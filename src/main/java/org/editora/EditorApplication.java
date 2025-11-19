@@ -247,8 +247,12 @@ public class EditorApplication extends Application {
         CheckMenuItem lineNumbersItem = new CheckMenuItem("Show Line Numbers");
         lineNumbersItem.setSelected(settings.isShowLineNumbers());
         lineNumbersItem.setOnAction(e -> toggleLineNumbers(lineNumbersItem.isSelected()));
+
+        CheckMenuItem statusBarItem = new CheckMenuItem("Show Status Bar");
+        statusBarItem.setSelected(true);
+        statusBarItem.setOnAction(e -> toggleStatusBar(statusBarItem.isSelected()));
         
-        viewMenu.getItems().addAll(commandPaletteItem, new SeparatorMenuItem(), toolbarItem, lineNumbersItem);
+        viewMenu.getItems().addAll(commandPaletteItem, new SeparatorMenuItem(), toolbarItem, lineNumbersItem, statusBarItem);
         
         // Help menu
         Menu helpMenu = new Menu("Help");
@@ -821,6 +825,17 @@ public class EditorApplication extends Application {
         logger.info("Line numbers " + (show ? "enabled" : "disabled"));
     }
 
+    private void toggleStatusBar(boolean show) {
+        if(statusLabel != null) {
+            statusLabel.setVisible(show);
+            statusLabel.setManaged(show);
+        }
+        logger.info("Status bar " + (show ? "shown" : "hidden"));
+    }
+
+
+    private void toggleStatusBar(boolean show, boolean animate) {}
+
     private void toggleToolbar(boolean show) {
         if (show) {
             if (!topContainer.getChildren().contains(toolBar)) {
@@ -877,6 +892,10 @@ public class EditorApplication extends Application {
         commandPalette.addCommand("Toggle Line Numbers", "Show or hide line numbers", () -> {
             boolean isVisible = settings.isShowLineNumbers();
             toggleLineNumbers(!isVisible);
+        });
+        commandPalette.addCommand("Toggle Status Bar", "Show or hide the status bar", () -> {
+            boolean isVisible = statusLabel.isVisible();
+            toggleStatusBar(!isVisible);
         });
         
         // Help commands
