@@ -19,6 +19,7 @@ import org.editora.settings.EditorSettings;
 import org.editora.settings.SettingsDialog;
 import org.editora.ui.FindReplaceDialog;
 import org.editora.ui.CodeEditorArea;
+import org.editora.ui.CommandPalette;
 import org.fxmisc.richtext.CodeArea;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +46,7 @@ public class EditorApplication extends Application {
     private EditorSettings settings;
     private ToolBar toolBar;
     private VBox topContainer;
+    private CommandPalette commandPalette;
     
     @Override
     public void start(Stage stage) {
@@ -95,6 +97,18 @@ public class EditorApplication extends Application {
 
         // Load syntax highlighting CSS
         scene.getStylesheets().add(getClass().getResource("/syntax-highlighting.css").toExternalForm());
+
+        // Initialize command palette
+        commandPalette = new CommandPalette(stage);
+        initializeCommandPalette();
+
+        // Add keyboard shortcut for command palette (Ctrl+Shift+P)
+        scene.setOnKeyPressed(event -> {
+            if (event.isControlDown() && event.isShiftDown() && event.getCode() == KeyCode.P) {
+                commandPalette.show();
+                event.consume();
+            }
+        });
 
         // Configure stage
         primaryStage.setTitle("Editora - Text Editor");
@@ -221,6 +235,11 @@ public class EditorApplication extends Application {
         // View menu
         Menu viewMenu = new Menu("View");
         
+        MenuItem commandPaletteItem = new MenuItem("Command Palette...");
+        commandPaletteItem.setGraphic(new FontIcon(MaterialDesignC.CODE_BRACES));
+        commandPaletteItem.setAccelerator(new KeyCodeCombination(KeyCode.P, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN));
+        commandPaletteItem.setOnAction(e -> showCommandPalette());
+        
         CheckMenuItem toolbarItem = new CheckMenuItem("Show Toolbar");
         toolbarItem.setSelected(true);
         toolbarItem.setOnAction(e -> toggleToolbar(toolbarItem.isSelected()));
@@ -229,7 +248,7 @@ public class EditorApplication extends Application {
         lineNumbersItem.setSelected(settings.isShowLineNumbers());
         lineNumbersItem.setOnAction(e -> toggleLineNumbers(lineNumbersItem.isSelected()));
         
-        viewMenu.getItems().addAll(toolbarItem, lineNumbersItem);
+        viewMenu.getItems().addAll(commandPaletteItem, new SeparatorMenuItem(), toolbarItem, lineNumbersItem);
         
         // Help menu
         Menu helpMenu = new Menu("Help");
@@ -331,6 +350,12 @@ public class EditorApplication extends Application {
 
         Separator sep4 = new Separator();
 
+        // Command palette button
+        Button commandPaletteBtn = new Button();
+        commandPaletteBtn.setGraphic(new FontIcon(MaterialDesignC.CODE_BRACES));
+        commandPaletteBtn.setTooltip(createTooltip("Command Palette (Ctrl+Shift+P)"));
+        commandPaletteBtn.setOnAction(e -> showCommandPalette());
+
         // Settings button
         Button settingsBtn = new Button();
         settingsBtn.setGraphic(new FontIcon(MaterialDesignC.COG));
@@ -341,7 +366,7 @@ public class EditorApplication extends Application {
             newBtn, openBtn, saveBtn, sep1,
             undoBtn, redoBtn, sep2,
             cutBtn, copyBtn, pasteBtn, sep3,
-            wrapBtn, sep4, settingsBtn
+            wrapBtn, sep4, commandPaletteBtn, settingsBtn
         );
 
         return toolBar;
@@ -681,6 +706,10 @@ public class EditorApplication extends Application {
         dialog.openAndFocus();
     }
 
+    private void showCommandPalette() {
+        commandPalette.show();
+    }
+
     private void applySettings(EditorSettings settings) {
         // Apply settings to all open tabs
         for (Tab tab : tabPane.getTabs()) {
@@ -802,6 +831,59 @@ public class EditorApplication extends Application {
         }
         
         logger.info("Toolbar " + (show ? "shown" : "hidden"));
+    }
+
+    private void initializeCommandPalette() {
+        // File commands
+        commandPalette.addCommand("New File", "Create a new file (Ctrl+N)", this::newFile);
+        commandPalette.addCommand("Open File", "Open an existing file (Ctrl+O)", this::openFile);
+        commandPalette.addCommand("Save", "Save the current file (Ctrl+S)", this::saveFile);
+        commandPalette.addCommand("Save As", "Save the current file with a new name (Ctrl+Shift+S)", this::saveFileAs);
+        commandPalette.addCommand("Settings", "Open settings dialog (Ctrl+,)", this::showSettings);
+        
+        // Edit commands
+        commandPalette.addCommand("Undo", "Undo the last action (Ctrl+Z)", () -> {
+            CodeArea ca = getCurrentCodeArea();
+            if (ca != null) ca.undo();
+        });
+        commandPalette.addCommand("Redo", "Redo the last undone action (Ctrl+Y)", () -> {
+            CodeArea ca = getCurrentCodeArea();
+            if (ca != null) ca.redo();
+        });
+        commandPalette.addCommand("Cut", "Cut selected text (Ctrl+X)", () -> {
+            CodeArea ca = getCurrentCodeArea();
+            if (ca != null) ca.cut();
+        });
+        commandPalette.addCommand("Copy", "Copy selected text (Ctrl+C)", () -> {
+            CodeArea ca = getCurrentCodeArea();
+            if (ca != null) ca.copy();
+        });
+        commandPalette.addCommand("Paste", "Paste from clipboard (Ctrl+V)", () -> {
+            CodeArea ca = getCurrentCodeArea();
+            if (ca != null) ca.paste();
+        });
+        commandPalette.addCommand("Select All", "Select all text (Ctrl+A)", () -> {
+            CodeArea ca = getCurrentCodeArea();
+            if (ca != null) ca.selectAll();
+        });
+        commandPalette.addCommand("Find", "Open find dialog (Ctrl+F)", this::showFindReplace);
+        commandPalette.addCommand("Replace", "Open replace dialog (Ctrl+H)", this::showFindReplace);
+        
+        // View commands
+        commandPalette.addCommand("Toggle Toolbar", "Show or hide the toolbar", () -> {
+            boolean isVisible = topContainer.getChildren().contains(toolBar);
+            toggleToolbar(!isVisible);
+        });
+        commandPalette.addCommand("Toggle Line Numbers", "Show or hide line numbers", () -> {
+            boolean isVisible = settings.isShowLineNumbers();
+            toggleLineNumbers(!isVisible);
+        });
+        
+        // Help commands
+        commandPalette.addCommand("About", "Show about dialog", this::showAbout);
+        commandPalette.addCommand("Loaded Plugins", "Show loaded plugins information", this::showPlugins);
+        
+        logger.info("Command palette initialized with {} commands", commandPalette.getCommandCount());
     }
 
     @Override
