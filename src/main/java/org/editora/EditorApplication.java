@@ -43,6 +43,8 @@ public class EditorApplication extends Application {
     private Label statusLabel;
     private int untitledCounter = 1;
     private EditorSettings settings;
+    private ToolBar toolBar;
+    private VBox topContainer;
     
     @Override
     public void start(Stage stage) {
@@ -65,10 +67,10 @@ public class EditorApplication extends Application {
         MenuBar menuBar = createMenuBar();
 
         // Toolbar
-        ToolBar toolBar = createToolBar();
+        toolBar = createToolBar();
 
         // Top container (menu + toolbar)
-        VBox topContainer = new VBox(menuBar, toolBar);
+        topContainer = new VBox(menuBar, toolBar);
 
         // Status bar
         statusLabel = new Label("Ready");
@@ -219,11 +221,15 @@ public class EditorApplication extends Application {
         // View menu
         Menu viewMenu = new Menu("View");
         
+        CheckMenuItem toolbarItem = new CheckMenuItem("Show Toolbar");
+        toolbarItem.setSelected(true);
+        toolbarItem.setOnAction(e -> toggleToolbar(toolbarItem.isSelected()));
+        
         CheckMenuItem lineNumbersItem = new CheckMenuItem("Show Line Numbers");
         lineNumbersItem.setSelected(settings.isShowLineNumbers());
         lineNumbersItem.setOnAction(e -> toggleLineNumbers(lineNumbersItem.isSelected()));
         
-        viewMenu.getItems().addAll(lineNumbersItem);
+        viewMenu.getItems().addAll(toolbarItem, lineNumbersItem);
         
         // Help menu
         Menu helpMenu = new Menu("Help");
@@ -784,6 +790,18 @@ public class EditorApplication extends Application {
         }
         
         logger.info("Line numbers " + (show ? "enabled" : "disabled"));
+    }
+
+    private void toggleToolbar(boolean show) {
+        if (show) {
+            if (!topContainer.getChildren().contains(toolBar)) {
+                topContainer.getChildren().add(1, toolBar);
+            }
+        } else {
+            topContainer.getChildren().remove(toolBar);
+        }
+        
+        logger.info("Toolbar " + (show ? "shown" : "hidden"));
     }
 
     @Override
