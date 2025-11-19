@@ -1,0 +1,87 @@
+/* Syntax Highlighting Styles for RichTextFX CodeArea */
+
+.styled-text-area {
+    -fx-background-color: #ffffff;
+}
+
+.styled-text-area .text {
+    -fx-fill: #000000;
+    -fx-cursor: text;
+}
+
+.styled-text-area .content {
+    -fx-cursor: text;
+}
+
+.virtual-flow {
+    -fx-background-color: transparent;
+}
+
+.virtual-flow .scroll-bar {
+    -fx-background-color: transparent;
+}
+
+.virtualized-scroll-pane {
+    -fx-background-color: transparent;
+}
+
+/* Java Syntax Highlighting */
+.keyword {
+    -fx-fill: #0000ff;
+    -fx-font-weight: bold;
+}
+
+.string {
+    -fx-fill: #008000;
+}
+
+.comment {
+    -fx-fill: #808080;
+    -fx-font-style: italic;
+}
+
+.number {
+    -fx-fill: #ff0000;
+}
+
+.paren, .brace, .bracket {
+    -fx-fill: #000000;
+    -fx-font-weight: bold;
+}
+
+.semicolon {
+    -fx-fill: #000000;
+}
+
+/* XML/HTML Syntax Highlighting */
+.tag {
+    -fx-fill: #800000;
+    -fx-font-weight: bold;
+}
+
+.attribute {
+    -fx-fill: #ff0000;
+}
+
+/* Line numbers */
+.lineno {
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: #666666;
+}
+
+/* Selection */
+.styled-text-area .selection {
+    -fx-fill: #ffffff !important;
+    -fx-background-color: #3399ff !important;
+}
+
+.code-area .selection {
+    -fx-fill: #ffffff !important;
+    -fx-background-color: #3399ff !important;
+}
+
+/* Caret */
+.styled-text-area .caret {
+    -fx-stroke: #000000;
+    -fx-stroke-width: 2px;
+}
