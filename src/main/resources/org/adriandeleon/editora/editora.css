@@ -437,11 +437,25 @@
 }
 
 .version-details-label {
-    -fx-line-spacing: 2px;
+    -fx-line-spacing: 1px;
 }
 
-.version-panel {
-    -fx-spacing: 14;
+.version-overlay-panel {
+    -fx-spacing: 6;
+    -fx-padding: 10 14 10 14;
+    -fx-background-insets: 0;
+    -fx-background-radius: 22;
+    -fx-border-insets: 0;
+    -fx-border-radius: 22;
+    -fx-background-color: #0b1220;
+    -fx-border-color: rgba(255, 255, 255, 0.24);
+    -fx-opacity: 1.0;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 32, 0.18, 0, 14);
+}
+
+
+.version-meta-row {
+    -fx-padding: 0;
 }
 
 .find-file-badge {
@@ -583,7 +597,7 @@
     -fx-border-color: rgba(255, 255, 255, 0.24);
 }
 
-.theme-dark .version-panel {
+.theme-dark .version-overlay-panel {
     -fx-background-color: #0b1220;
     -fx-border-color: rgba(255, 255, 255, 0.24);
 }
@@ -749,7 +763,7 @@
     -fx-border-color: rgba(0, 0, 0, 0.2);
 }
 
-.theme-light .version-panel {
+.theme-light .version-overlay-panel {
     -fx-background-color: #ffffff;
     -fx-border-color: rgba(0, 0, 0, 0.2);
 }

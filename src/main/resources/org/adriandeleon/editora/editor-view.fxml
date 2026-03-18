@@ -14,6 +14,7 @@
 <?import javafx.scene.control.Tooltip?>
 <?import javafx.scene.control.TreeView?>
 <?import javafx.scene.control.ToolBar?>
+<?import javafx.scene.Group?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Region?>
@@ -388,31 +389,28 @@
         </StackPane>
 
         <StackPane fx:id="versionOverlay" managed="false" visible="false" styleClass="overlay-backdrop settings-overlay-backdrop">
-            <BorderPane maxWidth="560.0" styleClass="overlay-panel settings-panel">
-                <center>
-                    <VBox spacing="14.0" styleClass="version-panel">
-                        <padding>
-                            <Insets bottom="20.0" left="20.0" right="20.0" top="20.0"/>
-                        </padding>
-                        <HBox alignment="CENTER_LEFT" spacing="12.0">
-                            <FontIcon iconLiteral="bi-info-square" iconSize="18" styleClass="settings-header-icon"/>
-                            <Label fx:id="versionTitleLabel" text="Editora" styleClass="overlay-title"/>
-                            <Region HBox.hgrow="ALWAYS"/>
-                            <Button mnemonicParsing="false" onAction="#onHideVersionOverlay" styleClass="settings-close-button">
-                                <graphic>
-                                    <FontIcon iconLiteral="bi-x-circle" iconSize="14" styleClass="settings-header-icon"/>
-                                </graphic>
-                                <tooltip>
-                                    <Tooltip text="Close Version Info (Esc)"/>
-                                </tooltip>
-                            </Button>
-                        </HBox>
+            <Group>
+                <VBox prefWidth="860.0" maxWidth="860.0" maxHeight="-1.0" styleClass="version-overlay-panel">
+                    <HBox alignment="CENTER_LEFT" spacing="12.0">
+                        <FontIcon iconLiteral="bi-info-square" iconSize="18" styleClass="settings-header-icon"/>
+                        <Label fx:id="versionTitleLabel" text="Editora" styleClass="overlay-title"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Button mnemonicParsing="false" onAction="#onHideVersionOverlay" styleClass="settings-close-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-x-circle" iconSize="14" styleClass="settings-header-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Close Version Info (Esc)"/>
+                            </tooltip>
+                        </Button>
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" spacing="10.0" styleClass="version-meta-row">
                         <Label fx:id="versionValueLabel" text="Version 1.0-SNAPSHOT" styleClass="settings-section-title"/>
                         <Label fx:id="versionAuthorLabel" text="Author: Adrian De Leon" styleClass="settings-value-label"/>
-                        <Label fx:id="versionDetailsLabel" styleClass="settings-helper-label version-details-label" wrapText="true" text="Version details load here when the overlay opens."/>
-                    </VBox>
-                </center>
-            </BorderPane>
+                    </HBox>
+                    <Label fx:id="versionDetailsLabel" styleClass="settings-helper-label version-details-label" wrapText="true" text="Version details load here when the overlay opens."/>
+                </VBox>
+            </Group>
         </StackPane>
 
         <StackPane fx:id="settingsOverlay" managed="false" visible="false" styleClass="overlay-backdrop settings-overlay-backdrop">

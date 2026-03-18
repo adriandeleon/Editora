@@ -2653,11 +2653,9 @@ public class EditorController {
         versionValueLabel.setText("Version " + APPLICATION_VERSION);
         versionAuthorLabel.setText("Author: " + APPLICATION_AUTHOR);
         versionDetailsLabel.setText(String.join("\n",
-                "A Java 25 + JavaFX 25 desktop editor shell built around RichTextFX CodeArea tabs.",
-                "",
-                "Command palette: " + CommandPaletteShortcut.displayText(currentSettings.commandPaletteShortcut()),
-                "Find File: minibuffer-style path completion with preview and history.",
-                "Theme engine: AtlantaFX • Text engine: RichTextFX • Plugins: ServiceLoader JARs"));
+                "Java 25 + JavaFX 25 desktop editor shell built around RichTextFX CodeArea tabs.",
+                "Palette: " + CommandPaletteShortcut.displayText(currentSettings.commandPaletteShortcut())
+                        + " • Find File: minibuffer-style path completion • Theme: AtlantaFX • Plugins: ServiceLoader JARs"));
         versionOverlay.setManaged(true);
         versionOverlay.setVisible(true);
     }
