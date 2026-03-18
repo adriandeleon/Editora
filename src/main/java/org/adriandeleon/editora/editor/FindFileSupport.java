@@ -159,6 +159,39 @@ public final class FindFileSupport {
         }
     }
 
+    public static Optional<Match> resolveExistingMatch(Path workspaceRoot,
+                                                       String rawInput,
+                                                       Collection<Match> matches,
+                                                       Path homeDirectory) {
+        Optional<Path> resolvedPath = resolvePath(workspaceRoot, rawInput, homeDirectory);
+        if (resolvedPath.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Path path = resolvedPath.get();
+        if (matches != null) {
+            for (Match match : matches) {
+                if (match != null && match.path().equals(path)) {
+                    return Optional.of(match);
+                }
+            }
+        }
+
+        boolean directory = Files.isDirectory(path);
+        if (!directory && !Files.isRegularFile(path)) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new Match(
+                path,
+                presentPath(workspaceRoot, path, directory),
+                buildParentPath(workspaceRoot, path),
+                directory,
+                false,
+                false
+        ));
+    }
+
     public static String presentPath(Path workspaceRoot, Path path, boolean directory) {
         Path normalizedPath = normalizeRoot(path);
         Path normalizedWorkspaceRoot = normalizeRoot(workspaceRoot);

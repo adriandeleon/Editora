@@ -170,7 +170,7 @@
                         </Button>
                         <Button mnemonicParsing="false" onAction="#onShowVersionOverlay" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-info-circle" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-info-square" iconSize="16" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Version Information"/>
@@ -371,7 +371,7 @@
                 <HBox alignment="CENTER_LEFT" spacing="12.0" styleClass="command-palette-header">
                     <Label text="Find File" styleClass="overlay-title"/>
                     <Region HBox.hgrow="ALWAYS"/>
-                    <Label text="Highlight preview • Tab complete • Enter open" styleClass="toolbar-caption"/>
+                    <Label text="Tab complete • Ctrl+R/Ctrl+S history • Enter open" styleClass="toolbar-caption"/>
                 </HBox>
                 <TextField fx:id="findFileField" promptText="Find file: src/utils/file.ts, ~/notes.md, or /absolute/path"/>
                 <Label fx:id="findFileHintLabel" styleClass="command-description" wrapText="true"/>
@@ -388,27 +388,31 @@
         </StackPane>
 
         <StackPane fx:id="versionOverlay" managed="false" visible="false" styleClass="overlay-backdrop settings-overlay-backdrop">
-            <VBox maxWidth="560.0" spacing="14.0" styleClass="overlay-panel settings-panel version-panel">
-                <padding>
-                    <Insets bottom="20.0" left="20.0" right="20.0" top="20.0"/>
-                </padding>
-                <HBox alignment="CENTER_LEFT" spacing="12.0">
-                    <FontIcon iconLiteral="bi-info-circle" iconSize="18" styleClass="settings-header-icon"/>
-                    <Label fx:id="versionTitleLabel" text="Editora" styleClass="overlay-title"/>
-                    <Region HBox.hgrow="ALWAYS"/>
-                    <Button mnemonicParsing="false" onAction="#onHideVersionOverlay" styleClass="settings-close-button">
-                        <graphic>
-                            <FontIcon iconLiteral="bi-x-circle" iconSize="14" styleClass="settings-header-icon"/>
-                        </graphic>
-                        <tooltip>
-                            <Tooltip text="Close Version Info (Esc)"/>
-                        </tooltip>
-                    </Button>
-                </HBox>
-                <Label fx:id="versionValueLabel" text="Version 1.0-SNAPSHOT" styleClass="settings-section-title"/>
-                <Label fx:id="versionAuthorLabel" text="Author: Adrian De Leon" styleClass="settings-value-label"/>
-                <Label fx:id="versionDetailsLabel" styleClass="settings-helper-label version-details-label" wrapText="true" text="Version details load here when the overlay opens."/>
-            </VBox>
+            <BorderPane maxWidth="560.0" styleClass="overlay-panel settings-panel">
+                <center>
+                    <VBox spacing="14.0" styleClass="version-panel">
+                        <padding>
+                            <Insets bottom="20.0" left="20.0" right="20.0" top="20.0"/>
+                        </padding>
+                        <HBox alignment="CENTER_LEFT" spacing="12.0">
+                            <FontIcon iconLiteral="bi-info-square" iconSize="18" styleClass="settings-header-icon"/>
+                            <Label fx:id="versionTitleLabel" text="Editora" styleClass="overlay-title"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button mnemonicParsing="false" onAction="#onHideVersionOverlay" styleClass="settings-close-button">
+                                <graphic>
+                                    <FontIcon iconLiteral="bi-x-circle" iconSize="14" styleClass="settings-header-icon"/>
+                                </graphic>
+                                <tooltip>
+                                    <Tooltip text="Close Version Info (Esc)"/>
+                                </tooltip>
+                            </Button>
+                        </HBox>
+                        <Label fx:id="versionValueLabel" text="Version 1.0-SNAPSHOT" styleClass="settings-section-title"/>
+                        <Label fx:id="versionAuthorLabel" text="Author: Adrian De Leon" styleClass="settings-value-label"/>
+                        <Label fx:id="versionDetailsLabel" styleClass="settings-helper-label version-details-label" wrapText="true" text="Version details load here when the overlay opens."/>
+                    </VBox>
+                </center>
+            </BorderPane>
         </StackPane>
 
         <StackPane fx:id="settingsOverlay" managed="false" visible="false" styleClass="overlay-backdrop settings-overlay-backdrop">

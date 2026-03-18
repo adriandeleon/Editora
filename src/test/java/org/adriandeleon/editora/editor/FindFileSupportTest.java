@@ -102,6 +102,52 @@ class FindFileSupportTest {
     }
 
     @Test
+    void resolvesExactTypedWorkspacePathIntoConcreteMatch() throws IOException {
+        Path workspaceRoot = Files.createDirectories(tempDir.resolve("workspace"));
+        Path srcDir = Files.createDirectories(workspaceRoot.resolve("src"));
+        Path appTs = Files.writeString(srcDir.resolve("app.ts"), "export {};\n");
+        Path apiDir = Files.createDirectories(srcDir.resolve("api"));
+        Path apiFile = Files.writeString(apiDir.resolve("client.ts"), "export {};\n");
+
+        List<FindFileSupport.Match> matches = FindFileSupport.rankMatches(
+                workspaceRoot,
+                List.of(srcDir, appTs, apiDir, apiFile),
+                List.of(),
+                List.of(),
+                "src/ap",
+                10
+        );
+
+        FindFileSupport.Match resolved = FindFileSupport.resolveExistingMatch(
+                workspaceRoot,
+                "src/app.ts",
+                matches,
+                tempDir.resolve("home")
+        ).orElseThrow();
+
+        assertEquals(appTs, resolved.path());
+        assertEquals("src/app.ts", resolved.displayPath());
+        assertFalse(resolved.directory());
+    }
+
+    @Test
+    void resolvesDirectAbsolutePathOutsideWorkspaceIntoSyntheticMatch() throws IOException {
+        Path workspaceRoot = Files.createDirectories(tempDir.resolve("workspace"));
+        Path externalFile = Files.writeString(tempDir.resolve("notes.txt"), "outside workspace\n");
+
+        FindFileSupport.Match resolved = FindFileSupport.resolveExistingMatch(
+                workspaceRoot,
+                externalFile.toString(),
+                List.of(),
+                tempDir.resolve("home")
+        ).orElseThrow();
+
+        assertEquals(externalFile.toAbsolutePath().normalize(), resolved.path());
+        assertEquals(FindFileSupport.presentPath(workspaceRoot, externalFile, false), resolved.displayPath());
+        assertFalse(resolved.directory());
+    }
+
+    @Test
     void buildsDirectoryPreviewWithDescentHint() throws IOException {
         Path workspaceRoot = Files.createDirectories(tempDir.resolve("workspace"));
         Path srcDir = Files.createDirectories(workspaceRoot.resolve("src"));

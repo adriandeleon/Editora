@@ -301,6 +301,8 @@ public class EditorController {
     private final List<String> findFileHistory = new ArrayList<>();
     private List<Path> findFileCandidates = List.of();
     private int findFileHistoryIndex = -1;
+    private String findFileHistoryDraft = "";
+    private boolean applyingFindFileHistory;
 
     @FXML
     private void initialize() {
@@ -724,7 +726,10 @@ public class EditorController {
 
         findFileField.textProperty().addListener((observable, previous, current) -> {
             lastFindFileQuery = current == null ? "" : current;
-            findFileHistoryIndex = -1;
+            if (!applyingFindFileHistory) {
+                findFileHistoryDraft = lastFindFileQuery;
+                findFileHistoryIndex = -1;
+            }
             refreshFindFileResults();
         });
         findFileField.setOnAction(event -> acceptFindFileInput());
@@ -783,15 +788,15 @@ public class EditorController {
             if (selectedMatch.open()) {
                 hint.append(" • Already open");
             }
-            hint.append(" • Highlight previews • Tab completes • Ctrl+R recalls history");
+            hint.append(" • Highlight previews • Tab completes • Ctrl+R/Ctrl+S history");
             findFileHintLabel.setText(hint.toString());
             return;
         }
 
         if (lastFindFileQuery == null || lastFindFileQuery.isBlank()) {
-            findFileHintLabel.setText("Recent files first • Highlight previews • Type a project-relative path • Tab completes • Esc cancels");
+            findFileHintLabel.setText("Recent files first • Highlight previews • Type a project-relative path • Tab completes • Ctrl+R/Ctrl+S history • Esc cancels");
         } else {
-            findFileHintLabel.setText("Enter opens highlighted file • Directories descend • Highlight previews • Ctrl+Backspace deletes a path segment");
+            findFileHintLabel.setText("Enter opens exact paths first • Directories descend • Highlight previews • Ctrl+Backspace deletes a path segment");
         }
     }
 
@@ -859,7 +864,12 @@ public class EditorController {
             return;
         }
         if (event.getCode() == KeyCode.R && event.isControlDown()) {
-            recallFindFileHistory();
+            recallOlderFindFileHistory();
+            event.consume();
+            return;
+        }
+        if (event.getCode() == KeyCode.S && event.isControlDown()) {
+            recallNewerFindFileHistory();
             event.consume();
             return;
         }
@@ -875,6 +885,12 @@ public class EditorController {
             event.consume();
         } else if (event.getCode() == KeyCode.TAB) {
             applyFindFileCompletion();
+            event.consume();
+        } else if (event.getCode() == KeyCode.R && event.isControlDown()) {
+            recallOlderFindFileHistory();
+            event.consume();
+        } else if (event.getCode() == KeyCode.S && event.isControlDown()) {
+            recallNewerFindFileHistory();
             event.consume();
         } else if ((event.getCode() == KeyCode.P || event.getCode() == KeyCode.UP) && event.isControlDown()) {
             moveFindFileSelection(-1);
@@ -899,12 +915,14 @@ public class EditorController {
                 });
     }
 
-    private void recallFindFileHistory() {
+    private void recallOlderFindFileHistory() {
         if (findFileHistory.isEmpty()) {
             return;
         }
+
         int targetIndex;
         if (findFileHistoryIndex < 0) {
+            findFileHistoryDraft = findFileField.getText() == null ? "" : findFileField.getText();
             targetIndex = 0;
         } else if (findFileHistoryIndex < findFileHistory.size() - 1) {
             targetIndex = findFileHistoryIndex + 1;
@@ -912,29 +930,55 @@ public class EditorController {
             targetIndex = findFileHistoryIndex;
         }
 
-        String recalled = findFileHistory.get(targetIndex);
-        findFileField.setText(recalled);
-        findFileField.positionCaret(recalled.length());
-        findFileHistoryIndex = targetIndex;
+        applyFindFileHistoryEntry(findFileHistory.get(targetIndex), targetIndex);
     }
 
-    private void acceptFindFileInput() {
-        FindFileSupport.Match selectedMatch = findFileListView.getSelectionModel().getSelectedItem();
-        if (selectedMatch != null) {
-            if (selectedMatch.directory()) {
-                String directoryInput = FindFileSupport.presentPath(workspaceRoot, selectedMatch.path(), true);
-                findFileField.setText(directoryInput);
-                findFileField.positionCaret(directoryInput.length());
-                return;
-            }
-
-            recordFindFileQuery(findFileField.getText());
-            hideFindFilePrompt(false);
-            openFile(selectedMatch.path());
+    private void recallNewerFindFileHistory() {
+        if (findFileHistoryIndex < 0) {
+            return;
+        }
+        if (findFileHistoryIndex == 0) {
+            applyFindFileHistoryEntry(findFileHistoryDraft, -1);
             return;
         }
 
-        Optional<Path> resolvedPath = FindFileSupport.resolvePath(workspaceRoot, findFileField.getText(), Path.of(System.getProperty("user.home", ".")));
+        int targetIndex = findFileHistoryIndex - 1;
+        applyFindFileHistoryEntry(findFileHistory.get(targetIndex), targetIndex);
+    }
+
+    private void applyFindFileHistoryEntry(String value, int historyIndex) {
+        String entry = value == null ? "" : value;
+        applyingFindFileHistory = true;
+        try {
+            findFileField.setText(entry);
+            findFileField.positionCaret(entry.length());
+        } finally {
+            applyingFindFileHistory = false;
+        }
+        findFileHistoryIndex = historyIndex;
+    }
+
+    private void acceptFindFileInput() {
+        String typedInput = findFileField.getText();
+        Path homeDirectory = Path.of(System.getProperty("user.home", "."));
+        Optional<FindFileSupport.Match> explicitMatch = FindFileSupport.resolveExistingMatch(
+                workspaceRoot,
+                typedInput,
+                List.copyOf(findFileResults),
+                homeDirectory
+        );
+        if (explicitMatch.isPresent()) {
+            openFindFileMatch(explicitMatch.get(), typedInput);
+            return;
+        }
+
+        FindFileSupport.Match selectedMatch = findFileListView.getSelectionModel().getSelectedItem();
+        if (selectedMatch != null) {
+            openFindFileMatch(selectedMatch, typedInput);
+            return;
+        }
+
+        Optional<Path> resolvedPath = FindFileSupport.resolvePath(workspaceRoot, typedInput, homeDirectory);
         if (resolvedPath.isEmpty()) {
             statusMessage("Enter a file path to open");
             return;
@@ -952,9 +996,22 @@ public class EditorController {
             return;
         }
 
-        recordFindFileQuery(findFileField.getText());
+        recordFindFileQuery(typedInput);
         hideFindFilePrompt(false);
         openFile(path);
+    }
+
+    private void openFindFileMatch(FindFileSupport.Match match, String typedInput) {
+        if (match.directory()) {
+            String directoryInput = FindFileSupport.presentPath(workspaceRoot, match.path(), true);
+            findFileField.setText(directoryInput);
+            findFileField.positionCaret(directoryInput.length());
+            return;
+        }
+
+        recordFindFileQuery(typedInput);
+        hideFindFilePrompt(false);
+        openFile(match.path());
     }
 
     private void recordFindFileQuery(String query) {
@@ -1232,7 +1289,7 @@ public class EditorController {
             return "bi-box-arrow-right";
         }
         if (name.contains("version") || name.contains("about")) {
-            return "bi-info-circle";
+            return "bi-info-square";
         }
         if (name.contains("find file")) {
             return "bi-folder2-open";
@@ -2566,6 +2623,7 @@ public class EditorController {
         hideCommandPalette();
         findFileCandidates = collectFindFileCandidates();
         findFileHistoryIndex = -1;
+        findFileHistoryDraft = lastFindFileQuery;
         findFileOverlay.setManaged(true);
         findFileOverlay.setVisible(true);
         findFileField.setText(lastFindFileQuery);
