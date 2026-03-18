@@ -1,0 +1,419 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.MenuButton?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.SplitPane?>
+<?import javafx.scene.control.TabPane?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.ToggleButton?>
+<?import javafx.scene.control.Tooltip?>
+<?import javafx.scene.control.TreeView?>
+<?import javafx.scene.control.ToolBar?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<StackPane fx:id="rootStack"
+           xmlns="http://javafx.com/javafx/25"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="org.adriandeleon.editora.EditorController"
+           prefHeight="920.0"
+           prefWidth="1440.0"
+           styleClass="editor-root">
+    <children>
+        <BorderPane fx:id="rootPane" styleClass="editor-shell">
+            <top>
+                <VBox spacing="10.0" BorderPane.alignment="CENTER">
+                    <padding>
+                        <Insets bottom="12.0" left="16.0" right="16.0" top="16.0"/>
+                    </padding>
+                    <ToolBar styleClass="top-toolbar">
+                        <Label text="Editora" styleClass="app-title"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Button mnemonicParsing="false" onAction="#onNewTab" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-plus" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="New Tab (⌘T)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onOpenFile" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-folder2-open" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Open File (⌘O)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onSaveFile" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-save2" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Save File (⌘S)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onSaveFileAs" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-save2" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Save File As (⇧⌘S)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onCloseCurrentTab" styleClass="toolbar-icon-button danger-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-x-circle" iconSize="15" styleClass="toolbar-font-icon danger-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Close Tab (⌘W)"/>
+                            </tooltip>
+                        </Button>
+                        <Separator orientation="VERTICAL"/>
+                        <Button fx:id="undoButton" mnemonicParsing="false" onAction="#onUndo" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-arrow-counterclockwise" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Undo (⌘Z)"/>
+                            </tooltip>
+                        </Button>
+                        <Button fx:id="redoButton" mnemonicParsing="false" onAction="#onRedo" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-arrow-clockwise" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Redo (⇧⌘Z)"/>
+                            </tooltip>
+                        </Button>
+                        <Button fx:id="cutButton" mnemonicParsing="false" onAction="#onCut" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-scissors" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Cut (⌘X)"/>
+                            </tooltip>
+                        </Button>
+                        <Button fx:id="copyButton" mnemonicParsing="false" onAction="#onCopy" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-files" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Copy (⌘C)"/>
+                            </tooltip>
+                        </Button>
+                        <Button fx:id="pasteButton" mnemonicParsing="false" onAction="#onPaste" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-clipboard" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Paste (⌘V)"/>
+                            </tooltip>
+                        </Button>
+                        <Separator orientation="VERTICAL"/>
+                        <MenuButton fx:id="recentFilesMenuButton" styleClass="toolbar-icon-button toolbar-menu-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-clock-history" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Recent Files"/>
+                            </tooltip>
+                        </MenuButton>
+                        <Button mnemonicParsing="false" onAction="#onShowCommandPalette" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-terminal" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip fx:id="commandPaletteToolbarTooltip" text="Command Palette (⌥X)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onToggleSearchBar" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-search" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Toggle Search (⌥⌘F)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-files" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Toggle Project Explorer (⌥⌘E)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onToggleStatusBar" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-info-circle" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Toggle Status Bar (⌥⌘B)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onShowSettings" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-gear" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Open Settings (⌘,)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onShowVersionOverlay" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-info-circle" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Version Information"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onToggleTheme" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-circle-half" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Toggle Theme"/>
+                            </tooltip>
+                        </Button>
+                        <MenuButton fx:id="pluginMenuButton" styleClass="toolbar-icon-button toolbar-menu-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-puzzle" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Plugins"/>
+                            </tooltip>
+                        </MenuButton>
+                        <Button mnemonicParsing="false" onAction="#onExitApplication" styleClass="toolbar-icon-button danger-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-box-arrow-right" iconSize="16" styleClass="toolbar-font-icon danger-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Exit Editora"/>
+                            </tooltip>
+                        </Button>
+                        <Separator orientation="VERTICAL"/>
+                        <Label fx:id="searchVisibilityIndicator" styleClass="toolbar-indicator indicator-visible" text="Search On"/>
+                        <Label fx:id="explorerVisibilityIndicator" styleClass="toolbar-indicator indicator-visible" text="Explorer On"/>
+                        <Label fx:id="statusVisibilityIndicator" styleClass="toolbar-indicator indicator-visible" text="Status On"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Label text="RichTextFX + AtlantaFX" styleClass="toolbar-caption"/>
+                    </ToolBar>
+                    <HBox fx:id="searchBar" alignment="CENTER_LEFT" spacing="10.0" styleClass="search-bar">
+                        <Label text="Search"/>
+                        <TextField fx:id="searchField" promptText="Search in current tab" HBox.hgrow="ALWAYS"/>
+                        <Label text="Replace"/>
+                        <TextField fx:id="replaceField" promptText="Replacement text" HBox.hgrow="ALWAYS"/>
+                        <Button mnemonicParsing="false" onAction="#onFindPrevious" styleClass="search-action-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-chevron-up" iconSize="14" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Find Previous"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onFindNext" styleClass="search-action-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-chevron-down" iconSize="14" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Find Next (⌘F focuses search)"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onReplaceSelection" styleClass="search-action-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-arrow-left-right" iconSize="14" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Replace Selection"/>
+                            </tooltip>
+                        </Button>
+                        <Button mnemonicParsing="false" onAction="#onReplaceAll" styleClass="search-action-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-arrow-repeat" iconSize="14" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Replace All"/>
+                            </tooltip>
+                        </Button>
+                        <ToggleButton fx:id="caseSensitiveToggle" mnemonicParsing="false" styleClass="search-option-toggle" text="Aa">
+                            <tooltip>
+                                <Tooltip text="Case-sensitive search"/>
+                            </tooltip>
+                        </ToggleButton>
+                        <ToggleButton fx:id="wholeWordToggle" mnemonicParsing="false" styleClass="search-option-toggle" text="W">
+                            <tooltip>
+                                <Tooltip text="Whole-word search"/>
+                            </tooltip>
+                        </ToggleButton>
+                        <ToggleButton fx:id="regexToggle" mnemonicParsing="false" styleClass="search-option-toggle" text=".*">
+                            <tooltip>
+                                <Tooltip text="Regular expression search"/>
+                            </tooltip>
+                        </ToggleButton>
+                        <Label fx:id="searchResultsLabel" text="Type to search" styleClass="search-results-label"/>
+                        <Button mnemonicParsing="false" onAction="#onToggleSearchBar" styleClass="panel-dismiss-button panel-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-x-circle" iconSize="13" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Hide Search (Esc or ⌥⌘F)"/>
+                            </tooltip>
+                        </Button>
+                    </HBox>
+                </VBox>
+            </top>
+            <center>
+                <SplitPane fx:id="centerSplitPane" dividerPositions="0.22" BorderPane.alignment="CENTER">
+                    <items>
+                        <VBox fx:id="projectExplorerPane" minWidth="240.0" prefWidth="300.0" spacing="12.0" styleClass="project-explorer">
+                            <padding>
+                                <Insets bottom="12.0" left="12.0" right="12.0" top="12.0"/>
+                            </padding>
+                            <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                <Label text="Project Explorer" styleClass="explorer-title"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Button mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="panel-dismiss-button panel-icon-button">
+                                    <graphic>
+                                        <FontIcon iconLiteral="bi-x-circle" iconSize="13" styleClass="toolbar-font-icon"/>
+                                    </graphic>
+                                    <tooltip>
+                                        <Tooltip text="Hide Project Explorer (Esc or ⌥⌘E)"/>
+                                    </tooltip>
+                                </Button>
+                                <Button mnemonicParsing="false" onAction="#onRefreshWorkspace" styleClass="search-action-button">
+                                    <graphic>
+                                        <FontIcon iconLiteral="bi-arrow-clockwise" iconSize="14" styleClass="toolbar-font-icon"/>
+                                    </graphic>
+                                    <tooltip>
+                                        <Tooltip text="Refresh Workspace"/>
+                                    </tooltip>
+                                </Button>
+                                <Button mnemonicParsing="false" onAction="#onOpenWorkspaceFolder" styleClass="search-action-button">
+                                    <graphic>
+                                        <FontIcon iconLiteral="bi-folder2-open" iconSize="14" styleClass="toolbar-font-icon"/>
+                                    </graphic>
+                                    <tooltip>
+                                        <Tooltip text="Open Workspace Folder"/>
+                                    </tooltip>
+                                </Button>
+                            </HBox>
+                            <Label fx:id="workspaceRootLabel" styleClass="workspace-root-label" wrapText="true"/>
+                            <TreeView fx:id="projectTreeView" VBox.vgrow="ALWAYS" styleClass="project-tree"/>
+                        </VBox>
+                        <TabPane fx:id="editorTabPane" styleClass="editor-tabs"/>
+                    </items>
+                </SplitPane>
+            </center>
+            <bottom>
+                <HBox fx:id="statusBar" alignment="CENTER_LEFT" spacing="16.0" styleClass="status-bar" BorderPane.alignment="CENTER">
+                    <padding>
+                        <Insets bottom="10.0" left="16.0" right="16.0" top="10.0"/>
+                    </padding>
+                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip status-message-chip">
+                        <FontIcon iconLiteral="bi-info-circle" iconSize="12" styleClass="status-icon"/>
+                        <Label fx:id="messageStatusLabel" text="Ready" styleClass="status-emphasis"/>
+                    </HBox>
+                    <Separator orientation="VERTICAL"/>
+                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
+                        <FontIcon iconLiteral="bi-file-earmark-text" iconSize="12" styleClass="status-icon"/>
+                        <Label fx:id="documentStatusLabel" text="No document"/>
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
+                        <FontIcon iconLiteral="bi-cursor-text" iconSize="12" styleClass="status-icon"/>
+                        <Label fx:id="caretStatusLabel" text="Line: —  Col: —"/>
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
+                        <FontIcon iconLiteral="bi-code-slash" iconSize="12" styleClass="status-icon"/>
+                        <Label fx:id="languageStatusLabel" text="Language: —"/>
+                    </HBox>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
+                        <FontIcon iconLiteral="bi-puzzle" iconSize="12" styleClass="status-icon"/>
+                        <Label fx:id="pluginStatusLabel" text="Plugins: 0"/>
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
+                        <FontIcon iconLiteral="bi-circle-half" iconSize="12" styleClass="status-icon"/>
+                        <Label fx:id="themeStatusLabel" text="Theme: Dark"/>
+                    </HBox>
+                </HBox>
+            </bottom>
+        </BorderPane>
+
+        <StackPane fx:id="commandPaletteOverlay" managed="false" visible="false" styleClass="overlay-backdrop">
+            <VBox maxWidth="760.0" spacing="14.0" styleClass="overlay-panel command-palette-panel">
+                <padding>
+                    <Insets bottom="18.0" left="18.0" right="18.0" top="18.0"/>
+                </padding>
+                <HBox alignment="CENTER_LEFT" spacing="12.0" styleClass="command-palette-header">
+                    <Label text="Command Palette" styleClass="overlay-title"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label fx:id="commandPaletteShortcutLabel" text="⌥X" styleClass="command-palette-shortcut-badge"/>
+                </HBox>
+                <TextField fx:id="commandPaletteField" promptText="Type to filter commands"/>
+                <ListView fx:id="commandPaletteListView" prefHeight="320.0"/>
+            </VBox>
+        </StackPane>
+
+        <StackPane fx:id="findFileOverlay" managed="false" visible="false" styleClass="overlay-backdrop">
+            <VBox maxWidth="820.0" spacing="12.0" styleClass="overlay-panel command-palette-panel find-file-panel">
+                <padding>
+                    <Insets bottom="18.0" left="18.0" right="18.0" top="18.0"/>
+                </padding>
+                <HBox alignment="CENTER_LEFT" spacing="12.0" styleClass="command-palette-header">
+                    <Label text="Find File" styleClass="overlay-title"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Label text="Highlight preview • Tab complete • Enter open" styleClass="toolbar-caption"/>
+                </HBox>
+                <TextField fx:id="findFileField" promptText="Find file: src/utils/file.ts, ~/notes.md, or /absolute/path"/>
+                <Label fx:id="findFileHintLabel" styleClass="command-description" wrapText="true"/>
+                <SplitPane dividerPositions="0.48" prefHeight="360.0" VBox.vgrow="ALWAYS">
+                    <items>
+                        <ListView fx:id="findFileListView" prefHeight="340.0"/>
+                        <VBox spacing="8.0" styleClass="find-file-preview-pane">
+                            <Label fx:id="findFilePreviewTitleLabel" text="Preview" styleClass="find-file-preview-title"/>
+                            <TextArea fx:id="findFilePreviewArea" editable="false" focusTraversable="false" prefRowCount="18" styleClass="find-file-preview-area" wrapText="false" VBox.vgrow="ALWAYS"/>
+                        </VBox>
+                    </items>
+                </SplitPane>
+            </VBox>
+        </StackPane>
+
+        <StackPane fx:id="versionOverlay" managed="false" visible="false" styleClass="overlay-backdrop settings-overlay-backdrop">
+            <VBox maxWidth="560.0" spacing="14.0" styleClass="overlay-panel settings-panel version-panel">
+                <padding>
+                    <Insets bottom="20.0" left="20.0" right="20.0" top="20.0"/>
+                </padding>
+                <HBox alignment="CENTER_LEFT" spacing="12.0">
+                    <FontIcon iconLiteral="bi-info-circle" iconSize="18" styleClass="settings-header-icon"/>
+                    <Label fx:id="versionTitleLabel" text="Editora" styleClass="overlay-title"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Button mnemonicParsing="false" onAction="#onHideVersionOverlay" styleClass="settings-close-button">
+                        <graphic>
+                            <FontIcon iconLiteral="bi-x-circle" iconSize="14" styleClass="settings-header-icon"/>
+                        </graphic>
+                        <tooltip>
+                            <Tooltip text="Close Version Info (Esc)"/>
+                        </tooltip>
+                    </Button>
+                </HBox>
+                <Label fx:id="versionValueLabel" text="Version 1.0-SNAPSHOT" styleClass="settings-section-title"/>
+                <Label fx:id="versionAuthorLabel" text="Author: Adrian De Leon" styleClass="settings-value-label"/>
+                <Label fx:id="versionDetailsLabel" styleClass="settings-helper-label version-details-label" wrapText="true" text="Version details load here when the overlay opens."/>
+            </VBox>
+        </StackPane>
+
+        <StackPane fx:id="settingsOverlay" managed="false" visible="false" styleClass="overlay-backdrop settings-overlay-backdrop">
+            <BorderPane fx:id="settingsContentHost" maxHeight="720.0" maxWidth="900.0" prefHeight="680.0" prefWidth="860.0" styleClass="overlay-panel settings-panel"/>
+        </StackPane>
+    </children>
+</StackPane>
+

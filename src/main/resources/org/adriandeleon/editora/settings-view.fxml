@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.Tooltip?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<VBox fx:id="settingsRoot"
+      xmlns="http://javafx.com/javafx/25"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="org.adriandeleon.editora.SettingsController"
+      fillWidth="true"
+      spacing="20.0"
+      styleClass="settings-view">
+    <padding>
+        <Insets bottom="24.0" left="24.0" right="24.0" top="24.0"/>
+    </padding>
+
+    <HBox alignment="CENTER_LEFT" spacing="14.0" styleClass="settings-header-row">
+        <FontIcon iconLiteral="bi-gear-fill" iconSize="18" styleClass="settings-header-icon"/>
+        <VBox spacing="6.0">
+            <Label text="Editora Settings" styleClass="settings-title"/>
+            <Label text="Theme, editor behavior, diagnostics, and plugin integration" styleClass="settings-subtitle"/>
+        </VBox>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button mnemonicParsing="false" onAction="#onClose" styleClass="settings-close-button">
+            <graphic>
+                <FontIcon iconLiteral="bi-x-circle" iconSize="14" styleClass="settings-header-icon"/>
+            </graphic>
+            <tooltip>
+                <Tooltip text="Close Settings (Esc)"/>
+            </tooltip>
+        </Button>
+    </HBox>
+
+    <ScrollPane fx:id="settingsScrollPane" fitToWidth="true" hbarPolicy="NEVER" styleClass="settings-scroll-pane" VBox.vgrow="ALWAYS">
+        <content>
+            <VBox spacing="18.0" styleClass="settings-scroll-content">
+                <VBox spacing="14.0" styleClass="settings-card">
+                    <HBox alignment="CENTER_LEFT" spacing="10.0">
+                        <FontIcon iconLiteral="bi-sliders" iconSize="17" styleClass="settings-section-icon"/>
+                        <VBox spacing="4.0">
+                            <Label text="Editor Preferences" styleClass="settings-section-title"/>
+                            <Label text="These options affect the active editing experience across tabs and future sessions." styleClass="settings-section-subtitle"/>
+                        </VBox>
+                    </HBox>
+
+                    <GridPane hgap="16.0" vgap="16.0">
+                        <columnConstraints>
+                            <ColumnConstraints halignment="RIGHT" minWidth="170.0"/>
+                            <ColumnConstraints hgrow="ALWAYS"/>
+                        </columnConstraints>
+
+                        <Label text="Theme" styleClass="settings-field-label" GridPane.rowIndex="0"/>
+                        <ComboBox fx:id="themeComboBox" maxWidth="260.0" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+
+                        <Label text="Wrap text" styleClass="settings-field-label" GridPane.rowIndex="1"/>
+                        <CheckBox fx:id="wrapTextCheckBox" text="Wrap lines inside the current editor tabs" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+
+                        <Label text="Diagnostics" styleClass="settings-field-label" GridPane.rowIndex="2"/>
+                        <CheckBox fx:id="diagnosticsCheckBox" text="Show gutter diagnostics from the active language service" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+
+                        <Label text="Editor font" styleClass="settings-field-label" GridPane.rowIndex="3"/>
+                        <VBox spacing="8.0" GridPane.columnIndex="1" GridPane.rowIndex="3">
+                            <HBox alignment="CENTER_LEFT" spacing="8.0">
+                                <ComboBox fx:id="editorFontFamilyComboBox" editable="true" maxWidth="300.0" prefWidth="260.0" promptText="Font family"/>
+                                <TextField fx:id="editorFontSizeField" prefWidth="90.0" promptText="Size"/>
+                            </HBox>
+                            <Label fx:id="editorFontHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Set the editor font family and size used by all document tabs."/>
+                        </VBox>
+
+                        <Label text="Command palette shortcut" styleClass="settings-field-label" GridPane.rowIndex="4"/>
+                        <VBox spacing="8.0" GridPane.columnIndex="1" GridPane.rowIndex="4">
+                            <HBox alignment="CENTER_LEFT" spacing="8.0">
+                                <TextField fx:id="commandPaletteShortcutField" focusTraversable="true" prefWidth="180.0" promptText="Focus and press shortcut" styleClass="shortcut-capture-field"/>
+                                <Button mnemonicParsing="false" onAction="#onResetCommandPaletteShortcut" text="Reset">
+                                    <tooltip>
+                                        <Tooltip text="Reset to the default command palette shortcut"/>
+                                    </tooltip>
+                                </Button>
+                            </HBox>
+                            <Label fx:id="commandPaletteShortcutHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Focus the field and press the new shortcut."/>
+                        </VBox>
+                    </GridPane>
+                </VBox>
+
+                <VBox spacing="14.0" styleClass="settings-card settings-info-card">
+                    <HBox alignment="CENTER_LEFT" spacing="10.0">
+                        <FontIcon iconLiteral="bi-puzzle-fill" iconSize="17" styleClass="settings-section-icon"/>
+                        <VBox spacing="4.0">
+                            <Label text="Environment Details" styleClass="settings-section-title"/>
+                            <Label text="Read-only context about the current Editora workspace and integration points." styleClass="settings-section-subtitle"/>
+                        </VBox>
+                    </HBox>
+
+                    <GridPane hgap="16.0" vgap="16.0">
+                        <columnConstraints>
+                            <ColumnConstraints halignment="RIGHT" minWidth="170.0"/>
+                            <ColumnConstraints hgrow="ALWAYS"/>
+                        </columnConstraints>
+
+                        <Label text="Plugins directory" styleClass="settings-field-label" GridPane.rowIndex="0"/>
+                        <Label fx:id="pluginsDirectoryLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+
+                        <Label text="Available languages" styleClass="settings-field-label" GridPane.rowIndex="1"/>
+                        <Label fx:id="availableLanguagesLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+
+                        <Label text="Editor control" styleClass="settings-field-label" GridPane.rowIndex="2"/>
+                        <Label fx:id="editorControlLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+                    </GridPane>
+                </VBox>
+
+                <VBox fx:id="keyboardShortcutsCard" focusTraversable="true" spacing="14.0" styleClass="settings-card">
+                    <HBox alignment="CENTER_LEFT" spacing="10.0">
+                        <FontIcon iconLiteral="bi-keyboard-fill" iconSize="17" styleClass="settings-section-icon"/>
+                        <VBox spacing="4.0">
+                            <Label text="Keyboard Shortcuts" styleClass="settings-section-title"/>
+                            <Label text="Shell shortcuts and editor-local Emacs bindings reference for the RichTextFX CodeArea." styleClass="settings-section-subtitle"/>
+                        </VBox>
+                    </HBox>
+
+                    <Label fx:id="keyboardShortcutsLabel" styleClass="settings-value-label settings-shortcut-reference" wrapText="true" text="Shortcuts load here when settings open."/>
+                    <Label styleClass="settings-helper-label" wrapText="true" text="Tip: search the command palette for keyboard, emacs, mark, kill, yank, or find file to jump back here quickly."/>
+                </VBox>
+            </VBox>
+        </content>
+    </ScrollPane>
+
+    <Separator/>
+
+    <HBox alignment="CENTER_LEFT" spacing="12.0" styleClass="settings-footer-row">
+        <Label text="Changes apply to the editor shell immediately and persist through the existing settings/session flow." styleClass="settings-footer-note"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button fx:id="cancelButton" cancelButton="true" mnemonicParsing="false" onAction="#onClose" text="Cancel">
+            <tooltip>
+                <Tooltip text="Cancel and close settings (Esc)"/>
+            </tooltip>
+        </Button>
+        <Button fx:id="applyButton" defaultButton="true" mnemonicParsing="false" onAction="#onApply" styleClass="suggested-action" text="Apply">
+            <tooltip>
+                <Tooltip text="Apply settings (⌘Enter)"/>
+            </tooltip>
+        </Button>
+    </HBox>
+</VBox>
+

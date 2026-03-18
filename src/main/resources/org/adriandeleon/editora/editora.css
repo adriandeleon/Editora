@@ -1,0 +1,795 @@
+.editor-root {
+    -fx-font-family: "Inter", "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+.editor-shell {
+    -fx-background-color: transparent;
+}
+
+.top-toolbar {
+    -fx-background-color: transparent;
+    -fx-padding: 4 8 4 8;
+    -fx-background-radius: 18;
+    -fx-border-radius: 18;
+}
+
+.app-title {
+    -fx-font-size: 1.5em;
+    -fx-font-weight: 800;
+}
+
+.toolbar-caption {
+    -fx-opacity: 0.7;
+}
+
+.toolbar-font-icon {
+}
+
+.danger-font-icon {
+    -fx-icon-color: #f75f5f;
+}
+
+.command-icon,
+.menu-item-icon,
+.status-icon,
+.editor-tab-icon {
+    -fx-icon-color: #60a5fa;
+}
+
+.command-icon {
+    -fx-icon-size: 16px;
+}
+
+.menu-item-label {
+    -fx-font-size: 0.95em;
+}
+
+.toolbar-icon-button,
+.search-action-button,
+.panel-icon-button,
+.toolbar-menu-button {
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-font-size: 1.0em;
+    -fx-font-weight: 800;
+    -fx-min-width: 34;
+    -fx-min-height: 34;
+    -fx-pref-width: 34;
+    -fx-pref-height: 34;
+    -fx-padding: 0;
+}
+
+.toolbar-menu-button {
+    -fx-pref-width: 42;
+}
+
+.search-action-button {
+    -fx-min-width: 32;
+    -fx-min-height: 32;
+    -fx-pref-width: 32;
+    -fx-pref-height: 32;
+}
+
+.panel-icon-button {
+    -fx-min-width: 30;
+    -fx-min-height: 30;
+    -fx-pref-width: 30;
+    -fx-pref-height: 30;
+}
+
+.danger-icon-button {
+    -fx-text-fill: #f75f5f;
+}
+
+.toolbar-indicator {
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-font-size: 0.9em;
+    -fx-font-weight: 700;
+    -fx-padding: 4 10;
+}
+
+.search-results-label {
+    -fx-font-size: 0.92em;
+    -fx-font-weight: 700;
+    -fx-opacity: 0.82;
+}
+
+.search-results-error {
+    -fx-text-fill: #f75f5f;
+    -fx-opacity: 1;
+}
+
+.search-option-toggle {
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-font-size: 0.85em;
+    -fx-font-weight: 800;
+    -fx-min-width: 34;
+    -fx-min-height: 32;
+    -fx-pref-width: 34;
+    -fx-pref-height: 32;
+    -fx-padding: 0 8 0 8;
+}
+
+.status-emphasis {
+    -fx-font-weight: 700;
+}
+
+.status-chip {
+    -fx-alignment: center-left;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-padding: 4 10 4 10;
+}
+
+.status-message-chip {
+    -fx-padding: 4 12 4 10;
+}
+
+.search-bar,
+.status-bar {
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+    -fx-padding: 12;
+}
+
+.search-bar {
+    -fx-alignment: center-left;
+    -fx-padding: 10 12 10 12;
+}
+
+.project-explorer {
+    -fx-background-radius: 18;
+    -fx-border-radius: 18;
+    -fx-padding: 0;
+}
+
+.explorer-title {
+    -fx-font-size: 1.05em;
+    -fx-font-weight: 800;
+}
+
+.workspace-root-label {
+    -fx-opacity: 0.78;
+    -fx-font-size: 0.9em;
+}
+
+.project-tree {
+    -fx-background-insets: 0;
+    -fx-background-radius: 12;
+}
+
+.editor-tabs {
+    -fx-tab-min-width: 160;
+}
+
+.editor-tab-header {
+    -fx-alignment: center-left;
+}
+
+.editor-tab-title {
+    -fx-font-weight: 700;
+}
+
+.editor-tab-header.dirty .editor-tab-icon {
+    -fx-icon-color: #5b8cff;
+}
+
+.editor-code-area {
+    -fx-font-family: "JetBrains Mono", "SF Mono", monospace;
+    -fx-font-size: 14px;
+    -fx-background-insets: 0;
+}
+
+
+.editor-code-area .text {
+    -fx-font-smoothing-type: lcd;
+}
+
+.line-fringe {
+    -fx-background-color: transparent;
+}
+
+.fringe-indicator {
+    -fx-font-size: 0.75em;
+    -fx-font-weight: 900;
+}
+
+.quiet-indicator {
+    -fx-opacity: 0.18;
+}
+
+.dirty-indicator {
+    -fx-text-fill: #5b8cff;
+    -fx-opacity: 0.88;
+}
+
+.diagnostic-info {
+    -fx-text-fill: #4aa3ff;
+}
+
+.diagnostic-warning {
+    -fx-text-fill: #f0b429;
+}
+
+.diagnostic-error {
+    -fx-text-fill: #f75f5f;
+}
+
+.keyword {
+    -fx-fill: #c678dd;
+    -fx-font-weight: bold;
+}
+
+.string {
+    -fx-fill: #98c379;
+}
+
+.comment {
+    -fx-fill: #6a9955;
+}
+
+.search-match {
+    -rtfx-background-color: rgba(91, 140, 255, 0.22);
+    -rtfx-background-radius: 4;
+}
+
+.search-match-current {
+    -rtfx-background-color: rgba(240, 180, 41, 0.34);
+    -rtfx-background-radius: 4;
+}
+
+.paren,
+.brace,
+.bracket,
+.semicolon {
+    -fx-fill: #61afef;
+}
+
+.overlay-backdrop {
+    -fx-alignment: center;
+    -fx-background-color: rgba(0, 0, 0, 0.38);
+    -fx-padding: 32;
+}
+
+.settings-overlay-backdrop {
+    -fx-background-color: rgba(0, 0, 0, 0.58);
+}
+
+.overlay-panel {
+    -fx-background-radius: 22;
+    -fx-border-radius: 22;
+    -fx-padding: 0;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 32, 0.18, 0, 14);
+}
+
+.command-palette-panel {
+    -fx-min-width: 560;
+}
+
+.command-palette-header {
+    -fx-padding: 0 0 2 0;
+}
+
+.command-palette-shortcut-badge {
+    -fx-font-weight: 800;
+    -fx-padding: 6 10 6 10;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+}
+
+.command-cell {
+    -fx-padding: 8 0 8 0;
+}
+
+.command-name {
+    -fx-font-size: 1.02em;
+    -fx-font-weight: 800;
+}
+
+.command-description {
+    -fx-opacity: 0.82;
+}
+
+.command-category,
+.command-shortcut {
+    -fx-opacity: 0.72;
+    -fx-font-size: 0.9em;
+}
+
+.overlay-title,
+.settings-title {
+    -fx-font-size: 1.35em;
+    -fx-font-weight: 800;
+}
+
+.settings-subtitle {
+    -fx-opacity: 0.78;
+}
+
+.settings-view {
+    -fx-background-color: #0b1220;
+}
+
+.settings-panel {
+    -fx-background-insets: 0;
+    -fx-background-radius: 26;
+    -fx-border-radius: 26;
+    -fx-padding: 0;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.4), 52, 0.22, 0, 22);
+}
+
+.settings-header-row {
+    -fx-padding: 2 0 2 0;
+}
+
+.settings-header-icon,
+.settings-section-icon {
+    -fx-font-size: 1.2em;
+    -fx-font-weight: 800;
+}
+
+.settings-scroll-pane {
+    -fx-background-color: #0b1220;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-fit-to-width: true;
+    -fx-padding: 0;
+}
+
+.settings-scroll-pane > .viewport {
+    -fx-background-color: #0b1220;
+}
+
+.settings-scroll-content {
+    -fx-background-color: #0b1220;
+    -fx-padding: 2 0 2 0;
+}
+
+.settings-card {
+    -fx-background-radius: 18;
+    -fx-border-radius: 18;
+    -fx-padding: 18;
+    -fx-spacing: 14;
+}
+
+.settings-section-title {
+    -fx-font-size: 1.06em;
+    -fx-font-weight: 800;
+}
+
+.settings-section-subtitle {
+    -fx-opacity: 0.74;
+    -fx-wrap-text: true;
+}
+
+.settings-field-label {
+    -fx-font-weight: 700;
+}
+
+.settings-value-label {
+    -fx-opacity: 0.9;
+}
+
+.settings-shortcut-reference {
+    -fx-font-family: "JetBrains Mono", "SF Mono", monospace;
+    -fx-line-spacing: 2px;
+}
+
+.settings-helper-label {
+    -fx-opacity: 0.78;
+    -fx-wrap-text: true;
+}
+
+.settings-helper-label-error {
+    -fx-opacity: 1;
+}
+
+.shortcut-capture-field {
+    -fx-font-weight: 800;
+}
+
+.settings-footer-row {
+    -fx-padding: 2 0 0 0;
+}
+
+.settings-footer-note {
+    -fx-opacity: 0.72;
+    -fx-wrap-text: true;
+}
+
+.settings-close-button {
+    -fx-opacity: 0.78;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-min-width: 34;
+    -fx-min-height: 34;
+    -fx-pref-width: 34;
+    -fx-pref-height: 34;
+    -fx-padding: 0;
+}
+
+.settings-close-button:hover {
+    -fx-opacity: 1.0;
+}
+
+.suggested-action {
+    -fx-font-weight: 700;
+}
+
+.find-file-panel {
+    -fx-spacing: 12;
+}
+
+.find-file-preview-pane {
+    -fx-padding: 2 0 0 0;
+}
+
+.find-file-preview-title {
+    -fx-font-weight: 700;
+}
+
+.find-file-preview-area {
+    -fx-font-family: "JetBrains Mono", "SF Mono", monospace;
+    -fx-highlight-fill: transparent;
+    -fx-highlight-text-fill: inherit;
+}
+
+.version-details-label {
+    -fx-line-spacing: 2px;
+}
+
+.version-panel {
+    -fx-spacing: 14;
+}
+
+.find-file-badge {
+    -fx-padding: 3 8 3 8;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-font-size: 0.83em;
+    -fx-font-weight: 700;
+}
+
+.panel-dismiss-button {
+    -fx-font-weight: 700;
+    -fx-opacity: 0.82;
+}
+
+.panel-dismiss-button:hover {
+    -fx-opacity: 1.0;
+}
+
+.theme-dark .search-bar,
+.theme-dark .status-bar,
+.theme-dark .overlay-panel,
+.theme-dark .project-explorer {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-border-color: rgba(255, 255, 255, 0.09);
+}
+
+.theme-dark .overlay-backdrop {
+    -fx-background-color: rgba(0, 0, 0, 0.42);
+}
+
+.theme-dark .settings-overlay-backdrop {
+    -fx-background-color: rgba(0, 0, 0, 0.62);
+}
+
+.theme-dark .top-toolbar {
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+}
+
+.theme-dark .toolbar-icon-button,
+.theme-dark .toolbar-menu-button,
+.theme-dark .search-action-button,
+.theme-dark .search-option-toggle,
+.theme-dark .panel-icon-button,
+.theme-dark .settings-close-button {
+    -fx-background-color: rgba(255, 255, 255, 0.05);
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-text-fill: #e5e7eb;
+}
+
+.theme-dark .toolbar-font-icon {
+    -fx-icon-color: #e5e7eb;
+}
+
+.theme-dark .status-chip {
+    -fx-background-color: rgba(255, 255, 255, 0.05);
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+}
+
+.theme-dark .search-option-toggle:selected {
+    -fx-background-color: rgba(91, 140, 255, 0.22);
+    -fx-border-color: rgba(91, 140, 255, 0.32);
+}
+
+.theme-dark .editor-tabs .tab {
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-background-radius: 14 14 0 0;
+    -fx-border-color: rgba(255, 255, 255, 0.06);
+}
+
+.theme-dark .editor-tabs .tab:selected {
+    -fx-background-color: rgba(255, 255, 255, 0.09);
+}
+
+.theme-dark .toolbar-icon-button:hover,
+.theme-dark .toolbar-menu-button:hover,
+.theme-dark .search-action-button:hover,
+.theme-dark .panel-icon-button:hover,
+.theme-dark .settings-close-button:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.1);
+}
+
+.theme-dark .toolbar-indicator {
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+    -fx-border-color: rgba(255, 255, 255, 0.12);
+}
+
+.theme-dark .command-palette-shortcut-badge {
+    -fx-background-color: rgba(91, 140, 255, 0.18);
+    -fx-border-color: rgba(91, 140, 255, 0.34);
+}
+
+.theme-dark .command-palette-panel {
+    -fx-background-color: #0f172a;
+    -fx-border-color: rgba(255, 255, 255, 0.16);
+}
+
+.theme-dark .find-file-badge-recent {
+    -fx-background-color: rgba(91, 140, 255, 0.16);
+    -fx-border-color: rgba(91, 140, 255, 0.28);
+    -fx-text-fill: #bfdbfe;
+}
+
+.theme-dark .find-file-badge-open {
+    -fx-background-color: rgba(52, 211, 153, 0.14);
+    -fx-border-color: rgba(52, 211, 153, 0.24);
+    -fx-text-fill: #a7f3d0;
+}
+
+.theme-dark .find-file-preview-area,
+.theme-dark .find-file-preview-area .content {
+    -fx-background-color: #111b2d;
+    -fx-control-inner-background: #111b2d;
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-text-fill: #e5e7eb;
+}
+
+.theme-dark .command-palette-panel .text-field,
+.theme-dark .command-palette-panel .list-view,
+.theme-dark .command-palette-panel .list-view > .virtual-flow > .clipped-container > .sheet {
+    -fx-background-color: #111b2d;
+    -fx-control-inner-background: #111b2d;
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-text-fill: #e5e7eb;
+}
+
+.theme-dark .command-palette-panel .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #e5e7eb;
+}
+
+.theme-dark .command-palette-panel .list-cell:selected {
+    -fx-background-color: rgba(91, 140, 255, 0.18);
+}
+
+.theme-dark .settings-panel {
+    -fx-background-color: #0b1220;
+    -fx-border-color: rgba(255, 255, 255, 0.24);
+}
+
+.theme-dark .version-panel {
+    -fx-background-color: #0b1220;
+    -fx-border-color: rgba(255, 255, 255, 0.24);
+}
+
+.theme-dark .settings-view,
+.theme-dark .settings-scroll-pane,
+.theme-dark .settings-scroll-pane > .viewport,
+.theme-dark .settings-scroll-content {
+    -fx-background-color: #0b1220;
+}
+
+.theme-dark .settings-card {
+    -fx-background-color: #172132;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+}
+
+.theme-dark .settings-info-card {
+    -fx-background-color: #131c2b;
+}
+
+.theme-dark .settings-header-icon,
+.theme-dark .settings-section-icon {
+    -fx-icon-color: #93c5fd;
+}
+
+.theme-dark .settings-helper-label-error {
+    -fx-text-fill: #fda4af;
+}
+
+.theme-dark .indicator-hidden {
+    -fx-background-color: rgba(247, 95, 95, 0.18);
+    -fx-border-color: rgba(247, 95, 95, 0.3);
+}
+
+.theme-dark .indicator-visible {
+    -fx-background-color: rgba(91, 140, 255, 0.18);
+    -fx-border-color: rgba(91, 140, 255, 0.3);
+}
+
+.theme-dark .editor-root {
+    -fx-background-color: linear-gradient(to bottom, rgba(13, 17, 23, 0.98), rgba(15, 23, 42, 0.98));
+}
+
+.theme-light .search-bar,
+.theme-light .status-bar,
+.theme-light .overlay-panel,
+.theme-light .project-explorer {
+    -fx-background-color: rgba(0, 0, 0, 0.04);
+    -fx-border-color: rgba(0, 0, 0, 0.08);
+}
+
+.theme-light .overlay-backdrop {
+    -fx-background-color: rgba(15, 23, 42, 0.16);
+}
+
+.theme-light .settings-overlay-backdrop {
+    -fx-background-color: rgba(15, 23, 42, 0.24);
+}
+
+.theme-light .top-toolbar {
+    -fx-background-color: rgba(255, 255, 255, 0.72);
+    -fx-border-color: rgba(15, 23, 42, 0.08);
+}
+
+.theme-light .toolbar-icon-button,
+.theme-light .toolbar-menu-button,
+.theme-light .search-action-button,
+.theme-light .search-option-toggle,
+.theme-light .panel-icon-button,
+.theme-light .settings-close-button {
+    -fx-background-color: rgba(255, 255, 255, 0.82);
+    -fx-border-color: rgba(15, 23, 42, 0.08);
+    -fx-text-fill: #0f172a;
+}
+
+.theme-light .toolbar-font-icon {
+    -fx-icon-color: #0f172a;
+}
+
+.theme-light .status-chip {
+    -fx-background-color: rgba(255, 255, 255, 0.82);
+    -fx-border-color: rgba(15, 23, 42, 0.08);
+}
+
+.theme-light .search-option-toggle:selected {
+    -fx-background-color: rgba(91, 140, 255, 0.16);
+    -fx-border-color: rgba(91, 140, 255, 0.24);
+}
+
+.theme-light .editor-tabs .tab {
+    -fx-background-color: rgba(255, 255, 255, 0.72);
+    -fx-background-radius: 14 14 0 0;
+    -fx-border-color: rgba(15, 23, 42, 0.08);
+}
+
+.theme-light .editor-tabs .tab:selected {
+    -fx-background-color: rgba(255, 255, 255, 0.96);
+}
+
+.theme-light .toolbar-icon-button:hover,
+.theme-light .toolbar-menu-button:hover,
+.theme-light .search-action-button:hover,
+.theme-light .panel-icon-button:hover,
+.theme-light .settings-close-button:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.98);
+}
+
+.theme-light .toolbar-indicator {
+    -fx-background-color: rgba(0, 0, 0, 0.05);
+    -fx-border-color: rgba(0, 0, 0, 0.1);
+}
+
+.theme-light .command-palette-shortcut-badge {
+    -fx-background-color: rgba(37, 99, 235, 0.12);
+    -fx-border-color: rgba(37, 99, 235, 0.2);
+}
+
+.theme-light .command-palette-panel {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: rgba(15, 23, 42, 0.12);
+}
+
+.theme-light .find-file-badge-recent {
+    -fx-background-color: rgba(37, 99, 235, 0.1);
+    -fx-border-color: rgba(37, 99, 235, 0.18);
+    -fx-text-fill: #1d4ed8;
+}
+
+.theme-light .find-file-badge-open {
+    -fx-background-color: rgba(5, 150, 105, 0.1);
+    -fx-border-color: rgba(5, 150, 105, 0.18);
+    -fx-text-fill: #047857;
+}
+
+.theme-light .find-file-preview-area,
+.theme-light .find-file-preview-area .content {
+    -fx-background-color: #ffffff;
+    -fx-control-inner-background: #ffffff;
+    -fx-border-color: rgba(15, 23, 42, 0.08);
+    -fx-text-fill: #0f172a;
+}
+
+.theme-light .command-palette-panel .text-field,
+.theme-light .command-palette-panel .list-view,
+.theme-light .command-palette-panel .list-view > .virtual-flow > .clipped-container > .sheet {
+    -fx-background-color: #ffffff;
+    -fx-control-inner-background: #ffffff;
+    -fx-border-color: rgba(15, 23, 42, 0.08);
+    -fx-text-fill: #0f172a;
+}
+
+.theme-light .command-palette-panel .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #0f172a;
+}
+
+.theme-light .command-palette-panel .list-cell:selected {
+    -fx-background-color: rgba(37, 99, 235, 0.12);
+}
+
+.theme-light .settings-panel {
+    -fx-background-color: #ffffff;
+    -fx-border-color: rgba(0, 0, 0, 0.2);
+}
+
+.theme-light .version-panel {
+    -fx-background-color: #ffffff;
+    -fx-border-color: rgba(0, 0, 0, 0.2);
+}
+
+.theme-light .settings-view,
+.theme-light .settings-scroll-pane,
+.theme-light .settings-scroll-pane > .viewport,
+.theme-light .settings-scroll-content {
+    -fx-background-color: #f3f4f6;
+}
+
+.theme-light .settings-card {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: rgba(15, 23, 42, 0.1);
+}
+
+.theme-light .settings-info-card {
+    -fx-background-color: #eef3f8;
+}
+
+.theme-light .settings-header-icon,
+.theme-light .settings-section-icon {
+    -fx-icon-color: #2563eb;
+}
+
+.theme-light .settings-helper-label-error {
+    -fx-text-fill: #dc2626;
+}
+
+.theme-light .indicator-hidden {
+    -fx-background-color: rgba(247, 95, 95, 0.14);
+    -fx-border-color: rgba(247, 95, 95, 0.24);
+}
+
+.theme-light .indicator-visible {
+    -fx-background-color: rgba(91, 140, 255, 0.14);
+    -fx-border-color: rgba(91, 140, 255, 0.22);
+}
+
+.theme-light .editor-root {
+    -fx-background-color: linear-gradient(to bottom, rgba(250, 251, 253, 0.98), rgba(240, 244, 248, 0.98));
+}
+
