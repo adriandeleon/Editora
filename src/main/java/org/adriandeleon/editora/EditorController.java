@@ -91,6 +91,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -303,6 +304,8 @@ public class EditorController {
     private int findFileHistoryIndex = -1;
     private String findFileHistoryDraft = "";
     private boolean applyingFindFileHistory;
+    private EditorTheme settingsThemeBeforePreview;
+    private boolean settingsThemePreviewActive;
 
     @FXML
     private void initialize() {
@@ -548,15 +551,8 @@ public class EditorController {
 
     @FXML
     private void onToggleTheme() {
-        EditorTheme nextTheme = currentSettings.theme() == EditorTheme.DARK ? EditorTheme.LIGHT : EditorTheme.DARK;
-        applySettings(new EditorSettings(
-                nextTheme,
-                currentSettings.wrapText(),
-                currentSettings.diagnosticsEnabled(),
-                currentSettings.commandPaletteShortcut(),
-                currentSettings.editorFontFamily(),
-                currentSettings.editorFontSize()
-        ), true);
+        EditorTheme nextTheme = currentSettings.theme().next();
+        setTheme(nextTheme, true);
         statusMessage("Theme switched to " + nextTheme.getDisplayName());
     }
 
@@ -1029,7 +1025,7 @@ public class EditorController {
     }
 
     private void registerBuiltInCommands() {
-        builtInCommands.setAll(List.of(
+        List<CommandAction> commandActions = new ArrayList<>(List.of(
                 new CommandAction("New Tab", "Create a new untitled document tab", "File", "⌘T", List.of("untitled", "document"), this::createNewTab),
                 new CommandAction("Open File", "Open a file into a new or existing tab", "File", "⌘O", List.of("file", "browse"), this::onOpenFile),
                 new CommandAction("Find File", "Open a workspace file using minibuffer-style path completion", "File", "", List.of("open file", "visit file", "find-file", "c-x c-f", "minibuffer", "path"), this::showFindFilePrompt),
@@ -1044,7 +1040,7 @@ public class EditorController {
                 new CommandAction("Save File As", "Save the active document to a new location", "File", "⇧⌘S", List.of("rename", "duplicate"), this::onSaveFileAs),
                 new CommandAction("Close Tab", "Close the current tab with dirty-state confirmation", "File", "⌘W", List.of("document", "close"), this::onCloseCurrentTab),
                 new CommandAction("Exit", "Close Editora after confirming unsaved changes", "File", "", List.of("quit", "close window", "exit app"), this::exitApplication),
-                new CommandAction("Toggle Theme", "Switch between AtlantaFX light and dark themes", "View", "", List.of("dark", "light", "appearance"), this::onToggleTheme),
+                new CommandAction("Toggle Theme", "Cycle through the available AtlantaFX themes", "View", "", List.of("dark", "light", "appearance", "primer", "nord", "cupertino", "dracula"), this::onToggleTheme),
                 new CommandAction("Find Next", "Find the next search match in the current document", "Search", "⌘F", List.of("search", "next"), this::onFindNext),
                 new CommandAction("Find Previous", "Find the previous search match in the current document", "Search", "", List.of("search", "previous"), this::onFindPrevious),
                 new CommandAction("Toggle Search Bar", "Show or hide the search and replace controls", "View", "⌥⌘F", List.of("search", "replace", "collapse", "hide"), this::onToggleSearchBar),
@@ -1058,7 +1054,32 @@ public class EditorController {
                 new CommandAction("Clear Recent Files", "Forget the recent-files history", "Workspace", "", List.of("recent", "history", "clear"), this::clearRecentFiles),
                 new CommandAction("Reload Plugins", "Reload plugin commands and menu actions from the plugins directory", "Plugins", "", List.of("plugins", "reload"), this::loadPlugins)
         ));
+        commandActions.addAll(Arrays.stream(EditorTheme.values())
+                .map(theme -> new CommandAction(
+                        theme.getCommandName(),
+                        "Switch Editora to the " + theme.getDisplayName() + " AtlantaFX theme",
+                        "View",
+                        "",
+                        List.of("theme", "appearance", theme.getDisplayName().toLowerCase(Locale.ROOT), theme.getFamilyDisplayName().toLowerCase(Locale.ROOT)),
+                        () -> {
+                            setTheme(theme, true);
+                            statusMessage("Theme switched to " + theme.getDisplayName());
+                        }
+                ))
+                .toList());
+        builtInCommands.setAll(commandActions);
         rebuildCommands();
+    }
+
+    private void setTheme(EditorTheme theme, boolean persist) {
+        applySettings(new EditorSettings(
+                theme,
+                currentSettings.wrapText(),
+                currentSettings.diagnosticsEnabled(),
+                currentSettings.commandPaletteShortcut(),
+                currentSettings.editorFontFamily(),
+                currentSettings.editorFontSize()
+        ), persist);
     }
 
     private void rebuildCommands() {
@@ -2672,16 +2693,21 @@ public class EditorController {
         hideVersionOverlay(false);
         hideFindFilePrompt(false);
         hideCommandPalette();
+        settingsThemeBeforePreview = currentSettings.theme();
+        settingsThemePreviewActive = false;
         settingsController.configure(
                 currentSettings,
                 pluginManager.getPluginsDirectory(),
                 languageServices.availableLanguagesSummary(),
+                this::previewThemeFromSettings,
                 settings -> {
                     applySettings(settings, true);
-                    hideSettingsView();
+                    settingsThemeBeforePreview = null;
+                    settingsThemePreviewActive = false;
+                    hideSettingsView(false);
                     statusMessage("Settings updated");
                 },
-                this::hideSettingsView
+                () -> hideSettingsView(true)
         );
         settingsOverlay.setManaged(true);
         settingsOverlay.setVisible(true);
@@ -2694,8 +2720,39 @@ public class EditorController {
     }
 
     private void hideSettingsView() {
+        hideSettingsView(true);
+    }
+
+    private void hideSettingsView(boolean restorePreviewTheme) {
+        if (restorePreviewTheme) {
+            restorePreviewThemeIfNeeded();
+        }
         settingsOverlay.setVisible(false);
         settingsOverlay.setManaged(false);
+    }
+
+    private void previewThemeFromSettings(EditorTheme theme) {
+        if (theme == null) {
+            return;
+        }
+        if (settingsThemeBeforePreview == null) {
+            settingsThemeBeforePreview = currentSettings.theme();
+        }
+        ThemeManager.apply(theme, rootStack);
+        themeStatusLabel.setText("Theme: " + theme.getDisplayName());
+        settingsThemePreviewActive = !theme.equals(settingsThemeBeforePreview);
+    }
+
+    private void restorePreviewThemeIfNeeded() {
+        if (!settingsThemePreviewActive || settingsThemeBeforePreview == null) {
+            settingsThemeBeforePreview = null;
+            settingsThemePreviewActive = false;
+            return;
+        }
+        ThemeManager.apply(settingsThemeBeforePreview, rootStack);
+        themeStatusLabel.setText("Theme: " + settingsThemeBeforePreview.getDisplayName());
+        settingsThemeBeforePreview = null;
+        settingsThemePreviewActive = false;
     }
 
     private void exitApplication() {

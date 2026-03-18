@@ -13,8 +13,8 @@ public final class ThemeManager {
             return;
         }
 
-        root.getStyleClass().removeAll("theme-light", "theme-dark");
-        root.getStyleClass().add(theme == EditorTheme.DARK ? "theme-dark" : "theme-light");
+        root.getStyleClass().removeIf(styleClass -> styleClass.startsWith("theme-"));
+        root.getStyleClass().addAll(theme.getRootStyleClasses());
     }
 }
 

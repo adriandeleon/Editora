@@ -27,12 +27,8 @@ public final class SettingsManager {
     }
 
     private static EditorTheme loadTheme() {
-        String storedTheme = PREFERENCES.get(THEME_KEY, EditorTheme.DARK.name());
-        try {
-            return EditorTheme.valueOf(storedTheme);
-        } catch (IllegalArgumentException exception) {
-            return EditorTheme.DARK;
-        }
+        String storedTheme = PREFERENCES.get(THEME_KEY, EditorTheme.defaultTheme().name());
+        return EditorTheme.fromStoredValue(storedTheme);
     }
 
     public static void save(EditorSettings settings) {

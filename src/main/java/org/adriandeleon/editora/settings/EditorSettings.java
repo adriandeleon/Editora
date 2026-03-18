@@ -12,6 +12,7 @@ public record EditorSettings(EditorTheme theme,
 	public static final int DEFAULT_EDITOR_FONT_SIZE = 14;
 
 	public EditorSettings {
+		theme = theme == null ? EditorTheme.defaultTheme() : theme;
 		commandPaletteShortcut = CommandPaletteShortcut.normalize(commandPaletteShortcut);
 		if (CommandPaletteShortcut.isReserved(commandPaletteShortcut)) {
 			commandPaletteShortcut = CommandPaletteShortcut.DEFAULT_VALUE;

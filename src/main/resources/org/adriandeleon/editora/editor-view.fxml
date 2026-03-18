@@ -327,7 +327,7 @@
                     </HBox>
                     <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
                         <FontIcon iconLiteral="bi-circle-half" iconSize="12" styleClass="status-icon"/>
-                        <Label fx:id="themeStatusLabel" text="Theme: Dark"/>
+                        <Label fx:id="themeStatusLabel" text="Theme: Primer Dark"/>
                     </HBox>
                 </HBox>
             </bottom>

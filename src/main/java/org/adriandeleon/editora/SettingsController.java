@@ -6,6 +6,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
@@ -31,6 +32,9 @@ public class SettingsController {
 
     @FXML
     private ComboBox<EditorTheme> themeComboBox;
+
+    @FXML
+    private Label themeHelpLabel;
 
     @FXML
     private CheckBox wrapTextCheckBox;
@@ -76,13 +80,25 @@ public class SettingsController {
 
     private Consumer<EditorSettings> applyHandler = settings -> {
     };
+    private Consumer<EditorTheme> previewThemeHandler = theme -> {
+    };
     private Runnable closeHandler = () -> {
     };
     private String commandPaletteShortcut = CommandPaletteShortcut.DEFAULT_VALUE;
+    private boolean suppressThemePreview;
 
     @FXML
     private void initialize() {
         themeComboBox.setItems(FXCollections.observableArrayList(EditorTheme.values()));
+        themeComboBox.setCellFactory(listView -> createThemeCell());
+        themeComboBox.setButtonCell(createThemeCell());
+        themeComboBox.valueProperty().addListener((observable, previous, current) -> {
+            if (suppressThemePreview || current == null) {
+                return;
+            }
+            previewThemeHandler.accept(current);
+            updateThemeHelpLabel(current);
+        });
         editorFontFamilyComboBox.setItems(FXCollections.observableArrayList(Font.getFamilies().stream()
                 .sorted(Comparator.naturalOrder())
                 .toList()));
@@ -96,11 +112,19 @@ public class SettingsController {
     public void configure(EditorSettings settings,
                           Path pluginsDirectory,
                           String availableLanguages,
+                          Consumer<EditorTheme> previewThemeHandler,
                           Consumer<EditorSettings> applyHandler,
                           Runnable closeHandler) {
+        this.previewThemeHandler = Objects.requireNonNull(previewThemeHandler);
         this.applyHandler = Objects.requireNonNull(applyHandler);
         this.closeHandler = Objects.requireNonNull(closeHandler);
-        themeComboBox.setValue(settings.theme());
+        suppressThemePreview = true;
+        try {
+            themeComboBox.setValue(settings.theme());
+        } finally {
+            suppressThemePreview = false;
+        }
+        updateThemeHelpLabel(settings.theme());
         wrapTextCheckBox.setSelected(settings.wrapText());
         diagnosticsCheckBox.setSelected(settings.diagnosticsEnabled());
         editorFontFamilyComboBox.setValue(settings.editorFontFamily());
@@ -174,6 +198,24 @@ public class SettingsController {
                 keyboardShortcutsCard.requestFocus();
             }
         });
+    }
+
+    private ListCell<EditorTheme> createThemeCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(EditorTheme item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item.getSettingsDisplayName());
+            }
+        };
+    }
+
+    private void updateThemeHelpLabel(EditorTheme theme) {
+        if (themeHelpLabel == null) {
+            return;
+        }
+        themeHelpLabel.setText("Preview applies live while settings are open. Families: Primer, Nord, Cupertino, Dracula. Selected: "
+                + (theme == null ? EditorTheme.defaultTheme().getDisplayName() : theme.getDisplayName()));
     }
 
     private void handleShortcutCapture(KeyEvent event) {

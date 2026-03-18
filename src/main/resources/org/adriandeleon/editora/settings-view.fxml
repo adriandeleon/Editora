@@ -64,7 +64,10 @@
                         </columnConstraints>
 
                         <Label text="Theme" styleClass="settings-field-label" GridPane.rowIndex="0"/>
-                        <ComboBox fx:id="themeComboBox" maxWidth="260.0" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+                        <VBox spacing="8.0" GridPane.columnIndex="1" GridPane.rowIndex="0">
+                            <ComboBox fx:id="themeComboBox" maxWidth="320.0" prefWidth="300.0"/>
+                            <Label fx:id="themeHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Preview applies live while settings are open. Families: Primer, Nord, Cupertino, Dracula."/>
+                        </VBox>
 
                         <Label text="Wrap text" styleClass="settings-field-label" GridPane.rowIndex="1"/>
                         <CheckBox fx:id="wrapTextCheckBox" text="Wrap lines inside the current editor tabs" GridPane.columnIndex="1" GridPane.rowIndex="1"/>

@@ -29,7 +29,7 @@ class SettingsManagerTest {
     @Test
     void saveAndLoadRoundTripsNormalizedSettings() {
         SettingsManager.save(new EditorSettings(
-                EditorTheme.LIGHT,
+                EditorTheme.NORD_LIGHT,
                 true,
                 false,
                 "alt+shortcut+x",
@@ -39,7 +39,7 @@ class SettingsManagerTest {
 
         EditorSettings loaded = SettingsManager.load();
 
-        assertEquals(EditorTheme.LIGHT, loaded.theme());
+        assertEquals(EditorTheme.NORD_LIGHT, loaded.theme());
         assertTrue(loaded.wrapText());
         assertFalse(loaded.diagnosticsEnabled());
         assertEquals("ALT+SHORTCUT+X", loaded.commandPaletteShortcut());
@@ -58,12 +58,21 @@ class SettingsManagerTest {
 
         EditorSettings loaded = SettingsManager.load();
 
-        assertEquals(EditorTheme.DARK, loaded.theme());
+        assertEquals(EditorTheme.PRIMER_DARK, loaded.theme());
         assertTrue(loaded.wrapText());
         assertFalse(loaded.diagnosticsEnabled());
         assertEquals(CommandPaletteShortcut.DEFAULT_VALUE, loaded.commandPaletteShortcut());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_FAMILY, loaded.editorFontFamily());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_SIZE, loaded.editorFontSize());
+    }
+
+    @Test
+    void loadMigratesLegacyLightAndDarkThemeValues() {
+        preferences.put("theme", "LIGHT");
+        assertEquals(EditorTheme.PRIMER_LIGHT, SettingsManager.load().theme());
+
+        preferences.put("theme", "DARK");
+        assertEquals(EditorTheme.PRIMER_DARK, SettingsManager.load().theme());
     }
 }
 
