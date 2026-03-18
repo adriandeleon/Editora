@@ -79,6 +79,14 @@
                                 <Tooltip text="Close Tab (⌘W)"/>
                             </tooltip>
                         </Button>
+                        <MenuButton fx:id="recentFilesMenuButton" styleClass="toolbar-icon-button toolbar-menu-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-clock-history" iconSize="16" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Recent Files"/>
+                            </tooltip>
+                        </MenuButton>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="undoButton" mnemonicParsing="false" onAction="#onUndo" styleClass="toolbar-icon-button">
                             <graphic>
@@ -121,14 +129,6 @@
                             </tooltip>
                         </Button>
                         <Separator orientation="VERTICAL"/>
-                        <MenuButton fx:id="recentFilesMenuButton" styleClass="toolbar-icon-button toolbar-menu-button">
-                            <graphic>
-                                <FontIcon iconLiteral="bi-clock-history" iconSize="16" styleClass="toolbar-font-icon"/>
-                            </graphic>
-                            <tooltip>
-                                <Tooltip text="Recent Files"/>
-                            </tooltip>
-                        </MenuButton>
                         <Button mnemonicParsing="false" onAction="#onShowCommandPalette" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-terminal" iconSize="16" styleClass="toolbar-font-icon"/>
@@ -167,22 +167,6 @@
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Open Settings (⌘,)"/>
-                            </tooltip>
-                        </Button>
-                        <Button mnemonicParsing="false" onAction="#onShowVersionOverlay" styleClass="toolbar-icon-button">
-                            <graphic>
-                                <FontIcon iconLiteral="bi-info-square" iconSize="16" styleClass="toolbar-font-icon"/>
-                            </graphic>
-                            <tooltip>
-                                <Tooltip text="Version Information"/>
-                            </tooltip>
-                        </Button>
-                        <Button mnemonicParsing="false" onAction="#onToggleTheme" styleClass="toolbar-icon-button">
-                            <graphic>
-                                <FontIcon iconLiteral="bi-circle-half" iconSize="16" styleClass="toolbar-font-icon"/>
-                            </graphic>
-                            <tooltip>
-                                <Tooltip text="Toggle Theme"/>
                             </tooltip>
                         </Button>
                         <MenuButton fx:id="pluginMenuButton" styleClass="toolbar-icon-button toolbar-menu-button">
