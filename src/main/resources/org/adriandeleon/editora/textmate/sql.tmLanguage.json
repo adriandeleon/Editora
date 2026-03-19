@@ -1,0 +1,49 @@
+{
+  "name": "SQL",
+  "scopeName": "source.sql",
+  "fileTypes": ["sql"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#functions" },
+    { "include": "#numbers" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-dash.sql",
+          "match": "--.*$"
+        },
+        {
+          "name": "comment.block.sql",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.single.sql",
+      "match": "'(?:''|[^'])*'"
+    },
+    "keywords": {
+      "name": "keyword.control.sql",
+      "match": "\\b(?:SELECT|FROM|WHERE|INSERT|INTO|UPDATE|DELETE|JOIN|LEFT|RIGHT|INNER|OUTER|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|VALUES|CREATE|TABLE|ALTER|DROP|AND|OR|NOT|NULL|AS|DISTINCT|CASE|WHEN|THEN|ELSE|END)\\b"
+    },
+    "functions": {
+      "name": "entity.name.function.sql",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+    },
+    "numbers": {
+      "name": "constant.numeric.sql",
+      "match": "\\b\\d+(?:\\.\\d+)?\\b"
+    },
+    "punctuation": {
+      "name": "punctuation.definition.sql",
+      "match": "[()\\[\\],.;=*<>+-]"
+    }
+  }
+}
+

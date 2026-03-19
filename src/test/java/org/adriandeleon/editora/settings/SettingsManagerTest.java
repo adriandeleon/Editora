@@ -32,6 +32,9 @@ class SettingsManagerTest {
                 EditorTheme.NORD_LIGHT,
                 true,
                 false,
+                true,
+                false,
+                false,
                 "alt+shortcut+x",
                 "  Fira Code  ",
                 16
@@ -42,6 +45,9 @@ class SettingsManagerTest {
         assertEquals(EditorTheme.NORD_LIGHT, loaded.theme());
         assertTrue(loaded.wrapText());
         assertFalse(loaded.diagnosticsEnabled());
+        assertTrue(loaded.searchBarVisible());
+        assertFalse(loaded.projectExplorerVisible());
+        assertFalse(loaded.breadcrumbBarVisible());
         assertEquals("ALT+SHORTCUT+X", loaded.commandPaletteShortcut());
         assertEquals("Fira Code", loaded.editorFontFamily());
         assertEquals(16, loaded.editorFontSize());
@@ -52,18 +58,31 @@ class SettingsManagerTest {
         preferences.put("theme", "BROKEN_THEME");
         preferences.putBoolean("wrapText", true);
         preferences.putBoolean("diagnosticsEnabled", false);
+        preferences.putBoolean("searchBarVisible", true);
+        preferences.putBoolean("projectExplorerVisible", true);
+        preferences.putBoolean("breadcrumbBarVisible", false);
         preferences.put("commandPaletteShortcut", "not-a-shortcut");
         preferences.put("editorFontFamily", "   ");
         preferences.putInt("editorFontSize", 200);
 
         EditorSettings loaded = SettingsManager.load();
 
-        assertEquals(EditorTheme.PRIMER_DARK, loaded.theme());
+        assertEquals(EditorTheme.PRIMER_LIGHT, loaded.theme());
         assertTrue(loaded.wrapText());
         assertFalse(loaded.diagnosticsEnabled());
+        assertTrue(loaded.searchBarVisible());
+        assertTrue(loaded.projectExplorerVisible());
+        assertFalse(loaded.breadcrumbBarVisible());
         assertEquals(CommandPaletteShortcut.DEFAULT_VALUE, loaded.commandPaletteShortcut());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_FAMILY, loaded.editorFontFamily());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_SIZE, loaded.editorFontSize());
+    }
+
+    @Test
+    void loadDefaultsThemeToPrimerLightWhenUnset() {
+        EditorSettings loaded = SettingsManager.load();
+
+        assertEquals(EditorTheme.PRIMER_LIGHT, loaded.theme());
     }
 
     @Test
@@ -73,6 +92,15 @@ class SettingsManagerTest {
 
         preferences.put("theme", "DARK");
         assertEquals(EditorTheme.PRIMER_DARK, SettingsManager.load().theme());
+    }
+
+    @Test
+    void loadDefaultsBreadcrumbsToVisibleWhenUnset() {
+        EditorSettings loaded = SettingsManager.load();
+
+        assertFalse(loaded.searchBarVisible());
+        assertFalse(loaded.projectExplorerVisible());
+        assertTrue(loaded.breadcrumbBarVisible());
     }
 }
 

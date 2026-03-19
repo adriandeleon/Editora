@@ -105,7 +105,7 @@
                         <!-- Default configuration for running with: mvn clean javafx:run -->
                         <id>default-cli</id>
                         <configuration>
-                            <mainClass>org.adriandeleon.editora/org.adriandeleon.editora.EditoraApplication</mainClass>
+                            <mainClass>org.adriandeleon.editora/org.adriandeleon.editora.Launcher</mainClass>
                             <jvmArgs>--enable-native-access=javafx.graphics</jvmArgs>
                             <launcher>app</launcher>
                             <jlinkZipName>app</jlinkZipName>

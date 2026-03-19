@@ -72,5 +72,17 @@ class SessionManagerTest {
 
         assertEquals(List.of(first, second), SessionManager.loadRecentFiles());
     }
+
+    @Test
+    void loadWorkspaceSessionDefaultsSearchAndExplorerToHidden() {
+        Path fallbackWorkspaceRoot = Path.of("/fallback").toAbsolutePath().normalize();
+
+        WorkspaceSession loaded = SessionManager.loadWorkspaceSession(fallbackWorkspaceRoot);
+
+        assertEquals(fallbackWorkspaceRoot, loaded.workspaceRoot());
+        assertEquals(false, loaded.searchBarVisible());
+        assertEquals(false, loaded.projectExplorerVisible());
+        assertEquals(true, loaded.statusBarVisible());
+    }
 }
 

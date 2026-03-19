@@ -120,11 +120,20 @@
     -fx-alignment: center-left;
     -fx-background-radius: 999;
     -fx-border-radius: 999;
-    -fx-padding: 4 10 4 10;
+    -fx-padding: 2 7 2 7;
 }
 
 .status-message-chip {
-    -fx-padding: 4 12 4 10;
+    -fx-padding: 2 8 2 7;
+}
+
+.status-path-row,
+.status-bar-row {
+    -fx-alignment: center-left;
+}
+
+.status-path-row {
+    -fx-spacing: 6;
 }
 
 .search-bar,
@@ -132,6 +141,11 @@
     -fx-background-radius: 14;
     -fx-border-radius: 14;
     -fx-padding: 12;
+}
+
+.status-bar {
+    -fx-padding: 6 8 6 8;
+    -fx-font-size: 0.84em;
 }
 
 .search-bar {
@@ -228,6 +242,47 @@
 
 .comment {
     -fx-fill: #6a9955;
+}
+
+.number,
+.constant {
+    -fx-fill: #d19a66;
+}
+
+.type,
+.tag {
+    -fx-fill: #e06c75;
+}
+
+.function,
+.attribute {
+    -fx-fill: #61afef;
+}
+
+.variable {
+    -fx-fill: #e5c07b;
+}
+
+.punctuation {
+    -fx-fill: #56b6c2;
+}
+
+.heading {
+    -fx-fill: #61afef;
+    -fx-font-weight: bold;
+}
+
+.bold {
+    -fx-font-weight: bold;
+}
+
+.italic {
+    -fx-font-style: italic;
+}
+
+.invalid {
+    -fx-fill: #f75f5f;
+    -fx-underline: true;
 }
 
 .search-match {
@@ -380,6 +435,24 @@
 .settings-helper-label {
     -fx-opacity: 0.78;
     -fx-wrap-text: true;
+}
+
+.settings-syntax-preview-host {
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+    -fx-padding: 0;
+    -fx-min-height: 220;
+}
+
+.settings-syntax-preview-host > .virtualized-scroll-pane,
+.settings-syntax-preview-host .virtual-flow {
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+}
+
+.settings-syntax-preview-area {
+    -fx-font-family: "JetBrains Mono", "SF Mono", monospace;
+    -fx-font-size: 13px;
 }
 
 .settings-helper-label-error {
@@ -614,6 +687,11 @@
     -fx-border-color: rgba(255, 255, 255, 0.14);
 }
 
+.theme-dark .settings-syntax-preview-host {
+    -fx-background-color: #111b2d;
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+}
+
 .theme-dark .settings-info-card {
     -fx-background-color: #131c2b;
 }
@@ -778,6 +856,11 @@
 .theme-light .settings-card {
     -fx-background-color: #f8fafc;
     -fx-border-color: rgba(15, 23, 42, 0.1);
+}
+
+.theme-light .settings-syntax-preview-host {
+    -fx-background-color: #ffffff;
+    -fx-border-color: rgba(15, 23, 42, 0.08);
 }
 
 .theme-light .settings-info-card {

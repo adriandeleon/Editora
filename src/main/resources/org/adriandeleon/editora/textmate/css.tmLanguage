@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>CSS</string>
+    <key>scopeName</key>
+    <string>source.css</string>
+    <key>fileTypes</key>
+    <array>
+        <string>css</string>
+    </array>
+    <key>patterns</key>
+    <array>
+        <dict><key>include</key><string>#comments</string></dict>
+        <dict><key>include</key><string>#strings</string></dict>
+        <dict><key>include</key><string>#selectors</string></dict>
+        <dict><key>include</key><string>#properties</string></dict>
+        <dict><key>include</key><string>#constants</string></dict>
+        <dict><key>include</key><string>#numbers</string></dict>
+        <dict><key>include</key><string>#punctuation</string></dict>
+    </array>
+    <key>repository</key>
+    <dict>
+        <key>comments</key>
+        <dict>
+            <key>name</key><string>comment.block.css</string>
+            <key>begin</key><string>/\*</string>
+            <key>end</key><string>\*/</string>
+        </dict>
+        <key>strings</key>
+        <dict>
+            <key>name</key><string>string.quoted.double.css</string>
+            <key>match</key><string>"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'</string>
+        </dict>
+        <key>selectors</key>
+        <dict>
+            <key>name</key><string>entity.name.tag.css</string>
+            <key>match</key><string>^[^{]+(?=\{)</string>
+        </dict>
+        <key>properties</key>
+        <dict>
+            <key>name</key><string>entity.other.attribute-name.css</string>
+            <key>match</key><string>\b[a-zA-Z-]+(?=\s*:)</string>
+        </dict>
+        <key>constants</key>
+        <dict>
+            <key>name</key><string>constant.language.css</string>
+            <key>match</key><string>#[0-9A-Fa-f]{3,8}\b</string>
+        </dict>
+        <key>numbers</key>
+        <dict>
+            <key>name</key><string>constant.numeric.css</string>
+            <key>match</key><string>\b\d+(?:\.\d+)?(?:px|em|rem|vh|vw|%)?\b</string>
+        </dict>
+        <key>punctuation</key>
+        <dict>
+            <key>name</key><string>punctuation.definition.css</string>
+            <key>match</key><string>[{}:;(),.]</string>
+        </dict>
+    </dict>
+</dict>
+</plist>
+

@@ -12,8 +12,8 @@
 <?import javafx.scene.layout.ColumnConstraints?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
-<?import javafx.scene.layout.Priority?>
 <?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
 
@@ -96,6 +96,15 @@
                             </HBox>
                             <Label fx:id="commandPaletteShortcutHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Focus the field and press the new shortcut."/>
                         </VBox>
+
+                        <Label text="Search bar" styleClass="settings-field-label" GridPane.rowIndex="5"/>
+                        <CheckBox fx:id="searchBarVisibleCheckBox" text="Show the search and replace bar in the editor shell" GridPane.columnIndex="1" GridPane.rowIndex="5"/>
+
+                        <Label text="Project explorer" styleClass="settings-field-label" GridPane.rowIndex="6"/>
+                        <CheckBox fx:id="projectExplorerVisibleCheckBox" text="Show the project explorer sidebar in the editor shell" GridPane.columnIndex="1" GridPane.rowIndex="6"/>
+
+                        <Label text="Status breadcrumb" styleClass="settings-field-label" GridPane.rowIndex="7"/>
+                        <CheckBox fx:id="breadcrumbBarVisibleCheckBox" text="Show the breadcrumb path inline in the status bar" GridPane.columnIndex="1" GridPane.rowIndex="7"/>
                     </GridPane>
                 </VBox>
 
@@ -123,6 +132,27 @@
                         <Label text="Editor control" styleClass="settings-field-label" GridPane.rowIndex="2"/>
                         <Label fx:id="editorControlLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
                     </GridPane>
+                </VBox>
+
+                <VBox spacing="14.0" styleClass="settings-card">
+                    <HBox alignment="CENTER_LEFT" spacing="10.0">
+                        <FontIcon iconLiteral="bi-code-slash" iconSize="17" styleClass="settings-section-icon"/>
+                        <VBox spacing="4.0">
+                            <Label text="Syntax Highlighting Preview" styleClass="settings-section-title"/>
+                            <Label text="Preview bundled and external TextMate grammars, then reload bundles without restarting Editora." styleClass="settings-section-subtitle"/>
+                        </VBox>
+                    </HBox>
+
+                    <HBox alignment="CENTER_LEFT" spacing="10.0">
+                        <ComboBox fx:id="syntaxPreviewLanguageComboBox" maxWidth="340.0" prefWidth="320.0"/>
+                        <Button mnemonicParsing="false" onAction="#onReloadSyntaxBundles" text="Reload TextMate Bundles">
+                            <tooltip>
+                                <Tooltip text="Reload bundled and external TextMate grammars without restarting"/>
+                            </tooltip>
+                        </Button>
+                    </HBox>
+                    <Label fx:id="syntaxPreviewHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Preview syntax highlighting for the supported languages here."/>
+                    <StackPane fx:id="syntaxPreviewHost" minHeight="240.0" prefHeight="240.0" styleClass="settings-syntax-preview-host"/>
                 </VBox>
 
                 <VBox fx:id="keyboardShortcutsCard" focusTraversable="true" spacing="14.0" styleClass="settings-card">

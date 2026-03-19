@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>XML / HTML</string>
+    <key>scopeName</key>
+    <string>text.xml</string>
+    <key>fileTypes</key>
+    <array>
+        <string>xml</string>
+        <string>html</string>
+        <string>xhtml</string>
+        <string>svg</string>
+    </array>
+    <key>patterns</key>
+    <array>
+        <dict><key>include</key><string>#comments</string></dict>
+        <dict><key>include</key><string>#cdata</string></dict>
+        <dict><key>include</key><string>#tags</string></dict>
+        <dict><key>include</key><string>#attributes</string></dict>
+        <dict><key>include</key><string>#strings</string></dict>
+        <dict><key>include</key><string>#punctuation</string></dict>
+    </array>
+    <key>repository</key>
+    <dict>
+        <key>comments</key>
+        <dict>
+            <key>name</key><string>comment.block.xml</string>
+            <key>begin</key><string>&lt;!--</string>
+            <key>end</key><string>--&gt;</string>
+        </dict>
+        <key>cdata</key>
+        <dict>
+            <key>name</key><string>string.unquoted.cdata.xml</string>
+            <key>begin</key><string>&lt;!\[CDATA\[</string>
+            <key>end</key><string>\]\]&gt;</string>
+        </dict>
+        <key>tags</key>
+        <dict>
+            <key>name</key><string>entity.name.tag.xml</string>
+            <key>match</key><string>&lt;/?[A-Za-z_:][A-Za-z0-9:._-]*</string>
+        </dict>
+        <key>attributes</key>
+        <dict>
+            <key>name</key><string>entity.other.attribute-name.xml</string>
+            <key>match</key><string>\b[A-Za-z_:][A-Za-z0-9:._-]*(?=\s*=)</string>
+        </dict>
+        <key>strings</key>
+        <dict>
+            <key>name</key><string>string.quoted.double.xml</string>
+            <key>match</key><string>"[^"]*"|'[^']*'</string>
+        </dict>
+        <key>punctuation</key>
+        <dict>
+            <key>name</key><string>punctuation.definition.tag.xml</string>
+            <key>match</key><string>&lt;|&gt;|/|=</string>
+        </dict>
+    </dict>
+</dict>
+</plist>
+

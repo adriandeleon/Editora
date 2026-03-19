@@ -1,0 +1,65 @@
+{
+  "name": "Python",
+  "scopeName": "source.python",
+  "fileTypes": ["py"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#functions" },
+    { "include": "#numbers" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "name": "comment.line.number-sign.python",
+      "match": "#.*$"
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.python",
+          "begin": "\"\"\"",
+          "end": "\"\"\""
+        },
+        {
+          "name": "string.quoted.single.python",
+          "begin": "'''",
+          "end": "'''"
+        },
+        {
+          "name": "string.quoted.double.python",
+          "begin": "\"",
+          "end": "(?<!\\\\)\""
+        },
+        {
+          "name": "string.quoted.single.python",
+          "begin": "'",
+          "end": "(?<!\\\\)'"
+        }
+      ]
+    },
+    "keywords": {
+      "name": "keyword.control.python",
+      "match": "\\b(?:and|as|assert|async|await|break|case|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|match|nonlocal|not|or|pass|raise|return|try|while|with|yield)\\b"
+    },
+    "constants": {
+      "name": "constant.language.python",
+      "match": "\\b(?:True|False|None)\\b"
+    },
+    "functions": {
+      "name": "entity.name.function.python",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+    },
+    "numbers": {
+      "name": "constant.numeric.python",
+      "match": "\\b(?:0[xX][0-9A-Fa-f]+|\\d+(?:\\.\\d+)?)\\b"
+    },
+    "punctuation": {
+      "name": "punctuation.definition.python",
+      "match": "[()\\[\\]{}:.,]"
+    }
+  }
+}
+

@@ -16,12 +16,20 @@ import javafx.scene.text.Font;
 import javafx.application.Platform;
 import org.adriandeleon.editora.settings.CommandPaletteShortcut;
 import org.adriandeleon.editora.settings.EditorSettings;
+import org.adriandeleon.editora.languages.LanguageAnalysis;
+import org.adriandeleon.editora.languages.LanguagePreviewSpec;
 import org.adriandeleon.editora.theme.EditorTheme;
+import org.fxmisc.flowless.VirtualizedScrollPane;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.LineNumberFactory;
 
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import javafx.scene.layout.StackPane;
 
 public class SettingsController {
     @FXML
@@ -41,6 +49,15 @@ public class SettingsController {
 
     @FXML
     private CheckBox diagnosticsCheckBox;
+
+    @FXML
+    private CheckBox searchBarVisibleCheckBox;
+
+    @FXML
+    private CheckBox projectExplorerVisibleCheckBox;
+
+    @FXML
+    private CheckBox breadcrumbBarVisibleCheckBox;
 
     @FXML
     private ComboBox<String> editorFontFamilyComboBox;
@@ -70,51 +87,71 @@ public class SettingsController {
     private Label keyboardShortcutsLabel;
 
     @FXML
-    private Button cancelButton;
+    ComboBox<LanguagePreviewSpec> syntaxPreviewLanguageComboBox;
 
     @FXML
-    private Button applyButton;
+    Label syntaxPreviewHelpLabel;
+
+    @FXML
+    StackPane syntaxPreviewHost;
+
+    @FXML
+    Button cancelButton;
+
+    @FXML
+    Button applyButton;
 
     @FXML
     private VBox keyboardShortcutsCard;
 
-    private Consumer<EditorSettings> applyHandler = settings -> {
-    };
-    private Consumer<EditorTheme> previewThemeHandler = theme -> {
+    private Consumer<EditorSettings> applyHandler = SettingsController::ignoreSettings;
+    private Consumer<EditorTheme> previewThemeHandler = SettingsController::ignoreTheme;
+    private Function<LanguagePreviewSpec, LanguageAnalysis> syntaxPreviewHandler = preview -> LanguageAnalysis.plainText(preview == null ? "" : preview.sampleText());
+    private Runnable reloadSyntaxBundlesHandler = () -> {
     };
     private Runnable closeHandler = () -> {
     };
     private String commandPaletteShortcut = CommandPaletteShortcut.DEFAULT_VALUE;
     private boolean suppressThemePreview;
+    private CodeArea syntaxPreviewArea;
 
     @FXML
     private void initialize() {
+        requireInjectedControls();
         themeComboBox.setItems(FXCollections.observableArrayList(EditorTheme.values()));
-        themeComboBox.setCellFactory(listView -> createThemeCell());
+        themeComboBox.setCellFactory(ignored -> createThemeCell());
         themeComboBox.setButtonCell(createThemeCell());
-        themeComboBox.valueProperty().addListener((observable, previous, current) -> {
+        themeComboBox.valueProperty().addListener(onValueChange(current -> {
             if (suppressThemePreview || current == null) {
                 return;
             }
             previewThemeHandler.accept(current);
             updateThemeHelpLabel(current);
-        });
+        }));
         editorFontFamilyComboBox.setItems(FXCollections.observableArrayList(Font.getFamilies().stream()
                 .sorted(Comparator.naturalOrder())
                 .toList()));
         editorFontFamilyComboBox.setEditable(true);
         editorControlLabel.setText("RichTextFX CodeArea inside VirtualizedScrollPane");
+        configureSyntaxPreview();
+        cancelButton.setCancelButton(true);
+        applyButton.setDefaultButton(true);
         commandPaletteShortcutField.setEditable(false);
         commandPaletteShortcutField.addEventFilter(KeyEvent.KEY_PRESSED, this::handleShortcutCapture);
         settingsRoot.addEventFilter(KeyEvent.KEY_PRESSED, this::handleKeyPressed);
     }
 
-    public void configure(EditorSettings settings,
-                          Path pluginsDirectory,
-                          String availableLanguages,
-                          Consumer<EditorTheme> previewThemeHandler,
-                          Consumer<EditorSettings> applyHandler,
-                          Runnable closeHandler) {
+    void configure(EditorSettings settings,
+                   Path pluginsDirectory,
+                   String availableLanguages,
+                   List<LanguagePreviewSpec> syntaxPreviews,
+                   Function<LanguagePreviewSpec, LanguageAnalysis> syntaxPreviewHandler,
+                   Runnable reloadSyntaxBundlesHandler,
+                   Consumer<EditorTheme> previewThemeHandler,
+                   Consumer<EditorSettings> applyHandler,
+                   Runnable closeHandler) {
+        this.syntaxPreviewHandler = Objects.requireNonNull(syntaxPreviewHandler);
+        this.reloadSyntaxBundlesHandler = Objects.requireNonNull(reloadSyntaxBundlesHandler);
         this.previewThemeHandler = Objects.requireNonNull(previewThemeHandler);
         this.applyHandler = Objects.requireNonNull(applyHandler);
         this.closeHandler = Objects.requireNonNull(closeHandler);
@@ -127,6 +164,9 @@ public class SettingsController {
         updateThemeHelpLabel(settings.theme());
         wrapTextCheckBox.setSelected(settings.wrapText());
         diagnosticsCheckBox.setSelected(settings.diagnosticsEnabled());
+        searchBarVisibleCheckBox.setSelected(settings.searchBarVisible());
+        projectExplorerVisibleCheckBox.setSelected(settings.projectExplorerVisible());
+        breadcrumbBarVisibleCheckBox.setSelected(settings.breadcrumbBarVisible());
         editorFontFamilyComboBox.setValue(settings.editorFontFamily());
         editorFontSizeField.setText(Integer.toString(settings.editorFontSize()));
         showFontInstruction();
@@ -136,6 +176,10 @@ public class SettingsController {
         pluginsDirectoryLabel.setText(pluginsDirectory.toAbsolutePath().toString());
         availableLanguagesLabel.setText(availableLanguages);
         keyboardShortcutsLabel.setText(buildKeyboardShortcutsReference(commandPaletteShortcut));
+        updateSyntaxPreviewOptions(syntaxPreviews, availableLanguages);
+        syntaxPreviewArea.setStyle(String.format("-fx-font-family: \"%s\"; -fx-font-size: %dpx;",
+                settings.editorFontFamily().replace("\"", "\\\""),
+                Math.max(10, settings.editorFontSize() - 1)));
     }
 
     @FXML
@@ -167,6 +211,9 @@ public class SettingsController {
                 themeComboBox.getValue(),
                 wrapTextCheckBox.isSelected(),
                 diagnosticsCheckBox.isSelected(),
+                searchBarVisibleCheckBox.isSelected(),
+                projectExplorerVisibleCheckBox.isSelected(),
+                breadcrumbBarVisibleCheckBox.isSelected(),
                 commandPaletteShortcut,
                 fontFamily,
                 fontSize
@@ -185,11 +232,16 @@ public class SettingsController {
         closeHandler.run();
     }
 
-    public void focusPrimaryControl() {
+    @FXML
+    void onReloadSyntaxBundles() {
+        reloadSyntaxBundlesHandler.run();
+    }
+
+    void focusPrimaryControl() {
         Platform.runLater(themeComboBox::requestFocus);
     }
 
-    public void showKeyboardShortcutsSection() {
+    void showKeyboardShortcutsSection() {
         Platform.runLater(() -> {
             if (settingsScrollPane != null) {
                 settingsScrollPane.setVvalue(1.0);
@@ -200,6 +252,28 @@ public class SettingsController {
         });
     }
 
+    void updateSyntaxPreviewOptions(List<LanguagePreviewSpec> previews, String availableLanguages) {
+        ComboBox<LanguagePreviewSpec> previewComboBox = Objects.requireNonNull(syntaxPreviewLanguageComboBox);
+        LanguagePreviewSpec previousSelection = previewComboBox.getValue();
+        List<LanguagePreviewSpec> normalizedPreviews = previews == null ? List.of() : List.copyOf(previews);
+        previewComboBox.setItems(FXCollections.observableArrayList(normalizedPreviews));
+        if (availableLanguagesLabel != null && availableLanguages != null) {
+            availableLanguagesLabel.setText(availableLanguages);
+        }
+
+        LanguagePreviewSpec restoredSelection = previousSelection == null
+                ? null
+                : normalizedPreviews.stream()
+                .filter(preview -> preview.displayName().equals(previousSelection.displayName()))
+                .findFirst()
+                .orElse(null);
+        LanguagePreviewSpec selection = restoredSelection != null
+                ? restoredSelection
+                : normalizedPreviews.isEmpty() ? null : normalizedPreviews.getFirst();
+        previewComboBox.setValue(selection);
+        refreshSyntaxPreview(selection);
+    }
+
     private ListCell<EditorTheme> createThemeCell() {
         return new ListCell<>() {
             @Override
@@ -208,6 +282,53 @@ public class SettingsController {
                 setText(empty || item == null ? null : item.getSettingsDisplayName());
             }
         };
+    }
+
+    private void configureSyntaxPreview() {
+        syntaxPreviewArea = new CodeArea();
+        syntaxPreviewArea.getStyleClass().addAll("editor-code-area", "settings-syntax-preview-area");
+        syntaxPreviewArea.setEditable(false);
+        syntaxPreviewArea.setWrapText(false);
+        syntaxPreviewArea.setParagraphGraphicFactory(LineNumberFactory.get(syntaxPreviewArea));
+        syntaxPreviewHost.getChildren().setAll(new VirtualizedScrollPane<>(syntaxPreviewArea));
+        syntaxPreviewLanguageComboBox.setCellFactory(ignored -> createSyntaxPreviewCell());
+        syntaxPreviewLanguageComboBox.setButtonCell(createSyntaxPreviewCell());
+        syntaxPreviewLanguageComboBox.valueProperty().addListener(onValueChange(this::refreshSyntaxPreview));
+    }
+
+    private ListCell<LanguagePreviewSpec> createSyntaxPreviewCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(LanguagePreviewSpec item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item.displayName() + (item.description().isBlank() ? "" : " · " + item.description()));
+            }
+        };
+    }
+
+    private void refreshSyntaxPreview(LanguagePreviewSpec previewSpec) {
+        if (syntaxPreviewArea == null) {
+            return;
+        }
+        if (previewSpec == null) {
+            syntaxPreviewArea.replaceText("No preview languages available.");
+            syntaxPreviewArea.setStyleSpans(0, LanguageAnalysis.plainText(syntaxPreviewArea.getText()).highlighting());
+            if (syntaxPreviewHelpLabel != null) {
+                syntaxPreviewHelpLabel.setText("Add bundled or external TextMate grammars to preview them here.");
+            }
+            return;
+        }
+
+        LanguageAnalysis analysis = syntaxPreviewHandler.apply(previewSpec);
+        syntaxPreviewArea.replaceText(previewSpec.sampleText());
+        syntaxPreviewArea.setStyleSpans(0, analysis.highlighting());
+        syntaxPreviewArea.moveTo(0);
+        syntaxPreviewArea.requestFollowCaret();
+        if (syntaxPreviewHelpLabel != null) {
+            syntaxPreviewHelpLabel.setText("Previewing " + previewSpec.displayName()
+                    + (previewSpec.description().isBlank() ? "" : " (" + previewSpec.description() + ")")
+                    + ". Reload external grammars from textmate-bundles/ to refresh this list without restarting.");
+        }
     }
 
     private void updateThemeHelpLabel(EditorTheme theme) {
@@ -348,6 +469,45 @@ public class SettingsController {
                 "  Kill word forward .......... ⌥D",
                 "  Kill word backward ......... ⌥⌫",
                 "  Yank clipboard ............. ⌃Y");
+    }
+
+    private void requireInjectedControls() {
+        Objects.requireNonNull(settingsRoot);
+        Objects.requireNonNull(themeComboBox);
+        Objects.requireNonNull(wrapTextCheckBox);
+        Objects.requireNonNull(diagnosticsCheckBox);
+        Objects.requireNonNull(searchBarVisibleCheckBox);
+        Objects.requireNonNull(projectExplorerVisibleCheckBox);
+        Objects.requireNonNull(breadcrumbBarVisibleCheckBox);
+        Objects.requireNonNull(editorFontFamilyComboBox);
+        Objects.requireNonNull(editorFontSizeField);
+        Objects.requireNonNull(editorFontHelpLabel);
+        Objects.requireNonNull(commandPaletteShortcutField);
+        Objects.requireNonNull(commandPaletteShortcutHelpLabel);
+        Objects.requireNonNull(pluginsDirectoryLabel);
+        Objects.requireNonNull(availableLanguagesLabel);
+        Objects.requireNonNull(editorControlLabel);
+        Objects.requireNonNull(keyboardShortcutsLabel);
+        Objects.requireNonNull(syntaxPreviewLanguageComboBox);
+        Objects.requireNonNull(syntaxPreviewHelpLabel);
+        Objects.requireNonNull(syntaxPreviewHost);
+        Objects.requireNonNull(cancelButton);
+        Objects.requireNonNull(applyButton);
+    }
+
+    private <T> javafx.beans.value.ChangeListener<T> onValueChange(Consumer<T> consumer) {
+        return (observable, ignored, current) -> {
+            Objects.requireNonNull(observable);
+            consumer.accept(current);
+        };
+    }
+
+    private static void ignoreSettings(EditorSettings settings) {
+        Objects.requireNonNull(settings);
+    }
+
+    private static void ignoreTheme(EditorTheme theme) {
+        Objects.requireNonNull(theme);
     }
 }
 

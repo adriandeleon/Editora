@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>Markdown</string>
+    <key>scopeName</key>
+    <string>text.html.markdown</string>
+    <key>fileTypes</key>
+    <array>
+        <string>md</string>
+        <string>markdown</string>
+    </array>
+    <key>patterns</key>
+    <array>
+        <dict><key>include</key><string>#fences</string></dict>
+        <dict><key>include</key><string>#heading</string></dict>
+        <dict><key>include</key><string>#inline-code</string></dict>
+        <dict><key>include</key><string>#bold</string></dict>
+        <dict><key>include</key><string>#italic</string></dict>
+        <dict><key>include</key><string>#link</string></dict>
+    </array>
+    <key>repository</key>
+    <dict>
+        <key>fences</key>
+        <dict>
+            <key>name</key><string>string.quoted.triple.markdown</string>
+            <key>begin</key><string>^```.*$</string>
+            <key>end</key><string>^```\s*$</string>
+        </dict>
+        <key>heading</key>
+        <dict>
+            <key>name</key><string>markup.heading.markdown</string>
+            <key>match</key><string>^#{1,6}\s+.*$</string>
+        </dict>
+        <key>inline-code</key>
+        <dict>
+            <key>name</key><string>string.quoted.inline.markdown</string>
+            <key>match</key><string>`[^`]+`</string>
+        </dict>
+        <key>bold</key>
+        <dict>
+            <key>name</key><string>markup.bold.markdown</string>
+            <key>match</key><string>(\*\*|__)(?=\S).+?(?&lt;=\S)\1</string>
+        </dict>
+        <key>italic</key>
+        <dict>
+            <key>name</key><string>markup.italic.markdown</string>
+            <key>match</key><string>(\*|_)(?=\S).+?(?&lt;=\S)\1</string>
+        </dict>
+        <key>link</key>
+        <dict>
+            <key>name</key><string>string.other.link.markdown</string>
+            <key>match</key><string>\[[^\]]+\]\([^\)]+\)</string>
+        </dict>
+    </dict>
+</dict>
+</plist>
+

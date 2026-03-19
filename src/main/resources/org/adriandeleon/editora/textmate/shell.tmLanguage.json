@@ -1,0 +1,45 @@
+{
+  "name": "Shell Script",
+  "scopeName": "source.shell",
+  "fileTypes": ["sh", "bash", "zsh"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#variables" },
+    { "include": "#functions" },
+    { "include": "#numbers" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "name": "comment.line.number-sign.shell",
+      "match": "#.*$"
+    },
+    "strings": {
+      "name": "string.quoted.double.shell",
+      "match": "\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'"
+    },
+    "keywords": {
+      "name": "keyword.control.shell",
+      "match": "\\b(?:if|then|else|elif|fi|for|while|do|done|case|esac|function|in)\\b"
+    },
+    "variables": {
+      "name": "variable.other.shell",
+      "match": "\\$[A-Za-z_][A-Za-z0-9_]*|\\$\\{[^}]+}"
+    },
+    "functions": {
+      "name": "entity.name.function.shell",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+    },
+    "numbers": {
+      "name": "constant.numeric.shell",
+      "match": "\\b\\d+\\b"
+    },
+    "punctuation": {
+      "name": "punctuation.definition.shell",
+      "match": "[(){};|&amp;]"
+    }
+  }
+}
+

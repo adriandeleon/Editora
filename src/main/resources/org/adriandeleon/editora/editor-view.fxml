@@ -20,6 +20,7 @@
 <?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
+<?import atlantafx.base.controls.Breadcrumbs?>
 <?import org.kordamp.ikonli.javafx.FontIcon?>
 
 <StackPane fx:id="rootStack"
@@ -41,7 +42,7 @@
                         <Separator orientation="VERTICAL"/>
                         <Button mnemonicParsing="false" onAction="#onNewTab" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-plus" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-plus" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="New Tab (⌘T)"/>
@@ -49,7 +50,7 @@
                         </Button>
                         <Button mnemonicParsing="false" onAction="#onOpenFile" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-folder2-open" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-folder2-open" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Open File (⌘O)"/>
@@ -57,7 +58,7 @@
                         </Button>
                         <Button mnemonicParsing="false" onAction="#onSaveFile" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-save2" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-save2" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Save File (⌘S)"/>
@@ -65,7 +66,7 @@
                         </Button>
                         <Button mnemonicParsing="false" onAction="#onSaveFileAs" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-save2" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-save" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Save File As (⇧⌘S)"/>
@@ -73,7 +74,7 @@
                         </Button>
                         <Button mnemonicParsing="false" onAction="#onCloseCurrentTab" styleClass="toolbar-icon-button danger-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-x-circle" iconSize="15" styleClass="toolbar-font-icon danger-font-icon"/>
+                                <FontIcon iconLiteral="bi-x-circle" iconSize="14" styleClass="toolbar-font-icon danger-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Close Tab (⌘W)"/>
@@ -81,7 +82,7 @@
                         </Button>
                         <MenuButton fx:id="recentFilesMenuButton" styleClass="toolbar-icon-button toolbar-menu-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-clock-history" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-clock-history" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Recent Files"/>
@@ -90,7 +91,7 @@
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="undoButton" mnemonicParsing="false" onAction="#onUndo" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-arrow-counterclockwise" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-arrow-counterclockwise" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Undo (⌘Z)"/>
@@ -98,7 +99,7 @@
                         </Button>
                         <Button fx:id="redoButton" mnemonicParsing="false" onAction="#onRedo" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-arrow-clockwise" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-arrow-clockwise" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Redo (⇧⌘Z)"/>
@@ -106,7 +107,7 @@
                         </Button>
                         <Button fx:id="cutButton" mnemonicParsing="false" onAction="#onCut" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-scissors" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-scissors" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Cut (⌘X)"/>
@@ -114,7 +115,7 @@
                         </Button>
                         <Button fx:id="copyButton" mnemonicParsing="false" onAction="#onCopy" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-files" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-files" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Copy (⌘C)"/>
@@ -122,7 +123,7 @@
                         </Button>
                         <Button fx:id="pasteButton" mnemonicParsing="false" onAction="#onPaste" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-clipboard" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-clipboard" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Paste (⌘V)"/>
@@ -131,7 +132,7 @@
                         <Separator orientation="VERTICAL"/>
                         <Button mnemonicParsing="false" onAction="#onShowCommandPalette" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-terminal" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-terminal" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip fx:id="commandPaletteToolbarTooltip" text="Command Palette (⌥X)"/>
@@ -139,7 +140,7 @@
                         </Button>
                         <Button mnemonicParsing="false" onAction="#onToggleSearchBar" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-search" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-search" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Toggle Search (⌥⌘F)"/>
@@ -147,7 +148,7 @@
                         </Button>
                         <Button mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-files" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-files" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Toggle Project Explorer (⌥⌘E)"/>
@@ -155,7 +156,7 @@
                         </Button>
                         <Button mnemonicParsing="false" onAction="#onToggleStatusBar" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-info-circle" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-info-circle" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Toggle Status Bar (⌥⌘B)"/>
@@ -163,15 +164,16 @@
                         </Button>
                         <Button mnemonicParsing="false" onAction="#onShowSettings" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-gear" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-gear" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Open Settings (⌘,)"/>
                             </tooltip>
                         </Button>
+                        <Region HBox.hgrow="ALWAYS"/>
                         <MenuButton fx:id="pluginMenuButton" styleClass="toolbar-icon-button toolbar-menu-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-puzzle" iconSize="16" styleClass="toolbar-font-icon"/>
+                                <FontIcon iconLiteral="bi-puzzle" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Plugins"/>
@@ -179,18 +181,12 @@
                         </MenuButton>
                         <Button mnemonicParsing="false" onAction="#onExitApplication" styleClass="toolbar-icon-button danger-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-box-arrow-right" iconSize="16" styleClass="toolbar-font-icon danger-font-icon"/>
+                                <FontIcon iconLiteral="bi-box-arrow-right" iconSize="14" styleClass="toolbar-font-icon danger-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Exit Editora"/>
                             </tooltip>
                         </Button>
-                        <Separator orientation="VERTICAL"/>
-                        <Label fx:id="searchVisibilityIndicator" styleClass="toolbar-indicator indicator-visible" text="Search On"/>
-                        <Label fx:id="explorerVisibilityIndicator" styleClass="toolbar-indicator indicator-visible" text="Explorer On"/>
-                        <Label fx:id="statusVisibilityIndicator" styleClass="toolbar-indicator indicator-visible" text="Status On"/>
-                        <Region HBox.hgrow="ALWAYS"/>
-                        <Label text="RichTextFX + AtlantaFX" styleClass="toolbar-caption"/>
                     </ToolBar>
                     <HBox fx:id="searchBar" alignment="CENTER_LEFT" spacing="10.0" styleClass="search-bar">
                         <Label text="Search"/>
@@ -299,35 +295,33 @@
                 </SplitPane>
             </center>
             <bottom>
-                <HBox fx:id="statusBar" alignment="CENTER_LEFT" spacing="16.0" styleClass="status-bar" BorderPane.alignment="CENTER">
+                <HBox fx:id="statusBar" alignment="CENTER_LEFT" spacing="12.0" styleClass="status-bar" BorderPane.alignment="CENTER">
                     <padding>
-                        <Insets bottom="10.0" left="16.0" right="16.0" top="10.0"/>
+                        <Insets bottom="6.0" left="8.0" right="8.0" top="6.0"/>
                     </padding>
-                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip status-message-chip">
-                        <FontIcon iconLiteral="bi-info-circle" iconSize="12" styleClass="status-icon"/>
-                        <Label fx:id="messageStatusLabel" text="Ready" styleClass="status-emphasis"/>
+                    <HBox fx:id="statusPathRow" alignment="CENTER_LEFT" spacing="6.0" styleClass="status-path-row" HBox.hgrow="ALWAYS">
+                        <FontIcon iconLiteral="bi-signpost-split" iconSize="12" styleClass="status-icon"/>
+                        <Breadcrumbs fx:id="documentPathBreadcrumbs" focusTraversable="false" HBox.hgrow="ALWAYS" styleClass="status-breadcrumbs"/>
                     </HBox>
-                    <Separator orientation="VERTICAL"/>
-                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
-                        <FontIcon iconLiteral="bi-file-earmark-text" iconSize="12" styleClass="status-icon"/>
-                        <Label fx:id="documentStatusLabel" text="No document"/>
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
-                        <FontIcon iconLiteral="bi-cursor-text" iconSize="12" styleClass="status-icon"/>
-                        <Label fx:id="caretStatusLabel" text="Line: —  Col: —"/>
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
-                        <FontIcon iconLiteral="bi-code-slash" iconSize="12" styleClass="status-icon"/>
-                        <Label fx:id="languageStatusLabel" text="Language: —"/>
-                    </HBox>
-                    <Region HBox.hgrow="ALWAYS"/>
-                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
-                        <FontIcon iconLiteral="bi-puzzle" iconSize="12" styleClass="status-icon"/>
-                        <Label fx:id="pluginStatusLabel" text="Plugins: 0"/>
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="6.0" styleClass="status-chip">
-                        <FontIcon iconLiteral="bi-circle-half" iconSize="12" styleClass="status-icon"/>
-                        <Label fx:id="themeStatusLabel" text="Theme: Primer Dark"/>
+                    <HBox alignment="CENTER_RIGHT" spacing="8.0" styleClass="status-bar-row">
+                        <HBox alignment="CENTER_LEFT" spacing="4.0" styleClass="status-chip status-message-chip">
+                            <FontIcon iconLiteral="bi-info-circle" iconSize="12" styleClass="status-icon"/>
+                            <Label fx:id="messageStatusLabel" text="Ready" styleClass="status-emphasis"/>
+                        </HBox>
+                        <Separator orientation="VERTICAL"/>
+                        <HBox alignment="CENTER_LEFT" spacing="4.0" styleClass="status-chip">
+                            <FontIcon iconLiteral="bi-file-earmark-text" iconSize="12" styleClass="status-icon"/>
+                            <Label fx:id="documentStatusLabel" text="No document"/>
+                        </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="4.0" styleClass="status-chip">
+                            <FontIcon iconLiteral="bi-cursor-text" iconSize="12" styleClass="status-icon"/>
+                            <Label fx:id="caretStatusLabel" text="Line: —  Col: —"/>
+                        </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="4.0" styleClass="status-chip">
+                            <FontIcon iconLiteral="bi-code-slash" iconSize="12" styleClass="status-icon"/>
+                            <Label fx:id="languageStatusLabel" text="Language: —"/>
+                        </HBox>
+                        <Region HBox.hgrow="ALWAYS"/>
                     </HBox>
                 </HBox>
             </bottom>

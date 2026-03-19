@@ -47,8 +47,8 @@ public final class SessionManager {
         Path workspaceRoot = decodePath(PREFERENCES.get(WORKSPACE_ROOT_KEY, "")).orElse(fallbackWorkspaceRoot);
         List<Path> openFiles = decodePaths(PREFERENCES.get(OPEN_FILES_KEY, ""));
         Optional<Path> selectedFile = decodePath(PREFERENCES.get(SELECTED_FILE_KEY, ""));
-        boolean searchBarVisible = PREFERENCES.getBoolean(SEARCH_BAR_VISIBLE_KEY, true);
-        boolean projectExplorerVisible = PREFERENCES.getBoolean(PROJECT_EXPLORER_VISIBLE_KEY, true);
+        boolean searchBarVisible = PREFERENCES.getBoolean(SEARCH_BAR_VISIBLE_KEY, false);
+        boolean projectExplorerVisible = PREFERENCES.getBoolean(PROJECT_EXPLORER_VISIBLE_KEY, false);
         boolean statusBarVisible = PREFERENCES.getBoolean(STATUS_BAR_VISIBLE_KEY, true);
         double projectExplorerDividerPosition = PREFERENCES.getDouble(PROJECT_EXPLORER_DIVIDER_POSITION_KEY, 0.22d);
         double projectExplorerWidth = PREFERENCES.getDouble(PROJECT_EXPLORER_WIDTH_KEY, 300d);

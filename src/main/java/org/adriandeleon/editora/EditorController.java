@@ -1,15 +1,19 @@
 package org.adriandeleon.editora;
 
+import atlantafx.base.controls.Breadcrumbs;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.event.Event;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -47,6 +51,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 import org.adriandeleon.editora.commands.CommandAction;
@@ -57,8 +62,10 @@ import org.adriandeleon.editora.editor.FindFileSupport;
 import org.adriandeleon.editora.languages.Diagnostic;
 import org.adriandeleon.editora.languages.DiagnosticSeverity;
 import org.adriandeleon.editora.languages.LanguageAnalysis;
+import org.adriandeleon.editora.languages.LanguagePreviewSpec;
 import org.adriandeleon.editora.languages.LanguageService;
 import org.adriandeleon.editora.languages.LanguageServiceRegistry;
+import org.adriandeleon.editora.languages.PlainTextLanguageService;
 import org.adriandeleon.editora.plugins.EditoraContext;
 import org.adriandeleon.editora.plugins.PluginManager;
 import org.adriandeleon.editora.session.SessionManager;
@@ -66,8 +73,10 @@ import org.adriandeleon.editora.session.WorkspaceSession;
 import org.adriandeleon.editora.settings.CommandPaletteShortcut;
 import org.adriandeleon.editora.settings.EditorSettings;
 import org.adriandeleon.editora.settings.SettingsManager;
+import org.adriandeleon.editora.status.StatusBarSupport;
 import org.adriandeleon.editora.theme.EditorTheme;
 import org.adriandeleon.editora.theme.ThemeManager;
+import org.adriandeleon.editora.window.WindowStateSupport;
 import org.kordamp.ikonli.javafx.FontIcon;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
@@ -173,25 +182,16 @@ public class EditorController {
     private Label caretStatusLabel;
 
     @FXML
-    private Label pluginStatusLabel;
-
-    @FXML
     private Label languageStatusLabel;
 
     @FXML
-    private Label themeStatusLabel;
-
-    @FXML
-    private Label searchVisibilityIndicator;
-
-    @FXML
-    private Label explorerVisibilityIndicator;
-
-    @FXML
-    private Label statusVisibilityIndicator;
-
-    @FXML
     private HBox statusBar;
+
+    @FXML
+    private HBox statusPathRow;
+
+    @FXML
+    private Breadcrumbs<StatusBarSupport.BreadcrumbEntry> documentPathBreadcrumbs;
 
     @FXML
     private Button undoButton;
@@ -312,8 +312,8 @@ public class EditorController {
         Path defaultWorkspaceRoot = Path.of("").toAbsolutePath().normalize();
         WorkspaceSession session = SessionManager.loadWorkspaceSession(defaultWorkspaceRoot);
         workspaceRoot = session.workspaceRoot();
-        searchBarVisible = session.searchBarVisible();
-        projectExplorerVisible = session.projectExplorerVisible();
+        searchBarVisible = currentSettings.searchBarVisible();
+        projectExplorerVisible = currentSettings.projectExplorerVisible();
         statusBarVisible = session.statusBarVisible();
         expandedExplorerDividerPosition = session.projectExplorerDividerPosition();
         expandedExplorerPrefWidth = Math.max(200, session.projectExplorerWidth());
@@ -331,6 +331,7 @@ public class EditorController {
         configureProjectTree();
         configureCommandPalette();
         configureFindFilePrompt();
+        configureStatusBar();
         registerBuiltInCommands();
         rebuildRecentFilesMenu();
         rebuildRecentFileCommands();
@@ -342,18 +343,18 @@ public class EditorController {
         wholeWordToggle.setSelected(session.searchWholeWord());
         regexToggle.setSelected(session.searchRegex());
         commandPaletteField.setText(lastCommandPaletteFilter);
-        searchField.setOnAction(event -> findMatch(true));
-        replaceField.setOnAction(event -> replaceSelection());
-        searchField.textProperty().addListener((observable, previous, current) -> refreshSearchUi());
-        caseSensitiveToggle.selectedProperty().addListener((observable, previous, current) -> refreshSearchUi());
-        wholeWordToggle.selectedProperty().addListener((observable, previous, current) -> refreshSearchUi());
-        regexToggle.selectedProperty().addListener((observable, previous, current) -> refreshSearchUi());
+        searchField.setOnAction(event -> handleEvent(event, () -> findMatch(true)));
+        replaceField.setOnAction(event -> handleEvent(event, this::replaceSelection));
+        searchField.textProperty().addListener(onChange(this::refreshSearchUi));
+        caseSensitiveToggle.selectedProperty().addListener(onChange(this::refreshSearchUi));
+        wholeWordToggle.selectedProperty().addListener(onChange(this::refreshSearchUi));
+        regexToggle.selectedProperty().addListener(onChange(this::refreshSearchUi));
         searchBar.addEventFilter(KeyEvent.KEY_PRESSED, this::handleSearchBarKeys);
         projectExplorerPane.addEventFilter(KeyEvent.KEY_PRESSED, this::handleProjectExplorerKeys);
 
-        editorTabPane.getSelectionModel().selectedItemProperty().addListener((observable, previous, current) ->
-                updateEditorState(getDocument(current).orElse(null)));
-        rootPane.sceneProperty().addListener((observable, previous, current) -> {
+        editorTabPane.getSelectionModel().selectedItemProperty().addListener(onCurrentChange(current ->
+                updateEditorState(getDocument(current).orElse(null))));
+        rootPane.sceneProperty().addListener(onCurrentChange(current -> {
             if (current != null) {
                 ThemeManager.apply(currentSettings.theme(), rootStack);
                 if (!acceleratorsInstalled) {
@@ -361,7 +362,7 @@ public class EditorController {
                     acceleratorsInstalled = true;
                 }
             }
-        });
+        }));
 
         commandPaletteOverlay.setOnMouseClicked(event -> {
             if (event.getTarget() == commandPaletteOverlay) {
@@ -383,17 +384,17 @@ public class EditorController {
                 hideSettingsView();
             }
         });
-        projectExplorerPane.widthProperty().addListener((observable, oldValue, newValue) -> {
+        projectExplorerPane.widthProperty().addListener(onCurrentChange(newValue -> {
             if (projectExplorerVisible && newValue.doubleValue() > 0) {
                 expandedExplorerPrefWidth = newValue.doubleValue();
             }
-        });
+        }));
         if (!centerSplitPane.getDividers().isEmpty()) {
-            centerSplitPane.getDividers().getFirst().positionProperty().addListener((observable, oldValue, newValue) -> {
+            centerSplitPane.getDividers().getFirst().positionProperty().addListener(onCurrentChange(newValue -> {
                 if (projectExplorerVisible) {
                     expandedExplorerDividerPosition = newValue.doubleValue();
                 }
-            });
+            }));
         }
 
         setWorkspaceRoot(workspaceRoot, false);
@@ -428,18 +429,23 @@ public class EditorController {
     }
 
     public void applyStageState(Stage stage) {
-        if (windowWidth > 0) {
-            stage.setWidth(windowWidth);
-        }
-        if (windowHeight > 0) {
-            stage.setHeight(windowHeight);
-        }
-        if (!Double.isNaN(windowX)) {
-            stage.setX(windowX);
-        }
-        if (!Double.isNaN(windowY)) {
-            stage.setY(windowY);
-        }
+        double restoredWidth = windowWidth > 0 ? windowWidth : 1440;
+        double restoredHeight = windowHeight > 0 ? windowHeight : 920;
+        stage.setWidth(restoredWidth);
+        stage.setHeight(restoredHeight);
+
+        List<Rectangle2D> visualBounds = Screen.getScreens().stream()
+                .map(Screen::getVisualBounds)
+                .toList();
+        WindowStateSupport.Position position = WindowStateSupport.resolveVisiblePosition(
+                restoredWidth,
+                restoredHeight,
+                windowX,
+                windowY,
+                visualBounds
+        );
+        stage.setX(position.x());
+        stage.setY(position.y());
         stage.setMaximized(windowMaximized);
     }
 
@@ -498,7 +504,7 @@ public class EditorController {
 
     @FXML
     private void onCloseCurrentTab() {
-        getActiveDocument().ifPresent(document -> closeDocument(document, true));
+        getActiveDocument().ifPresent(this::closeDocument);
     }
 
     @FXML
@@ -533,14 +539,12 @@ public class EditorController {
 
     @FXML
     private void onToggleSearchBar() {
-        searchBarVisible = !searchBarVisible;
-        applySearchBarVisibility(true, true);
+        toggleSearchBarVisibility();
     }
 
     @FXML
     private void onToggleProjectExplorer() {
-        projectExplorerVisible = !projectExplorerVisible;
-        applyProjectExplorerVisibility(true, true);
+        toggleProjectExplorerVisibility();
     }
 
     @FXML
@@ -552,18 +556,13 @@ public class EditorController {
     @FXML
     private void onToggleTheme() {
         EditorTheme nextTheme = currentSettings.theme().next();
-        setTheme(nextTheme, true);
+        setTheme(nextTheme);
         statusMessage("Theme switched to " + nextTheme.getDisplayName());
     }
 
     @FXML
     private void onShowSettings() {
         showSettingsView();
-    }
-
-    @FXML
-    private void onShowVersionOverlay() {
-        showVersionOverlay();
     }
 
     @FXML
@@ -598,20 +597,8 @@ public class EditorController {
 
     private void configureProjectTree() {
         projectTreeView.setShowRoot(true);
-        projectTreeView.setCellFactory(treeView -> new TreeCell<>() {
-            @Override
-            protected void updateItem(Path item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setTooltip(null);
-                } else {
-                    setText(displayPath(item));
-                    setTooltip(new Tooltip(item.toString()));
-                }
-            }
-        });
-
+        projectTreeView.setCellFactory(this::createProjectTreeCell);
+        
         projectTreeView.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
                 openSelectedProjectTreeItem();
@@ -625,10 +612,42 @@ public class EditorController {
         });
     }
 
+    private TreeCell<Path> createProjectTreeCell(TreeView<Path> treeView) {
+        Objects.requireNonNull(treeView);
+        return new TreeCell<>() {
+            @Override
+            protected void updateItem(Path item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setTooltip(null);
+                } else {
+                    setText(displayPath(item));
+                    setTooltip(new Tooltip(item.toString()));
+                }
+            }
+        };
+    }
+
     private void configureCommandPalette() {
         commandPaletteListView.setItems(paletteResults);
         commandPaletteListView.setPlaceholder(new Label("No matching commands"));
-        commandPaletteListView.setCellFactory(listView -> new ListCell<>() {
+        commandPaletteListView.setCellFactory(this::createCommandPaletteCell);
+
+        commandPaletteField.textProperty().addListener(onCurrentChange(this::filterCommands));
+        commandPaletteField.setOnAction(event -> handleEvent(event, this::executeSelectedCommand));
+        commandPaletteField.addEventFilter(KeyEvent.KEY_PRESSED, this::handleCommandPaletteFieldKeys);
+        commandPaletteListView.addEventFilter(KeyEvent.KEY_PRESSED, this::handleCommandPaletteListKeys);
+        commandPaletteListView.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                executeSelectedCommand();
+            }
+        });
+    }
+
+    private ListCell<CommandAction> createCommandPaletteCell(ListView<CommandAction> listView) {
+        Objects.requireNonNull(listView);
+        return new ListCell<>() {
             @Override
             protected void updateItem(CommandAction item, boolean empty) {
                 super.updateItem(item, empty);
@@ -663,23 +682,41 @@ public class EditorController {
                 content.getStyleClass().add("command-cell");
                 setGraphic(content);
             }
-        });
-
-        commandPaletteField.textProperty().addListener((observable, previous, current) -> filterCommands(current));
-        commandPaletteField.setOnAction(event -> executeSelectedCommand());
-        commandPaletteField.addEventFilter(KeyEvent.KEY_PRESSED, this::handleCommandPaletteFieldKeys);
-        commandPaletteListView.addEventFilter(KeyEvent.KEY_PRESSED, this::handleCommandPaletteListKeys);
-        commandPaletteListView.setOnMouseClicked(event -> {
-            if (event.getClickCount() == 2) {
-                executeSelectedCommand();
-            }
-        });
+        };
     }
 
     private void configureFindFilePrompt() {
         findFileListView.setItems(findFileResults);
         findFileListView.setPlaceholder(new Label("No matching files"));
-        findFileListView.setCellFactory(listView -> new ListCell<>() {
+        findFileListView.setCellFactory(this::createFindFileCell);
+
+        findFileField.textProperty().addListener(onCurrentChange(current -> {
+            lastFindFileQuery = current == null ? "" : current;
+            if (!applyingFindFileHistory) {
+                findFileHistoryDraft = lastFindFileQuery;
+                findFileHistoryIndex = -1;
+            }
+            refreshFindFileResults();
+        }));
+        findFileField.setOnAction(event -> handleEvent(event, this::acceptFindFileInput));
+        findFileField.addEventFilter(KeyEvent.KEY_PRESSED, this::handleFindFileFieldKeys);
+        findFileListView.addEventFilter(KeyEvent.KEY_PRESSED, this::handleFindFileListKeys);
+        findFileListView.getSelectionModel().selectedItemProperty().addListener(onCurrentChange(current -> {
+            updateFindFileHint(current);
+            updateFindFilePreview(current);
+        }));
+        findFileListView.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                acceptFindFileInput();
+            }
+        });
+        updateFindFileHint(null);
+        updateFindFilePreview(null);
+    }
+
+    private ListCell<FindFileSupport.Match> createFindFileCell(ListView<FindFileSupport.Match> listView) {
+        Objects.requireNonNull(listView);
+        return new ListCell<>() {
             @Override
             protected void updateItem(FindFileSupport.Match item, boolean empty) {
                 super.updateItem(item, empty);
@@ -718,30 +755,7 @@ public class EditorController {
                 content.getStyleClass().add("command-cell");
                 setGraphic(content);
             }
-        });
-
-        findFileField.textProperty().addListener((observable, previous, current) -> {
-            lastFindFileQuery = current == null ? "" : current;
-            if (!applyingFindFileHistory) {
-                findFileHistoryDraft = lastFindFileQuery;
-                findFileHistoryIndex = -1;
-            }
-            refreshFindFileResults();
-        });
-        findFileField.setOnAction(event -> acceptFindFileInput());
-        findFileField.addEventFilter(KeyEvent.KEY_PRESSED, this::handleFindFileFieldKeys);
-        findFileListView.addEventFilter(KeyEvent.KEY_PRESSED, this::handleFindFileListKeys);
-        findFileListView.getSelectionModel().selectedItemProperty().addListener((observable, previous, current) -> {
-            updateFindFileHint(current);
-            updateFindFilePreview(current);
-        });
-        findFileListView.setOnMouseClicked(event -> {
-            if (event.getClickCount() == 2) {
-                acceptFindFileInput();
-            }
-        });
-        updateFindFileHint(null);
-        updateFindFilePreview(null);
+        };
     }
 
     private void refreshFindFileResults() {
@@ -1046,12 +1060,14 @@ public class EditorController {
                 new CommandAction("Toggle Search Bar", "Show or hide the search and replace controls", "View", "⌥⌘F", List.of("search", "replace", "collapse", "hide"), this::onToggleSearchBar),
                 new CommandAction("Toggle Project Explorer", "Show or hide the project explorer sidebar", "View", "⌥⌘E", List.of("explorer", "sidebar", "project", "collapse", "hide"), this::onToggleProjectExplorer),
                 new CommandAction("Toggle Status Bar", "Show or hide the bottom status bar", "View", "⌥⌘B", List.of("status", "footer", "bottom", "hide"), this::onToggleStatusBar),
+                new CommandAction("Toggle Breadcrumb Path", "Show or hide the breadcrumb path inside the status bar", "View", "", List.of("breadcrumb", "path", "status", "file path", "location"), this::toggleBreadcrumbBarVisibility),
                 new CommandAction("Replace Selection", "Replace the current match selection", "Search", "", List.of("replace", "selection"), this::onReplaceSelection),
                 new CommandAction("Replace All", "Replace all matches in the current document", "Search", "", List.of("replace", "all"), this::onReplaceAll),
                 new CommandAction("Open Settings", "Show the full Editora settings view", "View", "⌘,", List.of("preferences", "configuration"), this::showSettingsView),
                 new CommandAction("Version", "Show Editora version and author information", "Help", "", List.of("about", "version", "author", "info"), this::showVersionOverlay),
                 new CommandAction("Show Keyboard Shortcuts", "Open the keyboard reference for shell and editor-local Emacs bindings", "Help", "", List.of("keyboard", "shortcut", "emacs", "mark", "kill", "yank", "region"), this::showKeyboardShortcutsView),
                 new CommandAction("Clear Recent Files", "Forget the recent-files history", "Workspace", "", List.of("recent", "history", "clear"), this::clearRecentFiles),
+                new CommandAction("Reload TextMate Bundles", "Reload bundled and external TextMate grammars without restarting Editora", "Languages", "", List.of("textmate", "syntax", "grammar", "bundle", "reload"), this::reloadTextMateBundles),
                 new CommandAction("Reload Plugins", "Reload plugin commands and menu actions from the plugins directory", "Plugins", "", List.of("plugins", "reload"), this::loadPlugins)
         ));
         commandActions.addAll(Arrays.stream(EditorTheme.values())
@@ -1062,7 +1078,7 @@ public class EditorController {
                         "",
                         List.of("theme", "appearance", theme.getDisplayName().toLowerCase(Locale.ROOT), theme.getFamilyDisplayName().toLowerCase(Locale.ROOT)),
                         () -> {
-                            setTheme(theme, true);
+                            setTheme(theme);
                             statusMessage("Theme switched to " + theme.getDisplayName());
                         }
                 ))
@@ -1071,15 +1087,18 @@ public class EditorController {
         rebuildCommands();
     }
 
-    private void setTheme(EditorTheme theme, boolean persist) {
+    private void setTheme(EditorTheme theme) {
         applySettings(new EditorSettings(
                 theme,
                 currentSettings.wrapText(),
                 currentSettings.diagnosticsEnabled(),
+                currentSettings.searchBarVisible(),
+                currentSettings.projectExplorerVisible(),
+                currentSettings.breadcrumbBarVisible(),
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
                 currentSettings.editorFontSize()
-        ), persist);
+        ), true);
     }
 
     private void rebuildCommands() {
@@ -1122,7 +1141,7 @@ public class EditorController {
                         () -> openFile(recentFile)
                 );
                 MenuItem item = createMenuItem(action, recentFile.getFileName() + " — " + recentFile.getParent());
-                item.setOnAction(event -> openFile(recentFile));
+                item.setOnAction(event -> handleEvent(event, () -> openFile(recentFile)));
                 recentFilesMenuButton.getItems().add(item);
             }
             recentFilesMenuButton.getItems().add(new SeparatorMenuItem());
@@ -1136,7 +1155,7 @@ public class EditorController {
                 List.of("recent", "history", "clear"),
                 this::clearRecentFiles
         ), "Clear Recent Files");
-        clearItem.setOnAction(event -> clearRecentFiles());
+        clearItem.setOnAction(event -> handleEvent(event, this::clearRecentFiles));
         recentFilesMenuButton.getItems().add(clearItem);
     }
 
@@ -1245,7 +1264,6 @@ public class EditorController {
 
         rebuildCommands();
         rebuildPluginMenu();
-        pluginStatusLabel.setText("Plugins: " + pluginManager.getLoadedPlugins().size());
         statusMessage(pluginManager.getLoadedPlugins().isEmpty() ? "No plugins loaded" : "Loaded " + pluginManager.getLoadedPlugins().size() + " plugin(s)");
     }
 
@@ -1259,7 +1277,7 @@ public class EditorController {
         } else {
             for (CommandAction action : pluginMenuActions) {
                 MenuItem item = createMenuItem(action, action.name());
-                item.setOnAction(event -> action.action().run());
+                item.setOnAction(event -> handleEvent(event, action.action()));
                 pluginMenuButton.getItems().add(item);
             }
             pluginMenuButton.getItems().add(new SeparatorMenuItem());
@@ -1273,7 +1291,7 @@ public class EditorController {
                 List.of("plugins", "reload"),
                 this::loadPlugins
         ), "Reload Plugins");
-        reloadItem.setOnAction(event -> loadPlugins());
+        reloadItem.setOnAction(event -> handleEvent(event, this::loadPlugins));
         pluginMenuButton.getItems().add(reloadItem);
         pluginMenuButton.setText("Plugins (" + pluginManager.getLoadedPlugins().size() + ")");
     }
@@ -1363,7 +1381,7 @@ public class EditorController {
     private boolean restoreWorkspaceSession(WorkspaceSession session) {
         List<Path> restoredFiles = new ArrayList<>();
         for (Path path : session.openFiles()) {
-            openFileInternal(path, false, true, true).ifPresent(document -> restoredFiles.add(path));
+            openFileInternal(path, false, true).ifPresent(document -> restoredFiles.add(document.getFilePath()));
         }
 
         if (restoredFiles.isEmpty()) {
@@ -1390,7 +1408,7 @@ public class EditorController {
                 .map(EditorDocument::getFilePath)
                 .filter(Objects::nonNull)
                 .toList();
-        Optional<Path> selectedFile = getActiveDocument().map(EditorDocument::getFilePath).filter(Objects::nonNull);
+        Optional<Path> selectedFile = getActiveDocument().map(EditorDocument::getFilePath);
         double currentDividerPosition = projectExplorerVisible && !centerSplitPane.getDividers().isEmpty()
                 ? centerSplitPane.getDividers().getFirst().getPosition()
                 : expandedExplorerDividerPosition;
@@ -1457,7 +1475,7 @@ public class EditorController {
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> analyzeDocument(document));
 
-        codeArea.textProperty().addListener((observable, previous, current) -> {
+        codeArea.textProperty().addListener(onChange(() -> {
             document.clearNavigationGoalColumn();
             document.clearMark();
             document.clampMarkPosition();
@@ -1467,25 +1485,25 @@ public class EditorController {
             updateCaretStatus(document);
             revealActiveDocumentInProjectTree(document);
             refreshSearchUi();
-        });
-        codeArea.caretPositionProperty().addListener((observable, previous, current) -> {
+        }));
+        codeArea.caretPositionProperty().addListener(onChange(() -> {
             if (!document.consumeNavigationGoalPreservation()) {
                 document.clearNavigationGoalColumn();
             }
             updateCaretStatus(document);
             updateEditActionAvailability(document);
             refreshSearchUi();
-        });
-        codeArea.selectionProperty().addListener((observable, previous, current) -> {
+        }));
+        codeArea.selectionProperty().addListener(onChange(() -> {
             updateEditActionAvailability(document);
             refreshSearchUi();
-        });
-        codeArea.focusedProperty().addListener((observable, previous, current) -> {
+        }));
+        codeArea.focusedProperty().addListener(onCurrentChange(current -> {
             if (current) {
                 editorTabPane.getSelectionModel().select(document.getTab());
                 updateEditActionAvailability(document);
             }
-        });
+        }));
     }
 
     private void installEditorKeyBindings(EditorDocument document) {
@@ -1741,34 +1759,34 @@ public class EditorController {
 
     private void installEditorContextMenu(EditorDocument document) {
         MenuItem undoItem = new MenuItem("Undo");
-        undoItem.setOnAction(event -> {
+        undoItem.setOnAction(event -> handleEvent(event, () -> {
             editorTabPane.getSelectionModel().select(document.getTab());
             undoActiveEdit();
-        });
+        }));
 
         MenuItem redoItem = new MenuItem("Redo");
-        redoItem.setOnAction(event -> {
+        redoItem.setOnAction(event -> handleEvent(event, () -> {
             editorTabPane.getSelectionModel().select(document.getTab());
             redoActiveEdit();
-        });
+        }));
 
         MenuItem cutItem = new MenuItem("Cut");
-        cutItem.setOnAction(event -> {
+        cutItem.setOnAction(event -> handleEvent(event, () -> {
             editorTabPane.getSelectionModel().select(document.getTab());
             cutActiveSelection();
-        });
+        }));
 
         MenuItem copyItem = new MenuItem("Copy");
-        copyItem.setOnAction(event -> {
+        copyItem.setOnAction(event -> handleEvent(event, () -> {
             editorTabPane.getSelectionModel().select(document.getTab());
             copyActiveSelection();
-        });
+        }));
 
         MenuItem pasteItem = new MenuItem("Paste");
-        pasteItem.setOnAction(event -> {
+        pasteItem.setOnAction(event -> handleEvent(event, () -> {
             editorTabPane.getSelectionModel().select(document.getTab());
             pasteIntoActiveEditor();
-        });
+        }));
 
         ContextMenu contextMenu = new ContextMenu(
                 undoItem,
@@ -1778,10 +1796,10 @@ public class EditorController {
                 copyItem,
                 pasteItem
         );
-        contextMenu.setOnShowing(event -> {
+        contextMenu.setOnShowing(event -> handleEvent(event, () -> {
             editorTabPane.getSelectionModel().select(document.getTab());
             updateContextMenuAvailability(document, undoItem, redoItem, cutItem, copyItem, pasteItem);
-        });
+        }));
         document.getCodeArea().setContextMenu(contextMenu);
     }
 
@@ -1807,7 +1825,7 @@ public class EditorController {
         tab.setClosable(true);
         tab.setOnCloseRequest(event -> {
             event.consume();
-            closeDocument(document, true);
+            closeDocument(document);
         });
 
         documentsByTab.put(tab, document);
@@ -1846,14 +1864,14 @@ public class EditorController {
         return true;
     }
 
-    private void closeDocument(EditorDocument document, boolean keepOneTabOpen) {
+    private void closeDocument(EditorDocument document) {
         if (!confirmCloseDocument(document)) {
             return;
         }
 
         documentsByTab.remove(document.getTab());
         editorTabPane.getTabs().remove(document.getTab());
-        if (keepOneTabOpen && editorTabPane.getTabs().isEmpty()) {
+        if (editorTabPane.getTabs().isEmpty()) {
             createNewTab();
         }
         updateEditorState(getActiveDocument().orElse(null));
@@ -1875,10 +1893,10 @@ public class EditorController {
     }
 
     private void openFile(Path path) {
-        openFileInternal(path, true, false, true);
+        openFileInternal(path, true, false);
     }
 
-    private Optional<EditorDocument> openFileInternal(Path path, boolean select, boolean quiet, boolean rememberRecent) {
+    private Optional<EditorDocument> openFileInternal(Path path, boolean select, boolean quiet) {
         Path normalizedPath = path.toAbsolutePath().normalize();
         Optional<EditorDocument> existingDocument = documentsByTab.values().stream()
                 .filter(document -> normalizedPath.equals(document.getFilePath()))
@@ -1889,9 +1907,7 @@ public class EditorController {
                 editorTabPane.getSelectionModel().select(existingDocument.get().getTab());
                 existingDocument.get().getCodeArea().requestFocus();
             }
-            if (rememberRecent) {
-                recordRecentFile(normalizedPath);
-            }
+            recordRecentFile(normalizedPath);
             if (!quiet) {
                 statusMessage("Focused already-open file " + normalizedPath.getFileName());
             }
@@ -1910,16 +1926,17 @@ public class EditorController {
             EditorDocument document = buildDocument(text, normalizedPath);
             openDocument(document, select);
             lastUsedDirectory = normalizedPath.getParent();
-            if (rememberRecent) {
-                recordRecentFile(normalizedPath);
-            }
+            recordRecentFile(normalizedPath);
             if (!quiet) {
                 statusMessage("Opened " + normalizedPath.getFileName());
             }
             return Optional.of(document);
-        } catch (IOException exception) {
+        } catch (IOException | RuntimeException exception) {
             if (!quiet) {
-                showError("Could not open file", exception);
+                IOException displayException = exception instanceof IOException ioException
+                        ? ioException
+                        : new IOException(exception.getMessage(), exception);
+                showError("Could not open file", displayException);
             }
             return Optional.empty();
         }
@@ -1928,9 +1945,9 @@ public class EditorController {
     private void recordRecentFile(Path path) {
         Path normalized = path.toAbsolutePath().normalize();
         recentFiles.removeIf(existing -> existing.equals(normalized));
-        recentFiles.add(0, normalized);
+        recentFiles.addFirst(normalized);
         while (recentFiles.size() > MAX_RECENT_FILES) {
-            recentFiles.remove(recentFiles.size() - 1);
+            recentFiles.removeLast();
         }
         SessionManager.saveRecentFiles(recentFiles);
         rebuildRecentFilesMenu();
@@ -1940,8 +1957,8 @@ public class EditorController {
         }
     }
 
-    private boolean saveActiveDocument(boolean saveAs) {
-        return getActiveDocument().map(document -> saveDocument(document, saveAs)).orElse(false);
+    private void saveActiveDocument(boolean saveAs) {
+        getActiveDocument().ifPresent(document -> saveDocument(document, saveAs));
     }
 
     private boolean saveDocument(EditorDocument document, boolean saveAs) {
@@ -2086,11 +2103,13 @@ public class EditorController {
                 } else if (searchBarVisible && isFocusInside(searchBar)) {
                     searchBarVisible = false;
                     applySearchBarVisibility(true, true);
+                    persistShellVisibilitySettings();
                     focusActiveEditor();
                     event.consume();
                 } else if (projectExplorerVisible && isFocusInside(projectExplorerPane)) {
                     projectExplorerVisible = false;
                     applyProjectExplorerVisibility(true, true);
+                    persistShellVisibilitySettings();
                     focusActiveEditor();
                     event.consume();
                 }
@@ -2118,12 +2137,83 @@ public class EditorController {
     }
 
     private void updateEditorState(EditorDocument document) {
+        updateDocumentPathBreadcrumbs(document);
         updateEditActionAvailability(document);
         updateCaretStatus(document);
         updateDocumentStatus(document);
         updateLanguageStatus(document);
         revealActiveDocumentInProjectTree(document);
         refreshSearchUi();
+    }
+
+    private void configureStatusBar() {
+        if (documentPathBreadcrumbs == null) {
+            return;
+        }
+
+        documentPathBreadcrumbs.setAutoNavigationEnabled(false);
+        documentPathBreadcrumbs.setFocusTraversable(false);
+        documentPathBreadcrumbs.setOnCrumbAction(this::handleBreadcrumbAction);
+        applyBreadcrumbBarVisibility(currentSettings.breadcrumbBarVisible(), false);
+        updateDocumentPathBreadcrumbs(getActiveDocument().orElse(null));
+    }
+
+    private void handleBreadcrumbAction(Breadcrumbs.BreadCrumbActionEvent<StatusBarSupport.BreadcrumbEntry> event) {
+        StatusBarSupport.BreadcrumbEntry entry = event == null || event.getSelectedCrumb() == null
+                ? null
+                : event.getSelectedCrumb().getValue();
+        if (entry == null || entry.path() == null) {
+            statusMessage("No project location available for this breadcrumb");
+            return;
+        }
+
+        revealPathInProjectTree(entry.path());
+    }
+
+    private void toggleBreadcrumbBarVisibility() {
+        boolean nextVisible = !currentSettings.breadcrumbBarVisible();
+        applyBreadcrumbBarVisibility(nextVisible, true);
+        applySettings(new EditorSettings(
+                currentSettings.theme(),
+                currentSettings.wrapText(),
+                currentSettings.diagnosticsEnabled(),
+                searchBarVisible,
+                projectExplorerVisible,
+                nextVisible,
+                currentSettings.commandPaletteShortcut(),
+                currentSettings.editorFontFamily(),
+                currentSettings.editorFontSize()
+        ), true);
+    }
+
+    private void applyBreadcrumbBarVisibility(boolean visible, boolean announce) {
+        if (statusPathRow == null) {
+            return;
+        }
+
+        statusPathRow.setManaged(visible);
+        statusPathRow.setVisible(visible);
+        if (announce) {
+            statusMessage(visible ? "Breadcrumb path shown" : "Breadcrumb path hidden");
+        }
+    }
+
+    private void updateDocumentPathBreadcrumbs(EditorDocument document) {
+        if (documentPathBreadcrumbs == null) {
+            return;
+        }
+
+        List<StatusBarSupport.BreadcrumbEntry> segments;
+        if (document == null) {
+            segments = List.of(new StatusBarSupport.BreadcrumbEntry("No document", null));
+        } else {
+            segments = StatusBarSupport.buildBreadcrumbEntries(
+                    workspaceRoot,
+                    document.getFilePath(),
+                    document.getDisplayName()
+            );
+        }
+        documentPathBreadcrumbs.setSelectedCrumb(Breadcrumbs.buildTreeModel(segments.toArray(StatusBarSupport.BreadcrumbEntry[]::new)));
     }
 
     private void updateCaretStatus(EditorDocument document) {
@@ -2148,9 +2238,11 @@ public class EditorController {
         }
 
         CodeArea codeArea = document.getCodeArea();
+        String text = codeArea.getText();
         int characters = codeArea.getLength();
         int lines = codeArea.getParagraphs().size();
-        documentStatusLabel.setText(document.getDisplayName() + " · " + lines + " lines · " + characters + " chars");
+        long utf8Bytes = StatusBarSupport.utf8Size(text);
+        documentStatusLabel.setText(StatusBarSupport.formatDocumentStatus(document.getDisplayName(), lines, characters, utf8Bytes));
     }
 
     private void updateLanguageStatus(EditorDocument document) {
@@ -2338,8 +2430,13 @@ public class EditorController {
 
     private void applySettings(EditorSettings settings, boolean persist) {
         currentSettings = settings;
+        searchBarVisible = settings.searchBarVisible();
+        projectExplorerVisible = settings.projectExplorerVisible();
         ThemeManager.apply(settings.theme(), rootStack);
         updateCommandPaletteShortcutPresentation();
+        applySearchBarVisibility(false, false);
+        applyProjectExplorerVisibility(false, false);
+        applyBreadcrumbBarVisibility(settings.breadcrumbBarVisible(), false);
         if (rootPane.getScene() != null) {
             installCommandPaletteAccelerator(rootPane.getScene());
         }
@@ -2348,16 +2445,11 @@ public class EditorController {
             applyEditorFontSettings(document.getCodeArea());
             analyzeDocument(document);
         });
-        updateThemeLabel();
         updateEditorState(getActiveDocument().orElse(null));
 
         if (persist) {
             SettingsManager.save(settings);
         }
-    }
-
-    private void updateThemeLabel() {
-        themeStatusLabel.setText("Theme: " + currentSettings.theme().getDisplayName());
     }
 
     private void applyEditorFontSettings(CodeArea codeArea) {
@@ -2375,8 +2467,15 @@ public class EditorController {
         if (!searchBarVisible) {
             searchBarVisible = true;
             applySearchBarVisibility(false, true);
+            persistShellVisibilitySettings();
         }
         Platform.runLater(searchField::requestFocus);
+    }
+
+    private void toggleSearchBarVisibility() {
+        searchBarVisible = !searchBarVisible;
+        applySearchBarVisibility(true, true);
+        persistShellVisibilitySettings();
     }
 
     private void applySearchBarVisibility(boolean announce, boolean animate) {
@@ -2400,7 +2499,6 @@ public class EditorController {
                 searchBar.setPrefHeight(0);
                 searchBar.setMaxHeight(0);
             }
-            updateVisibilityIndicators();
             if (announce) {
                 statusMessage(searchBarVisible ? "Search bar shown" : "Search bar hidden");
             }
@@ -2425,12 +2523,12 @@ public class EditorController {
                             new KeyValue(searchBar.prefHeightProperty(), searchBarExpandedHeight),
                             new KeyValue(searchBar.maxHeightProperty(), searchBarExpandedHeight))
             );
-            searchBarAnimation.setOnFinished(event -> {
+            searchBarAnimation.setOnFinished(event -> handleEvent(event, () -> {
                 searchBar.setMinHeight(Region.USE_COMPUTED_SIZE);
                 searchBar.setPrefHeight(Region.USE_COMPUTED_SIZE);
                 searchBar.setMaxHeight(Region.USE_COMPUTED_SIZE);
                 captureSearchBarExpandedHeight();
-            });
+            }));
         } else {
             double startHeight = Math.max(searchBar.getHeight(), computeSearchBarExpandedHeight());
             searchBar.setManaged(true);
@@ -2445,16 +2543,15 @@ public class EditorController {
                             new KeyValue(searchBar.prefHeightProperty(), 0),
                             new KeyValue(searchBar.maxHeightProperty(), 0))
             );
-            searchBarAnimation.setOnFinished(event -> {
+            searchBarAnimation.setOnFinished(event -> handleEvent(event, () -> {
                 searchBar.setManaged(false);
                 searchBar.setVisible(false);
                 searchBar.setMinHeight(0);
                 searchBar.setPrefHeight(0);
                 searchBar.setMaxHeight(0);
-            });
+            }));
         }
 
-        updateVisibilityIndicators();
         if (announce) {
             statusMessage(searchBarVisible ? "Search bar shown" : "Search bar hidden");
         }
@@ -2494,7 +2591,6 @@ public class EditorController {
                 projectExplorerPane.setMaxWidth(0);
                 centerSplitPane.getItems().remove(projectExplorerPane);
             }
-            updateVisibilityIndicators();
             if (announce) {
                 statusMessage(projectExplorerVisible ? "Project explorer shown" : "Project explorer hidden");
             }
@@ -2515,12 +2611,12 @@ public class EditorController {
                 }
                 Timeline animation = new Timeline(buildProjectExplorerKeyFrames(true));
                 projectExplorerAnimation = animation;
-                animation.setOnFinished(event -> {
+                animation.setOnFinished(event -> handleEvent(event, () -> {
                     projectExplorerPane.setMinWidth(expandedExplorerMinWidth);
                     projectExplorerPane.setPrefWidth(expandedExplorerPrefWidth);
                     projectExplorerPane.setMaxWidth(Region.USE_COMPUTED_SIZE);
                     projectExplorerPane.setOpacity(1);
-                });
+                }));
                 animation.playFromStart();
             });
         } else {
@@ -2533,7 +2629,7 @@ public class EditorController {
             projectExplorerPane.setVisible(true);
             Timeline animation = new Timeline(buildProjectExplorerKeyFrames(false));
             projectExplorerAnimation = animation;
-            animation.setOnFinished(event -> {
+            animation.setOnFinished(event -> handleEvent(event, () -> {
                 projectExplorerPane.setVisible(false);
                 projectExplorerPane.setManaged(false);
                 projectExplorerPane.setOpacity(0);
@@ -2541,14 +2637,34 @@ public class EditorController {
                 projectExplorerPane.setPrefWidth(0);
                 projectExplorerPane.setMaxWidth(0);
                 centerSplitPane.getItems().remove(projectExplorerPane);
-            });
+            }));
             animation.playFromStart();
         }
 
-        updateVisibilityIndicators();
         if (announce) {
             statusMessage(projectExplorerVisible ? "Project explorer shown" : "Project explorer hidden");
         }
+    }
+
+    private void toggleProjectExplorerVisibility() {
+        projectExplorerVisible = !projectExplorerVisible;
+        applyProjectExplorerVisibility(true, true);
+        persistShellVisibilitySettings();
+    }
+
+    private void persistShellVisibilitySettings() {
+        currentSettings = new EditorSettings(
+                currentSettings.theme(),
+                currentSettings.wrapText(),
+                currentSettings.diagnosticsEnabled(),
+                searchBarVisible,
+                projectExplorerVisible,
+                currentSettings.breadcrumbBarVisible(),
+                currentSettings.commandPaletteShortcut(),
+                currentSettings.editorFontFamily(),
+                currentSettings.editorFontSize()
+        );
+        SettingsManager.save(currentSettings);
     }
 
     private double sanitizedExplorerDividerPosition() {
@@ -2558,7 +2674,6 @@ public class EditorController {
     private void applyStatusBarVisibility(boolean announce) {
         statusBar.setManaged(statusBarVisible);
         statusBar.setVisible(statusBarVisible);
-        updateVisibilityIndicators();
         if (announce) {
             statusMessage(statusBarVisible ? "Status bar shown" : "Status bar hidden");
         }
@@ -2566,7 +2681,7 @@ public class EditorController {
 
     private void ensureProjectExplorerPresent() {
         if (!centerSplitPane.getItems().contains(projectExplorerPane)) {
-            centerSplitPane.getItems().add(0, projectExplorerPane);
+            centerSplitPane.getItems().addFirst(projectExplorerPane);
         }
     }
 
@@ -2599,20 +2714,6 @@ public class EditorController {
         return Math.max(44, Math.max(searchBar.getHeight(), searchBar.prefHeight(-1)));
     }
 
-    private void updateVisibilityIndicators() {
-        updateVisibilityIndicator(searchVisibilityIndicator, "Search", searchBarVisible);
-        updateVisibilityIndicator(explorerVisibilityIndicator, "Explorer", projectExplorerVisible);
-        updateVisibilityIndicator(statusVisibilityIndicator, "Status", statusBarVisible);
-    }
-
-    private void updateVisibilityIndicator(Label indicator, String name, boolean visible) {
-        if (indicator == null) {
-            return;
-        }
-        indicator.setText(name + (visible ? " On" : " Off"));
-        indicator.getStyleClass().removeAll("indicator-visible", "indicator-hidden");
-        indicator.getStyleClass().add(visible ? "indicator-visible" : "indicator-hidden");
-    }
 
     private void showCommandPalette() {
         hideVersionOverlay(false);
@@ -2699,6 +2800,9 @@ public class EditorController {
                 currentSettings,
                 pluginManager.getPluginsDirectory(),
                 languageServices.availableLanguagesSummary(),
+                languageServices.previewSpecs(),
+                this::analyzePreviewSpec,
+                this::reloadTextMateBundles,
                 this::previewThemeFromSettings,
                 settings -> {
                     applySettings(settings, true);
@@ -2739,7 +2843,6 @@ public class EditorController {
             settingsThemeBeforePreview = currentSettings.theme();
         }
         ThemeManager.apply(theme, rootStack);
-        themeStatusLabel.setText("Theme: " + theme.getDisplayName());
         settingsThemePreviewActive = !theme.equals(settingsThemeBeforePreview);
     }
 
@@ -2750,9 +2853,30 @@ public class EditorController {
             return;
         }
         ThemeManager.apply(settingsThemeBeforePreview, rootStack);
-        themeStatusLabel.setText("Theme: " + settingsThemeBeforePreview.getDisplayName());
         settingsThemeBeforePreview = null;
         settingsThemePreviewActive = false;
+    }
+
+    private void reloadTextMateBundles() {
+        languageServices.reloadTextMateBundles();
+        documentsByTab.values().forEach(this::analyzeDocument);
+        if (settingsOverlay != null && settingsOverlay.isVisible()) {
+            settingsController.updateSyntaxPreviewOptions(languageServices.previewSpecs(), languageServices.availableLanguagesSummary());
+        }
+        statusMessage("Reloaded TextMate bundles");
+    }
+
+    private LanguageAnalysis analyzePreviewSpec(LanguagePreviewSpec previewSpec) {
+        if (previewSpec == null) {
+            return LanguageAnalysis.plainText("");
+        }
+
+        LanguageService service = languageServices.resolve(previewSpec.samplePath());
+        try {
+            return service.analyze(previewSpec.sampleText());
+        } catch (RuntimeException exception) {
+            return LanguageAnalysis.plainText(previewSpec.sampleText());
+        }
     }
 
     private void exitApplication() {
@@ -3190,9 +3314,14 @@ public class EditorController {
 
     private void analyzeDocument(EditorDocument document) {
         LanguageService languageService = languageServices.resolve(document.getFilePath());
+        LanguageAnalysis analysis;
+        try {
+            analysis = languageService.analyze(document.getCodeArea().getText());
+        } catch (RuntimeException exception) {
+            languageService = PlainTextLanguageService.INSTANCE;
+            analysis = LanguageAnalysis.plainText(document.getCodeArea().getText());
+        }
         document.setLanguageService(languageService);
-
-        LanguageAnalysis analysis = languageService.analyze(document.getCodeArea().getText());
         document.setBaseHighlighting(analysis.highlighting());
         applyDocumentHighlighting(document);
         document.setDiagnosticsByLine(analysis.diagnostics().stream()
@@ -3266,6 +3395,7 @@ public class EditorController {
         workspaceRoot = root == null ? Path.of("").toAbsolutePath().normalize() : root.toAbsolutePath().normalize();
         workspaceRootLabel.setText(workspaceRoot.toString());
         refreshWorkspaceTree();
+        updateDocumentPathBreadcrumbs(getActiveDocument().orElse(null));
         if (refreshAndPersistMenus) {
             SessionManager.saveWorkspaceSession(buildCurrentSession());
         }
@@ -3357,11 +3487,39 @@ public class EditorController {
     }
 
     private void revealActiveDocumentInProjectTree(EditorDocument document) {
-        if (document == null || document.getFilePath() == null || workspaceRoot == null) {
+        if (document == null || document.getFilePath() == null) {
             return;
         }
-        if (!document.getFilePath().startsWith(workspaceRoot)) {
+
+        revealPathInProjectTree(document.getFilePath(), false, false);
+    }
+
+    private void revealPathInProjectTree(Path path) {
+        revealPathInProjectTree(path, true, true);
+    }
+
+    private void revealPathInProjectTree(Path path, boolean announceFailures, boolean allowShowingExplorer) {
+        if (path == null || workspaceRoot == null) {
             return;
+        }
+
+        Path normalizedPath = path.toAbsolutePath().normalize();
+        if (!normalizedPath.startsWith(workspaceRoot)) {
+            if (announceFailures) {
+                statusMessage("Breadcrumb target is outside the current workspace");
+            }
+            return;
+        }
+
+        if (!projectExplorerVisible) {
+            if (!allowShowingExplorer) {
+                return;
+            }
+            projectExplorerVisible = true;
+            applyProjectExplorerVisibility(false, true);
+            persistShellVisibilitySettings();
+        } else {
+            ensureProjectExplorerPresent();
         }
 
         TreeItem<Path> rootItem = projectTreeView.getRoot();
@@ -3369,8 +3527,11 @@ public class EditorController {
             return;
         }
 
-        TreeItem<Path> targetItem = findTreeItem(rootItem, document.getFilePath());
+        TreeItem<Path> targetItem = findTreeItem(rootItem, normalizedPath);
         if (targetItem == null) {
+            if (announceFailures) {
+                statusMessage("Could not reveal path in project explorer");
+            }
             return;
         }
 
@@ -3416,9 +3577,32 @@ public class EditorController {
         alert.initOwner(getWindow());
         alert.setTitle("Editora Error");
         alert.setHeaderText(header);
-        alert.setContentText(exception.getMessage());
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = exception.getClass().getSimpleName();
+        }
+        alert.setContentText(message);
         alert.showAndWait();
         statusMessage(header);
+    }
+
+    private void handleEvent(Event event, Runnable action) {
+        Objects.requireNonNull(event);
+        action.run();
+    }
+
+    private <T> ChangeListener<T> onChange(Runnable action) {
+        return (observable, previous, current) -> {
+            Objects.requireNonNull(observable);
+            action.run();
+        };
+    }
+
+    private <T> ChangeListener<T> onCurrentChange(java.util.function.Consumer<T> consumer) {
+        return (observable, previous, current) -> {
+            Objects.requireNonNull(observable);
+            consumer.accept(current);
+        };
     }
 
     private Window getWindow() {

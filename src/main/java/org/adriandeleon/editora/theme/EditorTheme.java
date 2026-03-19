@@ -20,7 +20,7 @@ public enum EditorTheme {
     CUPERTINO_DARK("Cupertino Dark", true, "theme-cupertino", new CupertinoDark().getUserAgentStylesheet()),
     DRACULA("Dracula", true, "theme-dracula", new Dracula().getUserAgentStylesheet());
 
-    private static final EditorTheme DEFAULT_THEME = PRIMER_DARK;
+    private static final EditorTheme DEFAULT_THEME = PRIMER_LIGHT;
 
     private final String displayName;
     private final boolean dark;

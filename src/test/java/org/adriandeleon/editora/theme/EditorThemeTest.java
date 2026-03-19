@@ -12,7 +12,12 @@ class EditorThemeTest {
     void mapsLegacyStoredValuesToPrimerThemes() {
         assertEquals(EditorTheme.PRIMER_LIGHT, EditorTheme.fromStoredValue("LIGHT"));
         assertEquals(EditorTheme.PRIMER_DARK, EditorTheme.fromStoredValue("DARK"));
-        assertEquals(EditorTheme.PRIMER_DARK, EditorTheme.fromStoredValue("broken"));
+        assertEquals(EditorTheme.PRIMER_LIGHT, EditorTheme.fromStoredValue("broken"));
+    }
+
+    @Test
+    void exposesPrimerLightAsTheDefaultTheme() {
+        assertEquals(EditorTheme.PRIMER_LIGHT, EditorTheme.defaultTheme());
     }
 
     @Test

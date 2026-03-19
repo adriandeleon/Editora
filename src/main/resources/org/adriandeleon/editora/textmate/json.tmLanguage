@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>JSON</string>
+    <key>scopeName</key>
+    <string>source.json</string>
+    <key>fileTypes</key>
+    <array>
+        <string>json</string>
+    </array>
+    <key>patterns</key>
+    <array>
+        <dict><key>include</key><string>#properties</string></dict>
+        <dict><key>include</key><string>#strings</string></dict>
+        <dict><key>include</key><string>#numbers</string></dict>
+        <dict><key>include</key><string>#constants</string></dict>
+        <dict><key>include</key><string>#punctuation</string></dict>
+    </array>
+    <key>repository</key>
+    <dict>
+        <key>properties</key>
+        <dict>
+            <key>name</key><string>entity.other.attribute-name.json</string>
+            <key>match</key><string>"(?:[^"\\]|\\.)*"(?=\s*:)</string>
+        </dict>
+        <key>strings</key>
+        <dict>
+            <key>name</key><string>string.quoted.double.json</string>
+            <key>match</key><string>"(?:[^"\\]|\\.)*"</string>
+        </dict>
+        <key>numbers</key>
+        <dict>
+            <key>name</key><string>constant.numeric.json</string>
+            <key>match</key><string>-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b</string>
+        </dict>
+        <key>constants</key>
+        <dict>
+            <key>name</key><string>constant.language.json</string>
+            <key>match</key><string>\b(?:true|false|null)\b</string>
+        </dict>
+        <key>punctuation</key>
+        <dict>
+            <key>name</key><string>punctuation.definition.json</string>
+            <key>match</key><string>[{}\[\],:]</string>
+        </dict>
+    </dict>
+</dict>
+</plist>
+

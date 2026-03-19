@@ -38,14 +38,6 @@ export PATH="$JAVA_HOME/bin:$PATH"
 - Prefer the shared run configuration: `Editora (Maven)`.
 - It launches the app through Maven (`javafx:run`), which uses the versions declared in `pom.xml`.
 
-If the IDE shows a startup stack trace mentioning:
-- `org.fxmisc.richtext@0.11.4`
-- `org.fxmisc.flowless@0.7.3`
-
-then the IDE is using a stale Application run configuration/classpath. The current project depends on:
-- `richtextfx 0.11.7`
-- `flowless 0.7.4`
-
 Use the shared Maven run configuration or reload the Maven project in the IDE before running again.
 
 ## Build the example plugin

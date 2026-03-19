@@ -1,0 +1,74 @@
+{
+  "name": "Java",
+  "scopeName": "source.java",
+  "fileTypes": ["java"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#annotations" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#types" },
+    { "include": "#functions" },
+    { "include": "#numbers" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.java",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.java",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.java",
+          "begin": "\"",
+          "end": "(?<!\\\\)\""
+        },
+        {
+          "name": "string.quoted.single.java",
+          "begin": "'",
+          "end": "(?<!\\\\)'"
+        }
+      ]
+    },
+    "annotations": {
+      "name": "storage.type.annotation.java",
+      "match": "@[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "keywords": {
+      "name": "keyword.control.java",
+      "match": "\\b(?:abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|package|private|protected|public|record|return|sealed|short|static|strictfp|super|switch|synchronized|this|throw|throws|transient|try|var|void|volatile|while|yield)\\b"
+    },
+    "constants": {
+      "name": "constant.language.java",
+      "match": "\\b(?:true|false|null)\\b"
+    },
+    "types": {
+      "name": "entity.name.type.java",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+    "functions": {
+      "name": "entity.name.function.java",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+    },
+    "numbers": {
+      "name": "constant.numeric.java",
+      "match": "\\b(?:0[xX][0-9A-Fa-f]+|\\d+(?:\\.\\d+)?)\\b"
+    },
+    "punctuation": {
+      "name": "punctuation.definition.java",
+      "match": "[()\\[\\]{}.,;]"
+    }
+  }
+}
+

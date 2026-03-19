@@ -49,4 +49,8 @@
 - Preserve the close-confirmation flow in `requestCloseDocument(...)` / `requestCloseAllDocuments()` when editing document lifecycle behavior.
 - Preserve `EditorController.initialize()` / `shutdown()` ordering so session restore happens before fallback tab creation and session save happens on exit.
 - If you add persisted workspace shell state, extend `WorkspaceSession`/`SessionManager` rather than creating new preference keys elsewhere.
+- Every setting/configuration should also have a UI in the settings overlay; extend `SettingsController` and `settings-view.fxml` for new settings.
+- Every setting/configuration should have a command palette action to toggle it; extend `CommandAction` and register the action for palette/menu visibility.
+- Every feature that operates on the active editor should be implemented as a `CommandAction` and operate on `getActiveDocument()`; avoid separate editor commands that require manual document passing.
+- Every feature that can have a Unit Test should have one; keep testable logic out of UI controllers and into testable services/utilities.
 - If you add new editor intelligence, route it through `LanguageServiceRegistry` and reuse the existing highlighting/diagnostic update path.
