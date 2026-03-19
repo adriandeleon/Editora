@@ -105,6 +105,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.regex.Matcher;
@@ -272,6 +275,9 @@ public class EditorController {
     private final ObservableList<Path> recentFiles = FXCollections.observableArrayList();
     private final ObservableList<FindFileSupport.Match> findFileResults = FXCollections.observableArrayList();
     private final Map<String, Integer> commandUsage = new HashMap<>();
+    private final ExecutorService analysisExecutor = Executors.newSingleThreadExecutor(
+            Thread.ofPlatform().daemon(true).name("editora-analysis-", 0).factory()
+    );
 
     private final PluginManager pluginManager = new PluginManager(Path.of("plugins"));
     private final LanguageServiceRegistry languageServices = LanguageServiceRegistry.getInstance();
@@ -306,6 +312,7 @@ public class EditorController {
     private boolean applyingFindFileHistory;
     private EditorTheme settingsThemeBeforePreview;
     private boolean settingsThemePreviewActive;
+    private volatile boolean shuttingDown;
 
     @FXML
     private void initialize() {
@@ -424,6 +431,8 @@ public class EditorController {
     }
 
     public void shutdown() {
+        shuttingDown = true;
+        analysisExecutor.shutdownNow();
         SessionManager.saveRecentFiles(recentFiles);
         SessionManager.saveWorkspaceSession(buildCurrentSession());
     }
@@ -3340,27 +3349,62 @@ public class EditorController {
     }
 
     private void analyzeDocument(EditorDocument document) {
-        LanguageService languageService = languageServices.resolve(document.getFilePath());
-        LanguageAnalysis analysis;
-        try {
-            analysis = languageService.analyze(document.getCodeArea().getText());
-        } catch (RuntimeException exception) {
-            languageService = PlainTextLanguageService.INSTANCE;
-            analysis = LanguageAnalysis.plainText(document.getCodeArea().getText());
+        if (shuttingDown) {
+            return;
         }
-        document.setLanguageService(languageService);
+
+        String text = document.getCodeArea().getText();
+        LanguageService languageService = languageServices.resolve(document.getFilePath());
+        long analysisRevision = document.nextAnalysisRevision();
+        try {
+            analysisExecutor.execute(() -> {
+                DocumentAnalysisResult result = analyzeText(languageService, text);
+                Platform.runLater(() -> applyDocumentAnalysis(document, analysisRevision, text, result));
+            });
+        } catch (RejectedExecutionException ignored) {
+            // Ignore late analysis requests during shutdown.
+        }
+    }
+
+    private DocumentAnalysisResult analyzeText(LanguageService languageService, String text) {
+        try {
+            return new DocumentAnalysisResult(languageService, languageService.analyze(text));
+        } catch (RuntimeException exception) {
+            return new DocumentAnalysisResult(PlainTextLanguageService.INSTANCE, LanguageAnalysis.plainText(text));
+        }
+    }
+
+    private void applyDocumentAnalysis(EditorDocument document,
+                                       long analysisRevision,
+                                       String analyzedText,
+                                       DocumentAnalysisResult result) {
+        if (shuttingDown
+                || !document.isAnalysisRevisionCurrent(analysisRevision)
+                || documentsByTab.get(document.getTab()) != document
+                || !Objects.equals(document.getCodeArea().getText(), analyzedText)) {
+            return;
+        }
+
+        LanguageAnalysis analysis = result.analysis();
+        int previousDiagnosticCount = document.getDiagnosticCount();
+        document.setLanguageService(result.languageService());
         document.setBaseHighlighting(analysis.highlighting());
         applyDocumentHighlighting(document);
         document.setDiagnosticsByLine(analysis.diagnostics().stream()
                 .collect(Collectors.groupingBy(Diagnostic::lineIndex, LinkedHashMap::new, Collectors.toList())));
 
-        IntFunction<Node> lineNumbers = LineNumberFactory.get(document.getCodeArea());
-        document.getCodeArea().setParagraphGraphicFactory(lineIndex -> createLineFringe(document, lineNumbers, lineIndex));
+        if (previousDiagnosticCount > 0 || !analysis.diagnostics().isEmpty()) {
+            IntFunction<Node> lineNumbers = LineNumberFactory.get(document.getCodeArea());
+            document.getCodeArea().setParagraphGraphicFactory(lineIndex -> createLineFringe(document, lineNumbers, lineIndex));
+        }
 
         if (getActiveDocument().filter(active -> active == document).isPresent()) {
             updateLanguageStatus(document);
             refreshSearchUi();
         }
+    }
+
+    private record DocumentAnalysisResult(LanguageService languageService, LanguageAnalysis analysis) {
     }
 
     private record SearchMatch(int start, int end) {

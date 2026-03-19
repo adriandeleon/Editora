@@ -67,6 +67,7 @@ public final class EditorDocument {
     private ScrollBar verticalScrollBar;
     private boolean miniMapVisible;
     private double miniMapRenderHeight;
+    private long analysisRevision;
 
     public EditorDocument(String untitledName,
                           CodeArea codeArea,
@@ -243,6 +244,14 @@ public final class EditorDocument {
 
     public int getDiagnosticCount() {
         return diagnosticsByLine.values().stream().mapToInt(List::size).sum();
+    }
+
+    public long nextAnalysisRevision() {
+        return ++analysisRevision;
+    }
+
+    public boolean isAnalysisRevisionCurrent(long analysisRevision) {
+        return this.analysisRevision == analysisRevision;
     }
 
     public String getDisplayName() {

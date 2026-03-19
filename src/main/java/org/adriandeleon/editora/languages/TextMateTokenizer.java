@@ -6,7 +6,9 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 
@@ -22,6 +24,7 @@ final class TextMateTokenizer {
         }
 
         ArrayDeque<Context> stack = new ArrayDeque<>();
+        Map<ExpansionKey, List<TextMateGrammar.Rule>> expansionCache = new HashMap<>();
         int position = 0;
         while (position < text.length()) {
             Context context = stack.peek();
@@ -30,7 +33,8 @@ final class TextMateTokenizer {
                     context == null ? grammar.patterns() : context.rule().patterns(),
                     text,
                     position,
-                    context == null ? Set.of() : Set.of(context.rule().name()));
+                    context == null ? Set.of() : Set.of(context.rule().name()),
+                    expansionCache);
 
             if (endCandidate != null && (nextCandidate == null || endCandidate.start() <= nextCandidate.start())) {
                 appendSpan(builder, context.contentStyles(), endCandidate.start() - position);
@@ -81,9 +85,10 @@ final class TextMateTokenizer {
                                                     List<TextMateGrammar.Rule> patterns,
                                                     String text,
                                                     int position,
-                                                    Set<String> includeStack) {
+                                                    Set<String> includeStack,
+                                                    Map<ExpansionKey, List<TextMateGrammar.Rule>> expansionCache) {
         MatchCandidate best = null;
-        for (TextMateGrammar.Rule rule : expandRules(grammar, patterns, includeStack)) {
+        for (TextMateGrammar.Rule rule : expandRules(grammar, patterns, includeStack, expansionCache)) {
             MatchCandidate candidate = switch (rule) {
                 case TextMateGrammar.MatchRule matchRule -> findCandidate(matchRule, matchRule.pattern().matcher(text), position);
                 case TextMateGrammar.BeginEndRule beginEndRule -> findCandidate(beginEndRule, beginEndRule.beginPattern().matcher(text), position);
@@ -101,13 +106,20 @@ final class TextMateTokenizer {
 
     private static List<TextMateGrammar.Rule> expandRules(TextMateGrammar grammar,
                                                           List<TextMateGrammar.Rule> patterns,
-                                                          Set<String> includeStack) {
+                                                          Set<String> includeStack,
+                                                          Map<ExpansionKey, List<TextMateGrammar.Rule>> expansionCache) {
+        ExpansionKey key = new ExpansionKey(patterns, includeStack);
+        List<TextMateGrammar.Rule> cached = expansionCache.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
         List<TextMateGrammar.Rule> expanded = new ArrayList<>();
         for (TextMateGrammar.Rule rule : patterns) {
             if (rule instanceof TextMateGrammar.IncludeRule includeRule) {
                 String include = includeRule.include();
                 if ("$self".equals(include) || "$base".equals(include)) {
-                    expanded.addAll(expandRules(grammar, grammar.patterns(), includeStack));
+                    expanded.addAll(expandRules(grammar, grammar.patterns(), includeStack, expansionCache));
                     continue;
                 }
                 if (include.startsWith("#")) {
@@ -115,7 +127,12 @@ final class TextMateTokenizer {
                     if (includeStack.contains(repositoryKey)) {
                         continue;
                     }
-                    expanded.addAll(expandRules(grammar, grammar.repository(repositoryKey), mergeIncludeStack(includeStack, repositoryKey)));
+                    expanded.addAll(expandRules(
+                            grammar,
+                            grammar.repository(repositoryKey),
+                            mergeIncludeStack(includeStack, repositoryKey),
+                            expansionCache
+                    ));
                 }
                 continue;
             }
@@ -123,7 +140,10 @@ final class TextMateTokenizer {
                 expanded.add(rule);
             }
         }
-        return expanded;
+
+        List<TextMateGrammar.Rule> resolved = List.copyOf(expanded);
+        expansionCache.put(key, resolved);
+        return resolved;
     }
 
     private static Set<String> mergeIncludeStack(Set<String> includeStack, String repositoryKey) {
@@ -144,6 +164,9 @@ final class TextMateTokenizer {
     }
 
     private record Context(TextMateGrammar.BeginEndRule rule, Collection<String> contentStyles) {
+    }
+
+    private record ExpansionKey(List<TextMateGrammar.Rule> patterns, Set<String> includeStack) {
     }
 
     private record MatchCandidate(TextMateGrammar.Rule rule, int start, int end) {
