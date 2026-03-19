@@ -1,11 +1,15 @@
 package org.adriandeleon.editora.languages;
 
 import java.util.Collection;
+import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 
 final class TextMateScopeStyleMapper {
+    private static final Map<String, Collection<String>> CACHE = new ConcurrentHashMap<>();
+
     private TextMateScopeStyleMapper() {
     }
 
@@ -14,6 +18,10 @@ final class TextMateScopeStyleMapper {
             return List.of();
         }
 
+        return CACHE.computeIfAbsent(scopeName, TextMateScopeStyleMapper::computeStyles);
+    }
+
+    private static Collection<String> computeStyles(String scopeName) {
         String scope = scopeName.toLowerCase(Locale.ROOT);
         LinkedHashSet<String> styles = new LinkedHashSet<>();
 

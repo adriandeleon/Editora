@@ -48,7 +48,7 @@
                                 <Tooltip text="New Tab (⌘T)"/>
                             </tooltip>
                         </Button>
-                        <Button mnemonicParsing="false" onAction="#onOpenFile" styleClass="toolbar-icon-button">
+                        <Button fx:id="openFileToolbarButton" mnemonicParsing="false" onAction="#onOpenFile" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-folder2-open" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
@@ -56,7 +56,7 @@
                                 <Tooltip text="Open File (⌘O)"/>
                             </tooltip>
                         </Button>
-                        <Button mnemonicParsing="false" onAction="#onSaveFile" styleClass="toolbar-icon-button">
+                        <Button fx:id="saveFileToolbarButton" mnemonicParsing="false" onAction="#onSaveFile" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-save2" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
@@ -64,7 +64,7 @@
                                 <Tooltip text="Save File (⌘S)"/>
                             </tooltip>
                         </Button>
-                        <Button mnemonicParsing="false" onAction="#onSaveFileAs" styleClass="toolbar-icon-button">
+                        <Button fx:id="saveFileAsToolbarButton" mnemonicParsing="false" onAction="#onSaveFileAs" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-save" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
@@ -130,7 +130,7 @@
                             </tooltip>
                         </Button>
                         <Separator orientation="VERTICAL"/>
-                        <Button mnemonicParsing="false" onAction="#onShowCommandPalette" styleClass="toolbar-icon-button">
+                        <Button fx:id="commandPaletteToolbarButton" mnemonicParsing="false" onAction="#onShowCommandPalette" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-terminal" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
@@ -138,7 +138,7 @@
                                 <Tooltip fx:id="commandPaletteToolbarTooltip" text="Command Palette (⌥X)"/>
                             </tooltip>
                         </Button>
-                        <Button mnemonicParsing="false" onAction="#onToggleSearchBar" styleClass="toolbar-icon-button">
+                        <Button fx:id="searchToolbarButton" mnemonicParsing="false" onAction="#onToggleSearchBar" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-search" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
@@ -146,7 +146,7 @@
                                 <Tooltip text="Toggle Search (⌥⌘F)"/>
                             </tooltip>
                         </Button>
-                        <Button mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="toolbar-icon-button">
+                        <Button fx:id="projectExplorerToolbarButton" mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-files" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
@@ -154,7 +154,7 @@
                                 <Tooltip text="Toggle Project Explorer (⌥⌘E)"/>
                             </tooltip>
                         </Button>
-                        <Button mnemonicParsing="false" onAction="#onToggleStatusBar" styleClass="toolbar-icon-button">
+                        <Button fx:id="statusBarToolbarButton" mnemonicParsing="false" onAction="#onToggleStatusBar" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-info-circle" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
@@ -162,7 +162,7 @@
                                 <Tooltip text="Toggle Status Bar (⌥⌘B)"/>
                             </tooltip>
                         </Button>
-                        <Button mnemonicParsing="false" onAction="#onShowSettings" styleClass="toolbar-icon-button">
+                        <Button fx:id="settingsToolbarButton" mnemonicParsing="false" onAction="#onShowSettings" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-gear" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>

@@ -6,6 +6,7 @@ import javafx.geometry.Orientation;
 import org.adriandeleon.editora.languages.Diagnostic;
 import org.adriandeleon.editora.languages.LanguageService;
 import org.adriandeleon.editora.editor.MiniMapSupport;
+import org.adriandeleon.editora.editor.ProgressiveHighlightSupport;
 import org.kordamp.ikonli.javafx.FontIcon;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
@@ -24,7 +25,9 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -68,6 +71,11 @@ public final class EditorDocument {
     private boolean miniMapVisible;
     private double miniMapRenderHeight;
     private long analysisRevision;
+    private long progressiveHighlightRevision;
+    private boolean progressiveHighlightingActive;
+    private final List<HighlightRange> completedHighlightRanges = new ArrayList<>();
+    private final List<HighlightRange> pendingHighlightRanges = new ArrayList<>();
+    private ProgressiveHighlightSupport.ParagraphWindow lastVisibleViewportParagraphWindow;
 
     public EditorDocument(String untitledName,
                           CodeArea codeArea,
@@ -252,6 +260,119 @@ public final class EditorDocument {
 
     public boolean isAnalysisRevisionCurrent(long analysisRevision) {
         return this.analysisRevision == analysisRevision;
+    }
+
+    public long getAnalysisRevision() {
+        return analysisRevision;
+    }
+
+    public void beginProgressiveHighlighting(long analysisRevision) {
+        progressiveHighlightingActive = true;
+        progressiveHighlightRevision = analysisRevision;
+        completedHighlightRanges.clear();
+        pendingHighlightRanges.clear();
+        lastVisibleViewportParagraphWindow = null;
+    }
+
+    public void clearProgressiveHighlighting() {
+        progressiveHighlightingActive = false;
+        progressiveHighlightRevision = 0L;
+        completedHighlightRanges.clear();
+        pendingHighlightRanges.clear();
+        lastVisibleViewportParagraphWindow = null;
+    }
+
+    public boolean isProgressiveHighlightingActive() {
+        return progressiveHighlightingActive;
+    }
+
+    public ProgressiveHighlightSupport.HighlightWindow claimProgressiveHighlightWindow(long analysisRevision,
+                                                                                       ProgressiveHighlightSupport.HighlightWindow desiredWindow) {
+        if (!progressiveHighlightingActive || progressiveHighlightRevision != analysisRevision || desiredWindow == null) {
+            return null;
+        }
+
+        int normalizedStart = Math.max(0, Math.min(desiredWindow.startOffset(), codeArea.getLength()));
+        int normalizedEnd = Math.max(normalizedStart, Math.min(desiredWindow.endOffset(), codeArea.getLength()));
+        HighlightRange uncovered = firstUncoveredRange(normalizedStart, normalizedEnd);
+        if (uncovered == null) {
+            return null;
+        }
+
+        pendingHighlightRanges.add(uncovered);
+        return new ProgressiveHighlightSupport.HighlightWindow(
+                uncovered.start(),
+                uncovered.end(),
+                desiredWindow.startParagraph(),
+                desiredWindow.endParagraphExclusive()
+        );
+    }
+
+    public void completeProgressiveHighlightRange(long analysisRevision, int start, int end) {
+        if (progressiveHighlightRevision != analysisRevision) {
+            return;
+        }
+        pendingHighlightRanges.removeIf(range -> range.start() == start && range.end() == end);
+        mergeHighlightRange(completedHighlightRanges, new HighlightRange(start, end));
+    }
+
+    public void abandonProgressiveHighlightRange(long analysisRevision, int start, int end) {
+        if (progressiveHighlightRevision != analysisRevision) {
+            return;
+        }
+        pendingHighlightRanges.removeIf(range -> range.start() == start && range.end() == end);
+    }
+
+    public int getParagraphCount() {
+        return Math.max(1, codeArea.getParagraphs().size());
+    }
+
+    public ProgressiveHighlightSupport.ParagraphWindow visibleParagraphWindow(int bufferParagraphs, int fallbackVisibleParagraphs) {
+        int paragraphCount = Math.max(1, codeArea.getParagraphs().size());
+        int visibleParagraphCount = codeArea.getVisibleParagraphs().size();
+        int firstVisibleParagraph = visibleParagraphCount > 0 ? codeArea.visibleParToAllParIndex(0) : 0;
+        return ProgressiveHighlightSupport.windowAroundVisibleParagraphs(
+                firstVisibleParagraph,
+                visibleParagraphCount,
+                paragraphCount,
+                bufferParagraphs,
+                fallbackVisibleParagraphs
+        );
+    }
+
+    public ProgressiveHighlightSupport.ViewportMotion updateViewportMotion(ProgressiveHighlightSupport.ParagraphWindow viewportParagraphWindow) {
+        ProgressiveHighlightSupport.ViewportMotion motion = ProgressiveHighlightSupport.inferViewportMotion(
+                lastVisibleViewportParagraphWindow,
+                viewportParagraphWindow
+        );
+        lastVisibleViewportParagraphWindow = viewportParagraphWindow;
+        return motion;
+    }
+
+    public ProgressiveHighlightSupport.HighlightWindow highlightWindowForParagraphs(ProgressiveHighlightSupport.ParagraphWindow paragraphWindow) {
+        int paragraphCount = getParagraphCount();
+        int startOffset = codeArea.getAbsolutePosition(paragraphWindow.startParagraph(), 0);
+        int endOffset = paragraphWindow.endParagraphExclusive() >= paragraphCount
+                ? codeArea.getLength()
+                : codeArea.getAbsolutePosition(paragraphWindow.endParagraphExclusive(), 0);
+        return new ProgressiveHighlightSupport.HighlightWindow(
+                startOffset,
+                endOffset,
+                paragraphWindow.startParagraph(),
+                paragraphWindow.endParagraphExclusive()
+        );
+    }
+
+    public ProgressiveHighlightSupport.HighlightWindow visibleHighlightWindow(int bufferParagraphs, int fallbackVisibleParagraphs) {
+        return highlightWindowForParagraphs(visibleParagraphWindow(bufferParagraphs, fallbackVisibleParagraphs));
+    }
+
+    public void resetViewToTop() {
+        codeArea.moveTo(0);
+        Platform.runLater(() -> {
+            codeArea.moveTo(0);
+            codeArea.showParagraphAtTop(0);
+        });
     }
 
     public String getDisplayName() {
@@ -494,6 +615,51 @@ public final class EditorDocument {
 
     private double miniMapContentWidth() {
         return Math.max(24d, miniMapHost.getWidth() - miniMapContentX() - miniMapContentRightInset());
+    }
+
+    private HighlightRange firstUncoveredRange(int start, int end) {
+        if (end <= start) {
+            return null;
+        }
+
+        List<HighlightRange> blockedRanges = new ArrayList<>(completedHighlightRanges.size() + pendingHighlightRanges.size());
+        blockedRanges.addAll(completedHighlightRanges);
+        blockedRanges.addAll(pendingHighlightRanges);
+        blockedRanges.sort(Comparator.comparingInt(HighlightRange::start).thenComparingInt(HighlightRange::end));
+
+        int cursor = start;
+        for (HighlightRange blocked : blockedRanges) {
+            if (blocked.end() <= cursor) {
+                continue;
+            }
+            if (blocked.start() > cursor) {
+                return new HighlightRange(cursor, Math.min(end, blocked.start()));
+            }
+            cursor = Math.max(cursor, blocked.end());
+            if (cursor >= end) {
+                return null;
+            }
+        }
+        return new HighlightRange(cursor, end);
+    }
+
+    private void mergeHighlightRange(List<HighlightRange> ranges, HighlightRange addition) {
+        int mergedStart = addition.start();
+        int mergedEnd = addition.end();
+        for (int index = 0; index < ranges.size(); ) {
+            HighlightRange current = ranges.get(index);
+            if (current.end() < mergedStart || current.start() > mergedEnd) {
+                index++;
+                continue;
+            }
+            mergedStart = Math.min(mergedStart, current.start());
+            mergedEnd = Math.max(mergedEnd, current.end());
+            ranges.remove(index);
+        }
+        ranges.add(new HighlightRange(mergedStart, mergedEnd));
+    }
+
+    private record HighlightRange(int start, int end) {
     }
 }
 

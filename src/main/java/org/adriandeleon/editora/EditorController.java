@@ -3,9 +3,11 @@ package org.adriandeleon.editora;
 import atlantafx.base.controls.Breadcrumbs;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
+import javafx.animation.PauseTransition;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
+import javafx.css.PseudoClass;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.event.Event;
@@ -59,6 +61,7 @@ import org.adriandeleon.editora.documents.EditorDocument;
 import org.adriandeleon.editora.editor.EmacsEditing;
 import org.adriandeleon.editora.editor.EmacsNavigation;
 import org.adriandeleon.editora.editor.FindFileSupport;
+import org.adriandeleon.editora.editor.ProgressiveHighlightSupport;
 import org.adriandeleon.editora.languages.Diagnostic;
 import org.adriandeleon.editora.languages.DiagnosticSeverity;
 import org.adriandeleon.editora.languages.LanguageAnalysis;
@@ -122,6 +125,8 @@ public class EditorController {
     private static final int MAX_FIND_FILE_HISTORY = 25;
     private static final int MAX_FIND_FILE_PREVIEW_LINES = 60;
     private static final int MAX_FIND_FILE_PREVIEW_CHARACTERS = 4_000;
+    private static final PseudoClass TOOLBAR_ACTIVE_PSEUDO_CLASS = PseudoClass.getPseudoClass("toolbar-active");
+    private static final javafx.util.Duration TOOLBAR_CLICK_FEEDBACK_DURATION = javafx.util.Duration.millis(220);
     private static final String APPLICATION_NAME = "Editora";
     private static final String APPLICATION_VERSION = Optional.ofNullable(EditoraApplication.class.getPackage().getImplementationVersion())
             .orElse("1.0-SNAPSHOT");
@@ -212,6 +217,30 @@ public class EditorController {
     private Button pasteButton;
 
     @FXML
+    private Button openFileToolbarButton;
+
+    @FXML
+    private Button saveFileToolbarButton;
+
+    @FXML
+    private Button saveFileAsToolbarButton;
+
+    @FXML
+    private Button commandPaletteToolbarButton;
+
+    @FXML
+    private Button searchToolbarButton;
+
+    @FXML
+    private Button projectExplorerToolbarButton;
+
+    @FXML
+    private Button statusBarToolbarButton;
+
+    @FXML
+    private Button settingsToolbarButton;
+
+    @FXML
     private StackPane commandPaletteOverlay;
 
     @FXML
@@ -275,6 +304,7 @@ public class EditorController {
     private final ObservableList<Path> recentFiles = FXCollections.observableArrayList();
     private final ObservableList<FindFileSupport.Match> findFileResults = FXCollections.observableArrayList();
     private final Map<String, Integer> commandUsage = new HashMap<>();
+    private final Map<Button, PauseTransition> toolbarClickFeedback = new HashMap<>();
     private final ExecutorService analysisExecutor = Executors.newSingleThreadExecutor(
             Thread.ofPlatform().daemon(true).name("editora-analysis-", 0).factory()
     );
@@ -415,6 +445,7 @@ public class EditorController {
         applySearchBarVisibility(false, false);
         applyProjectExplorerVisibility(false, false);
         applyStatusBarVisibility(false);
+        syncToolbarButtonStates();
         updateEditorState(getActiveDocument().orElse(null));
         Platform.runLater(this::captureSearchBarExpandedHeight);
         statusMessage(restored ? "Restored previous session" : "Ready");
@@ -473,6 +504,7 @@ public class EditorController {
 
     @FXML
     private void onOpenFile() {
+        animateToolbarClick(openFileToolbarButton);
         FileChooser chooser = createFileChooser("Open File", getActiveDocument().orElse(null));
         var selectedFile = chooser.showOpenDialog(getWindow());
         if (selectedFile != null) {
@@ -503,11 +535,13 @@ public class EditorController {
 
     @FXML
     private void onSaveFile() {
+        animateToolbarClick(saveFileToolbarButton);
         saveActiveDocument(false);
     }
 
     @FXML
     private void onSaveFileAs() {
+        animateToolbarClick(saveFileAsToolbarButton);
         saveActiveDocument(true);
     }
 
@@ -1462,6 +1496,7 @@ public class EditorController {
         codeArea.setWrapText(currentSettings.wrapText());
         applyEditorFontSettings(codeArea);
         codeArea.replaceText(initialText);
+        codeArea.moveTo(0);
 
         String untitledName = filePath == null ? "Untitled " + untitledCounter++ : filePath.getFileName().toString();
         EditorDocument document = new EditorDocument(
@@ -1490,6 +1525,9 @@ public class EditorController {
         codeArea.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> analyzeDocument(document));
+        codeArea.viewportDirtyEvents()
+                .successionEnds(Duration.ofMillis(90))
+                .subscribe(ignore -> requestProgressiveHighlighting(document));
 
         codeArea.textProperty().addListener(onChange(() -> {
             document.clearNavigationGoalColumn();
@@ -1849,6 +1887,7 @@ public class EditorController {
         if (select) {
             editorTabPane.getSelectionModel().select(tab);
             document.getCodeArea().requestFocus();
+            document.resetViewToTop();
             updateEditorState(document);
         }
         if (findFileOverlay != null && findFileOverlay.isVisible()) {
@@ -2160,6 +2199,7 @@ public class EditorController {
         updateLanguageStatus(document);
         revealActiveDocumentInProjectTree(document);
         refreshSearchUi();
+        requestProgressiveHighlighting(document);
     }
 
     private void configureStatusBar() {
@@ -2463,6 +2503,7 @@ public class EditorController {
             applyEditorFontSettings(document.getCodeArea());
             analyzeDocument(document);
         });
+        syncToolbarButtonStates();
         updateEditorState(getActiveDocument().orElse(null));
 
         if (persist) {
@@ -2520,6 +2561,7 @@ public class EditorController {
             if (announce) {
                 statusMessage(searchBarVisible ? "Search bar shown" : "Search bar hidden");
             }
+            syncToolbarButtonStates();
             return;
         }
 
@@ -2574,6 +2616,7 @@ public class EditorController {
             statusMessage(searchBarVisible ? "Search bar shown" : "Search bar hidden");
         }
         searchBarAnimation.playFromStart();
+        syncToolbarButtonStates();
     }
 
     private void applyProjectExplorerVisibility(boolean announce, boolean animate) {
@@ -2612,6 +2655,7 @@ public class EditorController {
             if (announce) {
                 statusMessage(projectExplorerVisible ? "Project explorer shown" : "Project explorer hidden");
             }
+            syncToolbarButtonStates();
             return;
         }
 
@@ -2662,6 +2706,7 @@ public class EditorController {
         if (announce) {
             statusMessage(projectExplorerVisible ? "Project explorer shown" : "Project explorer hidden");
         }
+        syncToolbarButtonStates();
     }
 
     private void toggleProjectExplorerVisibility() {
@@ -2710,6 +2755,7 @@ public class EditorController {
     private void applyStatusBarVisibility(boolean announce) {
         statusBar.setManaged(statusBarVisible);
         statusBar.setVisible(statusBarVisible);
+        syncToolbarButtonStates();
         if (announce) {
             statusMessage(statusBarVisible ? "Status bar shown" : "Status bar hidden");
         }
@@ -2758,6 +2804,7 @@ public class EditorController {
         updateCommandPaletteShortcutPresentation();
         commandPaletteOverlay.setManaged(true);
         commandPaletteOverlay.setVisible(true);
+        syncToolbarButtonStates();
         commandPaletteField.setText(lastCommandPaletteFilter);
         filterCommands(lastCommandPaletteFilter);
         if (!paletteResults.isEmpty()) {
@@ -2772,6 +2819,7 @@ public class EditorController {
     private void hideCommandPalette() {
         commandPaletteOverlay.setVisible(false);
         commandPaletteOverlay.setManaged(false);
+        syncToolbarButtonStates();
         getActiveDocument().ifPresent(document -> document.getCodeArea().requestFocus());
     }
 
@@ -2851,6 +2899,7 @@ public class EditorController {
         );
         settingsOverlay.setManaged(true);
         settingsOverlay.setVisible(true);
+        syncToolbarButtonStates();
         settingsController.focusPrimaryControl();
     }
 
@@ -2869,6 +2918,32 @@ public class EditorController {
         }
         settingsOverlay.setVisible(false);
         settingsOverlay.setManaged(false);
+        syncToolbarButtonStates();
+    }
+
+    private void animateToolbarClick(Button button) {
+        if (button == null) {
+            return;
+        }
+        setToolbarButtonActive(button, true);
+        PauseTransition transition = toolbarClickFeedback.computeIfAbsent(button, ignored -> new PauseTransition(TOOLBAR_CLICK_FEEDBACK_DURATION));
+        transition.stop();
+        transition.setOnFinished(event -> handleEvent(event, () -> setToolbarButtonActive(button, false)));
+        transition.playFromStart();
+    }
+
+    private void syncToolbarButtonStates() {
+        setToolbarButtonActive(commandPaletteToolbarButton, commandPaletteOverlay != null && commandPaletteOverlay.isVisible());
+        setToolbarButtonActive(searchToolbarButton, searchBarVisible);
+        setToolbarButtonActive(projectExplorerToolbarButton, projectExplorerVisible);
+        setToolbarButtonActive(statusBarToolbarButton, statusBarVisible);
+        setToolbarButtonActive(settingsToolbarButton, settingsOverlay != null && settingsOverlay.isVisible());
+    }
+
+    private void setToolbarButtonActive(Button button, boolean active) {
+        if (button != null) {
+            button.pseudoClassStateChanged(TOOLBAR_ACTIVE_PSEUDO_CLASS, active);
+        }
     }
 
     private void previewThemeFromSettings(EditorTheme theme) {
@@ -3175,11 +3250,41 @@ public class EditorController {
             document.setBaseHighlighting(baseHighlighting);
         }
 
+        if (matches.isEmpty()) {
+            document.getCodeArea().setStyleSpans(0, baseHighlighting);
+            return;
+        }
+
         StyleSpans<Collection<String>> mergedHighlighting = baseHighlighting.overlay(
                 buildSearchHighlighting(text, matches, currentMatchIndex(document.getCodeArea(), matches)),
                 this::mergeStyleClasses
         );
         document.getCodeArea().setStyleSpans(0, mergedHighlighting);
+    }
+
+    private void applyHighlightRange(EditorDocument document, int startOffset, StyleSpans<Collection<String>> highlighting) {
+        if (document == null || highlighting == null) {
+            return;
+        }
+        if (document == getActiveDocument().orElse(null) && !normalizedSearchQuery().isBlank()) {
+            refreshSearchUi();
+            return;
+        }
+        document.getCodeArea().setStyleSpans(startOffset, highlighting);
+    }
+
+    private StyleSpans<Collection<String>> replaceHighlightRange(StyleSpans<Collection<String>> current,
+                                                                 int start,
+                                                                 int end,
+                                                                 StyleSpans<Collection<String>> replacement) {
+        int normalizedStart = Math.max(0, Math.min(start, current.length()));
+        int normalizedEnd = Math.max(normalizedStart, Math.min(end, current.length()));
+        StyleSpans<Collection<String>> result = normalizedStart > 0
+                ? current.subView(0, normalizedStart).concat(replacement)
+                : replacement;
+        return normalizedEnd < current.length()
+                ? result.concat(current.subView(normalizedEnd, current.length()))
+                : result;
     }
 
     private SearchComputation computeSearch(EditorDocument document) {
@@ -3356,6 +3461,12 @@ public class EditorController {
         String text = document.getCodeArea().getText();
         LanguageService languageService = languageServices.resolve(document.getFilePath());
         long analysisRevision = document.nextAnalysisRevision();
+        if (languageService.supportsProgressiveHighlighting(text)) {
+            startProgressiveHighlighting(document, languageService, analysisRevision, text);
+            return;
+        }
+
+        document.clearProgressiveHighlighting();
         try {
             analysisExecutor.execute(() -> {
                 DocumentAnalysisResult result = analyzeText(languageService, text);
@@ -3374,6 +3485,129 @@ public class EditorController {
         }
     }
 
+    private void startProgressiveHighlighting(EditorDocument document,
+                                              LanguageService languageService,
+                                              long analysisRevision,
+                                              String text) {
+        document.beginProgressiveHighlighting(analysisRevision);
+        document.setLanguageService(languageService);
+        document.setDiagnosticsByLine(Map.of());
+        StyleSpans<Collection<String>> plainHighlighting = LanguageAnalysis.plainText(text).highlighting();
+        document.setBaseHighlighting(plainHighlighting);
+        applyHighlightRange(document, 0, plainHighlighting);
+        if (getActiveDocument().filter(active -> active == document).isPresent()) {
+            updateLanguageStatus(document);
+        }
+        requestProgressiveHighlighting(document);
+    }
+
+    private void requestProgressiveHighlighting(EditorDocument document) {
+        if (document == null || shuttingDown || !document.isProgressiveHighlightingActive()) {
+            return;
+        }
+        if (getActiveDocument().filter(active -> active == document).isEmpty()) {
+            return;
+        }
+
+        String text = document.getCodeArea().getText();
+        long analysisRevision = document.getAnalysisRevision();
+        ProgressiveHighlightSupport.ParagraphWindow viewportParagraphWindow = document.visibleParagraphWindow(
+                0,
+                ProgressiveHighlightSupport.FALLBACK_VISIBLE_PARAGRAPHS
+        );
+        ProgressiveHighlightSupport.ViewportMotion viewportMotion = document.updateViewportMotion(viewportParagraphWindow);
+        ProgressiveHighlightSupport.ParagraphWindow visibleParagraphWindow = document.visibleParagraphWindow(
+                ProgressiveHighlightSupport.VISIBLE_BUFFER_PARAGRAPHS,
+                ProgressiveHighlightSupport.FALLBACK_VISIBLE_PARAGRAPHS
+        );
+        int forwardPrefetchParagraphs = ProgressiveHighlightSupport.adaptiveForwardPrefetchParagraphs(
+                ProgressiveHighlightSupport.PREFETCH_MIN_PARAGRAPHS,
+                viewportParagraphWindow,
+                viewportMotion
+        );
+        ProgressiveHighlightSupport.HighlightWindow window = document.claimProgressiveHighlightWindow(
+                analysisRevision,
+                document.highlightWindowForParagraphs(visibleParagraphWindow)
+        );
+        if (window == null) {
+            for (ProgressiveHighlightSupport.ParagraphWindow neighborWindow : ProgressiveHighlightSupport.neighboringParagraphWindows(
+                    visibleParagraphWindow,
+                    document.getParagraphCount(),
+                    ProgressiveHighlightSupport.PREFETCH_MIN_PARAGRAPHS,
+                    forwardPrefetchParagraphs,
+                    viewportMotion.direction()
+            )) {
+                window = document.claimProgressiveHighlightWindow(
+                        analysisRevision,
+                        document.highlightWindowForParagraphs(neighborWindow)
+                );
+                if (window != null) {
+                    break;
+                }
+            }
+        }
+        if (window == null) {
+            return;
+        }
+
+        final EditorDocument targetDocument = document;
+        final String analyzedText = text;
+        final long currentAnalysisRevision = analysisRevision;
+        final LanguageService rangeLanguageService = document.getLanguageService();
+        final ProgressiveHighlightSupport.HighlightWindow claimedWindow = window;
+        try {
+            analysisExecutor.execute(() -> {
+                StyleSpans<Collection<String>> highlighting = analyzeHighlightRange(
+                        rangeLanguageService,
+                        analyzedText,
+                        claimedWindow.startOffset(),
+                        claimedWindow.endOffset()
+                );
+                Platform.runLater(() -> applyProgressiveHighlightRange(
+                        targetDocument,
+                        currentAnalysisRevision,
+                        analyzedText,
+                        claimedWindow.startOffset(),
+                        claimedWindow.endOffset(),
+                        highlighting
+                ));
+            });
+        } catch (RejectedExecutionException ignored) {
+            targetDocument.abandonProgressiveHighlightRange(currentAnalysisRevision, claimedWindow.startOffset(), claimedWindow.endOffset());
+        }
+    }
+
+    private StyleSpans<Collection<String>> analyzeHighlightRange(LanguageService languageService,
+                                                                 String text,
+                                                                 int startOffset,
+                                                                 int endOffset) {
+        try {
+            return languageService.highlightRange(text, startOffset, endOffset);
+        } catch (RuntimeException exception) {
+            return LanguageAnalysis.plainText(text.substring(startOffset, endOffset)).highlighting();
+        }
+    }
+
+    private void applyProgressiveHighlightRange(EditorDocument document,
+                                                long analysisRevision,
+                                                String analyzedText,
+                                                int startOffset,
+                                                int endOffset,
+                                                StyleSpans<Collection<String>> highlighting) {
+        if (shuttingDown
+                || !document.isAnalysisRevisionCurrent(analysisRevision)
+                || documentsByTab.get(document.getTab()) != document
+                || !Objects.equals(document.getCodeArea().getText(), analyzedText)) {
+            document.abandonProgressiveHighlightRange(analysisRevision, startOffset, endOffset);
+            return;
+        }
+
+        document.setBaseHighlighting(replaceHighlightRange(document.getBaseHighlighting(), startOffset, endOffset, highlighting));
+        document.completeProgressiveHighlightRange(analysisRevision, startOffset, endOffset);
+        applyHighlightRange(document, startOffset, highlighting);
+        requestProgressiveHighlighting(document);
+    }
+
     private void applyDocumentAnalysis(EditorDocument document,
                                        long analysisRevision,
                                        String analyzedText,
@@ -3389,7 +3623,6 @@ public class EditorController {
         int previousDiagnosticCount = document.getDiagnosticCount();
         document.setLanguageService(result.languageService());
         document.setBaseHighlighting(analysis.highlighting());
-        applyDocumentHighlighting(document);
         document.setDiagnosticsByLine(analysis.diagnostics().stream()
                 .collect(Collectors.groupingBy(Diagnostic::lineIndex, LinkedHashMap::new, Collectors.toList())));
 
@@ -3401,6 +3634,8 @@ public class EditorController {
         if (getActiveDocument().filter(active -> active == document).isPresent()) {
             updateLanguageStatus(document);
             refreshSearchUi();
+        } else {
+            applyDocumentHighlighting(document);
         }
     }
 

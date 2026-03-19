@@ -160,7 +160,7 @@ final class TextMateTokenizer {
         if (length <= 0) {
             return;
         }
-        builder.add(styles == null ? List.of() : List.copyOf(styles), length);
+        builder.add(styles == null || styles.isEmpty() ? List.of() : styles, length);
     }
 
     private record Context(TextMateGrammar.BeginEndRule rule, Collection<String> contentStyles) {
