@@ -7,6 +7,8 @@
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.Tab?>
+<?import javafx.scene.control.TabPane?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.Tooltip?>
 <?import javafx.scene.layout.ColumnConstraints?>
@@ -45,10 +47,16 @@
         </Button>
     </HBox>
 
-    <ScrollPane fx:id="settingsScrollPane" fitToWidth="true" hbarPolicy="NEVER" styleClass="settings-scroll-pane" VBox.vgrow="ALWAYS">
-        <content>
-            <VBox spacing="18.0" styleClass="settings-scroll-content">
-                <VBox spacing="14.0" styleClass="settings-card">
+    <TabPane fx:id="settingsTabPane" side="TOP" tabClosingPolicy="UNAVAILABLE" styleClass="settings-tab-pane" VBox.vgrow="ALWAYS">
+        <tabs>
+            <Tab text="Editor Preferences">
+                <graphic>
+                    <FontIcon iconLiteral="bi-sliders" iconSize="14" styleClass="settings-tab-icon"/>
+                </graphic>
+                <content>
+                    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="settings-scroll-pane settings-tab-scroll-pane">
+                        <VBox spacing="18.0" styleClass="settings-scroll-content settings-tab-content">
+                            <VBox spacing="14.0" styleClass="settings-card">
                     <HBox alignment="CENTER_LEFT" spacing="10.0">
                         <FontIcon iconLiteral="bi-sliders" iconSize="17" styleClass="settings-section-icon"/>
                         <VBox spacing="4.0">
@@ -109,9 +117,20 @@
                         <Label text="Status breadcrumb" styleClass="settings-field-label" GridPane.rowIndex="8"/>
                         <CheckBox fx:id="breadcrumbBarVisibleCheckBox" text="Show the breadcrumb path inline in the status bar" GridPane.columnIndex="1" GridPane.rowIndex="8"/>
                     </GridPane>
-                </VBox>
+                            </VBox>
+                        </VBox>
+                    </ScrollPane>
+                </content>
+            </Tab>
 
-                <VBox spacing="14.0" styleClass="settings-card settings-info-card">
+            <Tab text="Environment Details">
+                <graphic>
+                    <FontIcon iconLiteral="bi-puzzle" iconSize="14" styleClass="settings-tab-icon"/>
+                </graphic>
+                <content>
+                    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="settings-scroll-pane settings-tab-scroll-pane">
+                        <VBox spacing="18.0" styleClass="settings-scroll-content settings-tab-content">
+                            <VBox spacing="14.0" styleClass="settings-card settings-info-card">
                     <HBox alignment="CENTER_LEFT" spacing="10.0">
                         <FontIcon iconLiteral="bi-puzzle-fill" iconSize="17" styleClass="settings-section-icon"/>
                         <VBox spacing="4.0">
@@ -129,15 +148,39 @@
                         <Label text="Plugins directory" styleClass="settings-field-label" GridPane.rowIndex="0"/>
                         <Label fx:id="pluginsDirectoryLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
 
-                        <Label text="Available languages" styleClass="settings-field-label" GridPane.rowIndex="1"/>
-                        <Label fx:id="availableLanguagesLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+                        <Label text="Persistence directory" styleClass="settings-field-label" GridPane.rowIndex="1"/>
+                        <VBox spacing="8.0" GridPane.columnIndex="1" GridPane.rowIndex="1">
+                            <Label fx:id="persistenceDirectoryLabel" styleClass="settings-value-label" wrapText="true"/>
+                            <Button fx:id="openPersistenceFolderButton" mnemonicParsing="false" onAction="#onOpenPersistenceFolder" text="Open Persistence Folder">
+                                <tooltip>
+                                    <Tooltip text="Open the Editora persistence directory in your file manager"/>
+                                </tooltip>
+                            </Button>
+                        </VBox>
 
-                        <Label text="Editor control" styleClass="settings-field-label" GridPane.rowIndex="2"/>
-                        <Label fx:id="editorControlLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+                        <Label text="Persistence format" styleClass="settings-field-label" GridPane.rowIndex="2"/>
+                        <Label fx:id="persistenceFormatLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+
+                        <Label text="Available languages" styleClass="settings-field-label" GridPane.rowIndex="3"/>
+                        <Label fx:id="availableLanguagesLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+
+                        <Label text="Editor control" styleClass="settings-field-label" GridPane.rowIndex="4"/>
+                        <Label fx:id="editorControlLabel" styleClass="settings-value-label" wrapText="true" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
                     </GridPane>
-                </VBox>
+                            </VBox>
+                        </VBox>
+                    </ScrollPane>
+                </content>
+            </Tab>
 
-                <VBox spacing="14.0" styleClass="settings-card">
+            <Tab text="Syntax Highlighting Preview">
+                <graphic>
+                    <FontIcon iconLiteral="bi-code-slash" iconSize="14" styleClass="settings-tab-icon"/>
+                </graphic>
+                <content>
+                    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="settings-scroll-pane settings-tab-scroll-pane">
+                        <VBox spacing="18.0" styleClass="settings-scroll-content settings-tab-content">
+                            <VBox spacing="14.0" styleClass="settings-card">
                     <HBox alignment="CENTER_LEFT" spacing="10.0">
                         <FontIcon iconLiteral="bi-code-slash" iconSize="17" styleClass="settings-section-icon"/>
                         <VBox spacing="4.0">
@@ -156,9 +199,20 @@
                     </HBox>
                     <Label fx:id="syntaxPreviewHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Preview syntax highlighting for the supported languages here."/>
                     <StackPane fx:id="syntaxPreviewHost" minHeight="240.0" prefHeight="240.0" styleClass="settings-syntax-preview-host"/>
-                </VBox>
+                            </VBox>
+                        </VBox>
+                    </ScrollPane>
+                </content>
+            </Tab>
 
-                <VBox fx:id="keyboardShortcutsCard" focusTraversable="true" spacing="14.0" styleClass="settings-card">
+            <Tab fx:id="keyboardShortcutsTab" text="Keyboard Shortcuts">
+                <graphic>
+                    <FontIcon iconLiteral="bi-keyboard" iconSize="14" styleClass="settings-tab-icon"/>
+                </graphic>
+                <content>
+                    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="settings-scroll-pane settings-tab-scroll-pane">
+                        <VBox spacing="18.0" styleClass="settings-scroll-content settings-tab-content">
+                            <VBox fx:id="keyboardShortcutsCard" focusTraversable="true" spacing="14.0" styleClass="settings-card">
                     <HBox alignment="CENTER_LEFT" spacing="10.0">
                         <FontIcon iconLiteral="bi-keyboard-fill" iconSize="17" styleClass="settings-section-icon"/>
                         <VBox spacing="4.0">
@@ -169,10 +223,13 @@
 
                     <Label fx:id="keyboardShortcutsLabel" styleClass="settings-value-label settings-shortcut-reference" wrapText="true" text="Shortcuts load here when settings open."/>
                     <Label styleClass="settings-helper-label" wrapText="true" text="Tip: search the command palette for keyboard, emacs, mark, kill, yank, or find file to jump back here quickly."/>
-                </VBox>
-            </VBox>
-        </content>
-    </ScrollPane>
+                            </VBox>
+                        </VBox>
+                    </ScrollPane>
+                </content>
+            </Tab>
+        </tabs>
+    </TabPane>
 
     <Separator/>
 

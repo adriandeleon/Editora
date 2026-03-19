@@ -71,6 +71,8 @@ import org.adriandeleon.editora.languages.LanguageServiceRegistry;
 import org.adriandeleon.editora.languages.PlainTextLanguageService;
 import org.adriandeleon.editora.plugins.EditoraContext;
 import org.adriandeleon.editora.plugins.PluginManager;
+import org.adriandeleon.editora.persistence.EditoraPersistence;
+import org.adriandeleon.editora.persistence.PersistenceFolderSupport;
 import org.adriandeleon.editora.session.SessionManager;
 import org.adriandeleon.editora.session.WorkspaceSession;
 import org.adriandeleon.editora.settings.CommandPaletteShortcut;
@@ -2883,10 +2885,13 @@ public class EditorController {
         settingsController.configure(
                 currentSettings,
                 pluginManager.getPluginsDirectory(),
+                EditoraPersistence.dataDirectory(),
+                "JSON files stored in ~/.editora across macOS, Windows, and Linux: " + EditoraPersistence.persistenceFilesDescription(),
                 languageServices.availableLanguagesSummary(),
                 languageServices.previewSpecs(),
                 this::analyzePreviewSpec,
                 this::reloadTextMateBundles,
+                this::openPersistenceFolder,
                 this::previewThemeFromSettings,
                 settings -> {
                     applySettings(settings, true);
@@ -2919,6 +2924,14 @@ public class EditorController {
         settingsOverlay.setVisible(false);
         settingsOverlay.setManaged(false);
         syncToolbarButtonStates();
+    }
+
+    private void openPersistenceFolder() {
+        Path persistenceDirectory = EditoraPersistence.dataDirectory();
+        boolean opened = PersistenceFolderSupport.openDirectory(persistenceDirectory);
+        statusMessage(opened
+                ? "Opened persistence folder"
+                : "Could not open persistence folder: " + persistenceDirectory);
     }
 
     private void animateToolbarClick(Button button) {

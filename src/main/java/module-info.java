@@ -1,4 +1,5 @@
 module org.adriandeleon.editora {
+    requires java.desktop;
     requires java.prefs;
     requires java.xml;
     requires javafx.controls;

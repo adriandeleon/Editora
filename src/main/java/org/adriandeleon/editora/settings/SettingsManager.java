@@ -1,11 +1,18 @@
 package org.adriandeleon.editora.settings;
 
+import org.adriandeleon.editora.persistence.EditoraPersistence;
 import org.adriandeleon.editora.theme.EditorTheme;
 
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
 
 public final class SettingsManager {
     private static final Preferences PREFERENCES = Preferences.userNodeForPackage(SettingsManager.class);
+    private static final String SCHEMA_VERSION_KEY = "schemaVersion";
     private static final String THEME_KEY = "theme";
     private static final String WRAP_TEXT_KEY = "wrapText";
     private static final String DIAGNOSTICS_KEY = "diagnosticsEnabled";
@@ -21,7 +28,49 @@ public final class SettingsManager {
     }
 
     public static EditorSettings load() {
-        EditorTheme theme = loadTheme();
+        Optional<Map<String, Object>> storedSettings = EditoraPersistence.readJsonObject(EditoraPersistence.settingsFile());
+        if (storedSettings.isPresent()) {
+            return settingsFromJson(storedSettings.get());
+        }
+
+        EditorSettings legacySettings = loadLegacyPreferences();
+        if (hasLegacyPreferences()) {
+            save(legacySettings);
+        }
+        return legacySettings;
+    }
+
+    public static Path persistenceFile() {
+        return EditoraPersistence.settingsFile();
+    }
+
+    private static EditorSettings settingsFromJson(Map<String, Object> values) {
+        EditorTheme theme = EditorTheme.fromStoredValue(readString(values, THEME_KEY, EditorTheme.defaultTheme().name()));
+        boolean wrapText = readBoolean(values, WRAP_TEXT_KEY, false);
+        boolean diagnosticsEnabled = readBoolean(values, DIAGNOSTICS_KEY, true);
+        boolean miniMapVisible = readBoolean(values, MINI_MAP_VISIBLE_KEY, EditorSettings.DEFAULT_MINI_MAP_VISIBLE);
+        boolean searchBarVisible = readBoolean(values, SEARCH_BAR_VISIBLE_KEY, EditorSettings.DEFAULT_SEARCH_BAR_VISIBLE);
+        boolean projectExplorerVisible = readBoolean(values, PROJECT_EXPLORER_VISIBLE_KEY, EditorSettings.DEFAULT_PROJECT_EXPLORER_VISIBLE);
+        boolean breadcrumbBarVisible = readBoolean(values, BREADCRUMB_BAR_VISIBLE_KEY, true);
+        String commandPaletteShortcut = readString(values, COMMAND_PALETTE_SHORTCUT_KEY, CommandPaletteShortcut.DEFAULT_VALUE);
+        String editorFontFamily = readString(values, EDITOR_FONT_FAMILY_KEY, EditorSettings.DEFAULT_EDITOR_FONT_FAMILY);
+        int editorFontSize = readInt(values, EDITOR_FONT_SIZE_KEY, EditorSettings.DEFAULT_EDITOR_FONT_SIZE);
+        return new EditorSettings(
+                theme,
+                wrapText,
+                diagnosticsEnabled,
+                miniMapVisible,
+                searchBarVisible,
+                projectExplorerVisible,
+                breadcrumbBarVisible,
+                commandPaletteShortcut,
+                editorFontFamily,
+                editorFontSize
+        );
+    }
+
+    private static EditorSettings loadLegacyPreferences() {
+        EditorTheme theme = loadLegacyTheme();
         boolean wrapText = PREFERENCES.getBoolean(WRAP_TEXT_KEY, false);
         boolean diagnosticsEnabled = PREFERENCES.getBoolean(DIAGNOSTICS_KEY, true);
         boolean miniMapVisible = PREFERENCES.getBoolean(MINI_MAP_VISIBLE_KEY, EditorSettings.DEFAULT_MINI_MAP_VISIBLE);
@@ -45,22 +94,64 @@ public final class SettingsManager {
         );
     }
 
-    private static EditorTheme loadTheme() {
+    private static EditorTheme loadLegacyTheme() {
         String storedTheme = PREFERENCES.get(THEME_KEY, EditorTheme.defaultTheme().name());
         return EditorTheme.fromStoredValue(storedTheme);
     }
 
     public static void save(EditorSettings settings) {
-        PREFERENCES.put(THEME_KEY, settings.theme().name());
-        PREFERENCES.putBoolean(WRAP_TEXT_KEY, settings.wrapText());
-        PREFERENCES.putBoolean(DIAGNOSTICS_KEY, settings.diagnosticsEnabled());
-        PREFERENCES.putBoolean(MINI_MAP_VISIBLE_KEY, settings.miniMapVisible());
-        PREFERENCES.putBoolean(SEARCH_BAR_VISIBLE_KEY, settings.searchBarVisible());
-        PREFERENCES.putBoolean(PROJECT_EXPLORER_VISIBLE_KEY, settings.projectExplorerVisible());
-        PREFERENCES.putBoolean(BREADCRUMB_BAR_VISIBLE_KEY, settings.breadcrumbBarVisible());
-        PREFERENCES.put(COMMAND_PALETTE_SHORTCUT_KEY, settings.commandPaletteShortcut());
-        PREFERENCES.put(EDITOR_FONT_FAMILY_KEY, settings.editorFontFamily());
-        PREFERENCES.putInt(EDITOR_FONT_SIZE_KEY, settings.editorFontSize());
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put(SCHEMA_VERSION_KEY, EditoraPersistence.SCHEMA_VERSION);
+        values.put(THEME_KEY, settings.theme().name());
+        values.put(WRAP_TEXT_KEY, settings.wrapText());
+        values.put(DIAGNOSTICS_KEY, settings.diagnosticsEnabled());
+        values.put(MINI_MAP_VISIBLE_KEY, settings.miniMapVisible());
+        values.put(SEARCH_BAR_VISIBLE_KEY, settings.searchBarVisible());
+        values.put(PROJECT_EXPLORER_VISIBLE_KEY, settings.projectExplorerVisible());
+        values.put(BREADCRUMB_BAR_VISIBLE_KEY, settings.breadcrumbBarVisible());
+        values.put(COMMAND_PALETTE_SHORTCUT_KEY, settings.commandPaletteShortcut());
+        values.put(EDITOR_FONT_FAMILY_KEY, settings.editorFontFamily());
+        values.put(EDITOR_FONT_SIZE_KEY, settings.editorFontSize());
+        EditoraPersistence.writeJsonObject(EditoraPersistence.settingsFile(), values);
+    }
+
+    private static boolean hasLegacyPreferences() {
+        try {
+            return PREFERENCES.keys().length > 0;
+        } catch (BackingStoreException exception) {
+            return false;
+        }
+    }
+
+    private static String readString(Map<String, Object> values, String key, String fallback) {
+        Object value = values.get(key);
+        return value == null ? fallback : String.valueOf(value);
+    }
+
+    private static boolean readBoolean(Map<String, Object> values, String key, boolean fallback) {
+        Object value = values.get(key);
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if (value instanceof String stringValue) {
+            return Boolean.parseBoolean(stringValue);
+        }
+        return fallback;
+    }
+
+    private static int readInt(Map<String, Object> values, String key, int fallback) {
+        Object value = values.get(key);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String stringValue) {
+            try {
+                return Integer.parseInt(stringValue);
+            } catch (NumberFormatException ignored) {
+                return fallback;
+            }
+        }
+        return fallback;
     }
 }
 

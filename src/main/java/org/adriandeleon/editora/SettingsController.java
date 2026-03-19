@@ -8,6 +8,8 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -36,7 +38,7 @@ public class SettingsController {
     private VBox settingsRoot;
 
     @FXML
-    private ScrollPane settingsScrollPane;
+    private TabPane settingsTabPane;
 
     @FXML
     private ComboBox<EditorTheme> themeComboBox;
@@ -81,6 +83,15 @@ public class SettingsController {
     private Label pluginsDirectoryLabel;
 
     @FXML
+    private Label persistenceDirectoryLabel;
+
+    @FXML
+    private Label persistenceFormatLabel;
+
+    @FXML
+    private Button openPersistenceFolderButton;
+
+    @FXML
     private Label availableLanguagesLabel;
 
     @FXML
@@ -107,10 +118,15 @@ public class SettingsController {
     @FXML
     private VBox keyboardShortcutsCard;
 
+    @FXML
+    private Tab keyboardShortcutsTab;
+
     private Consumer<EditorSettings> applyHandler = SettingsController::ignoreSettings;
     private Consumer<EditorTheme> previewThemeHandler = SettingsController::ignoreTheme;
     private Function<LanguagePreviewSpec, LanguageAnalysis> syntaxPreviewHandler = preview -> LanguageAnalysis.plainText(preview == null ? "" : preview.sampleText());
     private Runnable reloadSyntaxBundlesHandler = () -> {
+    };
+    private Runnable openPersistenceFolderHandler = () -> {
     };
     private Runnable closeHandler = () -> {
     };
@@ -146,15 +162,19 @@ public class SettingsController {
 
     void configure(EditorSettings settings,
                    Path pluginsDirectory,
+                   Path persistenceDirectory,
+                   String persistenceFormat,
                    String availableLanguages,
                    List<LanguagePreviewSpec> syntaxPreviews,
                    Function<LanguagePreviewSpec, LanguageAnalysis> syntaxPreviewHandler,
                    Runnable reloadSyntaxBundlesHandler,
+                   Runnable openPersistenceFolderHandler,
                    Consumer<EditorTheme> previewThemeHandler,
                    Consumer<EditorSettings> applyHandler,
                    Runnable closeHandler) {
         this.syntaxPreviewHandler = Objects.requireNonNull(syntaxPreviewHandler);
         this.reloadSyntaxBundlesHandler = Objects.requireNonNull(reloadSyntaxBundlesHandler);
+        this.openPersistenceFolderHandler = Objects.requireNonNull(openPersistenceFolderHandler);
         this.previewThemeHandler = Objects.requireNonNull(previewThemeHandler);
         this.applyHandler = Objects.requireNonNull(applyHandler);
         this.closeHandler = Objects.requireNonNull(closeHandler);
@@ -178,6 +198,8 @@ public class SettingsController {
         updateShortcutField();
         showShortcutInstruction();
         pluginsDirectoryLabel.setText(pluginsDirectory.toAbsolutePath().toString());
+        persistenceDirectoryLabel.setText(persistenceDirectory.toAbsolutePath().toString());
+        persistenceFormatLabel.setText(persistenceFormat);
         availableLanguagesLabel.setText(availableLanguages);
         keyboardShortcutsLabel.setText(buildKeyboardShortcutsReference(commandPaletteShortcut));
         updateSyntaxPreviewOptions(syntaxPreviews, availableLanguages);
@@ -242,14 +264,24 @@ public class SettingsController {
         reloadSyntaxBundlesHandler.run();
     }
 
+    @FXML
+    void onOpenPersistenceFolder() {
+        openPersistenceFolderHandler.run();
+    }
+
     void focusPrimaryControl() {
-        Platform.runLater(themeComboBox::requestFocus);
+        Platform.runLater(() -> {
+            if (settingsTabPane != null) {
+                settingsTabPane.getSelectionModel().selectFirst();
+            }
+            themeComboBox.requestFocus();
+        });
     }
 
     void showKeyboardShortcutsSection() {
         Platform.runLater(() -> {
-            if (settingsScrollPane != null) {
-                settingsScrollPane.setVvalue(1.0);
+            if (settingsTabPane != null && keyboardShortcutsTab != null) {
+                settingsTabPane.getSelectionModel().select(keyboardShortcutsTab);
             }
             if (keyboardShortcutsCard != null) {
                 keyboardShortcutsCard.requestFocus();
@@ -479,6 +511,7 @@ public class SettingsController {
     private void requireInjectedControls() {
         Objects.requireNonNull(settingsRoot);
         Objects.requireNonNull(themeComboBox);
+        Objects.requireNonNull(settingsTabPane);
         Objects.requireNonNull(wrapTextCheckBox);
         Objects.requireNonNull(diagnosticsCheckBox);
         Objects.requireNonNull(miniMapVisibleCheckBox);
@@ -491,6 +524,9 @@ public class SettingsController {
         Objects.requireNonNull(commandPaletteShortcutField);
         Objects.requireNonNull(commandPaletteShortcutHelpLabel);
         Objects.requireNonNull(pluginsDirectoryLabel);
+        Objects.requireNonNull(persistenceDirectoryLabel);
+        Objects.requireNonNull(persistenceFormatLabel);
+        Objects.requireNonNull(openPersistenceFolderButton);
         Objects.requireNonNull(availableLanguagesLabel);
         Objects.requireNonNull(editorControlLabel);
         Objects.requireNonNull(keyboardShortcutsLabel);
@@ -499,6 +535,7 @@ public class SettingsController {
         Objects.requireNonNull(syntaxPreviewHost);
         Objects.requireNonNull(cancelButton);
         Objects.requireNonNull(applyButton);
+        Objects.requireNonNull(keyboardShortcutsTab);
     }
 
     private <T> javafx.beans.value.ChangeListener<T> onValueChange(Consumer<T> consumer) {
