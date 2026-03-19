@@ -51,6 +51,9 @@ public class SettingsController {
     private CheckBox diagnosticsCheckBox;
 
     @FXML
+    private CheckBox miniMapVisibleCheckBox;
+
+    @FXML
     private CheckBox searchBarVisibleCheckBox;
 
     @FXML
@@ -164,6 +167,7 @@ public class SettingsController {
         updateThemeHelpLabel(settings.theme());
         wrapTextCheckBox.setSelected(settings.wrapText());
         diagnosticsCheckBox.setSelected(settings.diagnosticsEnabled());
+        miniMapVisibleCheckBox.setSelected(settings.miniMapVisible());
         searchBarVisibleCheckBox.setSelected(settings.searchBarVisible());
         projectExplorerVisibleCheckBox.setSelected(settings.projectExplorerVisible());
         breadcrumbBarVisibleCheckBox.setSelected(settings.breadcrumbBarVisible());
@@ -211,6 +215,7 @@ public class SettingsController {
                 themeComboBox.getValue(),
                 wrapTextCheckBox.isSelected(),
                 diagnosticsCheckBox.isSelected(),
+                miniMapVisibleCheckBox.isSelected(),
                 searchBarVisibleCheckBox.isSelected(),
                 projectExplorerVisibleCheckBox.isSelected(),
                 breadcrumbBarVisibleCheckBox.isSelected(),
@@ -476,6 +481,7 @@ public class SettingsController {
         Objects.requireNonNull(themeComboBox);
         Objects.requireNonNull(wrapTextCheckBox);
         Objects.requireNonNull(diagnosticsCheckBox);
+        Objects.requireNonNull(miniMapVisibleCheckBox);
         Objects.requireNonNull(searchBarVisibleCheckBox);
         Objects.requireNonNull(projectExplorerVisibleCheckBox);
         Objects.requireNonNull(breadcrumbBarVisibleCheckBox);

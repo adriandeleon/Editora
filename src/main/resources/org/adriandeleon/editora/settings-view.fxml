@@ -97,14 +97,17 @@
                             <Label fx:id="commandPaletteShortcutHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Focus the field and press the new shortcut."/>
                         </VBox>
 
-                        <Label text="Search bar" styleClass="settings-field-label" GridPane.rowIndex="5"/>
-                        <CheckBox fx:id="searchBarVisibleCheckBox" text="Show the search and replace bar in the editor shell" GridPane.columnIndex="1" GridPane.rowIndex="5"/>
+                        <Label text="MiniMap" styleClass="settings-field-label" GridPane.rowIndex="5"/>
+                        <CheckBox fx:id="miniMapVisibleCheckBox" text="Show a read-only MiniMap overview beside each editor tab" GridPane.columnIndex="1" GridPane.rowIndex="5"/>
 
-                        <Label text="Project explorer" styleClass="settings-field-label" GridPane.rowIndex="6"/>
-                        <CheckBox fx:id="projectExplorerVisibleCheckBox" text="Show the project explorer sidebar in the editor shell" GridPane.columnIndex="1" GridPane.rowIndex="6"/>
+                        <Label text="Search bar" styleClass="settings-field-label" GridPane.rowIndex="6"/>
+                        <CheckBox fx:id="searchBarVisibleCheckBox" text="Show the search and replace bar in the editor shell" GridPane.columnIndex="1" GridPane.rowIndex="6"/>
 
-                        <Label text="Status breadcrumb" styleClass="settings-field-label" GridPane.rowIndex="7"/>
-                        <CheckBox fx:id="breadcrumbBarVisibleCheckBox" text="Show the breadcrumb path inline in the status bar" GridPane.columnIndex="1" GridPane.rowIndex="7"/>
+                        <Label text="Project explorer" styleClass="settings-field-label" GridPane.rowIndex="7"/>
+                        <CheckBox fx:id="projectExplorerVisibleCheckBox" text="Show the project explorer sidebar in the editor shell" GridPane.columnIndex="1" GridPane.rowIndex="7"/>
+
+                        <Label text="Status breadcrumb" styleClass="settings-field-label" GridPane.rowIndex="8"/>
+                        <CheckBox fx:id="breadcrumbBarVisibleCheckBox" text="Show the breadcrumb path inline in the status bar" GridPane.columnIndex="1" GridPane.rowIndex="8"/>
                     </GridPane>
                 </VBox>
 

@@ -1060,6 +1060,7 @@ public class EditorController {
                 new CommandAction("Toggle Search Bar", "Show or hide the search and replace controls", "View", "⌥⌘F", List.of("search", "replace", "collapse", "hide"), this::onToggleSearchBar),
                 new CommandAction("Toggle Project Explorer", "Show or hide the project explorer sidebar", "View", "⌥⌘E", List.of("explorer", "sidebar", "project", "collapse", "hide"), this::onToggleProjectExplorer),
                 new CommandAction("Toggle Status Bar", "Show or hide the bottom status bar", "View", "⌥⌘B", List.of("status", "footer", "bottom", "hide"), this::onToggleStatusBar),
+                new CommandAction("Toggle MiniMap", "Show or hide the MiniMap overview beside each editor tab", "View", "", List.of("minimap", "mini map", "overview", "scrollbar", "editor"), this::toggleMiniMapVisibility),
                 new CommandAction("Toggle Breadcrumb Path", "Show or hide the breadcrumb path inside the status bar", "View", "", List.of("breadcrumb", "path", "status", "file path", "location"), this::toggleBreadcrumbBarVisibility),
                 new CommandAction("Replace Selection", "Replace the current match selection", "Search", "", List.of("replace", "selection"), this::onReplaceSelection),
                 new CommandAction("Replace All", "Replace all matches in the current document", "Search", "", List.of("replace", "all"), this::onReplaceAll),
@@ -1092,6 +1093,7 @@ public class EditorController {
                 theme,
                 currentSettings.wrapText(),
                 currentSettings.diagnosticsEnabled(),
+                currentSettings.miniMapVisible(),
                 currentSettings.searchBarVisible(),
                 currentSettings.projectExplorerVisible(),
                 currentSettings.breadcrumbBarVisible(),
@@ -1453,7 +1455,12 @@ public class EditorController {
         codeArea.replaceText(initialText);
 
         String untitledName = filePath == null ? "Untitled " + untitledCounter++ : filePath.getFileName().toString();
-        EditorDocument document = new EditorDocument(untitledName, codeArea, languageServices.resolve(filePath));
+        EditorDocument document = new EditorDocument(
+                untitledName,
+                codeArea,
+                languageServices.resolve(filePath),
+                currentSettings.miniMapVisible()
+        );
         if (filePath != null) {
             document.setFilePath(filePath.toAbsolutePath().normalize());
         }
@@ -2177,6 +2184,7 @@ public class EditorController {
                 currentSettings.theme(),
                 currentSettings.wrapText(),
                 currentSettings.diagnosticsEnabled(),
+                currentSettings.miniMapVisible(),
                 searchBarVisible,
                 projectExplorerVisible,
                 nextVisible,
@@ -2442,6 +2450,7 @@ public class EditorController {
         }
         documentsByTab.values().forEach(document -> {
             document.getCodeArea().setWrapText(settings.wrapText());
+            document.setMiniMapVisible(settings.miniMapVisible());
             applyEditorFontSettings(document.getCodeArea());
             analyzeDocument(document);
         });
@@ -2652,11 +2661,29 @@ public class EditorController {
         persistShellVisibilitySettings();
     }
 
+    private void toggleMiniMapVisibility() {
+        boolean nextVisible = !currentSettings.miniMapVisible();
+        applySettings(new EditorSettings(
+                currentSettings.theme(),
+                currentSettings.wrapText(),
+                currentSettings.diagnosticsEnabled(),
+                nextVisible,
+                searchBarVisible,
+                projectExplorerVisible,
+                currentSettings.breadcrumbBarVisible(),
+                currentSettings.commandPaletteShortcut(),
+                currentSettings.editorFontFamily(),
+                currentSettings.editorFontSize()
+        ), true);
+        statusMessage(nextVisible ? "MiniMap shown" : "MiniMap hidden");
+    }
+
     private void persistShellVisibilitySettings() {
         currentSettings = new EditorSettings(
                 currentSettings.theme(),
                 currentSettings.wrapText(),
                 currentSettings.diagnosticsEnabled(),
+                currentSettings.miniMapVisible(),
                 searchBarVisible,
                 projectExplorerVisible,
                 currentSettings.breadcrumbBarVisible(),

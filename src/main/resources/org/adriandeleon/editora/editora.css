@@ -201,6 +201,44 @@
     -fx-font-smoothing-type: lcd;
 }
 
+.editor-document-shell {
+    -fx-spacing: 0;
+}
+
+.editor-mini-map {
+    -fx-alignment: top-center;
+    -fx-background-insets: 0;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+    -fx-padding: 4 2 4 2;
+}
+
+.editor-mini-map-content {
+    -fx-background-color: transparent;
+}
+
+.editor-mini-map-line {
+    -fx-background-color: rgba(148, 163, 184, 0.38);
+    -fx-background-radius: 2;
+}
+
+.editor-mini-map-fade-top {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.0));
+}
+
+.editor-mini-map-fade-bottom {
+    -fx-background-color: linear-gradient(to top, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.0));
+}
+
+.editor-mini-map-viewport {
+    -fx-background-color: rgba(128, 128, 128, 0.10);
+    -fx-border-color: rgba(96, 165, 250, 0.52);
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-effect: dropshadow(gaussian, rgba(96, 165, 250, 0.14), 10, 0.18, 0, 0);
+}
+
 .line-fringe {
     -fx-background-color: transparent;
 }
@@ -589,6 +627,29 @@
     -fx-border-color: rgba(255, 255, 255, 0.08);
 }
 
+.theme-dark .editor-mini-map {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.02));
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+}
+
+.theme-dark .editor-mini-map-line {
+    -fx-background-color: rgba(203, 213, 225, 0.28);
+}
+
+.theme-dark .editor-mini-map-fade-top {
+    -fx-background-color: linear-gradient(to bottom, rgba(11, 18, 32, 0.9), rgba(11, 18, 32, 0.0));
+}
+
+.theme-dark .editor-mini-map-fade-bottom {
+    -fx-background-color: linear-gradient(to top, rgba(11, 18, 32, 0.88), rgba(11, 18, 32, 0.0));
+}
+
+.theme-dark .editor-mini-map-viewport {
+    -fx-background-color: rgba(148, 163, 184, 0.10);
+    -fx-border-color: rgba(125, 211, 252, 0.55);
+    -fx-effect: dropshadow(gaussian, rgba(125, 211, 252, 0.16), 10, 0.18, 0, 0);
+}
+
 .theme-dark .search-option-toggle:selected {
     -fx-background-color: rgba(91, 140, 255, 0.22);
     -fx-border-color: rgba(91, 140, 255, 0.32);
@@ -758,6 +819,29 @@
 .theme-light .status-chip {
     -fx-background-color: rgba(255, 255, 255, 0.82);
     -fx-border-color: rgba(15, 23, 42, 0.08);
+}
+
+.theme-light .editor-mini-map {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.82), rgba(248, 250, 252, 0.92));
+    -fx-border-color: rgba(15, 23, 42, 0.08);
+}
+
+.theme-light .editor-mini-map-line {
+    -fx-background-color: rgba(71, 85, 105, 0.24);
+}
+
+.theme-light .editor-mini-map-fade-top {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.0));
+}
+
+.theme-light .editor-mini-map-fade-bottom {
+    -fx-background-color: linear-gradient(to top, rgba(248, 250, 252, 0.92), rgba(248, 250, 252, 0.0));
+}
+
+.theme-light .editor-mini-map-viewport {
+    -fx-background-color: rgba(15, 23, 42, 0.05);
+    -fx-border-color: rgba(59, 130, 246, 0.42);
+    -fx-effect: dropshadow(gaussian, rgba(59, 130, 246, 0.12), 10, 0.18, 0, 0);
 }
 
 .theme-light .search-option-toggle:selected {

@@ -9,6 +9,7 @@ public final class SettingsManager {
     private static final String THEME_KEY = "theme";
     private static final String WRAP_TEXT_KEY = "wrapText";
     private static final String DIAGNOSTICS_KEY = "diagnosticsEnabled";
+    private static final String MINI_MAP_VISIBLE_KEY = "miniMapVisible";
     private static final String SEARCH_BAR_VISIBLE_KEY = "searchBarVisible";
     private static final String PROJECT_EXPLORER_VISIBLE_KEY = "projectExplorerVisible";
     private static final String BREADCRUMB_BAR_VISIBLE_KEY = "breadcrumbBarVisible";
@@ -23,6 +24,7 @@ public final class SettingsManager {
         EditorTheme theme = loadTheme();
         boolean wrapText = PREFERENCES.getBoolean(WRAP_TEXT_KEY, false);
         boolean diagnosticsEnabled = PREFERENCES.getBoolean(DIAGNOSTICS_KEY, true);
+        boolean miniMapVisible = PREFERENCES.getBoolean(MINI_MAP_VISIBLE_KEY, EditorSettings.DEFAULT_MINI_MAP_VISIBLE);
         boolean searchBarVisible = PREFERENCES.getBoolean(SEARCH_BAR_VISIBLE_KEY, EditorSettings.DEFAULT_SEARCH_BAR_VISIBLE);
         boolean projectExplorerVisible = PREFERENCES.getBoolean(PROJECT_EXPLORER_VISIBLE_KEY, EditorSettings.DEFAULT_PROJECT_EXPLORER_VISIBLE);
         boolean breadcrumbBarVisible = PREFERENCES.getBoolean(BREADCRUMB_BAR_VISIBLE_KEY, true);
@@ -33,6 +35,7 @@ public final class SettingsManager {
                 theme,
                 wrapText,
                 diagnosticsEnabled,
+                miniMapVisible,
                 searchBarVisible,
                 projectExplorerVisible,
                 breadcrumbBarVisible,
@@ -51,6 +54,7 @@ public final class SettingsManager {
         PREFERENCES.put(THEME_KEY, settings.theme().name());
         PREFERENCES.putBoolean(WRAP_TEXT_KEY, settings.wrapText());
         PREFERENCES.putBoolean(DIAGNOSTICS_KEY, settings.diagnosticsEnabled());
+        PREFERENCES.putBoolean(MINI_MAP_VISIBLE_KEY, settings.miniMapVisible());
         PREFERENCES.putBoolean(SEARCH_BAR_VISIBLE_KEY, settings.searchBarVisible());
         PREFERENCES.putBoolean(PROJECT_EXPLORER_VISIBLE_KEY, settings.projectExplorerVisible());
         PREFERENCES.putBoolean(BREADCRUMB_BAR_VISIBLE_KEY, settings.breadcrumbBarVisible());

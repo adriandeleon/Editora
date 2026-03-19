@@ -5,12 +5,14 @@ import org.adriandeleon.editora.theme.EditorTheme;
 public record EditorSettings(EditorTheme theme,
                              boolean wrapText,
                              boolean diagnosticsEnabled,
+							 boolean miniMapVisible,
 							 boolean searchBarVisible,
 							 boolean projectExplorerVisible,
 							 boolean breadcrumbBarVisible,
                              String commandPaletteShortcut,
                              String editorFontFamily,
                              int editorFontSize) {
+	public static final boolean DEFAULT_MINI_MAP_VISIBLE = true;
 	public static final boolean DEFAULT_SEARCH_BAR_VISIBLE = false;
 	public static final boolean DEFAULT_PROJECT_EXPLORER_VISIBLE = false;
 	public static final String DEFAULT_EDITOR_FONT_FAMILY = "JetBrains Mono";

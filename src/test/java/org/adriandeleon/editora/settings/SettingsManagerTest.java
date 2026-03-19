@@ -33,6 +33,7 @@ class SettingsManagerTest {
                 true,
                 false,
                 true,
+                true,
                 false,
                 false,
                 "alt+shortcut+x",
@@ -45,6 +46,7 @@ class SettingsManagerTest {
         assertEquals(EditorTheme.NORD_LIGHT, loaded.theme());
         assertTrue(loaded.wrapText());
         assertFalse(loaded.diagnosticsEnabled());
+        assertTrue(loaded.miniMapVisible());
         assertTrue(loaded.searchBarVisible());
         assertFalse(loaded.projectExplorerVisible());
         assertFalse(loaded.breadcrumbBarVisible());
@@ -58,6 +60,7 @@ class SettingsManagerTest {
         preferences.put("theme", "BROKEN_THEME");
         preferences.putBoolean("wrapText", true);
         preferences.putBoolean("diagnosticsEnabled", false);
+        preferences.putBoolean("miniMapVisible", false);
         preferences.putBoolean("searchBarVisible", true);
         preferences.putBoolean("projectExplorerVisible", true);
         preferences.putBoolean("breadcrumbBarVisible", false);
@@ -70,6 +73,7 @@ class SettingsManagerTest {
         assertEquals(EditorTheme.PRIMER_LIGHT, loaded.theme());
         assertTrue(loaded.wrapText());
         assertFalse(loaded.diagnosticsEnabled());
+        assertFalse(loaded.miniMapVisible());
         assertTrue(loaded.searchBarVisible());
         assertTrue(loaded.projectExplorerVisible());
         assertFalse(loaded.breadcrumbBarVisible());
@@ -98,6 +102,7 @@ class SettingsManagerTest {
     void loadDefaultsBreadcrumbsToVisibleWhenUnset() {
         EditorSettings loaded = SettingsManager.load();
 
+        assertTrue(loaded.miniMapVisible());
         assertFalse(loaded.searchBarVisible());
         assertFalse(loaded.projectExplorerVisible());
         assertTrue(loaded.breadcrumbBarVisible());

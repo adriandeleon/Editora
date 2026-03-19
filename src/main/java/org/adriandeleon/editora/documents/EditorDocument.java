@@ -1,7 +1,11 @@
 package org.adriandeleon.editora.documents;
 
+import javafx.application.Platform;
+import javafx.beans.InvalidationListener;
+import javafx.geometry.Orientation;
 import org.adriandeleon.editora.languages.Diagnostic;
 import org.adriandeleon.editora.languages.LanguageService;
+import org.adriandeleon.editora.editor.MiniMapSupport;
 import org.kordamp.ikonli.javafx.FontIcon;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
@@ -10,9 +14,14 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollBar;
 import javafx.scene.control.Tab;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 
 import java.nio.file.Path;
 import java.util.Collection;
@@ -23,14 +32,28 @@ import java.util.Map;
 import java.util.Objects;
 
 public final class EditorDocument {
+    private static final double MINI_MAP_WIDTH = 92d;
+    private static final int MAX_MINI_MAP_ROWS = 600;
+    private static final int MINI_MAP_MAX_COLUMNS = 160;
+    private static final double MINI_MAP_CONTENT_LEFT_INSET = 10d;
+    private static final double MINI_MAP_CONTENT_RIGHT_INSET = 8d;
+    private static final double MINI_MAP_FADE_HEIGHT = 18d;
+
     private final String untitledName;
     private final Tab tab;
     private final CodeArea codeArea;
     private final VirtualizedScrollPane<CodeArea> container;
+    private final HBox content;
+    private final StackPane miniMapHost;
+    private final Pane miniMapContent;
+    private final Region miniMapViewport;
+    private final Region miniMapTopFade;
+    private final Region miniMapBottomFade;
     private final HBox tabHeader;
     private final FontIcon tabIcon;
     private final Label tabTitleLabel;
     private final Tooltip tabTooltip;
+    private final InvalidationListener miniMapViewportListener = ignored -> refreshMiniMapViewport();
 
     private Path filePath;
     private boolean dirty;
@@ -41,14 +64,26 @@ public final class EditorDocument {
     private Integer navigationGoalColumn;
     private boolean preserveNavigationGoalOnNextCaretChange;
     private Integer markPosition;
+    private ScrollBar verticalScrollBar;
+    private boolean miniMapVisible;
+    private double miniMapRenderHeight;
 
-    public EditorDocument(String untitledName, CodeArea codeArea, LanguageService languageService) {
+    public EditorDocument(String untitledName,
+                          CodeArea codeArea,
+                          LanguageService languageService,
+                          boolean miniMapVisible) {
         this.untitledName = untitledName;
         this.codeArea = codeArea;
         this.languageService = Objects.requireNonNull(languageService, "languageService");
         this.savedText = codeArea.getText();
         this.tab = new Tab();
         this.container = new VirtualizedScrollPane<>(codeArea);
+        this.content = new HBox();
+        this.miniMapHost = new StackPane();
+        this.miniMapContent = new Pane();
+        this.miniMapViewport = new Region();
+        this.miniMapTopFade = new Region();
+        this.miniMapBottomFade = new Region();
         this.tabIcon = new FontIcon("bi-file-earmark-text");
         this.tabIcon.setIconSize(12);
         this.tabIcon.getStyleClass().add("editor-tab-icon");
@@ -59,7 +94,10 @@ public final class EditorDocument {
         this.tabHeader.getStyleClass().add("editor-tab-header");
         this.tabTooltip = new Tooltip();
         this.baseHighlighting = emptyHighlighting(codeArea.getLength());
-        this.tab.setContent(container);
+        this.miniMapVisible = miniMapVisible;
+        configureContent();
+        configureMiniMap();
+        this.tab.setContent(content);
         this.tab.setGraphic(tabHeader);
         this.tab.setText(null);
         this.tab.setTooltip(tabTooltip);
@@ -80,6 +118,21 @@ public final class EditorDocument {
 
     public VirtualizedScrollPane<CodeArea> getContainer() {
         return container;
+    }
+
+    public void setMiniMapVisible(boolean miniMapVisible) {
+        this.miniMapVisible = miniMapVisible;
+        miniMapHost.setManaged(miniMapVisible);
+        miniMapHost.setVisible(miniMapVisible);
+        if (miniMapVisible) {
+            refreshMiniMap();
+        }
+    }
+
+    public void refreshMiniMap() {
+        redrawMiniMap();
+        refreshMiniMapViewport();
+        scheduleMiniMapBinding();
     }
 
     public Path getFilePath() {
@@ -229,6 +282,209 @@ public final class EditorDocument {
         StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
         builder.add(Collections.emptyList(), Math.max(0, textLength));
         return builder.create();
+    }
+
+    private void configureContent() {
+        content.getStyleClass().add("editor-document-shell");
+        content.setFillHeight(true);
+        content.setMinHeight(0d);
+        content.setPrefHeight(0d);
+        content.setMaxHeight(Double.MAX_VALUE);
+        container.setMinHeight(0d);
+        container.setMaxHeight(Double.MAX_VALUE);
+        miniMapHost.setMinHeight(0d);
+        miniMapHost.setMaxHeight(Double.MAX_VALUE);
+        HBox.setHgrow(container, Priority.ALWAYS);
+        content.getChildren().setAll(container, miniMapHost);
+    }
+
+    private void configureMiniMap() {
+        miniMapHost.getStyleClass().add("editor-mini-map");
+        miniMapHost.setMinWidth(MINI_MAP_WIDTH);
+        miniMapHost.setPrefWidth(MINI_MAP_WIDTH);
+        miniMapHost.setMaxWidth(MINI_MAP_WIDTH);
+        miniMapContent.setManaged(false);
+        miniMapContent.setMouseTransparent(true);
+        miniMapContent.getStyleClass().add("editor-mini-map-content");
+        miniMapViewport.setManaged(false);
+        miniMapViewport.setMouseTransparent(true);
+        miniMapViewport.getStyleClass().add("editor-mini-map-viewport");
+        configureFadeRegion(miniMapTopFade, "editor-mini-map-fade-top");
+        configureFadeRegion(miniMapBottomFade, "editor-mini-map-fade-bottom");
+        miniMapHost.getChildren().setAll(miniMapContent, miniMapTopFade, miniMapBottomFade, miniMapViewport);
+        StackPane.setAlignment(miniMapContent, Pos.TOP_LEFT);
+        StackPane.setAlignment(miniMapTopFade, Pos.TOP_LEFT);
+        StackPane.setAlignment(miniMapBottomFade, Pos.BOTTOM_LEFT);
+        StackPane.setAlignment(miniMapViewport, Pos.TOP_LEFT);
+
+        miniMapHost.widthProperty().addListener(ignored -> redrawMiniMap());
+        miniMapHost.heightProperty().addListener(ignored -> {
+            redrawMiniMap();
+            refreshMiniMapViewport();
+        });
+        codeArea.textProperty().addListener(ignored -> redrawMiniMap());
+        codeArea.sceneProperty().addListener((observable, previous, current) -> scheduleMiniMapBinding());
+        container.layoutBoundsProperty().addListener((observable, previous, current) -> scheduleMiniMapBinding());
+        miniMapHost.setOnMousePressed(event -> jumpToMiniMapPosition(event.getY()));
+        miniMapHost.setOnMouseDragged(event -> jumpToMiniMapPosition(event.getY()));
+
+        setMiniMapVisible(miniMapVisible);
+        scheduleMiniMapBinding();
+    }
+
+    private void scheduleMiniMapBinding() {
+        if (!miniMapVisible) {
+            return;
+        }
+        Platform.runLater(() -> {
+            bindVerticalScrollBar();
+            redrawMiniMap();
+            refreshMiniMapViewport();
+        });
+    }
+
+    private void bindVerticalScrollBar() {
+        ScrollBar candidate = container.lookupAll(".scroll-bar").stream()
+                .filter(ScrollBar.class::isInstance)
+                .map(ScrollBar.class::cast)
+                .filter(scrollBar -> scrollBar.getOrientation() == Orientation.VERTICAL)
+                .findFirst()
+                .orElse(null);
+        if (candidate == verticalScrollBar) {
+            return;
+        }
+
+        if (verticalScrollBar != null) {
+            verticalScrollBar.valueProperty().removeListener(miniMapViewportListener);
+            verticalScrollBar.visibleAmountProperty().removeListener(miniMapViewportListener);
+            verticalScrollBar.minProperty().removeListener(miniMapViewportListener);
+            verticalScrollBar.maxProperty().removeListener(miniMapViewportListener);
+        }
+
+        verticalScrollBar = candidate;
+        if (verticalScrollBar != null) {
+            verticalScrollBar.valueProperty().addListener(miniMapViewportListener);
+            verticalScrollBar.visibleAmountProperty().addListener(miniMapViewportListener);
+            verticalScrollBar.minProperty().addListener(miniMapViewportListener);
+            verticalScrollBar.maxProperty().addListener(miniMapViewportListener);
+        }
+    }
+
+    private void redrawMiniMap() {
+        double width = miniMapHost.getWidth();
+        double hostHeight = miniMapHost.getHeight();
+        miniMapContent.getChildren().clear();
+        miniMapRenderHeight = 0d;
+        if (!miniMapVisible || width <= 0 || hostHeight <= 0) {
+            return;
+        }
+
+        MiniMapSupport.MiniMapLayout layout = MiniMapSupport.layout(codeArea.getText(), hostHeight, MAX_MINI_MAP_ROWS);
+        List<MiniMapSupport.MiniMapSample> samples = MiniMapSupport.sampleText(codeArea.getText(), layout.sampleCount(), MINI_MAP_MAX_COLUMNS);
+        miniMapRenderHeight = layout.renderHeight();
+        double rowHeight = layout.rowHeight();
+        double leftPadding = miniMapContentX();
+        double rightPadding = miniMapContentRightInset();
+        double contentWidth = miniMapContentWidth();
+        double usableWidth = Math.max(1d, contentWidth);
+        for (int index = 0; index < samples.size(); index++) {
+            MiniMapSupport.MiniMapSample sample = samples.get(index);
+            if (sample.widthFraction() <= 0d) {
+                continue;
+            }
+
+            double x = leftPadding + usableWidth * sample.indentFraction();
+            double lineWidth = Math.max(1d, usableWidth * sample.widthFraction());
+            lineWidth = Math.min(lineWidth, Math.max(1d, width - rightPadding - x));
+            double y = index * rowHeight;
+            double lineHeight = Math.max(1d, rowHeight - 0.2d);
+            Region line = new Region();
+            line.setManaged(false);
+            line.getStyleClass().add("editor-mini-map-line");
+            line.resizeRelocate(x, y, lineWidth, lineHeight);
+            miniMapContent.getChildren().add(line);
+        }
+        miniMapContent.resizeRelocate(leftPadding, 0d, contentWidth, miniMapRenderHeight);
+        updateMiniMapFadeRegions(contentWidth, miniMapRenderHeight);
+    }
+
+    private void refreshMiniMapViewport() {
+        if (!miniMapVisible) {
+            miniMapViewport.setVisible(false);
+            return;
+        }
+
+        bindVerticalScrollBar();
+        double hostHeight = miniMapHost.getHeight();
+        double renderHeight = Math.max(0d, Math.min(hostHeight, miniMapRenderHeight));
+        if (verticalScrollBar == null || renderHeight <= 0d) {
+            miniMapViewport.setVisible(false);
+            return;
+        }
+
+        MiniMapSupport.ViewportIndicator indicator = MiniMapSupport.viewportIndicator(
+                verticalScrollBar.getMin(),
+                verticalScrollBar.getMax(),
+                verticalScrollBar.getValue(),
+                verticalScrollBar.getVisibleAmount()
+        );
+        double top = renderHeight * indicator.startFraction();
+        double viewportHeight = Math.max(Math.min(12d, renderHeight), renderHeight * indicator.heightFraction());
+        viewportHeight = Math.min(renderHeight, viewportHeight);
+        top = Math.max(0d, Math.min(renderHeight - viewportHeight, top));
+        double viewportX = Math.max(0d, miniMapContentX() - 2d);
+        double viewportWidth = Math.min(miniMapHost.getWidth() - viewportX, miniMapContentWidth() + 4d);
+        miniMapViewport.setVisible(true);
+        miniMapViewport.resizeRelocate(viewportX, top, viewportWidth, viewportHeight);
+    }
+
+    private void jumpToMiniMapPosition(double mouseY) {
+        double renderHeight = Math.max(0d, Math.min(miniMapHost.getHeight(), miniMapRenderHeight));
+        if (!miniMapVisible || verticalScrollBar == null || renderHeight <= 0d) {
+            return;
+        }
+
+        double clickFraction = Math.max(0d, Math.min(1d, mouseY / renderHeight));
+        double nextValue = MiniMapSupport.scrollValueForFraction(
+                clickFraction,
+                verticalScrollBar.getMin(),
+                verticalScrollBar.getMax(),
+                verticalScrollBar.getVisibleAmount()
+        );
+        verticalScrollBar.setValue(nextValue);
+        codeArea.requestFocus();
+    }
+
+    private void configureFadeRegion(Region region, String styleClass) {
+        region.setManaged(false);
+        region.setMouseTransparent(true);
+        region.getStyleClass().add(styleClass);
+    }
+
+    private void updateMiniMapFadeRegions(double contentWidth, double renderHeight) {
+        double fadeHeight = Math.min(MINI_MAP_FADE_HEIGHT, Math.max(0d, renderHeight / 3d));
+        boolean showFade = fadeHeight >= 6d;
+        miniMapTopFade.setVisible(showFade);
+        miniMapBottomFade.setVisible(showFade);
+        if (!showFade) {
+            return;
+        }
+        double x = miniMapContentX();
+        double y = Math.max(0d, renderHeight - fadeHeight);
+        miniMapTopFade.resizeRelocate(x, 0d, contentWidth, fadeHeight);
+        miniMapBottomFade.resizeRelocate(x, y, contentWidth, fadeHeight);
+    }
+
+    private double miniMapContentX() {
+        return Math.min(Math.max(0d, miniMapHost.getWidth() - 12d), MINI_MAP_CONTENT_LEFT_INSET);
+    }
+
+    private double miniMapContentRightInset() {
+        return Math.min(Math.max(0d, miniMapHost.getWidth() - miniMapContentX() - 8d), MINI_MAP_CONTENT_RIGHT_INSET);
+    }
+
+    private double miniMapContentWidth() {
+        return Math.max(24d, miniMapHost.getWidth() - miniMapContentX() - miniMapContentRightInset());
     }
 }
 
