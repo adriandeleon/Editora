@@ -219,6 +219,12 @@ public class EditorController {
     private Button pasteButton;
 
     @FXML
+    private Button newTabToolbarButton;
+
+    @FXML
+    private Button closeTabToolbarButton;
+
+    @FXML
     private Button openFileToolbarButton;
 
     @FXML
@@ -501,6 +507,7 @@ public class EditorController {
 
     @FXML
     private void onNewTab() {
+        animateToolbarClick(newTabToolbarButton);
         createNewTab();
     }
 
@@ -549,31 +556,37 @@ public class EditorController {
 
     @FXML
     private void onCloseCurrentTab() {
+        animateToolbarClick(closeTabToolbarButton);
         getActiveDocument().ifPresent(this::closeDocument);
     }
 
     @FXML
     private void onUndo() {
+        animateToolbarClick(undoButton);
         undoActiveEdit();
     }
 
     @FXML
     private void onRedo() {
+        animateToolbarClick(redoButton);
         redoActiveEdit();
     }
 
     @FXML
     private void onCut() {
+        animateToolbarClick(cutButton);
         cutActiveSelection();
     }
 
     @FXML
     private void onCopy() {
+        animateToolbarClick(copyButton);
         copyActiveSelection();
     }
 
     @FXML
     private void onPaste() {
+        animateToolbarClick(pasteButton);
         pasteIntoActiveEditor();
     }
 

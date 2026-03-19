@@ -40,7 +40,7 @@
                     <ToolBar styleClass="top-toolbar">
                         <Label text="Editora" styleClass="app-title"/>
                         <Separator orientation="VERTICAL"/>
-                        <Button mnemonicParsing="false" onAction="#onNewTab" styleClass="toolbar-icon-button">
+                        <Button fx:id="newTabToolbarButton" mnemonicParsing="false" onAction="#onNewTab" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-plus" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
@@ -72,7 +72,7 @@
                                 <Tooltip text="Save File As (⇧⌘S)"/>
                             </tooltip>
                         </Button>
-                        <Button mnemonicParsing="false" onAction="#onCloseCurrentTab" styleClass="toolbar-icon-button danger-icon-button">
+                        <Button fx:id="closeTabToolbarButton" mnemonicParsing="false" onAction="#onCloseCurrentTab" styleClass="toolbar-icon-button danger-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-x-circle" iconSize="14" styleClass="toolbar-font-icon danger-font-icon"/>
                             </graphic>
