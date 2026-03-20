@@ -253,46 +253,87 @@
                 </VBox>
             </top>
             <center>
-                <SplitPane fx:id="centerSplitPane" dividerPositions="0.22" BorderPane.alignment="CENTER">
-                    <items>
-                        <VBox fx:id="projectExplorerPane" minWidth="240.0" prefWidth="300.0" spacing="12.0" styleClass="project-explorer">
+                <BorderPane fx:id="toolWindowShell" BorderPane.alignment="CENTER" styleClass="tool-window-shell">
+                    <left>
+                        <VBox fx:id="leftToolWindowRail" alignment="TOP_CENTER" managed="false" spacing="6.0" styleClass="tool-window-rail tool-window-rail-left" visible="false" BorderPane.alignment="CENTER">
                             <padding>
-                                <Insets bottom="12.0" left="12.0" right="12.0" top="12.0"/>
+                                <Insets bottom="8.0" left="4.0" right="4.0" top="8.0"/>
                             </padding>
-                            <HBox alignment="CENTER_LEFT" spacing="10.0">
-                                <Label text="Project Explorer" styleClass="explorer-title"/>
-                                <Region HBox.hgrow="ALWAYS"/>
-                                <Button mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="panel-dismiss-button panel-icon-button">
-                                    <graphic>
-                                        <FontIcon iconLiteral="bi-x-circle" iconSize="13" styleClass="toolbar-font-icon"/>
-                                    </graphic>
-                                    <tooltip>
-                                        <Tooltip text="Hide Project Explorer (Esc or ⌥⌘E)"/>
-                                    </tooltip>
-                                </Button>
-                                <Button mnemonicParsing="false" onAction="#onRefreshWorkspace" styleClass="search-action-button">
-                                    <graphic>
-                                        <FontIcon iconLiteral="bi-arrow-clockwise" iconSize="14" styleClass="toolbar-font-icon"/>
-                                    </graphic>
-                                    <tooltip>
-                                        <Tooltip text="Refresh Workspace"/>
-                                    </tooltip>
-                                </Button>
-                                <Button mnemonicParsing="false" onAction="#onOpenWorkspaceFolder" styleClass="search-action-button">
-                                    <graphic>
-                                        <FontIcon iconLiteral="bi-folder2-open" iconSize="14" styleClass="toolbar-font-icon"/>
-                                    </graphic>
-                                    <tooltip>
-                                        <Tooltip text="Open Workspace Folder"/>
-                                    </tooltip>
-                                </Button>
-                            </HBox>
-                            <Label fx:id="workspaceRootLabel" styleClass="workspace-root-label" wrapText="true"/>
-                            <TreeView fx:id="projectTreeView" VBox.vgrow="ALWAYS" styleClass="project-tree"/>
+                            <Button fx:id="projectExplorerLeftRailButton" managed="false" mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="tool-window-rail-button toolbar-icon-button" visible="false">
+                                <graphic>
+                                    <FontIcon iconLiteral="bi-files" iconSize="14" styleClass="toolbar-font-icon"/>
+                                </graphic>
+                                <tooltip>
+                                    <Tooltip text="Toggle Project Explorer Tool Window"/>
+                                </tooltip>
+                            </Button>
                         </VBox>
-                        <TabPane fx:id="editorTabPane" styleClass="editor-tabs"/>
-                    </items>
-                </SplitPane>
+                    </left>
+                    <center>
+                        <SplitPane fx:id="centerSplitPane" dividerPositions="0.22" BorderPane.alignment="CENTER">
+                            <items>
+                                <VBox fx:id="projectExplorerPane" minWidth="220.0" prefWidth="260.0" spacing="10.0" styleClass="project-explorer">
+                                    <padding>
+                                        <Insets bottom="10.0" left="10.0" right="10.0" top="10.0"/>
+                                    </padding>
+                                    <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                        <Label text="Project Explorer" styleClass="explorer-title"/>
+                                        <Region HBox.hgrow="ALWAYS"/>
+                                        <Button mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="panel-dismiss-button panel-icon-button">
+                                            <graphic>
+                                                <FontIcon iconLiteral="bi-x-circle" iconSize="13" styleClass="toolbar-font-icon"/>
+                                            </graphic>
+                                            <tooltip>
+                                                <Tooltip text="Hide Project Explorer (Esc or ⌥⌘E)"/>
+                                            </tooltip>
+                                        </Button>
+                                        <Button mnemonicParsing="false" onAction="#onRefreshWorkspace" styleClass="search-action-button">
+                                            <graphic>
+                                                <FontIcon iconLiteral="bi-arrow-clockwise" iconSize="14" styleClass="toolbar-font-icon"/>
+                                            </graphic>
+                                            <tooltip>
+                                                <Tooltip text="Refresh Workspace"/>
+                                            </tooltip>
+                                        </Button>
+                                        <Button mnemonicParsing="false" onAction="#onOpenWorkspaceFolder" styleClass="search-action-button">
+                                            <graphic>
+                                                <FontIcon iconLiteral="bi-folder2-open" iconSize="14" styleClass="toolbar-font-icon"/>
+                                            </graphic>
+                                            <tooltip>
+                                                <Tooltip text="Open Workspace Folder"/>
+                                            </tooltip>
+                                        </Button>
+                                    </HBox>
+                                    <Label fx:id="workspaceRootLabel" styleClass="workspace-root-label" wrapText="true"/>
+                                    <TreeView fx:id="projectTreeView" VBox.vgrow="ALWAYS" styleClass="project-tree"/>
+                                </VBox>
+                                <TabPane fx:id="editorTabPane" styleClass="editor-tabs"/>
+                            </items>
+                        </SplitPane>
+                    </center>
+                    <right>
+                        <VBox fx:id="rightToolWindowRail" alignment="TOP_CENTER" managed="false" spacing="6.0" styleClass="tool-window-rail tool-window-rail-right" visible="false" BorderPane.alignment="CENTER">
+                            <padding>
+                                <Insets bottom="8.0" left="4.0" right="4.0" top="8.0"/>
+                            </padding>
+                            <Button fx:id="projectExplorerRightRailButton" managed="false" mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="tool-window-rail-button toolbar-icon-button" visible="false">
+                                <graphic>
+                                    <FontIcon iconLiteral="bi-files" iconSize="14" styleClass="toolbar-font-icon"/>
+                                </graphic>
+                                <tooltip>
+                                    <Tooltip text="Toggle Project Explorer Tool Window"/>
+                                </tooltip>
+                            </Button>
+                        </VBox>
+                    </right>
+                    <bottom>
+                        <HBox fx:id="bottomToolWindowRail" alignment="CENTER_LEFT" managed="false" spacing="6.0" styleClass="tool-window-rail tool-window-rail-bottom" visible="false" BorderPane.alignment="CENTER">
+                            <padding>
+                                <Insets bottom="5.0" left="8.0" right="8.0" top="5.0"/>
+                            </padding>
+                        </HBox>
+                    </bottom>
+                </BorderPane>
             </center>
             <bottom>
                 <HBox fx:id="statusBar" alignment="CENTER_LEFT" spacing="12.0" styleClass="status-bar" BorderPane.alignment="CENTER">

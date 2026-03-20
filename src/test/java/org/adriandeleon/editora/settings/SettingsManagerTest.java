@@ -10,8 +10,6 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.prefs.BackingStoreException;
-import java.util.prefs.Preferences;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,19 +20,16 @@ class SettingsManagerTest {
     @TempDir
     Path tempDir;
 
-    private final Preferences preferences = Preferences.userNodeForPackage(SettingsManager.class);
     private String previousHomeOverride;
 
     @BeforeEach
-    void clearBefore() throws BackingStoreException {
+    void clearBefore() {
         previousHomeOverride = System.getProperty(EditoraPersistence.HOME_OVERRIDE_PROPERTY);
         System.setProperty(EditoraPersistence.HOME_OVERRIDE_PROPERTY, tempDir.resolve("home").toString());
-        preferences.clear();
     }
 
     @AfterEach
-    void clearAfter() throws BackingStoreException {
-        preferences.clear();
+    void clearAfter() {
         if (previousHomeOverride == null) {
             System.clearProperty(EditoraPersistence.HOME_OVERRIDE_PROPERTY);
         } else {
@@ -43,7 +38,7 @@ class SettingsManagerTest {
     }
 
     @Test
-    void saveAndLoadRoundTripsNormalizedSettings() {
+    void saveAndLoadRoundTripsNormalizedSettings() throws IOException {
         SettingsManager.save(new EditorSettings(
                 EditorTheme.NORD_LIGHT,
                 true,
@@ -52,6 +47,7 @@ class SettingsManagerTest {
                 true,
                 false,
                 false,
+                ToolWindowSide.RIGHT,
                 "alt+shortcut+x",
                 "  Fira Code  ",
                 16
@@ -64,12 +60,18 @@ class SettingsManagerTest {
         assertFalse(loaded.diagnosticsEnabled());
         assertTrue(loaded.miniMapVisible());
         assertTrue(loaded.searchBarVisible());
-        assertFalse(loaded.projectExplorerVisible());
+        assertFalse(loaded.toolDockVisible());
         assertFalse(loaded.breadcrumbBarVisible());
+        assertEquals(ToolWindowSide.RIGHT, loaded.toolDockSide());
         assertEquals("ALT+SHORTCUT+X", loaded.commandPaletteShortcut());
         assertEquals("Fira Code", loaded.editorFontFamily());
         assertEquals(16, loaded.editorFontSize());
         assertTrue(Files.isRegularFile(SettingsManager.persistenceFile()));
+        String persistedSettings = Files.readString(SettingsManager.persistenceFile());
+        assertTrue(persistedSettings.contains("\"toolDockVisible\""));
+        assertTrue(persistedSettings.contains("\"toolDockSide\""));
+        assertFalse(persistedSettings.contains("\"projectExplorerVisible\""));
+        assertFalse(persistedSettings.contains("\"projectExplorerSide\""));
     }
 
     @Test
@@ -84,8 +86,9 @@ class SettingsManagerTest {
         assertTrue(loaded.diagnosticsEnabled());
         assertTrue(loaded.miniMapVisible());
         assertFalse(loaded.searchBarVisible());
-        assertFalse(loaded.projectExplorerVisible());
+        assertFalse(loaded.toolDockVisible());
         assertTrue(loaded.breadcrumbBarVisible());
+        assertEquals(EditorSettings.DEFAULT_TOOL_DOCK_SIDE, loaded.toolDockSide());
         assertEquals(CommandPaletteShortcut.DEFAULT_VALUE, loaded.commandPaletteShortcut());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_FAMILY, loaded.editorFontFamily());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_SIZE, loaded.editorFontSize());
@@ -99,45 +102,21 @@ class SettingsManagerTest {
     }
 
     @Test
-    void loadMigratesLegacyLightAndDarkThemeValues() {
-        preferences.put("theme", "LIGHT");
-        assertEquals(EditorTheme.PRIMER_LIGHT, SettingsManager.load().theme());
-
-        try {
-            Files.deleteIfExists(SettingsManager.persistenceFile());
-        } catch (IOException exception) {
-            throw new RuntimeException(exception);
-        }
-        preferences.put("theme", "DARK");
-        assertEquals(EditorTheme.PRIMER_DARK, SettingsManager.load().theme());
-    }
-
-    @Test
-    void loadMigratesLegacyPreferencesIntoJsonPersistence() {
-        preferences.put("theme", "BROKEN_THEME");
-        preferences.putBoolean("wrapText", true);
-        preferences.putBoolean("diagnosticsEnabled", false);
-        preferences.putBoolean("miniMapVisible", false);
-        preferences.putBoolean("searchBarVisible", true);
-        preferences.putBoolean("projectExplorerVisible", true);
-        preferences.putBoolean("breadcrumbBarVisible", false);
-        preferences.put("commandPaletteShortcut", "not-a-shortcut");
-        preferences.put("editorFontFamily", "   ");
-        preferences.putInt("editorFontSize", 200);
+    void loadIgnoresLegacyProjectExplorerSettingKeys() throws IOException {
+        Files.createDirectories(SettingsManager.persistenceFile().getParent());
+        Files.writeString(SettingsManager.persistenceFile(), """
+                {
+                  "theme": "NORD_DARK",
+                  "projectExplorerVisible": true,
+                  "projectExplorerSide": "right"
+                }
+                """);
 
         EditorSettings loaded = SettingsManager.load();
 
-        assertEquals(EditorTheme.PRIMER_LIGHT, loaded.theme());
-        assertTrue(loaded.wrapText());
-        assertFalse(loaded.diagnosticsEnabled());
-        assertFalse(loaded.miniMapVisible());
-        assertTrue(loaded.searchBarVisible());
-        assertTrue(loaded.projectExplorerVisible());
-        assertFalse(loaded.breadcrumbBarVisible());
-        assertEquals(CommandPaletteShortcut.DEFAULT_VALUE, loaded.commandPaletteShortcut());
-        assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_FAMILY, loaded.editorFontFamily());
-        assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_SIZE, loaded.editorFontSize());
-        assertTrue(Files.isRegularFile(SettingsManager.persistenceFile()));
+        assertEquals(EditorTheme.NORD_DARK, loaded.theme());
+        assertFalse(loaded.toolDockVisible());
+        assertEquals(EditorSettings.DEFAULT_TOOL_DOCK_SIDE, loaded.toolDockSide());
     }
 
     @Test
@@ -146,8 +125,9 @@ class SettingsManagerTest {
 
         assertTrue(loaded.miniMapVisible());
         assertFalse(loaded.searchBarVisible());
-        assertFalse(loaded.projectExplorerVisible());
+        assertFalse(loaded.toolDockVisible());
         assertTrue(loaded.breadcrumbBarVisible());
+        assertEquals(EditorSettings.DEFAULT_TOOL_DOCK_SIDE, loaded.toolDockSide());
     }
 }
 

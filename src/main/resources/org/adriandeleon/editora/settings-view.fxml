@@ -112,10 +112,16 @@
                         <CheckBox fx:id="searchBarVisibleCheckBox" text="Show the search and replace bar in the editor shell" GridPane.columnIndex="1" GridPane.rowIndex="6"/>
 
                         <Label text="Project explorer" styleClass="settings-field-label" GridPane.rowIndex="7"/>
-                        <CheckBox fx:id="projectExplorerVisibleCheckBox" text="Show the project explorer sidebar in the editor shell" GridPane.columnIndex="1" GridPane.rowIndex="7"/>
+                        <CheckBox fx:id="toolDockVisibleCheckBox" text="Show Project Explorer in the tool dock" GridPane.columnIndex="1" GridPane.rowIndex="7"/>
 
-                        <Label text="Status breadcrumb" styleClass="settings-field-label" GridPane.rowIndex="8"/>
-                        <CheckBox fx:id="breadcrumbBarVisibleCheckBox" text="Show the breadcrumb path inline in the status bar" GridPane.columnIndex="1" GridPane.rowIndex="8"/>
+                        <Label text="Tool Dock" styleClass="settings-field-label" GridPane.rowIndex="8"/>
+                        <VBox spacing="8.0" GridPane.columnIndex="1" GridPane.rowIndex="8">
+                            <ComboBox fx:id="toolDockSideComboBox" maxWidth="220.0" prefWidth="180.0"/>
+                            <Label styleClass="settings-helper-label" wrapText="true" text="Choose whether tool windows like Project Explorer open on the left or right rail."/>
+                        </VBox>
+
+                        <Label text="Status breadcrumb" styleClass="settings-field-label" GridPane.rowIndex="9"/>
+                        <CheckBox fx:id="breadcrumbBarVisibleCheckBox" text="Show the breadcrumb path inline in the status bar" GridPane.columnIndex="1" GridPane.rowIndex="9"/>
                     </GridPane>
                             </VBox>
                         </VBox>

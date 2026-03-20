@@ -7,19 +7,17 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.prefs.BackingStoreException;
-import java.util.prefs.Preferences;
 
 public final class SettingsManager {
-    private static final Preferences PREFERENCES = Preferences.userNodeForPackage(SettingsManager.class);
     private static final String SCHEMA_VERSION_KEY = "schemaVersion";
     private static final String THEME_KEY = "theme";
     private static final String WRAP_TEXT_KEY = "wrapText";
     private static final String DIAGNOSTICS_KEY = "diagnosticsEnabled";
     private static final String MINI_MAP_VISIBLE_KEY = "miniMapVisible";
     private static final String SEARCH_BAR_VISIBLE_KEY = "searchBarVisible";
-    private static final String PROJECT_EXPLORER_VISIBLE_KEY = "projectExplorerVisible";
+    private static final String TOOL_DOCK_VISIBLE_KEY = "toolDockVisible";
     private static final String BREADCRUMB_BAR_VISIBLE_KEY = "breadcrumbBarVisible";
+    private static final String TOOL_DOCK_SIDE_KEY = "toolDockSide";
     private static final String COMMAND_PALETTE_SHORTCUT_KEY = "commandPaletteShortcut";
     private static final String EDITOR_FONT_FAMILY_KEY = "editorFontFamily";
     private static final String EDITOR_FONT_SIZE_KEY = "editorFontSize";
@@ -29,15 +27,8 @@ public final class SettingsManager {
 
     public static EditorSettings load() {
         Optional<Map<String, Object>> storedSettings = EditoraPersistence.readJsonObject(EditoraPersistence.settingsFile());
-        if (storedSettings.isPresent()) {
-            return settingsFromJson(storedSettings.get());
-        }
-
-        EditorSettings legacySettings = loadLegacyPreferences();
-        if (hasLegacyPreferences()) {
-            save(legacySettings);
-        }
-        return legacySettings;
+        return storedSettings.map(SettingsManager::settingsFromJson)
+                .orElseGet(SettingsManager::defaultSettings);
     }
 
     public static Path persistenceFile() {
@@ -50,8 +41,9 @@ public final class SettingsManager {
         boolean diagnosticsEnabled = readBoolean(values, DIAGNOSTICS_KEY, true);
         boolean miniMapVisible = readBoolean(values, MINI_MAP_VISIBLE_KEY, EditorSettings.DEFAULT_MINI_MAP_VISIBLE);
         boolean searchBarVisible = readBoolean(values, SEARCH_BAR_VISIBLE_KEY, EditorSettings.DEFAULT_SEARCH_BAR_VISIBLE);
-        boolean projectExplorerVisible = readBoolean(values, PROJECT_EXPLORER_VISIBLE_KEY, EditorSettings.DEFAULT_PROJECT_EXPLORER_VISIBLE);
+        boolean toolDockVisible = readBoolean(values, TOOL_DOCK_VISIBLE_KEY, EditorSettings.DEFAULT_TOOL_DOCK_VISIBLE);
         boolean breadcrumbBarVisible = readBoolean(values, BREADCRUMB_BAR_VISIBLE_KEY, true);
+        ToolWindowSide toolDockSide = ToolWindowSide.fromStoredValue(readString(values, TOOL_DOCK_SIDE_KEY, EditorSettings.DEFAULT_TOOL_DOCK_SIDE.storedValue()));
         String commandPaletteShortcut = readString(values, COMMAND_PALETTE_SHORTCUT_KEY, CommandPaletteShortcut.DEFAULT_VALUE);
         String editorFontFamily = readString(values, EDITOR_FONT_FAMILY_KEY, EditorSettings.DEFAULT_EDITOR_FONT_FAMILY);
         int editorFontSize = readInt(values, EDITOR_FONT_SIZE_KEY, EditorSettings.DEFAULT_EDITOR_FONT_SIZE);
@@ -61,42 +53,29 @@ public final class SettingsManager {
                 diagnosticsEnabled,
                 miniMapVisible,
                 searchBarVisible,
-                projectExplorerVisible,
+                toolDockVisible,
                 breadcrumbBarVisible,
+                toolDockSide,
                 commandPaletteShortcut,
                 editorFontFamily,
                 editorFontSize
         );
     }
 
-    private static EditorSettings loadLegacyPreferences() {
-        EditorTheme theme = loadLegacyTheme();
-        boolean wrapText = PREFERENCES.getBoolean(WRAP_TEXT_KEY, false);
-        boolean diagnosticsEnabled = PREFERENCES.getBoolean(DIAGNOSTICS_KEY, true);
-        boolean miniMapVisible = PREFERENCES.getBoolean(MINI_MAP_VISIBLE_KEY, EditorSettings.DEFAULT_MINI_MAP_VISIBLE);
-        boolean searchBarVisible = PREFERENCES.getBoolean(SEARCH_BAR_VISIBLE_KEY, EditorSettings.DEFAULT_SEARCH_BAR_VISIBLE);
-        boolean projectExplorerVisible = PREFERENCES.getBoolean(PROJECT_EXPLORER_VISIBLE_KEY, EditorSettings.DEFAULT_PROJECT_EXPLORER_VISIBLE);
-        boolean breadcrumbBarVisible = PREFERENCES.getBoolean(BREADCRUMB_BAR_VISIBLE_KEY, true);
-        String commandPaletteShortcut = PREFERENCES.get(COMMAND_PALETTE_SHORTCUT_KEY, CommandPaletteShortcut.DEFAULT_VALUE);
-        String editorFontFamily = PREFERENCES.get(EDITOR_FONT_FAMILY_KEY, EditorSettings.DEFAULT_EDITOR_FONT_FAMILY);
-        int editorFontSize = PREFERENCES.getInt(EDITOR_FONT_SIZE_KEY, EditorSettings.DEFAULT_EDITOR_FONT_SIZE);
+    private static EditorSettings defaultSettings() {
         return new EditorSettings(
-                theme,
-                wrapText,
-                diagnosticsEnabled,
-                miniMapVisible,
-                searchBarVisible,
-                projectExplorerVisible,
-                breadcrumbBarVisible,
-                commandPaletteShortcut,
-                editorFontFamily,
-                editorFontSize
+                EditorTheme.defaultTheme(),
+                false,
+                true,
+                EditorSettings.DEFAULT_MINI_MAP_VISIBLE,
+                EditorSettings.DEFAULT_SEARCH_BAR_VISIBLE,
+                EditorSettings.DEFAULT_TOOL_DOCK_VISIBLE,
+                true,
+                EditorSettings.DEFAULT_TOOL_DOCK_SIDE,
+                CommandPaletteShortcut.DEFAULT_VALUE,
+                EditorSettings.DEFAULT_EDITOR_FONT_FAMILY,
+                EditorSettings.DEFAULT_EDITOR_FONT_SIZE
         );
-    }
-
-    private static EditorTheme loadLegacyTheme() {
-        String storedTheme = PREFERENCES.get(THEME_KEY, EditorTheme.defaultTheme().name());
-        return EditorTheme.fromStoredValue(storedTheme);
     }
 
     public static void save(EditorSettings settings) {
@@ -107,21 +86,15 @@ public final class SettingsManager {
         values.put(DIAGNOSTICS_KEY, settings.diagnosticsEnabled());
         values.put(MINI_MAP_VISIBLE_KEY, settings.miniMapVisible());
         values.put(SEARCH_BAR_VISIBLE_KEY, settings.searchBarVisible());
-        values.put(PROJECT_EXPLORER_VISIBLE_KEY, settings.projectExplorerVisible());
+        values.put(TOOL_DOCK_VISIBLE_KEY, settings.toolDockVisible());
         values.put(BREADCRUMB_BAR_VISIBLE_KEY, settings.breadcrumbBarVisible());
+        values.put(TOOL_DOCK_SIDE_KEY, settings.toolDockSide().storedValue());
         values.put(COMMAND_PALETTE_SHORTCUT_KEY, settings.commandPaletteShortcut());
         values.put(EDITOR_FONT_FAMILY_KEY, settings.editorFontFamily());
         values.put(EDITOR_FONT_SIZE_KEY, settings.editorFontSize());
         EditoraPersistence.writeJsonObject(EditoraPersistence.settingsFile(), values);
     }
 
-    private static boolean hasLegacyPreferences() {
-        try {
-            return PREFERENCES.keys().length > 0;
-        } catch (BackingStoreException exception) {
-            return false;
-        }
-    }
 
     private static String readString(Map<String, Object> values, String key, String fallback) {
         Object value = values.get(key);

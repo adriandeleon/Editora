@@ -7,7 +7,6 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
@@ -18,6 +17,7 @@ import javafx.scene.text.Font;
 import javafx.application.Platform;
 import org.adriandeleon.editora.settings.CommandPaletteShortcut;
 import org.adriandeleon.editora.settings.EditorSettings;
+import org.adriandeleon.editora.settings.ToolWindowSide;
 import org.adriandeleon.editora.languages.LanguageAnalysis;
 import org.adriandeleon.editora.languages.LanguagePreviewSpec;
 import org.adriandeleon.editora.theme.EditorTheme;
@@ -59,10 +59,13 @@ public class SettingsController {
     private CheckBox searchBarVisibleCheckBox;
 
     @FXML
-    private CheckBox projectExplorerVisibleCheckBox;
+    private CheckBox toolDockVisibleCheckBox;
 
     @FXML
     private CheckBox breadcrumbBarVisibleCheckBox;
+
+    @FXML
+    private ComboBox<ToolWindowSide> toolDockSideComboBox;
 
     @FXML
     private ComboBox<String> editorFontFamilyComboBox;
@@ -140,6 +143,9 @@ public class SettingsController {
         themeComboBox.setItems(FXCollections.observableArrayList(EditorTheme.values()));
         themeComboBox.setCellFactory(ignored -> createThemeCell());
         themeComboBox.setButtonCell(createThemeCell());
+        toolDockSideComboBox.setItems(FXCollections.observableArrayList(ToolWindowSide.values()));
+        toolDockSideComboBox.setCellFactory(ignored -> createToolWindowSideCell());
+        toolDockSideComboBox.setButtonCell(createToolWindowSideCell());
         themeComboBox.valueProperty().addListener(onValueChange(current -> {
             if (suppressThemePreview || current == null) {
                 return;
@@ -189,8 +195,9 @@ public class SettingsController {
         diagnosticsCheckBox.setSelected(settings.diagnosticsEnabled());
         miniMapVisibleCheckBox.setSelected(settings.miniMapVisible());
         searchBarVisibleCheckBox.setSelected(settings.searchBarVisible());
-        projectExplorerVisibleCheckBox.setSelected(settings.projectExplorerVisible());
+        toolDockVisibleCheckBox.setSelected(settings.toolDockVisible());
         breadcrumbBarVisibleCheckBox.setSelected(settings.breadcrumbBarVisible());
+        toolDockSideComboBox.setValue(settings.toolDockSide());
         editorFontFamilyComboBox.setValue(settings.editorFontFamily());
         editorFontSizeField.setText(Integer.toString(settings.editorFontSize()));
         showFontInstruction();
@@ -239,8 +246,9 @@ public class SettingsController {
                 diagnosticsCheckBox.isSelected(),
                 miniMapVisibleCheckBox.isSelected(),
                 searchBarVisibleCheckBox.isSelected(),
-                projectExplorerVisibleCheckBox.isSelected(),
+                toolDockVisibleCheckBox.isSelected(),
                 breadcrumbBarVisibleCheckBox.isSelected(),
+                toolDockSideComboBox.getValue() == null ? EditorSettings.DEFAULT_TOOL_DOCK_SIDE : toolDockSideComboBox.getValue(),
                 commandPaletteShortcut,
                 fontFamily,
                 fontSize
@@ -317,6 +325,16 @@ public class SettingsController {
             protected void updateItem(EditorTheme item, boolean empty) {
                 super.updateItem(item, empty);
                 setText(empty || item == null ? null : item.getSettingsDisplayName());
+            }
+        };
+    }
+
+    private ListCell<ToolWindowSide> createToolWindowSideCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(ToolWindowSide item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item.displayName());
             }
         };
     }
@@ -516,8 +534,9 @@ public class SettingsController {
         Objects.requireNonNull(diagnosticsCheckBox);
         Objects.requireNonNull(miniMapVisibleCheckBox);
         Objects.requireNonNull(searchBarVisibleCheckBox);
-        Objects.requireNonNull(projectExplorerVisibleCheckBox);
+        Objects.requireNonNull(toolDockVisibleCheckBox);
         Objects.requireNonNull(breadcrumbBarVisibleCheckBox);
+        Objects.requireNonNull(toolDockSideComboBox);
         Objects.requireNonNull(editorFontFamilyComboBox);
         Objects.requireNonNull(editorFontSizeField);
         Objects.requireNonNull(editorFontHelpLabel);

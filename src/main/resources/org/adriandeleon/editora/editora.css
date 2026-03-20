@@ -153,9 +153,36 @@
     -fx-padding: 10 12 10 12;
 }
 
+.tool-window-shell {
+    -fx-background-color: transparent;
+}
+
+.tool-window-rail {
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+}
+
+.tool-window-rail-left,
+.tool-window-rail-right {
+    -fx-min-width: 40;
+    -fx-pref-width: 40;
+}
+
+.tool-window-rail-bottom {
+    -fx-min-height: 38;
+    -fx-pref-height: 38;
+}
+
+.tool-window-rail-button {
+    -fx-min-width: 32;
+    -fx-min-height: 32;
+    -fx-pref-width: 32;
+    -fx-pref-height: 32;
+}
+
 .project-explorer {
-    -fx-background-radius: 18;
-    -fx-border-radius: 18;
+    -fx-background-radius: 16;
+    -fx-border-radius: 16;
     -fx-padding: 0;
 }
 
@@ -644,6 +671,7 @@
 .theme-dark .search-bar,
 .theme-dark .status-bar,
 .theme-dark .overlay-panel,
+.theme-dark .tool-window-rail,
 .theme-dark .project-explorer {
     -fx-background-color: rgba(255, 255, 255, 0.06);
     -fx-border-color: rgba(255, 255, 255, 0.09);
@@ -844,6 +872,7 @@
 .theme-light .search-bar,
 .theme-light .status-bar,
 .theme-light .overlay-panel,
+.theme-light .tool-window-rail,
 .theme-light .project-explorer {
     -fx-background-color: rgba(0, 0, 0, 0.04);
     -fx-border-color: rgba(0, 0, 0, 0.08);

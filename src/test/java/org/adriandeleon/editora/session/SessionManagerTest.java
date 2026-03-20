@@ -11,29 +11,26 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
-import java.util.prefs.BackingStoreException;
-import java.util.prefs.Preferences;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SessionManagerTest {
 
     @TempDir
     Path tempDir;
 
-    private final Preferences preferences = Preferences.userNodeForPackage(SessionManager.class);
     private String previousHomeOverride;
 
     @BeforeEach
-    void clearBefore() throws BackingStoreException {
+    void clearBefore() {
         previousHomeOverride = System.getProperty(EditoraPersistence.HOME_OVERRIDE_PROPERTY);
         System.setProperty(EditoraPersistence.HOME_OVERRIDE_PROPERTY, tempDir.resolve("home").toString());
-        preferences.clear();
     }
 
     @AfterEach
-    void clearAfter() throws BackingStoreException {
-        preferences.clear();
+    void clearAfter() {
         if (previousHomeOverride == null) {
             System.clearProperty(EditoraPersistence.HOME_OVERRIDE_PROPERTY);
         } else {
@@ -42,7 +39,7 @@ class SessionManagerTest {
     }
 
     @Test
-    void savesAndLoadsWorkspaceSessionShellState() {
+    void savesAndLoadsWorkspaceSessionShellState() throws IOException {
         Path workspaceRoot = Path.of("/tmp/editora-workspace").toAbsolutePath().normalize();
         Path firstOpenFile = workspaceRoot.resolve("src/Main.java").normalize();
         Path secondOpenFile = workspaceRoot.resolve("README.md").normalize();
@@ -77,6 +74,13 @@ class SessionManagerTest {
 
         assertEquals(session, loaded);
         assertEquals(SessionManager.workspaceSessionFile(), EditoraPersistence.workspaceSessionFile());
+        String persistedSession = Files.readString(SessionManager.workspaceSessionFile());
+        assertTrue(persistedSession.contains("\"toolDockVisible\""));
+        assertTrue(persistedSession.contains("\"toolDockDividerPosition\""));
+        assertTrue(persistedSession.contains("\"toolDockWidth\""));
+        assertFalse(persistedSession.contains("\"projectExplorerVisible\""));
+        assertFalse(persistedSession.contains("\"projectExplorerDividerPosition\""));
+        assertFalse(persistedSession.contains("\"projectExplorerWidth\""));
     }
 
     @Test
@@ -98,8 +102,31 @@ class SessionManagerTest {
 
         assertEquals(fallbackWorkspaceRoot, loaded.workspaceRoot());
         assertEquals(false, loaded.searchBarVisible());
-        assertEquals(false, loaded.projectExplorerVisible());
+        assertEquals(false, loaded.toolDockVisible());
         assertEquals(true, loaded.statusBarVisible());
+        assertEquals(0.22d, loaded.toolDockDividerPosition());
+        assertEquals(260d, loaded.toolDockWidth());
+    }
+
+    @Test
+    void loadWorkspaceSessionIgnoresLegacyProjectExplorerKeys() throws IOException {
+        Path fallbackWorkspaceRoot = Path.of("/fallback").toAbsolutePath().normalize();
+        Files.createDirectories(SessionManager.workspaceSessionFile().getParent());
+        Files.writeString(SessionManager.workspaceSessionFile(), """
+                {
+                  "workspaceRoot": "/tmp/legacy-workspace",
+                  "projectExplorerVisible": true,
+                  "projectExplorerDividerPosition": 0.31,
+                  "projectExplorerWidth": 420
+                }
+                """);
+
+        WorkspaceSession loaded = SessionManager.loadWorkspaceSession(fallbackWorkspaceRoot);
+
+        assertEquals(Path.of("/tmp/legacy-workspace").toAbsolutePath().normalize(), loaded.workspaceRoot());
+        assertFalse(loaded.toolDockVisible());
+        assertEquals(0.22d, loaded.toolDockDividerPosition());
+        assertEquals(260d, loaded.toolDockWidth());
     }
 
     @Test
@@ -114,8 +141,10 @@ class SessionManagerTest {
         assertEquals(List.of(), loaded.openFiles());
         assertEquals(Optional.empty(), loaded.selectedFile());
         assertEquals(false, loaded.searchBarVisible());
-        assertEquals(false, loaded.projectExplorerVisible());
+        assertEquals(false, loaded.toolDockVisible());
         assertEquals(true, loaded.statusBarVisible());
+        assertEquals(0.22d, loaded.toolDockDividerPosition());
+        assertEquals(260d, loaded.toolDockWidth());
     }
 }
 

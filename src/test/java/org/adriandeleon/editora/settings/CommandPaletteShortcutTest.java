@@ -13,19 +13,21 @@ class CommandPaletteShortcutTest {
 
     @Test
     void editorSettingsFallsBackToDefaultForInvalidOrReservedShortcuts() {
-        EditorSettings invalid = new EditorSettings(EditorTheme.PRIMER_DARK, false, true, true, true, false, true, "not-a-shortcut", "", -1);
-        EditorSettings reserved = new EditorSettings(EditorTheme.PRIMER_DARK, false, true, false, false, true, false, "ALT+F", "", -1);
+        EditorSettings invalid = new EditorSettings(EditorTheme.PRIMER_DARK, false, true, true, true, false, true, null, "not-a-shortcut", "", -1);
+        EditorSettings reserved = new EditorSettings(EditorTheme.PRIMER_DARK, false, true, false, false, true, false, ToolWindowSide.RIGHT, "ALT+F", "", -1);
 
         assertEquals(CommandPaletteShortcut.DEFAULT_VALUE, invalid.commandPaletteShortcut());
         assertEquals(CommandPaletteShortcut.DEFAULT_VALUE, reserved.commandPaletteShortcut());
         assertTrue(invalid.miniMapVisible());
         assertFalse(reserved.miniMapVisible());
         assertTrue(invalid.searchBarVisible());
-        assertFalse(invalid.projectExplorerVisible());
+        assertFalse(invalid.toolDockVisible());
         assertFalse(reserved.searchBarVisible());
-        assertTrue(reserved.projectExplorerVisible());
+        assertTrue(reserved.toolDockVisible());
         assertTrue(invalid.breadcrumbBarVisible());
         assertFalse(reserved.breadcrumbBarVisible());
+        assertEquals(EditorSettings.DEFAULT_TOOL_DOCK_SIDE, invalid.toolDockSide());
+        assertEquals(ToolWindowSide.RIGHT, reserved.toolDockSide());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_FAMILY, invalid.editorFontFamily());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_SIZE, invalid.editorFontSize());
     }

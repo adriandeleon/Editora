@@ -9,6 +9,7 @@ import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.css.PseudoClass;
 import javafx.collections.FXCollections;
+import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.event.Event;
 import javafx.fxml.FXML;
@@ -62,6 +63,7 @@ import org.adriandeleon.editora.editor.EmacsEditing;
 import org.adriandeleon.editora.editor.EmacsNavigation;
 import org.adriandeleon.editora.editor.FindFileSupport;
 import org.adriandeleon.editora.editor.ProgressiveHighlightSupport;
+import org.adriandeleon.editora.editor.ToolWindowLayoutSupport;
 import org.adriandeleon.editora.languages.Diagnostic;
 import org.adriandeleon.editora.languages.DiagnosticSeverity;
 import org.adriandeleon.editora.languages.LanguageAnalysis;
@@ -78,6 +80,7 @@ import org.adriandeleon.editora.session.WorkspaceSession;
 import org.adriandeleon.editora.settings.CommandPaletteShortcut;
 import org.adriandeleon.editora.settings.EditorSettings;
 import org.adriandeleon.editora.settings.SettingsManager;
+import org.adriandeleon.editora.settings.ToolWindowSide;
 import org.adriandeleon.editora.status.StatusBarSupport;
 import org.adriandeleon.editora.theme.EditorTheme;
 import org.adriandeleon.editora.theme.ThemeManager;
@@ -127,6 +130,8 @@ public class EditorController {
     private static final int MAX_FIND_FILE_HISTORY = 25;
     private static final int MAX_FIND_FILE_PREVIEW_LINES = 60;
     private static final int MAX_FIND_FILE_PREVIEW_CHARACTERS = 4_000;
+    private static final double DEFAULT_TOOL_DOCK_WIDTH = 260d;
+    private static final double MIN_TOOL_DOCK_WIDTH = 220d;
     private static final PseudoClass TOOLBAR_ACTIVE_PSEUDO_CLASS = PseudoClass.getPseudoClass("toolbar-active");
     private static final javafx.util.Duration TOOLBAR_CLICK_FEEDBACK_DURATION = javafx.util.Duration.millis(220);
     private static final String APPLICATION_NAME = "Editora";
@@ -181,6 +186,21 @@ public class EditorController {
 
     @FXML
     private SplitPane centerSplitPane;
+
+    @FXML
+    private VBox leftToolWindowRail;
+
+    @FXML
+    private VBox rightToolWindowRail;
+
+    @FXML
+    private HBox bottomToolWindowRail;
+
+    @FXML
+    private Button projectExplorerLeftRailButton;
+
+    @FXML
+    private Button projectExplorerRightRailButton;
 
     @FXML
     private Label messageStatusLabel;
@@ -327,11 +347,12 @@ public class EditorController {
     private int untitledCounter = 1;
     private boolean acceleratorsInstalled;
     private boolean searchBarVisible = true;
-    private boolean projectExplorerVisible = true;
+    private boolean toolDockVisible = true;
     private boolean statusBarVisible = true;
-    private double expandedExplorerDividerPosition = 0.22;
-    private double expandedExplorerPrefWidth = 300;
-    private double expandedExplorerMinWidth = 240;
+    private ToolWindowSide toolDockSide = currentSettings.toolDockSide();
+    private double expandedToolDockDividerPosition = 0.22;
+    private double expandedToolDockPrefWidth = DEFAULT_TOOL_DOCK_WIDTH;
+    private double expandedToolDockMinWidth = MIN_TOOL_DOCK_WIDTH;
     private String lastCommandPaletteFilter = "";
     private double windowWidth = 1440;
     private double windowHeight = 920;
@@ -339,7 +360,7 @@ public class EditorController {
     private double windowY = Double.NaN;
     private boolean windowMaximized;
     private Timeline searchBarAnimation;
-    private Timeline projectExplorerAnimation;
+    private Timeline toolDockAnimation;
     private KeyCombination commandPaletteAccelerator;
     private double searchBarExpandedHeight = 52;
     private String lastFindFileQuery = "";
@@ -351,6 +372,13 @@ public class EditorController {
     private EditorTheme settingsThemeBeforePreview;
     private boolean settingsThemePreviewActive;
     private volatile boolean shuttingDown;
+    private SplitPane.Divider trackedToolDockDivider;
+    private final ChangeListener<Number> toolDockDividerPositionListener = (observable, ignored, current) -> {
+        Objects.requireNonNull(observable);
+        if (toolDockVisible) {
+            expandedToolDockDividerPosition = current.doubleValue();
+        }
+    };
 
     @FXML
     private void initialize() {
@@ -358,10 +386,11 @@ public class EditorController {
         WorkspaceSession session = SessionManager.loadWorkspaceSession(defaultWorkspaceRoot);
         workspaceRoot = session.workspaceRoot();
         searchBarVisible = currentSettings.searchBarVisible();
-        projectExplorerVisible = currentSettings.projectExplorerVisible();
+        toolDockVisible = currentSettings.toolDockVisible();
+        toolDockSide = currentSettings.toolDockSide();
         statusBarVisible = session.statusBarVisible();
-        expandedExplorerDividerPosition = session.projectExplorerDividerPosition();
-        expandedExplorerPrefWidth = Math.max(200, session.projectExplorerWidth());
+        expandedToolDockDividerPosition = session.toolDockDividerPosition();
+        expandedToolDockPrefWidth = Math.max(MIN_TOOL_DOCK_WIDTH, session.toolDockWidth());
         lastCommandPaletteFilter = session.commandPaletteFilter();
         lastFindFileQuery = session.findFileQuery();
         findFileHistory.clear();
@@ -430,17 +459,13 @@ public class EditorController {
             }
         });
         projectExplorerPane.widthProperty().addListener(onCurrentChange(newValue -> {
-            if (projectExplorerVisible && newValue.doubleValue() > 0) {
-                expandedExplorerPrefWidth = newValue.doubleValue();
+            if (toolDockVisible && newValue.doubleValue() > 0) {
+                expandedToolDockPrefWidth = newValue.doubleValue();
             }
         }));
-        if (!centerSplitPane.getDividers().isEmpty()) {
-            centerSplitPane.getDividers().getFirst().positionProperty().addListener(onCurrentChange(newValue -> {
-                if (projectExplorerVisible) {
-                    expandedExplorerDividerPosition = newValue.doubleValue();
-                }
-            }));
-        }
+        centerSplitPane.getDividers().addListener((ListChangeListener<SplitPane.Divider>) change -> bindToolDockDividerTracking());
+        bindToolDockDividerTracking();
+        refreshToolWindowRails();
 
         setWorkspaceRoot(workspaceRoot, false);
         loadPlugins();
@@ -451,7 +476,7 @@ public class EditorController {
 
         applySettings(currentSettings, false);
         applySearchBarVisibility(false, false);
-        applyProjectExplorerVisibility(false, false);
+        applyToolDockVisibility(false, false);
         applyStatusBarVisibility(false);
         syncToolbarButtonStates();
         updateEditorState(getActiveDocument().orElse(null));
@@ -602,7 +627,7 @@ public class EditorController {
 
     @FXML
     private void onToggleProjectExplorer() {
-        toggleProjectExplorerVisibility();
+        toggleToolDockVisibility();
     }
 
     @FXML
@@ -1116,7 +1141,9 @@ public class EditorController {
                 new CommandAction("Find Next", "Find the next search match in the current document", "Search", "⌘F", List.of("search", "next"), this::onFindNext),
                 new CommandAction("Find Previous", "Find the previous search match in the current document", "Search", "", List.of("search", "previous"), this::onFindPrevious),
                 new CommandAction("Toggle Search Bar", "Show or hide the search and replace controls", "View", "⌥⌘F", List.of("search", "replace", "collapse", "hide"), this::onToggleSearchBar),
-                new CommandAction("Toggle Project Explorer", "Show or hide the project explorer sidebar", "View", "⌥⌘E", List.of("explorer", "sidebar", "project", "collapse", "hide"), this::onToggleProjectExplorer),
+                new CommandAction("Toggle Project Explorer", "Show or hide Project Explorer in the tool dock", "View", "⌥⌘E", List.of("explorer", "sidebar", "project", "collapse", "hide", "tool dock"), this::onToggleProjectExplorer),
+                new CommandAction("Move Project Explorer Left", "Dock Project Explorer on the left side of the tool dock", "View", "", List.of("explorer", "project", "tool window", "left", "dock", "sidebar", "tool dock"), this::moveProjectExplorerLeft),
+                new CommandAction("Move Project Explorer Right", "Dock Project Explorer on the right side of the tool dock", "View", "", List.of("explorer", "project", "tool window", "right", "dock", "sidebar", "tool dock"), this::moveProjectExplorerRight),
                 new CommandAction("Toggle Status Bar", "Show or hide the bottom status bar", "View", "⌥⌘B", List.of("status", "footer", "bottom", "hide"), this::onToggleStatusBar),
                 new CommandAction("Toggle MiniMap", "Show or hide the MiniMap overview beside each editor tab", "View", "", List.of("minimap", "mini map", "overview", "scrollbar", "editor"), this::toggleMiniMapVisibility),
                 new CommandAction("Toggle Breadcrumb Path", "Show or hide the breadcrumb path inside the status bar", "View", "", List.of("breadcrumb", "path", "status", "file path", "location"), this::toggleBreadcrumbBarVisibility),
@@ -1153,8 +1180,9 @@ public class EditorController {
                 currentSettings.diagnosticsEnabled(),
                 currentSettings.miniMapVisible(),
                 currentSettings.searchBarVisible(),
-                currentSettings.projectExplorerVisible(),
+                currentSettings.toolDockVisible(),
                 currentSettings.breadcrumbBarVisible(),
+                currentSettings.toolDockSide(),
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
                 currentSettings.editorFontSize()
@@ -1469,21 +1497,21 @@ public class EditorController {
                 .filter(Objects::nonNull)
                 .toList();
         Optional<Path> selectedFile = getActiveDocument().map(EditorDocument::getFilePath);
-        double currentDividerPosition = projectExplorerVisible && !centerSplitPane.getDividers().isEmpty()
+        double currentToolDockDividerPosition = toolDockVisible && !centerSplitPane.getDividers().isEmpty()
                 ? centerSplitPane.getDividers().getFirst().getPosition()
-                : expandedExplorerDividerPosition;
-        double currentExplorerWidth = projectExplorerVisible && projectExplorerPane.getWidth() > 0
+                : expandedToolDockDividerPosition;
+        double currentToolDockWidth = toolDockVisible && projectExplorerPane.getWidth() > 0
                 ? projectExplorerPane.getWidth()
-                : expandedExplorerPrefWidth;
+                : expandedToolDockPrefWidth;
         return new WorkspaceSession(
                 openFiles,
                 selectedFile,
                 workspaceRoot,
                 searchBarVisible,
-                projectExplorerVisible,
+                toolDockVisible,
                 statusBarVisible,
-                currentDividerPosition,
-                currentExplorerWidth,
+                currentToolDockDividerPosition,
+                currentToolDockWidth,
                 searchField.getText(),
                 replaceField.getText(),
                 caseSensitiveToggle.isSelected(),
@@ -2176,9 +2204,9 @@ public class EditorController {
                     persistShellVisibilitySettings();
                     focusActiveEditor();
                     event.consume();
-                } else if (projectExplorerVisible && isFocusInside(projectExplorerPane)) {
-                    projectExplorerVisible = false;
-                    applyProjectExplorerVisibility(true, true);
+                } else if (toolDockVisible && isFocusInside(projectExplorerPane)) {
+                    toolDockVisible = false;
+                    applyToolDockVisibility(true, true);
                     persistShellVisibilitySettings();
                     focusActiveEditor();
                     event.consume();
@@ -2250,8 +2278,9 @@ public class EditorController {
                 currentSettings.diagnosticsEnabled(),
                 currentSettings.miniMapVisible(),
                 searchBarVisible,
-                projectExplorerVisible,
+                toolDockVisible,
                 nextVisible,
+                toolDockSide,
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
                 currentSettings.editorFontSize()
@@ -2501,13 +2530,17 @@ public class EditorController {
     }
 
     private void applySettings(EditorSettings settings, boolean persist) {
+        if (toolDockVisible) {
+            captureToolDockLayoutState();
+        }
         currentSettings = settings;
         searchBarVisible = settings.searchBarVisible();
-        projectExplorerVisible = settings.projectExplorerVisible();
+        toolDockVisible = settings.toolDockVisible();
+        toolDockSide = settings.toolDockSide();
         ThemeManager.apply(settings.theme(), rootStack);
         updateCommandPaletteShortcutPresentation();
         applySearchBarVisibility(false, false);
-        applyProjectExplorerVisibility(false, false);
+        applyToolDockVisibility(false, false);
         applyBreadcrumbBarVisibility(settings.breadcrumbBarVisible(), false);
         if (rootPane.getScene() != null) {
             installCommandPaletteAccelerator(rootPane.getScene());
@@ -2634,78 +2667,73 @@ public class EditorController {
         syncToolbarButtonStates();
     }
 
-    private void applyProjectExplorerVisibility(boolean announce, boolean animate) {
-        if (projectExplorerAnimation != null) {
-            projectExplorerAnimation.stop();
+    private void applyToolDockVisibility(boolean announce, boolean animate) {
+        if (toolDockAnimation != null) {
+            toolDockAnimation.stop();
         }
 
+        refreshToolWindowRails();
+
         if (!animate) {
-            if (projectExplorerVisible) {
-                ensureProjectExplorerPresent();
+            if (toolDockVisible) {
+                updateCenterSplitPaneItems(true);
                 projectExplorerPane.setManaged(true);
                 projectExplorerPane.setVisible(true);
                 projectExplorerPane.setOpacity(1);
-                projectExplorerPane.setMinWidth(expandedExplorerMinWidth);
-                projectExplorerPane.setPrefWidth(expandedExplorerPrefWidth);
+                projectExplorerPane.setMinWidth(expandedToolDockMinWidth);
+                projectExplorerPane.setPrefWidth(expandedToolDockPrefWidth);
                 projectExplorerPane.setMaxWidth(Region.USE_COMPUTED_SIZE);
                 Platform.runLater(() -> {
                     if (!centerSplitPane.getDividers().isEmpty()) {
-                        centerSplitPane.setDividerPositions(sanitizedExplorerDividerPosition());
+                        centerSplitPane.setDividerPositions(targetToolDockDividerPosition());
                     }
                 });
             } else {
-                if (!centerSplitPane.getDividers().isEmpty()) {
-                    expandedExplorerDividerPosition = centerSplitPane.getDividers().getFirst().getPosition();
-                }
-                expandedExplorerPrefWidth = Math.max(projectExplorerPane.getWidth(), projectExplorerPane.getPrefWidth());
-                expandedExplorerMinWidth = Math.max(160, projectExplorerPane.getMinWidth());
+                captureToolDockLayoutState();
                 projectExplorerPane.setVisible(false);
                 projectExplorerPane.setManaged(false);
                 projectExplorerPane.setOpacity(0);
                 projectExplorerPane.setMinWidth(0);
                 projectExplorerPane.setPrefWidth(0);
                 projectExplorerPane.setMaxWidth(0);
-                centerSplitPane.getItems().remove(projectExplorerPane);
+                updateCenterSplitPaneItems(false);
             }
             if (announce) {
-                statusMessage(projectExplorerVisible ? "Project explorer shown" : "Project explorer hidden");
+                statusMessage(toolDockVisible ? "Project explorer shown" : "Project explorer hidden");
             }
             syncToolbarButtonStates();
             return;
         }
 
-        if (projectExplorerVisible) {
-            ensureProjectExplorerPresent();
+        if (toolDockVisible) {
+            updateCenterSplitPaneItems(true);
             projectExplorerPane.setManaged(true);
             projectExplorerPane.setVisible(true);
             projectExplorerPane.setOpacity(0);
             projectExplorerPane.setMinWidth(0);
             projectExplorerPane.setPrefWidth(0);
-            projectExplorerPane.setMaxWidth(expandedExplorerPrefWidth);
+            projectExplorerPane.setMaxWidth(expandedToolDockPrefWidth);
             Platform.runLater(() -> {
                 if (!centerSplitPane.getDividers().isEmpty()) {
-                    centerSplitPane.setDividerPositions(0);
+                    centerSplitPane.setDividerPositions(hiddenToolDockDividerPosition());
                 }
-                Timeline animation = new Timeline(buildProjectExplorerKeyFrames(true));
-                projectExplorerAnimation = animation;
+                Timeline animation = new Timeline(buildToolDockKeyFrames(true));
+                toolDockAnimation = animation;
                 animation.setOnFinished(event -> handleEvent(event, () -> {
-                    projectExplorerPane.setMinWidth(expandedExplorerMinWidth);
-                    projectExplorerPane.setPrefWidth(expandedExplorerPrefWidth);
+                    projectExplorerPane.setMinWidth(expandedToolDockMinWidth);
+                    projectExplorerPane.setPrefWidth(expandedToolDockPrefWidth);
                     projectExplorerPane.setMaxWidth(Region.USE_COMPUTED_SIZE);
                     projectExplorerPane.setOpacity(1);
                 }));
                 animation.playFromStart();
             });
         } else {
-            if (!centerSplitPane.getDividers().isEmpty()) {
-                expandedExplorerDividerPosition = centerSplitPane.getDividers().getFirst().getPosition();
-            }
-            expandedExplorerPrefWidth = Math.max(projectExplorerPane.getWidth(), projectExplorerPane.getPrefWidth());
-            expandedExplorerMinWidth = Math.max(160, projectExplorerPane.getMinWidth());
+            captureToolDockLayoutState();
+            updateCenterSplitPaneItems(true);
             projectExplorerPane.setManaged(true);
             projectExplorerPane.setVisible(true);
-            Timeline animation = new Timeline(buildProjectExplorerKeyFrames(false));
-            projectExplorerAnimation = animation;
+            Timeline animation = new Timeline(buildToolDockKeyFrames(false));
+            toolDockAnimation = animation;
             animation.setOnFinished(event -> handleEvent(event, () -> {
                 projectExplorerPane.setVisible(false);
                 projectExplorerPane.setManaged(false);
@@ -2713,21 +2741,52 @@ public class EditorController {
                 projectExplorerPane.setMinWidth(0);
                 projectExplorerPane.setPrefWidth(0);
                 projectExplorerPane.setMaxWidth(0);
-                centerSplitPane.getItems().remove(projectExplorerPane);
+                updateCenterSplitPaneItems(false);
             }));
             animation.playFromStart();
         }
 
         if (announce) {
-            statusMessage(projectExplorerVisible ? "Project explorer shown" : "Project explorer hidden");
+            statusMessage(toolDockVisible ? "Project explorer shown" : "Project explorer hidden");
         }
         syncToolbarButtonStates();
     }
 
-    private void toggleProjectExplorerVisibility() {
-        projectExplorerVisible = !projectExplorerVisible;
-        applyProjectExplorerVisibility(true, true);
+    private void toggleToolDockVisibility() {
+        toolDockVisible = !toolDockVisible;
+        applyToolDockVisibility(true, true);
         persistShellVisibilitySettings();
+    }
+
+    private void moveProjectExplorerLeft() {
+        moveProjectExplorer(ToolWindowSide.LEFT);
+    }
+
+    private void moveProjectExplorerRight() {
+        moveProjectExplorer(ToolWindowSide.RIGHT);
+    }
+
+    private void moveProjectExplorer(ToolWindowSide side) {
+        Objects.requireNonNull(side);
+        if (toolDockSide == side) {
+            statusMessage("Project explorer already docked in the " + side.displayName().toLowerCase(Locale.ROOT) + " tool dock");
+            return;
+        }
+
+        applySettings(new EditorSettings(
+                currentSettings.theme(),
+                currentSettings.wrapText(),
+                currentSettings.diagnosticsEnabled(),
+                currentSettings.miniMapVisible(),
+                searchBarVisible,
+                toolDockVisible,
+                currentSettings.breadcrumbBarVisible(),
+                side,
+                currentSettings.commandPaletteShortcut(),
+                currentSettings.editorFontFamily(),
+                currentSettings.editorFontSize()
+        ), true);
+        statusMessage("Project explorer moved to the " + side.displayName().toLowerCase(Locale.ROOT) + " tool dock");
     }
 
     private void toggleMiniMapVisibility() {
@@ -2738,8 +2797,9 @@ public class EditorController {
                 currentSettings.diagnosticsEnabled(),
                 nextVisible,
                 searchBarVisible,
-                projectExplorerVisible,
+                toolDockVisible,
                 currentSettings.breadcrumbBarVisible(),
+                toolDockSide,
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
                 currentSettings.editorFontSize()
@@ -2754,8 +2814,9 @@ public class EditorController {
                 currentSettings.diagnosticsEnabled(),
                 currentSettings.miniMapVisible(),
                 searchBarVisible,
-                projectExplorerVisible,
+                toolDockVisible,
                 currentSettings.breadcrumbBarVisible(),
+                toolDockSide,
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
                 currentSettings.editorFontSize()
@@ -2763,8 +2824,25 @@ public class EditorController {
         SettingsManager.save(currentSettings);
     }
 
-    private double sanitizedExplorerDividerPosition() {
-        return Math.max(0.05, Math.min(0.75, expandedExplorerDividerPosition));
+    private void captureToolDockLayoutState() {
+        if (!centerSplitPane.getDividers().isEmpty()) {
+            expandedToolDockDividerPosition = centerSplitPane.getDividers().getFirst().getPosition();
+        }
+        expandedToolDockPrefWidth = Math.max(projectExplorerPane.getWidth(), projectExplorerPane.getPrefWidth());
+        expandedToolDockMinWidth = Math.max(MIN_TOOL_DOCK_WIDTH, projectExplorerPane.getMinWidth() > 0 ? projectExplorerPane.getMinWidth() : expandedToolDockMinWidth);
+    }
+
+    private double hiddenToolDockDividerPosition() {
+        return toolDockSide == ToolWindowSide.RIGHT ? 1d : 0d;
+    }
+
+    private double targetToolDockDividerPosition() {
+        return ToolWindowLayoutSupport.computeDividerPosition(
+                centerSplitPane.getWidth(),
+                Math.max(MIN_TOOL_DOCK_WIDTH, expandedToolDockPrefWidth),
+                toolDockSide,
+                expandedToolDockDividerPosition
+        );
     }
 
     private void applyStatusBarVisibility(boolean announce) {
@@ -2776,31 +2854,70 @@ public class EditorController {
         }
     }
 
-    private void ensureProjectExplorerPresent() {
-        if (!centerSplitPane.getItems().contains(projectExplorerPane)) {
-            centerSplitPane.getItems().addFirst(projectExplorerPane);
+    private void updateCenterSplitPaneItems(boolean includeToolDock) {
+        if (includeToolDock) {
+            if (toolDockSide == ToolWindowSide.RIGHT) {
+                centerSplitPane.getItems().setAll(editorTabPane, projectExplorerPane);
+            } else {
+                centerSplitPane.getItems().setAll(projectExplorerPane, editorTabPane);
+            }
+        } else {
+            centerSplitPane.getItems().setAll(editorTabPane);
         }
+        bindToolDockDividerTracking();
     }
 
-    private KeyFrame[] buildProjectExplorerKeyFrames(boolean showing) {
-        SplitPane.Divider divider = centerSplitPane.getDividers().isEmpty() ? null : centerSplitPane.getDividers().getFirst();
-        double visibleWidth = Math.max(220, expandedExplorerPrefWidth);
+    private KeyFrame[] buildToolDockKeyFrames(boolean showing) {
+        SplitPane.Divider toolDockDivider = centerSplitPane.getDividers().isEmpty() ? null : centerSplitPane.getDividers().getFirst();
+        double visibleToolDockWidth = Math.max(MIN_TOOL_DOCK_WIDTH, expandedToolDockPrefWidth);
+        double hiddenDockDividerPosition = hiddenToolDockDividerPosition();
         List<KeyValue> startValues = new ArrayList<>();
         List<KeyValue> endValues = new ArrayList<>();
-        startValues.add(new KeyValue(projectExplorerPane.prefWidthProperty(), showing ? 0 : Math.max(projectExplorerPane.getWidth(), visibleWidth)));
-        startValues.add(new KeyValue(projectExplorerPane.maxWidthProperty(), showing ? visibleWidth : Math.max(projectExplorerPane.getWidth(), visibleWidth)));
+        startValues.add(new KeyValue(projectExplorerPane.prefWidthProperty(), showing ? 0 : Math.max(projectExplorerPane.getWidth(), visibleToolDockWidth)));
+        startValues.add(new KeyValue(projectExplorerPane.maxWidthProperty(), showing ? visibleToolDockWidth : Math.max(projectExplorerPane.getWidth(), visibleToolDockWidth)));
         startValues.add(new KeyValue(projectExplorerPane.opacityProperty(), showing ? 0 : projectExplorerPane.getOpacity()));
-        endValues.add(new KeyValue(projectExplorerPane.prefWidthProperty(), showing ? visibleWidth : 0));
-        endValues.add(new KeyValue(projectExplorerPane.maxWidthProperty(), showing ? visibleWidth : 0));
+        endValues.add(new KeyValue(projectExplorerPane.prefWidthProperty(), showing ? visibleToolDockWidth : 0));
+        endValues.add(new KeyValue(projectExplorerPane.maxWidthProperty(), showing ? visibleToolDockWidth : 0));
         endValues.add(new KeyValue(projectExplorerPane.opacityProperty(), showing ? 1 : 0));
-        if (divider != null) {
-            startValues.add(new KeyValue(divider.positionProperty(), showing ? 0 : divider.getPosition()));
-            endValues.add(new KeyValue(divider.positionProperty(), showing ? sanitizedExplorerDividerPosition() : 0));
+        if (toolDockDivider != null) {
+            startValues.add(new KeyValue(toolDockDivider.positionProperty(), showing ? hiddenDockDividerPosition : toolDockDivider.getPosition()));
+            endValues.add(new KeyValue(toolDockDivider.positionProperty(), showing ? targetToolDockDividerPosition() : hiddenDockDividerPosition));
         }
         return new KeyFrame[]{
                 new KeyFrame(javafx.util.Duration.ZERO, startValues.toArray(KeyValue[]::new)),
                 new KeyFrame(javafx.util.Duration.millis(showing ? 200 : 180), endValues.toArray(KeyValue[]::new))
         };
+    }
+
+    private void bindToolDockDividerTracking() {
+        if (trackedToolDockDivider != null) {
+            trackedToolDockDivider.positionProperty().removeListener(toolDockDividerPositionListener);
+        }
+        trackedToolDockDivider = centerSplitPane.getDividers().isEmpty() ? null : centerSplitPane.getDividers().getFirst();
+        if (trackedToolDockDivider != null) {
+            trackedToolDockDivider.positionProperty().addListener(toolDockDividerPositionListener);
+        }
+    }
+
+    private void refreshToolWindowRails() {
+        boolean dockedLeft = toolDockSide == ToolWindowSide.LEFT;
+        configureToolWindowRail(leftToolWindowRail, dockedLeft);
+        configureToolWindowRail(rightToolWindowRail, !dockedLeft);
+        configureToolWindowRail(projectExplorerLeftRailButton, dockedLeft);
+        configureToolWindowRail(projectExplorerRightRailButton, !dockedLeft);
+        if (bottomToolWindowRail != null) {
+            boolean showBottomRail = bottomToolWindowRail.getChildren().stream().anyMatch(Node::isManaged);
+            bottomToolWindowRail.setManaged(showBottomRail);
+            bottomToolWindowRail.setVisible(showBottomRail);
+        }
+    }
+
+    private void configureToolWindowRail(Node node, boolean visible) {
+        if (node == null) {
+            return;
+        }
+        node.setManaged(visible);
+        node.setVisible(visible);
     }
 
     private void captureSearchBarExpandedHeight() {
@@ -2961,7 +3078,9 @@ public class EditorController {
     private void syncToolbarButtonStates() {
         setToolbarButtonActive(commandPaletteToolbarButton, commandPaletteOverlay != null && commandPaletteOverlay.isVisible());
         setToolbarButtonActive(searchToolbarButton, searchBarVisible);
-        setToolbarButtonActive(projectExplorerToolbarButton, projectExplorerVisible);
+        setToolbarButtonActive(projectExplorerToolbarButton, toolDockVisible);
+        setToolbarButtonActive(projectExplorerLeftRailButton, toolDockVisible && toolDockSide == ToolWindowSide.LEFT);
+        setToolbarButtonActive(projectExplorerRightRailButton, toolDockVisible && toolDockSide == ToolWindowSide.RIGHT);
         setToolbarButtonActive(statusBarToolbarButton, statusBarVisible);
         setToolbarButtonActive(settingsToolbarButton, settingsOverlay != null && settingsOverlay.isVisible());
     }
@@ -3170,8 +3289,8 @@ public class EditorController {
 
     private void handleProjectExplorerKeys(KeyEvent event) {
         if (event.getCode() == KeyCode.ESCAPE) {
-            projectExplorerVisible = false;
-            applyProjectExplorerVisibility(true, true);
+            toolDockVisible = false;
+            applyToolDockVisibility(true, true);
             focusActiveEditor();
             event.consume();
         }
@@ -3843,15 +3962,15 @@ public class EditorController {
             return;
         }
 
-        if (!projectExplorerVisible) {
+        if (!toolDockVisible) {
             if (!allowShowingExplorer) {
                 return;
             }
-            projectExplorerVisible = true;
-            applyProjectExplorerVisibility(false, true);
+            toolDockVisible = true;
+            applyToolDockVisibility(false, true);
             persistShellVisibilitySettings();
         } else {
-            ensureProjectExplorerPresent();
+            updateCenterSplitPaneItems(true);
         }
 
         TreeItem<Path> rootItem = projectTreeView.getRoot();
