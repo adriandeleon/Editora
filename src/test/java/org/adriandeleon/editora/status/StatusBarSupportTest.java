@@ -1,22 +1,28 @@
 package org.adriandeleon.editora.status;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class StatusBarSupportTest {
 
+    @TempDir
+    Path tempDir;
+
     @Test
-    void buildsWorkspaceRelativeBreadcrumbSegments() {
-        Path workspaceRoot = Path.of("/Users/adriandeleon/git/adl/editora");
+    void buildsWorkspaceRelativeBreadcrumbSegments() throws Exception {
+        Path workspaceRoot = Files.createDirectories(tempDir.resolve("workspace/editora"));
         Path filePath = workspaceRoot.resolve("src/main/java/org/adriandeleon/editora/EditorController.java");
         List<StatusBarSupport.BreadcrumbEntry> entries = StatusBarSupport.buildBreadcrumbEntries(workspaceRoot, filePath, "EditorController.java");
 
         assertEquals(
-                List.of("editora", "src", "main", "java", "org", "adriandeleon", "editora", "EditorController.java"),
+                List.of(workspaceRoot.getFileName().toString(), "src", "main", "java", "org", "adriandeleon", "editora", "EditorController.java"),
                 entries.stream().map(StatusBarSupport.BreadcrumbEntry::label).toList()
         );
         assertEquals(workspaceRoot, entries.getFirst().path());
@@ -24,16 +30,23 @@ class StatusBarSupportTest {
     }
 
     @Test
-    void buildsAbsoluteBreadcrumbSegmentsForExternalFiles() {
-        Path workspaceRoot = Path.of("/Users/adriandeleon/git/adl/editora");
-        Path filePath = Path.of("/tmp/notes/todo.txt");
+    void buildsAbsoluteBreadcrumbSegmentsForExternalFiles() throws Exception {
+        Path workspaceRoot = Files.createDirectories(tempDir.resolve("workspace/editora"));
+        Path filePath = tempDir.resolve("external/notes/todo.txt").toAbsolutePath().normalize();
+
+        List<String> expectedLabels = new ArrayList<>();
+        expectedLabels.add(filePath.getRoot().toString());
+        for (Path segment : filePath) {
+            expectedLabels.add(segment.toString());
+        }
+
         List<StatusBarSupport.BreadcrumbEntry> entries = StatusBarSupport.buildBreadcrumbEntries(workspaceRoot, filePath, "todo.txt");
 
         assertEquals(
-                List.of("/", "tmp", "notes", "todo.txt"),
+                expectedLabels,
                 entries.stream().map(StatusBarSupport.BreadcrumbEntry::label).toList()
         );
-        assertEquals(Path.of("/"), entries.getFirst().path());
+        assertEquals(filePath.getRoot().toAbsolutePath().normalize(), entries.getFirst().path());
         assertEquals(filePath, entries.getLast().path());
     }
 

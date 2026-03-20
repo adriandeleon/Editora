@@ -92,13 +92,14 @@ class FindFileSupportTest {
     void resolvesWorkspaceRelativeAbsoluteAndHomeRelativePaths() {
         Path workspaceRoot = tempDir.resolve("workspace").toAbsolutePath().normalize();
         Path homeDirectory = tempDir.resolve("home").toAbsolutePath().normalize();
+        Path absoluteFile = tempDir.resolve("absolute/demo.txt").toAbsolutePath().normalize();
 
         assertEquals(workspaceRoot.resolve("src/Main.java"),
                 FindFileSupport.resolvePath(workspaceRoot, "src/Main.java", homeDirectory).orElseThrow());
         assertEquals(homeDirectory.resolve("notes/todo.md"),
                 FindFileSupport.resolvePath(workspaceRoot, "~/notes/todo.md", homeDirectory).orElseThrow());
-        assertEquals(Path.of("/tmp/demo.txt").toAbsolutePath().normalize(),
-                FindFileSupport.resolvePath(workspaceRoot, "/tmp/demo.txt", homeDirectory).orElseThrow());
+        assertEquals(absoluteFile,
+                FindFileSupport.resolvePath(workspaceRoot, absoluteFile.toString(), homeDirectory).orElseThrow());
     }
 
     @Test

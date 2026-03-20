@@ -40,7 +40,7 @@ class SessionManagerTest {
 
     @Test
     void savesAndLoadsWorkspaceSessionShellState() throws IOException {
-        Path workspaceRoot = Path.of("/tmp/editora-workspace").toAbsolutePath().normalize();
+        Path workspaceRoot = tempDir.resolve("editora-workspace").toAbsolutePath().normalize();
         Path firstOpenFile = workspaceRoot.resolve("src/Main.java").normalize();
         Path secondOpenFile = workspaceRoot.resolve("README.md").normalize();
 
@@ -70,7 +70,7 @@ class SessionManagerTest {
 
         SessionManager.saveWorkspaceSession(session);
 
-        WorkspaceSession loaded = SessionManager.loadWorkspaceSession(Path.of("/fallback").toAbsolutePath().normalize());
+        WorkspaceSession loaded = SessionManager.loadWorkspaceSession(tempDir.resolve("fallback").toAbsolutePath().normalize());
 
         assertEquals(session, loaded);
         assertEquals(SessionManager.workspaceSessionFile(), EditoraPersistence.workspaceSessionFile());
@@ -85,8 +85,8 @@ class SessionManagerTest {
 
     @Test
     void savesRecentFilesAsDistinctNormalizedPaths() {
-        Path first = Path.of("/tmp/editora-workspace/README.md").toAbsolutePath().normalize();
-        Path second = Path.of("/tmp/editora-workspace/src/Main.java").toAbsolutePath().normalize();
+        Path first = tempDir.resolve("editora-workspace/README.md").toAbsolutePath().normalize();
+        Path second = tempDir.resolve("editora-workspace/src/Main.java").toAbsolutePath().normalize();
 
         SessionManager.saveRecentFiles(List.of(first, second, first));
 
@@ -96,7 +96,7 @@ class SessionManagerTest {
 
     @Test
     void loadWorkspaceSessionDefaultsSearchAndExplorerToHidden() {
-        Path fallbackWorkspaceRoot = Path.of("/fallback").toAbsolutePath().normalize();
+        Path fallbackWorkspaceRoot = tempDir.resolve("fallback").toAbsolutePath().normalize();
 
         WorkspaceSession loaded = SessionManager.loadWorkspaceSession(fallbackWorkspaceRoot);
 
@@ -110,20 +110,21 @@ class SessionManagerTest {
 
     @Test
     void loadWorkspaceSessionIgnoresLegacyProjectExplorerKeys() throws IOException {
-        Path fallbackWorkspaceRoot = Path.of("/fallback").toAbsolutePath().normalize();
+        Path fallbackWorkspaceRoot = tempDir.resolve("fallback").toAbsolutePath().normalize();
+        Path legacyWorkspaceRoot = tempDir.resolve("legacy-workspace").toAbsolutePath().normalize();
         Files.createDirectories(SessionManager.workspaceSessionFile().getParent());
         Files.writeString(SessionManager.workspaceSessionFile(), """
                 {
-                  "workspaceRoot": "/tmp/legacy-workspace",
+                  "workspaceRoot": "%s",
                   "projectExplorerVisible": true,
                   "projectExplorerDividerPosition": 0.31,
                   "projectExplorerWidth": 420
                 }
-                """);
+                """.formatted(legacyWorkspaceRoot.toString().replace("\\", "\\\\")));
 
         WorkspaceSession loaded = SessionManager.loadWorkspaceSession(fallbackWorkspaceRoot);
 
-        assertEquals(Path.of("/tmp/legacy-workspace").toAbsolutePath().normalize(), loaded.workspaceRoot());
+        assertEquals(legacyWorkspaceRoot, loaded.workspaceRoot());
         assertFalse(loaded.toolDockVisible());
         assertEquals(0.22d, loaded.toolDockDividerPosition());
         assertEquals(260d, loaded.toolDockWidth());
@@ -131,7 +132,7 @@ class SessionManagerTest {
 
     @Test
     void loadWorkspaceSessionFallsBackWhenJsonIsMalformed() throws IOException {
-        Path fallbackWorkspaceRoot = Path.of("/fallback").toAbsolutePath().normalize();
+        Path fallbackWorkspaceRoot = tempDir.resolve("fallback").toAbsolutePath().normalize();
         Files.createDirectories(SessionManager.workspaceSessionFile().getParent());
         Files.writeString(SessionManager.workspaceSessionFile(), "{ broken }");
 

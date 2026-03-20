@@ -1,4 +1,5 @@
 # Editora
+[![Java CI with Maven](https://github.com/adriandeleon/Editora/actions/workflows/maven.yml/badge.svg)](https://github.com/adriandeleon/Editora/actions/workflows/maven.yml)
 
 `Editora` is a modern JavaFX text editor prototype built on Java 25, JavaFX 25, AtlantaFX, and RichTextFX.
 
