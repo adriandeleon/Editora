@@ -11,6 +11,7 @@ public record EditorSettings(EditorTheme theme,
 							 boolean miniMapVisible,
 							 boolean searchBarVisible,
 							 boolean toolDockVisible,
+							 boolean bookmarkWindowVisible,
 							 boolean breadcrumbBarVisible,
 							 ToolWindowSide toolDockSide,
                              String commandPaletteShortcut,
@@ -21,6 +22,7 @@ public record EditorSettings(EditorTheme theme,
 	public static final boolean DEFAULT_MINI_MAP_VISIBLE = true;
 	public static final boolean DEFAULT_SEARCH_BAR_VISIBLE = false;
 	public static final boolean DEFAULT_TOOL_DOCK_VISIBLE = false;
+	public static final boolean DEFAULT_BOOKMARK_WINDOW_VISIBLE = false;
 	public static final ToolWindowSide DEFAULT_TOOL_DOCK_SIDE = ToolWindowSide.DEFAULT;
 	public static final String DEFAULT_EDITOR_FONT_FAMILY = "JetBrains Mono";
 	public static final int DEFAULT_EDITOR_FONT_SIZE = 14;

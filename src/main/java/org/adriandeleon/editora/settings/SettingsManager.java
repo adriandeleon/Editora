@@ -17,6 +17,7 @@ public final class SettingsManager {
     private static final String MINI_MAP_VISIBLE_KEY = "miniMapVisible";
     private static final String SEARCH_BAR_VISIBLE_KEY = "searchBarVisible";
     private static final String TOOL_DOCK_VISIBLE_KEY = "toolDockVisible";
+    private static final String BOOKMARK_WINDOW_VISIBLE_KEY = "bookmarkWindowVisible";
     private static final String BREADCRUMB_BAR_VISIBLE_KEY = "breadcrumbBarVisible";
     private static final String TOOL_DOCK_SIDE_KEY = "toolDockSide";
     private static final String COMMAND_PALETTE_SHORTCUT_KEY = "commandPaletteShortcut";
@@ -45,6 +46,7 @@ public final class SettingsManager {
         boolean miniMapVisible = readBoolean(values, MINI_MAP_VISIBLE_KEY, EditorSettings.DEFAULT_MINI_MAP_VISIBLE);
         boolean searchBarVisible = readBoolean(values, SEARCH_BAR_VISIBLE_KEY, EditorSettings.DEFAULT_SEARCH_BAR_VISIBLE);
         boolean toolDockVisible = readBoolean(values, TOOL_DOCK_VISIBLE_KEY, EditorSettings.DEFAULT_TOOL_DOCK_VISIBLE);
+        boolean bookmarkWindowVisible = readBoolean(values, BOOKMARK_WINDOW_VISIBLE_KEY, EditorSettings.DEFAULT_BOOKMARK_WINDOW_VISIBLE);
         boolean breadcrumbBarVisible = readBoolean(values, BREADCRUMB_BAR_VISIBLE_KEY, true);
         ToolWindowSide toolDockSide = ToolWindowSide.fromStoredValue(readString(values, TOOL_DOCK_SIDE_KEY, EditorSettings.DEFAULT_TOOL_DOCK_SIDE.storedValue()));
         String commandPaletteShortcut = readString(values, COMMAND_PALETTE_SHORTCUT_KEY, CommandPaletteShortcut.DEFAULT_VALUE);
@@ -63,6 +65,7 @@ public final class SettingsManager {
                 miniMapVisible,
                 searchBarVisible,
                 toolDockVisible,
+                bookmarkWindowVisible,
                 breadcrumbBarVisible,
                 toolDockSide,
                 commandPaletteShortcut,
@@ -81,6 +84,7 @@ public final class SettingsManager {
                 EditorSettings.DEFAULT_MINI_MAP_VISIBLE,
                 EditorSettings.DEFAULT_SEARCH_BAR_VISIBLE,
                 EditorSettings.DEFAULT_TOOL_DOCK_VISIBLE,
+                EditorSettings.DEFAULT_BOOKMARK_WINDOW_VISIBLE,
                 true,
                 EditorSettings.DEFAULT_TOOL_DOCK_SIDE,
                 CommandPaletteShortcut.DEFAULT_VALUE,
@@ -100,6 +104,7 @@ public final class SettingsManager {
         values.put(MINI_MAP_VISIBLE_KEY, settings.miniMapVisible());
         values.put(SEARCH_BAR_VISIBLE_KEY, settings.searchBarVisible());
         values.put(TOOL_DOCK_VISIBLE_KEY, settings.toolDockVisible());
+        values.put(BOOKMARK_WINDOW_VISIBLE_KEY, settings.bookmarkWindowVisible());
         values.put(BREADCRUMB_BAR_VISIBLE_KEY, settings.breadcrumbBarVisible());
         values.put(TOOL_DOCK_SIDE_KEY, settings.toolDockSide().storedValue());
         values.put(COMMAND_PALETTE_SHORTCUT_KEY, settings.commandPaletteShortcut());

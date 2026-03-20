@@ -31,10 +31,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeSet;
 
 public final class EditorDocument {
     private static final double MINI_MAP_WIDTH = 92d;
@@ -76,6 +78,7 @@ public final class EditorDocument {
     private boolean preserveNavigationGoalOnNextCaretChange;
     private Integer markPosition;
     private ScrollBar verticalScrollBar;
+    private final List<BookmarkAnchor> bookmarks = new ArrayList<>();
     private boolean miniMapVisible;
     private double miniMapRenderHeight;
     private long analysisRevision;
@@ -185,6 +188,103 @@ public final class EditorDocument {
         }
         readOnlyInfoBar.setManaged(readOnly);
         readOnlyInfoBar.setVisible(readOnly);
+    }
+
+    public boolean toggleBookmark(int lineIndex) {
+        int normalizedLineIndex = normalizeLineIndex(lineIndex);
+        int bookmarkIndex = bookmarkIndexForLine(normalizedLineIndex);
+        if (bookmarkIndex >= 0) {
+            bookmarks.remove(bookmarkIndex);
+            return false;
+        }
+        bookmarks.add(new BookmarkAnchor(normalizedLineIndex, lineTextAt(normalizedLineIndex)));
+        sortBookmarks();
+        return true;
+    }
+
+    public boolean addBookmark(int lineIndex) {
+        int normalizedLineIndex = normalizeLineIndex(lineIndex);
+        if (bookmarkIndexForLine(normalizedLineIndex) >= 0) {
+            return false;
+        }
+        bookmarks.add(new BookmarkAnchor(normalizedLineIndex, lineTextAt(normalizedLineIndex)));
+        sortBookmarks();
+        return true;
+    }
+
+    public boolean removeBookmark(int lineIndex) {
+        int bookmarkIndex = bookmarkIndexForLine(normalizeLineIndex(lineIndex));
+        if (bookmarkIndex < 0) {
+            return false;
+        }
+        bookmarks.remove(bookmarkIndex);
+        return true;
+    }
+
+    public boolean hasBookmark(int lineIndex) {
+        return bookmarkIndexForLine(normalizeLineIndex(lineIndex)) >= 0;
+    }
+
+    public List<Integer> bookmarkedLines() {
+        return bookmarkLineIndexes();
+    }
+
+    public void setBookmarkedLines(Collection<Integer> lineIndexes) {
+        bookmarks.clear();
+        if (lineIndexes == null || lineIndexes.isEmpty()) {
+            return;
+        }
+
+        TreeSet<Integer> normalizedLineIndexes = new TreeSet<>();
+        lineIndexes.forEach(lineIndex -> normalizedLineIndexes.add(normalizeLineIndex(lineIndex)));
+        normalizedLineIndexes.forEach(normalizedLineIndex ->
+                bookmarks.add(new BookmarkAnchor(normalizedLineIndex, lineTextAt(normalizedLineIndex))));
+    }
+
+    public boolean pruneBookmarksToValidRange() {
+        List<Integer> previousLineIndexes = bookmarkLineIndexes();
+        TreeSet<Integer> normalizedLineIndexes = new TreeSet<>();
+        previousLineIndexes.stream().map(this::normalizeLineIndex).forEach(normalizedLineIndexes::add);
+        bookmarks.clear();
+        normalizedLineIndexes.forEach(normalizedLineIndex ->
+                bookmarks.add(new BookmarkAnchor(normalizedLineIndex, lineTextAt(normalizedLineIndex))));
+        return !previousLineIndexes.equals(List.copyOf(normalizedLineIndexes));
+    }
+
+    public boolean realignBookmarksToContent() {
+        if (bookmarks.isEmpty()) {
+            return false;
+        }
+
+        List<Integer> previousLineIndexes = bookmarkLineIndexes();
+        List<String> paragraphTexts = codeArea.getParagraphs().stream().map(paragraph -> paragraph.getText()).toList();
+        if (paragraphTexts.isEmpty()) {
+            return false;
+        }
+
+        List<BookmarkAnchor> sortedBookmarks = bookmarks.stream()
+                .sorted(Comparator.comparingInt(BookmarkAnchor::lineIndex))
+                .toList();
+        HashSet<Integer> claimedLines = new HashSet<>();
+        List<BookmarkAnchor> realignedBookmarks = new ArrayList<>(sortedBookmarks.size());
+        int maxLineIndex = paragraphTexts.size() - 1;
+
+        for (BookmarkAnchor bookmark : sortedBookmarks) {
+            int targetLine = findNearestMatchingLine(paragraphTexts, bookmark, claimedLines);
+            if (targetLine < 0) {
+                targetLine = Math.max(0, Math.min(bookmark.lineIndex(), maxLineIndex));
+            }
+            if (claimedLines.contains(targetLine)) {
+                targetLine = findNearestAvailableLine(targetLine, maxLineIndex, claimedLines);
+            }
+            claimedLines.add(targetLine);
+            realignedBookmarks.add(new BookmarkAnchor(targetLine, paragraphTexts.get(targetLine)));
+        }
+
+        bookmarks.clear();
+        bookmarks.addAll(realignedBookmarks);
+        sortBookmarks();
+        return !previousLineIndexes.equals(bookmarkLineIndexes());
     }
 
     public void scrollPageDown() {
@@ -730,7 +830,77 @@ public final class EditorDocument {
         ranges.add(new HighlightRange(mergedStart, mergedEnd));
     }
 
+    private int normalizeLineIndex(int lineIndex) {
+        int paragraphCount = Math.max(1, codeArea.getParagraphs().size());
+        return Math.max(0, Math.min(lineIndex, paragraphCount - 1));
+    }
+
+    private int bookmarkIndexForLine(int lineIndex) {
+        for (int index = 0; index < bookmarks.size(); index++) {
+            if (bookmarks.get(index).lineIndex() == lineIndex) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private List<Integer> bookmarkLineIndexes() {
+        return bookmarks.stream()
+                .map(BookmarkAnchor::lineIndex)
+                .sorted()
+                .toList();
+    }
+
+    private void sortBookmarks() {
+        bookmarks.sort(Comparator.comparingInt(BookmarkAnchor::lineIndex));
+    }
+
+    private String lineTextAt(int lineIndex) {
+        int normalizedLineIndex = normalizeLineIndex(lineIndex);
+        return codeArea.getParagraph(normalizedLineIndex).getText();
+    }
+
+    private int findNearestMatchingLine(List<String> paragraphTexts,
+                                        BookmarkAnchor bookmark,
+                                        HashSet<Integer> claimedLines) {
+        int bestLine = -1;
+        int bestDistance = Integer.MAX_VALUE;
+        for (int lineIndex = 0; lineIndex < paragraphTexts.size(); lineIndex++) {
+            if (claimedLines.contains(lineIndex) || !Objects.equals(paragraphTexts.get(lineIndex), bookmark.lineText())) {
+                continue;
+            }
+            int distance = Math.abs(lineIndex - bookmark.lineIndex());
+            if (bestLine < 0 || distance < bestDistance || (distance == bestDistance && lineIndex < bestLine)) {
+                bestLine = lineIndex;
+                bestDistance = distance;
+            }
+        }
+        return bestLine;
+    }
+
+    private int findNearestAvailableLine(int preferredLine,
+                                         int maxLineIndex,
+                                         HashSet<Integer> claimedLines) {
+        if (!claimedLines.contains(preferredLine)) {
+            return preferredLine;
+        }
+        for (int distance = 1; distance <= maxLineIndex + 1; distance++) {
+            int lower = preferredLine - distance;
+            if (lower >= 0 && !claimedLines.contains(lower)) {
+                return lower;
+            }
+            int upper = preferredLine + distance;
+            if (upper <= maxLineIndex && !claimedLines.contains(upper)) {
+                return upper;
+            }
+        }
+        return Math.max(0, Math.min(preferredLine, maxLineIndex));
+    }
+
     private record HighlightRange(int start, int end) {
+    }
+
+    private record BookmarkAnchor(int lineIndex, String lineText) {
     }
 }
 

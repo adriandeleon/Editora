@@ -17,6 +17,7 @@ public final class EditoraPersistence {
     public static final String SETTINGS_FILE_NAME = "settings.json";
     public static final String WORKSPACE_SESSION_FILE_NAME = "workspace-session.json";
     public static final String RECENT_FILES_FILE_NAME = "recent-files.json";
+    public static final String BOOKMARKS_FILE_NAME = "bookmarks.json";
     public static final int SCHEMA_VERSION = 1;
 
     private EditoraPersistence() {
@@ -42,8 +43,12 @@ public final class EditoraPersistence {
         return dataDirectory().resolve(RECENT_FILES_FILE_NAME);
     }
 
+    public static Path bookmarksFile() {
+        return dataDirectory().resolve(BOOKMARKS_FILE_NAME);
+    }
+
     public static String persistenceFilesDescription() {
-        return String.join(", ", SETTINGS_FILE_NAME, WORKSPACE_SESSION_FILE_NAME, RECENT_FILES_FILE_NAME);
+        return String.join(", ", SETTINGS_FILE_NAME, WORKSPACE_SESSION_FILE_NAME, RECENT_FILES_FILE_NAME, BOOKMARKS_FILE_NAME);
     }
 
     public static Optional<Map<String, Object>> readJsonObject(Path file) {

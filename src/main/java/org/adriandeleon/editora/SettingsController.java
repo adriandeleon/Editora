@@ -69,6 +69,9 @@ public class SettingsController {
     private CheckBox toolDockVisibleCheckBox;
 
     @FXML
+    private CheckBox bookmarkWindowVisibleCheckBox;
+
+    @FXML
     private CheckBox breadcrumbBarVisibleCheckBox;
 
     @FXML
@@ -226,6 +229,7 @@ public class SettingsController {
         miniMapVisibleCheckBox.setSelected(settings.miniMapVisible());
         searchBarVisibleCheckBox.setSelected(settings.searchBarVisible());
         toolDockVisibleCheckBox.setSelected(settings.toolDockVisible());
+        bookmarkWindowVisibleCheckBox.setSelected(settings.bookmarkWindowVisible());
         breadcrumbBarVisibleCheckBox.setSelected(settings.breadcrumbBarVisible());
         readOnlyOpenEnabledCheckBox.setSelected(settings.readOnlyOpenEnabled());
         readOnlyOpenPatternItems.setAll(settings.readOnlyOpenPatterns());
@@ -282,6 +286,7 @@ public class SettingsController {
                 miniMapVisibleCheckBox.isSelected(),
                 searchBarVisibleCheckBox.isSelected(),
                 toolDockVisibleCheckBox.isSelected(),
+                bookmarkWindowVisibleCheckBox.isSelected(),
                 breadcrumbBarVisibleCheckBox.isSelected(),
                 toolDockSideComboBox.getValue() == null ? EditorSettings.DEFAULT_TOOL_DOCK_SIDE : toolDockSideComboBox.getValue(),
                 commandPaletteShortcut,
@@ -693,6 +698,7 @@ public class SettingsController {
         Objects.requireNonNull(miniMapVisibleCheckBox);
         Objects.requireNonNull(searchBarVisibleCheckBox);
         Objects.requireNonNull(toolDockVisibleCheckBox);
+        Objects.requireNonNull(bookmarkWindowVisibleCheckBox);
         Objects.requireNonNull(breadcrumbBarVisibleCheckBox);
         Objects.requireNonNull(readOnlyOpenEnabledCheckBox);
         Objects.requireNonNull(readOnlyOpenPatternField);

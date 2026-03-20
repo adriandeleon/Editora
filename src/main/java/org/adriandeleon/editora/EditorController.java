@@ -31,6 +31,7 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.Separator;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
@@ -47,6 +48,7 @@ import javafx.scene.input.KeyCombination;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -76,6 +78,7 @@ import org.adriandeleon.editora.plugins.EditoraContext;
 import org.adriandeleon.editora.plugins.PluginManager;
 import org.adriandeleon.editora.persistence.EditoraPersistence;
 import org.adriandeleon.editora.persistence.PersistenceFolderSupport;
+import org.adriandeleon.editora.session.BookmarkManager;
 import org.adriandeleon.editora.session.SessionManager;
 import org.adriandeleon.editora.session.WorkspaceSession;
 import org.adriandeleon.editora.settings.CommandPaletteShortcut;
@@ -184,7 +187,25 @@ public class EditorController {
     private TreeView<Path> projectTreeView;
 
     @FXML
+    private TreeView<String> bookmarksTreeView;
+
+    @FXML
+    private TextField bookmarksSearchField;
+
+    @FXML
+    private Button removeBookmarkButton;
+
+    @FXML
     private VBox projectExplorerPane;
+
+    @FXML
+    private VBox bookmarkWindowPane;
+
+    @FXML
+    private VBox toolDockPane;
+
+    @FXML
+    private Separator toolWindowSeparator;
 
     @FXML
     private SplitPane centerSplitPane;
@@ -203,6 +224,12 @@ public class EditorController {
 
     @FXML
     private Button projectExplorerRightRailButton;
+
+    @FXML
+    private Button bookmarkLeftRailButton;
+
+    @FXML
+    private Button bookmarkRightRailButton;
 
     @FXML
     private Label messageStatusLabel;
@@ -340,6 +367,8 @@ public class EditorController {
     private BorderPane settingsContentHost;
 
     private final Map<Tab, EditorDocument> documentsByTab = new LinkedHashMap<>();
+    private final Map<Path, LinkedHashSet<Integer>> bookmarksByFile = new LinkedHashMap<>();
+    private final Map<TreeItem<String>, BookmarkNode> bookmarkNodesByTreeItem = new HashMap<>();
     private final ObservableList<CommandAction> builtInCommands = FXCollections.observableArrayList();
     private final ObservableList<CommandAction> recentFileCommands = FXCollections.observableArrayList();
     private final ObservableList<CommandAction> pluginCommands = FXCollections.observableArrayList();
@@ -365,6 +394,7 @@ public class EditorController {
     private boolean acceleratorsInstalled;
     private boolean searchBarVisible = true;
     private boolean toolDockVisible = true;
+    private boolean bookmarkWindowVisible = true;
     private boolean statusBarVisible = true;
     private ToolWindowSide toolDockSide = currentSettings.toolDockSide();
     private double expandedToolDockDividerPosition = 0.22;
@@ -386,13 +416,14 @@ public class EditorController {
     private int findFileHistoryIndex = -1;
     private String findFileHistoryDraft = "";
     private boolean applyingFindFileHistory;
+    private String lastBookmarkFilter = "";
     private EditorTheme settingsThemeBeforePreview;
     private boolean settingsThemePreviewActive;
     private volatile boolean shuttingDown;
     private SplitPane.Divider trackedToolDockDivider;
     private final ChangeListener<Number> toolDockDividerPositionListener = (observable, ignored, current) -> {
         Objects.requireNonNull(observable);
-        if (toolDockVisible) {
+        if (isToolDockShellVisible()) {
             expandedToolDockDividerPosition = current.doubleValue();
         }
     };
@@ -404,6 +435,7 @@ public class EditorController {
         workspaceRoot = session.workspaceRoot();
         searchBarVisible = currentSettings.searchBarVisible();
         toolDockVisible = currentSettings.toolDockVisible();
+        bookmarkWindowVisible = currentSettings.bookmarkWindowVisible();
         toolDockSide = currentSettings.toolDockSide();
         statusBarVisible = session.statusBarVisible();
         expandedToolDockDividerPosition = session.toolDockDividerPosition();
@@ -418,8 +450,11 @@ public class EditorController {
         windowY = session.windowY();
         windowMaximized = session.windowMaximized();
         recentFiles.setAll(SessionManager.loadRecentFiles());
+        bookmarksByFile.clear();
+        BookmarkManager.loadBookmarks().forEach((file, lines) -> bookmarksByFile.put(file, new LinkedHashSet<>(lines)));
 
         configureProjectTree();
+        configureBookmarksToolWindow();
         configureCommandPalette();
         configureFindFilePrompt();
         configureStatusBar();
@@ -441,7 +476,7 @@ public class EditorController {
         wholeWordToggle.selectedProperty().addListener(onChange(this::refreshSearchUi));
         regexToggle.selectedProperty().addListener(onChange(this::refreshSearchUi));
         searchBar.addEventFilter(KeyEvent.KEY_PRESSED, this::handleSearchBarKeys);
-        projectExplorerPane.addEventFilter(KeyEvent.KEY_PRESSED, this::handleProjectExplorerKeys);
+        toolDockPane.addEventFilter(KeyEvent.KEY_PRESSED, this::handleProjectExplorerKeys);
 
         editorTabPane.getSelectionModel().selectedItemProperty().addListener(onCurrentChange(current ->
                 updateEditorState(getDocument(current).orElse(null))));
@@ -475,8 +510,8 @@ public class EditorController {
                 hideSettingsView();
             }
         });
-        projectExplorerPane.widthProperty().addListener(onCurrentChange(newValue -> {
-            if (toolDockVisible && newValue.doubleValue() > 0) {
+        toolDockPane.widthProperty().addListener(onCurrentChange(newValue -> {
+            if (isToolDockShellVisible() && newValue.doubleValue() > 0) {
                 expandedToolDockPrefWidth = newValue.doubleValue();
             }
         }));
@@ -514,6 +549,7 @@ public class EditorController {
     public void shutdown() {
         shuttingDown = true;
         analysisExecutor.shutdownNow();
+        persistBookmarks();
         SessionManager.saveRecentFiles(recentFiles);
         SessionManager.saveWorkspaceSession(buildCurrentSession());
     }
@@ -585,6 +621,11 @@ public class EditorController {
     }
 
     @FXML
+    private void onRemoveSelectedBookmark() {
+        removeSelectedBookmarkFromToolWindow(true);
+    }
+
+    @FXML
     private void onSaveFile() {
         animateToolbarClick(saveFileToolbarButton);
         saveActiveDocument(false);
@@ -645,6 +686,11 @@ public class EditorController {
     @FXML
     private void onToggleProjectExplorer() {
         toggleToolDockVisibility();
+    }
+
+    @FXML
+    private void onToggleBookmarkWindow() {
+        toggleBookmarkWindowVisibility();
     }
 
     @FXML
@@ -723,6 +769,184 @@ public class EditorController {
                 event.consume();
             }
         });
+    }
+
+    private void configureBookmarksToolWindow() {
+        if (bookmarksTreeView == null || bookmarksSearchField == null || removeBookmarkButton == null) {
+            return;
+        }
+
+        bookmarksTreeView.setShowRoot(false);
+        bookmarksTreeView.setCellFactory(treeView -> {
+            Objects.requireNonNull(treeView);
+            return new TreeCell<>() {
+                @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                        setTooltip(null);
+                        setGraphic(null);
+                        return;
+                    }
+                    setText(item);
+                    BookmarkNode bookmarkNode = bookmarkNodesByTreeItem.get(getTreeItem());
+                    if (bookmarkNode == null || bookmarkNode.filePath() == null) {
+                        setTooltip(null);
+                        return;
+                    }
+                    if (bookmarkNode.bookmark() == null) {
+                        setTooltip(new Tooltip(bookmarkNode.filePath().toString()));
+                    } else {
+                        setTooltip(new Tooltip(bookmarkNode.filePath() + " : line " + (bookmarkNode.bookmark().lineIndex() + 1)));
+                    }
+                }
+            };
+        });
+
+        bookmarksSearchField.textProperty().addListener(onCurrentChange(current -> {
+            lastBookmarkFilter = current == null ? "" : current;
+            refreshBookmarksToolWindow();
+        }));
+        bookmarksTreeView.getSelectionModel().selectedItemProperty().addListener(onCurrentChange(current -> {
+            removeBookmarkButton.setDisable(current == null || bookmarkNodesByTreeItem.get(current) == null);
+        }));
+        bookmarksTreeView.setOnMouseClicked(event -> {
+            if (event.getButton() != MouseButton.PRIMARY) {
+                return;
+            }
+            TreeItem<String> selectedItem = bookmarksTreeView.getSelectionModel().getSelectedItem();
+            BookmarkNode bookmarkNode = selectedItem == null ? null : bookmarkNodesByTreeItem.get(selectedItem);
+            if (bookmarkNode != null && bookmarkNode.bookmark() != null) {
+                openBookmark(bookmarkNode.bookmark());
+            }
+        });
+        bookmarksTreeView.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) {
+                removeSelectedBookmarkFromToolWindow(false);
+                event.consume();
+                return;
+            }
+            if (event.getCode() == KeyCode.ENTER) {
+                TreeItem<String> selectedItem = bookmarksTreeView.getSelectionModel().getSelectedItem();
+                BookmarkNode bookmarkNode = selectedItem == null ? null : bookmarkNodesByTreeItem.get(selectedItem);
+                if (bookmarkNode != null && bookmarkNode.bookmark() != null) {
+                    openBookmark(bookmarkNode.bookmark());
+                    event.consume();
+                }
+            }
+        });
+        removeBookmarkButton.setDisable(true);
+        refreshBookmarksToolWindow();
+    }
+
+    private void refreshBookmarksToolWindow() {
+        if (bookmarksTreeView == null) {
+            return;
+        }
+
+        String query = lastBookmarkFilter == null ? "" : lastBookmarkFilter.strip().toLowerCase(Locale.ROOT);
+        TreeItem<String> root = new TreeItem<>("Bookmarks");
+        bookmarkNodesByTreeItem.clear();
+
+        bookmarkEntries().stream()
+                .collect(Collectors.groupingBy(BookmarkEntry::filePath, LinkedHashMap::new, Collectors.toList()))
+                .forEach((filePath, entries) -> {
+                    String fileLabel = workspaceRelativePath(filePath);
+                    List<BookmarkEntry> filtered = entries.stream()
+                            .filter(entry -> query.isBlank() || bookmarkMatchesQuery(entry, query))
+                            .sorted(Comparator.comparingInt(BookmarkEntry::lineIndex))
+                            .toList();
+                    if (filtered.isEmpty()) {
+                        return;
+                    }
+
+                    TreeItem<String> fileItem = new TreeItem<>(fileLabel + " (" + filtered.size() + ")");
+                    bookmarkNodesByTreeItem.put(fileItem, new BookmarkNode(filePath, null));
+                    filtered.forEach(entry -> {
+                        String linePreview = entry.lineText().isBlank() ? "(blank)" : entry.lineText();
+                        TreeItem<String> bookmarkItem = new TreeItem<>("L" + (entry.lineIndex() + 1) + ": " + linePreview);
+                        bookmarkNodesByTreeItem.put(bookmarkItem, new BookmarkNode(filePath, entry));
+                        fileItem.getChildren().add(bookmarkItem);
+                    });
+                    fileItem.setExpanded(true);
+                    root.getChildren().add(fileItem);
+                });
+
+        bookmarksTreeView.setRoot(root);
+        if (root.getChildren().isEmpty()) {
+            bookmarksTreeView.getSelectionModel().clearSelection();
+            removeBookmarkButton.setDisable(true);
+        } else {
+            bookmarksTreeView.getSelectionModel().select(root.getChildren().getFirst());
+        }
+    }
+
+    private boolean bookmarkMatchesQuery(BookmarkEntry entry, String query) {
+        String fileName = entry.filePath().getFileName() == null ? entry.filePath().toString() : entry.filePath().getFileName().toString();
+        return fileName.toLowerCase(Locale.ROOT).contains(query)
+                || entry.filePath().toString().toLowerCase(Locale.ROOT).contains(query)
+                || entry.lineText().toLowerCase(Locale.ROOT).contains(query);
+    }
+
+    private List<BookmarkEntry> bookmarkEntries() {
+        return bookmarksByFile.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey(Comparator.comparing(this::workspaceRelativePath, String.CASE_INSENSITIVE_ORDER)))
+                .flatMap(entry -> entry.getValue().stream()
+                        .sorted()
+                        .map(lineIndex -> new BookmarkEntry(entry.getKey(), lineIndex, linePreview(entry.getKey(), lineIndex))))
+                .toList();
+    }
+
+    private void removeSelectedBookmarkFromToolWindow(boolean confirmDelete) {
+        if (bookmarksTreeView == null) {
+            return;
+        }
+        TreeItem<String> selectedItem = bookmarksTreeView.getSelectionModel().getSelectedItem();
+        BookmarkNode bookmarkNode = selectedItem == null ? null : bookmarkNodesByTreeItem.get(selectedItem);
+        if (bookmarkNode == null) {
+            statusMessage("Select a bookmark to remove");
+            return;
+        }
+
+        if (bookmarkNode.bookmark() != null) {
+            if (confirmDelete && !confirmBookmarkDeletion(bookmarkNode)) {
+                return;
+            }
+            removeBookmark(bookmarkNode.filePath(), bookmarkNode.bookmark().lineIndex());
+            statusMessage("Removed bookmark at line " + (bookmarkNode.bookmark().lineIndex() + 1));
+            return;
+        }
+
+        LinkedHashSet<Integer> removed = bookmarksByFile.get(bookmarkNode.filePath());
+        if (removed != null && !removed.isEmpty()) {
+            if (confirmDelete && !confirmBookmarkDeletion(bookmarkNode)) {
+                return;
+            }
+            bookmarksByFile.remove(bookmarkNode.filePath());
+            Optional<EditorDocument> openDocument = openDocumentForPath(bookmarkNode.filePath());
+            openDocument.ifPresent(document -> {
+                document.setBookmarkedLines(List.of());
+                refreshLineFringe(document);
+            });
+            persistBookmarks();
+            refreshBookmarksToolWindow();
+            statusMessage("Removed " + removed.size() + " bookmarks from " + bookmarkNode.filePath().getFileName());
+        }
+    }
+
+    private boolean confirmBookmarkDeletion(BookmarkNode bookmarkNode) {
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.initOwner(getWindow());
+        confirmation.setTitle("Delete Bookmark");
+        if (bookmarkNode.bookmark() == null) {
+            confirmation.setHeaderText("Delete all bookmarks in " + bookmarkNode.filePath().getFileName() + "?");
+            confirmation.setContentText("This removes every bookmark entry for that file.");
+        } else {
+            confirmation.setHeaderText("Delete bookmark at line " + (bookmarkNode.bookmark().lineIndex() + 1) + "?");
+            confirmation.setContentText(bookmarkNode.filePath().toString());
+        }
+        return confirmation.showAndWait().filter(ButtonType.OK::equals).isPresent();
     }
 
     private TreeCell<Path> createProjectTreeCell(TreeView<Path> treeView) {
@@ -1172,6 +1396,8 @@ public class EditorController {
                 new CommandAction("Find Previous", "Find the previous search match in the current document", "Search", "", List.of("search", "previous"), this::onFindPrevious),
                 new CommandAction("Toggle Search Bar", "Show or hide the search and replace controls", "View", "⌥⌘F", List.of("search", "replace", "collapse", "hide"), this::onToggleSearchBar),
                 new CommandAction("Toggle Project Explorer", "Show or hide Project Explorer in the tool dock", "View", "⌥⌘E", List.of("explorer", "sidebar", "project", "collapse", "hide", "tool dock"), this::onToggleProjectExplorer),
+                new CommandAction("Toggle Bookmarks Tool Window", "Show or hide Bookmarks in its own tool window", "View", "", List.of("bookmarks", "bookmark", "tool window", "sidebar", "navigator", "collapse", "hide"), this::onToggleBookmarkWindow),
+                new CommandAction("Show Bookmarks Tool Window", "Focus the bookmark list in the tool dock", "View", "", List.of("bookmark", "bookmarks", "tool window", "sidebar", "navigator"), this::showBookmarksToolWindow),
                 new CommandAction("Move Project Explorer Left", "Dock Project Explorer on the left side of the tool dock", "View", "", List.of("explorer", "project", "tool window", "left", "dock", "sidebar", "tool dock"), this::moveProjectExplorerLeft),
                 new CommandAction("Move Project Explorer Right", "Dock Project Explorer on the right side of the tool dock", "View", "", List.of("explorer", "project", "tool window", "right", "dock", "sidebar", "tool dock"), this::moveProjectExplorerRight),
                 new CommandAction("Toggle Status Bar", "Show or hide the bottom status bar", "View", "⌥⌘B", List.of("status", "footer", "bottom", "hide"), this::onToggleStatusBar),
@@ -1186,7 +1412,10 @@ public class EditorController {
                 new CommandAction("Clear Recent Files", "Forget the recent-files history", "Workspace", "", List.of("recent", "history", "clear"), this::clearRecentFiles),
                 new CommandAction("Reload TextMate Bundles", "Reload bundled and external TextMate grammars without restarting Editora", "Languages", "", List.of("textmate", "syntax", "grammar", "bundle", "reload"), this::reloadTextMateBundles),
                 new CommandAction("Reload Plugins", "Reload plugin commands and menu actions from the plugins directory", "Plugins", "", List.of("plugins", "reload"), this::loadPlugins),
-                new CommandAction("Toggle Read-Only Mode", "Make the active document read-only or editable again; Space scrolls down, Backspace scrolls up", "Edit", "", List.of("read only", "readonly", "lock", "view", "immutable", "protect"), this::toggleReadOnly)
+                new CommandAction("Toggle Read-Only Mode", "Make the active document read-only or editable again; Space scrolls down, Backspace scrolls up", "Edit", "", List.of("read only", "readonly", "lock", "view", "immutable", "protect"), this::toggleReadOnly),
+                new CommandAction("Toggle Bookmark", "Add or remove a bookmark at the active line", "Edit", "", List.of("bookmark", "gutter", "mark", "line"), this::toggleBookmarkAtCaret),
+                new CommandAction("Add Bookmark", "Add a bookmark at the active line", "Edit", "", List.of("bookmark", "add", "mark", "line"), this::addBookmarkAtCaret),
+                new CommandAction("Remove Bookmark", "Remove the bookmark at the active line", "Edit", "", List.of("bookmark", "remove", "clear", "line"), this::removeBookmarkAtCaret)
         ));
         commandActions.addAll(Arrays.stream(EditorTheme.values())
                 .map(theme -> new CommandAction(
@@ -1213,6 +1442,7 @@ public class EditorController {
                 currentSettings.miniMapVisible(),
                 currentSettings.searchBarVisible(),
                 currentSettings.toolDockVisible(),
+                bookmarkWindowVisible,
                 currentSettings.breadcrumbBarVisible(),
                 currentSettings.toolDockSide(),
                 currentSettings.commandPaletteShortcut(),
@@ -1267,6 +1497,7 @@ public class EditorController {
                 currentSettings.miniMapVisible(),
                 searchBarVisible,
                 toolDockVisible,
+                bookmarkWindowVisible,
                 currentSettings.breadcrumbBarVisible(),
                 toolDockSide,
                 currentSettings.commandPaletteShortcut(),
@@ -1537,6 +1768,9 @@ public class EditorController {
         if (name.contains("settings")) {
             return "bi-gear";
         }
+        if (name.contains("bookmark")) {
+            return "bi-bookmark";
+        }
         if (name.contains("keyboard") || category.contains("help")) {
             return "bi-keyboard";
         }
@@ -1586,11 +1820,11 @@ public class EditorController {
                 .filter(Objects::nonNull)
                 .toList();
         Optional<Path> selectedFile = getActiveDocument().map(EditorDocument::getFilePath);
-        double currentToolDockDividerPosition = toolDockVisible && !centerSplitPane.getDividers().isEmpty()
+        double currentToolDockDividerPosition = isToolDockShellVisible() && !centerSplitPane.getDividers().isEmpty()
                 ? centerSplitPane.getDividers().getFirst().getPosition()
                 : expandedToolDockDividerPosition;
-        double currentToolDockWidth = toolDockVisible && projectExplorerPane.getWidth() > 0
-                ? projectExplorerPane.getWidth()
+        double currentToolDockWidth = isToolDockShellVisible() && toolDockPane.getWidth() > 0
+                ? toolDockPane.getWidth()
                 : expandedToolDockPrefWidth;
         return new WorkspaceSession(
                 openFiles,
@@ -1641,6 +1875,7 @@ public class EditorController {
         if (filePath != null) {
             document.setFilePath(filePath.toAbsolutePath().normalize());
             document.setReadOnly(ReadOnlyOpenRules.shouldOpenReadOnly(filePath, currentSettings));
+            applyPersistedBookmarks(document);
         }
 
         attachEditorBehavior(document);
@@ -1667,12 +1902,21 @@ public class EditorController {
             document.clearNavigationGoalColumn();
             document.clearMark();
             document.clampMarkPosition();
+            boolean bookmarksChanged = document.realignBookmarksToContent();
+            bookmarksChanged = document.pruneBookmarksToValidRange() || bookmarksChanged;
+            if (bookmarksChanged) {
+                syncDocumentBookmarksToPersistence(document);
+                refreshLineFringe(document);
+            }
             document.refreshDirtyState();
             updateDocumentStatus(document);
             updateEditActionAvailability(document);
             updateCaretStatus(document);
             revealActiveDocumentInProjectTree(document);
             refreshSearchUi();
+            if (hasBookmarksForFile(document.getFilePath())) {
+                refreshBookmarksToolWindow();
+            }
         }));
         codeArea.caretPositionProperty().addListener(onChange(() -> {
             if (!document.consumeNavigationGoalPreservation()) {
@@ -2046,6 +2290,7 @@ public class EditorController {
         if (findFileOverlay != null && findFileOverlay.isVisible()) {
             refreshFindFileResults();
         }
+        refreshBookmarksToolWindow();
     }
 
     private boolean confirmCloseDocument(EditorDocument document) {
@@ -2086,6 +2331,7 @@ public class EditorController {
         if (findFileOverlay != null && findFileOverlay.isVisible()) {
             refreshFindFileResults();
         }
+        refreshBookmarksToolWindow();
     }
 
     private void openSelectedProjectTreeItem() {
@@ -2170,7 +2416,8 @@ public class EditorController {
     }
 
     private boolean saveDocument(EditorDocument document, boolean saveAs) {
-        Path targetPath = document.getFilePath();
+        Path originalPath = document.getFilePath();
+        Path targetPath = originalPath;
         if (saveAs || targetPath == null) {
             FileChooser chooser = createFileChooser(saveAs ? "Save File As" : "Save File", document);
             chooser.setInitialFileName(defaultFileName(document));
@@ -2188,6 +2435,7 @@ public class EditorController {
             Files.writeString(targetPath, document.getCodeArea().getText(), StandardCharsets.UTF_8);
             document.setFilePath(targetPath);
             document.setLanguageService(languageServices.resolve(targetPath));
+            remapBookmarksForSavedDocument(originalPath, targetPath, document);
             document.markSaved();
             analyzeDocument(document);
             lastUsedDirectory = targetPath.getParent();
@@ -2314,8 +2562,9 @@ public class EditorController {
                     persistShellVisibilitySettings();
                     focusActiveEditor();
                     event.consume();
-                } else if (toolDockVisible && isFocusInside(projectExplorerPane)) {
+                } else if (isToolDockShellVisible() && isFocusInside(toolDockPane)) {
                     toolDockVisible = false;
+                    bookmarkWindowVisible = false;
                     applyToolDockVisibility(true, true);
                     persistShellVisibilitySettings();
                     focusActiveEditor();
@@ -2357,6 +2606,213 @@ public class EditorController {
         syncToolbarButtonStates();
     }
 
+    private void showBookmarksToolWindow() {
+        boolean shellWasVisible = isToolDockShellVisible();
+        bookmarkWindowVisible = true;
+        if (!shellWasVisible) {
+            applyToolDockVisibility(false, true);
+        } else {
+            applyToolWindowPaneVisibility();
+            refreshToolWindowRails();
+            syncToolbarButtonStates();
+        }
+        persistShellVisibilitySettings();
+        refreshBookmarksToolWindow();
+        if (bookmarksSearchField != null) {
+            Platform.runLater(bookmarksSearchField::requestFocus);
+        }
+    }
+
+    private void toggleBookmarkAtCaret() {
+        getActiveDocument().ifPresent(document -> toggleBookmark(document, document.getCodeArea().getCurrentParagraph(), false));
+    }
+
+    private void addBookmarkAtCaret() {
+        getActiveDocument().ifPresent(document -> {
+            int lineIndex = document.getCodeArea().getCurrentParagraph();
+            if (document.addBookmark(lineIndex)) {
+                syncDocumentBookmarksToPersistence(document);
+                refreshLineFringe(document);
+                refreshBookmarksToolWindow();
+                statusMessage("Bookmark added at line " + (lineIndex + 1));
+            } else {
+                statusMessage("Bookmark already exists at line " + (lineIndex + 1));
+            }
+        });
+    }
+
+    private void removeBookmarkAtCaret() {
+        getActiveDocument().ifPresent(document -> {
+            int lineIndex = document.getCodeArea().getCurrentParagraph();
+            if (document.removeBookmark(lineIndex)) {
+                syncDocumentBookmarksToPersistence(document);
+                refreshLineFringe(document);
+                refreshBookmarksToolWindow();
+                statusMessage("Bookmark removed from line " + (lineIndex + 1));
+            } else {
+                statusMessage("No bookmark found at line " + (lineIndex + 1));
+            }
+        });
+    }
+
+    private void toggleBookmark(EditorDocument document, int lineIndex, boolean quiet) {
+        if (document == null) {
+            return;
+        }
+        boolean nowBookmarked = document.toggleBookmark(lineIndex);
+        syncDocumentBookmarksToPersistence(document);
+        refreshLineFringe(document);
+        refreshBookmarksToolWindow();
+        if (!quiet) {
+            statusMessage(nowBookmarked
+                    ? "Bookmark added at line " + (lineIndex + 1)
+                    : "Bookmark removed from line " + (lineIndex + 1));
+        }
+    }
+
+    private void removeBookmark(Path filePath, int lineIndex) {
+        if (filePath == null) {
+            return;
+        }
+        Path normalized = filePath.toAbsolutePath().normalize();
+        LinkedHashSet<Integer> lines = bookmarksByFile.get(normalized);
+        if (lines == null) {
+            return;
+        }
+        lines.remove(lineIndex);
+        if (lines.isEmpty()) {
+            bookmarksByFile.remove(normalized);
+        }
+
+        openDocumentForPath(normalized).ifPresent(document -> {
+            document.removeBookmark(lineIndex);
+            refreshLineFringe(document);
+        });
+        persistBookmarks();
+        refreshBookmarksToolWindow();
+    }
+
+    private void openBookmark(BookmarkEntry bookmark) {
+        Optional<EditorDocument> openDocument = openDocumentForPath(bookmark.filePath());
+        EditorDocument document = openDocument.or(() -> openFileInternal(bookmark.filePath(), true, true)).orElse(null);
+        if (document == null) {
+            statusMessage("Bookmark file not found: " + bookmark.filePath());
+            return;
+        }
+
+        editorTabPane.getSelectionModel().select(document.getTab());
+        int lineIndex = Math.max(0, Math.min(bookmark.lineIndex(), document.getCodeArea().getParagraphs().size() - 1));
+        document.getCodeArea().showParagraphAtTop(lineIndex);
+        document.getCodeArea().moveTo(lineIndex, 0);
+        document.getCodeArea().requestFocus();
+        statusMessage("Opened bookmark at line " + (lineIndex + 1));
+    }
+
+    private Optional<EditorDocument> openDocumentForPath(Path filePath) {
+        if (filePath == null) {
+            return Optional.empty();
+        }
+        Path normalized = filePath.toAbsolutePath().normalize();
+        return documentsByTab.values().stream()
+                .filter(document -> normalized.equals(document.getFilePath()))
+                .findFirst();
+    }
+
+    private void applyPersistedBookmarks(EditorDocument document) {
+        Path filePath = document.getFilePath();
+        if (filePath == null) {
+            return;
+        }
+        LinkedHashSet<Integer> lines = bookmarksByFile.get(filePath.toAbsolutePath().normalize());
+        document.setBookmarkedLines(lines == null ? List.of() : lines);
+        refreshLineFringe(document);
+    }
+
+    private void syncDocumentBookmarksToPersistence(EditorDocument document) {
+        Path filePath = document.getFilePath();
+        if (filePath == null) {
+            return;
+        }
+        Path normalized = filePath.toAbsolutePath().normalize();
+        List<Integer> lines = document.bookmarkedLines();
+        if (lines.isEmpty()) {
+            bookmarksByFile.remove(normalized);
+        } else {
+            bookmarksByFile.put(normalized, new LinkedHashSet<>(lines));
+        }
+        persistBookmarks();
+    }
+
+    private void remapBookmarksForSavedDocument(Path originalPath, Path targetPath, EditorDocument document) {
+        Path normalizedTarget = targetPath == null ? null : targetPath.toAbsolutePath().normalize();
+        Path normalizedOriginal = originalPath == null ? null : originalPath.toAbsolutePath().normalize();
+        if (normalizedTarget == null) {
+            return;
+        }
+
+        if (normalizedOriginal != null && !normalizedOriginal.equals(normalizedTarget)) {
+            bookmarksByFile.remove(normalizedOriginal);
+        }
+        List<Integer> lines = document.bookmarkedLines();
+        if (lines.isEmpty()) {
+            bookmarksByFile.remove(normalizedTarget);
+        } else {
+            bookmarksByFile.put(normalizedTarget, new LinkedHashSet<>(lines));
+        }
+        persistBookmarks();
+        refreshBookmarksToolWindow();
+    }
+
+    private boolean hasBookmarksForFile(Path filePath) {
+        if (filePath == null) {
+            return false;
+        }
+        LinkedHashSet<Integer> lines = bookmarksByFile.get(filePath.toAbsolutePath().normalize());
+        return lines != null && !lines.isEmpty();
+    }
+
+    private void refreshLineFringe(EditorDocument document) {
+        if (document == null) {
+            return;
+        }
+        IntFunction<Node> lineNumbers = LineNumberFactory.get(document.getCodeArea());
+        document.getCodeArea().setParagraphGraphicFactory(lineIndex -> createLineFringe(document, lineNumbers, lineIndex));
+    }
+
+    private void persistBookmarks() {
+        BookmarkManager.saveBookmarks(bookmarksByFile);
+    }
+
+    private String linePreview(Path filePath, int lineIndex) {
+        Optional<EditorDocument> openDocument = openDocumentForPath(filePath);
+        if (openDocument.isPresent()) {
+            CodeArea codeArea = openDocument.get().getCodeArea();
+            if (lineIndex >= 0 && lineIndex < codeArea.getParagraphs().size()) {
+                return codeArea.getParagraph(lineIndex).getText().strip();
+            }
+            return "";
+        }
+
+        if (filePath == null || !Files.isRegularFile(filePath)) {
+            return "";
+        }
+        try (java.util.stream.Stream<String> lines = Files.lines(filePath, StandardCharsets.UTF_8)) {
+            return lines.skip(Math.max(0L, lineIndex)).findFirst().orElse("").strip();
+        } catch (IOException ignored) {
+            return "";
+        }
+    }
+
+    private String workspaceRelativePath(Path path) {
+        if (path == null) {
+            return "";
+        }
+        if (workspaceRoot != null && path.startsWith(workspaceRoot)) {
+            return workspaceRoot.relativize(path).toString().replace('\\', '/');
+        }
+        return path.toString();
+    }
+
     private void configureStatusBar() {
         if (documentPathBreadcrumbs == null) {
             return;
@@ -2391,6 +2847,7 @@ public class EditorController {
                 currentSettings.miniMapVisible(),
                 searchBarVisible,
                 toolDockVisible,
+                bookmarkWindowVisible,
                 nextVisible,
                 toolDockSide,
                 currentSettings.commandPaletteShortcut(),
@@ -2662,12 +3119,13 @@ public class EditorController {
     }
 
     private void applySettings(EditorSettings settings, boolean persist) {
-        if (toolDockVisible) {
+        if (isToolDockShellVisible()) {
             captureToolDockLayoutState();
         }
         currentSettings = settings;
         searchBarVisible = settings.searchBarVisible();
         toolDockVisible = settings.toolDockVisible();
+        bookmarkWindowVisible = settings.bookmarkWindowVisible();
         toolDockSide = settings.toolDockSide();
         ThemeManager.apply(settings.theme(), rootStack);
         updateCommandPaletteShortcutPresentation();
@@ -2804,17 +3262,19 @@ public class EditorController {
             toolDockAnimation.stop();
         }
 
+        boolean shellVisible = isToolDockShellVisible();
         refreshToolWindowRails();
 
         if (!animate) {
-            if (toolDockVisible) {
+            if (shellVisible) {
                 updateCenterSplitPaneItems(true);
-                projectExplorerPane.setManaged(true);
-                projectExplorerPane.setVisible(true);
-                projectExplorerPane.setOpacity(1);
-                projectExplorerPane.setMinWidth(expandedToolDockMinWidth);
-                projectExplorerPane.setPrefWidth(expandedToolDockPrefWidth);
-                projectExplorerPane.setMaxWidth(Region.USE_COMPUTED_SIZE);
+                toolDockPane.setManaged(true);
+                toolDockPane.setVisible(true);
+                toolDockPane.setOpacity(1);
+                toolDockPane.setMinWidth(expandedToolDockMinWidth);
+                toolDockPane.setPrefWidth(expandedToolDockPrefWidth);
+                toolDockPane.setMaxWidth(Region.USE_COMPUTED_SIZE);
+                applyToolWindowPaneVisibility();
                 Platform.runLater(() -> {
                     if (!centerSplitPane.getDividers().isEmpty()) {
                         centerSplitPane.setDividerPositions(targetToolDockDividerPosition());
@@ -2822,29 +3282,30 @@ public class EditorController {
                 });
             } else {
                 captureToolDockLayoutState();
-                projectExplorerPane.setVisible(false);
-                projectExplorerPane.setManaged(false);
-                projectExplorerPane.setOpacity(0);
-                projectExplorerPane.setMinWidth(0);
-                projectExplorerPane.setPrefWidth(0);
-                projectExplorerPane.setMaxWidth(0);
+                toolDockPane.setVisible(false);
+                toolDockPane.setManaged(false);
+                toolDockPane.setOpacity(0);
+                toolDockPane.setMinWidth(0);
+                toolDockPane.setPrefWidth(0);
+                toolDockPane.setMaxWidth(0);
                 updateCenterSplitPaneItems(false);
             }
             if (announce) {
-                statusMessage(toolDockVisible ? "Project explorer shown" : "Project explorer hidden");
+                statusMessage(shellVisible ? "Tool windows shown" : "Tool windows hidden");
             }
             syncToolbarButtonStates();
             return;
         }
 
-        if (toolDockVisible) {
+        if (shellVisible) {
             updateCenterSplitPaneItems(true);
-            projectExplorerPane.setManaged(true);
-            projectExplorerPane.setVisible(true);
-            projectExplorerPane.setOpacity(0);
-            projectExplorerPane.setMinWidth(0);
-            projectExplorerPane.setPrefWidth(0);
-            projectExplorerPane.setMaxWidth(expandedToolDockPrefWidth);
+            toolDockPane.setManaged(true);
+            toolDockPane.setVisible(true);
+            toolDockPane.setOpacity(0);
+            toolDockPane.setMinWidth(0);
+            toolDockPane.setPrefWidth(0);
+            toolDockPane.setMaxWidth(expandedToolDockPrefWidth);
+            applyToolWindowPaneVisibility();
             Platform.runLater(() -> {
                 if (!centerSplitPane.getDividers().isEmpty()) {
                     centerSplitPane.setDividerPositions(hiddenToolDockDividerPosition());
@@ -2852,42 +3313,64 @@ public class EditorController {
                 Timeline animation = new Timeline(buildToolDockKeyFrames(true));
                 toolDockAnimation = animation;
                 animation.setOnFinished(event -> handleEvent(event, () -> {
-                    projectExplorerPane.setMinWidth(expandedToolDockMinWidth);
-                    projectExplorerPane.setPrefWidth(expandedToolDockPrefWidth);
-                    projectExplorerPane.setMaxWidth(Region.USE_COMPUTED_SIZE);
-                    projectExplorerPane.setOpacity(1);
+                    toolDockPane.setMinWidth(expandedToolDockMinWidth);
+                    toolDockPane.setPrefWidth(expandedToolDockPrefWidth);
+                    toolDockPane.setMaxWidth(Region.USE_COMPUTED_SIZE);
+                    toolDockPane.setOpacity(1);
                 }));
                 animation.playFromStart();
             });
         } else {
             captureToolDockLayoutState();
             updateCenterSplitPaneItems(true);
-            projectExplorerPane.setManaged(true);
-            projectExplorerPane.setVisible(true);
+            toolDockPane.setManaged(true);
+            toolDockPane.setVisible(true);
+            applyToolWindowPaneVisibility();
             Timeline animation = new Timeline(buildToolDockKeyFrames(false));
             toolDockAnimation = animation;
             animation.setOnFinished(event -> handleEvent(event, () -> {
-                projectExplorerPane.setVisible(false);
-                projectExplorerPane.setManaged(false);
-                projectExplorerPane.setOpacity(0);
-                projectExplorerPane.setMinWidth(0);
-                projectExplorerPane.setPrefWidth(0);
-                projectExplorerPane.setMaxWidth(0);
+                toolDockPane.setVisible(false);
+                toolDockPane.setManaged(false);
+                toolDockPane.setOpacity(0);
+                toolDockPane.setMinWidth(0);
+                toolDockPane.setPrefWidth(0);
+                toolDockPane.setMaxWidth(0);
                 updateCenterSplitPaneItems(false);
             }));
             animation.playFromStart();
         }
 
         if (announce) {
-            statusMessage(toolDockVisible ? "Project explorer shown" : "Project explorer hidden");
+            statusMessage(shellVisible ? "Tool windows shown" : "Tool windows hidden");
         }
         syncToolbarButtonStates();
     }
 
     private void toggleToolDockVisibility() {
+        boolean shellWasVisible = isToolDockShellVisible();
         toolDockVisible = !toolDockVisible;
-        applyToolDockVisibility(true, true);
+        applyToolWindowShellTransition(shellWasVisible, true);
         persistShellVisibilitySettings();
+        statusMessage(toolDockVisible ? "Project explorer shown" : "Project explorer hidden");
+    }
+
+    private void toggleBookmarkWindowVisibility() {
+        boolean shellWasVisible = isToolDockShellVisible();
+        bookmarkWindowVisible = !bookmarkWindowVisible;
+        applyToolWindowShellTransition(shellWasVisible, true);
+        persistShellVisibilitySettings();
+        statusMessage(bookmarkWindowVisible ? "Bookmarks window shown" : "Bookmarks window hidden");
+    }
+
+    private void applyToolWindowShellTransition(boolean shellWasVisible, boolean animate) {
+        boolean shellVisible = isToolDockShellVisible();
+        if (shellWasVisible != shellVisible) {
+            applyToolDockVisibility(false, animate);
+            return;
+        }
+        applyToolWindowPaneVisibility();
+        refreshToolWindowRails();
+        syncToolbarButtonStates();
     }
 
     private void moveProjectExplorerLeft() {
@@ -2912,6 +3395,7 @@ public class EditorController {
                 currentSettings.miniMapVisible(),
                 searchBarVisible,
                 toolDockVisible,
+                bookmarkWindowVisible,
                 currentSettings.breadcrumbBarVisible(),
                 side,
                 currentSettings.commandPaletteShortcut(),
@@ -2932,6 +3416,7 @@ public class EditorController {
                 nextVisible,
                 searchBarVisible,
                 toolDockVisible,
+                bookmarkWindowVisible,
                 currentSettings.breadcrumbBarVisible(),
                 toolDockSide,
                 currentSettings.commandPaletteShortcut(),
@@ -2951,6 +3436,7 @@ public class EditorController {
                 currentSettings.miniMapVisible(),
                 searchBarVisible,
                 toolDockVisible,
+                bookmarkWindowVisible,
                 currentSettings.breadcrumbBarVisible(),
                 toolDockSide,
                 currentSettings.commandPaletteShortcut(),
@@ -2966,8 +3452,28 @@ public class EditorController {
         if (!centerSplitPane.getDividers().isEmpty()) {
             expandedToolDockDividerPosition = centerSplitPane.getDividers().getFirst().getPosition();
         }
-        expandedToolDockPrefWidth = Math.max(projectExplorerPane.getWidth(), projectExplorerPane.getPrefWidth());
-        expandedToolDockMinWidth = Math.max(MIN_TOOL_DOCK_WIDTH, projectExplorerPane.getMinWidth() > 0 ? projectExplorerPane.getMinWidth() : expandedToolDockMinWidth);
+        expandedToolDockPrefWidth = Math.max(toolDockPane.getWidth(), toolDockPane.getPrefWidth());
+        expandedToolDockMinWidth = Math.max(MIN_TOOL_DOCK_WIDTH, toolDockPane.getMinWidth() > 0 ? toolDockPane.getMinWidth() : expandedToolDockMinWidth);
+    }
+
+    private boolean isToolDockShellVisible() {
+        return toolDockVisible || bookmarkWindowVisible;
+    }
+
+    private void applyToolWindowPaneVisibility() {
+        if (projectExplorerPane != null) {
+            projectExplorerPane.setManaged(toolDockVisible);
+            projectExplorerPane.setVisible(toolDockVisible);
+        }
+        if (bookmarkWindowPane != null) {
+            bookmarkWindowPane.setManaged(bookmarkWindowVisible);
+            bookmarkWindowPane.setVisible(bookmarkWindowVisible);
+        }
+        if (toolWindowSeparator != null) {
+            boolean showSeparator = toolDockVisible && bookmarkWindowVisible;
+            toolWindowSeparator.setManaged(showSeparator);
+            toolWindowSeparator.setVisible(showSeparator);
+        }
     }
 
     private double hiddenToolDockDividerPosition() {
@@ -2995,9 +3501,9 @@ public class EditorController {
     private void updateCenterSplitPaneItems(boolean includeToolDock) {
         if (includeToolDock) {
             if (toolDockSide == ToolWindowSide.RIGHT) {
-                centerSplitPane.getItems().setAll(editorTabPane, projectExplorerPane);
+                centerSplitPane.getItems().setAll(editorTabPane, toolDockPane);
             } else {
-                centerSplitPane.getItems().setAll(projectExplorerPane, editorTabPane);
+                centerSplitPane.getItems().setAll(toolDockPane, editorTabPane);
             }
         } else {
             centerSplitPane.getItems().setAll(editorTabPane);
@@ -3011,12 +3517,12 @@ public class EditorController {
         double hiddenDockDividerPosition = hiddenToolDockDividerPosition();
         List<KeyValue> startValues = new ArrayList<>();
         List<KeyValue> endValues = new ArrayList<>();
-        startValues.add(new KeyValue(projectExplorerPane.prefWidthProperty(), showing ? 0 : Math.max(projectExplorerPane.getWidth(), visibleToolDockWidth)));
-        startValues.add(new KeyValue(projectExplorerPane.maxWidthProperty(), showing ? visibleToolDockWidth : Math.max(projectExplorerPane.getWidth(), visibleToolDockWidth)));
-        startValues.add(new KeyValue(projectExplorerPane.opacityProperty(), showing ? 0 : projectExplorerPane.getOpacity()));
-        endValues.add(new KeyValue(projectExplorerPane.prefWidthProperty(), showing ? visibleToolDockWidth : 0));
-        endValues.add(new KeyValue(projectExplorerPane.maxWidthProperty(), showing ? visibleToolDockWidth : 0));
-        endValues.add(new KeyValue(projectExplorerPane.opacityProperty(), showing ? 1 : 0));
+        startValues.add(new KeyValue(toolDockPane.prefWidthProperty(), showing ? 0 : Math.max(toolDockPane.getWidth(), visibleToolDockWidth)));
+        startValues.add(new KeyValue(toolDockPane.maxWidthProperty(), showing ? visibleToolDockWidth : Math.max(toolDockPane.getWidth(), visibleToolDockWidth)));
+        startValues.add(new KeyValue(toolDockPane.opacityProperty(), showing ? 0 : toolDockPane.getOpacity()));
+        endValues.add(new KeyValue(toolDockPane.prefWidthProperty(), showing ? visibleToolDockWidth : 0));
+        endValues.add(new KeyValue(toolDockPane.maxWidthProperty(), showing ? visibleToolDockWidth : 0));
+        endValues.add(new KeyValue(toolDockPane.opacityProperty(), showing ? 1 : 0));
         if (toolDockDivider != null) {
             startValues.add(new KeyValue(toolDockDivider.positionProperty(), showing ? hiddenDockDividerPosition : toolDockDivider.getPosition()));
             endValues.add(new KeyValue(toolDockDivider.positionProperty(), showing ? targetToolDockDividerPosition() : hiddenDockDividerPosition));
@@ -3043,6 +3549,8 @@ public class EditorController {
         configureToolWindowRail(rightToolWindowRail, !dockedLeft);
         configureToolWindowRail(projectExplorerLeftRailButton, dockedLeft);
         configureToolWindowRail(projectExplorerRightRailButton, !dockedLeft);
+        configureToolWindowRail(bookmarkLeftRailButton, dockedLeft);
+        configureToolWindowRail(bookmarkRightRailButton, !dockedLeft);
         if (bottomToolWindowRail != null) {
             boolean showBottomRail = bottomToolWindowRail.getChildren().stream().anyMatch(Node::isManaged);
             bottomToolWindowRail.setManaged(showBottomRail);
@@ -3219,6 +3727,8 @@ public class EditorController {
         setToolbarButtonActive(projectExplorerToolbarButton, toolDockVisible);
         setToolbarButtonActive(projectExplorerLeftRailButton, toolDockVisible && toolDockSide == ToolWindowSide.LEFT);
         setToolbarButtonActive(projectExplorerRightRailButton, toolDockVisible && toolDockSide == ToolWindowSide.RIGHT);
+        setToolbarButtonActive(bookmarkLeftRailButton, bookmarkWindowVisible && toolDockSide == ToolWindowSide.LEFT);
+        setToolbarButtonActive(bookmarkRightRailButton, bookmarkWindowVisible && toolDockSide == ToolWindowSide.RIGHT);
         setToolbarButtonActive(statusBarToolbarButton, statusBarVisible);
         setToolbarButtonActive(settingsToolbarButton, settingsOverlay != null && settingsOverlay.isVisible());
         setToolbarButtonActive(readOnlyToolbarButton, getActiveDocument().map(EditorDocument::isReadOnly).orElse(false));
@@ -3429,6 +3939,7 @@ public class EditorController {
     private void handleProjectExplorerKeys(KeyEvent event) {
         if (event.getCode() == KeyCode.ESCAPE) {
             toolDockVisible = false;
+            bookmarkWindowVisible = false;
             applyToolDockVisibility(true, true);
             focusActiveEditor();
             event.consume();
@@ -3947,10 +4458,35 @@ public class EditorController {
     private record SearchOptions(boolean caseSensitive, boolean wholeWord, boolean regex) {
     }
 
+    private record BookmarkEntry(Path filePath, int lineIndex, String lineText) {
+    }
+
+    private record BookmarkNode(Path filePath, BookmarkEntry bookmark) {
+    }
+
     private Node createLineFringe(EditorDocument document, IntFunction<Node> lineNumbers, int lineIndex) {
         List<Diagnostic> diagnostics = currentSettings.diagnosticsEnabled()
                 ? document.getDiagnosticsForLine(lineIndex)
                 : List.of();
+        boolean bookmarked = document.hasBookmark(lineIndex);
+
+        Label bookmarkMarker = new Label();
+        bookmarkMarker.getStyleClass().add("bookmark-gutter-marker");
+        if (bookmarked) {
+            bookmarkMarker.getStyleClass().add("bookmark-gutter-marker-active");
+        }
+        FontIcon bookmarkIcon = new FontIcon(bookmarked ? "bi-bookmark-fill" : "bi-bookmark");
+        bookmarkIcon.setIconSize(11);
+        bookmarkIcon.getStyleClass().add("bookmark-gutter-icon");
+        bookmarkMarker.setGraphic(bookmarkIcon);
+        Tooltip.install(bookmarkMarker, new Tooltip(bookmarked ? "Remove bookmark" : "Add bookmark"));
+        bookmarkMarker.setOnMouseClicked(event -> {
+            if (event.getButton() != MouseButton.PRIMARY) {
+                return;
+            }
+            toggleBookmark(document, lineIndex, true);
+            event.consume();
+        });
 
         Label indicator = new Label();
         indicator.getStyleClass().add("fringe-indicator");
@@ -3978,7 +4514,7 @@ public class EditorController {
             Tooltip.install(indicator, tooltip);
         }
 
-        HBox gutter = new HBox(8, indicator, lineNumbers.apply(lineIndex));
+        HBox gutter = new HBox(8, bookmarkMarker, indicator, lineNumbers.apply(lineIndex));
         gutter.setAlignment(Pos.CENTER_LEFT);
         gutter.setPadding(new Insets(0, 10, 0, 8));
         gutter.getStyleClass().add("line-fringe");
@@ -3997,6 +4533,7 @@ public class EditorController {
         workspaceRoot = root == null ? Path.of("").toAbsolutePath().normalize() : root.toAbsolutePath().normalize();
         workspaceRootLabel.setText(workspaceRoot.toString());
         refreshWorkspaceTree();
+        refreshBookmarksToolWindow();
         updateDocumentPathBreadcrumbs(getActiveDocument().orElse(null));
         if (refreshAndPersistMenus) {
             SessionManager.saveWorkspaceSession(buildCurrentSession());

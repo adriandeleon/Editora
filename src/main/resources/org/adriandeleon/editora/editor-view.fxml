@@ -275,45 +275,64 @@
                                     <Tooltip text="Toggle Project Explorer Tool Window"/>
                                 </tooltip>
                             </Button>
+                            <Button fx:id="bookmarkLeftRailButton" managed="false" mnemonicParsing="false" onAction="#onToggleBookmarkWindow" styleClass="tool-window-rail-button toolbar-icon-button" visible="false">
+                                <graphic>
+                                    <FontIcon iconLiteral="bi-bookmark-star" iconSize="14" styleClass="toolbar-font-icon"/>
+                                </graphic>
+                                <tooltip>
+                                    <Tooltip text="Toggle Bookmarks Tool Window"/>
+                                </tooltip>
+                            </Button>
                         </VBox>
                     </left>
                     <center>
                         <SplitPane fx:id="centerSplitPane" dividerPositions="0.22" BorderPane.alignment="CENTER">
                             <items>
-                                <VBox fx:id="projectExplorerPane" minWidth="220.0" prefWidth="260.0" spacing="10.0" styleClass="project-explorer">
+                                <VBox fx:id="toolDockPane" minWidth="220.0" prefWidth="260.0" spacing="10.0" styleClass="project-explorer">
                                     <padding>
                                         <Insets bottom="10.0" left="10.0" right="10.0" top="10.0"/>
                                     </padding>
-                                    <HBox alignment="CENTER_LEFT" spacing="10.0">
-                                        <Label text="Project Explorer" styleClass="explorer-title"/>
-                                        <Region HBox.hgrow="ALWAYS"/>
-                                        <Button mnemonicParsing="false" onAction="#onToggleProjectExplorer" styleClass="panel-dismiss-button panel-icon-button">
-                                            <graphic>
-                                                <FontIcon iconLiteral="bi-x-circle" iconSize="13" styleClass="toolbar-font-icon"/>
-                                            </graphic>
-                                            <tooltip>
-                                                <Tooltip text="Hide Project Explorer (Esc or ⌥⌘E)"/>
-                                            </tooltip>
-                                        </Button>
-                                        <Button mnemonicParsing="false" onAction="#onRefreshWorkspace" styleClass="search-action-button">
-                                            <graphic>
-                                                <FontIcon iconLiteral="bi-arrow-clockwise" iconSize="14" styleClass="toolbar-font-icon"/>
-                                            </graphic>
-                                            <tooltip>
-                                                <Tooltip text="Refresh Workspace"/>
-                                            </tooltip>
-                                        </Button>
-                                        <Button mnemonicParsing="false" onAction="#onOpenWorkspaceFolder" styleClass="search-action-button">
-                                            <graphic>
-                                                <FontIcon iconLiteral="bi-folder2-open" iconSize="14" styleClass="toolbar-font-icon"/>
-                                            </graphic>
-                                            <tooltip>
-                                                <Tooltip text="Open Workspace Folder"/>
-                                            </tooltip>
-                                        </Button>
-                                    </HBox>
-                                    <Label fx:id="workspaceRootLabel" styleClass="workspace-root-label" wrapText="true"/>
-                                    <TreeView fx:id="projectTreeView" VBox.vgrow="ALWAYS" styleClass="project-tree"/>
+                                    <VBox fx:id="projectExplorerPane" spacing="10.0" VBox.vgrow="ALWAYS">
+                                        <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                            <Label text="Project Explorer" styleClass="explorer-title"/>
+                                            <Region HBox.hgrow="ALWAYS"/>
+                                            <Button mnemonicParsing="false" onAction="#onRefreshWorkspace" styleClass="search-action-button">
+                                                <graphic>
+                                                    <FontIcon iconLiteral="bi-arrow-clockwise" iconSize="14" styleClass="toolbar-font-icon"/>
+                                                </graphic>
+                                                <tooltip>
+                                                    <Tooltip text="Refresh Workspace"/>
+                                                </tooltip>
+                                            </Button>
+                                            <Button mnemonicParsing="false" onAction="#onOpenWorkspaceFolder" styleClass="search-action-button">
+                                                <graphic>
+                                                    <FontIcon iconLiteral="bi-folder2-open" iconSize="14" styleClass="toolbar-font-icon"/>
+                                                </graphic>
+                                                <tooltip>
+                                                    <Tooltip text="Open Workspace Folder"/>
+                                                </tooltip>
+                                            </Button>
+                                        </HBox>
+                                        <Label fx:id="workspaceRootLabel" styleClass="workspace-root-label" wrapText="true"/>
+                                        <TreeView fx:id="projectTreeView" prefHeight="220.0" VBox.vgrow="ALWAYS" styleClass="project-tree"/>
+                                    </VBox>
+                                    <Separator fx:id="toolWindowSeparator"/>
+                                    <VBox fx:id="bookmarkWindowPane" spacing="10.0" VBox.vgrow="ALWAYS">
+                                        <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                            <Label text="Bookmarks" styleClass="explorer-title"/>
+                                            <Region HBox.hgrow="ALWAYS"/>
+                                            <Button fx:id="removeBookmarkButton" mnemonicParsing="false" onAction="#onRemoveSelectedBookmark" styleClass="panel-dismiss-button panel-icon-button">
+                                                <graphic>
+                                                    <FontIcon iconLiteral="bi-trash" iconSize="13" styleClass="toolbar-font-icon"/>
+                                                </graphic>
+                                                <tooltip>
+                                                    <Tooltip text="Remove Selected Bookmark"/>
+                                                </tooltip>
+                                            </Button>
+                                        </HBox>
+                                        <TextField fx:id="bookmarksSearchField" promptText="Search bookmarks by file name or line text"/>
+                                        <TreeView fx:id="bookmarksTreeView" minHeight="140.0" prefHeight="220.0" VBox.vgrow="ALWAYS" styleClass="project-tree bookmark-tree"/>
+                                    </VBox>
                                 </VBox>
                                 <TabPane fx:id="editorTabPane" styleClass="editor-tabs"/>
                             </items>
@@ -330,6 +349,14 @@
                                 </graphic>
                                 <tooltip>
                                     <Tooltip text="Toggle Project Explorer Tool Window"/>
+                                </tooltip>
+                            </Button>
+                            <Button fx:id="bookmarkRightRailButton" managed="false" mnemonicParsing="false" onAction="#onToggleBookmarkWindow" styleClass="tool-window-rail-button toolbar-icon-button" visible="false">
+                                <graphic>
+                                    <FontIcon iconLiteral="bi-bookmark-star" iconSize="14" styleClass="toolbar-font-icon"/>
+                                </graphic>
+                                <tooltip>
+                                    <Tooltip text="Toggle Bookmarks Tool Window"/>
                                 </tooltip>
                             </Button>
                         </VBox>

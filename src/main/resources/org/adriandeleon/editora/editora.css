@@ -332,6 +332,24 @@
 
 .line-fringe {
     -fx-background-color: transparent;
+    -fx-cursor: hand;
+}
+
+.bookmark-gutter-marker {
+    -fx-opacity: 0;
+}
+
+.bookmark-gutter-marker-active {
+    -fx-opacity: 1;
+}
+
+.bookmark-gutter-icon {
+    -fx-icon-color: #f59e0b;
+}
+
+.bookmark-tree {
+    -fx-background-insets: 0;
+    -fx-background-radius: 12;
 }
 
 .fringe-indicator {
