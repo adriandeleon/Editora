@@ -236,6 +236,23 @@
     -fx-icon-color: #5b8cff;
 }
 
+.editor-tab-header.read-only .editor-tab-title {
+    -fx-opacity: 0.72;
+    -fx-font-style: italic;
+}
+
+.editor-tab-header.read-only .editor-tab-icon {
+    -fx-icon-color: #f0b429;
+}
+
+.read-only-status-icon {
+    -fx-icon-color: #f0b429;
+}
+
+.interactive-status-chip {
+    -fx-cursor: hand;
+}
+
 .editor-code-area {
     -fx-font-family: "JetBrains Mono", "SF Mono", monospace;
     -fx-font-size: 14px;
@@ -710,6 +727,26 @@
     -fx-border-color: rgba(255, 255, 255, 0.08);
 }
 
+.theme-dark .read-only-chip {
+    -fx-background-color: rgba(148, 163, 184, 0.12);
+    -fx-border-color: rgba(148, 163, 184, 0.2);
+}
+
+.theme-dark .read-only-chip.read-only-chip-active {
+    -fx-background-color: rgba(240, 180, 41, 0.12);
+    -fx-border-color: rgba(240, 180, 41, 0.28);
+}
+
+.theme-dark .read-only-status-icon {
+    -fx-icon-color: #f0b429;
+}
+
+.theme-dark .toolbar-icon-button:toolbar-active.read-only-toolbar-active,
+.theme-dark #readOnlyToolbarButton:toolbar-active {
+    -fx-background-color: rgba(240, 180, 41, 0.18);
+    -fx-border-color: rgba(240, 180, 41, 0.34);
+}
+
 .theme-dark .editor-mini-map {
     -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.02));
     -fx-border-color: rgba(255, 255, 255, 0.08);
@@ -909,6 +946,25 @@
 .theme-light .status-chip {
     -fx-background-color: rgba(255, 255, 255, 0.82);
     -fx-border-color: rgba(15, 23, 42, 0.08);
+}
+
+.theme-light .read-only-chip {
+    -fx-background-color: rgba(148, 163, 184, 0.12);
+    -fx-border-color: rgba(148, 163, 184, 0.24);
+}
+
+.theme-light .read-only-chip.read-only-chip-active {
+    -fx-background-color: rgba(240, 180, 41, 0.1);
+    -fx-border-color: rgba(240, 180, 41, 0.3);
+}
+
+.theme-light .read-only-status-icon {
+    -fx-icon-color: #b45309;
+}
+
+.theme-light #readOnlyToolbarButton:toolbar-active {
+    -fx-background-color: rgba(240, 180, 41, 0.16);
+    -fx-border-color: rgba(240, 180, 41, 0.32);
 }
 
 .theme-light .editor-mini-map {

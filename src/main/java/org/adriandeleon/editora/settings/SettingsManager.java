@@ -5,6 +5,7 @@ import org.adriandeleon.editora.theme.EditorTheme;
 
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -21,6 +22,8 @@ public final class SettingsManager {
     private static final String COMMAND_PALETTE_SHORTCUT_KEY = "commandPaletteShortcut";
     private static final String EDITOR_FONT_FAMILY_KEY = "editorFontFamily";
     private static final String EDITOR_FONT_SIZE_KEY = "editorFontSize";
+    private static final String READ_ONLY_OPEN_ENABLED_KEY = "readOnlyOpenEnabled";
+    private static final String READ_ONLY_OPEN_PATTERNS_KEY = "readOnlyOpenPatterns";
 
     private SettingsManager() {
     }
@@ -47,6 +50,8 @@ public final class SettingsManager {
         String commandPaletteShortcut = readString(values, COMMAND_PALETTE_SHORTCUT_KEY, CommandPaletteShortcut.DEFAULT_VALUE);
         String editorFontFamily = readString(values, EDITOR_FONT_FAMILY_KEY, EditorSettings.DEFAULT_EDITOR_FONT_FAMILY);
         int editorFontSize = readInt(values, EDITOR_FONT_SIZE_KEY, EditorSettings.DEFAULT_EDITOR_FONT_SIZE);
+        boolean readOnlyOpenEnabled = readBoolean(values, READ_ONLY_OPEN_ENABLED_KEY, EditorSettings.DEFAULT_READ_ONLY_OPEN_ENABLED);
+        List<String> readOnlyOpenPatterns = readStringList(values, READ_ONLY_OPEN_PATTERNS_KEY);
         return new EditorSettings(
                 theme,
                 wrapText,
@@ -58,7 +63,9 @@ public final class SettingsManager {
                 toolDockSide,
                 commandPaletteShortcut,
                 editorFontFamily,
-                editorFontSize
+                editorFontSize,
+                readOnlyOpenEnabled,
+                readOnlyOpenPatterns
         );
     }
 
@@ -74,7 +81,9 @@ public final class SettingsManager {
                 EditorSettings.DEFAULT_TOOL_DOCK_SIDE,
                 CommandPaletteShortcut.DEFAULT_VALUE,
                 EditorSettings.DEFAULT_EDITOR_FONT_FAMILY,
-                EditorSettings.DEFAULT_EDITOR_FONT_SIZE
+                EditorSettings.DEFAULT_EDITOR_FONT_SIZE,
+                EditorSettings.DEFAULT_READ_ONLY_OPEN_ENABLED,
+                List.of()
         );
     }
 
@@ -92,6 +101,8 @@ public final class SettingsManager {
         values.put(COMMAND_PALETTE_SHORTCUT_KEY, settings.commandPaletteShortcut());
         values.put(EDITOR_FONT_FAMILY_KEY, settings.editorFontFamily());
         values.put(EDITOR_FONT_SIZE_KEY, settings.editorFontSize());
+        values.put(READ_ONLY_OPEN_ENABLED_KEY, settings.readOnlyOpenEnabled());
+        values.put(READ_ONLY_OPEN_PATTERNS_KEY, settings.readOnlyOpenPatterns());
         EditoraPersistence.writeJsonObject(EditoraPersistence.settingsFile(), values);
     }
 
@@ -125,6 +136,21 @@ public final class SettingsManager {
             }
         }
         return fallback;
+    }
+
+    private static List<String> readStringList(Map<String, Object> values, String key) {
+        Object value = values.get(key);
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .map(item -> item == null ? "" : String.valueOf(item).strip())
+                    .filter(item -> !item.isBlank())
+                    .toList();
+        }
+        if (value instanceof String stringValue) {
+            String normalized = stringValue.strip();
+            return normalized.isBlank() ? List.of() : List.of(normalized);
+        }
+        return List.of();
     }
 }
 

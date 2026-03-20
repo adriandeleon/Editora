@@ -17,6 +17,7 @@ import javafx.scene.text.Font;
 import javafx.application.Platform;
 import org.adriandeleon.editora.settings.CommandPaletteShortcut;
 import org.adriandeleon.editora.settings.EditorSettings;
+import org.adriandeleon.editora.settings.ReadOnlyOpenRules;
 import org.adriandeleon.editora.settings.ToolWindowSide;
 import org.adriandeleon.editora.languages.LanguageAnalysis;
 import org.adriandeleon.editora.languages.LanguagePreviewSpec;
@@ -63,6 +64,15 @@ public class SettingsController {
 
     @FXML
     private CheckBox breadcrumbBarVisibleCheckBox;
+
+    @FXML
+    private CheckBox readOnlyOpenEnabledCheckBox;
+
+    @FXML
+    private TextField readOnlyOpenPatternsField;
+
+    @FXML
+    private Label readOnlyOpenHelpLabel;
 
     @FXML
     private ComboBox<ToolWindowSide> toolDockSideComboBox;
@@ -197,6 +207,9 @@ public class SettingsController {
         searchBarVisibleCheckBox.setSelected(settings.searchBarVisible());
         toolDockVisibleCheckBox.setSelected(settings.toolDockVisible());
         breadcrumbBarVisibleCheckBox.setSelected(settings.breadcrumbBarVisible());
+        readOnlyOpenEnabledCheckBox.setSelected(settings.readOnlyOpenEnabled());
+        readOnlyOpenPatternsField.setText(String.join(", ", settings.readOnlyOpenPatterns()));
+        readOnlyOpenHelpLabel.setText("Built-in patterns are always included: *.md, *.txt, README. Add extra patterns with commas.");
         toolDockSideComboBox.setValue(settings.toolDockSide());
         editorFontFamilyComboBox.setValue(settings.editorFontFamily());
         editorFontSizeField.setText(Integer.toString(settings.editorFontSize()));
@@ -251,8 +264,18 @@ public class SettingsController {
                 toolDockSideComboBox.getValue() == null ? EditorSettings.DEFAULT_TOOL_DOCK_SIDE : toolDockSideComboBox.getValue(),
                 commandPaletteShortcut,
                 fontFamily,
-                fontSize
+                fontSize,
+                readOnlyOpenEnabledCheckBox.isSelected(),
+                parseReadOnlyOpenPatterns()
         ));
+    }
+
+    private List<String> parseReadOnlyOpenPatterns() {
+        String normalized = ReadOnlyOpenRules.normalizePatternText(readOnlyOpenPatternsField.getText());
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+        return List.of(normalized.split(",\\s*"));
     }
 
     @FXML
@@ -523,7 +546,10 @@ public class SettingsController {
                 "  Delete char ................ ⌃D",
                 "  Kill word forward .......... ⌥D",
                 "  Kill word backward ......... ⌥⌫",
-                "  Yank clipboard ............. ⌃Y");
+                "  Yank clipboard ............. ⌃Y",
+                "",
+                "Read-only mode (active tab)",
+                "  Page down / up ............. Space / ⌫");
     }
 
     private void requireInjectedControls() {
@@ -536,6 +562,9 @@ public class SettingsController {
         Objects.requireNonNull(searchBarVisibleCheckBox);
         Objects.requireNonNull(toolDockVisibleCheckBox);
         Objects.requireNonNull(breadcrumbBarVisibleCheckBox);
+        Objects.requireNonNull(readOnlyOpenEnabledCheckBox);
+        Objects.requireNonNull(readOnlyOpenPatternsField);
+        Objects.requireNonNull(readOnlyOpenHelpLabel);
         Objects.requireNonNull(toolDockSideComboBox);
         Objects.requireNonNull(editorFontFamilyComboBox);
         Objects.requireNonNull(editorFontSizeField);

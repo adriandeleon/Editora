@@ -60,6 +60,7 @@ public final class EditorDocument {
 
     private Path filePath;
     private boolean dirty;
+    private boolean readOnly;
     private String savedText;
     private LanguageService languageService;
     private Map<Integer, List<Diagnostic>> diagnosticsByLine = Map.of();
@@ -155,6 +156,36 @@ public final class EditorDocument {
 
     public boolean isDirty() {
         return dirty;
+    }
+
+    public boolean isReadOnly() {
+        return readOnly;
+    }
+
+    public void setReadOnly(boolean readOnly) {
+        this.readOnly = readOnly;
+        codeArea.setEditable(!readOnly);
+        tabHeader.getStyleClass().remove("read-only");
+        if (readOnly) {
+            tabHeader.getStyleClass().add("read-only");
+        }
+    }
+
+    public void scrollPageDown() {
+        int visibleParagraphs = Math.max(1, codeArea.getVisibleParagraphs().size());
+        int currentParagraph = codeArea.getCurrentParagraph();
+        int totalParagraphs = codeArea.getParagraphs().size();
+        int targetParagraph = Math.min(currentParagraph + visibleParagraphs, totalParagraphs - 1);
+        codeArea.moveTo(targetParagraph, 0);
+        codeArea.requestFollowCaret();
+    }
+
+    public void scrollPageUp() {
+        int visibleParagraphs = Math.max(1, codeArea.getVisibleParagraphs().size());
+        int currentParagraph = codeArea.getCurrentParagraph();
+        int targetParagraph = Math.max(currentParagraph - visibleParagraphs, 0);
+        codeArea.moveTo(targetParagraph, 0);
+        codeArea.requestFollowCaret();
     }
 
     public void refreshDirtyState() {

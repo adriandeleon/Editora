@@ -88,6 +88,14 @@
                                 <Tooltip text="Recent Files"/>
                             </tooltip>
                         </MenuButton>
+                        <Button fx:id="readOnlyToolbarButton" mnemonicParsing="false" onAction="#onToggleReadOnly" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-lock" iconSize="14" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Toggle Read-Only Mode"/>
+                            </tooltip>
+                        </Button>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="undoButton" mnemonicParsing="false" onAction="#onUndo" styleClass="toolbar-icon-button">
                             <graphic>
@@ -361,6 +369,10 @@
                         <HBox alignment="CENTER_LEFT" spacing="4.0" styleClass="status-chip">
                             <FontIcon iconLiteral="bi-code-slash" iconSize="12" styleClass="status-icon"/>
                             <Label fx:id="languageStatusLabel" text="Language: —"/>
+                        </HBox>
+                        <HBox fx:id="readOnlyStatusChip" alignment="CENTER_LEFT" managed="false" onMouseClicked="#onToggleReadOnlyFromStatus" spacing="4.0" styleClass="status-chip read-only-chip interactive-status-chip" visible="false">
+                            <FontIcon fx:id="readOnlyStatusIcon" iconLiteral="bi-lock-fill" iconSize="12" styleClass="status-icon read-only-status-icon"/>
+                            <Label fx:id="readOnlyStatusLabel" text="Read Only" styleClass="status-emphasis"/>
                         </HBox>
                         <Region HBox.hgrow="ALWAYS"/>
                     </HBox>

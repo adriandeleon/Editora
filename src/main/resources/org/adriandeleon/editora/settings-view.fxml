@@ -122,6 +122,13 @@
 
                         <Label text="Status breadcrumb" styleClass="settings-field-label" GridPane.rowIndex="9"/>
                         <CheckBox fx:id="breadcrumbBarVisibleCheckBox" text="Show the breadcrumb path inline in the status bar" GridPane.columnIndex="1" GridPane.rowIndex="9"/>
+
+                        <Label text="Default read-only" styleClass="settings-field-label" GridPane.rowIndex="10"/>
+                        <VBox spacing="8.0" GridPane.columnIndex="1" GridPane.rowIndex="10">
+                            <CheckBox fx:id="readOnlyOpenEnabledCheckBox" text="Open matching files in read-only mode by default"/>
+                            <TextField fx:id="readOnlyOpenPatternsField" promptText="Extra patterns, e.g. *.log, LICENSE, *.rst"/>
+                            <Label fx:id="readOnlyOpenHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Built-in patterns are always included: *.md, *.txt, README."/>
+                        </VBox>
                     </GridPane>
                             </VBox>
                         </VBox>

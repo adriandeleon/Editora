@@ -47,6 +47,7 @@ import javafx.scene.input.KeyCombination;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
@@ -79,6 +80,7 @@ import org.adriandeleon.editora.session.SessionManager;
 import org.adriandeleon.editora.session.WorkspaceSession;
 import org.adriandeleon.editora.settings.CommandPaletteShortcut;
 import org.adriandeleon.editora.settings.EditorSettings;
+import org.adriandeleon.editora.settings.ReadOnlyOpenRules;
 import org.adriandeleon.editora.settings.SettingsManager;
 import org.adriandeleon.editora.settings.ToolWindowSide;
 import org.adriandeleon.editora.status.StatusBarSupport;
@@ -267,6 +269,18 @@ public class EditorController {
 
     @FXML
     private Button settingsToolbarButton;
+
+    @FXML
+    private Button readOnlyToolbarButton;
+
+    @FXML
+    private HBox readOnlyStatusChip;
+
+    @FXML
+    private FontIcon readOnlyStatusIcon;
+
+    @FXML
+    private Label readOnlyStatusLabel;
 
     @FXML
     private StackPane commandPaletteOverlay;
@@ -641,6 +655,20 @@ public class EditorController {
         EditorTheme nextTheme = currentSettings.theme().next();
         setTheme(nextTheme);
         statusMessage("Theme switched to " + nextTheme.getDisplayName());
+    }
+
+    @FXML
+    private void onToggleReadOnly() {
+        animateToolbarClick(readOnlyToolbarButton);
+        toggleReadOnly();
+    }
+
+    @FXML
+    private void onToggleReadOnlyFromStatus(MouseEvent event) {
+        if (event != null) {
+            event.consume();
+        }
+        toggleReadOnly();
     }
 
     @FXML
@@ -1147,6 +1175,7 @@ public class EditorController {
                 new CommandAction("Toggle Status Bar", "Show or hide the bottom status bar", "View", "⌥⌘B", List.of("status", "footer", "bottom", "hide"), this::onToggleStatusBar),
                 new CommandAction("Toggle MiniMap", "Show or hide the MiniMap overview beside each editor tab", "View", "", List.of("minimap", "mini map", "overview", "scrollbar", "editor"), this::toggleMiniMapVisibility),
                 new CommandAction("Toggle Breadcrumb Path", "Show or hide the breadcrumb path inside the status bar", "View", "", List.of("breadcrumb", "path", "status", "file path", "location"), this::toggleBreadcrumbBarVisibility),
+                new CommandAction("Toggle Default Read-Only Open", "Enable or disable opening matching files in read-only mode by default", "Edit", "", List.of("read only", "readonly", "default", "pattern", "md", "txt", "readme"), () -> setDefaultReadOnlyOpenEnabled(!currentSettings.readOnlyOpenEnabled())),
                 new CommandAction("Replace Selection", "Replace the current match selection", "Search", "", List.of("replace", "selection"), this::onReplaceSelection),
                 new CommandAction("Replace All", "Replace all matches in the current document", "Search", "", List.of("replace", "all"), this::onReplaceAll),
                 new CommandAction("Open Settings", "Show the full Editora settings view", "View", "⌘,", List.of("preferences", "configuration"), this::showSettingsView),
@@ -1154,7 +1183,8 @@ public class EditorController {
                 new CommandAction("Show Keyboard Shortcuts", "Open the keyboard reference for shell and editor-local Emacs bindings", "Help", "", List.of("keyboard", "shortcut", "emacs", "mark", "kill", "yank", "region"), this::showKeyboardShortcutsView),
                 new CommandAction("Clear Recent Files", "Forget the recent-files history", "Workspace", "", List.of("recent", "history", "clear"), this::clearRecentFiles),
                 new CommandAction("Reload TextMate Bundles", "Reload bundled and external TextMate grammars without restarting Editora", "Languages", "", List.of("textmate", "syntax", "grammar", "bundle", "reload"), this::reloadTextMateBundles),
-                new CommandAction("Reload Plugins", "Reload plugin commands and menu actions from the plugins directory", "Plugins", "", List.of("plugins", "reload"), this::loadPlugins)
+                new CommandAction("Reload Plugins", "Reload plugin commands and menu actions from the plugins directory", "Plugins", "", List.of("plugins", "reload"), this::loadPlugins),
+                new CommandAction("Toggle Read-Only Mode", "Make the active document read-only or editable again; Space scrolls down, Backspace scrolls up", "Edit", "", List.of("read only", "readonly", "lock", "view", "immutable", "protect"), this::toggleReadOnly)
         ));
         commandActions.addAll(Arrays.stream(EditorTheme.values())
                 .map(theme -> new CommandAction(
@@ -1185,8 +1215,63 @@ public class EditorController {
                 currentSettings.toolDockSide(),
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
-                currentSettings.editorFontSize()
+                currentSettings.editorFontSize(),
+                currentSettings.readOnlyOpenEnabled(),
+                currentSettings.readOnlyOpenPatterns()
         ), true);
+    }
+
+    private void toggleReadOnly() {
+        getActiveDocument().ifPresent(document -> {
+            boolean nowReadOnly = !document.isReadOnly();
+            document.setReadOnly(nowReadOnly);
+            updateReadOnlyStatus(document);
+            syncToolbarButtonStates();
+            statusMessage(nowReadOnly ? "Read-only mode enabled" : "Read-only mode disabled");
+        });
+    }
+
+    private void updateReadOnlyStatus(EditorDocument document) {
+        if (readOnlyStatusChip == null) {
+            return;
+        }
+        boolean hasDocument = document != null;
+        boolean readOnly = hasDocument && document.isReadOnly();
+        readOnlyStatusChip.setManaged(hasDocument);
+        readOnlyStatusChip.setVisible(hasDocument);
+        readOnlyStatusChip.getStyleClass().remove("read-only-chip-active");
+        if (readOnly) {
+            readOnlyStatusChip.getStyleClass().add("read-only-chip-active");
+        }
+        if (readOnlyStatusIcon != null) {
+            readOnlyStatusIcon.setIconLiteral(readOnly ? "bi-lock-fill" : "bi-unlock");
+        }
+        if (readOnlyStatusLabel != null) {
+            readOnlyStatusLabel.setText(readOnly ? "Read Only" : "Writable");
+        }
+    }
+
+    private void setDefaultReadOnlyOpenEnabled(boolean enabled) {
+        if (currentSettings.readOnlyOpenEnabled() == enabled) {
+            statusMessage(enabled ? "Default read-only file opening is already enabled" : "Default read-only file opening is already disabled");
+            return;
+        }
+        applySettings(new EditorSettings(
+                currentSettings.theme(),
+                currentSettings.wrapText(),
+                currentSettings.diagnosticsEnabled(),
+                currentSettings.miniMapVisible(),
+                searchBarVisible,
+                toolDockVisible,
+                currentSettings.breadcrumbBarVisible(),
+                toolDockSide,
+                currentSettings.commandPaletteShortcut(),
+                currentSettings.editorFontFamily(),
+                currentSettings.editorFontSize(),
+                enabled,
+                currentSettings.readOnlyOpenPatterns()
+        ), true);
+        statusMessage(enabled ? "Default read-only file opening enabled" : "Default read-only file opening disabled");
     }
 
     private void rebuildCommands() {
@@ -1550,6 +1635,7 @@ public class EditorController {
         );
         if (filePath != null) {
             document.setFilePath(filePath.toAbsolutePath().normalize());
+            document.setReadOnly(ReadOnlyOpenRules.shouldOpenReadOnly(filePath, currentSettings));
         }
 
         attachEditorBehavior(document);
@@ -1608,12 +1694,30 @@ public class EditorController {
     }
 
     private void handleEditorKeyBindings(EditorDocument document, KeyEvent event) {
+        if (document.isReadOnly()) {
+            if (handleReadOnlyNavigation(document, event)) {
+                event.consume();
+            }
+            return;
+        }
         if (handleEmacsControlEditing(document, event)
                 || handleEmacsMetaEditing(document, event)
                 || handleEmacsControlNavigation(document, event)
                 || handleEmacsMetaNavigation(document, event)) {
             event.consume();
         }
+    }
+
+    private boolean handleReadOnlyNavigation(EditorDocument document, KeyEvent event) {
+        if (event.getCode() == KeyCode.SPACE && !event.isControlDown() && !event.isAltDown() && !event.isShortcutDown()) {
+            document.scrollPageDown();
+            return true;
+        }
+        if (event.getCode() == KeyCode.BACK_SPACE && !event.isControlDown() && !event.isAltDown() && !event.isShortcutDown()) {
+            document.scrollPageUp();
+            return true;
+        }
+        return false;
     }
 
     private boolean handleEmacsControlEditing(EditorDocument document, KeyEvent event) {
@@ -1909,12 +2013,13 @@ public class EditorController {
         CodeArea editor = document.getCodeArea();
         boolean hasSelection = editor.getSelection().getLength() > 0;
         boolean clipboardHasString = Clipboard.getSystemClipboard().hasString();
+        boolean readOnly = document.isReadOnly();
 
-        undoItem.setDisable(!editor.isUndoAvailable());
-        redoItem.setDisable(!editor.isRedoAvailable());
-        cutItem.setDisable(!hasSelection);
+        undoItem.setDisable(readOnly || !editor.isUndoAvailable());
+        redoItem.setDisable(readOnly || !editor.isRedoAvailable());
+        cutItem.setDisable(readOnly || !hasSelection);
         copyItem.setDisable(!hasSelection);
-        pasteItem.setDisable(!clipboardHasString);
+        pasteItem.setDisable(readOnly || !clipboardHasString);
     }
 
     private void openDocument(EditorDocument document, boolean select) {
@@ -2240,6 +2345,7 @@ public class EditorController {
         updateCaretStatus(document);
         updateDocumentStatus(document);
         updateLanguageStatus(document);
+        updateReadOnlyStatus(document);
         revealActiveDocumentInProjectTree(document);
         refreshSearchUi();
         requestProgressiveHighlighting(document);
@@ -2283,7 +2389,9 @@ public class EditorController {
                 toolDockSide,
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
-                currentSettings.editorFontSize()
+                currentSettings.editorFontSize(),
+                currentSettings.readOnlyOpenEnabled(),
+                currentSettings.readOnlyOpenPatterns()
         ), true);
     }
 
@@ -2368,6 +2476,9 @@ public class EditorController {
 
     private void undoActiveEdit() {
         getActiveDocument().ifPresent(document -> {
+            if (!ensureWritable(document, "Undo")) {
+                return;
+            }
             CodeArea editor = document.getCodeArea();
             if (!editor.isUndoAvailable()) {
                 statusMessage("Nothing to undo");
@@ -2385,6 +2496,9 @@ public class EditorController {
 
     private void redoActiveEdit() {
         getActiveDocument().ifPresent(document -> {
+            if (!ensureWritable(document, "Redo")) {
+                return;
+            }
             CodeArea editor = document.getCodeArea();
             if (!editor.isRedoAvailable()) {
                 statusMessage("Nothing to redo");
@@ -2402,6 +2516,9 @@ public class EditorController {
 
     private void cutActiveSelection() {
         getActiveDocument().ifPresent(document -> {
+            if (!ensureWritable(document, "Cut")) {
+                return;
+            }
             CodeArea editor = document.getCodeArea();
             if (editor.getSelection().getLength() == 0) {
                 statusMessage("Select text to cut");
@@ -2436,6 +2553,9 @@ public class EditorController {
 
     private void pasteIntoActiveEditor() {
         getActiveDocument().ifPresent(document -> {
+            if (!ensureWritable(document, "Paste")) {
+                return;
+            }
             CodeArea editor = document.getCodeArea();
             editor.paste();
             editor.requestFocus();
@@ -2477,6 +2597,9 @@ public class EditorController {
 
     private void replaceSelection() {
         getActiveDocument().ifPresent(document -> {
+            if (!ensureWritable(document, "Replace")) {
+                return;
+            }
             CodeArea editor = document.getCodeArea();
             String query = normalizedSearchQuery();
             if (query == null || query.isBlank()) {
@@ -2513,6 +2636,9 @@ public class EditorController {
         }
 
         getActiveDocument().ifPresent(document -> {
+            if (!ensureWritable(document, "Replace")) {
+                return;
+            }
             SearchComputation search = computeSearch(document);
             if (search.errorMessage() != null) {
                 statusMessage(search.errorMessage());
@@ -2784,7 +2910,9 @@ public class EditorController {
                 side,
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
-                currentSettings.editorFontSize()
+                currentSettings.editorFontSize(),
+                currentSettings.readOnlyOpenEnabled(),
+                currentSettings.readOnlyOpenPatterns()
         ), true);
         statusMessage("Project explorer moved to the " + side.displayName().toLowerCase(Locale.ROOT) + " tool dock");
     }
@@ -2802,7 +2930,9 @@ public class EditorController {
                 toolDockSide,
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
-                currentSettings.editorFontSize()
+                currentSettings.editorFontSize(),
+                currentSettings.readOnlyOpenEnabled(),
+                currentSettings.readOnlyOpenPatterns()
         ), true);
         statusMessage(nextVisible ? "MiniMap shown" : "MiniMap hidden");
     }
@@ -2819,7 +2949,9 @@ public class EditorController {
                 toolDockSide,
                 currentSettings.commandPaletteShortcut(),
                 currentSettings.editorFontFamily(),
-                currentSettings.editorFontSize()
+                currentSettings.editorFontSize(),
+                currentSettings.readOnlyOpenEnabled(),
+                currentSettings.readOnlyOpenPatterns()
         );
         SettingsManager.save(currentSettings);
     }
@@ -3083,6 +3215,7 @@ public class EditorController {
         setToolbarButtonActive(projectExplorerRightRailButton, toolDockVisible && toolDockSide == ToolWindowSide.RIGHT);
         setToolbarButtonActive(statusBarToolbarButton, statusBarVisible);
         setToolbarButtonActive(settingsToolbarButton, settingsOverlay != null && settingsOverlay.isVisible());
+        setToolbarButtonActive(readOnlyToolbarButton, getActiveDocument().map(EditorDocument::isReadOnly).orElse(false));
     }
 
     private void setToolbarButtonActive(Button button, boolean active) {
@@ -3317,6 +3450,17 @@ public class EditorController {
         getActiveDocument().ifPresent(document -> document.getCodeArea().requestFocus());
     }
 
+    private boolean ensureWritable(EditorDocument document, String actionName) {
+        if (document == null || !document.isReadOnly()) {
+            return true;
+        }
+        CodeArea editor = document.getCodeArea();
+        editor.requestFocus();
+        statusMessage("Read-only mode is enabled: cannot " + actionName.toLowerCase(Locale.ROOT));
+        updateEditActionAvailability(document);
+        return false;
+    }
+
     private void updateEditActionAvailability(EditorDocument document) {
         if (undoButton == null || redoButton == null || cutButton == null || copyButton == null || pasteButton == null) {
             return;
@@ -3334,12 +3478,13 @@ public class EditorController {
         CodeArea editor = document.getCodeArea();
         boolean hasSelection = editor.getSelection().getLength() > 0;
         boolean clipboardHasString = Clipboard.getSystemClipboard().hasString();
+        boolean readOnly = document.isReadOnly();
 
-        undoButton.setDisable(!editor.isUndoAvailable());
-        redoButton.setDisable(!editor.isRedoAvailable());
-        cutButton.setDisable(!hasSelection);
+        undoButton.setDisable(readOnly || !editor.isUndoAvailable());
+        redoButton.setDisable(readOnly || !editor.isRedoAvailable());
+        cutButton.setDisable(readOnly || !hasSelection);
         copyButton.setDisable(!hasSelection);
-        pasteButton.setDisable(!clipboardHasString);
+        pasteButton.setDisable(readOnly || !clipboardHasString);
     }
 
     private void refreshSearchUi() {

@@ -50,7 +50,9 @@ class SettingsManagerTest {
                 ToolWindowSide.RIGHT,
                 "alt+shortcut+x",
                 "  Fira Code  ",
-                16
+                16,
+                false,
+                java.util.List.of("*.log", "LICENSE")
         ));
 
         EditorSettings loaded = SettingsManager.load();
@@ -66,6 +68,8 @@ class SettingsManagerTest {
         assertEquals("ALT+SHORTCUT+X", loaded.commandPaletteShortcut());
         assertEquals("Fira Code", loaded.editorFontFamily());
         assertEquals(16, loaded.editorFontSize());
+        assertFalse(loaded.readOnlyOpenEnabled());
+        assertEquals(java.util.List.of("*.log", "LICENSE"), loaded.readOnlyOpenPatterns());
         assertTrue(Files.isRegularFile(SettingsManager.persistenceFile()));
         String persistedSettings = Files.readString(SettingsManager.persistenceFile());
         assertTrue(persistedSettings.contains("\"toolDockVisible\""));
@@ -92,6 +96,8 @@ class SettingsManagerTest {
         assertEquals(CommandPaletteShortcut.DEFAULT_VALUE, loaded.commandPaletteShortcut());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_FAMILY, loaded.editorFontFamily());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_SIZE, loaded.editorFontSize());
+        assertTrue(loaded.readOnlyOpenEnabled());
+        assertTrue(loaded.readOnlyOpenPatterns().isEmpty());
     }
 
     @Test
@@ -128,6 +134,8 @@ class SettingsManagerTest {
         assertFalse(loaded.toolDockVisible());
         assertTrue(loaded.breadcrumbBarVisible());
         assertEquals(EditorSettings.DEFAULT_TOOL_DOCK_SIDE, loaded.toolDockSide());
+        assertTrue(loaded.readOnlyOpenEnabled());
+        assertTrue(loaded.readOnlyOpenPatterns().isEmpty());
     }
 }
 
