@@ -268,6 +268,34 @@
     -fx-spacing: 0;
 }
 
+.editor-document-editor-row {
+    -fx-spacing: 0;
+}
+
+.editor-read-only-banner {
+    -fx-alignment: center-left;
+    -fx-spacing: 10;
+    -fx-padding: 4 10 4 10;
+    -fx-border-width: 0 0 1 0;
+}
+
+.editor-read-only-banner-icon {
+    -fx-icon-color: #92400e;
+}
+
+.editor-read-only-banner-text {
+    -fx-font-size: 0.82em;
+    -fx-font-weight: 700;
+}
+
+.read-only-banner-button {
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-font-size: 0.82em;
+    -fx-font-weight: 700;
+    -fx-padding: 2 10 2 10;
+}
+
 .editor-mini-map {
     -fx-alignment: top-center;
     -fx-background-insets: 0;
@@ -592,6 +620,19 @@
     -fx-font-size: 13px;
 }
 
+.settings-pattern-table {
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+}
+
+.settings-pattern-table .column-header-background {
+    -fx-background-radius: 12 12 0 0;
+}
+
+.settings-pattern-table .table-cell {
+    -fx-padding: 0 10 0 10;
+}
+
 .settings-helper-label-error {
     -fx-opacity: 1;
 }
@@ -741,10 +782,33 @@
     -fx-icon-color: #f0b429;
 }
 
-.theme-dark .toolbar-icon-button:toolbar-active.read-only-toolbar-active,
-.theme-dark #readOnlyToolbarButton:toolbar-active {
-    -fx-background-color: rgba(240, 180, 41, 0.18);
-    -fx-border-color: rgba(240, 180, 41, 0.34);
+.theme-dark .editor-read-only-banner {
+    -fx-background-color: #fff1b8;
+    -fx-border-color: rgba(146, 64, 14, 0.22);
+}
+
+.theme-dark .editor-read-only-banner-text,
+.theme-dark .read-only-banner-button {
+    -fx-text-fill: #78350f;
+}
+
+.theme-dark .read-only-banner-button {
+    -fx-background-color: rgba(255, 255, 255, 0.46);
+    -fx-border-color: rgba(120, 53, 15, 0.22);
+}
+
+.theme-dark .settings-pattern-table,
+.theme-dark .settings-pattern-table > .virtual-flow,
+.theme-dark .settings-pattern-table > .virtual-flow > .clipped-container > .sheet,
+.theme-dark .settings-pattern-table .column-header-background,
+.theme-dark .settings-pattern-table .filler {
+    -fx-background-color: #111b2d;
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+}
+
+.theme-dark .settings-pattern-table .column-header,
+.theme-dark .settings-pattern-table .table-cell {
+    -fx-text-fill: #e5e7eb;
 }
 
 .theme-dark .editor-mini-map {
@@ -962,9 +1026,33 @@
     -fx-icon-color: #b45309;
 }
 
-.theme-light #readOnlyToolbarButton:toolbar-active {
-    -fx-background-color: rgba(240, 180, 41, 0.16);
-    -fx-border-color: rgba(240, 180, 41, 0.32);
+.theme-light .editor-read-only-banner {
+    -fx-background-color: #fff4c2;
+    -fx-border-color: rgba(180, 83, 9, 0.16);
+}
+
+.theme-light .editor-read-only-banner-text,
+.theme-light .read-only-banner-button {
+    -fx-text-fill: #92400e;
+}
+
+.theme-light .read-only-banner-button {
+    -fx-background-color: rgba(255, 255, 255, 0.7);
+    -fx-border-color: rgba(146, 64, 14, 0.14);
+}
+
+.theme-light .settings-pattern-table,
+.theme-light .settings-pattern-table > .virtual-flow,
+.theme-light .settings-pattern-table > .virtual-flow > .clipped-container > .sheet,
+.theme-light .settings-pattern-table .column-header-background,
+.theme-light .settings-pattern-table .filler {
+    -fx-background-color: #ffffff;
+    -fx-border-color: rgba(15, 23, 42, 0.08);
+}
+
+.theme-light .settings-pattern-table .column-header,
+.theme-light .settings-pattern-table .table-cell {
+    -fx-text-fill: #0f172a;
 }
 
 .theme-light .editor-mini-map {

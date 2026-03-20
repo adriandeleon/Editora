@@ -9,6 +9,8 @@
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.Tab?>
 <?import javafx.scene.control.TabPane?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.Tooltip?>
 <?import javafx.scene.layout.ColumnConstraints?>
@@ -126,8 +128,17 @@
                         <Label text="Default read-only" styleClass="settings-field-label" GridPane.rowIndex="10"/>
                         <VBox spacing="8.0" GridPane.columnIndex="1" GridPane.rowIndex="10">
                             <CheckBox fx:id="readOnlyOpenEnabledCheckBox" text="Open matching files in read-only mode by default"/>
-                            <TextField fx:id="readOnlyOpenPatternsField" promptText="Extra patterns, e.g. *.log, LICENSE, *.rst"/>
-                            <Label fx:id="readOnlyOpenHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Built-in patterns are always included: *.md, *.txt, README."/>
+                            <HBox alignment="CENTER_LEFT" spacing="8.0">
+                                <TextField fx:id="readOnlyOpenPatternField" onAction="#onAddReadOnlyOpenPattern" promptText="Add pattern, e.g. *.log, LICENSE, *.rst" HBox.hgrow="ALWAYS"/>
+                                <Button fx:id="addReadOnlyOpenPatternButton" mnemonicParsing="false" onAction="#onAddReadOnlyOpenPattern" text="Add"/>
+                                <Button fx:id="removeReadOnlyOpenPatternButton" mnemonicParsing="false" onAction="#onRemoveReadOnlyOpenPattern" text="Remove"/>
+                            </HBox>
+                            <TableView fx:id="readOnlyOpenPatternsTable" editable="true" prefHeight="170.0" styleClass="settings-pattern-table">
+                                <columns>
+                                    <TableColumn fx:id="readOnlyOpenPatternColumn" editable="true" sortable="false" text="Pattern"/>
+                                </columns>
+                            </TableView>
+                            <Label fx:id="readOnlyOpenHelpLabel" styleClass="settings-helper-label" wrapText="true" text="Add or remove file-name / glob patterns that should open in read-only mode by default."/>
                         </VBox>
                     </GridPane>
                             </VBox>

@@ -14,9 +14,7 @@ public final class ReadOnlyOpenRules {
 
     public static List<String> effectivePatterns(EditorSettings settings) {
         Objects.requireNonNull(settings);
-        LinkedHashSet<String> patterns = new LinkedHashSet<>(EditorSettings.DEFAULT_READ_ONLY_OPEN_PATTERNS);
-        patterns.addAll(settings.readOnlyOpenPatterns());
-        return List.copyOf(patterns);
+        return List.copyOf(new LinkedHashSet<>(settings.readOnlyOpenPatterns()));
     }
 
     public static boolean shouldOpenReadOnly(Path file, EditorSettings settings) {
@@ -62,9 +60,9 @@ public final class ReadOnlyOpenRules {
         return regex.toString();
     }
 
-    public static String normalizePatternText(String patternText) {
+    public static List<String> parsePatternText(String patternText) {
         if (patternText == null || patternText.isBlank()) {
-            return "";
+            return List.of();
         }
         String[] tokens = patternText.split("[\\r\\n,;]");
         List<String> normalized = new ArrayList<>();
@@ -74,7 +72,11 @@ public final class ReadOnlyOpenRules {
                 normalized.add(candidate);
             }
         }
-        return String.join(", ", new LinkedHashSet<>(normalized));
+        return List.copyOf(new LinkedHashSet<>(normalized));
+    }
+
+    public static String normalizePatternText(String patternText) {
+        return String.join(", ", parsePatternText(patternText));
     }
 }
 

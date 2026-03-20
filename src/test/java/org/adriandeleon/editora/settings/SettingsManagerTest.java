@@ -97,7 +97,7 @@ class SettingsManagerTest {
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_FAMILY, loaded.editorFontFamily());
         assertEquals(EditorSettings.DEFAULT_EDITOR_FONT_SIZE, loaded.editorFontSize());
         assertTrue(loaded.readOnlyOpenEnabled());
-        assertTrue(loaded.readOnlyOpenPatterns().isEmpty());
+        assertEquals(EditorSettings.DEFAULT_READ_ONLY_OPEN_PATTERNS, loaded.readOnlyOpenPatterns());
     }
 
     @Test
@@ -105,6 +105,38 @@ class SettingsManagerTest {
         EditorSettings loaded = SettingsManager.load();
 
         assertEquals(EditorTheme.PRIMER_LIGHT, loaded.theme());
+    }
+
+    @Test
+    void loadSeedsDefaultReadOnlyPatternsWhenKeyIsMissing() throws IOException {
+        Files.createDirectories(SettingsManager.persistenceFile().getParent());
+        Files.writeString(SettingsManager.persistenceFile(), """
+                {
+                  "theme": "PRIMER_DARK",
+                  "readOnlyOpenEnabled": true
+                }
+                """);
+
+        EditorSettings loaded = SettingsManager.load();
+
+        assertEquals(EditorTheme.PRIMER_DARK, loaded.theme());
+        assertEquals(EditorSettings.DEFAULT_READ_ONLY_OPEN_PATTERNS, loaded.readOnlyOpenPatterns());
+    }
+
+    @Test
+    void loadPreservesExplicitlyEmptyReadOnlyPatternLists() throws IOException {
+        Files.createDirectories(SettingsManager.persistenceFile().getParent());
+        Files.writeString(SettingsManager.persistenceFile(), """
+                {
+                  "readOnlyOpenEnabled": true,
+                  "readOnlyOpenPatterns": []
+                }
+                """);
+
+        EditorSettings loaded = SettingsManager.load();
+
+        assertTrue(loaded.readOnlyOpenEnabled());
+        assertTrue(loaded.readOnlyOpenPatterns().isEmpty());
     }
 
     @Test
@@ -135,7 +167,7 @@ class SettingsManagerTest {
         assertTrue(loaded.breadcrumbBarVisible());
         assertEquals(EditorSettings.DEFAULT_TOOL_DOCK_SIDE, loaded.toolDockSide());
         assertTrue(loaded.readOnlyOpenEnabled());
-        assertTrue(loaded.readOnlyOpenPatterns().isEmpty());
+        assertEquals(EditorSettings.DEFAULT_READ_ONLY_OPEN_PATTERNS, loaded.readOnlyOpenPatterns());
     }
 }
 

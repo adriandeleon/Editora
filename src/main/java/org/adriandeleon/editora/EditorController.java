@@ -274,6 +274,9 @@ public class EditorController {
     private Button readOnlyToolbarButton;
 
     @FXML
+    private FontIcon readOnlyToolbarIcon;
+
+    @FXML
     private HBox readOnlyStatusChip;
 
     @FXML
@@ -659,7 +662,6 @@ public class EditorController {
 
     @FXML
     private void onToggleReadOnly() {
-        animateToolbarClick(readOnlyToolbarButton);
         toggleReadOnly();
     }
 
@@ -1225,8 +1227,7 @@ public class EditorController {
         getActiveDocument().ifPresent(document -> {
             boolean nowReadOnly = !document.isReadOnly();
             document.setReadOnly(nowReadOnly);
-            updateReadOnlyStatus(document);
-            syncToolbarButtonStates();
+            updateEditorState(document);
             statusMessage(nowReadOnly ? "Read-only mode enabled" : "Read-only mode disabled");
         });
     }
@@ -1248,6 +1249,9 @@ public class EditorController {
         }
         if (readOnlyStatusLabel != null) {
             readOnlyStatusLabel.setText(readOnly ? "Read Only" : "Writable");
+        }
+        if (readOnlyToolbarIcon != null) {
+            readOnlyToolbarIcon.setIconLiteral(readOnly ? "bi-lock-fill" : "bi-unlock");
         }
     }
 
@@ -1633,6 +1637,7 @@ public class EditorController {
                 languageServices.resolve(filePath),
                 currentSettings.miniMapVisible()
         );
+        document.setReadOnlyToggleHandler(this::toggleReadOnly);
         if (filePath != null) {
             document.setFilePath(filePath.toAbsolutePath().normalize());
             document.setReadOnly(ReadOnlyOpenRules.shouldOpenReadOnly(filePath, currentSettings));
@@ -2349,6 +2354,7 @@ public class EditorController {
         revealActiveDocumentInProjectTree(document);
         refreshSearchUi();
         requestProgressiveHighlighting(document);
+        syncToolbarButtonStates();
     }
 
     private void configureStatusBar() {

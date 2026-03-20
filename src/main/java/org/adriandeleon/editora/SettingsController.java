@@ -1,15 +1,21 @@
 package org.adriandeleon.editora;
 
 import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
+import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.VBox;
@@ -69,7 +75,19 @@ public class SettingsController {
     private CheckBox readOnlyOpenEnabledCheckBox;
 
     @FXML
-    private TextField readOnlyOpenPatternsField;
+    private TextField readOnlyOpenPatternField;
+
+    @FXML
+    private Button addReadOnlyOpenPatternButton;
+
+    @FXML
+    private Button removeReadOnlyOpenPatternButton;
+
+    @FXML
+    private TableView<String> readOnlyOpenPatternsTable;
+
+    @FXML
+    private TableColumn<String, String> readOnlyOpenPatternColumn;
 
     @FXML
     private Label readOnlyOpenHelpLabel;
@@ -146,6 +164,7 @@ public class SettingsController {
     private String commandPaletteShortcut = CommandPaletteShortcut.DEFAULT_VALUE;
     private boolean suppressThemePreview;
     private CodeArea syntaxPreviewArea;
+    private final ObservableList<String> readOnlyOpenPatternItems = FXCollections.observableArrayList();
 
     @FXML
     private void initialize() {
@@ -173,6 +192,7 @@ public class SettingsController {
         applyButton.setDefaultButton(true);
         commandPaletteShortcutField.setEditable(false);
         commandPaletteShortcutField.addEventFilter(KeyEvent.KEY_PRESSED, this::handleShortcutCapture);
+        configureReadOnlyOpenPatternTable();
         settingsRoot.addEventFilter(KeyEvent.KEY_PRESSED, this::handleKeyPressed);
     }
 
@@ -208,8 +228,10 @@ public class SettingsController {
         toolDockVisibleCheckBox.setSelected(settings.toolDockVisible());
         breadcrumbBarVisibleCheckBox.setSelected(settings.breadcrumbBarVisible());
         readOnlyOpenEnabledCheckBox.setSelected(settings.readOnlyOpenEnabled());
-        readOnlyOpenPatternsField.setText(String.join(", ", settings.readOnlyOpenPatterns()));
-        readOnlyOpenHelpLabel.setText("Built-in patterns are always included: *.md, *.txt, README. Add extra patterns with commas.");
+        readOnlyOpenPatternItems.setAll(settings.readOnlyOpenPatterns());
+        readOnlyOpenPatternField.clear();
+        updateReadOnlyOpenPatternControls();
+        showReadOnlyOpenInstruction();
         toolDockSideComboBox.setValue(settings.toolDockSide());
         editorFontFamilyComboBox.setValue(settings.editorFontFamily());
         editorFontSizeField.setText(Integer.toString(settings.editorFontSize()));
@@ -266,16 +288,55 @@ public class SettingsController {
                 fontFamily,
                 fontSize,
                 readOnlyOpenEnabledCheckBox.isSelected(),
-                parseReadOnlyOpenPatterns()
+                List.copyOf(readOnlyOpenPatternItems)
         ));
     }
 
-    private List<String> parseReadOnlyOpenPatterns() {
-        String normalized = ReadOnlyOpenRules.normalizePatternText(readOnlyOpenPatternsField.getText());
-        if (normalized.isBlank()) {
-            return List.of();
+    @FXML
+    private void onAddReadOnlyOpenPattern() {
+        List<String> candidates = ReadOnlyOpenRules.parsePatternText(readOnlyOpenPatternField.getText());
+        if (candidates.isEmpty()) {
+            showReadOnlyOpenError("Enter a file name or glob pattern to add.");
+            readOnlyOpenPatternField.requestFocus();
+            return;
         }
-        return List.of(normalized.split(",\\s*"));
+
+        int addedCount = 0;
+        for (String candidate : candidates) {
+            if (!readOnlyOpenPatternItems.contains(candidate)) {
+                readOnlyOpenPatternItems.add(candidate);
+                addedCount++;
+            }
+        }
+
+        if (addedCount == 0) {
+            showReadOnlyOpenError("Those patterns are already in the list.");
+            readOnlyOpenPatternField.requestFocus();
+            readOnlyOpenPatternField.selectAll();
+            return;
+        }
+
+        readOnlyOpenPatternField.clear();
+        readOnlyOpenPatternsTable.getSelectionModel().clearSelection();
+        int firstAddedIndex = Math.max(0, readOnlyOpenPatternItems.size() - addedCount);
+        readOnlyOpenPatternsTable.getSelectionModel().select(firstAddedIndex);
+        readOnlyOpenPatternsTable.scrollTo(firstAddedIndex);
+        showReadOnlyOpenInstruction();
+    }
+
+    @FXML
+    private void onRemoveReadOnlyOpenPattern() {
+        List<String> selectedPatterns = List.copyOf(readOnlyOpenPatternsTable.getSelectionModel().getSelectedItems());
+        if (selectedPatterns.isEmpty()) {
+            showReadOnlyOpenError("Select one or more patterns to remove.");
+            readOnlyOpenPatternsTable.requestFocus();
+            return;
+        }
+
+        readOnlyOpenPatternItems.removeAll(selectedPatterns);
+        readOnlyOpenPatternsTable.getSelectionModel().clearSelection();
+        updateReadOnlyOpenPatternControls();
+        showReadOnlyOpenInstruction();
     }
 
     @FXML
@@ -372,6 +433,77 @@ public class SettingsController {
         syntaxPreviewLanguageComboBox.setCellFactory(ignored -> createSyntaxPreviewCell());
         syntaxPreviewLanguageComboBox.setButtonCell(createSyntaxPreviewCell());
         syntaxPreviewLanguageComboBox.valueProperty().addListener(onValueChange(this::refreshSyntaxPreview));
+    }
+
+    private void configureReadOnlyOpenPatternTable() {
+        readOnlyOpenPatternsTable.setItems(readOnlyOpenPatternItems);
+        readOnlyOpenPatternsTable.setEditable(true);
+        readOnlyOpenPatternsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        readOnlyOpenPatternsTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        readOnlyOpenPatternsTable.setPlaceholder(new Label("No patterns configured."));
+        readOnlyOpenPatternColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(cell.getValue()));
+        readOnlyOpenPatternColumn.setCellFactory(TextFieldTableCell.forTableColumn());
+        readOnlyOpenPatternColumn.setOnEditCommit(event -> commitReadOnlyOpenPatternEdit(event.getTablePosition().getRow(), event.getNewValue()));
+        readOnlyOpenPatternsTable.getSelectionModel().getSelectedItems().addListener((javafx.collections.ListChangeListener<String>) change -> updateReadOnlyOpenPatternControls());
+        readOnlyOpenPatternsTable.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) {
+                onRemoveReadOnlyOpenPattern();
+                event.consume();
+            }
+        });
+        readOnlyOpenPatternField.setOnAction(event -> onAddReadOnlyOpenPattern());
+        readOnlyOpenEnabledCheckBox.selectedProperty().addListener(onValueChange(ignored -> updateReadOnlyOpenPatternControls()));
+        updateReadOnlyOpenPatternControls();
+        showReadOnlyOpenInstruction();
+    }
+
+    private void commitReadOnlyOpenPatternEdit(int rowIndex, String newValue) {
+        if (rowIndex < 0 || rowIndex >= readOnlyOpenPatternItems.size()) {
+            return;
+        }
+
+        String replacement = parseSingleReadOnlyOpenPattern(newValue);
+        if (replacement == null) {
+            showReadOnlyOpenError("Each row must contain exactly one file name or glob pattern.");
+            readOnlyOpenPatternsTable.refresh();
+            return;
+        }
+
+        int duplicateIndex = readOnlyOpenPatternItems.indexOf(replacement);
+        if (duplicateIndex >= 0 && duplicateIndex != rowIndex) {
+            showReadOnlyOpenError("That pattern is already listed.");
+            readOnlyOpenPatternsTable.refresh();
+            return;
+        }
+
+        readOnlyOpenPatternItems.set(rowIndex, replacement);
+        showReadOnlyOpenInstruction();
+    }
+
+    private String parseSingleReadOnlyOpenPattern(String value) {
+        List<String> parsedPatterns = ReadOnlyOpenRules.parsePatternText(value);
+        return parsedPatterns.size() == 1 ? parsedPatterns.getFirst() : null;
+    }
+
+    private void updateReadOnlyOpenPatternControls() {
+        boolean enabled = readOnlyOpenEnabledCheckBox.isSelected();
+        boolean hasSelection = readOnlyOpenPatternsTable != null && !readOnlyOpenPatternsTable.getSelectionModel().getSelectedItems().isEmpty();
+        readOnlyOpenPatternField.setDisable(!enabled);
+        addReadOnlyOpenPatternButton.setDisable(!enabled);
+        removeReadOnlyOpenPatternButton.setDisable(!enabled || !hasSelection);
+        readOnlyOpenPatternsTable.setDisable(!enabled);
+    }
+
+    private void showReadOnlyOpenInstruction() {
+        readOnlyOpenHelpLabel.setText("Add or remove file-name / glob patterns that should open in read-only mode by default. Double-click a row to edit it.");
+        readOnlyOpenHelpLabel.getStyleClass().remove("settings-helper-label-error");
+    }
+
+    private void showReadOnlyOpenError(String message) {
+        readOnlyOpenHelpLabel.setText(message);
+        if (!readOnlyOpenHelpLabel.getStyleClass().contains("settings-helper-label-error")) {
+            readOnlyOpenHelpLabel.getStyleClass().add("settings-helper-label-error");
+        }
     }
 
     private ListCell<LanguagePreviewSpec> createSyntaxPreviewCell() {
@@ -563,7 +695,11 @@ public class SettingsController {
         Objects.requireNonNull(toolDockVisibleCheckBox);
         Objects.requireNonNull(breadcrumbBarVisibleCheckBox);
         Objects.requireNonNull(readOnlyOpenEnabledCheckBox);
-        Objects.requireNonNull(readOnlyOpenPatternsField);
+        Objects.requireNonNull(readOnlyOpenPatternField);
+        Objects.requireNonNull(addReadOnlyOpenPatternButton);
+        Objects.requireNonNull(removeReadOnlyOpenPatternButton);
+        Objects.requireNonNull(readOnlyOpenPatternsTable);
+        Objects.requireNonNull(readOnlyOpenPatternColumn);
         Objects.requireNonNull(readOnlyOpenHelpLabel);
         Objects.requireNonNull(toolDockSideComboBox);
         Objects.requireNonNull(editorFontFamilyComboBox);

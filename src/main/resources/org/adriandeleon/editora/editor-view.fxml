@@ -90,7 +90,7 @@
                         </MenuButton>
                         <Button fx:id="readOnlyToolbarButton" mnemonicParsing="false" onAction="#onToggleReadOnly" styleClass="toolbar-icon-button">
                             <graphic>
-                                <FontIcon iconLiteral="bi-lock" iconSize="14" styleClass="toolbar-font-icon"/>
+                                <FontIcon fx:id="readOnlyToolbarIcon" iconLiteral="bi-unlock" iconSize="14" styleClass="toolbar-font-icon"/>
                             </graphic>
                             <tooltip>
                                 <Tooltip text="Toggle Read-Only Mode"/>

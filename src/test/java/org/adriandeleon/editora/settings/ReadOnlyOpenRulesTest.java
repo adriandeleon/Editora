@@ -27,7 +27,7 @@ class ReadOnlyOpenRulesTest {
                 EditorSettings.DEFAULT_EDITOR_FONT_FAMILY,
                 EditorSettings.DEFAULT_EDITOR_FONT_SIZE,
                 true,
-                List.of()
+                EditorSettings.DEFAULT_READ_ONLY_OPEN_PATTERNS
         );
 
         assertTrue(ReadOnlyOpenRules.shouldOpenReadOnly(Path.of("README"), settings));
@@ -81,6 +81,29 @@ class ReadOnlyOpenRulesTest {
         );
 
         assertFalse(ReadOnlyOpenRules.shouldOpenReadOnly(Path.of("Main.java"), settings));
+    }
+
+    @Test
+    void explicitEmptyPatternListDisablesTheFormerDefaultsToo() {
+        EditorSettings settings = new EditorSettings(
+                EditorTheme.defaultTheme(),
+                false,
+                true,
+                EditorSettings.DEFAULT_MINI_MAP_VISIBLE,
+                EditorSettings.DEFAULT_SEARCH_BAR_VISIBLE,
+                EditorSettings.DEFAULT_TOOL_DOCK_VISIBLE,
+                true,
+                EditorSettings.DEFAULT_TOOL_DOCK_SIDE,
+                CommandPaletteShortcut.DEFAULT_VALUE,
+                EditorSettings.DEFAULT_EDITOR_FONT_FAMILY,
+                EditorSettings.DEFAULT_EDITOR_FONT_SIZE,
+                true,
+                List.of()
+        );
+
+        assertFalse(ReadOnlyOpenRules.shouldOpenReadOnly(Path.of("README"), settings));
+        assertFalse(ReadOnlyOpenRules.shouldOpenReadOnly(Path.of("notes.md"), settings));
+        assertFalse(ReadOnlyOpenRules.shouldOpenReadOnly(Path.of("file.txt"), settings));
     }
 }
 

@@ -51,7 +51,11 @@ public final class SettingsManager {
         String editorFontFamily = readString(values, EDITOR_FONT_FAMILY_KEY, EditorSettings.DEFAULT_EDITOR_FONT_FAMILY);
         int editorFontSize = readInt(values, EDITOR_FONT_SIZE_KEY, EditorSettings.DEFAULT_EDITOR_FONT_SIZE);
         boolean readOnlyOpenEnabled = readBoolean(values, READ_ONLY_OPEN_ENABLED_KEY, EditorSettings.DEFAULT_READ_ONLY_OPEN_ENABLED);
-        List<String> readOnlyOpenPatterns = readStringList(values, READ_ONLY_OPEN_PATTERNS_KEY);
+        List<String> readOnlyOpenPatterns = readStringList(
+                values,
+                READ_ONLY_OPEN_PATTERNS_KEY,
+                EditorSettings.DEFAULT_READ_ONLY_OPEN_PATTERNS
+        );
         return new EditorSettings(
                 theme,
                 wrapText,
@@ -83,7 +87,7 @@ public final class SettingsManager {
                 EditorSettings.DEFAULT_EDITOR_FONT_FAMILY,
                 EditorSettings.DEFAULT_EDITOR_FONT_SIZE,
                 EditorSettings.DEFAULT_READ_ONLY_OPEN_ENABLED,
-                List.of()
+                EditorSettings.DEFAULT_READ_ONLY_OPEN_PATTERNS
         );
     }
 
@@ -138,7 +142,11 @@ public final class SettingsManager {
         return fallback;
     }
 
-    private static List<String> readStringList(Map<String, Object> values, String key) {
+    private static List<String> readStringList(Map<String, Object> values, String key, List<String> fallback) {
+        if (!values.containsKey(key)) {
+            return fallback == null ? List.of() : List.copyOf(fallback);
+        }
+
         Object value = values.get(key);
         if (value instanceof List<?> list) {
             return list.stream()

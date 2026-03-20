@@ -14,6 +14,7 @@ import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import javafx.geometry.Pos;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollBar;
 import javafx.scene.control.Tab;
@@ -23,6 +24,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -46,7 +48,9 @@ public final class EditorDocument {
     private final Tab tab;
     private final CodeArea codeArea;
     private final VirtualizedScrollPane<CodeArea> container;
-    private final HBox content;
+    private final VBox content;
+    private final HBox editorRow;
+    private final HBox readOnlyInfoBar;
     private final StackPane miniMapHost;
     private final Pane miniMapContent;
     private final Region miniMapViewport;
@@ -57,10 +61,13 @@ public final class EditorDocument {
     private final Label tabTitleLabel;
     private final Tooltip tabTooltip;
     private final InvalidationListener miniMapViewportListener = ignored -> refreshMiniMapViewport();
+    private final Runnable noOpToggleHandler = () -> {
+    };
 
     private Path filePath;
     private boolean dirty;
     private boolean readOnly;
+    private Runnable readOnlyToggleHandler;
     private String savedText;
     private LanguageService languageService;
     private Map<Integer, List<Diagnostic>> diagnosticsByLine = Map.of();
@@ -88,7 +95,9 @@ public final class EditorDocument {
         this.savedText = codeArea.getText();
         this.tab = new Tab();
         this.container = new VirtualizedScrollPane<>(codeArea);
-        this.content = new HBox();
+        this.content = new VBox();
+        this.editorRow = new HBox();
+        this.readOnlyInfoBar = new HBox();
         this.miniMapHost = new StackPane();
         this.miniMapContent = new Pane();
         this.miniMapViewport = new Region();
@@ -103,6 +112,7 @@ public final class EditorDocument {
         this.tabHeader.setAlignment(Pos.CENTER_LEFT);
         this.tabHeader.getStyleClass().add("editor-tab-header");
         this.tabTooltip = new Tooltip();
+        this.readOnlyToggleHandler = noOpToggleHandler;
         this.baseHighlighting = emptyHighlighting(codeArea.getLength());
         this.miniMapVisible = miniMapVisible;
         configureContent();
@@ -162,6 +172,10 @@ public final class EditorDocument {
         return readOnly;
     }
 
+    public void setReadOnlyToggleHandler(Runnable readOnlyToggleHandler) {
+        this.readOnlyToggleHandler = readOnlyToggleHandler == null ? noOpToggleHandler : readOnlyToggleHandler;
+    }
+
     public void setReadOnly(boolean readOnly) {
         this.readOnly = readOnly;
         codeArea.setEditable(!readOnly);
@@ -169,6 +183,8 @@ public final class EditorDocument {
         if (readOnly) {
             tabHeader.getStyleClass().add("read-only");
         }
+        readOnlyInfoBar.setManaged(readOnly);
+        readOnlyInfoBar.setVisible(readOnly);
     }
 
     public void scrollPageDown() {
@@ -447,16 +463,40 @@ public final class EditorDocument {
 
     private void configureContent() {
         content.getStyleClass().add("editor-document-shell");
-        content.setFillHeight(true);
+        content.setFillWidth(true);
         content.setMinHeight(0d);
         content.setPrefHeight(0d);
         content.setMaxHeight(Double.MAX_VALUE);
+        editorRow.getStyleClass().add("editor-document-editor-row");
+        editorRow.setFillHeight(true);
+        editorRow.setMinHeight(0d);
+        editorRow.setPrefHeight(0d);
+        editorRow.setMaxHeight(Double.MAX_VALUE);
+        readOnlyInfoBar.getStyleClass().add("editor-read-only-banner");
+        readOnlyInfoBar.setAlignment(Pos.CENTER_LEFT);
+        readOnlyInfoBar.setSpacing(10d);
+        readOnlyInfoBar.setManaged(false);
+        readOnlyInfoBar.setVisible(false);
+        FontIcon readOnlyBannerIcon = new FontIcon("bi-lock-fill");
+        readOnlyBannerIcon.setIconSize(12);
+        readOnlyBannerIcon.getStyleClass().add("editor-read-only-banner-icon");
+        Label readOnlyInfoLabel = new Label("Read-only mode is on. Use Space to page down and Backspace to page up.");
+        readOnlyInfoLabel.getStyleClass().add("editor-read-only-banner-text");
+        Button readOnlyToggleButton = new Button("Enable Editing");
+        readOnlyToggleButton.getStyleClass().add("read-only-banner-button");
+        readOnlyToggleButton.setFocusTraversable(false);
+        readOnlyToggleButton.setMnemonicParsing(false);
+        readOnlyToggleButton.setOnAction(event -> readOnlyToggleHandler.run());
         container.setMinHeight(0d);
         container.setMaxHeight(Double.MAX_VALUE);
         miniMapHost.setMinHeight(0d);
         miniMapHost.setMaxHeight(Double.MAX_VALUE);
+        VBox.setVgrow(editorRow, Priority.ALWAYS);
         HBox.setHgrow(container, Priority.ALWAYS);
-        content.getChildren().setAll(container, miniMapHost);
+        editorRow.getChildren().setAll(container, miniMapHost);
+        readOnlyInfoBar.getChildren().setAll(readOnlyBannerIcon, readOnlyInfoLabel, new Region(), readOnlyToggleButton);
+        HBox.setHgrow(readOnlyInfoBar.getChildren().get(2), Priority.ALWAYS);
+        content.getChildren().setAll(readOnlyInfoBar, editorRow);
     }
 
     private void configureMiniMap() {
