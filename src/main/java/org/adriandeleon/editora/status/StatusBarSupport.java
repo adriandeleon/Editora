@@ -22,6 +22,13 @@ public final class StatusBarSupport {
                 + " · " + formatFileSize(utf8Bytes);
     }
 
+    public static String formatKeybindingScope(boolean editorFocused, boolean readOnly) {
+        if (!editorFocused) {
+            return "Keys: Shell shortcuts";
+        }
+        return readOnly ? "Keys: Emacs nav" : "Keys: Emacs-local";
+    }
+
     public static long utf8Size(String text) {
         return (text == null ? "" : text).getBytes(StandardCharsets.UTF_8).length;
     }

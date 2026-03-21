@@ -397,6 +397,10 @@
                             <FontIcon iconLiteral="bi-code-slash" iconSize="12" styleClass="status-icon"/>
                             <Label fx:id="languageStatusLabel" text="Language: —"/>
                         </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="4.0" styleClass="status-chip">
+                            <FontIcon iconLiteral="bi-keyboard" iconSize="12" styleClass="status-icon"/>
+                            <Label fx:id="keybindingScopeStatusLabel" text="Keys: Shell shortcuts"/>
+                        </HBox>
                         <HBox fx:id="readOnlyStatusChip" alignment="CENTER_LEFT" managed="false" onMouseClicked="#onToggleReadOnlyFromStatus" spacing="4.0" styleClass="status-chip read-only-chip interactive-status-chip" visible="false">
                             <FontIcon fx:id="readOnlyStatusIcon" iconLiteral="bi-lock-fill" iconSize="12" styleClass="status-icon read-only-status-icon"/>
                             <Label fx:id="readOnlyStatusLabel" text="Read Only" styleClass="status-emphasis"/>

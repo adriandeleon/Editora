@@ -63,6 +63,7 @@ import javafx.stage.Window;
 import org.adriandeleon.editora.commands.CommandAction;
 import org.adriandeleon.editora.documents.EditorDocument;
 import org.adriandeleon.editora.editor.EmacsEditing;
+import org.adriandeleon.editora.editor.EmacsKeyBindingSupport;
 import org.adriandeleon.editora.editor.EmacsNavigation;
 import org.adriandeleon.editora.editor.FindFileSupport;
 import org.adriandeleon.editora.editor.ProgressiveHighlightSupport;
@@ -244,6 +245,9 @@ public class EditorController {
     private Label languageStatusLabel;
 
     @FXML
+    private Label keybindingScopeStatusLabel;
+
+    @FXML
     private HBox statusBar;
 
     @FXML
@@ -421,6 +425,7 @@ public class EditorController {
     private boolean settingsThemePreviewActive;
     private volatile boolean shuttingDown;
     private SplitPane.Divider trackedToolDockDivider;
+    private final ChangeListener<Node> focusOwnerChangeListener = (observable, previous, current) -> updateKeybindingScopeStatus();
     private final ChangeListener<Number> toolDockDividerPositionListener = (observable, ignored, current) -> {
         Objects.requireNonNull(observable);
         if (isToolDockShellVisible()) {
@@ -483,10 +488,12 @@ public class EditorController {
         rootPane.sceneProperty().addListener(onCurrentChange(current -> {
             if (current != null) {
                 ThemeManager.apply(currentSettings.theme(), rootStack);
+                current.focusOwnerProperty().addListener(focusOwnerChangeListener);
                 if (!acceleratorsInstalled) {
                     installAccelerators(current);
                     acceleratorsInstalled = true;
                 }
+                updateKeybindingScopeStatus();
             }
         }));
 
@@ -1970,7 +1977,10 @@ public class EditorController {
     }
 
     private boolean handleEmacsControlEditing(EditorDocument document, KeyEvent event) {
-        if (!event.isControlDown() || event.isAltDown() || event.isMetaDown() || event.isShortcutDown()) {
+        if (!EmacsKeyBindingSupport.isControlChordAllowingShift(
+                event.isControlDown(),
+                event.isAltDown(),
+                event.isMetaDown())) {
             return false;
         }
 
@@ -1993,7 +2003,11 @@ public class EditorController {
     }
 
     private boolean handleEmacsControlNavigation(EditorDocument document, KeyEvent event) {
-        if (!event.isControlDown() || event.isAltDown() || event.isMetaDown() || event.isShortcutDown() || event.isShiftDown()) {
+        if (!EmacsKeyBindingSupport.isControlChord(
+                event.isControlDown(),
+                event.isAltDown(),
+                event.isMetaDown(),
+                event.isShiftDown())) {
             return false;
         }
 
@@ -2013,7 +2027,10 @@ public class EditorController {
     }
 
     private boolean handleEmacsMetaNavigation(EditorDocument document, KeyEvent event) {
-        if (!event.isAltDown() || event.isControlDown() || event.isMetaDown() || event.isShortcutDown()) {
+        if (!EmacsKeyBindingSupport.isMetaChordAllowingShift(
+                event.isAltDown(),
+                event.isControlDown(),
+                event.isMetaDown())) {
             return false;
         }
 
@@ -2037,7 +2054,11 @@ public class EditorController {
     }
 
     private boolean handleEmacsMetaEditing(EditorDocument document, KeyEvent event) {
-        if (!event.isAltDown() || event.isControlDown() || event.isMetaDown() || event.isShortcutDown() || event.isShiftDown()) {
+        if (!EmacsKeyBindingSupport.isMetaChord(
+                event.isAltDown(),
+                event.isControlDown(),
+                event.isMetaDown(),
+                event.isShiftDown())) {
             return false;
         }
 
@@ -2600,6 +2621,7 @@ public class EditorController {
         updateDocumentStatus(document);
         updateLanguageStatus(document);
         updateReadOnlyStatus(document);
+        updateKeybindingScopeStatus();
         revealActiveDocumentInProjectTree(document);
         refreshSearchUi();
         requestProgressiveHighlighting(document);
@@ -2823,6 +2845,18 @@ public class EditorController {
         documentPathBreadcrumbs.setOnCrumbAction(this::handleBreadcrumbAction);
         applyBreadcrumbBarVisibility(currentSettings.breadcrumbBarVisible(), false);
         updateDocumentPathBreadcrumbs(getActiveDocument().orElse(null));
+        updateKeybindingScopeStatus();
+    }
+
+    private void updateKeybindingScopeStatus() {
+        if (keybindingScopeStatusLabel == null) {
+            return;
+        }
+
+        EditorDocument activeDocument = getActiveDocument().orElse(null);
+        boolean editorFocused = activeDocument != null && activeDocument.getCodeArea().isFocused();
+        boolean readOnly = activeDocument != null && activeDocument.isReadOnly();
+        keybindingScopeStatusLabel.setText(StatusBarSupport.formatKeybindingScope(editorFocused, readOnly));
     }
 
     private void handleBreadcrumbAction(Breadcrumbs.BreadCrumbActionEvent<StatusBarSupport.BreadcrumbEntry> event) {

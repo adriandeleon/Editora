@@ -77,5 +77,12 @@ class StatusBarSupportTest {
         assertEquals("1.5 KB", StatusBarSupport.formatFileSize(1536));
         assertEquals("3.0 MB", StatusBarSupport.formatFileSize(3L * 1024 * 1024));
     }
+
+    @Test
+    void formatsKeybindingScopeForEditorAndShellFocus() {
+        assertEquals("Keys: Shell shortcuts", StatusBarSupport.formatKeybindingScope(false, false));
+        assertEquals("Keys: Emacs-local", StatusBarSupport.formatKeybindingScope(true, false));
+        assertEquals("Keys: Emacs nav", StatusBarSupport.formatKeybindingScope(true, true));
+    }
 }
 
