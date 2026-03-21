@@ -47,6 +47,7 @@ class SettingsManagerTest {
                 true,
                 false,
                 false,
+                false,
                 ToolWindowSide.RIGHT,
                 "alt+shortcut+x",
                 "  Fira Code  ",
@@ -63,6 +64,7 @@ class SettingsManagerTest {
         assertTrue(loaded.miniMapVisible());
         assertTrue(loaded.searchBarVisible());
         assertFalse(loaded.toolDockVisible());
+        assertFalse(loaded.bookmarkWindowVisible());
         assertFalse(loaded.breadcrumbBarVisible());
         assertEquals(ToolWindowSide.RIGHT, loaded.toolDockSide());
         assertEquals("ALT+SHORTCUT+X", loaded.commandPaletteShortcut());

@@ -27,8 +27,14 @@ class SettingsViewFxmlTest {
                 "Skipping JavaFX FXML test because no GUI display is available");
         if (JAVA_FX_STARTED.compareAndSet(false, true)) {
             CountDownLatch startupLatch = new CountDownLatch(1);
-            Platform.startup(startupLatch::countDown);
-            assertTrue(startupLatch.await(5, TimeUnit.SECONDS), "JavaFX toolkit did not start");
+            try {
+                Platform.startup(startupLatch::countDown);
+                assertTrue(startupLatch.await(5, TimeUnit.SECONDS), "JavaFX toolkit did not start");
+            } catch (IllegalStateException exception) {
+                if (!exception.getMessage().contains("Toolkit already initialized")) {
+                    throw exception;
+                }
+            }
         }
     }
 

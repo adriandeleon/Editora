@@ -13,8 +13,8 @@ class CommandPaletteShortcutTest {
 
     @Test
     void editorSettingsFallsBackToDefaultForInvalidOrReservedShortcuts() {
-        EditorSettings invalid = new EditorSettings(EditorTheme.PRIMER_DARK, false, true, true, true, false, true, null, "not-a-shortcut", "", -1, true, java.util.List.of());
-        EditorSettings reserved = new EditorSettings(EditorTheme.PRIMER_DARK, false, true, false, false, true, false, ToolWindowSide.RIGHT, "ALT+F", "", -1, true, java.util.List.of());
+        EditorSettings invalid = new EditorSettings(EditorTheme.PRIMER_DARK, false, true, true, true, false, false, true, null, "not-a-shortcut", "", -1, true, java.util.List.of());
+        EditorSettings reserved = new EditorSettings(EditorTheme.PRIMER_DARK, false, true, false, false, true, false, false, ToolWindowSide.RIGHT, "ALT+F", "", -1, true, java.util.List.of());
 
         assertEquals(CommandPaletteShortcut.DEFAULT_VALUE, invalid.commandPaletteShortcut());
         assertEquals(CommandPaletteShortcut.DEFAULT_VALUE, reserved.commandPaletteShortcut());
