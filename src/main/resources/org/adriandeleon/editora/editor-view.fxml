@@ -138,6 +138,31 @@
                             </tooltip>
                         </Button>
                         <Separator orientation="VERTICAL"/>
+                        <Button fx:id="splitRightToolbarButton" mnemonicParsing="false" onAction="#onSplitRight" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-distribute-horizontal" iconSize="14" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Split Right (Emacs: C-x 3)"/>
+                            </tooltip>
+                        </Button>
+                        <Button fx:id="splitDownToolbarButton" mnemonicParsing="false" onAction="#onSplitDown" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-distribute-vertical" iconSize="14" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Split Down (Emacs: C-x 2)"/>
+                            </tooltip>
+                        </Button>
+                        <Button fx:id="unsplitToolbarButton" mnemonicParsing="false" onAction="#onUnsplit" styleClass="toolbar-icon-button">
+                            <graphic>
+                                <FontIcon iconLiteral="bi-square" iconSize="14" styleClass="toolbar-font-icon"/>
+                            </graphic>
+                            <tooltip>
+                                <Tooltip text="Unsplit (Emacs: C-x 0)"/>
+                            </tooltip>
+                        </Button>
+                        <Separator orientation="VERTICAL"/>
                         <Button fx:id="commandPaletteToolbarButton" mnemonicParsing="false" onAction="#onShowCommandPalette" styleClass="toolbar-icon-button">
                             <graphic>
                                 <FontIcon iconLiteral="bi-terminal" iconSize="14" styleClass="toolbar-font-icon"/>

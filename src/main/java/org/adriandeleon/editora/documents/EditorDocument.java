@@ -2,7 +2,10 @@ package org.adriandeleon.editora.documents;
 
 import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
+import javafx.beans.value.ChangeListener;
+import javafx.geometry.Bounds;
 import javafx.geometry.Orientation;
+import javafx.geometry.NodeOrientation;
 import org.adriandeleon.editora.languages.Diagnostic;
 import org.adriandeleon.editora.languages.LanguageService;
 import org.adriandeleon.editora.editor.MiniMapSupport;
@@ -17,8 +20,10 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollBar;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.Tooltip;
+import javafx.scene.Scene;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
@@ -36,7 +41,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeSet;
+import java.util.function.Consumer;
 
 public final class EditorDocument {
     private static final double MINI_MAP_WIDTH = 92d;
@@ -50,6 +57,8 @@ public final class EditorDocument {
     private final Tab tab;
     private final CodeArea codeArea;
     private final VirtualizedScrollPane<CodeArea> container;
+    private final StackPane editorHost;
+    private final HBox primaryEditorPane;
     private final VBox content;
     private final HBox editorRow;
     private final HBox readOnlyInfoBar;
@@ -63,6 +72,7 @@ public final class EditorDocument {
     private final Label tabTitleLabel;
     private final Tooltip tabTooltip;
     private final InvalidationListener miniMapViewportListener = ignored -> refreshMiniMapViewport();
+    private final InvalidationListener secondaryMiniMapViewportListener = ignored -> refreshSecondaryMiniMapViewport();
     private final Runnable noOpToggleHandler = () -> {
     };
 
@@ -81,12 +91,36 @@ public final class EditorDocument {
     private final List<BookmarkAnchor> bookmarks = new ArrayList<>();
     private boolean miniMapVisible;
     private double miniMapRenderHeight;
+    private final StackPane secondaryMiniMapHost;
+    private final Pane secondaryMiniMapContent;
+    private final Region secondaryMiniMapViewport;
+    private final Region secondaryMiniMapTopFade;
+    private final Region secondaryMiniMapBottomFade;
+    private ScrollBar secondaryVerticalScrollBar;
+    private double secondaryMiniMapRenderHeight;
     private long analysisRevision;
     private long progressiveHighlightRevision;
     private boolean progressiveHighlightingActive;
     private final List<HighlightRange> completedHighlightRanges = new ArrayList<>();
     private final List<HighlightRange> pendingHighlightRanges = new ArrayList<>();
     private ProgressiveHighlightSupport.ParagraphWindow lastVisibleViewportParagraphWindow;
+    private SplitPane splitEditorPane;
+    private CodeArea secondaryCodeArea;
+    private VirtualizedScrollPane<CodeArea> secondaryContainer;
+    private Orientation splitOrientation = Orientation.HORIZONTAL;
+    private boolean synchronizingSplitEditors;
+    private boolean splitTextSyncScheduled;
+    private CodeArea pendingSplitSyncSource;
+    private CodeArea pendingSplitSyncTarget;
+    private ChangeListener<String> primarySplitTextSyncListener;
+    private ChangeListener<String> secondarySplitTextSyncListener;
+    private ChangeListener<Number> primarySplitCaretSyncListener;
+    private ChangeListener<Number> secondarySplitCaretSyncListener;
+    private ChangeListener<String> secondaryMiniMapTextListener;
+    private ChangeListener<Scene> secondaryMiniMapSceneListener;
+    private ChangeListener<Bounds> secondaryMiniMapLayoutListener;
+    private Consumer<CodeArea> splitEditorInitializer = ignored -> {
+    };
 
     public EditorDocument(String untitledName,
                           CodeArea codeArea,
@@ -98,6 +132,8 @@ public final class EditorDocument {
         this.savedText = codeArea.getText();
         this.tab = new Tab();
         this.container = new VirtualizedScrollPane<>(codeArea);
+        this.editorHost = new StackPane();
+        this.primaryEditorPane = new HBox();
         this.content = new VBox();
         this.editorRow = new HBox();
         this.readOnlyInfoBar = new HBox();
@@ -106,6 +142,11 @@ public final class EditorDocument {
         this.miniMapViewport = new Region();
         this.miniMapTopFade = new Region();
         this.miniMapBottomFade = new Region();
+        this.secondaryMiniMapHost = new StackPane();
+        this.secondaryMiniMapContent = new Pane();
+        this.secondaryMiniMapViewport = new Region();
+        this.secondaryMiniMapTopFade = new Region();
+        this.secondaryMiniMapBottomFade = new Region();
         this.tabIcon = new FontIcon("bi-file-earmark-text");
         this.tabIcon.setIconSize(12);
         this.tabIcon.getStyleClass().add("editor-tab-icon");
@@ -120,6 +161,7 @@ public final class EditorDocument {
         this.miniMapVisible = miniMapVisible;
         configureContent();
         configureMiniMap();
+        configureSecondaryMiniMap();
         this.tab.setContent(content);
         this.tab.setGraphic(tabHeader);
         this.tab.setText(null);
@@ -147,6 +189,8 @@ public final class EditorDocument {
         this.miniMapVisible = miniMapVisible;
         miniMapHost.setManaged(miniMapVisible);
         miniMapHost.setVisible(miniMapVisible);
+        secondaryMiniMapHost.setManaged(miniMapVisible && hasSplitView());
+        secondaryMiniMapHost.setVisible(miniMapVisible && hasSplitView());
         if (miniMapVisible) {
             refreshMiniMap();
         }
@@ -155,6 +199,8 @@ public final class EditorDocument {
     public void refreshMiniMap() {
         redrawMiniMap();
         refreshMiniMapViewport();
+        redrawSecondaryMiniMap();
+        refreshSecondaryMiniMapViewport();
         scheduleMiniMapBinding();
     }
 
@@ -182,6 +228,9 @@ public final class EditorDocument {
     public void setReadOnly(boolean readOnly) {
         this.readOnly = readOnly;
         codeArea.setEditable(!readOnly);
+        if (secondaryCodeArea != null) {
+            secondaryCodeArea.setEditable(!readOnly);
+        }
         tabHeader.getStyleClass().remove("read-only");
         if (readOnly) {
             tabHeader.getStyleClass().add("read-only");
@@ -341,6 +390,77 @@ public final class EditorDocument {
 
     public void setBaseHighlighting(StyleSpans<Collection<String>> baseHighlighting) {
         this.baseHighlighting = baseHighlighting == null ? emptyHighlighting(codeArea.getLength()) : baseHighlighting;
+    }
+
+    public void setSplitEditorInitializer(Consumer<CodeArea> splitEditorInitializer) {
+        this.splitEditorInitializer = splitEditorInitializer == null ? ignored -> {
+        } : splitEditorInitializer;
+    }
+
+    public boolean hasSplitView() {
+        return secondaryCodeArea != null && splitEditorPane != null;
+    }
+
+    public boolean splitRight() {
+        return ensureSplit(Orientation.HORIZONTAL);
+    }
+
+    public boolean splitDown() {
+        return ensureSplit(Orientation.VERTICAL);
+    }
+
+    public boolean unsplit() {
+        if (!hasSplitView()) {
+            return false;
+        }
+        removeSplitEditorListeners();
+        editorHost.getChildren().setAll(primaryEditorPane);
+        splitEditorPane = null;
+        secondaryCodeArea = null;
+        secondaryContainer = null;
+        splitOrientation = Orientation.HORIZONTAL;
+        secondaryMiniMapHost.setManaged(false);
+        secondaryMiniMapHost.setVisible(false);
+        secondaryVerticalScrollBar = null;
+        secondaryMiniMapRenderHeight = 0d;
+        secondaryMiniMapContent.getChildren().clear();
+        pendingSplitSyncSource = null;
+        pendingSplitSyncTarget = null;
+        splitTextSyncScheduled = false;
+        codeArea.requestFocus();
+        return true;
+    }
+
+    public boolean focusOtherSplitView() {
+        if (!hasSplitView()) {
+            return false;
+        }
+        if (secondaryCodeArea != null && secondaryCodeArea.isFocused()) {
+            codeArea.requestFocus();
+        } else {
+            secondaryCodeArea.requestFocus();
+        }
+        return true;
+    }
+
+    public CodeArea activeCodeArea() {
+        if (secondaryCodeArea != null && secondaryCodeArea.isFocused()) {
+            return secondaryCodeArea;
+        }
+        return codeArea;
+    }
+
+    public Optional<CodeArea> secondaryCodeArea() {
+        return Optional.ofNullable(secondaryCodeArea);
+    }
+
+    public void applyEditorPresentationToSplitView() {
+        if (secondaryCodeArea == null) {
+            return;
+        }
+        secondaryCodeArea.setWrapText(codeArea.isWrapText());
+        secondaryCodeArea.setStyle(codeArea.getStyle());
+        secondaryCodeArea.setEditable(codeArea.isEditable());
     }
 
     public Integer getNavigationGoalColumn() {
@@ -568,6 +688,10 @@ public final class EditorDocument {
         content.setPrefHeight(0d);
         content.setMaxHeight(Double.MAX_VALUE);
         editorRow.getStyleClass().add("editor-document-editor-row");
+                        editorHost.getStyleClass().add("editor-document-editor-host");
+                        editorHost.setMinHeight(0d);
+                        editorHost.setPrefHeight(0d);
+                        editorHost.setMaxHeight(Double.MAX_VALUE);
         editorRow.setFillHeight(true);
         editorRow.setMinHeight(0d);
         editorRow.setPrefHeight(0d);
@@ -591,9 +715,18 @@ public final class EditorDocument {
         container.setMaxHeight(Double.MAX_VALUE);
         miniMapHost.setMinHeight(0d);
         miniMapHost.setMaxHeight(Double.MAX_VALUE);
-        VBox.setVgrow(editorRow, Priority.ALWAYS);
+        primaryEditorPane.getStyleClass().add("editor-document-editor-pane");
+        primaryEditorPane.setNodeOrientation(NodeOrientation.LEFT_TO_RIGHT);
+        primaryEditorPane.setFillHeight(true);
+        primaryEditorPane.setMinHeight(0d);
+        primaryEditorPane.setPrefHeight(0d);
+        primaryEditorPane.setMaxHeight(Double.MAX_VALUE);
         HBox.setHgrow(container, Priority.ALWAYS);
-        editorRow.getChildren().setAll(container, miniMapHost);
+        primaryEditorPane.getChildren().setAll(container, miniMapHost);
+        VBox.setVgrow(editorRow, Priority.ALWAYS);
+        HBox.setHgrow(editorHost, Priority.ALWAYS);
+        editorHost.getChildren().setAll(primaryEditorPane);
+        editorRow.getChildren().setAll(editorHost);
         readOnlyInfoBar.getChildren().setAll(readOnlyBannerIcon, readOnlyInfoLabel, new Region(), readOnlyToggleButton);
         HBox.setHgrow(readOnlyInfoBar.getChildren().get(2), Priority.ALWAYS);
         content.getChildren().setAll(readOnlyInfoBar, editorRow);
@@ -633,6 +766,33 @@ public final class EditorDocument {
         scheduleMiniMapBinding();
     }
 
+    private void configureSecondaryMiniMap() {
+        secondaryMiniMapHost.getStyleClass().add("editor-mini-map");
+        secondaryMiniMapHost.setMinWidth(MINI_MAP_WIDTH);
+        secondaryMiniMapHost.setPrefWidth(MINI_MAP_WIDTH);
+        secondaryMiniMapHost.setMaxWidth(MINI_MAP_WIDTH);
+        secondaryMiniMapContent.setManaged(false);
+        secondaryMiniMapContent.setMouseTransparent(true);
+        secondaryMiniMapContent.getStyleClass().add("editor-mini-map-content");
+        secondaryMiniMapViewport.setManaged(false);
+        secondaryMiniMapViewport.setMouseTransparent(true);
+        secondaryMiniMapViewport.getStyleClass().add("editor-mini-map-viewport");
+        configureFadeRegion(secondaryMiniMapTopFade, "editor-mini-map-fade-top");
+        configureFadeRegion(secondaryMiniMapBottomFade, "editor-mini-map-fade-bottom");
+        secondaryMiniMapHost.getChildren().setAll(secondaryMiniMapContent, secondaryMiniMapTopFade, secondaryMiniMapBottomFade, secondaryMiniMapViewport);
+        StackPane.setAlignment(secondaryMiniMapContent, Pos.TOP_LEFT);
+        StackPane.setAlignment(secondaryMiniMapTopFade, Pos.TOP_LEFT);
+        StackPane.setAlignment(secondaryMiniMapBottomFade, Pos.BOTTOM_LEFT);
+        StackPane.setAlignment(secondaryMiniMapViewport, Pos.TOP_LEFT);
+        secondaryMiniMapHost.widthProperty().addListener(ignored -> redrawSecondaryMiniMap());
+        secondaryMiniMapHost.heightProperty().addListener(ignored -> {
+            redrawSecondaryMiniMap();
+            refreshSecondaryMiniMapViewport();
+        });
+        secondaryMiniMapHost.setOnMousePressed(event -> jumpToSecondaryMiniMapPosition(event.getY()));
+        secondaryMiniMapHost.setOnMouseDragged(event -> jumpToSecondaryMiniMapPosition(event.getY()));
+    }
+
     private void scheduleMiniMapBinding() {
         if (!miniMapVisible) {
             return;
@@ -641,6 +801,9 @@ public final class EditorDocument {
             bindVerticalScrollBar();
             redrawMiniMap();
             refreshMiniMapViewport();
+            bindSecondaryVerticalScrollBar();
+            redrawSecondaryMiniMap();
+            refreshSecondaryMiniMapViewport();
         });
     }
 
@@ -671,6 +834,36 @@ public final class EditorDocument {
         }
     }
 
+    private void bindSecondaryVerticalScrollBar() {
+        if (secondaryContainer == null) {
+            return;
+        }
+        ScrollBar candidate = secondaryContainer.lookupAll(".scroll-bar").stream()
+                .filter(ScrollBar.class::isInstance)
+                .map(ScrollBar.class::cast)
+                .filter(scrollBar -> scrollBar.getOrientation() == Orientation.VERTICAL)
+                .findFirst()
+                .orElse(null);
+        if (candidate == secondaryVerticalScrollBar) {
+            return;
+        }
+
+        if (secondaryVerticalScrollBar != null) {
+            secondaryVerticalScrollBar.valueProperty().removeListener(secondaryMiniMapViewportListener);
+            secondaryVerticalScrollBar.visibleAmountProperty().removeListener(secondaryMiniMapViewportListener);
+            secondaryVerticalScrollBar.minProperty().removeListener(secondaryMiniMapViewportListener);
+            secondaryVerticalScrollBar.maxProperty().removeListener(secondaryMiniMapViewportListener);
+        }
+
+        secondaryVerticalScrollBar = candidate;
+        if (secondaryVerticalScrollBar != null) {
+            secondaryVerticalScrollBar.valueProperty().addListener(secondaryMiniMapViewportListener);
+            secondaryVerticalScrollBar.visibleAmountProperty().addListener(secondaryMiniMapViewportListener);
+            secondaryVerticalScrollBar.minProperty().addListener(secondaryMiniMapViewportListener);
+            secondaryVerticalScrollBar.maxProperty().addListener(secondaryMiniMapViewportListener);
+        }
+    }
+
     private void redrawMiniMap() {
         double width = miniMapHost.getWidth();
         double hostHeight = miniMapHost.getHeight();
@@ -684,9 +877,9 @@ public final class EditorDocument {
         List<MiniMapSupport.MiniMapSample> samples = MiniMapSupport.sampleText(codeArea.getText(), layout.sampleCount(), MINI_MAP_MAX_COLUMNS);
         miniMapRenderHeight = layout.renderHeight();
         double rowHeight = layout.rowHeight();
-        double leftPadding = miniMapContentX();
-        double rightPadding = miniMapContentRightInset();
-        double contentWidth = miniMapContentWidth();
+        double leftPadding = miniMapContentX(miniMapHost);
+        double rightPadding = miniMapContentRightInset(miniMapHost);
+        double contentWidth = miniMapContentWidth(miniMapHost);
         double usableWidth = Math.max(1d, contentWidth);
         for (int index = 0; index < samples.size(); index++) {
             MiniMapSupport.MiniMapSample sample = samples.get(index);
@@ -706,7 +899,45 @@ public final class EditorDocument {
             miniMapContent.getChildren().add(line);
         }
         miniMapContent.resizeRelocate(leftPadding, 0d, contentWidth, miniMapRenderHeight);
-        updateMiniMapFadeRegions(contentWidth, miniMapRenderHeight);
+        updateMiniMapFadeRegions(miniMapTopFade, miniMapBottomFade, miniMapHost, contentWidth, miniMapRenderHeight);
+    }
+
+    private void redrawSecondaryMiniMap() {
+        double width = secondaryMiniMapHost.getWidth();
+        double hostHeight = secondaryMiniMapHost.getHeight();
+        secondaryMiniMapContent.getChildren().clear();
+        secondaryMiniMapRenderHeight = 0d;
+        if (!miniMapVisible || !hasSplitView() || secondaryCodeArea == null || width <= 0 || hostHeight <= 0) {
+            return;
+        }
+
+        MiniMapSupport.MiniMapLayout layout = MiniMapSupport.layout(secondaryCodeArea.getText(), hostHeight, MAX_MINI_MAP_ROWS);
+        List<MiniMapSupport.MiniMapSample> samples = MiniMapSupport.sampleText(secondaryCodeArea.getText(), layout.sampleCount(), MINI_MAP_MAX_COLUMNS);
+        secondaryMiniMapRenderHeight = layout.renderHeight();
+        double rowHeight = layout.rowHeight();
+        double leftPadding = miniMapContentX(secondaryMiniMapHost);
+        double rightPadding = miniMapContentRightInset(secondaryMiniMapHost);
+        double contentWidth = miniMapContentWidth(secondaryMiniMapHost);
+        double usableWidth = Math.max(1d, contentWidth);
+        for (int index = 0; index < samples.size(); index++) {
+            MiniMapSupport.MiniMapSample sample = samples.get(index);
+            if (sample.widthFraction() <= 0d) {
+                continue;
+            }
+
+            double x = leftPadding + usableWidth * sample.indentFraction();
+            double lineWidth = Math.max(1d, usableWidth * sample.widthFraction());
+            lineWidth = Math.min(lineWidth, Math.max(1d, width - rightPadding - x));
+            double y = index * rowHeight;
+            double lineHeight = Math.max(1d, rowHeight - 0.2d);
+            Region line = new Region();
+            line.setManaged(false);
+            line.getStyleClass().add("editor-mini-map-line");
+            line.resizeRelocate(x, y, lineWidth, lineHeight);
+            secondaryMiniMapContent.getChildren().add(line);
+        }
+        secondaryMiniMapContent.resizeRelocate(leftPadding, 0d, contentWidth, secondaryMiniMapRenderHeight);
+        updateMiniMapFadeRegions(secondaryMiniMapTopFade, secondaryMiniMapBottomFade, secondaryMiniMapHost, contentWidth, secondaryMiniMapRenderHeight);
     }
 
     private void refreshMiniMapViewport() {
@@ -733,10 +964,40 @@ public final class EditorDocument {
         double viewportHeight = Math.max(Math.min(12d, renderHeight), renderHeight * indicator.heightFraction());
         viewportHeight = Math.min(renderHeight, viewportHeight);
         top = Math.max(0d, Math.min(renderHeight - viewportHeight, top));
-        double viewportX = Math.max(0d, miniMapContentX() - 2d);
-        double viewportWidth = Math.min(miniMapHost.getWidth() - viewportX, miniMapContentWidth() + 4d);
+        double viewportX = Math.max(0d, miniMapContentX(miniMapHost) - 2d);
+        double viewportWidth = Math.min(miniMapHost.getWidth() - viewportX, miniMapContentWidth(miniMapHost) + 4d);
         miniMapViewport.setVisible(true);
         miniMapViewport.resizeRelocate(viewportX, top, viewportWidth, viewportHeight);
+    }
+
+    private void refreshSecondaryMiniMapViewport() {
+        if (!miniMapVisible || !hasSplitView()) {
+            secondaryMiniMapViewport.setVisible(false);
+            return;
+        }
+
+        bindSecondaryVerticalScrollBar();
+        double hostHeight = secondaryMiniMapHost.getHeight();
+        double renderHeight = Math.max(0d, Math.min(hostHeight, secondaryMiniMapRenderHeight));
+        if (secondaryVerticalScrollBar == null || renderHeight <= 0d) {
+            secondaryMiniMapViewport.setVisible(false);
+            return;
+        }
+
+        MiniMapSupport.ViewportIndicator indicator = MiniMapSupport.viewportIndicator(
+                secondaryVerticalScrollBar.getMin(),
+                secondaryVerticalScrollBar.getMax(),
+                secondaryVerticalScrollBar.getValue(),
+                secondaryVerticalScrollBar.getVisibleAmount()
+        );
+        double top = renderHeight * indicator.startFraction();
+        double viewportHeight = Math.max(Math.min(12d, renderHeight), renderHeight * indicator.heightFraction());
+        viewportHeight = Math.min(renderHeight, viewportHeight);
+        top = Math.max(0d, Math.min(renderHeight - viewportHeight, top));
+        double viewportX = Math.max(0d, miniMapContentX(secondaryMiniMapHost) - 2d);
+        double viewportWidth = Math.min(secondaryMiniMapHost.getWidth() - viewportX, miniMapContentWidth(secondaryMiniMapHost) + 4d);
+        secondaryMiniMapViewport.setVisible(true);
+        secondaryMiniMapViewport.resizeRelocate(viewportX, top, viewportWidth, viewportHeight);
     }
 
     private void jumpToMiniMapPosition(double mouseY) {
@@ -756,36 +1017,57 @@ public final class EditorDocument {
         codeArea.requestFocus();
     }
 
+    private void jumpToSecondaryMiniMapPosition(double mouseY) {
+        double renderHeight = Math.max(0d, Math.min(secondaryMiniMapHost.getHeight(), secondaryMiniMapRenderHeight));
+        if (!miniMapVisible || secondaryVerticalScrollBar == null || renderHeight <= 0d || secondaryCodeArea == null) {
+            return;
+        }
+
+        double clickFraction = Math.max(0d, Math.min(1d, mouseY / renderHeight));
+        double nextValue = MiniMapSupport.scrollValueForFraction(
+                clickFraction,
+                secondaryVerticalScrollBar.getMin(),
+                secondaryVerticalScrollBar.getMax(),
+                secondaryVerticalScrollBar.getVisibleAmount()
+        );
+        secondaryVerticalScrollBar.setValue(nextValue);
+        secondaryCodeArea.requestFocus();
+    }
+
     private void configureFadeRegion(Region region, String styleClass) {
         region.setManaged(false);
         region.setMouseTransparent(true);
         region.getStyleClass().add(styleClass);
     }
 
-    private void updateMiniMapFadeRegions(double contentWidth, double renderHeight) {
+    private void updateMiniMapFadeRegions(Region topFade,
+                                          Region bottomFade,
+                                          StackPane host,
+                                          double contentWidth,
+                                          double renderHeight) {
         double fadeHeight = Math.min(MINI_MAP_FADE_HEIGHT, Math.max(0d, renderHeight / 3d));
         boolean showFade = fadeHeight >= 6d;
-        miniMapTopFade.setVisible(showFade);
-        miniMapBottomFade.setVisible(showFade);
+        topFade.setVisible(showFade);
+        bottomFade.setVisible(showFade);
         if (!showFade) {
             return;
         }
-        double x = miniMapContentX();
+        double x = miniMapContentX(host);
         double y = Math.max(0d, renderHeight - fadeHeight);
-        miniMapTopFade.resizeRelocate(x, 0d, contentWidth, fadeHeight);
-        miniMapBottomFade.resizeRelocate(x, y, contentWidth, fadeHeight);
+        topFade.resizeRelocate(x, 0d, contentWidth, fadeHeight);
+        bottomFade.resizeRelocate(x, y, contentWidth, fadeHeight);
     }
 
-    private double miniMapContentX() {
-        return Math.min(Math.max(0d, miniMapHost.getWidth() - 12d), MINI_MAP_CONTENT_LEFT_INSET);
+    private double miniMapContentX(StackPane host) {
+        return Math.min(Math.max(0d, host.getWidth() - 12d), MINI_MAP_CONTENT_LEFT_INSET);
     }
 
-    private double miniMapContentRightInset() {
-        return Math.min(Math.max(0d, miniMapHost.getWidth() - miniMapContentX() - 8d), MINI_MAP_CONTENT_RIGHT_INSET);
+    private double miniMapContentRightInset(StackPane host) {
+        return Math.min(Math.max(0d, host.getWidth() - miniMapContentX(host) - 8d), MINI_MAP_CONTENT_RIGHT_INSET);
     }
 
-    private double miniMapContentWidth() {
-        return Math.max(24d, miniMapHost.getWidth() - miniMapContentX() - miniMapContentRightInset());
+    private double miniMapContentWidth(StackPane host) {
+        return Math.max(24d, host.getWidth() - miniMapContentX(host) - miniMapContentRightInset(host));
     }
 
     private HighlightRange firstUncoveredRange(int start, int end) {
@@ -833,6 +1115,172 @@ public final class EditorDocument {
     private int normalizeLineIndex(int lineIndex) {
         int paragraphCount = Math.max(1, codeArea.getParagraphs().size());
         return Math.max(0, Math.min(lineIndex, paragraphCount - 1));
+    }
+
+    private boolean ensureSplit(Orientation orientation) {
+        if (hasSplitView()) {
+            splitOrientation = orientation;
+            splitEditorPane.setOrientation(orientation);
+            return false;
+        }
+
+        splitOrientation = orientation;
+        secondaryCodeArea = createSecondaryCodeArea();
+        secondaryContainer = new VirtualizedScrollPane<>(secondaryCodeArea);
+        secondaryContainer.setMinHeight(0d);
+        secondaryContainer.setMaxHeight(Double.MAX_VALUE);
+        secondaryMiniMapHost.setManaged(miniMapVisible);
+        secondaryMiniMapHost.setVisible(miniMapVisible);
+        HBox secondaryEditorPane = new HBox();
+        secondaryEditorPane.getStyleClass().add("editor-document-editor-pane");
+        secondaryEditorPane.setNodeOrientation(NodeOrientation.LEFT_TO_RIGHT);
+        secondaryEditorPane.setFillHeight(true);
+        secondaryEditorPane.setMinHeight(0d);
+        secondaryEditorPane.setPrefHeight(0d);
+        secondaryEditorPane.setMaxHeight(Double.MAX_VALUE);
+        HBox.setHgrow(secondaryContainer, Priority.ALWAYS);
+        secondaryEditorPane.getChildren().setAll(secondaryContainer, secondaryMiniMapHost);
+
+        splitEditorPane = new SplitPane();
+        splitEditorPane.getStyleClass().add("editor-document-split-pane");
+        splitEditorPane.setOrientation(orientation);
+        splitEditorPane.getItems().setAll(primaryEditorPane, secondaryEditorPane);
+        splitEditorPane.setDividerPositions(0.5d);
+
+        editorHost.getChildren().setAll(splitEditorPane);
+        attachSecondaryMiniMapListeners();
+        scheduleMiniMapBinding();
+        secondaryCodeArea.requestFocus();
+        return true;
+    }
+
+    private CodeArea createSecondaryCodeArea() {
+        CodeArea secondary = new CodeArea();
+        secondary.getStyleClass().setAll(codeArea.getStyleClass());
+        secondary.setWrapText(codeArea.isWrapText());
+        secondary.setStyle(codeArea.getStyle());
+        secondary.replaceText(codeArea.getText());
+        secondary.moveTo(codeArea.getCaretPosition());
+        secondary.setEditable(codeArea.isEditable());
+        wireSplitEditorSync(codeArea, secondary);
+        splitEditorInitializer.accept(secondary);
+        return secondary;
+    }
+
+    private void wireSplitEditorSync(CodeArea primary, CodeArea secondary) {
+        primarySplitTextSyncListener = (observable, previous, current) -> queueSplitEditorTextSync(primary, secondary);
+        secondarySplitTextSyncListener = (observable, previous, current) -> queueSplitEditorTextSync(secondary, primary);
+        primarySplitCaretSyncListener = (observable, previous, current) -> syncSplitEditorCaret(primary, secondary);
+        secondarySplitCaretSyncListener = (observable, previous, current) -> syncSplitEditorCaret(secondary, primary);
+        primary.textProperty().addListener(primarySplitTextSyncListener);
+        secondary.textProperty().addListener(secondarySplitTextSyncListener);
+        primary.caretPositionProperty().addListener(primarySplitCaretSyncListener);
+        secondary.caretPositionProperty().addListener(secondarySplitCaretSyncListener);
+    }
+
+    private void attachSecondaryMiniMapListeners() {
+        if (secondaryCodeArea == null || secondaryContainer == null) {
+            return;
+        }
+
+        secondaryMiniMapTextListener = (observable, previous, current) -> redrawSecondaryMiniMap();
+        secondaryMiniMapSceneListener = (observable, previous, current) -> scheduleMiniMapBinding();
+        secondaryMiniMapLayoutListener = (observable, previous, current) -> scheduleMiniMapBinding();
+        secondaryCodeArea.textProperty().addListener(secondaryMiniMapTextListener);
+        secondaryCodeArea.sceneProperty().addListener(secondaryMiniMapSceneListener);
+        secondaryContainer.layoutBoundsProperty().addListener(secondaryMiniMapLayoutListener);
+    }
+
+    private void removeSplitEditorListeners() {
+        if (primarySplitTextSyncListener != null) {
+            codeArea.textProperty().removeListener(primarySplitTextSyncListener);
+            primarySplitTextSyncListener = null;
+        }
+        if (primarySplitCaretSyncListener != null) {
+            codeArea.caretPositionProperty().removeListener(primarySplitCaretSyncListener);
+            primarySplitCaretSyncListener = null;
+        }
+        if (secondaryCodeArea != null) {
+            if (secondarySplitTextSyncListener != null) {
+                secondaryCodeArea.textProperty().removeListener(secondarySplitTextSyncListener);
+                secondarySplitTextSyncListener = null;
+            }
+            if (secondarySplitCaretSyncListener != null) {
+                secondaryCodeArea.caretPositionProperty().removeListener(secondarySplitCaretSyncListener);
+                secondarySplitCaretSyncListener = null;
+            }
+            if (secondaryMiniMapTextListener != null) {
+                secondaryCodeArea.textProperty().removeListener(secondaryMiniMapTextListener);
+                secondaryMiniMapTextListener = null;
+            }
+            if (secondaryMiniMapSceneListener != null) {
+                secondaryCodeArea.sceneProperty().removeListener(secondaryMiniMapSceneListener);
+                secondaryMiniMapSceneListener = null;
+            }
+        }
+        if (secondaryContainer != null && secondaryMiniMapLayoutListener != null) {
+            secondaryContainer.layoutBoundsProperty().removeListener(secondaryMiniMapLayoutListener);
+            secondaryMiniMapLayoutListener = null;
+        }
+    }
+
+    private void queueSplitEditorTextSync(CodeArea source, CodeArea target) {
+        if (source == null || target == null) {
+            return;
+        }
+        pendingSplitSyncSource = source;
+        pendingSplitSyncTarget = target;
+        if (splitTextSyncScheduled) {
+            return;
+        }
+        splitTextSyncScheduled = true;
+        Platform.runLater(this::flushSplitEditorTextSync);
+    }
+
+    private void flushSplitEditorTextSync() {
+        splitTextSyncScheduled = false;
+        CodeArea source = pendingSplitSyncSource;
+        CodeArea target = pendingSplitSyncTarget;
+        pendingSplitSyncSource = null;
+        pendingSplitSyncTarget = null;
+        syncSplitEditorText(source, target);
+    }
+
+    private void syncSplitEditorText(CodeArea source, CodeArea target) {
+        if (synchronizingSplitEditors || target == null || source == null) {
+            if (source != null && target != null) {
+                queueSplitEditorTextSync(source, target);
+            }
+            return;
+        }
+        if (Objects.equals(source.getText(), target.getText())) {
+            return;
+        }
+        synchronizingSplitEditors = true;
+        try {
+            int targetCaret = Math.max(0, Math.min(source.getCaretPosition(), source.getLength()));
+            target.replaceText(source.getText());
+            target.moveTo(Math.min(targetCaret, target.getLength()));
+        } finally {
+            synchronizingSplitEditors = false;
+        }
+    }
+
+    private void syncSplitEditorCaret(CodeArea source, CodeArea target) {
+        if (synchronizingSplitEditors || target == null || source == null) {
+            return;
+        }
+        int sourceCaret = source.getCaretPosition();
+        int targetCaret = Math.max(0, Math.min(sourceCaret, target.getLength()));
+        if (target.getCaretPosition() == targetCaret) {
+            return;
+        }
+        synchronizingSplitEditors = true;
+        try {
+            target.moveTo(targetCaret);
+        } finally {
+            synchronizingSplitEditors = false;
+        }
     }
 
     private int bookmarkIndexForLine(int lineIndex) {

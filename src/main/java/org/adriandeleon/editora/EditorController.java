@@ -287,6 +287,15 @@ public class EditorController {
     private Button saveFileAsToolbarButton;
 
     @FXML
+    private Button splitRightToolbarButton;
+
+    @FXML
+    private Button splitDownToolbarButton;
+
+    @FXML
+    private Button unsplitToolbarButton;
+
+    @FXML
     private Button commandPaletteToolbarButton;
 
     @FXML
@@ -424,6 +433,8 @@ public class EditorController {
     private EditorTheme settingsThemeBeforePreview;
     private boolean settingsThemePreviewActive;
     private volatile boolean shuttingDown;
+    private boolean emacsWindowCommandPending;
+    private long emacsWindowCommandTimestampNanos;
     private SplitPane.Divider trackedToolDockDivider;
     private final ChangeListener<Node> focusOwnerChangeListener = (observable, previous, current) -> updateKeybindingScopeStatus();
     private final ChangeListener<Number> toolDockDividerPositionListener = (observable, ignored, current) -> {
@@ -683,6 +694,21 @@ public class EditorController {
     @FXML
     private void onShowCommandPalette() {
         showCommandPalette();
+    }
+
+    @FXML
+    private void onSplitRight() {
+        splitActiveDocumentRight();
+    }
+
+    @FXML
+    private void onSplitDown() {
+        splitActiveDocumentDown();
+    }
+
+    @FXML
+    private void onUnsplit() {
+        unsplitActiveDocument();
     }
 
     @FXML
@@ -1405,6 +1431,10 @@ public class EditorController {
                 new CommandAction("Toggle Project Explorer", "Show or hide Project Explorer in the tool dock", "View", "⌥⌘E", List.of("explorer", "sidebar", "project", "collapse", "hide", "tool dock"), this::onToggleProjectExplorer),
                 new CommandAction("Toggle Bookmarks Tool Window", "Show or hide Bookmarks in its own tool window", "View", "", List.of("bookmarks", "bookmark", "tool window", "sidebar", "navigator", "collapse", "hide"), this::onToggleBookmarkWindow),
                 new CommandAction("Show Bookmarks Tool Window", "Focus the bookmark list in the tool dock", "View", "", List.of("bookmark", "bookmarks", "tool window", "sidebar", "navigator"), this::showBookmarksToolWindow),
+                new CommandAction("Split Right", "Split the active editor into side-by-side views", "View", "", List.of("split", "right", "pane", "window", "c-x 3"), this::splitActiveDocumentRight),
+                new CommandAction("Split Down", "Split the active editor into stacked views", "View", "", List.of("split", "down", "horizontal", "pane", "window", "c-x 2"), this::splitActiveDocumentDown),
+                new CommandAction("Unsplit", "Close the secondary split view for the active editor", "View", "", List.of("unsplit", "single view", "pane", "window", "c-x 0"), this::unsplitActiveDocument),
+                new CommandAction("Next Split View", "Move focus between split editor views", "View", "", List.of("split", "other window", "focus", "c-x o"), this::focusOtherSplitView),
                 new CommandAction("Move Project Explorer Left", "Dock Project Explorer on the left side of the tool dock", "View", "", List.of("explorer", "project", "tool window", "left", "dock", "sidebar", "tool dock"), this::moveProjectExplorerLeft),
                 new CommandAction("Move Project Explorer Right", "Dock Project Explorer on the right side of the tool dock", "View", "", List.of("explorer", "project", "tool window", "right", "dock", "sidebar", "tool dock"), this::moveProjectExplorerRight),
                 new CommandAction("Toggle Status Bar", "Show or hide the bottom status bar", "View", "⌥⌘B", List.of("status", "footer", "bottom", "hide"), this::onToggleStatusBar),
@@ -1778,6 +1808,9 @@ public class EditorController {
         if (name.contains("bookmark")) {
             return "bi-bookmark";
         }
+        if (name.contains("split") || name.contains("unsplit") || name.contains("window")) {
+            return "bi-layout-split";
+        }
         if (name.contains("keyboard") || category.contains("help")) {
             return "bi-keyboard";
         }
@@ -1879,6 +1912,7 @@ public class EditorController {
                 currentSettings.miniMapVisible()
         );
         document.setReadOnlyToggleHandler(this::toggleReadOnly);
+        document.setSplitEditorInitializer(splitEditor -> installSplitEditorBehavior(document, splitEditor));
         if (filePath != null) {
             document.setFilePath(filePath.toAbsolutePath().normalize());
             document.setReadOnly(ReadOnlyOpenRules.shouldOpenReadOnly(filePath, currentSettings));
@@ -1895,8 +1929,8 @@ public class EditorController {
         CodeArea codeArea = document.getCodeArea();
         IntFunction<Node> lineNumbers = LineNumberFactory.get(codeArea);
         codeArea.setParagraphGraphicFactory(lineIndex -> createLineFringe(document, lineNumbers, lineIndex));
-        installEditorContextMenu(document);
-        installEditorKeyBindings(document);
+        installEditorContextMenu(document, codeArea);
+        installEditorKeyBindings(document, codeArea);
 
         codeArea.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(150))
@@ -1945,11 +1979,30 @@ public class EditorController {
         }));
     }
 
-    private void installEditorKeyBindings(EditorDocument document) {
-        document.getCodeArea().addEventFilter(KeyEvent.KEY_PRESSED, event -> handleEditorKeyBindings(document, event));
+    private void installSplitEditorBehavior(EditorDocument document, CodeArea splitEditor) {
+        IntFunction<Node> lineNumbers = LineNumberFactory.get(splitEditor);
+        splitEditor.setParagraphGraphicFactory(lineIndex -> createLineFringe(document, lineNumbers, lineIndex));
+        installEditorContextMenu(document, splitEditor);
+        installEditorKeyBindings(document, splitEditor);
+        splitEditor.focusedProperty().addListener(onCurrentChange(current -> {
+            if (current) {
+                editorTabPane.getSelectionModel().select(document.getTab());
+                updateEditActionAvailability(document);
+                updateCaretStatus(document);
+                updateKeybindingScopeStatus();
+            }
+        }));
+    }
+
+    private void installEditorKeyBindings(EditorDocument document, CodeArea editor) {
+        editor.addEventFilter(KeyEvent.KEY_PRESSED, event -> handleEditorKeyBindings(document, event));
     }
 
     private void handleEditorKeyBindings(EditorDocument document, KeyEvent event) {
+        if (handleEmacsWindowPrefix(document, event)) {
+            event.consume();
+            return;
+        }
         if (document.isReadOnly()) {
             if (handleReadOnlyNavigation(document, event)) {
                 event.consume();
@@ -1960,20 +2013,86 @@ public class EditorController {
                 || handleEmacsMetaEditing(document, event)
                 || handleEmacsControlNavigation(document, event)
                 || handleEmacsMetaNavigation(document, event)) {
+            emacsWindowCommandPending = false;
             event.consume();
         }
     }
 
+    private boolean handleEmacsWindowPrefix(EditorDocument document, KeyEvent event) {
+        if (event == null) {
+            return false;
+        }
+
+        if (emacsWindowCommandPending
+                && System.nanoTime() - emacsWindowCommandTimestampNanos > Duration.ofSeconds(4).toNanos()) {
+            emacsWindowCommandPending = false;
+        }
+
+        if (emacsWindowCommandPending) {
+            emacsWindowCommandPending = false;
+            return switch (event.getCode()) {
+                case DIGIT2, NUMPAD2 -> {
+                    splitActiveDocumentDown();
+                    yield true;
+                }
+                case DIGIT3, NUMPAD3 -> {
+                    splitActiveDocumentRight();
+                    yield true;
+                }
+                case DIGIT0, NUMPAD0 -> {
+                    unsplitActiveDocument();
+                    yield true;
+                }
+                case O -> {
+                    focusOtherSplitView();
+                    yield true;
+                }
+                default -> false;
+            };
+        }
+
+        if (EmacsKeyBindingSupport.isControlChord(
+                event.isControlDown(),
+                event.isAltDown(),
+                event.isMetaDown(),
+                event.isShiftDown())
+                && event.getCode() == KeyCode.X) {
+            emacsWindowCommandPending = true;
+            emacsWindowCommandTimestampNanos = System.nanoTime();
+            statusMessage("C-x window command: 2 split down, 3 split right, 0 unsplit, o other view");
+            return true;
+        }
+
+        return false;
+    }
+
     private boolean handleReadOnlyNavigation(EditorDocument document, KeyEvent event) {
+        CodeArea editor = event != null && event.getSource() instanceof CodeArea sourceEditor
+                ? sourceEditor
+                : document.getCodeArea();
         if (event.getCode() == KeyCode.SPACE && !event.isControlDown() && !event.isAltDown() && !event.isShortcutDown()) {
-            document.scrollPageDown();
+            scrollEditorPage(editor, true);
             return true;
         }
         if (event.getCode() == KeyCode.BACK_SPACE && !event.isControlDown() && !event.isAltDown() && !event.isShortcutDown()) {
-            document.scrollPageUp();
+            scrollEditorPage(editor, false);
             return true;
         }
         return false;
+    }
+
+    private void scrollEditorPage(CodeArea editor, boolean forward) {
+        if (editor == null) {
+            return;
+        }
+        int visibleParagraphs = Math.max(1, editor.getVisibleParagraphs().size());
+        int currentParagraph = editor.getCurrentParagraph();
+        int paragraphCount = Math.max(1, editor.getParagraphs().size());
+        int targetParagraph = forward
+                ? Math.min(currentParagraph + visibleParagraphs, paragraphCount - 1)
+                : Math.max(currentParagraph - visibleParagraphs, 0);
+        editor.moveTo(targetParagraph, 0);
+        editor.requestFollowCaret();
     }
 
     private boolean handleEmacsControlEditing(EditorDocument document, KeyEvent event) {
@@ -2228,7 +2347,7 @@ public class EditorController {
         Clipboard.getSystemClipboard().setContent(content);
     }
 
-    private void installEditorContextMenu(EditorDocument document) {
+    private void installEditorContextMenu(EditorDocument document, CodeArea editor) {
         MenuItem undoItem = new MenuItem("Undo");
         undoItem.setOnAction(event -> handleEvent(event, () -> {
             editorTabPane.getSelectionModel().select(document.getTab());
@@ -2269,18 +2388,18 @@ public class EditorController {
         );
         contextMenu.setOnShowing(event -> handleEvent(event, () -> {
             editorTabPane.getSelectionModel().select(document.getTab());
-            updateContextMenuAvailability(document, undoItem, redoItem, cutItem, copyItem, pasteItem);
+            updateContextMenuAvailability(document, editor, undoItem, redoItem, cutItem, copyItem, pasteItem);
         }));
-        document.getCodeArea().setContextMenu(contextMenu);
+        editor.setContextMenu(contextMenu);
     }
 
     private void updateContextMenuAvailability(EditorDocument document,
+                                               CodeArea editor,
                                                MenuItem undoItem,
                                                MenuItem redoItem,
                                                MenuItem cutItem,
                                                MenuItem copyItem,
                                                MenuItem pasteItem) {
-        CodeArea editor = document.getCodeArea();
         boolean hasSelection = editor.getSelection().getLength() > 0;
         boolean clipboardHasString = Clipboard.getSystemClipboard().hasString();
         boolean readOnly = document.isReadOnly();
@@ -2645,6 +2764,57 @@ public class EditorController {
         }
     }
 
+    private void splitActiveDocumentRight() {
+        getActiveDocument().ifPresent(document -> {
+            boolean created = document.splitRight();
+            document.applyEditorPresentationToSplitView();
+            if (created) {
+                document.secondaryCodeArea().ifPresent(this::applyEditorFontSettings);
+            }
+            refreshLineFringe(document);
+            applyDocumentHighlighting(document);
+            syncToolbarButtonStates();
+            statusMessage(created ? "Split editor right" : "Editor moved to right split layout");
+        });
+    }
+
+    private void splitActiveDocumentDown() {
+        getActiveDocument().ifPresent(document -> {
+            boolean created = document.splitDown();
+            document.applyEditorPresentationToSplitView();
+            if (created) {
+                document.secondaryCodeArea().ifPresent(this::applyEditorFontSettings);
+            }
+            refreshLineFringe(document);
+            applyDocumentHighlighting(document);
+            syncToolbarButtonStates();
+            statusMessage(created ? "Split editor down" : "Editor moved to stacked split layout");
+        });
+    }
+
+    private void unsplitActiveDocument() {
+        getActiveDocument().ifPresent(document -> {
+            if (document.unsplit()) {
+                refreshLineFringe(document);
+                syncToolbarButtonStates();
+                statusMessage("Split editor closed");
+            } else {
+                statusMessage("Editor is already unsplit");
+            }
+        });
+    }
+
+    private void focusOtherSplitView() {
+        getActiveDocument().ifPresent(document -> {
+            if (!document.focusOtherSplitView()) {
+                statusMessage("Split editor is not active");
+                return;
+            }
+            updateCaretStatus(document);
+            updateKeybindingScopeStatus();
+        });
+    }
+
     private void toggleBookmarkAtCaret() {
         getActiveDocument().ifPresent(document -> toggleBookmark(document, document.getCodeArea().getCurrentParagraph(), false));
     }
@@ -2799,6 +2969,10 @@ public class EditorController {
         }
         IntFunction<Node> lineNumbers = LineNumberFactory.get(document.getCodeArea());
         document.getCodeArea().setParagraphGraphicFactory(lineIndex -> createLineFringe(document, lineNumbers, lineIndex));
+        document.secondaryCodeArea().ifPresent(splitEditor -> {
+            IntFunction<Node> splitLineNumbers = LineNumberFactory.get(splitEditor);
+            splitEditor.setParagraphGraphicFactory(lineIndex -> createLineFringe(document, splitLineNumbers, lineIndex));
+        });
     }
 
     private void persistBookmarks() {
@@ -2854,7 +3028,7 @@ public class EditorController {
         }
 
         EditorDocument activeDocument = getActiveDocument().orElse(null);
-        boolean editorFocused = activeDocument != null && activeDocument.getCodeArea().isFocused();
+        boolean editorFocused = activeDocument != null && activeDocument.activeCodeArea().isFocused();
         boolean readOnly = activeDocument != null && activeDocument.isReadOnly();
         keybindingScopeStatusLabel.setText(StatusBarSupport.formatKeybindingScope(editorFocused, readOnly));
     }
@@ -2928,7 +3102,7 @@ public class EditorController {
             return;
         }
 
-        CodeArea codeArea = document.getCodeArea();
+        CodeArea codeArea = document.activeCodeArea();
         String status = "Line: " + (codeArea.getCurrentParagraph() + 1) + "  Col: " + (codeArea.getCaretColumn() + 1);
         if (document.hasMark()) {
             int selectionLength = codeArea.getSelection().getLength();
@@ -3173,6 +3347,7 @@ public class EditorController {
             document.getCodeArea().setWrapText(settings.wrapText());
             document.setMiniMapVisible(settings.miniMapVisible());
             applyEditorFontSettings(document.getCodeArea());
+            document.applyEditorPresentationToSplitView();
             analyzeDocument(document);
         });
         syncToolbarButtonStates();
@@ -3756,6 +3931,7 @@ public class EditorController {
     }
 
     private void syncToolbarButtonStates() {
+        EditorDocument activeDocument = getActiveDocument().orElse(null);
         setToolbarButtonActive(commandPaletteToolbarButton, commandPaletteOverlay != null && commandPaletteOverlay.isVisible());
         setToolbarButtonActive(searchToolbarButton, searchBarVisible);
         setToolbarButtonActive(projectExplorerToolbarButton, toolDockVisible);
@@ -3763,9 +3939,14 @@ public class EditorController {
         setToolbarButtonActive(projectExplorerRightRailButton, toolDockVisible && toolDockSide == ToolWindowSide.RIGHT);
         setToolbarButtonActive(bookmarkLeftRailButton, bookmarkWindowVisible && toolDockSide == ToolWindowSide.LEFT);
         setToolbarButtonActive(bookmarkRightRailButton, bookmarkWindowVisible && toolDockSide == ToolWindowSide.RIGHT);
+        setToolbarButtonActive(splitRightToolbarButton, activeDocument != null && activeDocument.hasSplitView());
+        setToolbarButtonActive(splitDownToolbarButton, activeDocument != null && activeDocument.hasSplitView());
+        if (unsplitToolbarButton != null) {
+            unsplitToolbarButton.setDisable(activeDocument == null || !activeDocument.hasSplitView());
+        }
         setToolbarButtonActive(statusBarToolbarButton, statusBarVisible);
         setToolbarButtonActive(settingsToolbarButton, settingsOverlay != null && settingsOverlay.isVisible());
-        setToolbarButtonActive(readOnlyToolbarButton, getActiveDocument().map(EditorDocument::isReadOnly).orElse(false));
+        setToolbarButtonActive(readOnlyToolbarButton, activeDocument != null && activeDocument.isReadOnly());
     }
 
     private void setToolbarButtonActive(Button button, boolean active) {
@@ -4092,7 +4273,9 @@ public class EditorController {
         }
 
         if (matches.isEmpty()) {
-            document.getCodeArea().setStyleSpans(0, baseHighlighting);
+            StyleSpans<Collection<String>> resolvedBaseHighlighting = baseHighlighting;
+            document.getCodeArea().setStyleSpans(0, resolvedBaseHighlighting);
+            document.secondaryCodeArea().ifPresent(splitEditor -> splitEditor.setStyleSpans(0, resolvedBaseHighlighting));
             return;
         }
 
@@ -4101,6 +4284,7 @@ public class EditorController {
                 this::mergeStyleClasses
         );
         document.getCodeArea().setStyleSpans(0, mergedHighlighting);
+        document.secondaryCodeArea().ifPresent(splitEditor -> splitEditor.setStyleSpans(0, mergedHighlighting));
     }
 
     private void applyHighlightRange(EditorDocument document, int startOffset, StyleSpans<Collection<String>> highlighting) {
@@ -4112,6 +4296,7 @@ public class EditorController {
             return;
         }
         document.getCodeArea().setStyleSpans(startOffset, highlighting);
+        document.secondaryCodeArea().ifPresent(splitEditor -> splitEditor.setStyleSpans(startOffset, highlighting));
     }
 
     private StyleSpans<Collection<String>> replaceHighlightRange(StyleSpans<Collection<String>> current,

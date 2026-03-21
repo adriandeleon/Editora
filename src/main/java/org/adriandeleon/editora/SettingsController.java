@@ -684,6 +684,10 @@ public class SettingsController {
                 "  Kill word forward .......... ⌥D",
                 "  Kill word backward ......... ⌥⌫",
                 "  Yank clipboard ............. ⌃Y",
+                "  Split down ................. ⌃X 2",
+                "  Split right ................ ⌃X 3",
+                "  Unsplit .................... ⌃X 0",
+                "  Other split view ........... ⌃X O",
                 "",
                 "Read-only mode (active tab)",
                 "  Page down / up ............. Space / ⌫");
