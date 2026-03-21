@@ -792,7 +792,7 @@ public class EditorController {
         projectTreeView.setCellFactory(this::createProjectTreeCell);
         
         projectTreeView.setOnMouseClicked(event -> {
-            if (event.getClickCount() == 2) {
+            if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 1) {
                 openSelectedProjectTreeItem();
             }
         });
