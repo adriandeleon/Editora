@@ -56,7 +56,45 @@ final class TextMateLanguageService implements LanguageService {
     @Override
     public LanguageAnalysis analyze(String text) {
         String normalizedText = text == null ? "" : text;
-        return new LanguageAnalysis(TextMateTokenizer.computeHighlighting(grammar, normalizedText), List.of());
+        return new LanguageAnalysis(
+                TextMateTokenizer.computeHighlighting(grammar, normalizedText),
+                List.of(),
+                computeFoldRanges(normalizedText));
+    }
+
+    private List<FoldRange> computeFoldRanges(String text) {
+        if (text.isEmpty()) {
+            return List.of();
+        }
+        return switch (foldingMode()) {
+            case BRACE -> FoldingSupport.computeBraceFolds(text);
+            case INDENT -> FoldingSupport.computeIndentFolds(text);
+            case MARKDOWN -> FoldingSupport.computeMarkdownFolds(text);
+            case NONE -> List.of();
+        };
+    }
+
+    private FoldingMode foldingMode() {
+        if (fileTypes.stream().anyMatch(t -> t.equals("py") || t.equals("pyw"))) {
+            return FoldingMode.INDENT;
+        }
+        if (fileTypes.stream().anyMatch(t -> t.equals("yaml") || t.equals("yml"))) {
+            return FoldingMode.INDENT;
+        }
+        if (fileTypes.stream().anyMatch(t -> t.equals("sh") || t.equals("bash") || t.equals("zsh"))) {
+            return FoldingMode.INDENT;
+        }
+        if (fileTypes.stream().anyMatch(t -> t.equals("md") || t.equals("markdown"))) {
+            return FoldingMode.MARKDOWN;
+        }
+        if (fileTypes.stream().anyMatch(t -> t.equals("sql"))) {
+            return FoldingMode.NONE;
+        }
+        return FoldingMode.BRACE;
+    }
+
+    private enum FoldingMode {
+        BRACE, INDENT, MARKDOWN, NONE
     }
 
     @Override

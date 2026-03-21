@@ -7,6 +7,7 @@ import javafx.geometry.Bounds;
 import javafx.geometry.Orientation;
 import javafx.geometry.NodeOrientation;
 import org.adriandeleon.editora.languages.Diagnostic;
+import org.adriandeleon.editora.languages.FoldRange;
 import org.adriandeleon.editora.languages.LanguageService;
 import org.adriandeleon.editora.editor.MiniMapSupport;
 import org.adriandeleon.editora.editor.ProgressiveHighlightSupport;
@@ -121,6 +122,11 @@ public final class EditorDocument {
     private ChangeListener<Bounds> secondaryMiniMapLayoutListener;
     private Consumer<CodeArea> splitEditorInitializer = ignored -> {
     };
+
+    // ---- Code-folding state ----
+    private List<FoldRange> foldableRanges = new ArrayList<>();
+    private final Map<Integer, FoldedBlock> activeFolds = new LinkedHashMap<>();
+    private boolean foldingOperation = false;
 
     public EditorDocument(String untitledName,
                           CodeArea codeArea,
@@ -1343,6 +1349,153 @@ public final class EditorDocument {
             }
         }
         return Math.max(0, Math.min(preferredLine, maxLineIndex));
+    }
+
+    // =========================================================================
+    // Code-folding public API
+    // =========================================================================
+
+    /** Replace the set of foldable ranges (called from EditorController after analysis). */
+    public void setFoldableRanges(List<FoldRange> ranges) {
+        foldableRanges = new ArrayList<>(ranges == null ? List.of() : ranges);
+    }
+
+    public List<FoldRange> getFoldableRanges() {
+        return List.copyOf(foldableRanges);
+    }
+
+    /** Return the fold range whose startLine equals {@code startLine}, or {@code null}. */
+    public FoldRange getFoldableRangeAt(int startLine) {
+        for (FoldRange range : foldableRanges) {
+            if (range.startLine() == startLine) {
+                return range;
+            }
+        }
+        return null;
+    }
+
+    public boolean isFoldedAt(int lineIndex) {
+        return activeFolds.containsKey(lineIndex);
+    }
+
+    public boolean hasActiveFolds() {
+        return !activeFolds.isEmpty();
+    }
+
+    /** Returns a snapshot of the current fold start-line indices (unordered). */
+    public List<Integer> activeFoldStartLines() {
+        return new ArrayList<>(activeFolds.keySet());
+    }
+
+    /** True while a fold/unfold text manipulation is in progress (suppresses re-analysis). */
+    public boolean isFoldingOperation() {
+        return foldingOperation;
+    }
+
+    /**
+     * Collapses the foldable range that starts at {@code startLine} by removing the hidden
+     * content from the CodeArea and storing it for later restoration.
+     *
+     * @return true if the fold was applied, false if the line is not foldable or already folded
+     */
+    public boolean foldAt(int startLine) {
+        if (isFoldedAt(startLine)) {
+            return false;
+        }
+        FoldRange range = getFoldableRangeAt(startLine);
+        if (range == null) {
+            return false;
+        }
+        int endLine = range.endLine();
+        int paraCount = codeArea.getParagraphs().size();
+        if (startLine >= paraCount || endLine >= paraCount) {
+            return false;
+        }
+
+        foldingOperation = true;
+        try {
+            int startOffset = codeArea.getAbsolutePosition(startLine, codeArea.getParagraph(startLine).length());
+            int endOffset = codeArea.getAbsolutePosition(endLine, codeArea.getParagraph(endLine).length());
+            if (endOffset <= startOffset) {
+                return false;
+            }
+            String hiddenText = codeArea.getText(startOffset, endOffset);
+            codeArea.replaceText(startOffset, endOffset, "");
+
+            int lineCount = endLine - startLine;
+            activeFolds.put(startLine, new FoldedBlock(lineCount, hiddenText));
+
+            // Shift or remove foldable ranges that are affected by this fold.
+            List<FoldRange> updated = new ArrayList<>();
+            for (FoldRange r : foldableRanges) {
+                if (r.startLine() == startLine && r.endLine() == endLine) {
+                    continue; // this range is now folded – drop it from the list
+                }
+                if (r.startLine() > startLine) {
+                    int newStart = r.startLine() - lineCount;
+                    int newEnd = r.endLine() - lineCount;
+                    if (newEnd > newStart) {
+                        updated.add(new FoldRange(newStart, newEnd));
+                    }
+                } else if (r.endLine() > startLine) {
+                    // Range crosses the fold boundary – clamp to the fold start line.
+                    if (startLine > r.startLine()) {
+                        updated.add(new FoldRange(r.startLine(), startLine));
+                    }
+                } else {
+                    updated.add(r);
+                }
+            }
+            foldableRanges = updated;
+            return true;
+        } finally {
+            foldingOperation = false;
+        }
+    }
+
+    /**
+     * Restores the content that was hidden by {@link #foldAt} at {@code startLine}.
+     *
+     * @return true if the fold was restored, false if the line is not currently folded
+     */
+    public boolean unfoldAt(int startLine) {
+        FoldedBlock block = activeFolds.get(startLine);
+        if (block == null) {
+            return false;
+        }
+        int paraCount = codeArea.getParagraphs().size();
+        if (startLine >= paraCount) {
+            // Stale fold – discard without restoring (should be rare).
+            activeFolds.remove(startLine);
+            return false;
+        }
+
+        foldingOperation = true;
+        try {
+            int insertOffset = codeArea.getAbsolutePosition(startLine, codeArea.getParagraph(startLine).length());
+            codeArea.insertText(insertOffset, block.hiddenText());
+            activeFolds.remove(startLine);
+
+            // Shift subsequent ranges back and re-add the restored range.
+            int lineCount = block.foldedLineCount();
+            List<FoldRange> updated = new ArrayList<>();
+            for (FoldRange r : foldableRanges) {
+                if (r.startLine() >= startLine) {
+                    updated.add(new FoldRange(r.startLine() + lineCount, r.endLine() + lineCount));
+                } else {
+                    updated.add(r);
+                }
+            }
+            updated.add(new FoldRange(startLine, startLine + lineCount));
+            foldableRanges = updated;
+            return true;
+        } finally {
+            foldingOperation = false;
+        }
+    }
+
+    /** Fold stored block metadata (hidden text + number of hidden lines). */
+    public record FoldedBlock(int foldedLineCount, String hiddenText) {
     }
 
     private record HighlightRange(int start, int end) {

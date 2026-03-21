@@ -7,11 +7,19 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-public record LanguageAnalysis(StyleSpans<Collection<String>> highlighting, List<Diagnostic> diagnostics) {
+public record LanguageAnalysis(
+        StyleSpans<Collection<String>> highlighting,
+        List<Diagnostic> diagnostics,
+        List<FoldRange> foldRanges) {
+
+    public LanguageAnalysis {
+        foldRanges = foldRanges == null ? List.of() : List.copyOf(foldRanges);
+    }
+
     public static LanguageAnalysis plainText(String text) {
         StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
         builder.add(Collections.emptyList(), text.length());
-        return new LanguageAnalysis(builder.create(), List.of());
+        return new LanguageAnalysis(builder.create(), List.of(), List.of());
     }
 }
 

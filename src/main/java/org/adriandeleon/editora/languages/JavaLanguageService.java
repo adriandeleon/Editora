@@ -61,7 +61,7 @@ public final class JavaLanguageService implements LanguageService {
 
     @Override
     public LanguageAnalysis analyze(String text) {
-        return new LanguageAnalysis(computeHighlighting(text), computeDiagnostics(text));
+        return new LanguageAnalysis(computeHighlighting(text), computeDiagnostics(text), FoldingSupport.computeBraceFolds(text));
     }
 
     private StyleSpans<Collection<String>> computeHighlighting(String text) {

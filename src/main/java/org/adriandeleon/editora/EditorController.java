@@ -70,6 +70,7 @@ import org.adriandeleon.editora.editor.ProgressiveHighlightSupport;
 import org.adriandeleon.editora.editor.ToolWindowLayoutSupport;
 import org.adriandeleon.editora.languages.Diagnostic;
 import org.adriandeleon.editora.languages.DiagnosticSeverity;
+import org.adriandeleon.editora.languages.FoldRange;
 import org.adriandeleon.editora.languages.LanguageAnalysis;
 import org.adriandeleon.editora.languages.LanguagePreviewSpec;
 import org.adriandeleon.editora.languages.LanguageService;
@@ -1452,7 +1453,10 @@ public class EditorController {
                 new CommandAction("Toggle Read-Only Mode", "Make the active document read-only or editable again; Space scrolls down, Backspace scrolls up", "Edit", "", List.of("read only", "readonly", "lock", "view", "immutable", "protect"), this::toggleReadOnly),
                 new CommandAction("Toggle Bookmark", "Add or remove a bookmark at the active line", "Edit", "", List.of("bookmark", "gutter", "mark", "line"), this::toggleBookmarkAtCaret),
                 new CommandAction("Add Bookmark", "Add a bookmark at the active line", "Edit", "", List.of("bookmark", "add", "mark", "line"), this::addBookmarkAtCaret),
-                new CommandAction("Remove Bookmark", "Remove the bookmark at the active line", "Edit", "", List.of("bookmark", "remove", "clear", "line"), this::removeBookmarkAtCaret)
+                new CommandAction("Remove Bookmark", "Remove the bookmark at the active line", "Edit", "", List.of("bookmark", "remove", "clear", "line"), this::removeBookmarkAtCaret),
+                new CommandAction("Toggle Fold", "Fold or unfold the block at the cursor line", "Edit", "", List.of("fold", "collapse", "unfold", "expand", "block"), this::toggleFoldAtCaret),
+                new CommandAction("Fold All", "Collapse all foldable regions in the active document", "Edit", "", List.of("fold", "collapse", "all", "block"), this::foldAllInDocument),
+                new CommandAction("Unfold All", "Expand all folded regions in the active document", "Edit", "", List.of("unfold", "expand", "all", "block"), this::unfoldAllInActiveDocument)
         ));
         commandActions.addAll(Arrays.stream(EditorTheme.values())
                 .map(theme -> new CommandAction(
@@ -1808,6 +1812,9 @@ public class EditorController {
         if (name.contains("bookmark")) {
             return "bi-bookmark";
         }
+        if (name.contains("fold") || name.contains("collapse") || name.contains("unfold") || name.contains("expand")) {
+            return "bi-chevron-bar-contract";
+        }
         if (name.contains("split") || name.contains("unsplit") || name.contains("window")) {
             return "bi-layout-split";
         }
@@ -1940,6 +1947,15 @@ public class EditorController {
                 .subscribe(ignore -> requestProgressiveHighlighting(document));
 
         codeArea.textProperty().addListener(onChange(() -> {
+            // Auto-unfold when text is edited outside a fold operation so stored
+            // positions do not drift and hidden content is never silently discarded.
+            if (!document.isFoldingOperation() && document.hasActiveFolds()) {
+                Platform.runLater(() -> {
+                    if (!document.isFoldingOperation()) {
+                        unfoldAllInDocument(document);
+                    }
+                });
+            }
             document.clearNavigationGoalColumn();
             document.clearMark();
             document.clampMarkPosition();
@@ -2844,6 +2860,78 @@ public class EditorController {
             } else {
                 statusMessage("No bookmark found at line " + (lineIndex + 1));
             }
+        });
+    }
+
+    // ---- Code-folding actions ----
+
+    private void toggleFoldAtLine(EditorDocument document, int lineIndex) {
+        if (document == null) {
+            return;
+        }
+        if (document.isFoldedAt(lineIndex)) {
+            document.unfoldAt(lineIndex);
+            refreshLineFringe(document);
+            statusMessage("Block unfolded at line " + (lineIndex + 1));
+        } else {
+            FoldRange range = document.getFoldableRangeAt(lineIndex);
+            if (range != null && document.foldAt(lineIndex)) {
+                refreshLineFringe(document);
+                statusMessage("Block folded at line " + (lineIndex + 1)
+                        + " (" + range.foldedLineCount() + " lines hidden)");
+            }
+        }
+    }
+
+    private void toggleFoldAtCaret() {
+        getActiveDocument().ifPresent(document -> {
+            int lineIndex = document.getCodeArea().getCurrentParagraph();
+            toggleFoldAtLine(document, lineIndex);
+        });
+    }
+
+    private void foldAllInDocument() {
+        getActiveDocument().ifPresent(document -> {
+            List<FoldRange> ranges = new ArrayList<>(document.getFoldableRanges());
+            if (ranges.isEmpty()) {
+                statusMessage("No foldable regions found in this document");
+                return;
+            }
+            // Fold from last to first so earlier line numbers stay valid.
+            ranges.sort(Comparator.comparingInt(FoldRange::startLine).reversed());
+            int folded = 0;
+            for (FoldRange range : ranges) {
+                if (!document.isFoldedAt(range.startLine()) && document.foldAt(range.startLine())) {
+                    folded++;
+                }
+            }
+            refreshLineFringe(document);
+            statusMessage(folded == 0 ? "All foldable regions are already folded"
+                    : "Folded " + folded + " region(s)");
+        });
+    }
+
+    private void unfoldAllInDocument(EditorDocument document) {
+        if (document == null || !document.hasActiveFolds()) {
+            return;
+        }
+        List<Integer> foldLines = new ArrayList<>(document.activeFoldStartLines());
+        // Unfold from last line to first so earlier positions stay valid.
+        foldLines.sort(Comparator.reverseOrder());
+        for (int line : foldLines) {
+            document.unfoldAt(line);
+        }
+        refreshLineFringe(document);
+    }
+
+    private void unfoldAllInActiveDocument() {
+        getActiveDocument().ifPresent(document -> {
+            if (!document.hasActiveFolds()) {
+                statusMessage("No folded regions in this document");
+                return;
+            }
+            unfoldAllInDocument(document);
+            statusMessage("All folds cleared");
         });
     }
 
@@ -4652,7 +4740,13 @@ public class EditorController {
         document.setDiagnosticsByLine(analysis.diagnostics().stream()
                 .collect(Collectors.groupingBy(Diagnostic::lineIndex, LinkedHashMap::new, Collectors.toList())));
 
-        if (previousDiagnosticCount > 0 || !analysis.diagnostics().isEmpty()) {
+        // Always refresh fold ranges from the latest analysis result.
+        document.setFoldableRanges(analysis.foldRanges());
+
+        boolean needsFringeRefresh = previousDiagnosticCount > 0
+                || !analysis.diagnostics().isEmpty()
+                || !analysis.foldRanges().isEmpty();
+        if (needsFringeRefresh) {
             IntFunction<Node> lineNumbers = LineNumberFactory.get(document.getCodeArea());
             document.getCodeArea().setParagraphGraphicFactory(lineIndex -> createLineFringe(document, lineNumbers, lineIndex));
         }
@@ -4733,7 +4827,29 @@ public class EditorController {
             Tooltip.install(indicator, tooltip);
         }
 
-        HBox gutter = new HBox(8, bookmarkMarker, indicator, lineNumbers.apply(lineIndex));
+        // Fold toggle button
+        FoldRange foldRange = document.getFoldableRangeAt(lineIndex);
+        boolean isFolded = document.isFoldedAt(lineIndex);
+        Label foldMarker = new Label();
+        foldMarker.getStyleClass().add("fold-gutter-marker");
+        if (foldRange != null || isFolded) {
+            FontIcon foldIcon = new FontIcon(isFolded ? "bi-chevron-right" : "bi-chevron-down");
+            foldIcon.setIconSize(10);
+            foldIcon.getStyleClass().add("fold-gutter-icon");
+            foldMarker.setGraphic(foldIcon);
+            foldMarker.getStyleClass().add("fold-gutter-marker-active");
+            Tooltip.install(foldMarker, new Tooltip(isFolded ? "Unfold block (click)" : "Fold block (click)"));
+            final int capturedLine = lineIndex;
+            foldMarker.setOnMouseClicked(event -> {
+                if (event.getButton() != MouseButton.PRIMARY) {
+                    return;
+                }
+                toggleFoldAtLine(document, capturedLine);
+                event.consume();
+            });
+        }
+
+        HBox gutter = new HBox(8, bookmarkMarker, indicator, foldMarker, lineNumbers.apply(lineIndex));
         gutter.setAlignment(Pos.CENTER_LEFT);
         gutter.setPadding(new Insets(0, 10, 0, 8));
         gutter.getStyleClass().add("line-fringe");

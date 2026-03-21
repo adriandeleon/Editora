@@ -352,6 +352,30 @@
     -fx-background-radius: 12;
 }
 
+.fold-gutter-marker {
+    -fx-opacity: 0;
+    -fx-cursor: hand;
+    -fx-min-width: 14px;
+    -fx-pref-width: 14px;
+}
+
+.fold-gutter-marker-active {
+    -fx-opacity: 0.55;
+    -fx-transition: opacity 120ms ease-in-out;
+}
+
+.fold-gutter-marker-active:hover {
+    -fx-opacity: 1.0;
+}
+
+.fold-gutter-icon {
+    -fx-icon-color: #60a5fa;
+}
+
+.line-fringe:hover .fold-gutter-marker {
+    -fx-opacity: 0.40;
+}
+
 .fringe-indicator {
     -fx-font-size: 0.75em;
     -fx-font-weight: 900;
