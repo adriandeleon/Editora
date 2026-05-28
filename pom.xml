@@ -16,6 +16,18 @@
         <maven.compiler.release>25</maven.compiler.release>
         <javafx.version>25</javafx.version>
         <javafx.plugin.version>0.0.8</javafx.plugin.version>
+        <richtextfx.version>0.11.7</richtextfx.version>
+        <atlantafx.version>2.1.0</atlantafx.version>
+        <jackson.version>2.19.0</jackson.version>
+        <junit.version>5.11.4</junit.version>
+        <moditect.version>1.2.2.Final</moditect.version>
+        <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
+        <jpackage.type>APP_IMAGE</jpackage.type>
+        <!-- Transitive automatic-module deps patched by moditect for jlink/jpackage. -->
+        <reactfx.version>2.0-M5</reactfx.version>
+        <undofx.version>2.1.1</undofx.version>
+        <flowless.version>0.7.4</flowless.version>
+        <wellbehavedfx.version>0.3.3</wellbehavedfx.version>
     </properties>
 
     <dependencies>
@@ -29,6 +41,28 @@
             <artifactId>javafx-fxml</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.fxmisc.richtext</groupId>
+            <artifactId>richtextfx</artifactId>
+            <version>${richtextfx.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.mkpaz</groupId>
+            <artifactId>atlantafx-base</artifactId>
+            <version>${atlantafx.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -37,6 +71,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
             </plugin>
             <plugin>
                 <groupId>org.openjfx</groupId>
@@ -52,6 +91,226 @@
                     <jlinkZipName>editora</jlinkZipName>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.moditect</groupId>
+                <artifactId>moditect-maven-plugin</artifactId>
+                <version>${moditect.version}</version>
+                <executions>
+                    <execution>
+                        <id>patch-automatic-modules</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>add-module-info</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/modules</outputDirectory>
+                            <overwriteExistingFiles>true</overwriteExistingFiles>
+                            <jdepsExtraArgs>
+                                <arg>--multi-release=25</arg>
+                            </jdepsExtraArgs>
+                            <modules>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.reactfx</groupId>
+                                        <artifactId>reactfx</artifactId>
+                                        <version>${reactfx.version}</version>
+                                    </artifact>
+                                    <moduleInfoSource>
+                                        module reactfx {
+                                            requires javafx.base;
+                                            requires javafx.graphics;
+                                            requires javafx.controls;
+                                            exports org.reactfx;
+                                            exports org.reactfx.collection;
+                                            exports org.reactfx.inhibeans;
+                                            exports org.reactfx.inhibeans.binding;
+                                            exports org.reactfx.inhibeans.collection;
+                                            exports org.reactfx.inhibeans.property;
+                                            exports org.reactfx.inhibeans.value;
+                                            exports org.reactfx.util;
+                                            exports org.reactfx.value;
+                                        }
+                                    </moduleInfoSource>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.fxmisc.wellbehaved</groupId>
+                                        <artifactId>wellbehavedfx</artifactId>
+                                        <version>${wellbehavedfx.version}</version>
+                                    </artifact>
+                                    <moduleInfoSource>
+                                        module wellbehavedfx {
+                                            requires javafx.base;
+                                            requires javafx.graphics;
+                                            requires javafx.controls;
+                                            exports org.fxmisc.wellbehaved.event;
+                                            exports org.fxmisc.wellbehaved.event.template;
+                                            exports org.fxmisc.wellbehaved.event.internal;
+                                        }
+                                    </moduleInfoSource>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.fxmisc.undo</groupId>
+                                        <artifactId>undofx</artifactId>
+                                        <version>${undofx.version}</version>
+                                    </artifact>
+                                    <moduleInfoSource>
+                                        module org.fxmisc.undo {
+                                            requires javafx.base;
+                                            requires reactfx;
+                                            exports org.fxmisc.undo;
+                                            exports org.fxmisc.undo.impl;
+                                        }
+                                    </moduleInfoSource>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.fxmisc.flowless</groupId>
+                                        <artifactId>flowless</artifactId>
+                                        <version>${flowless.version}</version>
+                                    </artifact>
+                                    <moduleInfoSource>
+                                        module org.fxmisc.flowless {
+                                            requires javafx.base;
+                                            requires javafx.graphics;
+                                            requires javafx.controls;
+                                            requires reactfx;
+                                            exports org.fxmisc.flowless;
+                                        }
+                                    </moduleInfoSource>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.fxmisc.richtext</groupId>
+                                        <artifactId>richtextfx</artifactId>
+                                        <version>${richtextfx.version}</version>
+                                    </artifact>
+                                    <moduleInfoSource>
+                                        module org.fxmisc.richtext {
+                                            requires javafx.base;
+                                            requires javafx.graphics;
+                                            requires javafx.controls;
+                                            requires reactfx;
+                                            requires org.fxmisc.flowless;
+                                            requires org.fxmisc.undo;
+                                            requires wellbehavedfx;
+                                            exports org.fxmisc.richtext;
+                                            exports org.fxmisc.richtext.event;
+                                            exports org.fxmisc.richtext.model;
+                                            exports org.fxmisc.richtext.util;
+                                        }
+                                    </moduleInfoSource>
+                                </module>
+                            </modules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- OS-activated profiles select the native installer type for the `dist` build. -->
+        <profile>
+            <id>os-mac</id>
+            <activation><os><family>mac</family></os></activation>
+            <properties><jpackage.type>DMG</jpackage.type></properties>
+        </profile>
+        <profile>
+            <id>os-windows</id>
+            <activation><os><family>windows</family></os></activation>
+            <properties><jpackage.type>MSI</jpackage.type></properties>
+        </profile>
+        <profile>
+            <id>os-linux</id>
+            <activation><os><name>Linux</name></os></activation>
+            <properties><jpackage.type>DEB</jpackage.type></properties>
+        </profile>
+
+        <!-- `mvn -Pdist package` builds a self-contained app image / native installer. -->
+        <profile>
+            <id>dist</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <version>3.8.1</version>
+                        <executions>
+                            <execution>
+                                <id>stage-dependencies</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>copy-dependencies</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${project.build.directory}/mods</outputDirectory>
+                                    <includeScope>runtime</includeScope>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>assemble-module-path</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <!-- Overlay moditect-patched modules over the plain automatic jars. -->
+                                        <copy todir="${project.build.directory}/mods" overwrite="true">
+                                            <fileset dir="${project.build.directory}/modules"/>
+                                        </copy>
+                                        <!-- Add the application module itself. -->
+                                        <copy todir="${project.build.directory}/mods"
+                                              file="${project.build.directory}/${project.build.finalName}.jar"/>
+                                        <!-- Drop the empty (non-classifier) JavaFX jars; keep the platform ones. -->
+                                        <delete>
+                                            <fileset dir="${project.build.directory}/mods"
+                                                     includes="javafx-*-${javafx.version}.jar"/>
+                                        </delete>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <version>${jpackage.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>jpackage</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jpackage</goal>
+                                </goals>
+                                <configuration>
+                                    <type>${jpackage.type}</type>
+                                    <name>Editora</name>
+                                    <appVersion>${project.version}</appVersion>
+                                    <vendor>Editora</vendor>
+                                    <module>com.editora/com.editora.App</module>
+                                    <modulePaths>
+                                        <modulePath>${project.build.directory}/mods</modulePath>
+                                    </modulePaths>
+                                    <javaOptions>
+                                        <javaOption>--enable-native-access=javafx.graphics</javaOption>
+                                    </javaOptions>
+                                    <destination>${project.build.directory}/dist</destination>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

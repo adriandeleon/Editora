@@ -1,0 +1,55 @@
+/* Editora — editor-surface styling layered on top of the AtlantaFX (Primer Light) theme.
+   Standard controls (toolbar, buttons, text fields, list view) are themed by AtlantaFX;
+   the rules below cover the RichTextFX editor, which AtlantaFX does not style. */
+
+.editor-area {
+    -fx-background-color: #ffffff;
+    -fx-font-family: "monospace";
+    -fx-font-size: 14px;
+}
+
+.editor-area .text {
+    -fx-fill: #24292f;
+}
+
+.editor-area .caret {
+    -fx-stroke: #24292f;
+}
+
+.editor-area .selection {
+    -fx-fill: #b6e3ff;
+}
+
+/* Line-number gutter */
+.editor-area .lineno {
+    -fx-background-color: #f6f8fa;
+    -fx-text-fill: #8c959f;
+    -fx-font-family: "monospace";
+    -fx-padding: 0 8 0 8;
+}
+
+.status-bar {
+    -fx-background-color: #f6f8fa;
+    -fx-padding: 3 10 3 10;
+    -fx-text-fill: #57606a;
+}
+
+/* Command palette overlay (a Popup, so it is styled explicitly rather than by the theme) */
+.command-palette {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d7de;
+    -fx-border-width: 1;
+    -fx-padding: 6;
+    -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
+}
+
+.command-palette .list-cell .keybinding {
+    -fx-text-fill: #8c959f;
+}
+
+.find-bar {
+    -fx-background-color: #f6f8fa;
+    -fx-padding: 4 8 4 8;
+    -fx-spacing: 6;
+    -fx-alignment: center-left;
+}

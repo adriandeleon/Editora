@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.TabPane?>
+<?import javafx.scene.control.ToolBar?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane fx:id="root" xmlns="http://javafx.com/javafx"
+            xmlns:fx="http://javafx.com/fxml"
+            fx:controller="com.editora.ui.MainController">
+    <top>
+        <ToolBar>
+            <items>
+                <Button text="New" onAction="#onNew"/>
+                <Button text="Open" onAction="#onOpen"/>
+                <Button text="Save" onAction="#onSave"/>
+                <Button text="Save As" onAction="#onSaveAs"/>
+                <Separator orientation="VERTICAL"/>
+                <Button text="Find" onAction="#onFind"/>
+                <Button text="Replace" onAction="#onReplace"/>
+                <Separator orientation="VERTICAL"/>
+                <Button text="Palette" onAction="#onPalette"/>
+                <Button text="Close Tab" onAction="#onCloseTab"/>
+            </items>
+        </ToolBar>
+    </top>
+    <center>
+        <TabPane fx:id="tabPane"/>
+    </center>
+    <bottom>
+        <VBox fx:id="bottomBox">
+            <children>
+                <Label fx:id="statusLabel" styleClass="status-bar" text="Ready"/>
+            </children>
+        </VBox>
+    </bottom>
+</BorderPane>

@@ -1,0 +1,14 @@
+/* Syntax token colors (Primer Light palette). Classes are applied to CodeArea text spans. */
+.keyword    { -fx-fill: #cf222e; -fx-font-weight: bold; }
+.string     { -fx-fill: #0a3069; }
+.comment    { -fx-fill: #6e7781; -fx-font-style: italic; }
+.number     { -fx-fill: #0550ae; }
+.annotation { -fx-fill: #953800; }
+.punct      { -fx-fill: #24292f; }
+.tag        { -fx-fill: #116329; }
+.attribute  { -fx-fill: #0550ae; }
+.heading    { -fx-fill: #0550ae; -fx-font-weight: bold; }
+.code       { -fx-fill: #0a3069; }
+.link       { -fx-fill: #0969da; -fx-underline: true; }
+.bold       { -fx-fill: #24292f; -fx-font-weight: bold; }
+.italic     { -fx-fill: #24292f; -fx-font-style: italic; }

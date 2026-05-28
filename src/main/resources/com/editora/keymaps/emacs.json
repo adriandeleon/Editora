@@ -1,0 +1,22 @@
+{
+  "C-x C-f": "file.open",
+  "C-x C-s": "file.save",
+  "C-x C-w": "file.saveAs",
+  "C-x C-c": "app.quit",
+  "C-x b": "buffer.next",
+  "C-x k": "buffer.close",
+  "M-x": "palette.show",
+  "C-s": "find.show",
+  "C-r": "find.showBackward",
+  "M-%": "find.replace",
+  "C-w": "edit.cut",
+  "M-w": "edit.copy",
+  "C-y": "edit.paste",
+  "C-/": "edit.undo",
+  "C-S-/": "edit.redo",
+  "C-g": "edit.cancel",
+  "C-a": "nav.lineStart",
+  "C-e": "nav.lineEnd",
+  "M-<": "nav.docStart",
+  "M->": "nav.docEnd"
+}
