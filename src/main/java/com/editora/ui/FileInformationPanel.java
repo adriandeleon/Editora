@@ -17,23 +17,14 @@ import com.editora.editor.EditorBuffer;
 import com.editora.editor.LanguageRegistry;
 
 import javafx.beans.value.ChangeListener;
-import javafx.scene.Node;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Separator;
 import javafx.scene.control.TitledPane;
-import javafx.scene.control.ToggleButton;
-import javafx.scene.control.ToggleGroup;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 /**
@@ -97,69 +88,9 @@ public class FileInformationPanel extends VBox {
     // --- UI construction ---
 
     private void buildUI() {
-        // Inner segmented header: file / outline / warnings + info button.
-        ToggleGroup group = new ToggleGroup();
-        ToggleButton fileTab = headerToggle(group, Icons.fileSheet(), "File info", true);
-        ToggleButton outlineTab = headerToggle(group, Icons.outline(), "Outline (coming soon)", false);
-        ToggleButton warningsTab = headerToggle(group, Icons.warning(), "Warnings (coming soon)", false);
-        HBox tabs = new HBox(fileTab, outlineTab, warningsTab);
-        tabs.getStyleClass().add("file-info-tabs");
-
-        Button info = new Button();
-        info.setGraphic(Icons.about());
-        info.getStyleClass().addAll("button-icon", "flat", "file-info-aux");
-        info.setTooltip(new Tooltip("File information"));
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox header = new HBox(8, tabs, spacer, info);
-        header.setAlignment(Pos.CENTER_LEFT);
-        header.getStyleClass().add("file-info-header");
-
-        // Content stack — only "File" view is implemented; others are placeholders.
         Region fileView = buildFileView();
-        Region outlinePlaceholder = comingSoon("Outline view coming soon");
-        Region warningsPlaceholder = comingSoon("Warnings view coming soon");
-
-        StackPane content = new StackPane(fileView, outlinePlaceholder, warningsPlaceholder);
-        content.setAlignment(Pos.TOP_CENTER);
-        fileView.setVisible(true);
-        outlinePlaceholder.setVisible(false);
-        warningsPlaceholder.setVisible(false);
-
-        fileTab.selectedProperty().addListener((o, w, n) -> {
-            fileView.setVisible(n);
-            fileView.setManaged(n);
-        });
-        outlineTab.selectedProperty().addListener((o, w, n) -> {
-            outlinePlaceholder.setVisible(n);
-            outlinePlaceholder.setManaged(n);
-        });
-        warningsTab.selectedProperty().addListener((o, w, n) -> {
-            warningsPlaceholder.setVisible(n);
-            warningsPlaceholder.setManaged(n);
-        });
-        outlinePlaceholder.setManaged(false);
-        warningsPlaceholder.setManaged(false);
-
-        getChildren().addAll(header, content);
-        VBox.setVgrow(content, Priority.ALWAYS);
-    }
-
-    private ToggleButton headerToggle(ToggleGroup group, Node icon, String tip, boolean selected) {
-        ToggleButton btn = new ToggleButton();
-        btn.setGraphic(icon);
-        btn.setToggleGroup(group);
-        btn.setSelected(selected);
-        btn.getStyleClass().add("file-info-tab");
-        btn.setTooltip(new Tooltip(tip));
-        // Prevent the user from un-selecting the active toggle (keep one always selected).
-        btn.setOnAction(e -> {
-            if (!btn.isSelected()) {
-                btn.setSelected(true);
-            }
-        });
-        return btn;
+        getChildren().add(fileView);
+        VBox.setVgrow(fileView, Priority.ALWAYS);
     }
 
     private Region buildFileView() {
@@ -215,8 +146,7 @@ public class FileInformationPanel extends VBox {
         addRow(caret, 1, "Line", lineValue);
         addRow(caret, 2, "Column", columnValue);
 
-        VBox box = new VBox(10, totals, new Separator(), caret);
-        return box;
+        return new VBox(10, totals, caret);
     }
 
     private GridPane buildCharacterGrid() {
@@ -252,14 +182,6 @@ public class FileInformationPanel extends VBox {
         Label l = new Label("–");
         l.setMaxWidth(Double.MAX_VALUE);
         return l;
-    }
-
-    private Region comingSoon(String text) {
-        Label l = new Label(text);
-        l.getStyleClass().add("tool-window-placeholder");
-        StackPane sp = new StackPane(l);
-        sp.setAlignment(Pos.CENTER);
-        return sp;
     }
 
     // --- Live refresh ---

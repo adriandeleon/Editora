@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 
@@ -33,6 +34,7 @@ public class ToolWindowManager {
     private static final PseudoClass OPEN = PseudoClass.getPseudoClass("open");
 
     private final ConfigManager config;
+    private final KeymapManager keymap;
 
     private final VBox leftStripe = new VBox();
     private final VBox rightStripe = new VBox();
@@ -46,8 +48,9 @@ public class ToolWindowManager {
     private final Map<ToolWindow, Button> stripeButtons = new HashMap<>();
     private final Map<ToolWindow, Region> panels = new HashMap<>();
 
-    public ToolWindowManager(BorderPane workspace, Node editorArea, ConfigManager config) {
+    public ToolWindowManager(BorderPane workspace, Node editorArea, ConfigManager config, KeymapManager keymap) {
         this.config = config;
+        this.keymap = keymap;
 
         leftStripe.getStyleClass().addAll("tool-stripe", "tool-stripe-vertical", "tool-stripe-left");
         rightStripe.getStyleClass().addAll("tool-stripe", "tool-stripe-vertical", "tool-stripe-right");
@@ -74,7 +77,7 @@ public class ToolWindowManager {
         Button button = new Button();
         button.setGraphic(tw.createIcon());
         button.getStyleClass().addAll("tool-stripe-button", "flat");
-        button.setTooltip(new Tooltip(tw.getTitle()));
+        button.setTooltip(new Tooltip(tooltipFor(tw)));
         button.setOnAction(e -> toggle(tw));
         stripeButtons.put(tw, button);
         if (isVisible(tw)) {
@@ -112,6 +115,20 @@ public class ToolWindowManager {
 
     public Collection<ToolWindow> getRegisteredToolWindows() {
         return Collections.unmodifiableCollection(byId.values());
+    }
+
+    /** Tooltip text: title plus the chord for the tool window's command, if one is bound. */
+    private String tooltipFor(ToolWindow tw) {
+        String cmd = tw.getCommandId();
+        if (cmd == null) {
+            return tw.getTitle();
+        }
+        for (Map.Entry<String, String> e : keymap.bindings().entrySet()) {
+            if (cmd.equals(e.getValue())) {
+                return tw.getTitle() + " (" + e.getKey() + ")";
+            }
+        }
+        return tw.getTitle();
     }
 
     /** The side this tool window is currently assigned to (settings override, falling back to the registered default). */

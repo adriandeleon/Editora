@@ -1,53 +1,63 @@
 package com.editora.ui;
 
+import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.shape.SVGPath;
 
 /**
- * Toolbar icons as {@link SVGPath} nodes (Material Design 24dp single-path glyphs).
- * Each call returns a fresh node — a node can only live in one place in the scene graph.
- * Color is controlled via the {@code toolbar-icon} style class (see app.css).
+ * Toolbar icons as Material Design 24dp single-path glyphs, returned wrapped in a {@link Group}
+ * and scaled down. The Group's layout bounds reflect the scaled size, so buttons sized to their
+ * graphic also shrink. Color is controlled via the {@code toolbar-icon} style class on the inner
+ * {@link SVGPath} (see app.css).
+ *
+ * <p>Each call returns a fresh node — a JavaFX node can only have one parent.
  */
 final class Icons {
+
+    /** Scale applied to every toolbar/stripe icon. */
+    private static final double ICON_SCALE = 0.8;
 
     private Icons() {
     }
 
-    private static SVGPath of(String content) {
+    private static Node of(String content) {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("toolbar-icon");
-        return svg;
+        svg.setScaleX(ICON_SCALE);
+        svg.setScaleY(ICON_SCALE);
+        return new Group(svg);
     }
 
-    static SVGPath newFile() {
+    static Node newFile() {
         return of("M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z");
     }
 
-    static SVGPath open() {
+    static Node open() {
         return of("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
     }
 
-    static SVGPath save() {
+    static Node save() {
         return of("M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 "
                 + "0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z");
     }
 
-    static SVGPath saveAs() {
+    static Node saveAs() {
         return of("M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67 2.59-2.58L17 "
                 + "11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z");
     }
 
-    static SVGPath undo() {
+    static Node undo() {
         return of("M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 "
                 + "3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z");
     }
 
-    static SVGPath redo() {
+    static Node redo() {
         return of("M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 "
                 + "4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z");
     }
 
-    static SVGPath cut() {
+    static Node cut() {
         return of("M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 "
                 + "1.14-.13 1.64-.36L10 12l-2.36 2.36C7.14 14.13 6.59 14 6 14c-2.21 0-4 1.79-4 4s1.79 "
                 + "4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64zM6 8c-1.1 "
@@ -56,34 +66,34 @@ final class Icons {
                 + "2 7-7V3z");
     }
 
-    static SVGPath copy() {
+    static Node copy() {
         return of("M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 "
                 + "0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z");
     }
 
-    static SVGPath paste() {
+    static Node paste() {
         return of("M19 2h-4.18C14.4.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 "
                 + "2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 "
                 + ".45-1 1-1zm7 18H5V4h2v3h10V4h2v16z");
     }
 
-    static SVGPath find() {
+    static Node find() {
         return of("M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 "
                 + "9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 "
                 + "0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z");
     }
 
-    static SVGPath palette() {
+    static Node palette() {
         return of("M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 "
                 + "7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.96 17.55 11 21 11 21z");
     }
 
-    static SVGPath closeTab() {
+    static Node closeTab() {
         return of("M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 "
                 + "19 17.59 13.41 12z");
     }
 
-    static SVGPath settings() {
+    static Node settings() {
         return of("M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41."
                 + "12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-"
                 + "2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-"
@@ -95,44 +105,48 @@ final class Icons {
                 + "3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z");
     }
 
-    static SVGPath quit() {
+    static Node trash() {
+        return of("M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z");
+    }
+
+    static Node quit() {
         return of("M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 "
                 + "7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 "
                 + "4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z");
     }
 
-    static SVGPath project() {
+    static Node project() {
         // Material "account_tree" — a tree-like icon for the Project tool window.
         return of("M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3z");
     }
 
-    static SVGPath bookmark() {
+    static Node bookmark() {
         return of("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
     }
 
-    static SVGPath closeSmall() {
+    static Node closeSmall() {
         // Same outline as closeTab() — used by the tool window header.
         return of("M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 "
                 + "19 17.59 13.41 12z");
     }
 
-    static SVGPath fileSheet() {
+    static Node fileSheet() {
         return of("M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v"
                 + "-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z");
     }
 
-    static SVGPath outline() {
+    static Node outline() {
         return of("M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-"
                 + "6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-"
                 + "1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-"
                 + "6h14v-2H7v2zm0-8v2h14V5H7z");
     }
 
-    static SVGPath warning() {
+    static Node warning() {
         return of("M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z");
     }
 
-    static SVGPath about() {
+    static Node about() {
         return of("M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 "
                 + "2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z");
     }

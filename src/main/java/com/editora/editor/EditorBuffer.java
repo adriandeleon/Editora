@@ -16,7 +16,12 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.input.Clipboard;
+import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.Region;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Line;
+import javafx.scene.text.Font;
+import javafx.scene.text.Text;
 
 /** A single open document: a RichTextFX {@link CodeArea} plus its backing file, language, and dirty state. */
 public class EditorBuffer {
@@ -25,18 +30,42 @@ public class EditorBuffer {
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
 
+    /** Wraps the scroll pane so we can overlay the column-80 ruler line on top of it. */
+    private final AnchorPane root = new AnchorPane();
+    private final Line columnRuler = new Line();
+
     private Path path;
     private LanguageRules rules = LanguageRegistry.plaintext();
+    private String fontFamily = "monospace";
+    private int fontSize = 14;
+    private boolean rulerVisible;
 
     public EditorBuffer() {
         area.setParagraphGraphicFactory(LineNumberFactory.get(area));
         area.getStyleClass().add("editor-area");
         area.setWrapText(false);
+        area.setLineHighlighterFill(Color.web("#dfe7f0"));
         area.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> applyHighlighting());
         area.textProperty().addListener((obs, old, now) -> dirty.set(true));
         installContextMenu();
+        installColumnRulerOverlay();
+    }
+
+    private void installColumnRulerOverlay() {
+        columnRuler.getStyleClass().add("column-ruler");
+        columnRuler.setManaged(false);
+        columnRuler.setMouseTransparent(true);
+        columnRuler.setStartY(0);
+        columnRuler.endYProperty().bind(root.heightProperty());
+        columnRuler.setVisible(false);
+
+        root.getChildren().addAll(scrollPane, columnRuler);
+        AnchorPane.setTopAnchor(scrollPane, 0d);
+        AnchorPane.setBottomAnchor(scrollPane, 0d);
+        AnchorPane.setLeftAnchor(scrollPane, 0d);
+        AnchorPane.setRightAnchor(scrollPane, 0d);
     }
 
     private void installContextMenu() {
@@ -81,14 +110,46 @@ public class EditorBuffer {
         return area;
     }
 
-    /** The node to place in the scene: the editor wrapped in a scroll pane (vertical + horizontal bars). */
+    /** The node to place in the scene: scroll pane + column-ruler overlay. */
     public Region getNode() {
-        return scrollPane;
+        return root;
     }
 
     /** Applies the editor font, overriding the stylesheet defaults. */
     public void setFont(String family, int size) {
+        this.fontFamily = family;
+        this.fontSize = size;
         area.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
+        updateColumnRulerPosition();
+    }
+
+    /** Show/hide the column-80 ruler overlay. */
+    public void setColumnRulerVisible(boolean visible) {
+        this.rulerVisible = visible;
+        columnRuler.setVisible(visible);
+        if (visible) {
+            updateColumnRulerPosition();
+        }
+    }
+
+    /** Toggle the highlight on the line containing the caret. */
+    public void setLineHighlightOn(boolean on) {
+        area.setLineHighlighterOn(on);
+    }
+
+    private void updateColumnRulerPosition() {
+        if (!rulerVisible) {
+            return;
+        }
+        Text probe = new Text("M");
+        probe.setFont(Font.font(fontFamily, fontSize));
+        double charWidth = probe.getLayoutBounds().getWidth();
+        if (charWidth <= 0) {
+            return;
+        }
+        double x = charWidth * 80;
+        columnRuler.setStartX(x);
+        columnRuler.setEndX(x);
     }
 
     public Path getPath() {

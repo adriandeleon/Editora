@@ -9,7 +9,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.ui.MainController;
 
-import atlantafx.base.theme.PrimerLight;
+import com.editora.ui.Themes;
 
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -21,10 +21,10 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) throws IOException {
-        Application.setUserAgentStylesheet(new PrimerLight().getUserAgentStylesheet());
-
         ConfigManager config = new ConfigManager();
         Settings settings = config.load();
+
+        Application.setUserAgentStylesheet(Themes.stylesheetFor(settings.getTheme()));
 
         CommandRegistry registry = new CommandRegistry();
         KeymapManager keymap = new KeymapManager();

@@ -38,6 +38,9 @@ public class SettingsWindow {
 
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
+    private ComboBox<String> themeCombo;
+    private CheckBox columnRulerCheck;
+    private CheckBox lineHighlightCheck;
     private boolean built;
     private boolean loading;
 
@@ -83,13 +86,39 @@ public class SettingsWindow {
             }
         });
 
+        themeCombo = new ComboBox<>();
+        themeCombo.getItems().setAll(Themes.NAMES);
+        themeCombo.setPrefWidth(220);
+        themeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setTheme(now);
+            javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(now));
+            apply();
+        });
+
+        columnRulerCheck = new CheckBox("Show 80-column ruler");
+        columnRulerCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setShowColumnRuler(now);
+            apply();
+        });
+        lineHighlightCheck = new CheckBox("Highlight current line");
+        lineHighlightCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setHighlightCurrentLine(now);
+            apply();
+        });
+
         GridPane form = new GridPane();
         form.setHgap(12);
         form.setVgap(10);
         form.addRow(0, new Label("Font family:"), fontFamily);
         form.addRow(1, new Label("Font size:"), fontSize);
+        form.addRow(2, new Label("Theme:"), themeCombo);
+        form.add(columnRulerCheck, 1, 3);
+        form.add(lineHighlightCheck, 1, 4);
 
-        int row = 2;
+        int row = 5;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -143,9 +172,10 @@ public class SettingsWindow {
 
         VBox rootBox = new VBox(16, form, buttons);
         rootBox.setPadding(new Insets(16));
-        rootBox.setPrefWidth(380);
+        rootBox.setPrefWidth(520);
+        rootBox.setPrefHeight(560);
 
-        stage.setScene(new Scene(rootBox));
+        stage.setScene(new Scene(rootBox, 520, 560));
     }
 
     private void load() {
@@ -157,6 +187,13 @@ public class SettingsWindow {
             }
             fontFamily.setValue(settings.getFontFamily());
             fontSize.getValueFactory().setValue(settings.getFontSize());
+            String theme = Themes.normalize(settings.getTheme());
+            if (!theme.equals(settings.getTheme())) {
+                settings.setTheme(theme);
+            }
+            themeCombo.setValue(theme);
+            columnRulerCheck.setSelected(settings.isShowColumnRuler());
+            lineHighlightCheck.setSelected(settings.isHighlightCurrentLine());
         } finally {
             loading = false;
         }

@@ -17,13 +17,16 @@ public final class ToolWindow {
     private final Side side;
     private final Supplier<Node> iconSupplier;
     private final Region content;
+    private final String commandId;
 
-    public ToolWindow(String id, String title, Side side, Supplier<Node> iconSupplier, Region content) {
+    public ToolWindow(String id, String title, Side side, Supplier<Node> iconSupplier, Region content,
+                      String commandId) {
         this.id = id;
         this.title = title;
         this.side = side;
         this.iconSupplier = iconSupplier;
         this.content = content;
+        this.commandId = commandId;
     }
 
     public String getId() {
@@ -45,5 +48,10 @@ public final class ToolWindow {
 
     public Region getContent() {
         return content;
+    }
+
+    /** Optional id of the command that toggles this tool window — used to look up its keybinding. */
+    public String getCommandId() {
+        return commandId;
     }
 }

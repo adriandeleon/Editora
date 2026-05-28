@@ -9,6 +9,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
+import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 
@@ -30,10 +31,14 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.Tooltip;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
@@ -88,10 +93,15 @@ public class MainController {
     private Button aboutButton;
     @FXML
     private Button quitButton;
+    @FXML
+    private ComboBox<Path> recentCombo;
+    @FXML
+    private Button clearRecentButton;
 
     private Stage stage;
     private ConfigManager config;
     private CommandRegistry registry;
+    private KeymapManager keymap;
     private CommandPalette palette;
     private FindReplaceBar findBar;
     private SettingsWindow settingsWindow;
@@ -103,6 +113,7 @@ public class MainController {
     private Switcher switcher;
     /** Most-recently-used tab order, head = most recent. */
     private final LinkedList<Tab> mru = new LinkedList<>();
+    private RecentFiles recentFiles;
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
         this.stage = stage;
@@ -113,12 +124,13 @@ public class MainController {
         });
         this.config = config;
         this.registry = registry;
+        this.keymap = keymap;
         this.palette = new CommandPalette(registry, keymap);
         this.findBar = new FindReplaceBar(this::activeArea, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
         setupToolWindows();
-        this.settingsWindow = new SettingsWindow(config, toolWindows, this::applyFontToAllBuffers);
+        this.settingsWindow = new SettingsWindow(config, toolWindows, this::applyViewSettingsToAllBuffers);
         this.switcher = new Switcher(() -> List.copyOf(mru),
                 tab -> tabPane.getSelectionModel().select(tab),
                 this::closeTabFromSwitcher,
@@ -126,7 +138,76 @@ public class MainController {
         setupMruTracking();
         registerCommands();
         setupToolbar();
+        setupRecentFiles();
         toolWindows.restore();
+    }
+
+    private void setupRecentFiles() {
+        recentFiles = new RecentFiles(config.getConfigDir());
+        recentCombo.setItems(recentFiles.getList());
+
+        // Button cell = what's shown when the combo is closed.
+        recentCombo.setButtonCell(new ListCell<>() {
+            @Override
+            protected void updateItem(Path item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? recentCombo.getPromptText() : item.getFileName().toString());
+            }
+        });
+
+        // Dropdown cells: filename label + small ✕ to remove just that entry.
+        recentCombo.setCellFactory(v -> new RecentFileCell(recentFiles));
+
+        // Selecting an entry opens it, then clears the selection so the prompt shows again.
+        recentCombo.valueProperty().addListener((obs, was, now) -> {
+            if (now == null) {
+                return;
+            }
+            Path toOpen = now;
+            Platform.runLater(() -> recentCombo.getSelectionModel().clearSelection());
+            openPath(toOpen);
+        });
+
+        setupButton(clearRecentButton, Icons.trash(), "Clear recent files");
+    }
+
+    /** Custom dropdown cell with an inline remove button. */
+    private static class RecentFileCell extends ListCell<Path> {
+        private final Label name = new Label();
+        private final Button removeBtn = new Button("✕");
+        private final HBox box;
+
+        RecentFileCell(RecentFiles recents) {
+            removeBtn.getStyleClass().addAll("button-icon", "flat", "recent-remove");
+            removeBtn.setFocusTraversable(false);
+            // Don't let the click bubble up and trigger the combo's selection.
+            removeBtn.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> {
+                Path item = getItem();
+                if (item != null) {
+                    recents.remove(item);
+                }
+                e.consume();
+            });
+            javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+            box = new HBox(8, name, spacer, removeBtn);
+            box.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        }
+
+        @Override
+        protected void updateItem(Path item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty || item == null) {
+                setGraphic(null);
+                setText(null);
+                setTooltip(null);
+            } else {
+                name.setText(item.getFileName().toString());
+                setTooltip(new Tooltip(item.toString()));
+                setGraphic(box);
+                setText(null);
+            }
+        }
     }
 
     private void setupMruTracking() {
@@ -155,14 +236,16 @@ public class MainController {
     }
 
     private void setupToolWindows() {
-        toolWindows = new ToolWindowManager(workspace, tabPane, config);
+        toolWindows = new ToolWindowManager(workspace, tabPane, config, keymap);
         projectToolWindow = new ToolWindow("project", "Project", ToolWindow.Side.RIGHT,
-                Icons::project, placeholder("Project tool window\n(content coming soon)"));
+                Icons::project, placeholder("Project tool window\n(content coming soon)"),
+                "tool.project");
         bookmarksToolWindow = new ToolWindow("bookmarks", "Bookmarks", ToolWindow.Side.RIGHT,
-                Icons::bookmark, placeholder("Bookmarks tool window\n(content coming soon)"));
+                Icons::bookmark, placeholder("Bookmarks tool window\n(content coming soon)"),
+                "tool.bookmarks");
         fileInfoPanel = new FileInformationPanel();
         fileInfoToolWindow = new ToolWindow("file-information", "File Information", ToolWindow.Side.RIGHT,
-                Icons::about, fileInfoPanel);
+                Icons::about, fileInfoPanel, "tool.fileInformation");
         toolWindows.register(projectToolWindow);
         toolWindows.register(bookmarksToolWindow);
         toolWindows.register(fileInfoToolWindow);
@@ -203,7 +286,7 @@ public class MainController {
 
     private void setupButton(Button button, Node icon, String tooltip) {
         button.setGraphic(icon);
-        button.getStyleClass().addAll("button-icon", "flat");
+        button.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
         button.setTooltip(new Tooltip(tooltip));
     }
 
@@ -226,8 +309,7 @@ public class MainController {
     }
 
     private void addBuffer(EditorBuffer buffer) {
-        Settings settings = config.getSettings();
-        buffer.setFont(settings.getFontFamily(), settings.getFontSize());
+        applyViewSettings(buffer);
         Tab tab = new Tab();
         tab.setContent(buffer.getNode());
         tab.setUserData(buffer);
@@ -268,18 +350,36 @@ public class MainController {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Open File");
         Path file = pathOf(chooser.showOpenDialog(stage));
-        if (file == null) {
-            return;
+        if (file != null) {
+            openPath(file);
         }
+    }
+
+    /** Open a file by path; refreshes recent files and reports status. */
+    private void openPath(Path file) {
         try {
             String content = Files.readString(file);
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
             buffer.setContent(content);
             addBuffer(buffer);
+            if (recentFiles != null) {
+                recentFiles.add(file);
+            }
             setStatus("Opened " + file);
         } catch (IOException e) {
             setStatus("Failed to open: " + e.getMessage());
+            if (recentFiles != null) {
+                recentFiles.remove(file);
+            }
+        }
+    }
+
+    @FXML
+    private void onClearRecent() {
+        if (recentFiles != null) {
+            recentFiles.clear();
+            setStatus("Recent files cleared");
         }
     }
 
@@ -467,11 +567,34 @@ public class MainController {
         SettingsWindow.showAbout(stage);
     }
 
-    private void applyFontToAllBuffers(Settings settings) {
+    private void toggleColumnRuler() {
+        Settings s = config.getSettings();
+        s.setShowColumnRuler(!s.isShowColumnRuler());
+        config.save();
+        applyViewSettingsToAllBuffers(s);
+        setStatus("80-column ruler: " + (s.isShowColumnRuler() ? "on" : "off"));
+    }
+
+    private void toggleLineHighlight() {
+        Settings s = config.getSettings();
+        s.setHighlightCurrentLine(!s.isHighlightCurrentLine());
+        config.save();
+        applyViewSettingsToAllBuffers(s);
+        setStatus("Current line highlight: " + (s.isHighlightCurrentLine() ? "on" : "off"));
+    }
+
+    private void applyViewSettings(EditorBuffer buffer) {
+        Settings s = config.getSettings();
+        buffer.setFont(s.getFontFamily(), s.getFontSize());
+        buffer.setColumnRulerVisible(s.isShowColumnRuler());
+        buffer.setLineHighlightOn(s.isHighlightCurrentLine());
+    }
+
+    private void applyViewSettingsToAllBuffers(Settings settings) {
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
             if (buffer != null) {
-                buffer.setFont(settings.getFontFamily(), settings.getFontSize());
+                applyViewSettings(buffer);
             }
         }
     }
@@ -497,6 +620,16 @@ public class MainController {
         }
     }
 
+    /** Run a navigation action and scroll the viewport to follow the caret. */
+    private void moveAndFollow(java.util.function.Consumer<CodeArea> motion) {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        motion.accept(area);
+        area.requestFollowCaret();
+    }
+
     private static Path pathOf(java.io.File file) {
         return file == null ? null : file.toPath();
     }
@@ -511,6 +644,11 @@ public class MainController {
         registry.register(Command.of("app.quit", "Application: Quit", this::onQuit));
         registry.register(Command.of("palette.show", "Command Palette", this::onPalette));
         registry.register(Command.of("view.settings", "Settings", this::onSettings));
+        registry.register(Command.of("view.toggleColumnRuler", "View: Toggle 80-Column Ruler",
+                this::toggleColumnRuler));
+        registry.register(Command.of("view.toggleLineHighlight", "View: Toggle Current Line Highlight",
+                this::toggleLineHighlight));
+        registry.register(Command.of("file.clearRecent", "File: Clear Recent Files", this::onClearRecent));
         registry.register(Command.of("help.about", "About Editora", this::onAbout));
         registry.register(Command.of("tool.project", "Tool Window: Project",
                 () -> toolWindows.toggle(projectToolWindow)));
@@ -532,29 +670,29 @@ public class MainController {
         registry.register(Command.of("edit.redo", "Edit: Redo", this::onRedo));
         registry.register(Command.of("edit.cancel", "Cancel", this::cancel));
         registry.register(Command.of("nav.lineStart", "Go: Line Start",
-                () -> withArea(a -> a.lineStart(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.lineStart(SelectionPolicy.CLEAR))));
         registry.register(Command.of("nav.lineEnd", "Go: Line End",
-                () -> withArea(a -> a.lineEnd(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.lineEnd(SelectionPolicy.CLEAR))));
         registry.register(Command.of("nav.docStart", "Go: Document Start",
-                () -> withArea(a -> a.start(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.start(SelectionPolicy.CLEAR))));
         registry.register(Command.of("nav.docEnd", "Go: Document End",
-                () -> withArea(a -> a.end(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.end(SelectionPolicy.CLEAR))));
         registry.register(Command.of("nav.charForward", "Go: Forward Char",
-                () -> withArea(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1)))));
+                () -> moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1)))));
         registry.register(Command.of("nav.charBackward", "Go: Backward Char",
-                () -> withArea(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1)))));
+                () -> moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1)))));
         registry.register(Command.of("nav.lineDown", "Go: Next Line",
-                () -> withArea(a -> a.nextLine(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.nextLine(SelectionPolicy.CLEAR))));
         registry.register(Command.of("nav.lineUp", "Go: Previous Line",
-                () -> withArea(a -> a.prevLine(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.prevLine(SelectionPolicy.CLEAR))));
         registry.register(Command.of("nav.wordForward", "Go: Forward Word",
-                () -> withArea(a -> a.moveTo(nextWordBoundary(a.getText(), a.getCaretPosition())))));
+                () -> moveAndFollow(a -> a.moveTo(nextWordBoundary(a.getText(), a.getCaretPosition())))));
         registry.register(Command.of("nav.wordBackward", "Go: Backward Word",
-                () -> withArea(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition())))));
+                () -> moveAndFollow(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition())))));
         registry.register(Command.of("nav.pageDown", "Go: Page Down",
-                () -> withArea(a -> a.nextPage(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.nextPage(SelectionPolicy.CLEAR))));
         registry.register(Command.of("nav.pageUp", "Go: Page Up",
-                () -> withArea(a -> a.prevPage(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.prevPage(SelectionPolicy.CLEAR))));
         registry.register(Command.of("edit.deleteChar", "Edit: Delete Forward Char",
                 () -> withArea(CodeArea::deleteNextChar)));
         registry.register(Command.of("edit.killWord", "Edit: Kill Forward Word",

@@ -11,9 +11,11 @@ public class Settings {
 
     private String fontFamily = "monospace";
     private int fontSize = 14;
-    private String theme = "dark";
+    private String theme = "Primer Light";
     private int tabSize = 4;
     private String keymap = "emacs";
+    private boolean showColumnRuler = true;
+    private boolean highlightCurrentLine = true;
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -68,6 +70,22 @@ public class Settings {
 
     public void setKeymap(String keymap) {
         this.keymap = keymap;
+    }
+
+    public boolean isShowColumnRuler() {
+        return showColumnRuler;
+    }
+
+    public void setShowColumnRuler(boolean showColumnRuler) {
+        this.showColumnRuler = showColumnRuler;
+    }
+
+    public boolean isHighlightCurrentLine() {
+        return highlightCurrentLine;
+    }
+
+    public void setHighlightCurrentLine(boolean highlightCurrentLine) {
+        this.highlightCurrentLine = highlightCurrentLine;
     }
 
     public Map<String, String> getKeybindings() {
