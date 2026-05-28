@@ -31,12 +31,12 @@ class ConfigManagerTest {
         Settings reloaded = new ConfigManager(dir).load();
         assertEquals(8, reloaded.getTabSize());
         assertEquals("light", reloaded.getTheme());
-        assertTrue(Files.exists(dir.resolve("config.json")));
+        assertTrue(Files.exists(dir.resolve("settings.json")));
     }
 
     @Test
     void partialJsonMergesOntoDefaults(@TempDir Path dir) throws IOException {
-        Files.writeString(dir.resolve("config.json"), "{\"fontSize\": 20}");
+        Files.writeString(dir.resolve("settings.json"), "{\"fontSize\": 20}");
         Settings settings = new ConfigManager(dir).load();
         assertEquals(20, settings.getFontSize());
         assertEquals("emacs", settings.getKeymap()); // untouched default
@@ -44,7 +44,7 @@ class ConfigManagerTest {
 
     @Test
     void malformedJsonFallsBackToDefaults(@TempDir Path dir) throws IOException {
-        Files.writeString(dir.resolve("config.json"), "{ this is not json");
+        Files.writeString(dir.resolve("settings.json"), "{ this is not json");
         Settings settings = new ConfigManager(dir).load();
         assertEquals(14, settings.getFontSize());
     }

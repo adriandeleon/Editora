@@ -28,6 +28,30 @@
     -fx-padding: 0 8 0 8;
 }
 
+/* Unsaved/dirty tab: amber/italic label so the bullet prefix is reinforced visually. */
+.tab.dirty .tab-label {
+    -fx-text-fill: #bf8700;
+    -fx-font-style: italic;
+}
+
+/* Toolbar SVG icons */
+.toolbar-icon {
+    -fx-fill: #57606a;
+}
+
+.button:hover .toolbar-icon {
+    -fx-fill: #24292f;
+}
+
+/* Active state for toggle-like buttons (palette / find) while their overlay is open */
+.button:open {
+    -fx-background-color: #ddf4ff;
+}
+
+.button:open .toolbar-icon {
+    -fx-fill: #0969da;
+}
+
 .status-bar {
     -fx-background-color: #f6f8fa;
     -fx-padding: 3 10 3 10;

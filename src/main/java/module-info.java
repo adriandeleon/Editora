@@ -2,6 +2,7 @@ module com.editora {
     requires javafx.controls;
     requires javafx.fxml;
     requires org.fxmisc.richtext;
+    requires org.fxmisc.flowless;
     requires reactfx;
     requires atlantafx.base;
     requires com.fasterxml.jackson.databind;

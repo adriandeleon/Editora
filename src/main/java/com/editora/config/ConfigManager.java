@@ -4,19 +4,19 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
- * Loads and saves {@link Settings} as JSON in a platform-appropriate config directory.
+ * Loads and saves {@link Settings} as JSON in {@code ~/.editora-v2/settings.json} (the same location
+ * on macOS, Linux, and Windows, where {@code user.home} maps to the user profile).
  * Missing or malformed config falls back to built-in defaults rather than failing.
  */
 public class ConfigManager {
 
-    static final String APP_DIR_NAME = "Editora";
-    static final String CONFIG_FILE_NAME = "config.json";
+    static final String APP_DIR_NAME = ".editora-v2";
+    static final String CONFIG_FILE_NAME = "settings.json";
 
     private final ObjectMapper mapper = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT);
@@ -68,20 +68,8 @@ public class ConfigManager {
         }
     }
 
-    /** Resolves the OS-specific config directory: %APPDATA%\Editora, ~/Library/Application Support/Editora, or $XDG_CONFIG_HOME/editora. */
+    /** Resolves {@code ~/.editora-v2} ({@code user.home} is the user profile on every platform). */
     static Path defaultConfigDir() {
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        String home = System.getProperty("user.home", ".");
-        if (os.contains("win")) {
-            String appData = System.getenv("APPDATA");
-            Path base = (appData != null && !appData.isBlank()) ? Path.of(appData) : Path.of(home);
-            return base.resolve(APP_DIR_NAME);
-        }
-        if (os.contains("mac")) {
-            return Path.of(home, "Library", "Application Support", APP_DIR_NAME);
-        }
-        String xdg = System.getenv("XDG_CONFIG_HOME");
-        Path base = (xdg != null && !xdg.isBlank()) ? Path.of(xdg) : Path.of(home, ".config");
-        return base.resolve("editora");
+        return Path.of(System.getProperty("user.home", "."), APP_DIR_NAME);
     }
 }

@@ -24,7 +24,7 @@ the key dispatcher on the scene, applies the theme, and loads `ui/main.fxml`.
   - `KeymapManager`: maps chord sequences (e.g. `C-x C-s`) to command ids; loads `resources/com/editora/keymaps/emacs.json`, then overlays user overrides from config.
   - `KeyDispatcher`: a scene-level `KEY_PRESSED` filter that builds chord tokens and resolves them, holding a pending-prefix buffer for multi-key Emacs chords. Lone unbound keys are *not* consumed, so normal typing works.
 - `editor/` — `EditorBuffer` wraps a RichTextFX `CodeArea` (line numbers via `LineNumberFactory`, debounced highlighting). `SyntaxHighlighter` + `LanguageRules` + `LanguageRegistry` do regex-based highlighting per file extension.
-- `config/` — `ConfigManager` resolves a platform config dir and loads/merges/saves `config.json` (Jackson), falling back to defaults on malformed input. `Settings` is the POJO.
+- `config/` — `ConfigManager` loads/merges/saves `~/.editora-v2/settings.json` (Jackson; `user.home` is the user profile on every OS), falling back to defaults on malformed input. `Settings` is the POJO. The directory is temporarily `~/.editora-v2/` (instead of `~/.editora/`) to avoid colliding with an existing Editora V1 install on this machine. Note: `Settings` is `@JsonIgnoreProperties(ignoreUnknown = true)`, so `save()` rewrites the file with only the fields it models — unknown keys in an existing file are dropped.
 - `ui/` — `MainController` (+ `main.fxml`): toolbar, tabbed `EditorBuffer`s, status bar. `CommandPalette` (M-x fuzzy popup) and `FindReplaceBar` (find/replace with case + regex).
 
 ## Conventions

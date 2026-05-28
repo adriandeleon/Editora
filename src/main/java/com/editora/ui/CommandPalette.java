@@ -156,6 +156,10 @@ public class CommandPalette {
         return popup.isShowing();
     }
 
+    public javafx.beans.value.ObservableValue<Boolean> showingProperty() {
+        return popup.showingProperty();
+    }
+
     private final class CommandCell extends ListCell<Command> {
         private final Label title = new Label();
         private final Label key = new Label();

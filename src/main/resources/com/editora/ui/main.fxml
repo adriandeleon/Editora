@@ -12,20 +12,35 @@
             xmlns:fx="http://javafx.com/fxml"
             fx:controller="com.editora.ui.MainController">
     <top>
-        <ToolBar>
-            <items>
-                <Button text="New" onAction="#onNew"/>
-                <Button text="Open" onAction="#onOpen"/>
-                <Button text="Save" onAction="#onSave"/>
-                <Button text="Save As" onAction="#onSaveAs"/>
-                <Separator orientation="VERTICAL"/>
-                <Button text="Find" onAction="#onFind"/>
-                <Button text="Replace" onAction="#onReplace"/>
-                <Separator orientation="VERTICAL"/>
-                <Button text="Palette" onAction="#onPalette"/>
-                <Button text="Close Tab" onAction="#onCloseTab"/>
-            </items>
-        </ToolBar>
+        <VBox fx:id="topBox">
+            <children>
+                <ToolBar>
+                    <items>
+                        <Button fx:id="newButton" onAction="#onNew"/>
+                        <Button fx:id="openButton" onAction="#onOpen"/>
+                        <Button fx:id="closeTabButton" onAction="#onCloseTab"/>
+                        <Button fx:id="saveButton" onAction="#onSave"/>
+                        <Button fx:id="saveAsButton" onAction="#onSaveAs"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Button fx:id="undoButton" onAction="#onUndo"/>
+                        <Button fx:id="redoButton" onAction="#onRedo"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Button fx:id="cutButton" onAction="#onCut"/>
+                        <Button fx:id="copyButton" onAction="#onCopy"/>
+                        <Button fx:id="pasteButton" onAction="#onPaste"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Button fx:id="findButton" onAction="#onFind"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Button fx:id="paletteButton" onAction="#onPalette"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Button fx:id="settingsButton" onAction="#onSettings"/>
+                        <Button fx:id="aboutButton" onAction="#onAbout"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Button fx:id="quitButton" onAction="#onQuit"/>
+                    </items>
+                </ToolBar>
+            </children>
+        </VBox>
     </top>
     <center>
         <TabPane fx:id="tabPane"/>
