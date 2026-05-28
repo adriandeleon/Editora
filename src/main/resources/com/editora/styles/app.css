@@ -26,6 +26,13 @@
     -fx-opacity: 0.7;
 }
 
+/* Document overview docked on the editor's right edge. */
+.minimap {
+    -fx-background-color: #fbfcfd;
+    -fx-border-color: #eaeef2;
+    -fx-border-width: 0 0 0 1;
+}
+
 /* Line-number gutter */
 .editor-area .lineno {
     -fx-background-color: #f6f8fa;

@@ -588,11 +588,29 @@ public class MainController {
         setStatus("Current line highlight: " + (s.isHighlightCurrentLine() ? "on" : "off"));
     }
 
+    private void toggleLineNumbers() {
+        Settings s = config.getSettings();
+        s.setShowLineNumbers(!s.isShowLineNumbers());
+        config.save();
+        applyViewSettingsToAllBuffers(s);
+        setStatus("Line numbers: " + (s.isShowLineNumbers() ? "on" : "off"));
+    }
+
+    private void toggleMinimap() {
+        Settings s = config.getSettings();
+        s.setShowMinimap(!s.isShowMinimap());
+        config.save();
+        applyViewSettingsToAllBuffers(s);
+        setStatus("Minimap: " + (s.isShowMinimap() ? "on" : "off"));
+    }
+
     private void applyViewSettings(EditorBuffer buffer) {
         Settings s = config.getSettings();
         buffer.setFont(s.getFontFamily(), s.getFontSize());
         buffer.setColumnRulerVisible(s.isShowColumnRuler());
         buffer.setLineHighlightOn(s.isHighlightCurrentLine());
+        buffer.setLineNumbersVisible(s.isShowLineNumbers());
+        buffer.setMinimapVisible(s.isShowMinimap());
     }
 
     private void applyViewSettingsToAllBuffers(Settings settings) {
@@ -653,6 +671,10 @@ public class MainController {
                 this::toggleColumnRuler));
         registry.register(Command.of("view.toggleLineHighlight", "View: Toggle Current Line Highlight",
                 this::toggleLineHighlight));
+        registry.register(Command.of("view.toggleLineNumbers", "View: Toggle Line Numbers",
+                this::toggleLineNumbers));
+        registry.register(Command.of("view.toggleMinimap", "View: Toggle Minimap",
+                this::toggleMinimap));
         registry.register(Command.of("file.clearRecent", "File: Clear Recent Files", this::onClearRecent));
         registry.register(Command.of("help.about", "About Editora", this::onAbout));
         registry.register(Command.of("tool.project", "Tool Window: Project",

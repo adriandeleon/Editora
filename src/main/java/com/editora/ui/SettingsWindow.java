@@ -41,6 +41,8 @@ public class SettingsWindow {
     private ComboBox<String> themeCombo;
     private CheckBox columnRulerCheck;
     private CheckBox lineHighlightCheck;
+    private CheckBox lineNumbersCheck;
+    private CheckBox minimapCheck;
     private boolean built;
     private boolean loading;
 
@@ -108,6 +110,16 @@ public class SettingsWindow {
             config.getSettings().setHighlightCurrentLine(now);
             apply();
         });
+        lineNumbersCheck = new CheckBox("Show line numbers");
+        lineNumbersCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setShowLineNumbers(now);
+            apply();
+        });
+        minimapCheck = new CheckBox("Show minimap");
+        minimapCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setShowMinimap(now);
+            apply();
+        });
 
         GridPane form = new GridPane();
         form.setHgap(12);
@@ -117,8 +129,10 @@ public class SettingsWindow {
         form.addRow(2, new Label("Theme:"), themeCombo);
         form.add(columnRulerCheck, 1, 3);
         form.add(lineHighlightCheck, 1, 4);
+        form.add(lineNumbersCheck, 1, 5);
+        form.add(minimapCheck, 1, 6);
 
-        int row = 5;
+        int row = 7;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -194,6 +208,8 @@ public class SettingsWindow {
             themeCombo.setValue(theme);
             columnRulerCheck.setSelected(settings.isShowColumnRuler());
             lineHighlightCheck.setSelected(settings.isHighlightCurrentLine());
+            lineNumbersCheck.setSelected(settings.isShowLineNumbers());
+            minimapCheck.setSelected(settings.isShowMinimap());
         } finally {
             loading = false;
         }

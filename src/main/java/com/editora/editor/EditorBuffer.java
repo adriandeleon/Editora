@@ -32,9 +32,10 @@ public class EditorBuffer {
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
 
-    /** Wraps the scroll pane so we can overlay the column-80 ruler line on top of it. */
+    /** Wraps the scroll pane so we can overlay the column-80 ruler line and dock the minimap. */
     private final AnchorPane root = new AnchorPane();
     private final Line columnRuler = new Line();
+    private final Minimap minimap = new Minimap(area);
 
     private Path path;
     private LanguageRules rules = LanguageRegistry.plaintext();
@@ -52,10 +53,10 @@ public class EditorBuffer {
                 .subscribe(ignore -> applyHighlighting());
         area.textProperty().addListener((obs, old, now) -> dirty.set(true));
         installContextMenu();
-        installColumnRulerOverlay();
+        installOverlays();
     }
 
-    private void installColumnRulerOverlay() {
+    private void installOverlays() {
         columnRuler.getStyleClass().add("column-ruler");
         columnRuler.setManaged(false);
         columnRuler.setMouseTransparent(true);
@@ -63,11 +64,16 @@ public class EditorBuffer {
         columnRuler.endYProperty().bind(root.heightProperty());
         columnRuler.setVisible(false);
 
-        root.getChildren().addAll(scrollPane, columnRuler);
+        // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
+        // is docked to the right edge; the column ruler floats on top of everything.
+        root.getChildren().addAll(scrollPane, minimap, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
-        AnchorPane.setRightAnchor(scrollPane, 0d);
+        AnchorPane.setRightAnchor(scrollPane, Minimap.WIDTH);
+        AnchorPane.setTopAnchor(minimap, 0d);
+        AnchorPane.setBottomAnchor(minimap, 0d);
+        AnchorPane.setRightAnchor(minimap, 0d);
     }
 
     private void installContextMenu() {
@@ -146,6 +152,18 @@ public class EditorBuffer {
     /** Toggle the highlight on the line containing the caret. */
     public void setLineHighlightOn(boolean on) {
         area.setLineHighlighterOn(on);
+    }
+
+    /** Show/hide the line-number gutter. */
+    public void setLineNumbersVisible(boolean visible) {
+        area.setParagraphGraphicFactory(visible ? LineNumberFactory.get(area) : null);
+    }
+
+    /** Show/hide the minimap overview; reclaims its width for the editor when hidden. */
+    public void setMinimapVisible(boolean visible) {
+        minimap.setVisible(visible);
+        minimap.setManaged(visible);
+        AnchorPane.setRightAnchor(scrollPane, visible ? Minimap.WIDTH : 0d);
     }
 
     private void updateColumnRulerPosition() {

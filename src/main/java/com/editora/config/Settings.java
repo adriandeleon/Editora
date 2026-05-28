@@ -16,6 +16,8 @@ public class Settings {
     private String keymap = "emacs";
     private boolean showColumnRuler = true;
     private boolean highlightCurrentLine = true;
+    private boolean showLineNumbers = true;
+    private boolean showMinimap = true;
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -86,6 +88,22 @@ public class Settings {
 
     public void setHighlightCurrentLine(boolean highlightCurrentLine) {
         this.highlightCurrentLine = highlightCurrentLine;
+    }
+
+    public boolean isShowLineNumbers() {
+        return showLineNumbers;
+    }
+
+    public void setShowLineNumbers(boolean showLineNumbers) {
+        this.showLineNumbers = showLineNumbers;
+    }
+
+    public boolean isShowMinimap() {
+        return showMinimap;
+    }
+
+    public void setShowMinimap(boolean showMinimap) {
+        this.showMinimap = showMinimap;
     }
 
     public Map<String, String> getKeybindings() {
