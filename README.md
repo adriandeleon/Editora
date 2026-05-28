@@ -22,15 +22,18 @@ Emacs-style keymap or a fuzzy command palette.
 
 ## Build & Run
 
+A Maven wrapper is included, so no local Maven install is required — use `./mvnw`
+(or `mvnw.cmd` on Windows). Plain `mvn` works too if you have Maven installed.
+
 ```bash
 # Run the app
-mvn javafx:run
+./mvnw javafx:run
 
 # Run tests
-mvn test
+./mvnw test
 
 # Build a native app image / installer (DMG on macOS, MSI on Windows, DEB on Linux)
-mvn -Pdist package
+./mvnw -Pdist package
 ```
 
 The `dist` profile produces a platform installer under `target/dist/`.
