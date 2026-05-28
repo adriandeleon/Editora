@@ -43,7 +43,11 @@
         </VBox>
     </top>
     <center>
-        <TabPane fx:id="tabPane"/>
+        <BorderPane fx:id="workspace">
+            <center>
+                <TabPane fx:id="tabPane"/>
+            </center>
+        </BorderPane>
     </center>
     <bottom>
         <VBox fx:id="bottomBox">

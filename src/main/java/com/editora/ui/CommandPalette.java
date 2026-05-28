@@ -84,6 +84,18 @@ public class CommandPalette {
                 move(-1);
                 e.consume();
             }
+            case N -> {
+                if (e.isControlDown()) {
+                    move(1);
+                    e.consume();
+                }
+            }
+            case P -> {
+                if (e.isControlDown()) {
+                    move(-1);
+                    e.consume();
+                }
+            }
             case G -> {
                 if (e.isControlDown()) {
                     hide();

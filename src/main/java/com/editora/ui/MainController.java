@@ -15,7 +15,12 @@ import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Optional;
+
+import javafx.collections.ListChangeListener;
 
 import javafx.application.Platform;
 import javafx.css.PseudoClass;
@@ -30,6 +35,8 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
@@ -41,6 +48,8 @@ public class MainController {
 
     @FXML
     private BorderPane root;
+    @FXML
+    private BorderPane workspace;
     @FXML
     private TabPane tabPane;
     @FXML
@@ -86,18 +95,86 @@ public class MainController {
     private CommandPalette palette;
     private FindReplaceBar findBar;
     private SettingsWindow settingsWindow;
+    private ToolWindowManager toolWindows;
+    private ToolWindow projectToolWindow;
+    private ToolWindow bookmarksToolWindow;
+    private ToolWindow fileInfoToolWindow;
+    private FileInformationPanel fileInfoPanel;
+    private Switcher switcher;
+    /** Most-recently-used tab order, head = most recent. */
+    private final LinkedList<Tab> mru = new LinkedList<>();
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
         this.stage = stage;
+        stage.setOnCloseRequest(e -> {
+            if (!confirmCloseAllBuffers()) {
+                e.consume();
+            }
+        });
         this.config = config;
         this.registry = registry;
         this.palette = new CommandPalette(registry, keymap);
         this.findBar = new FindReplaceBar(this::activeArea, this::setStatus);
-        this.settingsWindow = new SettingsWindow(config, this::applyFontToAllBuffers);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
+        setupToolWindows();
+        this.settingsWindow = new SettingsWindow(config, toolWindows, this::applyFontToAllBuffers);
+        this.switcher = new Switcher(() -> List.copyOf(mru),
+                tab -> tabPane.getSelectionModel().select(tab),
+                this::closeTabFromSwitcher,
+                toolWindows);
+        setupMruTracking();
         registerCommands();
         setupToolbar();
+        toolWindows.restore();
+    }
+
+    private void setupMruTracking() {
+        tabPane.getSelectionModel().selectedItemProperty().addListener((obs, was, now) -> {
+            if (now != null) {
+                mru.remove(now);
+                mru.addFirst(now);
+            }
+            EditorBuffer buffer = now == null ? null : (EditorBuffer) now.getUserData();
+            fileInfoPanel.attach(buffer);
+        });
+        tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
+            while (c.next()) {
+                if (c.wasRemoved()) {
+                    mru.removeAll(c.getRemoved());
+                }
+            }
+        });
+    }
+
+    private void closeTabFromSwitcher(Tab tab) {
+        EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+        if (buffer == null || confirmCloseIfDirty(buffer)) {
+            tabPane.getTabs().remove(tab);
+        }
+    }
+
+    private void setupToolWindows() {
+        toolWindows = new ToolWindowManager(workspace, tabPane, config);
+        projectToolWindow = new ToolWindow("project", "Project", ToolWindow.Side.RIGHT,
+                Icons::project, placeholder("Project tool window\n(content coming soon)"));
+        bookmarksToolWindow = new ToolWindow("bookmarks", "Bookmarks", ToolWindow.Side.RIGHT,
+                Icons::bookmark, placeholder("Bookmarks tool window\n(content coming soon)"));
+        fileInfoPanel = new FileInformationPanel();
+        fileInfoToolWindow = new ToolWindow("file-information", "File Information", ToolWindow.Side.RIGHT,
+                Icons::about, fileInfoPanel);
+        toolWindows.register(projectToolWindow);
+        toolWindows.register(bookmarksToolWindow);
+        toolWindows.register(fileInfoToolWindow);
+    }
+
+    private Region placeholder(String text) {
+        Label label = new Label(text);
+        label.getStyleClass().add("tool-window-placeholder");
+        label.setWrapText(true);
+        StackPane wrapper = new StackPane(label);
+        wrapper.setAlignment(javafx.geometry.Pos.CENTER);
+        return wrapper;
     }
 
     private void setupToolbar() {
@@ -306,7 +383,24 @@ public class MainController {
 
     @FXML
     private void onQuit() {
-        Platform.exit();
+        if (confirmCloseAllBuffers()) {
+            Platform.exit();
+        }
+    }
+
+    /** Walks every tab and prompts to save/discard each dirty buffer. False = user cancelled. */
+    private boolean confirmCloseAllBuffers() {
+        for (Tab tab : new ArrayList<>(tabPane.getTabs())) {
+            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            if (buffer == null || !buffer.isDirty()) {
+                continue;
+            }
+            tabPane.getSelectionModel().select(tab);
+            if (!confirmCloseIfDirty(buffer)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void nextBuffer() {
@@ -418,6 +512,16 @@ public class MainController {
         registry.register(Command.of("palette.show", "Command Palette", this::onPalette));
         registry.register(Command.of("view.settings", "Settings", this::onSettings));
         registry.register(Command.of("help.about", "About Editora", this::onAbout));
+        registry.register(Command.of("tool.project", "Tool Window: Project",
+                () -> toolWindows.toggle(projectToolWindow)));
+        registry.register(Command.of("tool.bookmarks", "Tool Window: Bookmarks",
+                () -> toolWindows.toggle(bookmarksToolWindow)));
+        registry.register(Command.of("tool.fileInformation", "Tool Window: File Information",
+                () -> toolWindows.toggle(fileInfoToolWindow)));
+        registry.register(Command.of("switcher.show", "Switcher",
+                () -> switcher.show(stage, false)));
+        registry.register(Command.of("switcher.showReverse", "Switcher (Reverse)",
+                () -> switcher.show(stage, true)));
         registry.register(Command.of("find.show", "Find", () -> toggleFind(false)));
         registry.register(Command.of("find.showBackward", "Find Backward", () -> toggleFind(true)));
         registry.register(Command.of("find.replace", "Replace", () -> toggleFind(false)));

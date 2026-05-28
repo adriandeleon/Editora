@@ -59,6 +59,7 @@ public class EditorBuffer {
                 undo, redo,
                 new SeparatorMenuItem(),
                 selectAll);
+        menu.getStyleClass().add("editor-context-menu");
 
         menu.setOnShowing(e -> {
             boolean hasSelection = area.getSelection().getLength() > 0;

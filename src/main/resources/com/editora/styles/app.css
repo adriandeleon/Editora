@@ -28,6 +28,191 @@
     -fx-padding: 0 8 0 8;
 }
 
+/* IntelliJ-style tool window stripes + panels. */
+.tool-stripe {
+    -fx-background-color: #f6f8fa;
+    -fx-border-color: #d0d7de;
+    -fx-spacing: 2;
+}
+
+.tool-stripe-vertical {
+    -fx-pref-width: 32;
+    -fx-padding: 4 0 4 0;
+}
+
+.tool-stripe-horizontal {
+    -fx-pref-height: 32;
+    -fx-padding: 0 4 0 4;
+}
+
+.tool-stripe-left   { -fx-border-width: 0 1 0 0; }
+.tool-stripe-right  { -fx-border-width: 0 0 0 1; }
+.tool-stripe-bottom { -fx-border-width: 1 0 0 0; }
+
+.tool-stripe-button {
+    -fx-padding: 6;
+    -fx-min-width: 24;
+    -fx-min-height: 24;
+}
+
+.tool-stripe-button .toolbar-icon {
+    -fx-fill: #57606a;
+}
+
+.tool-stripe-button:hover .toolbar-icon {
+    -fx-fill: #24292f;
+}
+
+.tool-stripe-button:open {
+    -fx-background-color: #ddf4ff;
+}
+
+.tool-stripe-button:open .toolbar-icon {
+    -fx-fill: #0969da;
+}
+
+.tool-window {
+    -fx-background-color: #ffffff;
+}
+
+.tool-window-header {
+    -fx-background-color: #f6f8fa;
+    -fx-padding: 4 4 4 8;
+    -fx-border-color: #d0d7de;
+    -fx-border-width: 0 0 1 0;
+}
+
+.tool-window-title {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #24292f;
+}
+
+.tool-window-close {
+    -fx-padding: 2;
+}
+
+.tool-window-content {
+    -fx-padding: 8;
+    -fx-background-color: #ffffff;
+}
+
+.tool-window-placeholder {
+    -fx-text-fill: #6e7781;
+    -fx-text-alignment: center;
+}
+
+/* File Information tool window */
+.file-info-panel {
+    -fx-background-color: #ffffff;
+}
+
+.file-info-header {
+    -fx-padding: 6 8 6 8;
+    -fx-border-color: #d0d7de;
+    -fx-border-width: 0 0 1 0;
+}
+
+.file-info-tabs {
+    -fx-spacing: 0;
+}
+
+.file-info-tab {
+    -fx-background-radius: 0;
+    -fx-padding: 6 12 6 12;
+    -fx-background-color: transparent;
+}
+
+.file-info-tab:hover .toolbar-icon {
+    -fx-fill: #24292f;
+}
+
+.file-info-tab:selected {
+    -fx-background-color: #ddf4ff;
+}
+
+.file-info-tab:selected .toolbar-icon {
+    -fx-fill: #0969da;
+}
+
+.file-info-tab .toolbar-icon {
+    -fx-fill: #57606a;
+}
+
+.file-info-scroll {
+    -fx-background-color: transparent;
+}
+
+.file-info-scroll .viewport {
+    -fx-background-color: transparent;
+}
+
+.file-info-section {
+    -fx-background-color: transparent;
+}
+
+.file-info-section > .title {
+    -fx-background-color: transparent;
+    -fx-padding: 2 0 2 0;
+    -fx-font-size: 11px;
+    -fx-text-fill: #6e7781;
+    -fx-font-weight: bold;
+}
+
+.file-info-grid {
+    -fx-padding: 8;
+    -fx-background-color: #f6f8fa;
+    -fx-background-radius: 4;
+}
+
+.file-info-key {
+    -fx-text-fill: #24292f;
+    -fx-font-size: 12px;
+}
+
+.file-info-value {
+    -fx-text-fill: #57606a;
+    -fx-font-size: 12px;
+    -fx-alignment: center-right;
+}
+
+/* Switcher popup — two columns of recent files / tool windows. */
+.switcher {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d0d7de;
+    -fx-border-width: 1;
+    -fx-padding: 8;
+    -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
+}
+
+.switcher-column {
+    -fx-padding: 4;
+}
+
+.switcher-column:active .switcher-header {
+    -fx-text-fill: #0969da;
+}
+
+.switcher-header {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #6e7781;
+    -fx-padding: 2 4 2 4;
+}
+
+.switcher .list-view {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+}
+
+/* Editor right-click menu: use the UI font, not the editor's monospace inline style. */
+.editor-context-menu,
+.editor-context-menu .menu-item,
+.editor-context-menu .menu-item .label {
+    -fx-font-family: "sans-serif";
+    -fx-font-size: 13px;
+}
+
 /* Unsaved/dirty tab: amber/italic label so the bullet prefix is reinforced visually. */
 .tab.dirty .tab-label {
     -fx-text-fill: #bf8700;

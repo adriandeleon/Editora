@@ -10,8 +10,10 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.Separator;
 import javafx.scene.control.Spinner;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -21,6 +23,7 @@ import javafx.scene.text.Font;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+import javafx.util.StringConverter;
 
 /** A small settings window. Changes are persisted to settings.json and applied live. */
 public class SettingsWindow {
@@ -30,14 +33,17 @@ public class SettingsWindow {
 
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
+    private final ToolWindowManager toolWindows;
     private final Stage stage = new Stage();
 
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private boolean built;
+    private boolean loading;
 
-    public SettingsWindow(ConfigManager config, Consumer<Settings> onApply) {
+    public SettingsWindow(ConfigManager config, ToolWindowManager toolWindows, Consumer<Settings> onApply) {
         this.config = config;
+        this.toolWindows = toolWindows;
         this.onApply = onApply;
     }
 
@@ -83,6 +89,49 @@ public class SettingsWindow {
         form.addRow(0, new Label("Font family:"), fontFamily);
         form.addRow(1, new Label("Font size:"), fontSize);
 
+        int row = 2;
+        if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
+            form.add(new Separator(), 0, row++, 2, 1);
+            Label heading = new Label("Tool window placement");
+            heading.setStyle("-fx-font-weight: bold;");
+            form.add(heading, 0, row++, 2, 1);
+            for (ToolWindow tw : toolWindows.getRegisteredToolWindows()) {
+                CheckBox showCheck = new CheckBox("Show");
+                showCheck.setSelected(toolWindows.isVisible(tw));
+
+                ComboBox<ToolWindow.Side> sideCombo = new ComboBox<>();
+                sideCombo.getItems().setAll(ToolWindow.Side.values());
+                sideCombo.setConverter(new StringConverter<>() {
+                    @Override
+                    public String toString(ToolWindow.Side side) {
+                        if (side == null) {
+                            return "";
+                        }
+                        return side.name().charAt(0) + side.name().substring(1).toLowerCase();
+                    }
+
+                    @Override
+                    public ToolWindow.Side fromString(String s) {
+                        return ToolWindow.Side.valueOf(s.toUpperCase());
+                    }
+                });
+                sideCombo.setValue(toolWindows.currentSide(tw));
+                sideCombo.setDisable(!showCheck.isSelected());
+
+                showCheck.selectedProperty().addListener((obs, was, visible) -> {
+                    toolWindows.setVisible(tw, visible);
+                    sideCombo.setDisable(!visible);
+                });
+                sideCombo.valueProperty().addListener((obs, old, now) -> {
+                    if (now != null) {
+                        toolWindows.setSide(tw, now);
+                    }
+                });
+
+                form.addRow(row++, new Label(tw.getTitle() + ":"), showCheck, sideCombo);
+            }
+        }
+
         Button about = new Button("About");
         about.setOnAction(e -> showAbout(stage));
         Button close = new Button("Close");
@@ -100,12 +149,17 @@ public class SettingsWindow {
     }
 
     private void load() {
-        Settings settings = config.getSettings();
-        if (!fontFamily.getItems().contains(settings.getFontFamily())) {
-            fontFamily.getItems().add(0, settings.getFontFamily());
+        loading = true;
+        try {
+            Settings settings = config.getSettings();
+            if (!fontFamily.getItems().contains(settings.getFontFamily())) {
+                fontFamily.getItems().add(0, settings.getFontFamily());
+            }
+            fontFamily.setValue(settings.getFontFamily());
+            fontSize.getValueFactory().setValue(settings.getFontSize());
+        } finally {
+            loading = false;
         }
-        fontFamily.setValue(settings.getFontFamily());
-        fontSize.getValueFactory().setValue(settings.getFontSize());
     }
 
     /** Parses the spinner's editor text, clamps it to range, and commits it to the value. */
@@ -120,6 +174,9 @@ public class SettingsWindow {
     }
 
     private void apply() {
+        if (loading) {
+            return;
+        }
         if (fontFamily.getValue() == null || fontSize.getValue() == null) {
             return;
         }

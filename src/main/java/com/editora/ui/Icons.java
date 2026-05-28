@@ -101,6 +101,37 @@ final class Icons {
                 + "4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z");
     }
 
+    static SVGPath project() {
+        // Material "account_tree" — a tree-like icon for the Project tool window.
+        return of("M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3z");
+    }
+
+    static SVGPath bookmark() {
+        return of("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
+    }
+
+    static SVGPath closeSmall() {
+        // Same outline as closeTab() — used by the tool window header.
+        return of("M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 "
+                + "19 17.59 13.41 12z");
+    }
+
+    static SVGPath fileSheet() {
+        return of("M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v"
+                + "-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z");
+    }
+
+    static SVGPath outline() {
+        return of("M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-"
+                + "6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-"
+                + "1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-"
+                + "6h14v-2H7v2zm0-8v2h14V5H7z");
+    }
+
+    static SVGPath warning() {
+        return of("M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z");
+    }
+
     static SVGPath about() {
         return of("M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 "
                 + "2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z");
