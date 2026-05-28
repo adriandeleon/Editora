@@ -107,6 +107,7 @@ public class MainController {
     private SettingsWindow settingsWindow;
     private ToolWindowManager toolWindows;
     private ToolWindow projectToolWindow;
+    private ToolWindow structureToolWindow;
     private ToolWindow bookmarksToolWindow;
     private ToolWindow fileInfoToolWindow;
     private FileInformationPanel fileInfoPanel;
@@ -240,6 +241,9 @@ public class MainController {
         projectToolWindow = new ToolWindow("project", "Project", ToolWindow.Side.RIGHT,
                 Icons::project, placeholder("Project tool window\n(content coming soon)"),
                 "tool.project");
+        structureToolWindow = new ToolWindow("structure", "Structure", ToolWindow.Side.RIGHT,
+                Icons::structure, placeholder("Structure tool window\n(content coming soon)"),
+                "tool.structure");
         bookmarksToolWindow = new ToolWindow("bookmarks", "Bookmarks", ToolWindow.Side.RIGHT,
                 Icons::bookmark, placeholder("Bookmarks tool window\n(content coming soon)"),
                 "tool.bookmarks");
@@ -247,6 +251,7 @@ public class MainController {
         fileInfoToolWindow = new ToolWindow("file-information", "File Information", ToolWindow.Side.RIGHT,
                 Icons::about, fileInfoPanel, "tool.fileInformation");
         toolWindows.register(projectToolWindow);
+        toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
         toolWindows.register(fileInfoToolWindow);
     }
@@ -652,6 +657,8 @@ public class MainController {
         registry.register(Command.of("help.about", "About Editora", this::onAbout));
         registry.register(Command.of("tool.project", "Tool Window: Project",
                 () -> toolWindows.toggle(projectToolWindow)));
+        registry.register(Command.of("tool.structure", "Tool Window: Structure",
+                () -> toolWindows.toggle(structureToolWindow)));
         registry.register(Command.of("tool.bookmarks", "Tool Window: Bookmarks",
                 () -> toolWindows.toggle(bookmarksToolWindow)));
         registry.register(Command.of("tool.fileInformation", "Tool Window: File Information",

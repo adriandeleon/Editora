@@ -124,6 +124,12 @@ final class Icons {
         return of("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
     }
 
+    static Node structure() {
+        // Material "device_hub" — a node/tree graph, used for the Structure tool window.
+        return of("M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 "
+                + "2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4z");
+    }
+
     static Node closeSmall() {
         // Same outline as closeTab() — used by the tool window header.
         return of("M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 "
