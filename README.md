@@ -1,5 +1,7 @@
 # Editora
 
+[![CI](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml/badge.svg)](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml)
+
 A keyboard-driven, cross-platform programmer's text editor built with **JDK 25**,
 **JavaFX 25**, and **Maven**. Every action is a registered command, reachable by an
 Emacs-style keymap or a fuzzy command palette.
