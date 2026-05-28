@@ -16,6 +16,8 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.input.Clipboard;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
@@ -103,6 +105,15 @@ public class EditorBuffer {
         area.setOnContextMenuRequested(e -> {
             menu.show(area, e.getScreenX(), e.getScreenY());
             e.consume();
+        });
+
+        // A left-click in the editor dismisses an open context menu. RichTextFX consumes the
+        // mouse press before the popup's auto-hide fires, so close it explicitly. The event is
+        // not consumed, so the click still positions the caret as usual.
+        area.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
+            if (menu.isShowing() && e.getButton() == MouseButton.PRIMARY) {
+                menu.hide();
+            }
         });
     }
 
