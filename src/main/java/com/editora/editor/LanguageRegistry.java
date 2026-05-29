@@ -1,62 +1,53 @@
 package com.editora.editor;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import com.editora.editor.LanguageRules.Rule;
-
-/** Maps file extensions to {@link LanguageRules}, with a plaintext fallback. */
+/**
+ * Resolves a file name to a short language identifier. Syntax highlighting itself is handled by
+ * {@link GrammarRegistry} (TextMate grammars via tm4e); this registry only supplies the language
+ * <em>name</em> used by the fold engine ({@link FoldRegions}) to pick a folding strategy and by the
+ * File Information panel for display. Unknown extensions resolve to {@code "plaintext"}.
+ */
 public final class LanguageRegistry {
 
-    private static final LanguageRules PLAINTEXT = new LanguageRules("plaintext", List.of());
+    public static final String PLAINTEXT = "plaintext";
 
-    private static final String STRING = "\"(?:\\\\.|[^\"\\\\])*\"";
-
-    private static final LanguageRules JAVA = new LanguageRules("java", List.of(
-            new Rule("COMMENT", "//[^\\n]*|/\\*(?:.|\\R)*?\\*/", "comment"),
-            new Rule("STRING", STRING, "string"),
-            new Rule("ANNOTATION", "@\\w+", "annotation"),
-            new Rule("KEYWORD", "\\b(?:abstract|assert|boolean|break|byte|case|catch|char|class|"
-                    + "const|continue|default|do|double|else|enum|extends|final|finally|float|for|"
-                    + "goto|if|implements|import|instanceof|int|interface|long|native|new|package|"
-                    + "private|protected|public|record|return|sealed|short|static|strictfp|super|"
-                    + "switch|synchronized|this|throw|throws|transient|try|var|void|volatile|while|"
-                    + "yield|true|false|null)\\b", "keyword"),
-            new Rule("NUMBER", "\\b\\d+(?:\\.\\d+)?\\b", "number")));
-
-    private static final LanguageRules JSON = new LanguageRules("json", List.of(
-            new Rule("STRING", STRING, "string"),
-            new Rule("NUMBER", "-?\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b", "number"),
-            new Rule("KEYWORD", "\\b(?:true|false|null)\\b", "keyword"),
-            new Rule("PUNCT", "[{}\\[\\]:,]", "punct")));
-
-    private static final LanguageRules XML = new LanguageRules("xml", List.of(
-            new Rule("COMMENT", "<!--(?:.|\\R)*?-->", "comment"),
-            new Rule("STRING", "\"[^\"]*\"|'[^']*'", "string"),
-            new Rule("TAG", "</?[\\w:.-]+|/?>", "tag"),
-            new Rule("ATTRIBUTE", "[\\w:.-]+(?=\\s*=)", "attribute")));
-
-    private static final LanguageRules MARKDOWN = new LanguageRules("markdown", List.of(
-            new Rule("CODE", "```(?:.|\\R)*?```|`[^`]*`", "code"),
-            new Rule("HEADING", "(?m)^#{1,6}\\s.*$", "heading"),
-            new Rule("LINK", "\\[[^\\]]*\\]\\([^)]*\\)", "link"),
-            new Rule("BOLD", "\\*\\*[^*]+\\*\\*", "bold"),
-            new Rule("ITALIC", "\\*[^*]+\\*", "italic")));
-
-    private static final Map<String, LanguageRules> BY_EXTENSION = Map.ofEntries(
-            Map.entry("java", JAVA),
-            Map.entry("json", JSON),
-            Map.entry("xml", XML),
-            Map.entry("fxml", XML),
-            Map.entry("html", XML),
-            Map.entry("md", MARKDOWN),
-            Map.entry("markdown", MARKDOWN));
+    /** Lower-case file extension -> language name. */
+    private static final Map<String, String> BY_EXTENSION = Map.ofEntries(
+            // Markup (fold by element nesting / fenced sections).
+            Map.entry("xml", "xml"), Map.entry("xsd", "xml"), Map.entry("xsl", "xml"),
+            Map.entry("xslt", "xml"), Map.entry("svg", "xml"), Map.entry("fxml", "xml"),
+            Map.entry("pom", "xml"), Map.entry("rss", "xml"), Map.entry("wsdl", "xml"),
+            Map.entry("html", "html"), Map.entry("htm", "html"), Map.entry("xhtml", "html"),
+            Map.entry("md", "markdown"), Map.entry("markdown", "markdown"),
+            Map.entry("mdown", "markdown"), Map.entry("mkd", "markdown"),
+            // Brace-delimited languages (fold by matched {} / []).
+            Map.entry("java", "java"),
+            Map.entry("json", "json"), Map.entry("jsonc", "json"), Map.entry("json5", "json"),
+            Map.entry("c", "c"), Map.entry("h", "c"),
+            Map.entry("cpp", "cpp"), Map.entry("cc", "cpp"), Map.entry("cxx", "cpp"),
+            Map.entry("hpp", "cpp"), Map.entry("hh", "cpp"), Map.entry("hxx", "cpp"),
+            Map.entry("rs", "rust"), Map.entry("go", "go"),
+            Map.entry("kt", "kotlin"), Map.entry("kts", "kotlin"),
+            Map.entry("groovy", "groovy"), Map.entry("gradle", "groovy"), Map.entry("gvy", "groovy"),
+            Map.entry("cs", "csharp"), Map.entry("csx", "csharp"),
+            Map.entry("css", "css"),
+            // Line/indentation-based languages (no delimiter folding).
+            Map.entry("py", "python"), Map.entry("pyw", "python"), Map.entry("pyi", "python"),
+            Map.entry("rb", "ruby"), Map.entry("rake", "ruby"), Map.entry("gemspec", "ruby"),
+            Map.entry("sh", "shell"), Map.entry("bash", "shell"), Map.entry("zsh", "shell"),
+            Map.entry("ps1", "powershell"), Map.entry("psm1", "powershell"),
+            Map.entry("bat", "batchfile"), Map.entry("cmd", "batchfile"),
+            Map.entry("yaml", "yaml"), Map.entry("yml", "yaml"),
+            Map.entry("ini", "ini"), Map.entry("cfg", "ini"), Map.entry("conf", "ini"),
+            Map.entry("sql", "sql"), Map.entry("ddl", "sql"), Map.entry("dml", "sql"));
 
     private LanguageRegistry() {
     }
 
-    public static LanguageRules forFileName(String fileName) {
+    /** The language name for {@code fileName}'s extension, or {@code "plaintext"} if unrecognized. */
+    public static String forFileName(String fileName) {
         if (fileName == null) {
             return PLAINTEXT;
         }
@@ -68,7 +59,7 @@ public final class LanguageRegistry {
         return BY_EXTENSION.getOrDefault(ext, PLAINTEXT);
     }
 
-    public static LanguageRules plaintext() {
+    public static String plaintext() {
         return PLAINTEXT;
     }
 }

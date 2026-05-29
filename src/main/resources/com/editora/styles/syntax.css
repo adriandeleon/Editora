@@ -1,14 +1,35 @@
-/* Syntax token colors (Primer Light palette). Classes are applied to CodeArea text spans. */
-.keyword    { -fx-fill: #cf222e; -fx-font-weight: bold; }
-.string     { -fx-fill: #0a3069; }
-.comment    { -fx-fill: #6e7781; -fx-font-style: italic; }
-.number     { -fx-fill: #0550ae; }
-.annotation { -fx-fill: #953800; }
-.punct      { -fx-fill: #24292f; }
-.tag        { -fx-fill: #116329; }
-.attribute  { -fx-fill: #0550ae; }
-.heading    { -fx-fill: #0550ae; -fx-font-weight: bold; }
-.code       { -fx-fill: #0a3069; }
-.link       { -fx-fill: #0969da; -fx-underline: true; }
-.bold       { -fx-fill: #24292f; -fx-font-weight: bold; }
-.italic     { -fx-fill: #24292f; -fx-font-style: italic; }
+/* Syntax token colors (Primer Light palette). Classes are applied to CodeArea text spans by the
+   TextMate highlighter (scope -> class, see TextMateHighlighter).
+
+   IMPORTANT: each selector is the COMPOUND `.text.<class>` (specificity 0,2,0), not a single
+   `.<class>` (0,1,0) and not a descendant `.editor-area .text.<class>`.
+     - It must be 0,2,0 to tie the base `.editor-area .text` fill in app.css and win on source order
+       (this file is added after app.css); a single-class rule would lose the cascade and every token
+       would render in the default text color.
+     - It must NOT use a descendant combinator: a combinator forces JavaFX to walk ancestors and
+       defeats the per-node CSS style cache, which makes RichTextFX restyle every visible text segment
+       on each scroll pulse — catastrophic scroll lag. The compound form matches by style class alone. */
+.text.keyword    { -fx-fill: #cf222e; -fx-font-weight: bold; }
+.text.string     { -fx-fill: #0a3069; }
+.text.regexp     { -fx-fill: #0a3069; -fx-font-style: italic; }
+.text.escape     { -fx-fill: #1a7f37; }
+.text.comment    { -fx-fill: #6e7781; -fx-font-style: italic; }
+.text.number     { -fx-fill: #0550ae; }
+.text.constant   { -fx-fill: #0550ae; }
+.text.annotation { -fx-fill: #953800; }
+.text.type       { -fx-fill: #953800; }
+.text.function   { -fx-fill: #8250df; }
+.text.variable   { -fx-fill: #24292f; }
+.text.operator   { -fx-fill: #cf222e; }
+.text.property   { -fx-fill: #0550ae; }
+.text.punct      { -fx-fill: #24292f; }
+.text.tag        { -fx-fill: #116329; }
+.text.attribute  { -fx-fill: #0550ae; }
+.text.invalid    { -fx-fill: #ffffff; -rtfx-background-color: #cf222e; }
+
+/* Markup (Markdown) */
+.text.heading    { -fx-fill: #0550ae; -fx-font-weight: bold; }
+.text.code       { -fx-fill: #0a3069; }
+.text.link       { -fx-fill: #0969da; -fx-underline: true; }
+.text.bold       { -fx-fill: #24292f; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: #24292f; -fx-font-style: italic; }

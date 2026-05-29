@@ -2,12 +2,19 @@ package com.editora.editor;
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import java.nio.file.Path;
+
+import javafx.application.Platform;
 
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -38,7 +45,18 @@ public class EditorBuffer {
     private final FoldManager folds = new FoldManager(area);
 
     private Path path;
-    private LanguageRules rules = LanguageRegistry.plaintext();
+    /** Language name for the current file (drives fold strategy); see {@link LanguageRegistry}. */
+    private String language = LanguageRegistry.plaintext();
+    /** TextMate grammar for the current file, or {@code null} when no grammar is bundled. */
+    private IGrammar grammar;
+    /** Off-thread tokenizer so highlighting a large document never blocks the UI (see applyHighlighting). */
+    private final ExecutorService highlightExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "editor-highlighter");
+        t.setDaemon(true);
+        return t;
+    });
+    /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
+    private long highlightGen;
     private String fontFamily = "monospace";
     private int fontSize = 14;
     private boolean rulerVisible;
@@ -220,13 +238,15 @@ public class EditorBuffer {
         return path;
     }
 
-    /** Associates this buffer with a file and selects highlighting rules from its extension. */
+    /** Associates this buffer with a file and selects the grammar and fold language from its extension. */
     public void setPath(Path path) {
         this.path = path;
-        this.rules = path == null
+        String fileName = path == null ? null : path.getFileName().toString();
+        this.language = fileName == null
                 ? LanguageRegistry.plaintext()
-                : LanguageRegistry.forFileName(path.getFileName().toString());
-        folds.setLanguage(rules.name());
+                : LanguageRegistry.forFileName(fileName);
+        this.grammar = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
+        folds.setLanguage(language);
         applyHighlighting();
     }
 
@@ -257,9 +277,41 @@ public class EditorBuffer {
     }
 
     private void applyHighlighting() {
-        StyleSpans<Collection<String>> spans = SyntaxHighlighter.compute(area.getText(), rules);
-        if (spans != null) {
-            area.setStyleSpans(0, spans);
+        if (grammar == null) {
+            // No grammar for this file type: clear any previously applied styles so none linger.
+            // This is cheap (a single span), so do it inline on the FX thread.
+            int length = area.getLength();
+            if (length > 0) {
+                area.setStyleSpans(0, new StyleSpansBuilder<Collection<String>>()
+                        .add(Collections.emptyList(), length)
+                        .create());
+            }
+            return;
         }
+        // Tokenizing a whole document is O(document length) — hundreds of milliseconds to over a
+        // second on large files. Running it on the FX thread froze scrolling and typing, so we
+        // compute the spans on a background thread and apply the result back on the FX thread. A
+        // generation counter discards stale results, and we re-check the document length before
+        // applying (the user may have edited since), since RichTextFX requires the spans to cover
+        // the document exactly.
+        String text = area.getText();
+        IGrammar g = grammar;
+        long gen = ++highlightGen;
+        highlightExecutor.execute(() -> {
+            StyleSpans<Collection<String>> spans;
+            try {
+                spans = TextMateHighlighter.compute(text, g);
+            } catch (Exception | LinkageError e) {
+                return; // never let a grammar/engine fault kill the highlighter thread
+            }
+            if (spans == null) {
+                return;
+            }
+            Platform.runLater(() -> {
+                if (gen == highlightGen && spans.length() == area.getLength()) {
+                    area.setStyleSpans(0, spans);
+                }
+            });
+        });
     }
 }

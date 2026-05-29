@@ -20,6 +20,10 @@
         <atlantafx.version>2.1.0</atlantafx.version>
         <jackson.version>2.19.0</jackson.version>
         <junit.version>5.11.4</junit.version>
+        <tm4e.version>RELEASE260</tm4e.version>
+        <joni.version>2.2.6</joni.version>
+        <jcodings.version>1.0.58</jcodings.version>
+        <gson.version>2.11.0</gson.version>
         <moditect.version>1.2.2.Final</moditect.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
@@ -55,6 +59,30 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
+        </dependency>
+
+        <!-- TextMate grammar engine (Eclipse tm4e core, repackaged as a plain Maven jar by the
+             NetBeans project) plus its Oniguruma regex backend (joni/jcodings) and JSON parser
+             (gson). All are automatic modules patched by moditect for the jlink/jpackage dist. -->
+        <dependency>
+            <groupId>org.netbeans.external</groupId>
+            <artifactId>org.eclipse.tm4e.core-0.14.0</artifactId>
+            <version>${tm4e.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jruby.joni</groupId>
+            <artifactId>joni</artifactId>
+            <version>${joni.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jruby.jcodings</groupId>
+            <artifactId>jcodings</artifactId>
+            <version>${jcodings.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${gson.version}</version>
         </dependency>
 
         <dependency>
@@ -202,6 +230,30 @@
                                         }
                                     </moduleInfoSource>
                                 </module>
+                                <!-- tm4e core ships only an Automatic-Module-Name; jlink needs a real
+                                     descriptor. Its joni/jcodings/gson deps are already modular. The
+                                     optional snakeyaml/batik paths (YAML sources, CSS themes) are never
+                                     exercised, so they are intentionally not required. -->
+                                <module>
+                                    <artifact>
+                                        <groupId>org.netbeans.external</groupId>
+                                        <artifactId>org.eclipse.tm4e.core-0.14.0</artifactId>
+                                        <version>${tm4e.version}</version>
+                                    </artifact>
+                                    <moduleInfoSource>
+                                        module org.eclipse.tm4e.core {
+                                            requires java.xml;
+                                            requires org.jruby.joni;
+                                            requires org.jruby.jcodings;
+                                            requires com.google.gson;
+                                            exports org.eclipse.tm4e.core;
+                                            exports org.eclipse.tm4e.core.grammar;
+                                            exports org.eclipse.tm4e.core.registry;
+                                            exports org.eclipse.tm4e.core.model;
+                                            exports org.eclipse.tm4e.core.theme;
+                                        }
+                                    </moduleInfoSource>
+                                </module>
                             </modules>
                         </configuration>
                     </execution>
@@ -276,6 +328,16 @@
                                             <fileset dir="${project.build.directory}/mods"
                                                      includes="javafx-*-${javafx.version}.jar"/>
                                         </delete>
+                                        <!-- The NetBeans-repackaged tm4e jar is code-signed; jlink rejects
+                                             signed modular jars (and moditect already invalidated the
+                                             signature by injecting module-info). Strip the signature blocks.
+                                             Done with Ant's zip task so no external `zip` binary is needed. -->
+                                        <zip destfile="${project.build.directory}/mods/tm4e-unsigned.jar">
+                                            <zipfileset src="${project.build.directory}/mods/org.eclipse.tm4e.core-0.14.0-${tm4e.version}.jar"
+                                                        excludes="META-INF/*.SF,META-INF/*.RSA,META-INF/*.DSA,META-INF/*.EC"/>
+                                        </zip>
+                                        <move file="${project.build.directory}/mods/tm4e-unsigned.jar"
+                                              tofile="${project.build.directory}/mods/org.eclipse.tm4e.core-0.14.0-${tm4e.version}.jar"/>
                                     </target>
                                 </configuration>
                             </execution>

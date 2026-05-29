@@ -254,7 +254,7 @@ public class FileInformationPanel extends VBox {
         if (p == null) {
             return "General";
         }
-        String lang = LanguageRegistry.forFileName(p.getFileName().toString()).name();
+        String lang = LanguageRegistry.forFileName(p.getFileName().toString());
         return lang.substring(0, 1).toUpperCase(Locale.ROOT) + lang.substring(1);
     }
 

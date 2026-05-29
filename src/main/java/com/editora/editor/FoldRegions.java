@@ -14,12 +14,16 @@ import java.util.regex.Pattern;
  *
  * <p>Detection is delimiter-based and language-aware:
  * <ul>
- *   <li><b>Braces</b> ({@code java}, {@code json}, and the default): matched {@code &#123;&#125;} / {@code []}
- *       pairs, skipping delimiters inside strings, char literals, and {@code //} / {@code /* *&#47;} comments.</li>
- *   <li><b>XML</b> ({@code xml}, and by extension fxml/html): matched element tags, skipping comments,
- *       CDATA, processing instructions, doctypes, and self-closing tags.</li>
+ *   <li><b>Braces</b> (brace-delimited languages such as {@code java}, {@code json}, {@code c},
+ *       {@code cpp}, {@code rust}, {@code go}, {@code kotlin}, {@code groovy}, {@code csharp},
+ *       {@code css}): matched {@code &#123;&#125;} / {@code []} pairs, skipping delimiters inside
+ *       strings, char literals, and {@code //} / {@code /* *&#47;} comments.</li>
+ *   <li><b>XML</b> ({@code xml} / {@code html}, and by extension fxml): matched element tags, skipping
+ *       comments, CDATA, processing instructions, doctypes, and self-closing tags.</li>
  *   <li><b>Markdown</b>: fenced code blocks (```` ``` ````) and heading sections (a heading folds down to
  *       the line before the next heading of the same or higher level).</li>
+ *   <li><b>Line/indentation-based languages</b> (python, ruby, shell, yaml, ini, sql, powershell,
+ *       batch) and plaintext: no delimiter folding.</li>
  * </ul>
  *
  * <p>Line indices are 0-based and correspond to {@code CodeArea} paragraph indices.
@@ -41,16 +45,19 @@ public final class FoldRegions {
     private FoldRegions() {
     }
 
-    /** Detects foldable regions for the given text and language name (see {@link LanguageRules#name()}). */
+    /** Detects foldable regions for the given text and language name (see {@link LanguageRegistry}). */
     public static List<Region> detect(String text, String language) {
         if (text == null || text.isEmpty()) {
             return List.of();
         }
         return switch (language == null ? "" : language) {
             case "markdown" -> markdown(text);
-            case "xml" -> xml(text);
-            case "plaintext" -> List.of();
-            default -> braces(text);
+            case "xml", "html" -> xml(text);
+            // Brace-delimited languages fold on matched {} / [].
+            case "java", "json", "c", "cpp", "rust", "go", "kotlin", "groovy", "csharp", "css" ->
+                    braces(text);
+            // plaintext and line/indentation-based languages have no delimiter folding.
+            default -> List.of();
         };
     }
 

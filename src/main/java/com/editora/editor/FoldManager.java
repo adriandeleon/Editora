@@ -119,7 +119,7 @@ public final class FoldManager {
         } : callback;
     }
 
-    /** Sets the language (see {@link LanguageRules#name()}) and recomputes regions. */
+    /** Sets the language (see {@link LanguageRegistry}) and recomputes regions. */
     public void setLanguage(String language) {
         this.language = language;
         recompute();
