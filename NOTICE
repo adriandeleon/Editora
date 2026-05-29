@@ -1,0 +1,88 @@
+Editora
+Copyright (c) 2026 Adrian De Leon
+
+This product is licensed under the MIT License (see LICENSE).
+
+It includes third-party software and data, each under its own license, as
+described below.
+
+================================================================================
+Bundled TextMate grammars (syntax highlighting)
+================================================================================
+
+The grammar files under src/main/resources/com/editora/grammars/
+(*.tmLanguage.json) provide syntax highlighting and come from two sources.
+
+Most grammars were obtained from the shiki "tm-grammars" collection:
+
+    https://github.com/shikijs/textmate-grammars-themes
+    (packages/tm-grammars/grammars)
+
+These are aggregated by shiki from their respective upstream projects, each
+under its original license (predominantly MIT, with some under other permissive
+licenses such as Apache-2.0 or BSD); see the upstream repository above for the
+per-grammar license and source attribution.
+
+The following grammars were instead obtained from the Eclipse tm4e
+"language_pack" (which curates grammars for the tm4e engine used here):
+
+    https://github.com/eclipse-tm4e/tm4e
+    (org.eclipse.tm4e.language_pack/syntaxes)
+
+    XML, shell, C, C++, Rust, Ruby, Markdown.
+
+These remain under their original upstream licenses (predominantly MIT). All
+grammars are redistributed unmodified except markdown.tmLanguage.json, which
+has three regular expressions minimally adjusted for compatibility with the
+Joni regex backend (the {,3} quantifier rewritten as {0,3}, and a variable-
+length look-behind removed from the strikethrough rule).
+
+Languages bundled: Java, XML, shell, PowerShell, DOS batch, Python, Groovy,
+Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL.
+
+================================================================================
+Third-party libraries
+================================================================================
+
+Eclipse TextMate for Java (tm4e) — org.eclipse.tm4e.core
+    Tokenizes documents with TextMate grammars.
+    License: Eclipse Public License 2.0 (EPL-2.0)
+    https://github.com/eclipse/tm4e
+    Distributed via the NetBeans repackaging
+    (org.netbeans.external:org.eclipse.tm4e.core-0.14.0).
+
+Joni — org.jruby.joni:joni
+    Java port of the Oniguruma regular-expression library; the regex backend
+    used by tm4e.
+    License: MIT
+    https://github.com/jruby/joni
+
+JCodings — org.jruby.jcodings:jcodings
+    Character-encoding support used by Joni.
+    License: MIT
+    https://github.com/jruby/jcodings
+
+Gson — com.google.code.gson:gson
+    Parses the TextMate grammar JSON files.
+    License: Apache License 2.0
+    https://github.com/google/gson
+
+RichTextFX (and reactfx, flowless, undofx, wellbehavedfx)
+    The styled code-editing control.
+    License: BSD-2-Clause / GPL-2.0-with-classpath-exception (dual)
+    https://github.com/FXMisc/RichTextFX
+
+AtlantaFX — atlantafx.base
+    JavaFX CSS theme library.
+    License: MIT
+    https://github.com/mkpaz/atlantafx
+
+Jackson (jackson-databind, jackson-core, jackson-annotations)
+    JSON (de)serialization for user settings.
+    License: Apache License 2.0
+    https://github.com/FasterXML/jackson
+
+JavaFX
+    UI toolkit.
+    License: GPL-2.0-with-classpath-exception
+    https://openjfx.io

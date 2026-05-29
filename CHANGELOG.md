@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Syntax highlighting via bundled TextMate grammars (using tm4e) for 21
+  languages: Java, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin,
+  Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, and SQL.
+  Stateful tokenization carries grammar state across lines so multi-line
+  constructs (block comments, heredocs, fenced code) highlight correctly.
+- Code folding now covers more languages (C, C++, Rust, Go, Kotlin, Groovy, C#,
+  CSS) in addition to Java, JSON, XML/HTML, and Markdown.
+- `NOTICE` file attributing the bundled TextMate grammars and third-party
+  libraries.
 - Structure tool window: a collapsible tree of the active file's foldable
   regions with a search filter and Emacs-style keyboard navigation. Selecting
   an entry navigates the editor and anchors the target line at the top of the
@@ -23,12 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Information panel.
 - Toolbar icons, a settings window, and an expanded Emacs keymap.
 - Command palette (`M-x`) with fuzzy matching, driven by the command registry.
-- Syntax highlighting with per-language regex rules.
 - GitHub Actions CI workflow with a status badge, plus a Maven wrapper.
 - README, MIT license, and `CLAUDE.md` project guide.
 
 ### Changed
 
+- The recent-files picker is now a toolbar menu button (with a per-entry remove
+  action) instead of a combo box.
 - The key dispatcher now yields only single-key chords to windows that own
   their keys (e.g. the Structure tool window); multi-key Emacs chords such as
   `C-x o` stay global so window switching and `C-x`/`C-c` commands work from

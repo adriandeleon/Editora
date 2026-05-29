@@ -23,7 +23,7 @@ the key dispatcher on the scene, applies the theme, and loads `ui/main.fxml`.
   - `Command` / `CommandRegistry`: every action is a registered `Command` (id + title + runnable). The registry feeds both keybindings and the palette.
   - `KeymapManager`: maps chord sequences (e.g. `C-x C-s`) to command ids; loads `resources/com/editora/keymaps/emacs.json`, then overlays user overrides from config.
   - `KeyDispatcher`: a scene-level `KEY_PRESSED` filter that builds chord tokens and resolves them, holding a pending-prefix buffer for multi-key Emacs chords. Lone unbound keys are *not* consumed, so normal typing works.
-- `editor/` — `EditorBuffer` wraps a RichTextFX `CodeArea` (line numbers via `LineNumberFactory`, debounced highlighting). `SyntaxHighlighter` + `LanguageRules` + `LanguageRegistry` do regex-based highlighting per file extension.
+- `editor/` — `EditorBuffer` wraps a RichTextFX `CodeArea` (line numbers + fold chevrons via `FoldManager`, debounced highlighting). Syntax highlighting uses **TextMate grammars** via tm4e: `GrammarRegistry` (singleton) maps a file extension to a bundled `.tmLanguage.json` grammar under `resources/com/editora/grammars/`; `TextMateHighlighter` tokenizes the document line-by-line (carrying grammar state across lines) and maps each token's TextMate scope to a CSS class themed in `styles/syntax.css`. Files without a bundled grammar are left unstyled. `LanguageRegistry` is now only an extension→language-name resolver used by `FoldRegions`/`FoldManager` (fold strategy) and the File Information panel — it no longer does highlighting. **Grammar resources live in the `com.editora.grammars` package, which `module-info.java` must `opens ... to org.eclipse.tm4e.core`; without that, JPMS encapsulation makes tm4e's `Class.getResourceAsStream` return null at runtime (module path) and grammars silently fail to load even though classpath tests pass.**
 - `config/` — `ConfigManager` loads/merges/saves `~/.editora-v2/settings.json` (Jackson; `user.home` is the user profile on every OS), falling back to defaults on malformed input. `Settings` is the POJO. The directory is temporarily `~/.editora-v2/` (instead of `~/.editora/`) to avoid colliding with an existing Editora V1 install on this machine. Note: `Settings` is `@JsonIgnoreProperties(ignoreUnknown = true)`, so `save()` rewrites the file with only the fields it models — unknown keys in an existing file are dropped.
 - `ui/` — `MainController` (+ `main.fxml`): toolbar, tabbed `EditorBuffer`s, status bar. `CommandPalette` (M-x fuzzy popup) and `FindReplaceBar` (find/replace with case + regex).
 
@@ -41,3 +41,11 @@ the `dist` profile injects explicit `module-info` descriptors into them. If you 
 RichTextFX or add a dep it uses, you may need to adjust those descriptors' `requires`
 (e.g. several of them need `javafx.controls` for `IndexRange`). Use RichTextFX
 **0.11.7+** — earlier versions are incompatible with JavaFX 25.
+
+tm4e (the syntax engine) ships as the NetBeans repackaging
+`org.netbeans.external:org.eclipse.tm4e.core-0.14.0:RELEASE260` (tm4e is not on
+Maven Central). Its Oniguruma backend (`org.jruby.joni:joni`, `org.jruby.jcodings:jcodings`)
+and `com.google.code.gson:gson` are already proper modules, but tm4e core is an
+automatic module, so `moditect` injects a `module-info` for it too. The NetBeans
+jar is also **code-signed**, and `jlink` rejects signed modular jars — the `dist`
+profile's antrun step strips `META-INF/*.SF,*.RSA,*.DSA,*.EC` before linking.
