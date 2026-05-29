@@ -31,9 +31,10 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.ComboBox;
+import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
-import javafx.scene.control.ListCell;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.Tooltip;
@@ -94,7 +95,7 @@ public class MainController {
     @FXML
     private Button quitButton;
     @FXML
-    private ComboBox<Path> recentCombo;
+    private MenuButton recentButton;
     @FXML
     private Button clearRecentButton;
 
@@ -146,70 +147,52 @@ public class MainController {
 
     private void setupRecentFiles() {
         recentFiles = new RecentFiles(config.getConfigDir());
-        recentCombo.setItems(recentFiles.getList());
+        recentButton.setGraphic(Icons.recent());
+        recentButton.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
+        recentButton.setTooltip(new Tooltip("Recent files"));
 
-        // Button cell = what's shown when the combo is closed.
-        recentCombo.setButtonCell(new ListCell<>() {
-            @Override
-            protected void updateItem(Path item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty || item == null ? recentCombo.getPromptText() : item.getFileName().toString());
-            }
-        });
-
-        // Dropdown cells: filename label + small ✕ to remove just that entry.
-        recentCombo.setCellFactory(v -> new RecentFileCell(recentFiles));
-
-        // Selecting an entry opens it, then clears the selection so the prompt shows again.
-        recentCombo.valueProperty().addListener((obs, was, now) -> {
-            if (now == null) {
-                return;
-            }
-            Path toOpen = now;
-            Platform.runLater(() -> recentCombo.getSelectionModel().clearSelection());
-            openPath(toOpen);
-        });
+        // Rebuild the dropdown whenever the recent-files list changes.
+        recentFiles.getList().addListener((ListChangeListener<Path>) c -> rebuildRecentMenu());
+        rebuildRecentMenu();
 
         setupButton(clearRecentButton, Icons.trash(), "Clear recent files");
     }
 
-    /** Custom dropdown cell with an inline remove button. */
-    private static class RecentFileCell extends ListCell<Path> {
-        private final Label name = new Label();
-        private final Button removeBtn = new Button("✕");
-        private final HBox box;
-
-        RecentFileCell(RecentFiles recents) {
-            removeBtn.getStyleClass().addAll("button-icon", "flat", "recent-remove");
-            removeBtn.setFocusTraversable(false);
-            // Don't let the click bubble up and trigger the combo's selection.
-            removeBtn.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> {
-                Path item = getItem();
-                if (item != null) {
-                    recents.remove(item);
-                }
-                e.consume();
-            });
-            javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
-            HBox.setHgrow(spacer, Priority.ALWAYS);
-            box = new HBox(8, name, spacer, removeBtn);
-            box.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+    /** Repopulates the recent-files menu from the persisted list (most-recent first). */
+    private void rebuildRecentMenu() {
+        recentButton.getItems().clear();
+        if (recentFiles.getList().isEmpty()) {
+            MenuItem empty = new MenuItem("No recent files");
+            empty.setDisable(true);
+            recentButton.getItems().add(empty);
+            return;
         }
-
-        @Override
-        protected void updateItem(Path item, boolean empty) {
-            super.updateItem(item, empty);
-            if (empty || item == null) {
-                setGraphic(null);
-                setText(null);
-                setTooltip(null);
-            } else {
-                name.setText(item.getFileName().toString());
-                setTooltip(new Tooltip(item.toString()));
-                setGraphic(box);
-                setText(null);
-            }
+        for (Path path : recentFiles.getList()) {
+            recentButton.getItems().add(recentMenuItem(path));
         }
+    }
+
+    /** A recent-file menu entry: filename label that opens the file, plus an inline ✕ to remove it. */
+    private CustomMenuItem recentMenuItem(Path path) {
+        Label name = new Label(path.getFileName().toString());
+        Button removeBtn = new Button("✕");
+        removeBtn.getStyleClass().addAll("button-icon", "flat", "recent-remove");
+        removeBtn.setFocusTraversable(false);
+        // Remove just this entry without opening it or closing the menu.
+        removeBtn.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> {
+            recentFiles.remove(path);
+            e.consume();
+        });
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox box = new HBox(8, name, spacer, removeBtn);
+        box.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        box.setPrefWidth(220);
+
+        CustomMenuItem item = new CustomMenuItem(box);
+        item.setOnAction(e -> openPath(path));
+        Tooltip.install(box, new Tooltip(path.toString()));
+        return item;
     }
 
     private void setupMruTracking() {
