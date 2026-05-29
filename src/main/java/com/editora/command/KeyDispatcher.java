@@ -3,6 +3,8 @@ package com.editora.command;
 import java.util.Locale;
 import java.util.function.Consumer;
 
+import javafx.event.EventTarget;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -38,6 +40,15 @@ public class KeyDispatcher {
         String sequence = pending.isEmpty() ? token : pending + " " + token;
 
         String commandId = keymap.commandFor(sequence);
+        boolean prefix = keymap.isPrefix(sequence);
+
+        // A window that owns its keys (e.g. the Structure tool window) handles its own single-key
+        // chords locally. Multi-key chords (those continuing a pending prefix, like C-x o) stay
+        // global, so the user can always switch windows or invoke C-x / C-c commands from anywhere.
+        if (pending.isEmpty() && !prefix && ownsKeys(event.getTarget())) {
+            return; // let the focused window handle this key
+        }
+
         if (commandId != null) {
             event.consume();
             reset();
@@ -45,7 +56,7 @@ public class KeyDispatcher {
             return;
         }
 
-        if (keymap.isPrefix(sequence)) {
+        if (prefix) {
             event.consume();
             pending = sequence;
             statusListener.accept(sequence + " -");
@@ -60,6 +71,22 @@ public class KeyDispatcher {
             return;
         }
         // A lone, unbound key: let it fall through so normal text input works.
+    }
+
+    /**
+     * True if the event's target (or any ancestor) opts out of global key dispatch via the
+     * {@code editora.ownsKeys} node property. Such components (e.g. the Structure tool window)
+     * implement their own keyboard handling and must receive raw key events, including bound chords.
+     */
+    private static boolean ownsKeys(EventTarget target) {
+        Node node = target instanceof Node n ? n : null;
+        while (node != null) {
+            if (Boolean.TRUE.equals(node.getProperties().get("editora.ownsKeys"))) {
+                return true;
+            }
+            node = node.getParent();
+        }
+        return false;
     }
 
     private void reset() {

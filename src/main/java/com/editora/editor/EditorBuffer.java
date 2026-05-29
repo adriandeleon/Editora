@@ -5,7 +5,6 @@ import java.util.Collection;
 
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
 
 import java.nio.file.Path;
@@ -36,15 +35,19 @@ public class EditorBuffer {
     private final AnchorPane root = new AnchorPane();
     private final Line columnRuler = new Line();
     private final Minimap minimap = new Minimap(area);
+    private final FoldManager folds = new FoldManager(area);
 
     private Path path;
     private LanguageRules rules = LanguageRegistry.plaintext();
     private String fontFamily = "monospace";
     private int fontSize = 14;
     private boolean rulerVisible;
+    private boolean lineNumbersVisible = true;
+    /** Document x of the column-80 ruler (before horizontal scroll is applied). */
+    private double rulerBaseX;
 
     public EditorBuffer() {
-        area.setParagraphGraphicFactory(LineNumberFactory.get(area));
+        refreshGutter();
         area.getStyleClass().add("editor-area");
         area.setWrapText(false);
         area.setLineHighlighterFill(Color.web("#dfe7f0"));
@@ -63,6 +66,8 @@ public class EditorBuffer {
         columnRuler.setStartY(0);
         columnRuler.endYProperty().bind(root.heightProperty());
         columnRuler.setVisible(false);
+        // The ruler is pinned to the overlay pane, so re-place it as the text scrolls horizontally.
+        area.estimatedScrollXProperty().addListener((obs, old, now) -> positionColumnRuler());
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
@@ -154,9 +159,29 @@ public class EditorBuffer {
         area.setLineHighlighterOn(on);
     }
 
-    /** Show/hide the line-number gutter. */
+    /** Show/hide the line-number gutter. The fold-chevron column is always present. */
     public void setLineNumbersVisible(boolean visible) {
-        area.setParagraphGraphicFactory(visible ? LineNumberFactory.get(area) : null);
+        this.lineNumbersVisible = visible;
+        refreshGutter();
+    }
+
+    /** Rebuilds the gutter graphic factory (line numbers + fold chevrons) from current state. */
+    private void refreshGutter() {
+        area.setParagraphGraphicFactory(folds.gutterFactory(lineNumbersVisible));
+    }
+
+    public FoldManager getFoldManager() {
+        return folds;
+    }
+
+    /** Collapse every foldable region in the document. */
+    public void foldAll() {
+        folds.foldAll();
+    }
+
+    /** Expand every collapsed region in the document. */
+    public void unfoldAll() {
+        folds.unfoldAll();
     }
 
     /** Show/hide the minimap overview; reclaims its width for the editor when hidden. */
@@ -176,7 +201,17 @@ public class EditorBuffer {
         if (charWidth <= 0) {
             return;
         }
-        double x = charWidth * 80;
+        rulerBaseX = charWidth * 80;
+        positionColumnRuler();
+    }
+
+    /** Places the ruler at column 80, offset by the current horizontal scroll so it tracks the text. */
+    private void positionColumnRuler() {
+        if (!rulerVisible) {
+            return;
+        }
+        Double scrollX = area.estimatedScrollXProperty().getValue();
+        double x = rulerBaseX - (scrollX == null || scrollX.isNaN() ? 0 : scrollX);
         columnRuler.setStartX(x);
         columnRuler.setEndX(x);
     }
@@ -191,6 +226,7 @@ public class EditorBuffer {
         this.rules = path == null
                 ? LanguageRegistry.plaintext()
                 : LanguageRegistry.forFileName(path.getFileName().toString());
+        folds.setLanguage(rules.name());
         applyHighlighting();
     }
 

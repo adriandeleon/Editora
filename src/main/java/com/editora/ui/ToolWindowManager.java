@@ -117,6 +117,18 @@ public class ToolWindowManager {
         return Collections.unmodifiableCollection(byId.values());
     }
 
+    /** The currently open tool windows, ordered by side (left, bottom, right), for focus cycling. */
+    public java.util.List<ToolWindow> getOpenToolWindows() {
+        java.util.List<ToolWindow> open = new java.util.ArrayList<>();
+        for (ToolWindow.Side side : ToolWindow.Side.values()) {
+            ToolWindow tw = openBySide.get(side);
+            if (tw != null) {
+                open.add(tw);
+            }
+        }
+        return open;
+    }
+
     /** Tooltip text: title plus the chord for the tool window's command, if one is bound. */
     private String tooltipFor(ToolWindow tw) {
         String cmd = tw.getCommandId();

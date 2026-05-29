@@ -41,6 +41,61 @@
     -fx-padding: 0 8 0 8;
 }
 
+/* Folding gutter: line number + IntelliJ-style fold chevron. */
+.editor-area .fold-gutter {
+    -fx-background-color: #f6f8fa;
+    -fx-padding: 0 4 0 0;
+}
+
+.editor-area .fold-gutter .lineno {
+    -fx-background-color: transparent;
+    -fx-padding: 0 4 0 8;
+}
+
+.editor-area .fold-chevron {
+    -fx-text-fill: #8c959f;
+    -fx-font-family: "sans-serif";
+    -fx-font-size: 10px;
+    -fx-min-width: 11;
+    -fx-alignment: center;
+}
+
+.editor-area .fold-chevron:hover {
+    -fx-text-fill: #0969da;
+}
+
+/* Hover preview of a collapsed region's hidden content. */
+.fold-preview-tooltip {
+    -fx-font-family: "monospace";
+    -fx-font-size: 12px;
+    -fx-background-color: #ffffff;
+    -fx-text-fill: #24292f;
+    -fx-border-color: #d0d7de;
+    -fx-border-width: 1;
+    -fx-padding: 6 8 6 8;
+    -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.2), 12, 0.15, 0, 3);
+}
+
+/* Structure tool window: search box + collapsible region tree. */
+.structure-panel {
+    -fx-background-color: #ffffff;
+}
+
+.structure-panel .structure-filter {
+    -fx-font-size: 12px;
+}
+
+.structure-tree {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-font-size: 12px;
+}
+
+.structure-tree .tree-cell {
+    -fx-text-fill: #24292f;
+    -fx-padding: 1 4 1 4;
+}
+
 /* IntelliJ-style tool window stripes + panels. */
 .tool-stripe {
     -fx-background-color: #f6f8fa;

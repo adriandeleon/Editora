@@ -111,6 +111,7 @@ public class MainController {
     private ToolWindow bookmarksToolWindow;
     private ToolWindow fileInfoToolWindow;
     private FileInformationPanel fileInfoPanel;
+    private StructurePanel structurePanel;
     private Switcher switcher;
     /** Most-recently-used tab order, head = most recent. */
     private final LinkedList<Tab> mru = new LinkedList<>();
@@ -219,6 +220,7 @@ public class MainController {
             }
             EditorBuffer buffer = now == null ? null : (EditorBuffer) now.getUserData();
             fileInfoPanel.attach(buffer);
+            structurePanel.attach(buffer);
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
@@ -241,9 +243,9 @@ public class MainController {
         projectToolWindow = new ToolWindow("project", "Project", ToolWindow.Side.RIGHT,
                 Icons::project, placeholder("Project tool window\n(content coming soon)"),
                 "tool.project");
+        structurePanel = new StructurePanel();
         structureToolWindow = new ToolWindow("structure", "Structure", ToolWindow.Side.RIGHT,
-                Icons::structure, placeholder("Structure tool window\n(content coming soon)"),
-                "tool.structure");
+                Icons::structure, structurePanel, "tool.structure");
         bookmarksToolWindow = new ToolWindow("bookmarks", "Bookmarks", ToolWindow.Side.RIGHT,
                 Icons::bookmark, placeholder("Bookmarks tool window\n(content coming soon)"),
                 "tool.bookmarks");
@@ -315,6 +317,7 @@ public class MainController {
 
     private void addBuffer(EditorBuffer buffer) {
         applyViewSettings(buffer);
+        buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         Tab tab = new Tab();
         tab.setContent(buffer.getNode());
         tab.setUserData(buffer);
@@ -368,6 +371,7 @@ public class MainController {
             buffer.setPath(file);
             buffer.setContent(content);
             addBuffer(buffer);
+            restoreFolds(buffer);
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
@@ -604,6 +608,91 @@ public class MainController {
         setStatus("Minimap: " + (s.isShowMinimap() ? "on" : "off"));
     }
 
+    /**
+     * Emacs {@code C-x o}: cycles keyboard focus between the editor and any open tool windows.
+     * Order: editor, then each open tool window (by side); wraps back to the editor.
+     */
+    private void otherWindow() {
+        List<Node> targets = new ArrayList<>();
+        CodeArea area = activeArea();
+        if (area != null) {
+            targets.add(area);
+        }
+        for (ToolWindow tw : toolWindows.getOpenToolWindows()) {
+            targets.add(tw.getContent());
+        }
+        if (targets.size() < 2) {
+            return; // nothing to switch to
+        }
+        Node focusOwner = root.getScene() == null ? null : root.getScene().getFocusOwner();
+        int current = indexOfContaining(targets, focusOwner);
+        int next = current < 0 ? 0 : (current + 1) % targets.size();
+        focusWindow(targets.get(next));
+    }
+
+    /** Index of the target that contains (or is) the focus owner, or -1 if none. */
+    private static int indexOfContaining(List<Node> targets, Node focusOwner) {
+        for (int i = 0; i < targets.size(); i++) {
+            for (Node n = focusOwner; n != null; n = n.getParent()) {
+                if (n == targets.get(i)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static void focusWindow(Node target) {
+        if (target instanceof StructurePanel structure) {
+            structure.focusContent();
+        } else {
+            target.requestFocus();
+        }
+    }
+
+    private void foldAll() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.foldAll();
+            setStatus("Folded all regions");
+        }
+    }
+
+    private void unfoldAll() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.unfoldAll();
+            setStatus("Unfolded all regions");
+        }
+    }
+
+    /** Persists the buffer's collapsed fold regions, keyed by its file path. */
+    private void persistFolds(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null) {
+            return;
+        }
+        List<Integer> lines = buffer.getFoldManager().collapsedStartLines();
+        var map = config.getSettings().getFoldedRegions();
+        if (lines.isEmpty()) {
+            map.remove(file.toString());
+        } else {
+            map.put(file.toString(), lines);
+        }
+        config.save();
+    }
+
+    /** Re-applies a file's saved collapsed fold regions after it is opened. */
+    private void restoreFolds(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null) {
+            return;
+        }
+        List<Integer> saved = config.getSettings().getFoldedRegions().get(file.toString());
+        buffer.getFoldManager().applyCollapsedStartLines(saved);
+        buffer.markClean();
+    }
+
     private void applyViewSettings(EditorBuffer buffer) {
         Settings s = config.getSettings();
         buffer.setFont(s.getFontFamily(), s.getFontSize());
@@ -675,6 +764,10 @@ public class MainController {
                 this::toggleLineNumbers));
         registry.register(Command.of("view.toggleMinimap", "View: Toggle Minimap",
                 this::toggleMinimap));
+        registry.register(Command.of("view.foldAll", "View: Fold All", this::foldAll));
+        registry.register(Command.of("view.unfoldAll", "View: Unfold All", this::unfoldAll));
+        registry.register(Command.of("window.other", "Window: Other (Editor / Tool Window)",
+                this::otherWindow));
         registry.register(Command.of("file.clearRecent", "File: Clear Recent Files", this::onClearRecent));
         registry.register(Command.of("help.about", "About Editora", this::onAbout));
         registry.register(Command.of("tool.project", "Tool Window: Project",
