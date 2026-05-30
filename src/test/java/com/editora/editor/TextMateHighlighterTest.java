@@ -84,4 +84,42 @@ class TextMateHighlighterTest {
         assertNull(GrammarRegistry.shared().forFileName("notes.txt"));
         assertNull(GrammarRegistry.shared().forFileName(null));
     }
+
+    // --- symbol extraction (structure view) ---
+
+    private static List<TextMateHighlighter.Symbol> symbolsOf(String fileName, String text) {
+        IGrammar grammar = GrammarRegistry.shared().forFileName(fileName);
+        assertNotNull(grammar, "grammar should load for " + fileName);
+        TextMateHighlighter.Analysis analysis = TextMateHighlighter.analyze(text, grammar);
+        assertNotNull(analysis);
+        return analysis.symbols();
+    }
+
+    private static boolean hasSymbol(List<TextMateHighlighter.Symbol> symbols, String name, String kind) {
+        return symbols.stream().anyMatch(s -> s.name().equals(name) && s.kind().equals(kind));
+    }
+
+    @Test
+    void analyzeExtractsJavaDefinitionsAndExcludesCalls() {
+        String text = "public class Foo {\n    void bar() {\n        baz();\n    }\n}\n";
+        List<TextMateHighlighter.Symbol> symbols = symbolsOf("Foo.java", text);
+        assertTrue(hasSymbol(symbols, "Foo", "type"), "expected the class as a type symbol");
+        assertTrue(hasSymbol(symbols, "bar", "function"), "expected the method as a function symbol");
+        assertTrue(symbols.stream().noneMatch(s -> s.name().equals("baz")),
+                "a function call must not appear as a definition");
+    }
+
+    @Test
+    void analyzeExtractsMarkdownSections() {
+        List<TextMateHighlighter.Symbol> symbols = symbolsOf("a.md", "# Title\n\nbody text\n");
+        assertTrue(symbols.stream().anyMatch(s -> s.kind().equals("section")),
+                "expected a markdown heading as a section symbol");
+    }
+
+    @Test
+    void analyzeExtractsXmlTags() {
+        List<TextMateHighlighter.Symbol> symbols = symbolsOf("a.xml", "<root>\n  <child/>\n</root>\n");
+        assertTrue(symbols.stream().anyMatch(s -> s.kind().equals("tag")),
+                "expected xml elements as tag symbols");
+    }
 }

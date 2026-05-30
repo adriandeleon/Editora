@@ -4,14 +4,17 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import org.fxmisc.richtext.CodeArea;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.TextMateHighlighter.Symbol;
 
 import javafx.application.Platform;
 
@@ -87,15 +90,19 @@ public class StructurePanel extends VBox {
     public void attach(EditorBuffer buffer) {
         if (this.buffer != null) {
             this.buffer.getFoldManager().setOnRegionsChanged(null);
+            this.buffer.setOnSymbolsChanged(null);
         }
         this.buffer = buffer;
         if (buffer == null) {
             rebuild();
             return;
         }
+        // Node ranges/nesting come from fold regions; names/kinds come from TextMate symbols — rebuild
+        // when either updates (regions on text/fold change, symbols when re-highlighting completes).
         buffer.getFoldManager().setOnRegionsChanged(this::rebuild);
-        // Force a recompute so the tree reflects the current text immediately; the callback above
-        // then drives live updates as the document changes.
+        buffer.setOnSymbolsChanged(this::rebuild);
+        // Force a recompute so the tree reflects the current text immediately; the callbacks above
+        // then drive live updates as the document changes.
         buffer.getFoldManager().recompute();
     }
 
@@ -254,7 +261,7 @@ public class StructurePanel extends VBox {
             return;
         }
         CodeArea area = buffer.getArea();
-        int line = item.getValue().region().startLine();
+        int line = item.getValue().line();
         if (line < 0 || line >= area.getParagraphs().size()) {
             return;
         }
@@ -293,14 +300,25 @@ public class StructurePanel extends VBox {
         regions.sort(Comparator.comparingInt(Region::startLine)
                 .thenComparing(Comparator.comparingInt(Region::endLine).reversed()));
 
+        // Name/kind come from the TextMate symbols on (or, for Allman braces, just above) each region's
+        // header. Regions with no symbol are control-flow/anonymous blocks and are dropped (declutter).
+        Map<Integer, Symbol> symbolByLine = new HashMap<>();
+        for (Symbol s : buffer.symbols()) {
+            symbolByLine.putIfAbsent(s.line(), s);
+        }
+        boolean haveSymbols = !symbolByLine.isEmpty();
+        boolean brace = isBraceLanguage(buffer.getLanguage());
+
         List<StructureNode> rootNodes = new ArrayList<>();
         Deque<StructureNode> stack = new ArrayDeque<>();
         for (Region r : regions) {
             if (r.startLine() < 0 || r.startLine() >= paras) {
                 continue;
             }
-            String text = area.getParagraph(r.startLine()).getText().trim();
-            StructureNode node = new StructureNode(r, text.isEmpty() ? "line " + (r.startLine() + 1) : text);
+            StructureNode node = nodeFor(area, r, symbolByLine, haveSymbols, brace);
+            if (node == null) {
+                continue; // no symbol: skip this region (its kept descendants nest under the nearest kept ancestor)
+            }
             while (!stack.isEmpty() && !contains(stack.peek().region(), r)) {
                 stack.pop();
             }
@@ -312,6 +330,53 @@ public class StructurePanel extends VBox {
             stack.push(node);
         }
         return rootNodes;
+    }
+
+    /**
+     * Builds a node for a region: its label/kind from the TextMate symbol on the header line (or, for
+     * brace languages, the signature on the nearest non-blank lines above the {@code &#123;}). Returns
+     * {@code null} when no symbol is found and a grammar is active (declutter). Without symbols (no
+     * grammar) it falls back to the header-line text, keeping every region.
+     */
+    private StructureNode nodeFor(CodeArea area, Region r, Map<Integer, Symbol> symbolByLine,
+            boolean haveSymbols, boolean brace) {
+        int start = r.startLine();
+        if (haveSymbols) {
+            Symbol symbol = symbolByLine.get(start);
+            int line = start;
+            if (symbol == null && brace) {
+                int probe = start - 1;
+                int examined = 0;
+                while (probe >= 0 && examined < 3) {
+                    String t = area.getParagraph(probe).getText().trim();
+                    if (!t.isEmpty()) {
+                        examined++;
+                        Symbol up = symbolByLine.get(probe);
+                        if (up != null) {
+                            symbol = up;
+                            line = probe;
+                            break;
+                        }
+                    }
+                    probe--;
+                }
+            }
+            if (symbol == null) {
+                return null;
+            }
+            return new StructureNode(r, symbol.name(), symbol.kind(), line);
+        }
+        // No grammar/symbols: keep the old header-text label and show every region.
+        String text = area.getParagraph(start).getText().trim();
+        return new StructureNode(r, text.isEmpty() ? "line " + (start + 1) : text, null, start);
+    }
+
+    /** Languages whose folds are brace-delimited (Allman braces put the signature above the start line). */
+    private static boolean isBraceLanguage(String language) {
+        return switch (language == null ? "" : language) {
+            case "java", "json", "c", "cpp", "rust", "go", "kotlin", "groovy", "csharp", "css" -> true;
+            default -> false;
+        };
     }
 
     private static boolean contains(Region outer, Region inner) {
@@ -329,7 +394,7 @@ public class StructurePanel extends VBox {
         }
         if (root.getChildren().isEmpty()) {
             String message = buffer == null ? "No file open" : (q.isEmpty() ? "No structure" : "No matches");
-            root.getChildren().add(new TreeItem<>(new StructureNode(null, message)));
+            root.getChildren().add(new TreeItem<>(new StructureNode(null, message, null, -1)));
             tree.setRoot(root);
         } else {
             tree.setRoot(root);
@@ -366,15 +431,19 @@ public class StructurePanel extends VBox {
         }
     }
 
-    /** A node in the structure tree: a foldable region plus its header-line label and children. */
+    /** A node in the structure tree: a foldable region, its symbol label/kind, the line to navigate to, and children. */
     private static final class StructureNode {
         private final Region region;
         private final String label;
+        private final String kind;
+        private final int line;
         private final List<StructureNode> children = new ArrayList<>();
 
-        StructureNode(Region region, String label) {
+        StructureNode(Region region, String label, String kind, int line) {
             this.region = region;
             this.label = label;
+            this.kind = kind;
+            this.line = line;
         }
 
         Region region() {
@@ -383,6 +452,14 @@ public class StructurePanel extends VBox {
 
         String label() {
             return label;
+        }
+
+        String kind() {
+            return kind;
+        }
+
+        int line() {
+            return line;
         }
 
         List<StructureNode> children() {

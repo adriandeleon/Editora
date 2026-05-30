@@ -3,6 +3,7 @@ package com.editora.editor;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -57,6 +58,10 @@ public class EditorBuffer {
     });
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
     private long highlightGen;
+    /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
+    private List<TextMateHighlighter.Symbol> symbols = List.of();
+    /** Notified (on the FX thread) after {@link #symbols} is refreshed. */
+    private Runnable onSymbolsChanged = () -> { };
     private String fontFamily = "monospace";
     private int fontSize = 14;
     /** Visual tab width (columns); applied to the minimap and persisted via Settings. */
@@ -338,6 +343,16 @@ public class EditorBuffer {
         return path == null ? "untitled" : path.getFileName().toString();
     }
 
+    /** Named definitions (functions, types, sections, tags…) from the last tokenization. */
+    public List<TextMateHighlighter.Symbol> symbols() {
+        return symbols;
+    }
+
+    /** Sets a callback invoked (on the FX thread) whenever {@link #symbols()} changes. */
+    public void setOnSymbolsChanged(Runnable callback) {
+        this.onSymbolsChanged = callback == null ? () -> { } : callback;
+    }
+
     private void applyHighlighting() {
         if (grammar == null) {
             // No grammar for this file type: clear any previously applied styles so none linger.
@@ -347,6 +362,10 @@ public class EditorBuffer {
                 area.setStyleSpans(0, new StyleSpansBuilder<Collection<String>>()
                         .add(Collections.emptyList(), length)
                         .create());
+            }
+            if (!symbols.isEmpty()) {
+                symbols = List.of();
+                onSymbolsChanged.run();
             }
             return;
         }
@@ -360,18 +379,20 @@ public class EditorBuffer {
         IGrammar g = grammar;
         long gen = ++highlightGen;
         highlightExecutor.execute(() -> {
-            StyleSpans<Collection<String>> spans;
+            TextMateHighlighter.Analysis analysis;
             try {
-                spans = TextMateHighlighter.compute(text, g);
+                analysis = TextMateHighlighter.analyze(text, g);
             } catch (Exception | LinkageError e) {
                 return; // never let a grammar/engine fault kill the highlighter thread
             }
-            if (spans == null) {
+            if (analysis == null || analysis.spans() == null) {
                 return;
             }
             Platform.runLater(() -> {
-                if (gen == highlightGen && spans.length() == area.getLength()) {
-                    area.setStyleSpans(0, spans);
+                if (gen == highlightGen && analysis.spans().length() == area.getLength()) {
+                    area.setStyleSpans(0, analysis.spans());
+                    symbols = analysis.symbols();
+                    onSymbolsChanged.run();
                 }
             });
         });

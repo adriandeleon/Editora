@@ -1,6 +1,7 @@
 package com.editora.editor;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -28,11 +29,29 @@ public final class TextMateHighlighter {
     private TextMateHighlighter() {
     }
 
+    /** A named definition found while tokenizing: the 0-based {@code line}, its {@code name}, and a coarse {@code kind}. */
+    public record Symbol(int line, String name, String kind) {
+    }
+
+    /** The result of one tokenization pass: highlight {@code spans} plus the document's {@code symbols}. */
+    public record Analysis(StyleSpans<Collection<String>> spans, List<Symbol> symbols) {
+    }
+
     /**
      * Style spans covering the whole text. Returns {@code null} for empty text or a null grammar
      * (RichTextFX cannot build zero-length spans) — callers should skip applying styles then.
      */
     public static StyleSpans<Collection<String>> compute(String text, IGrammar grammar) {
+        Analysis analysis = analyze(text, grammar);
+        return analysis == null ? null : analysis.spans();
+    }
+
+    /**
+     * Tokenizes the whole document once, producing both the highlight spans and the list of named
+     * definitions (functions, types, sections, tags…) for the structure view. Returns {@code null}
+     * for empty text or a null grammar.
+     */
+    public static Analysis analyze(String text, IGrammar grammar) {
         if (text == null || text.isEmpty() || grammar == null) {
             return null;
         }
@@ -41,9 +60,11 @@ public final class TextMateHighlighter {
         // identical (or empty) styling. RichTextFX materializes one Text node per span, so emitting
         // every token as its own span balloons the node count and makes layout/scrolling crawl.
         SpanMerger spans = new SpanMerger();
+        List<Symbol> symbols = new ArrayList<>();
         IStateStack state = null;
         int pos = 0;
         int length = text.length();
+        int lineIndex = 0;
         while (true) {
             int newline = text.indexOf('\n', pos);
             int lineEnd = newline < 0 ? length : newline;
@@ -57,6 +78,7 @@ public final class TextMateHighlighter {
                 ITokenizeLineResult<IToken[]> result = grammar.tokenizeLine(line + "\n", state, NO_TIMEOUT);
                 state = result.getRuleStack();
                 addLineSpans(spans, line.length(), result.getTokens());
+                collectSymbol(symbols, lineIndex, line, result.getTokens());
             } catch (Exception | LinkageError e) {
                 spans.add(null, line.length());
             }
@@ -65,8 +87,65 @@ public final class TextMateHighlighter {
             }
             spans.add(null, 1); // the '\n' itself
             pos = newline + 1;
+            lineIndex++;
         }
-        return spans.build();
+        return new Analysis(spans.build(), symbols);
+    }
+
+    /** Records the first definition name on a line (if any) for the structure view. */
+    private static void collectSymbol(List<Symbol> symbols, int lineIndex, String line, IToken[] tokens) {
+        int len = line.length();
+        for (IToken token : tokens) {
+            String kind = kindForScopes(token.getScopes());
+            if (kind == null) {
+                continue;
+            }
+            int start = Math.min(token.getStartIndex(), len);
+            int end = Math.min(token.getEndIndex(), len);
+            if (end <= start) {
+                continue;
+            }
+            String name = line.substring(start, end).strip();
+            if (!name.isEmpty()) {
+                symbols.add(new Symbol(lineIndex, name, kind));
+                return; // one definition name per line is enough for the outline
+            }
+        }
+    }
+
+    /**
+     * Classifies a token's scopes as a definition kind for the structure view, or {@code null} if the
+     * token is not a definition name. Calls are excluded: their name carries {@code entity.name.*} too,
+     * but always nested under {@code meta.function-call}.
+     */
+    static String kindForScopes(List<String> scopes) {
+        if (scopes == null) {
+            return null;
+        }
+        for (String scope : scopes) {
+            if (scope.startsWith("meta.function-call")) {
+                return null;
+            }
+        }
+        for (int i = scopes.size() - 1; i >= 0; i--) {
+            String scope = scopes.get(i);
+            if (scope.startsWith("entity.name.function")) {
+                return "function";
+            }
+            if (scope.startsWith("entity.name.type") || scope.startsWith("entity.name.class")) {
+                return "type";
+            }
+            if (scope.startsWith("entity.name.namespace")) {
+                return "namespace";
+            }
+            if (scope.startsWith("entity.name.section")) {
+                return "section";
+            }
+            if (scope.startsWith("entity.name.tag")) {
+                return "tag";
+            }
+        }
+        return null;
     }
 
     private static void addLineSpans(SpanMerger spans, int lineLength, IToken[] tokens) {

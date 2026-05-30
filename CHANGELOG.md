@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Structure tool window now labels entries with the symbol name and kind
+  (functions, types/classes, namespaces, Markdown headings, XML tags) derived
+  from the TextMate grammar, and hides trivial blocks (if/for/while/…), instead
+  of showing the raw brace line. Works across all bundled languages; clicking a
+  node jumps to the symbol's line.
 - Folded regions now shade their header line (in addition to the gutter chevron)
   so collapsed code is easier to spot.
 - Opening a file that is already open now switches to its existing tab instead
