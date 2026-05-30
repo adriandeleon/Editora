@@ -179,6 +179,7 @@ public final class FoldManager {
                 area.getParagraphLength(region.endLine()));
 
         area.foldParagraphs(region.startLine(), region.endLine());
+        shadeHeader(region.startLine(), true);
 
         // foldParagraphs() moves the caret to the fold header; restore it unless it was in the
         // now-hidden body, so folding a block elsewhere doesn't relocate the user's cursor.
@@ -195,6 +196,7 @@ public final class FoldManager {
         hidePreview();
         int topPar = firstVisiblePar();
         area.unfoldParagraphs(startLine);
+        shadeHeader(startLine, false);
         restoreViewport(topPar);
         if (!restoring) {
             onFoldStateChanged.run();
@@ -206,6 +208,7 @@ public final class FoldManager {
         for (Region r : regions) {
             if (!isCollapsed(r.startLine())) {
                 area.foldParagraphs(r.startLine(), r.endLine());
+                shadeHeader(r.startLine(), true);
             }
         }
         restoreViewport(topPar);
@@ -221,6 +224,9 @@ public final class FoldManager {
             if (!area.isFolded(p) && area.isFolded(p + 1)) {
                 area.unfoldParagraphs(p);
             }
+        }
+        for (Region r : regions) {
+            shadeHeader(r.startLine(), false);
         }
         restoreViewport(topPar);
         if (!restoring) {
@@ -282,10 +288,18 @@ public final class FoldManager {
             for (Region r : regions) {
                 if (startLines.contains(r.startLine()) && !isCollapsed(r.startLine())) {
                     area.foldParagraphs(r.startLine(), r.endLine());
+                    shadeHeader(r.startLine(), true);
                 }
             }
         } finally {
             restoring = false;
+        }
+    }
+
+    /** Shades (or clears) the folded region's header line so a collapsed block is visible at a glance. */
+    private void shadeHeader(int line, boolean folded) {
+        if (line >= 0 && line < area.getParagraphs().size()) {
+            area.setParagraphStyle(line, folded ? List.of("fold-header-line") : List.of());
         }
     }
 

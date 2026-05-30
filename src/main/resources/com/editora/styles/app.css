@@ -41,6 +41,11 @@
     -fx-padding: 0 8 0 8;
 }
 
+/* Folded header line: shade the whole line so it's clearly a collapsed region. */
+.editor-area .fold-header-line {
+    -fx-background-color: #eef1f5;
+}
+
 /* Folding gutter: line number + IntelliJ-style fold chevron. */
 .editor-area .fold-gutter {
     -fx-background-color: #f6f8fa;
@@ -55,8 +60,8 @@
 .editor-area .fold-chevron {
     -fx-text-fill: #8c959f;
     -fx-font-family: "sans-serif";
-    -fx-font-size: 10px;
-    -fx-min-width: 11;
+    -fx-font-size: 13px;
+    -fx-min-width: 14;
     -fx-alignment: center;
 }
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The About dialog now shows the build date/time (baked in at build time).
 - Editor tab right-click context menu: Close, Close Other Tabs, Close All Tabs,
   Close Unmodified Tabs, Close Tabs to the Left/Right, Copy Path, Pin/Unpin Tab,
   and Rename File…. Pinned tabs are marked (📌), kept grouped at the front, and
@@ -48,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Folded regions now shade their header line (in addition to the gutter chevron)
+  so collapsed code is easier to spot.
 - Opening a file that is already open now switches to its existing tab instead
   of opening a duplicate.
 - The recent-files picker is now a toolbar menu button (with a per-entry remove

@@ -14,6 +14,11 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>25</maven.compiler.release>
+        <!-- maven.build.timestamp is UTC; baked into build-info.properties for the About dialog.
+             The indirection via build.timestamp is the standard workaround for the format being
+             ignored when maven.build.timestamp is filtered into a resource directly. -->
+        <maven.build.timestamp.format>yyyy-MM-dd HH:mm:ss 'UTC'</maven.build.timestamp.format>
+        <build.timestamp>${maven.build.timestamp}</build.timestamp>
         <javafx.version>25</javafx.version>
         <javafx.plugin.version>0.0.8</javafx.plugin.version>
         <richtextfx.version>0.11.7</richtextfx.version>
@@ -94,6 +99,24 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Filter only build-info.properties so ${maven.build.timestamp} is substituted;
+                 everything else (grammars, CSS, FXML) is copied verbatim. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>com/editora/build-info.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>com/editora/build-info.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -1,5 +1,8 @@
 package com.editora.ui;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
 import java.util.function.Consumer;
 
 import com.editora.config.ConfigManager;
@@ -30,6 +33,8 @@ public class SettingsWindow {
 
     private static final String APP_NAME = "Editora";
     private static final String APP_VERSION = "1.0.0";
+    /** Build timestamp baked in by Maven resource filtering (see build-info.properties). */
+    private static final String BUILD_TIME = loadBuildTime();
 
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
@@ -251,9 +256,27 @@ public class SettingsWindow {
 
                 Java %s
                 JavaFX %s
+                Built %s
                 Settings: ~/.editora-v2/settings.json""".formatted(
                 System.getProperty("java.version", "?"),
-                System.getProperty("javafx.runtime.version", "?")));
+                System.getProperty("javafx.runtime.version", "?"),
+                BUILD_TIME));
         alert.showAndWait();
+    }
+
+    /** Reads the Maven-filtered build timestamp; falls back gracefully for unfiltered/dev runs. */
+    private static String loadBuildTime() {
+        try (InputStream in = SettingsWindow.class.getResourceAsStream("/com/editora/build-info.properties")) {
+            if (in == null) {
+                return "unknown";
+            }
+            Properties props = new Properties();
+            props.load(in);
+            String time = props.getProperty("build.time", "");
+            // Unfiltered (e.g. run straight from an IDE) leaves the literal Maven placeholder.
+            return time.isEmpty() || time.startsWith("${") ? "(dev build)" : time;
+        } catch (IOException e) {
+            return "unknown";
+        }
     }
 }
