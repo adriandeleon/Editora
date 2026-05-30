@@ -304,6 +304,20 @@ public class EditorBuffer {
         markClean();
     }
 
+    /**
+     * Places the caret at the start of the document and scrolls to the top. Called after a file is
+     * loaded so opening a file always lands on the first line ({@code replaceText} leaves the caret
+     * at the end, and restoring saved folds moves it to a fold header).
+     */
+    public void goToStart() {
+        area.moveTo(0);
+        try {
+            area.showParagraphAtTop(0);
+        } catch (RuntimeException ignored) {
+            // Viewport not laid out yet; it defaults to the top, so there is nothing more to do.
+        }
+    }
+
     public String getContent() {
         return area.getText();
     }

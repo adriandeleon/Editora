@@ -361,6 +361,9 @@ public class MainController {
             buffer.setContent(content);
             addBuffer(buffer);
             restoreFolds(buffer);
+            // Land on the first line: replaceText leaves the caret at the end, and fold restoration
+            // moves it to a fold header. Defer so the viewport scroll runs after the tab is laid out.
+            Platform.runLater(buffer::goToStart);
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
