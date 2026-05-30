@@ -287,6 +287,11 @@
     -fx-font-style: italic;
 }
 
+/* Pinned tab: bold label so the 📌 prefix is reinforced (mirrors the dirty treatment). */
+.tab.pinned .tab-label {
+    -fx-font-weight: bold;
+}
+
 /* Compact toolbar: tighter padding so the overall bar is ~25-30% shorter. */
 .tool-bar {
     -fx-padding: 2 6 2 6;

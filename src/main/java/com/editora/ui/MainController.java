@@ -19,9 +19,12 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import javafx.collections.ListChangeListener;
 
@@ -34,14 +37,18 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.BorderPane;
@@ -119,6 +126,10 @@ public class MainController {
     private Switcher switcher;
     /** Most-recently-used tab order, head = most recent. */
     private final LinkedList<Tab> mru = new LinkedList<>();
+    /** Pinned tabs (identity-based): kept grouped at the front and skipped by bulk-close actions. */
+    private final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** Guards programmatic tab reordering so the MRU list listener doesn't drop the moved tab. */
+    private boolean reordering;
     private RecentFiles recentFiles;
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
@@ -213,18 +224,17 @@ public class MainController {
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
-                if (c.wasRemoved()) {
+                // A pin reorder removes+re-adds the same tab; skip cleanup so it isn't forgotten.
+                if (c.wasRemoved() && !reordering) {
                     mru.removeAll(c.getRemoved());
+                    pinned.removeAll(c.getRemoved());
                 }
             }
         });
     }
 
     private void closeTabFromSwitcher(Tab tab) {
-        EditorBuffer buffer = (EditorBuffer) tab.getUserData();
-        if (buffer == null || confirmCloseIfDirty(buffer)) {
-            tabPane.getTabs().remove(tab);
-        }
+        closeTab(tab);
     }
 
     private void setupToolWindows() {
@@ -315,22 +325,32 @@ public class MainController {
                 e.consume();
             }
         });
-        updateTitle(tab, buffer);
-        buffer.dirtyProperty().addListener((obs, was, now) -> updateTitle(tab, buffer));
+        updateTabMeta(tab, buffer);
+        buffer.dirtyProperty().addListener((obs, was, now) -> updateTabMeta(tab, buffer));
+        installTabMenu(tab, buffer);
         tabPane.getTabs().add(tab);
         tabPane.getSelectionModel().select(tab);
         buffer.getArea().requestFocus();
     }
 
-    private void updateTitle(Tab tab, EditorBuffer buffer) {
+    /** Refreshes a tab's title (pin + dirty markers), style classes, and full-path tooltip. */
+    private void updateTabMeta(Tab tab, EditorBuffer buffer) {
         boolean dirty = buffer.isDirty();
-        tab.setText((dirty ? "• " : "") + buffer.getTitle());
-        if (dirty) {
-            if (!tab.getStyleClass().contains("dirty")) {
-                tab.getStyleClass().add("dirty");
+        boolean isPinned = pinned.contains(tab);
+        tab.setText((isPinned ? "📌 " : "") + (dirty ? "• " : "") + buffer.getTitle());
+        toggleClass(tab, "dirty", dirty);
+        toggleClass(tab, "pinned", isPinned);
+        Path p = buffer.getPath();
+        tab.setTooltip(new Tooltip(p != null ? p.toAbsolutePath().toString() : "untitled"));
+    }
+
+    private static void toggleClass(Tab tab, String styleClass, boolean on) {
+        if (on) {
+            if (!tab.getStyleClass().contains(styleClass)) {
+                tab.getStyleClass().add(styleClass);
             }
         } else {
-            tab.getStyleClass().remove("dirty");
+            tab.getStyleClass().remove(styleClass);
         }
     }
 
@@ -419,7 +439,7 @@ public class MainController {
         boolean ok = writeBuffer(buffer, file);
         Tab tab = tabFor(buffer);
         if (tab != null) {
-            updateTitle(tab, buffer);
+            updateTabMeta(tab, buffer);
         }
         return ok;
     }
@@ -438,15 +458,248 @@ public class MainController {
 
     @FXML
     private void onCloseTab() {
-        Tab tab = tabPane.getSelectionModel().getSelectedItem();
+        closeTab(activeTab());
+    }
+
+    private Tab activeTab() {
+        return tabPane.getSelectionModel().getSelectedItem();
+    }
+
+    private static EditorBuffer bufferOf(Tab tab) {
+        return tab == null ? null : (EditorBuffer) tab.getUserData();
+    }
+
+    /** Closes a single tab (prompting if dirty). Ignores pin state — direct close always works. */
+    private void closeTab(Tab tab) {
         if (tab == null) {
             return;
         }
-        EditorBuffer buffer = (EditorBuffer) tab.getUserData();
-        if (buffer != null && !confirmCloseIfDirty(buffer)) {
+        EditorBuffer buffer = bufferOf(tab);
+        if (buffer == null || confirmCloseIfDirty(buffer)) {
+            tabPane.getTabs().remove(tab);
+        }
+    }
+
+    /**
+     * Closes each tab in {@code targets} (a snapshot), prompting for dirty buffers and stopping if
+     * the user cancels — mirroring {@link #confirmCloseAllBuffers()}.
+     */
+    private void closeTabs(List<Tab> targets) {
+        for (Tab tab : targets) {
+            EditorBuffer buffer = bufferOf(tab);
+            if (buffer != null && !buffer.isDirty()) {
+                tabPane.getTabs().remove(tab);
+                continue;
+            }
+            tabPane.getSelectionModel().select(tab);
+            if (buffer != null && !confirmCloseIfDirty(buffer)) {
+                return; // user cancelled — stop the batch
+            }
+            tabPane.getTabs().remove(tab);
+        }
+    }
+
+    /** Non-pinned tabs whose index is less than {@code pivot}'s. */
+    private List<Tab> eligibleToLeft(Tab pivot) {
+        int idx = tabPane.getTabs().indexOf(pivot);
+        List<Tab> out = new ArrayList<>();
+        for (int i = 0; i < idx; i++) {
+            Tab t = tabPane.getTabs().get(i);
+            if (!pinned.contains(t)) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    /** Non-pinned tabs whose index is greater than {@code pivot}'s. */
+    private List<Tab> eligibleToRight(Tab pivot) {
+        int idx = tabPane.getTabs().indexOf(pivot);
+        List<Tab> out = new ArrayList<>();
+        for (int i = idx + 1; i < tabPane.getTabs().size(); i++) {
+            Tab t = tabPane.getTabs().get(i);
+            if (!pinned.contains(t)) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    private void closeOtherTabs(Tab keep) {
+        List<Tab> targets = new ArrayList<>();
+        for (Tab t : tabPane.getTabs()) {
+            if (t != keep && !pinned.contains(t)) {
+                targets.add(t);
+            }
+        }
+        closeTabs(targets);
+    }
+
+    private void closeAllTabs() {
+        List<Tab> targets = new ArrayList<>();
+        for (Tab t : tabPane.getTabs()) {
+            if (!pinned.contains(t)) {
+                targets.add(t);
+            }
+        }
+        closeTabs(targets);
+    }
+
+    private void closeUnmodifiedTabs() {
+        List<Tab> targets = new ArrayList<>();
+        for (Tab t : tabPane.getTabs()) {
+            EditorBuffer buffer = bufferOf(t);
+            if (!pinned.contains(t) && (buffer == null || !buffer.isDirty())) {
+                targets.add(t);
+            }
+        }
+        closeTabs(targets);
+    }
+
+    private void closeTabsToLeft(Tab pivot) {
+        if (pivot != null) {
+            closeTabs(eligibleToLeft(pivot));
+        }
+    }
+
+    private void closeTabsToRight(Tab pivot) {
+        if (pivot != null) {
+            closeTabs(eligibleToRight(pivot));
+        }
+    }
+
+    /** Copies the buffer's absolute path to the system clipboard. */
+    private void copyPath(EditorBuffer buffer) {
+        if (buffer == null || buffer.getPath() == null) {
             return;
         }
-        tabPane.getTabs().remove(tab);
+        ClipboardContent content = new ClipboardContent();
+        content.putString(buffer.getPath().toAbsolutePath().toString());
+        Clipboard.getSystemClipboard().setContent(content);
+        setStatus("Copied path");
+    }
+
+    /**
+     * Toggles a tab's pinned state. Pinned tabs are kept grouped at the front of the strip (in pin
+     * order) and skipped by the bulk-close actions.
+     */
+    private void togglePin(Tab tab) {
+        if (tab == null) {
+            return;
+        }
+        if (pinned.remove(tab)) {
+            // Unpinned: move just past the remaining pinned group.
+            moveTab(tab, pinned.size());
+        } else {
+            pinned.add(tab);
+            // Pinned: park at the end of the pinned group so multiple pins stay grouped.
+            moveTab(tab, pinned.size() - 1);
+        }
+        updateTabMeta(tab, bufferOf(tab));
+        setStatus(pinned.contains(tab) ? "Pinned" : "Unpinned");
+    }
+
+    /** Moves {@code tab} to {@code target} without corrupting the MRU (see the reordering guard). */
+    private void moveTab(Tab tab, int target) {
+        int from = tabPane.getTabs().indexOf(tab);
+        if (from < 0) {
+            return;
+        }
+        reordering = true;
+        try {
+            tabPane.getTabs().remove(tab);
+            int clamped = Math.max(0, Math.min(target, tabPane.getTabs().size()));
+            tabPane.getTabs().add(clamped, tab);
+        } finally {
+            reordering = false;
+        }
+        tabPane.getSelectionModel().select(tab);
+    }
+
+    /** Renames the buffer's file on disk and migrates path-keyed state (folds, recent files). */
+    private void renameFile(EditorBuffer buffer, Tab tab) {
+        if (buffer == null || buffer.getPath() == null) {
+            return;
+        }
+        Path old = buffer.getPath();
+        TextInputDialog dialog = new TextInputDialog(old.getFileName().toString());
+        dialog.initOwner(stage);
+        dialog.setTitle("Rename File");
+        dialog.setHeaderText(null);
+        dialog.setContentText("New name:");
+        dialog.showAndWait().ifPresent(name -> {
+            String trimmed = name.trim();
+            if (trimmed.isEmpty()) {
+                return;
+            }
+            Path target = old.resolveSibling(trimmed);
+            if (target.equals(old)) {
+                return;
+            }
+            if (Files.exists(target)) {
+                setStatus("Rename failed: " + target.getFileName() + " already exists");
+                return;
+            }
+            try {
+                Files.move(old, target);
+            } catch (IOException e) {
+                setStatus("Rename failed: " + e.getMessage());
+                return;
+            }
+            buffer.setPath(target); // re-detects language/grammar
+            // Migrate state keyed by the absolute path string.
+            Settings s = config.getSettings();
+            List<Integer> folds = s.getFoldedRegions().remove(old.toString());
+            if (folds != null) {
+                s.getFoldedRegions().put(target.toString(), folds);
+            }
+            if (recentFiles != null) {
+                recentFiles.remove(old);
+                recentFiles.add(target);
+            }
+            config.save();
+            updateTabMeta(tab, buffer);
+            statusBar.refresh();
+            setStatus("Renamed to " + target.getFileName());
+        });
+    }
+
+    /** Builds and attaches the right-click context menu for a tab. */
+    private void installTabMenu(Tab tab, EditorBuffer buffer) {
+        MenuItem close = new MenuItem("Close");
+        close.setOnAction(e -> closeTab(tab));
+        MenuItem closeOthers = new MenuItem("Close Other Tabs");
+        closeOthers.setOnAction(e -> closeOtherTabs(tab));
+        MenuItem closeAll = new MenuItem("Close All Tabs");
+        closeAll.setOnAction(e -> closeAllTabs());
+        MenuItem closeUnmodified = new MenuItem("Close Unmodified Tabs");
+        closeUnmodified.setOnAction(e -> closeUnmodifiedTabs());
+        MenuItem closeLeft = new MenuItem("Close Tabs to the Left");
+        closeLeft.setOnAction(e -> closeTabsToLeft(tab));
+        MenuItem closeRight = new MenuItem("Close Tabs to the Right");
+        closeRight.setOnAction(e -> closeTabsToRight(tab));
+        MenuItem copyPath = new MenuItem("Copy Path");
+        copyPath.setOnAction(e -> copyPath(buffer));
+        MenuItem pin = new MenuItem("Pin Tab");
+        pin.setOnAction(e -> togglePin(tab));
+        MenuItem rename = new MenuItem("Rename File…");
+        rename.setOnAction(e -> renameFile(buffer, tab));
+
+        ContextMenu menu = new ContextMenu(
+                close, closeOthers, closeAll, closeUnmodified,
+                new SeparatorMenuItem(),
+                closeLeft, closeRight,
+                new SeparatorMenuItem(),
+                copyPath, pin, rename);
+        menu.setOnShowing(e -> {
+            closeLeft.setDisable(eligibleToLeft(tab).isEmpty());
+            closeRight.setDisable(eligibleToRight(tab).isEmpty());
+            boolean hasPath = buffer.getPath() != null;
+            copyPath.setDisable(!hasPath);
+            rename.setDisable(!hasPath);
+            pin.setText(pinned.contains(tab) ? "Unpin Tab" : "Pin Tab");
+        });
+        tab.setContextMenu(menu);
     }
 
     /** @return true if the tab is allowed to close (saved, discarded, or wasn't dirty). */
@@ -827,6 +1080,21 @@ public class MainController {
         registry.register(Command.of("file.save", "File: Save", this::onSave));
         registry.register(Command.of("file.saveAs", "File: Save As…", this::onSaveAs));
         registry.register(Command.of("buffer.close", "Buffer: Close", this::onCloseTab));
+        registry.register(Command.of("buffer.closeOthers", "Buffer: Close Other Tabs",
+                () -> closeOtherTabs(activeTab())));
+        registry.register(Command.of("buffer.closeAll", "Buffer: Close All Tabs", this::closeAllTabs));
+        registry.register(Command.of("buffer.closeUnmodified", "Buffer: Close Unmodified Tabs",
+                this::closeUnmodifiedTabs));
+        registry.register(Command.of("buffer.closeLeft", "Buffer: Close Tabs to the Left",
+                () -> closeTabsToLeft(activeTab())));
+        registry.register(Command.of("buffer.closeRight", "Buffer: Close Tabs to the Right",
+                () -> closeTabsToRight(activeTab())));
+        registry.register(Command.of("buffer.copyPath", "Buffer: Copy Path",
+                () -> copyPath(activeBuffer())));
+        registry.register(Command.of("buffer.togglePin", "Buffer: Toggle Pin",
+                () -> togglePin(activeTab())));
+        registry.register(Command.of("buffer.rename", "Buffer: Rename File…",
+                () -> renameFile(activeBuffer(), activeTab())));
         registry.register(Command.of("buffer.next", "Buffer: Next", this::nextBuffer));
         registry.register(Command.of("app.quit", "Application: Quit", this::onQuit));
         registry.register(Command.of("palette.show", "Command Palette", this::onPalette));

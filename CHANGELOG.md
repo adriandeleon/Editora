@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Editor tab right-click context menu: Close, Close Other Tabs, Close All Tabs,
+  Close Unmodified Tabs, Close Tabs to the Left/Right, Copy Path, Pin/Unpin Tab,
+  and Rename File…. Pinned tabs are marked (📌), kept grouped at the front, and
+  skipped by the bulk-close actions. Each action is also a palette command
+  (`buffer.closeOthers`, `buffer.closeAll`, `buffer.copyPath`, `buffer.togglePin`,
+  `buffer.rename`, …). Tabs now show a full-path tooltip on hover.
 - Status bar segments: live cursor position/selection, language, indentation
   (tab size), line endings, and encoding, shown right of the message area.
   Segments are clickable and dispatch commands — `nav.goToLine` (`M-g g`),
