@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The About dialog now shows the build date/time (baked in at build time).
 - Editor tab right-click context menu: Close, Close Other Tabs, Close All Tabs,
   Close Unmodified Tabs, Close Tabs to the Left/Right, Copy Path, Pin/Unpin Tab,
-  and Rename File…. Pinned tabs are marked (📌), kept grouped at the front, and
+  and Rename File…. Pinned tabs are marked with a pin icon, kept grouped at the front, and
   skipped by the bulk-close actions. Each action is also a palette command
   (`buffer.closeOthers`, `buffer.closeAll`, `buffer.copyPath`, `buffer.togglePin`,
   `buffer.rename`, …). Tabs now show a full-path tooltip on hover.
@@ -52,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Closing a pinned tab now asks for confirmation first (the X, the Close menu
+  item, and the close command); bulk-close actions still skip pinned tabs.
 - The Structure tool window now labels entries with the symbol name and kind
   (functions, types/classes, namespaces, Markdown headings, XML tags) derived
   from the TextMate grammar, and hides trivial blocks (if/for/while/…), instead

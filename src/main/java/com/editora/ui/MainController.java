@@ -320,7 +320,7 @@ public class MainController {
         tab.setContent(buffer.getNode());
         tab.setUserData(buffer);
         tab.setOnCloseRequest(e -> {
-            if (!confirmCloseIfDirty(buffer)) {
+            if (!confirmClose(tab)) {
                 e.consume();
             }
         });
@@ -336,7 +336,9 @@ public class MainController {
     private void updateTabMeta(Tab tab, EditorBuffer buffer) {
         boolean dirty = buffer.isDirty();
         boolean isPinned = pinned.contains(tab);
-        tab.setText((isPinned ? "📌 " : "") + (dirty ? "• " : "") + buffer.getTitle());
+        tab.setText((dirty ? "• " : "") + buffer.getTitle());
+        // Pinned tabs are marked with an SVG pin graphic (matching the toolbar icons), not a glyph.
+        tab.setGraphic(isPinned ? Icons.pin() : null);
         toggleClass(tab, "dirty", dirty);
         toggleClass(tab, "pinned", isPinned);
         Path p = buffer.getPath();
@@ -479,13 +481,9 @@ public class MainController {
         return tab == null ? null : (EditorBuffer) tab.getUserData();
     }
 
-    /** Closes a single tab (prompting if dirty). Ignores pin state — direct close always works. */
+    /** Closes a single tab, confirming first if it is pinned and/or has unsaved changes. */
     private void closeTab(Tab tab) {
-        if (tab == null) {
-            return;
-        }
-        EditorBuffer buffer = bufferOf(tab);
-        if (buffer == null || confirmCloseIfDirty(buffer)) {
+        if (tab != null && confirmClose(tab)) {
             tabPane.getTabs().remove(tab);
         }
     }
@@ -710,6 +708,35 @@ public class MainController {
             pin.setText(pinned.contains(tab) ? "Unpin Tab" : "Pin Tab");
         });
         tab.setContextMenu(menu);
+    }
+
+    /**
+     * @return true if {@code tab} may close — confirming first if it is pinned, then running the
+     *         unsaved-changes check. Used by every single-tab close (the X, the command, the menu).
+     */
+    private boolean confirmClose(Tab tab) {
+        EditorBuffer buffer = bufferOf(tab);
+        if (buffer == null) {
+            return true;
+        }
+        if (pinned.contains(tab) && !confirmClosePinned(buffer)) {
+            return false;
+        }
+        return confirmCloseIfDirty(buffer);
+    }
+
+    /** @return true if the user confirms closing a pinned tab. */
+    private boolean confirmClosePinned(EditorBuffer buffer) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.initOwner(stage);
+        alert.setTitle("Pinned tab");
+        alert.setHeaderText("Close pinned tab " + buffer.getTitle() + "?");
+        alert.setContentText(null);
+        ButtonType close = new ButtonType("Close");
+        ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(close, cancel);
+        Optional<ButtonType> result = alert.showAndWait();
+        return result.isPresent() && result.get() == close;
     }
 
     /** @return true if the tab is allowed to close (saved, discarded, or wasn't dirty). */
