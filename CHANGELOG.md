@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`buffer.closeOthers`, `buffer.closeAll`, `buffer.copyPath`, `buffer.togglePin`,
   `buffer.rename`, …). Tabs now show a full-path tooltip on hover.
 - Status bar segments: live cursor position/selection, language, indentation
-  (tab size), line endings, and encoding, shown right of the message area.
+  (tab size), line endings, file size, and encoding, shown right of the message area.
   Segments are clickable and dispatch commands — `nav.goToLine` (`M-g g`),
   `buffer.setLanguage` (override the syntax grammar), `buffer.setTabSize`, and
   `buffer.convertLineEndings` (LF/CRLF). Tab size now affects the minimap.

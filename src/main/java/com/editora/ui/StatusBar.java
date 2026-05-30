@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.function.Supplier;
 
@@ -35,6 +36,7 @@ public final class StatusBar extends HBox {
     private final Label language = segment("buffer.setLanguage", "Set language");
     private final Label indent = segment("buffer.setTabSize", "Set tab size");
     private final Label endings = segment("buffer.convertLineEndings", "Convert line endings");
+    private final Label size = new Label();
     private final Label encoding = new Label("UTF-8");
 
     private EditorBuffer attached;
@@ -49,11 +51,13 @@ public final class StatusBar extends HBox {
 
         getStyleClass().add("status-bar");
         echo.getStyleClass().add("status-message");
+        size.getStyleClass().add("status-segment");
+        size.setTooltip(new Tooltip("File size"));
         encoding.getStyleClass().add("status-segment");
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        getChildren().addAll(echo, spacer, position, language, indent, endings, encoding);
+        getChildren().addAll(echo, spacer, position, language, indent, endings, size, encoding);
         refresh();
     }
 
@@ -91,12 +95,10 @@ public final class StatusBar extends HBox {
     public void refresh() {
         EditorBuffer buffer = activeBuffer.get();
         boolean hasBuffer = buffer != null;
-        position.setVisible(hasBuffer);
-        language.setVisible(hasBuffer);
-        endings.setVisible(hasBuffer);
-        position.setManaged(hasBuffer);
-        language.setManaged(hasBuffer);
-        endings.setManaged(hasBuffer);
+        for (Label seg : new Label[]{position, language, endings, size}) {
+            seg.setVisible(hasBuffer);
+            seg.setManaged(hasBuffer);
+        }
 
         indent.setText("Tab Size: " + settings.get().getTabSize());
         if (!hasBuffer) {
@@ -117,6 +119,18 @@ public final class StatusBar extends HBox {
 
         language.setText(displayLanguage(buffer.getLanguage()));
         endings.setText(buffer.getLineEnding());
+        size.setText(formatSize(buffer.getContent().getBytes(StandardCharsets.UTF_8).length));
+    }
+
+    /** Human-readable byte size for the status bar (e.g. {@code 512 B}, {@code 1.2 kB}, {@code 3.4 MB}). */
+    private static String formatSize(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        if (bytes < 1024 * 1024) {
+            return String.format(Locale.ROOT, "%.1f kB", bytes / 1024.0);
+        }
+        return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
     /** Capitalizes a language name for display (e.g. {@code "java"} -> {@code "Java"}). */
