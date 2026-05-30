@@ -93,6 +93,10 @@ public class MainController {
     @FXML
     private Button findButton;
     @FXML
+    private Button splitVerticalButton;
+    @FXML
+    private Button splitHorizontalButton;
+    @FXML
     private Button paletteButton;
     @FXML
     private Button closeTabButton;
@@ -220,6 +224,7 @@ public class MainController {
             fileInfoPanel.attach(buffer);
             structurePanel.attach(buffer);
             statusBar.attach(buffer);
+            refreshSplitButtons();
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
@@ -276,6 +281,8 @@ public class MainController {
         setupButton(copyButton, Icons.copy(), "Copy (M-w)");
         setupButton(pasteButton, Icons.paste(), "Paste (C-y)");
         setupButton(findButton, Icons.find(), "Find / Replace (C-s)");
+        setupButton(splitVerticalButton, Icons.splitVertical(), "Split Editor — Side by Side (C-x 3)");
+        setupButton(splitHorizontalButton, Icons.splitHorizontal(), "Split Editor — Stacked (C-x 2)");
         setupButton(paletteButton, Icons.palette(), "Command Palette (M-x)");
         setupButton(closeTabButton, Icons.closeTab(), "Close Tab (C-x k)");
         setupButton(settingsButton, Icons.settings(), "Settings");
@@ -287,6 +294,44 @@ public class MainController {
                 (obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
         findBar.visibleProperty().addListener(
                 (obs, was, now) -> findButton.pseudoClassStateChanged(OPEN, now));
+        refreshSplitButtons();
+    }
+
+    @FXML
+    private void onSplitVertical() {
+        toggleSplit(EditorBuffer.Split.SIDE_BY_SIDE);
+    }
+
+    @FXML
+    private void onSplitHorizontal() {
+        toggleSplit(EditorBuffer.Split.STACKED);
+    }
+
+    private void toggleSplit(EditorBuffer.Split orientation) {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        buffer.toggleSplit(orientation);
+        refreshSplitButtons();
+        setStatus(buffer.getSplit() == EditorBuffer.Split.NONE ? "Editor unsplit" : "Editor split");
+    }
+
+    private void unsplit() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.setSplit(EditorBuffer.Split.NONE);
+            refreshSplitButtons();
+            setStatus("Editor unsplit");
+        }
+    }
+
+    /** Reflects the active buffer's split state in the toolbar toggle buttons. */
+    private void refreshSplitButtons() {
+        EditorBuffer buffer = activeBuffer();
+        EditorBuffer.Split split = buffer == null ? EditorBuffer.Split.NONE : buffer.getSplit();
+        splitVerticalButton.pseudoClassStateChanged(OPEN, split == EditorBuffer.Split.SIDE_BY_SIDE);
+        splitHorizontalButton.pseudoClassStateChanged(OPEN, split == EditorBuffer.Split.STACKED);
     }
 
     private void setupButton(Button button, Node icon, String tooltip) {
@@ -310,7 +355,7 @@ public class MainController {
 
     private CodeArea activeArea() {
         EditorBuffer buffer = activeBuffer();
-        return buffer == null ? null : buffer.getArea();
+        return buffer == null ? null : buffer.getFocusedArea();
     }
 
     private void addBuffer(EditorBuffer buffer) {
@@ -1172,6 +1217,11 @@ public class MainController {
                 this::toggleMinimap));
         registry.register(Command.of("view.toggleWhitespace", "View: Toggle Hidden Characters",
                 this::toggleWhitespace));
+        registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
+                this::onSplitVertical));
+        registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",
+                this::onSplitHorizontal));
+        registry.register(Command.of("view.unsplit", "View: Unsplit Editor", this::unsplit));
         registry.register(Command.of("view.foldAll", "View: Fold All", this::foldAll));
         registry.register(Command.of("view.unfoldAll", "View: Unfold All", this::unfoldAll));
         registry.register(Command.of("nav.goToLine", "Go: Go to Line…", this::goToLine));

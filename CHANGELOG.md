@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Editor split view: toolbar icons (and `view.splitVertical` / `view.splitHorizontal`
+  / `view.unsplit` commands, `C-x 3` / `C-x 2` / `C-x 1`) toggle a second synced view
+  of the current file — side by side or stacked. Edits/highlighting stay in sync;
+  scroll, caret, and minimap are per-pane. The icons reflect the active split state.
 - "Show hidden characters" view option: renders markers for spaces (·), tabs (→),
   and line ends (¶) on a transparent overlay without altering the document.
   Toggle via `view.toggleWhitespace` (`C-c w`) or Settings; off by default.

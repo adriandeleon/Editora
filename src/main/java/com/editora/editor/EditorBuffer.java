@@ -10,6 +10,7 @@ import java.util.concurrent.Executors;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
@@ -19,14 +20,17 @@ import javafx.application.Platform;
 
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
+import javafx.geometry.Orientation;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.SplitPane;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
 import javafx.scene.text.Font;
@@ -39,8 +43,24 @@ public class EditorBuffer {
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
 
+    /** Orientation of an optional second, synced view of this document. */
+    public enum Split { NONE, SIDE_BY_SIDE, STACKED }
+
     /** Wraps the scroll pane so we can overlay the column-80 ruler line and dock the minimap. */
     private final AnchorPane root = new AnchorPane();
+    /** Tab content: shows either {@link #root} alone or a SplitPane of [root, secondary view]. */
+    private final StackPane viewHost = new StackPane(root);
+    /** A second editable view sharing this document (created lazily on first split). */
+    private CodeArea area2;
+    private VirtualizedScrollPane<CodeArea> scrollPane2;
+    /** The secondary view's container (scroll pane + its own minimap), mounted in the SplitPane. */
+    private AnchorPane root2;
+    private Minimap minimap2;
+    private Split split = Split.NONE;
+    /** Whether the minimap is shown; applied to every split pane's minimap. */
+    private boolean minimapVisible = true;
+    /** The most recently focused view (primary or secondary); drives "active area" for commands. */
+    private CodeArea focusedArea = area;
     private final Line columnRuler = new Line();
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
@@ -81,6 +101,11 @@ public class EditorBuffer {
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> applyHighlighting());
         area.textProperty().addListener((obs, old, now) -> dirty.set(true));
+        area.focusedProperty().addListener((obs, was, now) -> {
+            if (now) {
+                focusedArea = area;
+            }
+        });
         installContextMenu();
         installOverlays();
     }
@@ -160,20 +185,90 @@ public class EditorBuffer {
         });
     }
 
+    /** The primary view. Tool windows, overlays, folding and highlighting all bind to this one. */
     public CodeArea getArea() {
         return area;
     }
 
-    /** The node to place in the scene: scroll pane + column-ruler overlay. */
+    /** The view that currently has focus (primary or the split's secondary); for caret/edit commands. */
+    public CodeArea getFocusedArea() {
+        return focusedArea;
+    }
+
+    /** The node to place in the scene: the primary view, or a SplitPane when split. */
     public Region getNode() {
-        return root;
+        return viewHost;
+    }
+
+    public Split getSplit() {
+        return split;
+    }
+
+    /** Toggles {@code orientation}: turns it off if already active, otherwise switches to it. */
+    public void toggleSplit(Split orientation) {
+        setSplit(split == orientation ? Split.NONE : orientation);
+    }
+
+    /** Shows or hides a second, synced view of this document beside ({@code SIDE_BY_SIDE}) or below it. */
+    public void setSplit(Split orientation) {
+        this.split = orientation;
+        if (orientation == Split.NONE) {
+            focusedArea = area;
+            viewHost.getChildren().setAll(root);
+            return;
+        }
+        ensureSecondaryView();
+        SplitPane pane = new SplitPane(root, root2);
+        pane.setOrientation(orientation == Split.SIDE_BY_SIDE ? Orientation.HORIZONTAL : Orientation.VERTICAL);
+        pane.setDividerPositions(0.5);
+        viewHost.getChildren().setAll(pane);
+    }
+
+    /** Lazily builds the secondary view (scroll pane + its own minimap) sharing this document. */
+    private void ensureSecondaryView() {
+        if (area2 != null) {
+            return;
+        }
+        area2 = new CodeArea(area.getContent()); // shares the EditableStyledDocument
+        area2.getStyleClass().add("editor-area");
+        area2.setWrapText(false);
+        area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
+        area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
+        area2.focusedProperty().addListener((obs, was, now) -> {
+            if (now) {
+                focusedArea = area2;
+            }
+        });
+        scrollPane2 = new VirtualizedScrollPane<>(area2);
+        // Give the secondary view its own minimap (tracks this pane's viewport), docked like the primary.
+        minimap2 = new Minimap(area2);
+        minimap2.setTabSize(tabSize);
+        root2 = new AnchorPane(scrollPane2, minimap2);
+        AnchorPane.setTopAnchor(scrollPane2, 0d);
+        AnchorPane.setBottomAnchor(scrollPane2, 0d);
+        AnchorPane.setLeftAnchor(scrollPane2, 0d);
+        AnchorPane.setTopAnchor(minimap2, 0d);
+        AnchorPane.setBottomAnchor(minimap2, 0d);
+        AnchorPane.setRightAnchor(minimap2, 0d);
+        applyMinimap(scrollPane2, minimap2, minimapVisible);
+    }
+
+    /** Docks/undocks a minimap on the right of its scroll pane (shared by both split panes). */
+    private static void applyMinimap(Region scroll, Minimap mm, boolean visible) {
+        mm.setVisible(visible);
+        mm.setManaged(visible);
+        AnchorPane.setRightAnchor(scroll, visible ? Minimap.WIDTH : 0d);
     }
 
     /** Applies the editor font, overriding the stylesheet defaults. */
     public void setFont(String family, int size) {
         this.fontFamily = family;
         this.fontSize = size;
-        area.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
+        String style = "-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;";
+        area.setStyle(style);
+        if (area2 != null) {
+            area2.setStyle(style);
+        }
         whitespace.setFont(family, size);
         updateColumnRulerPosition();
     }
@@ -217,12 +312,14 @@ public class EditorBuffer {
         folds.unfoldAll();
     }
 
-    /** Show/hide the minimap overview; reclaims its width for the editor when hidden. */
+    /** Show/hide the minimap overview (on every split pane); reclaims its width for the editor when hidden. */
     public void setMinimapVisible(boolean visible) {
-        minimap.setVisible(visible);
-        minimap.setManaged(visible);
-        AnchorPane.setRightAnchor(scrollPane, visible ? Minimap.WIDTH : 0d);
+        this.minimapVisible = visible;
+        applyMinimap(scrollPane, minimap, visible);
         AnchorPane.setRightAnchor(whitespace, visible ? Minimap.WIDTH : 0d);
+        if (minimap2 != null) {
+            applyMinimap(scrollPane2, minimap2, visible);
+        }
     }
 
     /** Show/hide the "hidden characters" markers (spaces, tabs, line ends). */
@@ -311,6 +408,9 @@ public class EditorBuffer {
     public void setTabSize(int tabSize) {
         this.tabSize = tabSize;
         minimap.setTabSize(tabSize);
+        if (minimap2 != null) {
+            minimap2.setTabSize(tabSize);
+        }
     }
 
     public int getTabSize() {

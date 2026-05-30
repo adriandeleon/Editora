@@ -33,6 +33,9 @@
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="findButton" onAction="#onFind"/>
                         <Separator orientation="VERTICAL"/>
+                        <Button fx:id="splitVerticalButton" onAction="#onSplitVertical"/>
+                        <Button fx:id="splitHorizontalButton" onAction="#onSplitHorizontal"/>
+                        <Separator orientation="VERTICAL"/>
                         <Button fx:id="paletteButton" onAction="#onPalette"/>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="settingsButton" onAction="#onSettings"/>

@@ -159,6 +159,16 @@ final class Icons {
         return of("M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z");
     }
 
+    static Node splitVertical() {
+        // Two panes side by side (a vertical divider) — the "split side by side" action.
+        return of("M4 5h6v14H4V5zm10 0h6v14h-6V5z");
+    }
+
+    static Node splitHorizontal() {
+        // Two panes stacked (a horizontal divider) — the "split stacked" action.
+        return of("M5 4h14v6H5V4zm0 10h14v6H5v-6z");
+    }
+
     static Node pin() {
         // Material "push_pin" — a thumbtack, used to mark pinned tabs.
         return of("M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z");
