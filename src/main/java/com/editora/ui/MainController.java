@@ -880,6 +880,14 @@ public class MainController {
         setStatus("Minimap: " + (s.isShowMinimap() ? "on" : "off"));
     }
 
+    private void toggleWhitespace() {
+        Settings s = config.getSettings();
+        s.setShowWhitespace(!s.isShowWhitespace());
+        config.save();
+        applyViewSettingsToAllBuffers(s);
+        setStatus("Hidden characters: " + (s.isShowWhitespace() ? "on" : "off"));
+    }
+
     /**
      * Emacs {@code C-x o}: cycles keyboard focus between the editor and any open tool windows.
      * Order: editor, then each open tool window (by side); wraps back to the editor.
@@ -1054,6 +1062,7 @@ public class MainController {
         buffer.setLineHighlightOn(s.isHighlightCurrentLine());
         buffer.setLineNumbersVisible(s.isShowLineNumbers());
         buffer.setMinimapVisible(s.isShowMinimap());
+        buffer.setWhitespaceVisible(s.isShowWhitespace());
         buffer.setTabSize(s.getTabSize());
     }
 
@@ -1134,6 +1143,8 @@ public class MainController {
                 this::toggleLineNumbers));
         registry.register(Command.of("view.toggleMinimap", "View: Toggle Minimap",
                 this::toggleMinimap));
+        registry.register(Command.of("view.toggleWhitespace", "View: Toggle Hidden Characters",
+                this::toggleWhitespace));
         registry.register(Command.of("view.foldAll", "View: Fold All", this::foldAll));
         registry.register(Command.of("view.unfoldAll", "View: Unfold All", this::unfoldAll));
         registry.register(Command.of("nav.goToLine", "Go: Go to Line…", this::goToLine));

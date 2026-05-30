@@ -19,6 +19,7 @@ public class Settings {
     private boolean highlightCurrentLine = true;
     private boolean showLineNumbers = true;
     private boolean showMinimap = true;
+    private boolean showWhitespace = false;
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -107,6 +108,14 @@ public class Settings {
 
     public void setShowMinimap(boolean showMinimap) {
         this.showMinimap = showMinimap;
+    }
+
+    public boolean isShowWhitespace() {
+        return showWhitespace;
+    }
+
+    public void setShowWhitespace(boolean showWhitespace) {
+        this.showWhitespace = showWhitespace;
     }
 
     public Map<String, String> getKeybindings() {

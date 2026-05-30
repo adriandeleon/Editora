@@ -43,6 +43,7 @@ public class EditorBuffer {
     private final AnchorPane root = new AnchorPane();
     private final Line columnRuler = new Line();
     private final Minimap minimap = new Minimap(area);
+    private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final FoldManager folds = new FoldManager(area);
 
     private Path path;
@@ -96,11 +97,17 @@ public class EditorBuffer {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, minimap, columnRuler);
+        root.getChildren().addAll(scrollPane, whitespace, minimap, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
         AnchorPane.setRightAnchor(scrollPane, Minimap.WIDTH);
+        // The whitespace overlay shares the text rectangle with the scroll pane (and tracks it when
+        // the minimap is toggled); it is mouse-transparent so clicks reach the editor.
+        AnchorPane.setTopAnchor(whitespace, 0d);
+        AnchorPane.setBottomAnchor(whitespace, 0d);
+        AnchorPane.setLeftAnchor(whitespace, 0d);
+        AnchorPane.setRightAnchor(whitespace, Minimap.WIDTH);
         AnchorPane.setTopAnchor(minimap, 0d);
         AnchorPane.setBottomAnchor(minimap, 0d);
         AnchorPane.setRightAnchor(minimap, 0d);
@@ -167,6 +174,7 @@ public class EditorBuffer {
         this.fontFamily = family;
         this.fontSize = size;
         area.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
+        whitespace.setFont(family, size);
         updateColumnRulerPosition();
     }
 
@@ -214,6 +222,12 @@ public class EditorBuffer {
         minimap.setVisible(visible);
         minimap.setManaged(visible);
         AnchorPane.setRightAnchor(scrollPane, visible ? Minimap.WIDTH : 0d);
+        AnchorPane.setRightAnchor(whitespace, visible ? Minimap.WIDTH : 0d);
+    }
+
+    /** Show/hide the "hidden characters" markers (spaces, tabs, line ends). */
+    public void setWhitespaceVisible(boolean visible) {
+        whitespace.setActive(visible);
     }
 
     private void updateColumnRulerPosition() {

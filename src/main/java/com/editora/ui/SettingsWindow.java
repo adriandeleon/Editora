@@ -48,6 +48,7 @@ public class SettingsWindow {
     private CheckBox lineHighlightCheck;
     private CheckBox lineNumbersCheck;
     private CheckBox minimapCheck;
+    private CheckBox whitespaceCheck;
     private boolean built;
     private boolean loading;
 
@@ -125,6 +126,11 @@ public class SettingsWindow {
             config.getSettings().setShowMinimap(now);
             apply();
         });
+        whitespaceCheck = new CheckBox("Show hidden characters (spaces, tabs, EOL)");
+        whitespaceCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setShowWhitespace(now);
+            apply();
+        });
 
         GridPane form = new GridPane();
         form.setHgap(12);
@@ -136,8 +142,9 @@ public class SettingsWindow {
         form.add(lineHighlightCheck, 1, 4);
         form.add(lineNumbersCheck, 1, 5);
         form.add(minimapCheck, 1, 6);
+        form.add(whitespaceCheck, 1, 7);
 
-        int row = 7;
+        int row = 8;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -215,6 +222,7 @@ public class SettingsWindow {
             lineHighlightCheck.setSelected(settings.isHighlightCurrentLine());
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
             minimapCheck.setSelected(settings.isShowMinimap());
+            whitespaceCheck.setSelected(settings.isShowWhitespace());
         } finally {
             loading = false;
         }

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- "Show hidden characters" view option: renders markers for spaces (·), tabs (→),
+  and line ends (¶) on a transparent overlay without altering the document.
+  Toggle via `view.toggleWhitespace` (`C-c w`) or Settings; off by default.
 - The About dialog now shows the build date/time (baked in at build time).
 - Editor tab right-click context menu: Close, Close Other Tabs, Close All Tabs,
   Close Unmodified Tabs, Close Tabs to the Left/Right, Copy Path, Pin/Unpin Tab,

@@ -38,5 +38,6 @@
   "M->": "nav.docEnd",
   "C-c f": "view.foldAll",
   "C-c u": "view.unfoldAll",
+  "C-c w": "view.toggleWhitespace",
   "M-g g": "nav.goToLine"
 }
