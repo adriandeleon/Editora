@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- User preferences are now stored as TOML in `~/.editora-v2/settings.toml` (was
+  `settings.json`). Session state (fold regions, tool-window layout) moved to a
+  separate `workspace-state.json`; recent files stay in `recent-files.json`. No
+  migration — a pre-existing `settings.json` is ignored.
 - Closing a pinned tab now asks for confirmation first (the X, the Close menu
   item, and the close command); bulk-close actions still skip pinned tabs.
 - The Structure tool window now labels entries with the symbol name and kind

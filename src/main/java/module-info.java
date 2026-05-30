@@ -6,6 +6,7 @@ module com.editora {
     requires reactfx;
     requires atlantafx.base;
     requires com.fasterxml.jackson.databind;
+    requires com.fasterxml.jackson.dataformat.toml;
     requires org.eclipse.tm4e.core;
     requires java.logging;
 

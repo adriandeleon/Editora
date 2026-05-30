@@ -8,7 +8,7 @@ import java.util.Map;
 
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
-import com.editora.config.Settings;
+import com.editora.config.WorkspaceState;
 
 import javafx.application.Platform;
 import javafx.css.PseudoClass;
@@ -88,7 +88,7 @@ public class ToolWindowManager {
 
     /** True if this tool window's stripe button should be shown. Defaults to visible. */
     public boolean isVisible(ToolWindow tw) {
-        Boolean v = config.getSettings().getToolWindowVisible().get(tw.getId());
+        Boolean v = config.getWorkspaceState().getToolWindowVisible().get(tw.getId());
         return v == null || v;
     }
 
@@ -108,7 +108,7 @@ public class ToolWindowManager {
         } else if (button != null) {
             stripeFor(currentSide(tw)).getChildren().add(button);
         }
-        config.getSettings().getToolWindowVisible().put(tw.getId(), visible);
+        config.getWorkspaceState().getToolWindowVisible().put(tw.getId(), visible);
         updateStripeVisibility();
         config.save();
     }
@@ -145,7 +145,7 @@ public class ToolWindowManager {
 
     /** The side this tool window is currently assigned to (settings override, falling back to the registered default). */
     public ToolWindow.Side currentSide(ToolWindow tw) {
-        String stored = config.getSettings().getToolWindowSides().get(tw.getId());
+        String stored = config.getWorkspaceState().getToolWindowSides().get(tw.getId());
         if (stored != null) {
             try {
                 return ToolWindow.Side.valueOf(stored);
@@ -170,7 +170,7 @@ public class ToolWindowManager {
             stripeFor(oldSide).getChildren().remove(button);
             stripeFor(newSide).getChildren().add(button);
         }
-        config.getSettings().getToolWindowSides().put(tw.getId(), newSide.name());
+        config.getWorkspaceState().getToolWindowSides().put(tw.getId(), newSide.name());
         updateStripeVisibility();
         config.save();
     }
@@ -189,7 +189,7 @@ public class ToolWindowManager {
 
     /** Opens any tool windows the settings file says were open last time. */
     public void restore() {
-        Settings s = config.getSettings();
+        WorkspaceState s = config.getWorkspaceState();
         openById(s.getOpenLeftToolWindow());
         openById(s.getOpenRightToolWindow());
         openById(s.getOpenBottomToolWindow());
@@ -219,18 +219,18 @@ public class ToolWindowManager {
         switch (side) {
             case LEFT -> {
                 hSplit.getItems().add(0, panel);
-                double pos = config.getSettings().getLeftDividerPosition();
+                double pos = config.getWorkspaceState().getLeftDividerPosition();
                 Platform.runLater(() -> hSplit.setDividerPosition(0, pos));
             }
             case RIGHT -> {
                 hSplit.getItems().add(panel);
-                double pos = config.getSettings().getRightDividerPosition();
+                double pos = config.getWorkspaceState().getRightDividerPosition();
                 int dividerIdx = hSplit.getItems().size() - 2;
                 Platform.runLater(() -> hSplit.setDividerPosition(dividerIdx, pos));
             }
             case BOTTOM -> {
                 vSplit.getItems().add(panel);
-                double pos = config.getSettings().getBottomDividerPosition();
+                double pos = config.getWorkspaceState().getBottomDividerPosition();
                 Platform.runLater(() -> vSplit.setDividerPosition(0, pos));
             }
         }
@@ -244,7 +244,7 @@ public class ToolWindowManager {
             return;
         }
         ToolWindow.Side side = currentSide(tw);
-        Settings settings = config.getSettings();
+        WorkspaceState settings = config.getWorkspaceState();
         switch (side) {
             case LEFT -> {
                 int idx = hSplit.getItems().indexOf(panel);
@@ -291,7 +291,7 @@ public class ToolWindowManager {
     }
 
     private void persist() {
-        Settings s = config.getSettings();
+        WorkspaceState s = config.getWorkspaceState();
         s.setOpenLeftToolWindow(idOf(openBySide.get(ToolWindow.Side.LEFT)));
         s.setOpenRightToolWindow(idOf(openBySide.get(ToolWindow.Side.RIGHT)));
         s.setOpenBottomToolWindow(idOf(openBySide.get(ToolWindow.Side.BOTTOM)));

@@ -7,22 +7,28 @@ import java.nio.file.Path;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 
 /**
- * Loads and saves {@link Settings} as JSON in {@code ~/.editora-v2/settings.json} (the same location
- * on macOS, Linux, and Windows, where {@code user.home} maps to the user profile).
- * Missing or malformed config falls back to built-in defaults rather than failing.
+ * Loads and saves the user config in {@code ~/.editora-v2/} ({@code user.home} maps to the user
+ * profile on macOS, Linux, and Windows). Preferences ({@link Settings}) are stored as TOML in
+ * {@code settings.toml}; session state ({@link WorkspaceState}: fold regions, tool-window layout) is
+ * stored as JSON in {@code workspace-state.json}. Missing or malformed files fall back to defaults.
  */
 public class ConfigManager {
 
     static final String APP_DIR_NAME = ".editora-v2";
-    static final String CONFIG_FILE_NAME = "settings.json";
+    static final String SETTINGS_FILE_NAME = "settings.toml";
+    static final String WORKSPACE_FILE_NAME = "workspace-state.json";
 
-    private final ObjectMapper mapper = new ObjectMapper()
-            .enable(SerializationFeature.INDENT_OUTPUT);
+    /** TOML for preferences. */
+    private final TomlMapper toml = new TomlMapper();
+    /** Pretty JSON for session/state data. */
+    private final ObjectMapper json = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
     private final Path configDir;
     private Settings settings = new Settings();
+    private WorkspaceState workspaceState = new WorkspaceState();
 
     public ConfigManager() {
         this(defaultConfigDir());
@@ -36,35 +42,48 @@ public class ConfigManager {
         return configDir;
     }
 
-    public Path getConfigFile() {
-        return configDir.resolve(CONFIG_FILE_NAME);
+    public Path getSettingsFile() {
+        return configDir.resolve(SETTINGS_FILE_NAME);
+    }
+
+    public Path getWorkspaceStateFile() {
+        return configDir.resolve(WORKSPACE_FILE_NAME);
     }
 
     public Settings getSettings() {
         return settings;
     }
 
-    /** Reads config.json, merging stored values onto defaults. Falls back to defaults on any error. */
+    public WorkspaceState getWorkspaceState() {
+        return workspaceState;
+    }
+
+    /** Reads both files, merging stored values onto defaults. Falls back to defaults on any error. */
     public Settings load() {
-        Path file = getConfigFile();
+        settings = read(getSettingsFile(), toml, new Settings());
+        workspaceState = read(getWorkspaceStateFile(), json, new WorkspaceState());
+        return settings;
+    }
+
+    /** Reads {@code file} with {@code mapper}, merging onto {@code defaults}; returns defaults on error. */
+    private static <T> T read(Path file, ObjectMapper mapper, T defaults) {
         if (!Files.isReadable(file)) {
-            settings = new Settings();
-            return settings;
+            return defaults;
         }
         try {
-            settings = mapper.readerForUpdating(new Settings()).readValue(Files.readString(file));
+            return mapper.readerForUpdating(defaults).readValue(Files.readString(file));
         } catch (IOException e) {
-            settings = new Settings();
+            return defaults;
         }
-        return settings;
     }
 
     public void save() {
         try {
             Files.createDirectories(configDir);
-            mapper.writeValue(getConfigFile().toFile(), settings);
+            toml.writeValue(getSettingsFile().toFile(), settings);
+            json.writeValue(getWorkspaceStateFile().toFile(), workspaceState);
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to write " + getConfigFile(), e);
+            throw new UncheckedIOException("Failed to write config to " + configDir, e);
         }
     }
 

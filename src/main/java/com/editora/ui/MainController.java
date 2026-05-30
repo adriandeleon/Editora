@@ -701,10 +701,10 @@ public class MainController {
             }
             buffer.setPath(target); // re-detects language/grammar
             // Migrate state keyed by the absolute path string.
-            Settings s = config.getSettings();
-            List<Integer> folds = s.getFoldedRegions().remove(old.toString());
+            var folded = config.getWorkspaceState().getFoldedRegions();
+            List<Integer> folds = folded.remove(old.toString());
             if (folds != null) {
-                s.getFoldedRegions().put(target.toString(), folds);
+                folded.put(target.toString(), folds);
             }
             if (recentFiles != null) {
                 recentFiles.remove(old);
@@ -1107,7 +1107,7 @@ public class MainController {
             return;
         }
         List<Integer> lines = buffer.getFoldManager().collapsedStartLines();
-        var map = config.getSettings().getFoldedRegions();
+        var map = config.getWorkspaceState().getFoldedRegions();
         if (lines.isEmpty()) {
             map.remove(file.toString());
         } else {
@@ -1122,7 +1122,7 @@ public class MainController {
         if (file == null) {
             return;
         }
-        List<Integer> saved = config.getSettings().getFoldedRegions().get(file.toString());
+        List<Integer> saved = config.getWorkspaceState().getFoldedRegions().get(file.toString());
         buffer.getFoldManager().applyCollapsedStartLines(saved);
         buffer.markClean();
     }

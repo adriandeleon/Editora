@@ -44,9 +44,10 @@ The `dist` profile produces a platform installer under `target/dist/`.
 
 ## Configuration
 
-User settings live in `~/.editora-v2/settings.json` (font, theme, keymap, tab size,
-view options, and keybinding overrides). Recent files are stored alongside it in
-`recent-files.json`.
+User preferences live in `~/.editora-v2/settings.toml` (font, theme, keymap, tab size,
+view options, and keybinding overrides). Session state — collapsed fold regions and
+tool-window layout — is stored as JSON in `workspace-state.json`, and recent files in
+`recent-files.json`, both alongside it.
 
 ## License
 
