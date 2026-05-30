@@ -42,6 +42,22 @@ A Maven wrapper is included, so no local Maven install is required — use `./mv
 
 The `dist` profile produces a platform installer under `target/dist/`.
 
+## Releases
+
+Tagged releases publish native installers to
+[GitHub Releases](https://github.com/adriandeleon/Editora/releases) for Linux, macOS, and
+Windows (x64 and arm64). A GitHub Actions matrix builds each installer with `-Pdist` on its own
+runner and [JReleaser](https://jreleaser.org) assembles the release (config in `jreleaser.yml`).
+
+To cut a release: bump `<version>` in `pom.xml`, commit, then push a matching tag:
+
+```bash
+git tag v1.2.3 && git push origin v1.2.3
+```
+
+A `-rcN` suffix (e.g. `v1.2.3-rc1`) is published as a pre-release. Installers are currently
+**unsigned**, so macOS Gatekeeper / Windows SmartScreen will warn on first launch.
+
 ## Configuration
 
 User preferences live in `~/.editora-v2/settings.toml` (font, theme, keymap, tab size,

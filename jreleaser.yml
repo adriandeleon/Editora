@@ -1,0 +1,40 @@
+# JReleaser configuration — creates the GitHub release and attaches the per-platform installers
+# that the release workflow builds (one runner per OS/arch). The version is supplied at release time
+# via the JRELEASER_PROJECT_VERSION env var (derived from the git tag); see .github/workflows/release.yml.
+project:
+  name: editora
+  description: A keyboard-driven, cross-platform programmer's text editor.
+  authors:
+    - Adrian De Leon
+  license: MIT
+  links:
+    homepage: https://github.com/adriandeleon/Editora
+  inceptionYear: "2026"
+  java:
+    groupId: com.editora
+    version: 25
+
+release:
+  github:
+    owner: adriandeleon
+    name: Editora
+    tagName: 'v{{projectVersion}}'
+    releaseName: 'Editora {{projectVersion}}'
+    # Re-running on the same tag replaces the assets instead of failing.
+    overwrite: true
+    # Tags like v1.0.0-rc1 are published as pre-releases.
+    prerelease:
+      pattern: '.*-rc.*'
+    changelog:
+      formatted: ALWAYS
+      format: '- {{commitShortHash}} {{commitTitle}}'
+      contributors:
+        enabled: false
+
+# Attach the installers gathered from the build matrix (downloaded under ./artifacts).
+# Installers are renamed per target in CI, so names are unique across OS/arch.
+files:
+  globs:
+    - pattern: 'artifacts/**/*.dmg'
+    - pattern: 'artifacts/**/*.msi'
+    - pattern: 'artifacts/**/*.deb'
