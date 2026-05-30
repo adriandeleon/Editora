@@ -1,7 +1,6 @@
 package com.editora.ui;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -374,6 +373,17 @@ public class MainController {
 
     /** Open a file by path; refreshes recent files and reports status. */
     private void openPath(Path file) {
+        Tab existing = tabForPath(file);
+        if (existing != null) {
+            // Already open — switch to its tab instead of opening a duplicate.
+            tabPane.getSelectionModel().select(existing);
+            ((EditorBuffer) existing.getUserData()).getArea().requestFocus();
+            if (recentFiles != null) {
+                recentFiles.add(file);
+            }
+            setStatus("Already open: " + file.getFileName());
+            return;
+        }
         try {
             String content = Files.readString(file);
             EditorBuffer buffer = new EditorBuffer();
@@ -729,6 +739,23 @@ public class MainController {
     private Tab tabFor(EditorBuffer buffer) {
         for (Tab tab : tabPane.getTabs()) {
             if (tab.getUserData() == buffer) {
+                return tab;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The tab whose buffer is backed by {@code file}, or {@code null} if it isn't open. Paths are
+     * compared as normalized absolute paths so relative vs. absolute (or {@code .}/{@code ..})
+     * spellings of the same file still match. Untitled buffers (no path) are skipped.
+     */
+    private Tab tabForPath(Path file) {
+        Path target = file.toAbsolutePath().normalize();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            Path p = buffer == null ? null : buffer.getPath();
+            if (p != null && p.toAbsolutePath().normalize().equals(target)) {
                 return tab;
             }
         }

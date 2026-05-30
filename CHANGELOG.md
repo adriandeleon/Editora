@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Opening a file that is already open now switches to its existing tab instead
+  of opening a duplicate.
 - The recent-files picker is now a toolbar menu button (with a per-entry remove
   action) instead of a combo box.
 - The key dispatcher now yields only single-key chords to windows that own
