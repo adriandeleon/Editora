@@ -244,17 +244,15 @@ public class FileInformationPanel extends VBox {
 
     private void refreshTextSettings(EditorBuffer buffer) {
         encodingValue.setText("Unicode (UTF-8)");
-        String text = buffer.getArea().getText();
-        lineEndingsValue.setText(text.contains("\r\n") ? "CRLF" : "LF");
+        lineEndingsValue.setText(EditorBuffer.detectLineEnding(buffer.getArea().getText()));
         modeValue.setText(modeLabel(buffer));
     }
 
     private static String modeLabel(EditorBuffer buffer) {
-        Path p = buffer.getPath();
-        if (p == null) {
+        String lang = buffer.getLanguage();
+        if (lang == null || lang.isEmpty() || lang.equals(LanguageRegistry.plaintext())) {
             return "General";
         }
-        String lang = LanguageRegistry.forFileName(p.getFileName().toString());
         return lang.substring(0, 1).toUpperCase(Locale.ROOT) + lang.substring(1);
     }
 

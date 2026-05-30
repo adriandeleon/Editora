@@ -33,6 +33,8 @@ final class Minimap extends Region {
     private final CodeArea area;
     private final Canvas canvas = new Canvas(WIDTH, 0);
     private WritableImage contentImage;
+    /** Visual width of a tab character, in columns. */
+    private int tabSize = 4;
 
     Minimap(CodeArea area) {
         this.area = area;
@@ -49,6 +51,14 @@ final class Minimap extends Region {
 
         canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, this::scrollToEvent);
         canvas.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::scrollToEvent);
+    }
+
+    /** Sets the visual tab width (columns) and re-renders if it changed. */
+    void setTabSize(int tabSize) {
+        if (tabSize > 0 && tabSize != this.tabSize) {
+            this.tabSize = tabSize;
+            renderContent();
+        }
     }
 
     @Override
@@ -151,7 +161,7 @@ final class Minimap extends Region {
                 runStart = -1;
             }
             if (i < n) {
-                col += text.charAt(i) == '\t' ? 4 : 1;
+                col += text.charAt(i) == '\t' ? tabSize : 1;
             }
         }
     }

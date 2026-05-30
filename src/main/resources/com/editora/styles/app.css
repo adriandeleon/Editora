@@ -328,8 +328,29 @@
 
 .status-bar {
     -fx-background-color: #f6f8fa;
-    -fx-padding: 3 10 3 10;
+    -fx-border-color: #d0d7de transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 0 6 0 10;
+    -fx-alignment: center-left;
+}
+
+/* Left echo area: transient command messages. */
+.status-bar .status-message {
     -fx-text-fill: #57606a;
+    -fx-padding: 3 6 3 0;
+}
+
+/* Right-aligned segments, separated by a thin divider (VS Code style). */
+.status-bar .status-segment {
+    -fx-text-fill: #57606a;
+    -fx-padding: 3 8 3 8;
+    -fx-border-color: transparent transparent transparent #d8dee4;
+    -fx-border-width: 0 0 0 1;
+}
+
+.status-bar .status-segment-clickable:hover {
+    -fx-background-color: #eaeef2;
+    -fx-cursor: hand;
 }
 
 /* Command palette overlay (a Popup, so it is styled explicitly rather than by the theme) */

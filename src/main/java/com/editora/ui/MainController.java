@@ -12,6 +12,8 @@ import com.editora.config.ConfigManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.LanguageRegistry;
 
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
@@ -31,12 +33,14 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -58,8 +62,6 @@ public class MainController {
     private BorderPane workspace;
     @FXML
     private TabPane tabPane;
-    @FXML
-    private Label statusLabel;
     @FXML
     private VBox topBox;
     @FXML
@@ -105,6 +107,7 @@ public class MainController {
     private KeymapManager keymap;
     private CommandPalette palette;
     private FindReplaceBar findBar;
+    private StatusBar statusBar;
     private SettingsWindow settingsWindow;
     private ToolWindowManager toolWindows;
     private ToolWindow projectToolWindow;
@@ -132,6 +135,8 @@ public class MainController {
         this.findBar = new FindReplaceBar(this::activeArea, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
+        this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
+        bottomBox.getChildren().setAll(statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows, this::applyViewSettingsToAllBuffers);
         this.switcher = new Switcher(() -> List.copyOf(mru),
@@ -204,6 +209,7 @@ public class MainController {
             EditorBuffer buffer = now == null ? null : (EditorBuffer) now.getUserData();
             fileInfoPanel.attach(buffer);
             structurePanel.attach(buffer);
+            statusBar.attach(buffer);
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
@@ -285,7 +291,7 @@ public class MainController {
     }
 
     public void setStatus(String message) {
-        statusLabel.setText(message);
+        statusBar.setMessage(message);
     }
 
     private EditorBuffer activeBuffer() {
@@ -649,6 +655,88 @@ public class MainController {
         }
     }
 
+    /** Prompts for a 1-based line number and moves the caret there (clamped to the document). */
+    private void goToLine() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int total = area.getParagraphs().size();
+        TextInputDialog dialog = new TextInputDialog(String.valueOf(area.getCurrentParagraph() + 1));
+        dialog.initOwner(stage);
+        dialog.setTitle("Go to Line");
+        dialog.setHeaderText(null);
+        dialog.setContentText("Line (1–" + total + "):");
+        dialog.showAndWait().ifPresent(input -> {
+            try {
+                int target = Math.max(1, Math.min(total, Integer.parseInt(input.trim()))) - 1;
+                moveAndFollow(a -> a.moveTo(target, 0));
+                setStatus("Line " + (target + 1));
+            } catch (NumberFormatException e) {
+                setStatus("Not a line number: " + input);
+            }
+        });
+    }
+
+    /** Lets the user override the syntax language/grammar for the active buffer. */
+    private void chooseLanguage() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        List<String> names = new ArrayList<>();
+        names.add(LanguageRegistry.plaintext());
+        names.addAll(GrammarRegistry.shared().availableLanguageNames());
+        String current = names.contains(buffer.getLanguage()) ? buffer.getLanguage() : names.get(0);
+        ChoiceDialog<String> dialog = new ChoiceDialog<>(current, names);
+        dialog.initOwner(stage);
+        dialog.setTitle("Set Language");
+        dialog.setHeaderText(null);
+        dialog.setContentText("Language:");
+        dialog.showAndWait().ifPresent(name -> {
+            buffer.setLanguageOverride(name);
+            statusBar.refresh();
+            setStatus("Language: " + name);
+        });
+    }
+
+    /** Changes the (persisted) tab width and applies it to every buffer. */
+    private void chooseTabSize() {
+        Settings s = config.getSettings();
+        List<Integer> options = List.of(2, 4, 8);
+        ChoiceDialog<Integer> dialog = new ChoiceDialog<>(
+                options.contains(s.getTabSize()) ? s.getTabSize() : 4, options);
+        dialog.initOwner(stage);
+        dialog.setTitle("Tab Size");
+        dialog.setHeaderText(null);
+        dialog.setContentText("Tab size (columns):");
+        dialog.showAndWait().ifPresent(size -> {
+            s.setTabSize(size);
+            config.save();
+            applyViewSettingsToAllBuffers(s);
+            statusBar.refresh();
+            setStatus("Tab size: " + size);
+        });
+    }
+
+    /** Converts the active buffer's line endings between LF and CRLF. */
+    private void chooseLineEndings() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        ChoiceDialog<String> dialog = new ChoiceDialog<>(buffer.getLineEnding(), List.of("LF", "CRLF"));
+        dialog.initOwner(stage);
+        dialog.setTitle("Line Endings");
+        dialog.setHeaderText(null);
+        dialog.setContentText("Line endings:");
+        dialog.showAndWait().ifPresent(choice -> {
+            buffer.convertLineEndings("CRLF".equals(choice));
+            statusBar.refresh();
+            setStatus("Line endings: " + choice);
+        });
+    }
+
     /** Persists the buffer's collapsed fold regions, keyed by its file path. */
     private void persistFolds(EditorBuffer buffer) {
         Path file = buffer.getPath();
@@ -683,6 +771,7 @@ public class MainController {
         buffer.setLineHighlightOn(s.isHighlightCurrentLine());
         buffer.setLineNumbersVisible(s.isShowLineNumbers());
         buffer.setMinimapVisible(s.isShowMinimap());
+        buffer.setTabSize(s.getTabSize());
     }
 
     private void applyViewSettingsToAllBuffers(Settings settings) {
@@ -749,6 +838,11 @@ public class MainController {
                 this::toggleMinimap));
         registry.register(Command.of("view.foldAll", "View: Fold All", this::foldAll));
         registry.register(Command.of("view.unfoldAll", "View: Unfold All", this::unfoldAll));
+        registry.register(Command.of("nav.goToLine", "Go: Go to Line…", this::goToLine));
+        registry.register(Command.of("buffer.setLanguage", "Buffer: Set Language…", this::chooseLanguage));
+        registry.register(Command.of("buffer.setTabSize", "Buffer: Set Tab Size…", this::chooseTabSize));
+        registry.register(Command.of("buffer.convertLineEndings", "Buffer: Convert Line Endings (LF/CRLF)…",
+                this::chooseLineEndings));
         registry.register(Command.of("window.other", "Window: Other (Editor / Tool Window)",
                 this::otherWindow));
         registry.register(Command.of("file.clearRecent", "File: Clear Recent Files", this::onClearRecent));

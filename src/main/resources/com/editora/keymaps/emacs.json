@@ -37,5 +37,6 @@
   "M-<": "nav.docStart",
   "M->": "nav.docEnd",
   "C-c f": "view.foldAll",
-  "C-c u": "view.unfoldAll"
+  "C-c u": "view.unfoldAll",
+  "M-g g": "nav.goToLine"
 }

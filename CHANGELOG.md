@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Status bar segments: live cursor position/selection, language, indentation
+  (tab size), line endings, and encoding, shown right of the message area.
+  Segments are clickable and dispatch commands — `nav.goToLine` (`M-g g`),
+  `buffer.setLanguage` (override the syntax grammar), `buffer.setTabSize`, and
+  `buffer.convertLineEndings` (LF/CRLF). Tab size now affects the minimap.
 - Syntax highlighting via bundled TextMate grammars (using tm4e) for 21
   languages: Java, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin,
   Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, and SQL.

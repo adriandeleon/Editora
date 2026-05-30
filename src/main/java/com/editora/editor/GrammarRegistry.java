@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -30,6 +31,8 @@ public final class GrammarRegistry {
     private final Map<String, String> scopeToResource = new HashMap<>();
     /** Lower-case file extension -> TextMate scope name. */
     private final Map<String, String> extensionToScope = new HashMap<>();
+    /** Language name (== resource base name, e.g. {@code "java"}) -> TextMate scope name. */
+    private final Map<String, String> languageNameToScope = new HashMap<>();
 
     private final Registry registry;
     private final Map<String, IGrammar> grammarCache = new HashMap<>();
@@ -43,6 +46,9 @@ public final class GrammarRegistry {
         Logger.getLogger("org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp").setLevel(Level.OFF);
         Logger.getLogger("org.eclipse.tm4e.core.internal.grammar.raw.RawCaptures").setLevel(Level.OFF);
         registerGrammars();
+        // The resource base name doubles as the language name (see LanguageRegistry), so the
+        // inverse of scopeToResource resolves a language name to its scope.
+        scopeToResource.forEach((scope, resource) -> languageNameToScope.put(resource, scope));
         registry = new Registry(new IRegistryOptions() {
             @Override
             public IGrammarSource getGrammarSource(String scopeName) {
@@ -64,6 +70,23 @@ public final class GrammarRegistry {
     public synchronized IGrammar forFileName(String fileName) {
         String scope = scopeForFileName(fileName);
         return scope == null ? null : grammarForScope(scope);
+    }
+
+    /**
+     * The grammar for a language name (e.g. {@code "java"}, as produced by {@link LanguageRegistry}),
+     * or {@code null} if no grammar is bundled for it.
+     */
+    public synchronized IGrammar forLanguageName(String name) {
+        if (name == null) {
+            return null;
+        }
+        String scope = languageNameToScope.get(name.toLowerCase(Locale.ROOT));
+        return scope == null ? null : grammarForScope(scope);
+    }
+
+    /** Language names that have a bundled grammar, sorted alphabetically. */
+    public synchronized Set<String> availableLanguageNames() {
+        return new TreeSet<>(languageNameToScope.keySet());
     }
 
     private IGrammar grammarForScope(String scope) {

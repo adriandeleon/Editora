@@ -59,6 +59,8 @@ public class EditorBuffer {
     private long highlightGen;
     private String fontFamily = "monospace";
     private int fontSize = 14;
+    /** Visual tab width (columns); applied to the minimap and persisted via Settings. */
+    private int tabSize = 4;
     private boolean rulerVisible;
     private boolean lineNumbersVisible = true;
     /** Document x of the column-80 ruler (before horizontal scroll is applied). */
@@ -242,12 +244,58 @@ public class EditorBuffer {
     public void setPath(Path path) {
         this.path = path;
         String fileName = path == null ? null : path.getFileName().toString();
-        this.language = fileName == null
-                ? LanguageRegistry.plaintext()
-                : LanguageRegistry.forFileName(fileName);
-        this.grammar = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
+        String name = fileName == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(fileName);
+        IGrammar g = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
+        applyLanguage(name, g);
+    }
+
+    /** The current language name (see {@link LanguageRegistry}); drives fold strategy and the status bar. */
+    public String getLanguage() {
+        return language;
+    }
+
+    /**
+     * Overrides the language/grammar for this buffer regardless of its file extension (e.g. chosen
+     * from the status bar). Pass {@link LanguageRegistry#plaintext()} to disable highlighting.
+     */
+    public void setLanguageOverride(String name) {
+        String resolved = name == null ? LanguageRegistry.plaintext() : name;
+        IGrammar g = GrammarRegistry.shared().forLanguageName(resolved);
+        applyLanguage(resolved, g);
+    }
+
+    /** Applies a language name + grammar: updates fold strategy and re-highlights. */
+    private void applyLanguage(String name, IGrammar g) {
+        this.language = name;
+        this.grammar = g;
         folds.setLanguage(language);
         applyHighlighting();
+    }
+
+    /** Rewrites the document with the chosen line ending; marks the buffer dirty. */
+    public void convertLineEndings(boolean crlf) {
+        String normalized = area.getText().replace("\r\n", "\n");
+        area.replaceText(crlf ? normalized.replace("\n", "\r\n") : normalized);
+    }
+
+    /** {@code "CRLF"} if {@code text} contains any Windows line ending, else {@code "LF"}. */
+    public static String detectLineEnding(String text) {
+        return text != null && text.contains("\r\n") ? "CRLF" : "LF";
+    }
+
+    /** The detected line ending of the current document ({@code "LF"}/{@code "CRLF"}). */
+    public String getLineEnding() {
+        return detectLineEnding(area.getText());
+    }
+
+    /** Sets the visual tab width used by the minimap (and tracked for future use). */
+    public void setTabSize(int tabSize) {
+        this.tabSize = tabSize;
+        minimap.setTabSize(tabSize);
+    }
+
+    public int getTabSize() {
+        return tabSize;
     }
 
     /** Replaces the document content (e.g. after loading a file) and resets the dirty flag. */
