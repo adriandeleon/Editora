@@ -1,5 +1,6 @@
 package com.editora.config;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,41 @@ public class WorkspaceState {
     private Map<String, Boolean> toolWindowVisible = new LinkedHashMap<>();
     /** Persisted collapsed fold regions: absolute file path -> header line indices (0-based). */
     private Map<String, List<Integer>> foldedRegions = new LinkedHashMap<>();
+
+    /** Files open at last exit, in tab order. */
+    private List<OpenFile> openFiles = new ArrayList<>();
+    /** Absolute path of the tab that was active at last exit ("" if none/untitled). */
+    private String activeFile = "";
+
+    /** One persisted open file: its absolute path and the caret offset to restore. */
+    public static class OpenFile {
+        private String path = "";
+        private int caret;
+
+        public OpenFile() {
+        }
+
+        public OpenFile(String path, int caret) {
+            this.path = path;
+            this.caret = caret;
+        }
+
+        public String getPath() {
+            return path;
+        }
+
+        public void setPath(String path) {
+            this.path = path == null ? "" : path;
+        }
+
+        public int getCaret() {
+            return caret;
+        }
+
+        public void setCaret(int caret) {
+            this.caret = caret;
+        }
+    }
 
     public String getOpenLeftToolWindow() {
         return openLeftToolWindow;
@@ -98,5 +134,21 @@ public class WorkspaceState {
 
     public void setFoldedRegions(Map<String, List<Integer>> foldedRegions) {
         this.foldedRegions = foldedRegions == null ? new LinkedHashMap<>() : foldedRegions;
+    }
+
+    public List<OpenFile> getOpenFiles() {
+        return openFiles;
+    }
+
+    public void setOpenFiles(List<OpenFile> openFiles) {
+        this.openFiles = openFiles == null ? new ArrayList<>() : openFiles;
+    }
+
+    public String getActiveFile() {
+        return activeFile;
+    }
+
+    public void setActiveFile(String activeFile) {
+        this.activeFile = activeFile == null ? "" : activeFile;
     }
 }

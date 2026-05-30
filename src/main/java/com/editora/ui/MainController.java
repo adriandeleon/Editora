@@ -10,6 +10,7 @@ import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
+import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LanguageRegistry;
@@ -340,8 +341,48 @@ public class MainController {
         button.setTooltip(new Tooltip(tooltip));
     }
 
+    /** Restores last session's open files (with their carets); falls back to one empty buffer. */
     public void openInitialBuffer() {
-        addBuffer(new EditorBuffer());
+        WorkspaceState state = config.getWorkspaceState();
+        for (WorkspaceState.OpenFile f : state.getOpenFiles()) {
+            if (f.getPath() == null || f.getPath().isBlank()) {
+                continue;
+            }
+            Path p = Path.of(f.getPath());
+            if (Files.isReadable(p)) {
+                restoreFile(p, f.getCaret());
+            }
+        }
+        if (tabPane.getTabs().isEmpty()) {
+            addBuffer(new EditorBuffer());
+            return;
+        }
+        Tab active = state.getActiveFile().isBlank() ? null : tabForPath(Path.of(state.getActiveFile()));
+        tabPane.getSelectionModel().select(active != null ? active : tabPane.getTabs().get(0));
+    }
+
+    /** Opens {@code file} restoring the caret to {@code caretOffset} (no recent-files entry, no go-to-start). */
+    private void restoreFile(Path file, int caretOffset) {
+        try {
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setPath(file);
+            buffer.setContent(Files.readString(file));
+            addBuffer(buffer);
+            restoreFolds(buffer);
+            CodeArea area = buffer.getArea();
+            int caret = Math.max(0, Math.min(caretOffset, area.getLength()));
+            area.moveTo(caret);
+            // Defer the scroll until the tab is laid out (mirrors goToStart / StructurePanel.navigateTo).
+            Platform.runLater(() -> {
+                try {
+                    area.showParagraphAtTop(area.getCurrentParagraph());
+                } catch (RuntimeException ignored) {
+                    // Viewport not ready; ignore.
+                }
+            });
+        } catch (IOException e) {
+            // Unreadable now — skip it.
+        }
     }
 
     public void setStatus(String message) {
@@ -853,7 +894,26 @@ public class MainController {
                 return false;
             }
         }
+        persistSession();
         return true;
+    }
+
+    /** Records the open files (in tab order) and their carets so the next launch can restore them. */
+    private void persistSession() {
+        List<WorkspaceState.OpenFile> files = new ArrayList<>();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            if (buffer != null && buffer.getPath() != null) {
+                files.add(new WorkspaceState.OpenFile(
+                        buffer.getPath().toAbsolutePath().toString(), buffer.getArea().getCaretPosition()));
+            }
+        }
+        WorkspaceState state = config.getWorkspaceState();
+        state.setOpenFiles(files);
+        EditorBuffer active = activeBuffer();
+        state.setActiveFile(active != null && active.getPath() != null
+                ? active.getPath().toAbsolutePath().toString() : "");
+        config.save();
     }
 
     private void nextBuffer() {

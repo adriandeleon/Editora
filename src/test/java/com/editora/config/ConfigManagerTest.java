@@ -75,4 +75,22 @@ class ConfigManagerTest {
         assertEquals(List.of(3, 9), reloaded.getWorkspaceState().getFoldedRegions().get("/tmp/a/Main.java"));
         assertEquals("project", reloaded.getWorkspaceState().getOpenLeftToolWindow());
     }
+
+    @Test
+    void sessionRoundTripsAsJson(@TempDir Path dir) {
+        ConfigManager config = new ConfigManager(dir);
+        config.load();
+        WorkspaceState ws = config.getWorkspaceState();
+        ws.getOpenFiles().add(new WorkspaceState.OpenFile("/tmp/a/Main.java", 150));
+        ws.getOpenFiles().add(new WorkspaceState.OpenFile("/tmp/b/Util.java", 0));
+        ws.setActiveFile("/tmp/b/Util.java");
+        config.save();
+
+        ConfigManager rc = new ConfigManager(dir);
+        rc.load();
+        assertEquals(2, rc.getWorkspaceState().getOpenFiles().size());
+        assertEquals("/tmp/a/Main.java", rc.getWorkspaceState().getOpenFiles().get(0).getPath());
+        assertEquals(150, rc.getWorkspaceState().getOpenFiles().get(0).getCaret());
+        assertEquals("/tmp/b/Util.java", rc.getWorkspaceState().getActiveFile());
+    }
 }
