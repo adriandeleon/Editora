@@ -1,0 +1,42 @@
+/* Editor theme: Islands Light — colors from JetBrains IntelliJ's "IntelliJ Light" editor scheme,
+   which the "Islands Light" UI theme uses (Light.xml, parent Default). Keywords/comments are not
+   bold/italic, matching the scheme. */
+
+.editor-area { -fx-background-color: #ffffff; }
+.editor-area .text { -fx-fill: #080808; }
+.editor-area .caret { -fx-stroke: #080808; }
+.editor-area .selection { -fx-fill: #a6d2ff; }
+.column-ruler { -fx-stroke: #ebecf0; }
+
+.minimap { -fx-background-color: #f7f8fa; -fx-border-color: #ebecf0; }
+
+.editor-area .lineno { -fx-background-color: #f2f2f2; -fx-text-fill: #adadad; }
+.editor-area .fold-header-line { -fx-background-color: #eef1f5; }
+.editor-area .fold-gutter { -fx-background-color: #f2f2f2; }
+.editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
+.editor-area .fold-chevron { -fx-text-fill: #adadad; }
+.editor-area .fold-chevron:hover { -fx-text-fill: #3574f0; }
+
+.text.keyword    { -fx-fill: #0033b3; }
+.text.string     { -fx-fill: #067d17; }
+.text.regexp     { -fx-fill: #067d17; }
+.text.escape     { -fx-fill: #0037a6; }
+.text.comment    { -fx-fill: #8c8c8c; -fx-font-style: italic; }
+.text.number     { -fx-fill: #1750eb; }
+.text.constant   { -fx-fill: #871094; }
+.text.annotation { -fx-fill: #9e880d; }
+.text.type       { -fx-fill: #080808; }
+.text.function   { -fx-fill: #00627a; }
+.text.variable   { -fx-fill: #080808; }
+.text.operator   { -fx-fill: #080808; }
+.text.property   { -fx-fill: #871094; }
+.text.punct      { -fx-fill: #080808; }
+.text.tag        { -fx-fill: #0033b3; }
+.text.attribute  { -fx-fill: #871094; }
+.text.invalid    { -fx-fill: #ffffff; -rtfx-background-color: #e60000; }
+
+.text.heading    { -fx-fill: #080808; -fx-font-weight: bold; }
+.text.code       { -fx-fill: #067d17; }
+.text.link       { -fx-fill: #0033b3; -fx-underline: true; }
+.text.bold       { -fx-fill: #080808; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: #080808; -fx-font-style: italic; }

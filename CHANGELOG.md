@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Editor color themes (syntax tokens + editor surface) matching each AtlantaFX
-  theme — Primer Light/Dark, Nord Light/Dark, Cupertino Light/Dark, and Dracula —
-  chosen in Settings under "Editor theme". Selecting an AtlantaFX app theme switches
-  to the matching editor theme automatically, until you pick an editor theme yourself.
+- Editor color themes (syntax tokens + editor surface) chosen in Settings under
+  "Editor theme": Primer Light/Dark, Nord Light/Dark, Cupertino Light/Dark, Dracula
+  (these match the AtlantaFX themes), plus JetBrains-style Islands Light and Islands
+  Dark. Selecting an AtlantaFX app theme switches to the matching editor theme
+  automatically, until you pick an editor theme yourself.
 - Editor tabs can be reordered by dragging them with the mouse. Pinned tabs stay
   grouped at the front (a drag is clamped to the dragged tab's group).
 - Large-file mode: opening a file 5 MB or larger skips syntax highlighting and the

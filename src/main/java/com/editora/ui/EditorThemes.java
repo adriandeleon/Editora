@@ -25,7 +25,9 @@ public final class EditorThemes {
             "Nord Dark",
             "Cupertino Light",
             "Cupertino Dark",
-            "Dracula");
+            "Dracula",
+            "Islands Light",
+            "Islands Dark");
 
     /** Theme name -> override stylesheet base name; Primer Light is the default (no override). */
     private static final Map<String, String> CSS = Map.of(
@@ -34,7 +36,9 @@ public final class EditorThemes {
             "Nord Dark", "nord-dark",
             "Cupertino Light", "cupertino-light",
             "Cupertino Dark", "cupertino-dark",
-            "Dracula", "dracula");
+            "Dracula", "dracula",
+            "Islands Light", "islands-light",
+            "Islands Dark", "islands-dark");
 
     /** Theme name -> current-line highlight color (RichTextFX sets this in code, not via CSS). */
     private static final Map<String, String> LINE_HIGHLIGHT = Map.of(
@@ -44,7 +48,9 @@ public final class EditorThemes {
             "Nord Dark", "#3b4252",
             "Cupertino Light", "#ececec",
             "Cupertino Dark", "#2f2f2f",
-            "Dracula", "#44475a");
+            "Dracula", "#44475a",
+            "Islands Light", "#fcfaed",
+            "Islands Dark", "#1f2024");
 
     /** Theme name -> minimap block color (the minimap is canvas-drawn, not CSS). Dark themes use a
      *  brighter block than the gutter text so the overview stays legible on a dark background. */
@@ -55,7 +61,9 @@ public final class EditorThemes {
             "Nord Dark", "#aab2c4",
             "Cupertino Light", "#a0a0a8",
             "Cupertino Dark", "#9a9a9e",
-            "Dracula", "#a6acd4");
+            "Dracula", "#a6acd4",
+            "Islands Light", "#adadad",
+            "Islands Dark", "#8a8e96");
 
     /** Theme name -> minimap viewport-overlay color (8-digit hex incl. alpha). Dark themes use a
      *  stronger alpha so the visible-range box reads against the dark background. */
@@ -66,7 +74,9 @@ public final class EditorThemes {
             "Nord Dark", "#88c0d040",
             "Cupertino Light", "#0a84ff24",
             "Cupertino Dark", "#0a84ff40",
-            "Dracula", "#bd93f940");
+            "Dracula", "#bd93f940",
+            "Islands Light", "#a6d2ff80",
+            "Islands Dark", "#56a8f540");
 
     private EditorThemes() {
     }
