@@ -113,15 +113,36 @@ final class WhitespaceOverlay extends Region {
             g.setFill(MARKER);
             g.setFont(font);
             g.setTextBaseline(VPos.CENTER);
+            // The text area's left edge (past the line-number gutter). Empty lines have no character
+            // to anchor their ¶ to, so we reuse this x derived from a real character on any line.
+            double contentLeftX = contentLeftX(first, last);
             for (int p = first; p <= last; p++) {
-                drawParagraph(g, p, total, w);
+                drawParagraph(g, p, total, w, contentLeftX);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event will redraw.
         }
     }
 
-    private void drawParagraph(GraphicsContext g, int paragraph, int total, double w) {
+    /**
+     * The local x of the text area's left edge, taken from the first character of the first
+     * non-empty visible paragraph. Returns {@code -1} if no visible line has any text.
+     */
+    private double contentLeftX(int first, int last) {
+        for (int p = first; p <= last; p++) {
+            if (area.getParagraph(p).getText().isEmpty()) {
+                continue;
+            }
+            int abs = area.getAbsolutePosition(p, 0);
+            Bounds b = toLocal(area.getCharacterBoundsOnScreen(abs, abs + 1).orElse(null));
+            if (b != null) {
+                return b.getMinX();
+            }
+        }
+        return -1;
+    }
+
+    private void drawParagraph(GraphicsContext g, int paragraph, int total, double w, double contentLeftX) {
         String line = area.getParagraph(paragraph).getText();
         int len = line.length();
         g.setTextAlign(TextAlignment.CENTER);
@@ -148,8 +169,10 @@ final class WhitespaceOverlay extends Region {
                             area.getAbsolutePosition(paragraph, len - 1),
                             area.getAbsolutePosition(paragraph, len - 1) + 1).orElse(null))
                     : toLocal(area.getParagraphBoundsOnScreen(paragraph).orElse(null));
-            if (eol != null) {
-                double x = (len > 0 ? eol.getMaxX() : eol.getMinX()) + 2;
+            // For an empty line, anchor the ¶ at the text-area left edge, not the line's
+            // on-screen minX (which is the gutter); skip if no reference x is available.
+            if (eol != null && (len > 0 || contentLeftX >= 0)) {
+                double x = len > 0 ? eol.getMaxX() + 2 : contentLeftX;
                 if (x >= 0 && x <= w) {
                     g.setTextAlign(TextAlignment.LEFT);
                     g.fillText(EOL, x, eol.getMinY() + eol.getHeight() / 2);
