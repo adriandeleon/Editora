@@ -128,6 +128,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- No more light-gray flash on startup with a dark theme: the scene is pre-filled with
+  the theme's background color, so the first frame paints in the theme color instead of
+  JavaFX's default background before the CSS is applied.
 - Much faster startup when restoring a session: all tab headers are created first
   (so they appear at once), then each file's content and folds are loaded one per
   pulse — the active file first — keeping the UI responsive. Previously a session

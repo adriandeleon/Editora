@@ -41,6 +41,11 @@ public class App extends Application {
         controller.init(stage, config, registry, keymap);
 
         Scene scene = new Scene(root, 1000, 700);
+        // Pre-fill with the theme background so the first frame isn't JavaFX's default light gray
+        // (which otherwise flashes before the CSS is applied — most visible with a dark theme). The
+        // root and editor are transparent until CSS paints them, so this fill shows through. (Scene
+        // fill isn't a CSS property, so it doesn't interfere with later theme switches.)
+        scene.setFill(Themes.backgroundFor(settings.getTheme()));
         scene.getStylesheets().addAll(
                 App.class.getResource("styles/app.css").toExternalForm(),
                 App.class.getResource("styles/syntax.css").toExternalForm());
