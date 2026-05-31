@@ -38,9 +38,9 @@ public class SettingsWindow {
 
     private static final String APP_NAME = "Editora";
     private static final String APP_VERSION = "1.0.0";
-    // Window size (15% larger than the previous 572x616).
+    // Window size; height bumped 20% (708 -> 850) to fit the added view options without scrolling.
     private static final double WIDTH = 658;
-    private static final double HEIGHT = 708;
+    private static final double HEIGHT = 850;
     /** Build timestamp baked in by Maven resource filtering (see build-info.properties). */
     private static final String BUILD_TIME = loadBuildTime();
 
@@ -62,6 +62,7 @@ public class SettingsWindow {
     private CheckBox toolbarCheck;
     private CheckBox statusBarCheck;
     private CheckBox tabBarCheck;
+    private CheckBox breadcrumbCheck;
     private CheckBox zenCheck;
     private boolean built;
     private boolean loading;
@@ -194,6 +195,12 @@ public class SettingsWindow {
             apply();
         });
 
+        breadcrumbCheck = new CheckBox("Show file breadcrumb");
+        breadcrumbCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setShowBreadcrumb(now);
+            apply();
+        });
+
         zenCheck = new CheckBox("Zen mode (distraction-free)");
         zenCheck.selectedProperty().addListener((obs, was, now) -> {
             if (loading) {
@@ -227,9 +234,10 @@ public class SettingsWindow {
         form.add(toolbarCheck, 1, 9);
         form.add(statusBarCheck, 1, 10);
         form.add(tabBarCheck, 1, 11);
-        form.add(zenCheck, 1, 12);
+        form.add(breadcrumbCheck, 1, 12);
+        form.add(zenCheck, 1, 13);
 
-        int row = 13;
+        int row = 14;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -316,6 +324,7 @@ public class SettingsWindow {
             toolbarCheck.setSelected(settings.isShowToolbar());
             statusBarCheck.setSelected(settings.isShowStatusBar());
             tabBarCheck.setSelected(settings.isShowTabBar());
+            breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
         } finally {
             loading = false;
@@ -336,6 +345,7 @@ public class SettingsWindow {
             toolbarCheck.setSelected(s.isShowToolbar());
             statusBarCheck.setSelected(s.isShowStatusBar());
             tabBarCheck.setSelected(s.isShowTabBar());
+            breadcrumbCheck.setSelected(s.isShowBreadcrumb());
         } finally {
             loading = prev;
         }

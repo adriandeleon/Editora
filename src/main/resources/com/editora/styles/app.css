@@ -380,6 +380,52 @@
     -fx-background-radius: 4;
 }
 
+/* File breadcrumb bar (IntelliJ-style), at the bottom above the status bar. Kept compact. */
+.file-breadcrumb {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 0 4 0 4;
+}
+
+.file-breadcrumb .file-breadcrumb-scroll,
+.file-breadcrumb .file-breadcrumb-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+    -fx-border-width: 0;
+}
+
+/* No border/focus ring on the breadcrumb's scroll pane (it was drawing a rounded box). */
+.file-breadcrumb .file-breadcrumb-scroll:focused {
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.file-breadcrumb .breadcrumbs {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+
+/* Compact, non-underlined crumb hyperlinks. */
+.file-breadcrumb .file-breadcrumb-crumb {
+    -fx-padding: 0 3 0 3;
+    -fx-border-width: 0;
+    -fx-underline: false;
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+}
+
+.file-breadcrumb .file-breadcrumb-crumb:hover {
+    -fx-text-fill: -color-accent-fg;
+}
+
+/* Shrink the "/" dividers between crumbs to match. */
+.file-breadcrumb .breadcrumbs > .label {
+    -fx-font-size: 12px;
+    -fx-padding: 0 1 0 1;
+}
+
 /* Right-aligned Switcher keybinding hint on the toolbar (discoverability). */
 .toolbar-hint {
     -fx-text-fill: -color-fg-muted;

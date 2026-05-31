@@ -131,6 +131,7 @@ public class MainController {
     private CommandPalette palette;
     private FindReplaceBar findBar;
     private StatusBar statusBar;
+    private FileBreadcrumb breadcrumb;
     private SettingsWindow settingsWindow;
     private ToolWindowManager toolWindows;
     private ToolWindow projectToolWindow;
@@ -169,7 +170,9 @@ public class MainController {
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
-        bottomBox.getChildren().setAll(statusBar);
+        this.breadcrumb = new FileBreadcrumb(this::openPath);
+        // Breadcrumb sits just above the status bar at the bottom (IntelliJ-style).
+        bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows,
                 this::applyViewSettingsToAllBuffers, this::setZenMode);
@@ -203,6 +206,7 @@ public class MainController {
         if (!s.isShowTabBar()) {
             tabPane.getStyleClass().add("no-tab-header");
         }
+        breadcrumb.setEnabled(s.isShowBreadcrumb());
     }
 
     private void setupRecentFiles() {
@@ -269,6 +273,7 @@ public class MainController {
             fileInfoPanel.attach(buffer);
             structurePanel.attach(buffer);
             statusBar.attach(buffer);
+            breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
             refreshSplitButtons();
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
@@ -852,6 +857,9 @@ public class MainController {
         if (tab != null) {
             updateTabMeta(tab, buffer);
         }
+        if (buffer == activeBuffer()) {
+            breadcrumb.setActiveFile(buffer.getPath());
+        }
         return ok;
     }
 
@@ -1067,6 +1075,9 @@ public class MainController {
             config.save();
             updateTabMeta(tab, buffer);
             statusBar.refresh();
+            if (buffer == activeBuffer()) {
+                breadcrumb.setActiveFile(buffer.getPath());
+            }
             setStatus("Renamed to " + target.getFileName());
         });
     }
@@ -1398,6 +1409,7 @@ public class MainController {
     private static final String ZEN_TOOLBAR = "toolbar";
     private static final String ZEN_STATUS_BAR = "statusBar";
     private static final String ZEN_TAB_BAR = "tabBar";
+    private static final String ZEN_BREADCRUMB = "breadcrumb";
 
     /**
      * Enters/leaves distraction-free Zen mode. Entering snapshots the user's view/chrome prefs and the
@@ -1421,6 +1433,7 @@ public class MainController {
             snap.put(ZEN_TOOLBAR, s.isShowToolbar());
             snap.put(ZEN_STATUS_BAR, s.isShowStatusBar());
             snap.put(ZEN_TAB_BAR, s.isShowTabBar());
+            snap.put(ZEN_BREADCRUMB, s.isShowBreadcrumb());
             ws.setPreZenView(snap);
             ws.setPreZenToolWindows(toolWindows.closeAllOpen());
             setZenViewSettings(s, false);
@@ -1434,6 +1447,7 @@ public class MainController {
             s.setShowToolbar(snap.getOrDefault(ZEN_TOOLBAR, true));
             s.setShowStatusBar(snap.getOrDefault(ZEN_STATUS_BAR, true));
             s.setShowTabBar(snap.getOrDefault(ZEN_TAB_BAR, true));
+            s.setShowBreadcrumb(snap.getOrDefault(ZEN_BREADCRUMB, false));
             ws.getPreZenView().clear();
         }
         ws.setZenMode(on);
@@ -1449,7 +1463,7 @@ public class MainController {
         setStatus("Zen mode: " + (on ? "on" : "off"));
     }
 
-    /** Sets the five editor view options and the three chrome toggles to {@code value} at once. */
+    /** Sets the five editor view options and the chrome toggles (bars + breadcrumb) to {@code value}. */
     private void setZenViewSettings(Settings s, boolean value) {
         s.setShowColumnRuler(value);
         s.setHighlightCurrentLine(value);
@@ -1459,6 +1473,7 @@ public class MainController {
         s.setShowToolbar(value);
         s.setShowStatusBar(value);
         s.setShowTabBar(value);
+        s.setShowBreadcrumb(value);
     }
 
     private void toggleToolbar() {
@@ -1467,6 +1482,14 @@ public class MainController {
         config.save();
         applyChromeVisibility();
         setStatus("Toolbar: " + (s.isShowToolbar() ? "on" : "off"));
+    }
+
+    private void toggleBreadcrumb() {
+        Settings s = config.getSettings();
+        s.setShowBreadcrumb(!s.isShowBreadcrumb());
+        config.save();
+        applyChromeVisibility();
+        setStatus("File breadcrumb: " + (s.isShowBreadcrumb() ? "on" : "off"));
     }
 
     private void toggleStatusBar() {
@@ -1840,6 +1863,8 @@ public class MainController {
         registry.register(Command.of("view.toggleStatusBar", "View: Toggle Status Bar",
                 this::toggleStatusBar));
         registry.register(Command.of("view.toggleTabBar", "View: Toggle Tab Bar", this::toggleTabBar));
+        registry.register(Command.of("view.toggleBreadcrumb", "View: Toggle File Breadcrumb",
+                this::toggleBreadcrumb));
         registry.register(Command.of("view.toggleZen", "View: Toggle Zen Mode", this::toggleZen));
         registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
                 this::onSplitVertical));

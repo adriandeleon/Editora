@@ -26,6 +26,7 @@ public class Settings {
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
+    private boolean showBreadcrumb = false;
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -148,6 +149,14 @@ public class Settings {
 
     public void setShowTabBar(boolean showTabBar) {
         this.showTabBar = showTabBar;
+    }
+
+    public boolean isShowBreadcrumb() {
+        return showBreadcrumb;
+    }
+
+    public void setShowBreadcrumb(boolean showBreadcrumb) {
+        this.showBreadcrumb = showBreadcrumb;
     }
 
     public Map<String, String> getKeybindings() {

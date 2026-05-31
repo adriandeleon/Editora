@@ -47,6 +47,7 @@
   "C-c t": "view.toggleToolbar",
   "C-c s": "view.toggleStatusBar",
   "C-c b": "view.toggleTabBar",
+  "C-c p": "view.toggleBreadcrumb",
   "C-c z": "view.toggleZen",
   "M-g g": "nav.goToLine"
 }
