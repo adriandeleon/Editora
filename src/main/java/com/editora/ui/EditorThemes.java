@@ -40,6 +40,30 @@ public final class EditorThemes {
             "Islands Light", "islands-light",
             "Islands Dark", "islands-dark");
 
+    /** Theme name -> editor background color (mirrors {@code .editor-area} in each theme's CSS). */
+    private static final Map<String, String> EDITOR_BG = Map.of(
+            "Primer Light", "#ffffff",
+            "Primer Dark", "#0d1117",
+            "Nord Light", "#eceff4",
+            "Nord Dark", "#2e3440",
+            "Cupertino Light", "#ffffff",
+            "Cupertino Dark", "#1e1e1e",
+            "Dracula", "#282a36",
+            "Islands Light", "#ffffff",
+            "Islands Dark", "#191a1c");
+
+    /** Theme name -> editor foreground/text color (mirrors {@code .editor-area .text}). */
+    private static final Map<String, String> EDITOR_FG = Map.of(
+            "Primer Light", "#24292f",
+            "Primer Dark", "#c9d1d9",
+            "Nord Light", "#2e3440",
+            "Nord Dark", "#d8dee9",
+            "Cupertino Light", "#1d1d1f",
+            "Cupertino Dark", "#dfdfe0",
+            "Dracula", "#f8f8f2",
+            "Islands Light", "#080808",
+            "Islands Dark", "#bcbec4");
+
     /** Theme name -> current-line highlight color (RichTextFX sets this in code, not via CSS). */
     private static final Map<String, String> LINE_HIGHLIGHT = Map.of(
             "Primer Light", "#dfe7f0",
@@ -107,6 +131,16 @@ public final class EditorThemes {
     /** Current-line highlight color for {@code name}. */
     public static Color lineHighlightFor(String name) {
         return Color.web(LINE_HIGHLIGHT.getOrDefault(normalize(name), "#dfe7f0"));
+    }
+
+    /** Editor background color for {@code name}. */
+    public static Color editorBackgroundFor(String name) {
+        return Color.web(EDITOR_BG.getOrDefault(normalize(name), "#ffffff"));
+    }
+
+    /** Editor foreground/text color for {@code name}. */
+    public static Color editorForegroundFor(String name) {
+        return Color.web(EDITOR_FG.getOrDefault(normalize(name), "#24292f"));
     }
 
     /** Minimap block color for {@code name}. */

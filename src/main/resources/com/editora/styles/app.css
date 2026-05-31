@@ -69,9 +69,10 @@
     -fx-text-fill: #0969da;
 }
 
-/* Hover preview of a collapsed region's hidden content. */
+/* Hover preview of a collapsed region's hidden content. The colors are set inline per editor theme
+   (FoldManager.setPreviewColors); these defaults match the default (Primer Light) editor theme. */
 .fold-preview-tooltip {
-    -fx-font-family: "monospace";
+    -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-size: 12px;
     -fx-background-color: #ffffff;
     -fx-text-fill: #24292f;

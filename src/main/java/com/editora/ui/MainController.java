@@ -1435,6 +1435,8 @@ public class MainController {
         buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
         buffer.setMinimapColors(EditorThemes.minimapTextFor(s.getEditorTheme()),
                 EditorThemes.minimapViewportFor(s.getEditorTheme()));
+        buffer.setFoldPreviewColors(EditorThemes.editorBackgroundFor(s.getEditorTheme()),
+                EditorThemes.editorForegroundFor(s.getEditorTheme()));
     }
 
     private void applyViewSettingsToAllBuffers(Settings settings) {
@@ -1466,11 +1468,14 @@ public class MainController {
         Color highlight = EditorThemes.lineHighlightFor(themeName);
         Color mmText = EditorThemes.minimapTextFor(themeName);
         Color mmViewport = EditorThemes.minimapViewportFor(themeName);
+        Color editorBg = EditorThemes.editorBackgroundFor(themeName);
+        Color editorFg = EditorThemes.editorForegroundFor(themeName);
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
             if (buffer != null) {
                 buffer.setLineHighlightColor(highlight);
                 buffer.setMinimapColors(mmText, mmViewport);
+                buffer.setFoldPreviewColors(editorBg, editorFg);
             }
         }
     }

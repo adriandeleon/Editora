@@ -324,6 +324,11 @@ public class EditorBuffer {
         }
     }
 
+    /** Colors the collapsed-region hover preview to match the editor theme. */
+    public void setFoldPreviewColors(Color background, Color foreground) {
+        folds.setPreviewColors(background, foreground);
+    }
+
     /** Forces the minimap(s) to re-render (after layout/theme settle; the first render may run early). */
     public void refreshMinimap() {
         minimap.refresh();

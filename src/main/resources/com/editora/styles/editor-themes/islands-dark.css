@@ -10,9 +10,9 @@
 
 .minimap { -fx-background-color: #191a1c; -fx-border-color: #2b2d30; }
 
-.editor-area .lineno { -fx-background-color: #191a1c; -fx-text-fill: #4b5059; }
-.editor-area .fold-header-line { -fx-background-color: #1f2024; }
-.editor-area .fold-gutter { -fx-background-color: #191a1c; }
+.editor-area .lineno { -fx-background-color: #1f2024; -fx-text-fill: #4b5059; }
+.editor-area .fold-header-line { -fx-background-color: #26282e; }
+.editor-area .fold-gutter { -fx-background-color: #1f2024; }
 .editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
 .editor-area .fold-chevron { -fx-text-fill: #4b5059; }
 .editor-area .fold-chevron:hover { -fx-text-fill: #56a8f5; }

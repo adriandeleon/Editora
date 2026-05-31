@@ -26,6 +26,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 
 /**
@@ -78,6 +79,30 @@ public final class FoldManager {
         linePreview.setShowDuration(javafx.util.Duration.INDEFINITE);
         area.addEventHandler(MouseEvent.MOUSE_MOVED, this::updateHoverPreview);
         area.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hidePreview());
+    }
+
+    /**
+     * Colors the collapsed-region preview to match the editor theme. A Tooltip renders in its own
+     * popup that the scene's editor-theme stylesheet doesn't reach, so the colors are set inline.
+     */
+    public void setPreviewColors(Color background, Color foreground) {
+        Color border = background.interpolate(foreground, 0.3);
+        linePreview.setStyle(
+                "-fx-background-color: " + hex(background) + ";"
+                + "-fx-text-fill: " + hex(foreground) + ";"
+                + "-fx-border-color: " + hex(border) + ";"
+                + "-fx-border-width: 1;"
+                + "-fx-padding: 6 8 6 8;"
+                + "-fx-font-family: \"JetBrains Mono\", \"monospace\";"
+                + "-fx-font-size: 12px;"
+                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0.15, 0, 3);");
+    }
+
+    private static String hex(Color c) {
+        return String.format("#%02x%02x%02x",
+                (int) Math.round(c.getRed() * 255),
+                (int) Math.round(c.getGreen() * 255),
+                (int) Math.round(c.getBlue() * 255));
     }
 
     private void updateHoverPreview(MouseEvent e) {
