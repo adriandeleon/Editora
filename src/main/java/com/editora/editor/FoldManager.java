@@ -204,6 +204,33 @@ public final class FoldManager {
         }
     }
 
+    /**
+     * Reveals {@code line} if it is hidden inside one or more collapsed regions, unfolding from the
+     * outermost in. No-op if the line is already visible. (Used by Go to Line so a folded target is
+     * shown rather than silently scrolled to a hidden paragraph.)
+     */
+    public void unfoldContaining(int line) {
+        int n = area.getParagraphs().size();
+        if (line < 0 || line >= n || !area.isFolded(line)) {
+            return;
+        }
+        boolean changed = false;
+        // Each pass unfolds the innermost-visible region above the line; repeat for nested folds.
+        int guard = 0;
+        while (line < area.getParagraphs().size() && area.isFolded(line) && guard++ < n) {
+            int header = line;
+            while (header > 0 && area.isFolded(header)) {
+                header--;
+            }
+            area.unfoldParagraphs(header);
+            shadeHeader(header, false);
+            changed = true;
+        }
+        if (changed && !restoring) {
+            onFoldStateChanged.run();
+        }
+    }
+
     public void foldAll() {
         int topPar = firstVisiblePar();
         for (Region r : regions) {

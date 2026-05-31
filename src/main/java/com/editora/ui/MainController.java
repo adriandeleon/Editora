@@ -1267,6 +1267,10 @@ public class MainController {
                 }
                 int targetLine = line;
                 int targetColumn = column;
+                EditorBuffer buffer = activeBuffer();
+                if (buffer != null) {
+                    buffer.getFoldManager().unfoldContaining(targetLine);
+                }
                 moveAndFollow(a -> a.moveTo(targetLine, targetColumn));
                 setStatus("Line " + (targetLine + 1) + ", Col " + (targetColumn + 1));
             } catch (NumberFormatException e) {
