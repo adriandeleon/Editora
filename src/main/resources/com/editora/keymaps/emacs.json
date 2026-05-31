@@ -44,5 +44,7 @@
   "C-c f": "view.foldAll",
   "C-c u": "view.unfoldAll",
   "C-c w": "view.toggleWhitespace",
+  "C-c t": "view.toggleToolbar",
+  "C-c s": "view.toggleStatusBar",
   "M-g g": "nav.goToLine"
 }

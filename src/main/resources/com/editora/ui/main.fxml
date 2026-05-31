@@ -14,7 +14,7 @@
     <top>
         <VBox fx:id="topBox">
             <children>
-                <ToolBar>
+                <ToolBar fx:id="toolBar">
                     <items>
                         <Button fx:id="newButton" onAction="#onNew"/>
                         <Button fx:id="openButton" onAction="#onOpen"/>

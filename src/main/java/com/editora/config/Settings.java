@@ -23,6 +23,8 @@ public class Settings {
     private boolean showLineNumbers = true;
     private boolean showMinimap = true;
     private boolean showWhitespace = false;
+    private boolean showToolbar = true;
+    private boolean showStatusBar = true;
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -121,6 +123,22 @@ public class Settings {
 
     public void setShowWhitespace(boolean showWhitespace) {
         this.showWhitespace = showWhitespace;
+    }
+
+    public boolean isShowToolbar() {
+        return showToolbar;
+    }
+
+    public void setShowToolbar(boolean showToolbar) {
+        this.showToolbar = showToolbar;
+    }
+
+    public boolean isShowStatusBar() {
+        return showStatusBar;
+    }
+
+    public void setShowStatusBar(boolean showStatusBar) {
+        this.showStatusBar = showStatusBar;
     }
 
     public Map<String, String> getKeybindings() {

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Toggle the toolbar and the status bar — via Settings checkboxes ("Show toolbar",
+  "Show status bar"), the `view.toggleToolbar` (`C-c t`) / `view.toggleStatusBar`
+  (`C-c s`) palette commands, and persisted in settings.
 - Application icon: the Editora logo now appears as the window/dock/taskbar icon, in
   the About dialog, and as the native installer icon (macOS `.icns`, Windows `.ico`,
   Linux `.png`), all generated from `branding/editora-icon.svg`.

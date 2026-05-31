@@ -47,6 +47,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.control.ToolBar;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
@@ -79,6 +80,8 @@ public class MainController {
     private VBox topBox;
     @FXML
     private VBox bottomBox;
+    @FXML
+    private ToolBar toolBar;
     @FXML
     private Button newButton;
     @FXML
@@ -175,6 +178,17 @@ public class MainController {
         setupToolbar();
         setupRecentFiles();
         toolWindows.restore();
+        applyChromeVisibility();
+    }
+
+    /** Shows/hides the toolbar and status bar per the saved settings (hidden nodes also unmanaged so
+     *  they don't reserve layout space). Cheap: two visibility flags + one layout pass. */
+    private void applyChromeVisibility() {
+        Settings s = config.getSettings();
+        toolBar.setVisible(s.isShowToolbar());
+        toolBar.setManaged(s.isShowToolbar());
+        statusBar.setVisible(s.isShowStatusBar());
+        statusBar.setManaged(s.isShowStatusBar());
     }
 
     private void setupRecentFiles() {
@@ -1293,6 +1307,23 @@ public class MainController {
         setStatus("Hidden characters: " + (s.isShowWhitespace() ? "on" : "off"));
     }
 
+    private void toggleToolbar() {
+        Settings s = config.getSettings();
+        s.setShowToolbar(!s.isShowToolbar());
+        config.save();
+        applyChromeVisibility();
+        setStatus("Toolbar: " + (s.isShowToolbar() ? "on" : "off"));
+    }
+
+    private void toggleStatusBar() {
+        Settings s = config.getSettings();
+        s.setShowStatusBar(!s.isShowStatusBar());
+        config.save();
+        applyChromeVisibility();
+        // The status bar may now be hidden, so this message just confirms the toggle while visible.
+        setStatus("Status bar: " + (s.isShowStatusBar() ? "on" : "off"));
+    }
+
     /**
      * Emacs {@code C-x o}: cycles keyboard focus between the editor and any open tool windows.
      * Order: editor, then each open tool window (by side); wraps back to the editor.
@@ -1491,6 +1522,7 @@ public class MainController {
 
     private void applyViewSettingsToAllBuffers(Settings settings) {
         applyEditorTheme(settings.getEditorTheme());
+        applyChromeVisibility();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
             if (buffer != null) {
@@ -1642,6 +1674,9 @@ public class MainController {
                 this::toggleMinimap));
         registry.register(Command.of("view.toggleWhitespace", "View: Toggle Hidden Characters",
                 this::toggleWhitespace));
+        registry.register(Command.of("view.toggleToolbar", "View: Toggle Toolbar", this::toggleToolbar));
+        registry.register(Command.of("view.toggleStatusBar", "View: Toggle Status Bar",
+                this::toggleStatusBar));
         registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
                 this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",

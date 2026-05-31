@@ -58,6 +58,8 @@ public class SettingsWindow {
     private CheckBox lineNumbersCheck;
     private CheckBox minimapCheck;
     private CheckBox whitespaceCheck;
+    private CheckBox toolbarCheck;
+    private CheckBox statusBarCheck;
     private boolean built;
     private boolean loading;
 
@@ -170,6 +172,16 @@ public class SettingsWindow {
             config.getSettings().setShowWhitespace(now);
             apply();
         });
+        toolbarCheck = new CheckBox("Show toolbar");
+        toolbarCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setShowToolbar(now);
+            apply();
+        });
+        statusBarCheck = new CheckBox("Show status bar");
+        statusBarCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setShowStatusBar(now);
+            apply();
+        });
 
         GridPane form = new GridPane();
         form.setHgap(12);
@@ -189,8 +201,10 @@ public class SettingsWindow {
         form.add(lineNumbersCheck, 1, 6);
         form.add(minimapCheck, 1, 7);
         form.add(whitespaceCheck, 1, 8);
+        form.add(toolbarCheck, 1, 9);
+        form.add(statusBarCheck, 1, 10);
 
-        int row = 9;
+        int row = 11;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -274,6 +288,8 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
             minimapCheck.setSelected(settings.isShowMinimap());
             whitespaceCheck.setSelected(settings.isShowWhitespace());
+            toolbarCheck.setSelected(settings.isShowToolbar());
+            statusBarCheck.setSelected(settings.isShowStatusBar());
         } finally {
             loading = false;
         }
