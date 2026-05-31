@@ -117,6 +117,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Show hidden characters" no longer piles stray space/tab/EOL markers onto the
   fold-header row when a region is collapsed: folded (hidden) paragraphs are now
   skipped by the whitespace overlay (and the 80-column ruler's measurement).
+- Running a command via a chord that opens a dialog no longer types a stray
+  character afterwards (e.g. `M-g g` then OK inserted a `g`): the dispatcher now
+  also swallows the character event paired with a key press it handled, which a
+  modal dialog (`showAndWait`) would otherwise deliver to the editor after closing.
 - `M-` (Meta) chords no longer insert a stray character on macOS. Option is the
   Meta key, and `Option+<key>` also emits a special character (e.g. `M-f` → "ƒ",
   `M-x` → "≈") whose KEY_TYPED was inserted into the editor (or palette) after the

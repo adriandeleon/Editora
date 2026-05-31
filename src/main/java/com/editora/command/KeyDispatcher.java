@@ -23,6 +23,8 @@ public class KeyDispatcher {
     private final Consumer<String> statusListener;
 
     private String pending = "";
+    /** True when the last KEY_PRESSED was consumed, so its paired KEY_TYPED is swallowed too. */
+    private boolean consumedPress;
 
     public KeyDispatcher(CommandRegistry registry, KeymapManager keymap, Consumer<String> statusListener) {
         this.registry = registry;
@@ -33,20 +35,25 @@ public class KeyDispatcher {
 
     public void install(Scene scene) {
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handle);
-        if (IS_MAC) {
-            // On macOS the Emacs Meta key is Option, and Option+<key> also emits a special character
-            // (e.g. Option+f => "ƒ") whose KEY_TYPED would be inserted into the focused control right
-            // after the M- chord runs. Option is reserved for Meta chords here, so swallow characters
-            // typed while Alt is held. (The command palette popup has its own scene/filter for this.)
-            scene.addEventFilter(KeyEvent.KEY_TYPED, event -> {
-                if (event.isAltDown()) {
-                    event.consume();
-                }
-            });
+        scene.addEventFilter(KeyEvent.KEY_TYPED, this::handleTyped);
+    }
+
+    /**
+     * Swallows the character event that pairs with a key press we already handled, so a bound key
+     * never also types a character. This matters when the command opened a modal dialog
+     * ({@code showAndWait}): the press is consumed, but its KEY_TYPED is queued and delivered to the
+     * editor after the dialog closes (e.g. the trailing {@code g} of {@code M-g g}). On macOS we also
+     * swallow any Option-produced character, since Option is the Meta key (e.g. {@code M-f} => "ƒ").
+     */
+    private void handleTyped(KeyEvent event) {
+        if (consumedPress || (IS_MAC && event.isAltDown())) {
+            consumedPress = false;
+            event.consume();
         }
     }
 
     void handle(KeyEvent event) {
+        consumedPress = false;
         String token = chord(event);
         if (token == null) {
             return; // a modifier key on its own
@@ -65,6 +72,7 @@ public class KeyDispatcher {
 
         if (commandId != null) {
             event.consume();
+            consumedPress = true; // set before run(): a modal command defers the paired KEY_TYPED
             reset();
             registry.run(commandId);
             return;
@@ -72,6 +80,7 @@ public class KeyDispatcher {
 
         if (prefix) {
             event.consume();
+            consumedPress = true;
             pending = sequence;
             statusListener.accept(sequence + " -");
             return;
@@ -80,6 +89,7 @@ public class KeyDispatcher {
         if (!pending.isEmpty()) {
             // Mid-chord but no continuation matched: cancel the chord and swallow the key.
             event.consume();
+            consumedPress = true;
             statusListener.accept(sequence + " is undefined");
             reset();
             return;
