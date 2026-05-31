@@ -1,8 +1,11 @@
 package com.editora.ui;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+
+import com.editora.editor.EditorBuffer;
 
 import javafx.css.PseudoClass;
 import javafx.geometry.Pos;
@@ -19,7 +22,8 @@ import javafx.stage.Popup;
 import javafx.stage.Window;
 
 /**
- * IntelliJ-style Switcher popup. Two columns: recent files on the left, tool windows on the right.
+ * IntelliJ-style Switcher popup. Two columns: open files (most-recently-used first) on the left,
+ * tool windows on the right.
  * Navigation uses Emacs-style movement: C-n/C-p down/up, C-f/C-b right/left column, Enter to
  * activate, C-g or Esc to cancel, C-d or Backspace to close the highlighted entry.
  */
@@ -37,6 +41,7 @@ public class Switcher {
     private final ListView<ToolWindow> toolsList = new ListView<>();
     private final VBox leftColumn;
     private final VBox rightColumn;
+    private final Label pathLabel = new Label();
 
     private boolean leftFocused = true;
 
@@ -48,7 +53,7 @@ public class Switcher {
         this.activateTab = activateTab;
         this.closeTab = closeTab;
         this.toolWindows = toolWindows;
-        this.leftColumn = buildColumn("Recent Files", filesList);
+        this.leftColumn = buildColumn("Open Files", filesList);
         this.rightColumn = buildColumn("Tool Windows", toolsList);
         build();
     }
@@ -62,14 +67,27 @@ public class Switcher {
     }
 
     private void build() {
-        filesList.setPrefSize(280, 320);
-        toolsList.setPrefSize(220, 320);
+        filesList.setPrefSize(336, 384);
+        toolsList.setPrefSize(264, 384);
 
+        // Render the name in a Label graphic (like the tool-window column) rather than the cell's
+        // own text: the tab's own text is empty (its title lives in a graphic node), and a Label
+        // also inherits a theme-aware fill so the names stay readable in dark mode.
         filesList.setCellFactory(v -> new ListCell<>() {
+            private final Label label = new Label();
+
             @Override
             protected void updateItem(Tab item, boolean empty) {
                 super.updateItem(item, empty);
-                setText(empty || item == null ? "" : item.getText());
+                if (empty || item == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                EditorBuffer buffer = (EditorBuffer) item.getUserData();
+                label.setText(buffer != null ? buffer.getTitle() : item.getText());
+                setGraphic(label);
+                setText(null);
             }
         });
 
@@ -98,17 +116,28 @@ public class Switcher {
             }
         });
 
-        HBox content = new HBox(8, leftColumn, rightColumn);
-        content.getStyleClass().add("switcher");
-        content.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
+        HBox columns = new HBox(8, leftColumn, rightColumn);
+        columns.getStyleClass().add("switcher-columns");
+
+        pathLabel.getStyleClass().add("switcher-path");
+        pathLabel.setMaxWidth(Double.MAX_VALUE);
+
+        // Static legend of the navigation keys (discoverability).
+        Label hint = new Label("↑↓ / C-n C-p move  ·  ←→ / C-f C-b column"
+                + "  ·  ↵ open  ·  C-d close  ·  esc cancel");
+        hint.getStyleClass().add("switcher-hint");
+
+        VBox root = new VBox(columns, pathLabel, hint);
+        root.getStyleClass().add("switcher");
+        root.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         // Releasing Ctrl activates the selection (IntelliJ Switcher behavior).
-        content.addEventFilter(KeyEvent.KEY_RELEASED, e -> {
+        root.addEventFilter(KeyEvent.KEY_RELEASED, e -> {
             if (e.getCode() == KeyCode.CONTROL && popup.isShowing()) {
                 commit();
                 e.consume();
             }
         });
-        popup.getContent().add(content);
+        popup.getContent().add(root);
         popup.setAutoHide(true);
     }
 
@@ -131,8 +160,9 @@ public class Switcher {
             leftFocused = false;
         }
         applyColumnFocus();
+        updateFooter();
 
-        double width = 540;
+        double width = 648;
         double x = owner.getX() + (owner.getWidth() - width) / 2;
         double y = owner.getY() + 120;
         popup.show(owner, x, y);
@@ -232,6 +262,7 @@ public class Switcher {
         int next = Math.floorMod(idx + delta, size);
         list.getSelectionModel().select(next);
         list.scrollTo(next);
+        updateFooter();
     }
 
     private void focusColumn(boolean left) {
@@ -244,12 +275,31 @@ public class Switcher {
             target.getSelectionModel().select(0);
         }
         applyColumnFocus();
+        updateFooter();
         target.requestFocus();
     }
 
     private void applyColumnFocus() {
         leftColumn.pseudoClassStateChanged(ACTIVE_COLUMN, leftFocused);
         rightColumn.pseudoClassStateChanged(ACTIVE_COLUMN, !leftFocused);
+    }
+
+    /** Footer shows the highlighted file's full path (or, on the tools column, the tool window). */
+    private void updateFooter() {
+        if (leftFocused) {
+            Tab tab = filesList.getSelectionModel().getSelectedItem();
+            if (tab == null) {
+                pathLabel.setText(" ");
+                return;
+            }
+            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            Path path = buffer == null ? null : buffer.getPath();
+            pathLabel.setText(path != null ? path.toString()
+                    : buffer != null ? buffer.getTitle() : " ");
+        } else {
+            ToolWindow tw = toolsList.getSelectionModel().getSelectedItem();
+            pathLabel.setText(tw != null ? "Tool window: " + tw.getTitle() : " ");
+        }
     }
 
     private void commit() {
@@ -280,5 +330,6 @@ public class Switcher {
                 toolWindows.close(tw);
             }
         }
+        updateFooter();
     }
 }

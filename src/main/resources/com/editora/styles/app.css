@@ -284,7 +284,7 @@
 }
 
 .switcher-header {
-    -fx-font-size: 11px;
+    -fx-font-size: 14px;
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 2 4 2 4;
@@ -293,6 +293,42 @@
 .switcher .list-view {
     -fx-background-color: transparent;
     -fx-border-width: 0;
+}
+
+/* The files column sets cell text directly (no graphic), so give cells an explicit,
+   theme-aware fill — otherwise the file names are unreadable in dark mode. */
+.switcher .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -color-fg-default;
+}
+
+/* Selection bar reflects the active column: vivid in the focused column, muted in the other. */
+.switcher .list-cell:filled:selected {
+    -fx-background-color: -color-bg-subtle;
+    -fx-text-fill: -color-fg-default;
+}
+
+.switcher-column:active .list-cell:filled:selected {
+    -fx-background-color: -color-accent-emphasis;
+    -fx-text-fill: -color-fg-emphasis;
+}
+
+/* Full path of the highlighted file, shown at the bottom of the popup. */
+.switcher-path {
+    -fx-text-fill: -color-fg-default;
+    -fx-font-size: 11px;
+    -fx-padding: 6 4 8 4;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* Static legend of the Switcher navigation keys, separated from the path above it. */
+.switcher-hint {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+    -fx-padding: 8 4 2 4;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1 0 0 0;
 }
 
 /* Editor right-click menu: use the UI font, not the editor's monospace inline style. */
@@ -342,6 +378,13 @@
 .toolbar-button {
     -fx-padding: 3 5 3 5;
     -fx-background-radius: 4;
+}
+
+/* Right-aligned Switcher keybinding hint on the toolbar (discoverability). */
+.toolbar-hint {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 13px;
+    -fx-padding: 0 6 0 6;
 }
 
 /* Inline remove button on each Recent Files dropdown row. */

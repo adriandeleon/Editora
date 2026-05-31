@@ -44,6 +44,7 @@ import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.Separator;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
@@ -169,7 +170,7 @@ public class MainController {
         bottomBox.getChildren().setAll(statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows, this::applyViewSettingsToAllBuffers);
-        this.switcher = new Switcher(() -> List.copyOf(mru),
+        this.switcher = new Switcher(this::openTabsForSwitcher,
                 tab -> tabPane.getSelectionModel().select(tab),
                 this::closeTabFromSwitcher,
                 toolWindows);
@@ -278,6 +279,26 @@ public class MainController {
         closeTab(tab);
     }
 
+    /**
+     * All open tabs for the Switcher, most-recently-used first. The MRU only records tabs that have
+     * been selected, so any open-but-never-activated tab (e.g. a restored background tab) is appended
+     * in tab-strip order — ensuring every open file is listed.
+     */
+    private List<Tab> openTabsForSwitcher() {
+        List<Tab> ordered = new ArrayList<>();
+        for (Tab tab : mru) {
+            if (tabPane.getTabs().contains(tab)) {
+                ordered.add(tab);
+            }
+        }
+        for (Tab tab : tabPane.getTabs()) {
+            if (!ordered.contains(tab)) {
+                ordered.add(tab);
+            }
+        }
+        return ordered;
+    }
+
     private void setupToolWindows() {
         toolWindows = new ToolWindowManager(workspace, tabPane, config, keymap);
         projectToolWindow = new ToolWindow("project", "Project", ToolWindow.Side.RIGHT,
@@ -331,7 +352,51 @@ public class MainController {
                 (obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
         findBar.visibleProperty().addListener(
                 (obs, was, now) -> findButton.pseudoClassStateChanged(OPEN, now));
+        arrangeToolbarTail();
         refreshSplitButtons();
+    }
+
+    /**
+     * Right-aligns the trailing toolbar group: a Switcher keybinding hint (discoverability), then the
+     * About and Quit buttons, with Quit always rightmost and About just left of it. About/Quit are
+     * moved here from their FXML slot; the group uses plain spacing (no separators) to stand apart
+     * from the separator-delimited icon clusters.
+     */
+    private void arrangeToolbarTail() {
+        var items = toolBar.getItems();
+        // Pull About + Quit out of their FXML position, and drop the separator that preceded Quit.
+        items.removeAll(aboutButton, quitButton);
+        if (!items.isEmpty() && items.get(items.size() - 1) instanceof Separator) {
+            items.remove(items.size() - 1);
+        }
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        items.add(spacer);
+
+        String chord = invertBindings().get("switcher.show");
+        if (chord != null && !chord.isBlank()) {
+            Label hint = new Label("Switcher: " + chord);
+            hint.getStyleClass().add("toolbar-hint");
+            items.add(hint);
+        }
+
+        items.addAll(toolbarGap(), aboutButton, toolbarGap(), quitButton);
+    }
+
+    /** A fixed-width blank gap used to separate the trailing toolbar group without a separator line. */
+    private static Region toolbarGap() {
+        Region gap = new Region();
+        gap.setMinWidth(14);
+        gap.setPrefWidth(14);
+        return gap;
+    }
+
+    /** command id -> first chord bound to it (first binding wins), from the active keymap. */
+    private java.util.Map<String, String> invertBindings() {
+        java.util.Map<String, String> byCommand = new java.util.LinkedHashMap<>();
+        keymap.bindings().forEach((sequence, id) -> byCommand.putIfAbsent(id, sequence));
+        return byCommand;
     }
 
     @FXML

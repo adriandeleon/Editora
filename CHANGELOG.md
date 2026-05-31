@@ -96,6 +96,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Switcher (`C-x C-b`) now lists all open files (labeled "Open Files", most-recently-used
+  first) instead of only previously-activated ones. It is also larger with bigger column
+  headers; the selection bar now tracks the active column (vivid in the focused column, dimmed
+  in the other), and the highlighted file's full path is shown at the bottom of the popup, above
+  a legend of the navigation keys. A "Switcher: C-x C-b" hint on the toolbar makes the keybinding
+  discoverable.
 - Syntax highlighting is now incremental: an edit re-tokenizes only from the changed
   line to the end of the document (reusing stored per-line grammar states for the
   unchanged prefix) instead of the whole file, lowering highlight latency on larger
