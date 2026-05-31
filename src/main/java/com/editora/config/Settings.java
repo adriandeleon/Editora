@@ -9,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Settings {
 
-    private String fontFamily = "monospace";
+    private String fontFamily = "JetBrains Mono";
     private int fontSize = 14;
     private String theme = "Primer Light";
     /** Editor color theme (syntax + surface). Follows {@link #theme} until the user picks one. */

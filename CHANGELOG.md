@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bundled monospace fonts (no install needed): JetBrains Mono (the new default),
+  Cascadia Code, Fira Code, IBM Plex Mono, and Source Code Pro. They're loaded at
+  startup and listed first in the Settings font picker. (Existing configs keep their
+  saved font; the new default applies to fresh installs.)
 - Editor color themes (syntax tokens + editor surface) chosen in Settings under
   "Editor theme": Primer Light/Dark, Nord Light/Dark, Cupertino Light/Dark, Dracula
   (these match the AtlantaFX themes), plus JetBrains-style Islands Light and Islands

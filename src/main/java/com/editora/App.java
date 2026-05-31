@@ -23,6 +23,8 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) throws IOException {
+        com.editora.ui.Fonts.load(); // register bundled fonts before any UI/CSS uses them
+
         ConfigManager config = new ConfigManager();
         Settings settings = config.load();
 

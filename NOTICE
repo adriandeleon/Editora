@@ -41,6 +41,23 @@ Languages bundled: Java, XML, shell, PowerShell, DOS batch, Python, Groovy,
 Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL.
 
 ================================================================================
+Bundled fonts
+================================================================================
+
+The font files under src/main/resources/com/editora/fonts/ are redistributed
+unmodified, each under the SIL Open Font License 1.1 (OFL-1.1):
+
+    JetBrains Mono   — https://github.com/JetBrains/JetBrainsMono   (© JetBrains)
+    Cascadia Code    — https://github.com/microsoft/cascadia-code  (© Microsoft)
+    Fira Code        — https://github.com/tonsky/FiraCode          (© The Fira Code Project Authors)
+    IBM Plex Mono    — https://github.com/IBM/plex                 (© IBM Corp.)
+    Source Code Pro  — https://github.com/adobe-fonts/source-code-pro (© Adobe)
+
+The full SIL Open Font License 1.1 text is available at
+https://openfontlicense.org. The OFL permits bundling and redistribution within
+this application.
+
+================================================================================
 Third-party libraries
 ================================================================================
 

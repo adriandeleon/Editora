@@ -94,7 +94,7 @@ public class SettingsWindow {
         stage.initModality(Modality.NONE);
 
         fontFamily = new ComboBox<>();
-        fontFamily.getItems().setAll(monospaceFamilies());
+        fontFamily.getItems().setAll(fontFamilyChoices());
         fontFamily.setPrefWidth(220);
         fontFamily.valueProperty().addListener((obs, old, now) -> apply());
 
@@ -298,6 +298,17 @@ public class SettingsWindow {
             }
         }
         return families;
+    }
+
+    /** Bundled fonts first (always offered), then the other installed monospaced families. */
+    private static List<String> fontFamilyChoices() {
+        List<String> choices = new ArrayList<>(Fonts.BUNDLED);
+        for (String family : monospaceFamilies()) {
+            if (!choices.contains(family)) {
+                choices.add(family);
+            }
+        }
+        return choices;
     }
 
     /** Parses the spinner's editor text, clamps it to range, and commits it to the value. */

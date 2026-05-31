@@ -14,6 +14,8 @@ Emacs-style keymap or a fuzzy command palette.
 - **Syntax highlighting** — TextMate grammars (via [tm4e](https://github.com/eclipse/tm4e))
   for 21 languages: Java, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin,
   Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, and SQL.
+- **Bundled fonts** — JetBrains Mono (default), Cascadia Code, Fira Code, IBM Plex Mono,
+  and Source Code Pro ship with the app; no system install required.
 - **Editor view options** — 80-column ruler and current-line highlight.
 - **Themes** — switchable AtlantaFX themes (Primer, Nord, Cupertino, Dracula), each
   with a matching editor color theme (syntax + surface) that follows the app theme by
