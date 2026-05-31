@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Large-file mode: opening a file 5 MB or larger skips syntax highlighting and the
+  minimap (regardless of view settings) to stay responsive, and the status bar
+  announces this when it happens.
 - The main window now remembers its size, position, and maximized state across
   launches (stored in `workspace-state.json`). A saved position that no longer
   lands on a connected screen falls back to the default centered window.

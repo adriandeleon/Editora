@@ -375,6 +375,9 @@ public class MainController {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
             buffer.setContent(Files.readString(file));
+            if (applyLargeFileMode(buffer, file)) {
+                setStatus(largeFileNote(file));
+            }
             addBuffer(buffer);
             restoreFolds(buffer);
             CodeArea area = buffer.getArea();
@@ -485,6 +488,7 @@ public class MainController {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
             buffer.setContent(content);
+            boolean large = applyLargeFileMode(buffer, file);
             addBuffer(buffer);
             restoreFolds(buffer);
             // Land on the first line: replaceText leaves the caret at the end, and fold restoration
@@ -493,12 +497,38 @@ public class MainController {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus("Opened " + file);
+            setStatus(large ? largeFileNote(file) : "Opened " + file);
         } catch (IOException e) {
             setStatus("Failed to open: " + e.getMessage());
             if (recentFiles != null) {
                 recentFiles.remove(file);
             }
+        }
+    }
+
+    /**
+     * For files at/above {@link EditorBuffer#LARGE_FILE_BYTES}, disables syntax highlighting and the
+     * minimap so the editor stays responsive. Returns true if large-file mode was applied (the caller
+     * announces it via {@link #largeFileNote}).
+     */
+    private boolean applyLargeFileMode(EditorBuffer buffer, Path file) {
+        if (fileSize(file) < EditorBuffer.LARGE_FILE_BYTES) {
+            return false;
+        }
+        buffer.setLargeFile(true);
+        return true;
+    }
+
+    private String largeFileNote(Path file) {
+        return file.getFileName() + " — large file (" + StatusBar.formatSize(fileSize(file))
+                + "): syntax highlighting and minimap disabled";
+    }
+
+    private static long fileSize(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException e) {
+            return 0;
         }
     }
 

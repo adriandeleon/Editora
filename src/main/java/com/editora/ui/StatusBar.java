@@ -122,8 +122,8 @@ public final class StatusBar extends HBox {
         size.setText(formatSize(buffer.getContent().getBytes(StandardCharsets.UTF_8).length));
     }
 
-    /** Human-readable byte size for the status bar (e.g. {@code 512 B}, {@code 1.2 kB}, {@code 3.4 MB}). */
-    private static String formatSize(long bytes) {
+    /** Human-readable byte size (e.g. {@code 512 B}, {@code 1.2 kB}, {@code 3.4 MB}). */
+    static String formatSize(long bytes) {
         if (bytes < 1024) {
             return bytes + " B";
         }

@@ -57,8 +57,12 @@ public class EditorBuffer {
     private AnchorPane root2;
     private Minimap minimap2;
     private Split split = Split.NONE;
+    /** Files at/above this size skip syntax highlighting and the minimap to stay responsive. */
+    public static final long LARGE_FILE_BYTES = 5L * 1024 * 1024;
     /** Whether the minimap is shown; applied to every split pane's minimap. */
     private boolean minimapVisible = true;
+    /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
+    private boolean largeFile;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     private CodeArea focusedArea = area;
     /**
@@ -266,7 +270,7 @@ public class EditorBuffer {
         AnchorPane.setTopAnchor(minimap2, 0d);
         AnchorPane.setBottomAnchor(minimap2, 0d);
         AnchorPane.setRightAnchor(minimap2, 0d);
-        applyMinimap(scrollPane2, minimap2, minimapVisible);
+        applyMinimap(scrollPane2, minimap2, minimapVisible && !largeFile);
     }
 
     /** Docks/undocks a minimap on the right of its scroll pane (shared by both split panes). */
@@ -332,10 +336,12 @@ public class EditorBuffer {
     /** Show/hide the minimap overview (on every split pane); reclaims its width for the editor when hidden. */
     public void setMinimapVisible(boolean visible) {
         this.minimapVisible = visible;
-        applyMinimap(scrollPane, minimap, visible);
-        AnchorPane.setRightAnchor(whitespace, visible ? Minimap.WIDTH : 0d);
+        // Large files force the minimap off regardless of the user's setting (see setLargeFile).
+        boolean effective = visible && !largeFile;
+        applyMinimap(scrollPane, minimap, effective);
+        AnchorPane.setRightAnchor(whitespace, effective ? Minimap.WIDTH : 0d);
         if (minimap2 != null) {
-            applyMinimap(scrollPane2, minimap2, visible);
+            applyMinimap(scrollPane2, minimap2, effective);
         }
     }
 
@@ -491,6 +497,27 @@ public class EditorBuffer {
         return tabSize;
     }
 
+    /**
+     * Enables large-file mode: skips syntax highlighting and hides the minimap (regardless of the
+     * user's view settings) so very large documents stay responsive. Should be set right after the
+     * content is loaded; see {@link #LARGE_FILE_BYTES}.
+     */
+    public void setLargeFile(boolean large) {
+        if (this.largeFile == large) {
+            return;
+        }
+        this.largeFile = large;
+        highlightGen++; // discard any in-flight highlight result
+        setMinimapVisible(minimapVisible); // re-apply with the large-file guard
+        if (!large) {
+            applyHighlighting(); // re-enable highlighting if we ever leave large-file mode
+        }
+    }
+
+    public boolean isLargeFile() {
+        return largeFile;
+    }
+
     /** Replaces the document content (e.g. after loading a file) and resets the dirty flag. */
     public void setContent(String content) {
         area.replaceText(content == null ? "" : content);
@@ -574,6 +601,14 @@ public class EditorBuffer {
     }
 
     private void applyHighlighting() {
+        if (largeFile) {
+            // Large-file mode: leave the document as plain text and drop any structure symbols.
+            if (!symbols.isEmpty()) {
+                symbols = List.of();
+                onSymbolsChanged.run();
+            }
+            return;
+        }
         if (grammar == null) {
             // No grammar for this file type: clear any previously applied styles so none linger.
             // This is cheap (a single span), so do it inline on the FX thread.
