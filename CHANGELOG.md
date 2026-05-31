@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Editor tabs can be reordered by dragging them with the mouse. Pinned tabs stay
+  grouped at the front (a drag is clamped to the dragged tab's group).
 - Large-file mode: opening a file 5 MB or larger skips syntax highlighting and the
   minimap (regardless of view settings) to stay responsive, and the status bar
   announces this when it happens.

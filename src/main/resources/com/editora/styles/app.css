@@ -286,15 +286,35 @@
     -fx-font-size: 13px;
 }
 
+/* The tab title lives in a graphic Label (.tab-title) so it can act as a drag handle for
+   mouse reordering; inherit the default tab-label appearance. */
+.tab .tab-title {
+    -fx-text-fill: -color-fg-default;
+}
+
 /* Unsaved/dirty tab: amber/italic label so the bullet prefix is reinforced visually. */
-.tab.dirty .tab-label {
+.tab.dirty .tab-title {
     -fx-text-fill: #bf8700;
     -fx-font-style: italic;
 }
 
-/* Pinned tab: bold label so the 📌 prefix is reinforced (mirrors the dirty treatment). */
-.tab.pinned .tab-label {
+/* Pinned tab: bold label so the pin marker is reinforced (mirrors the dirty treatment). */
+.tab.pinned .tab-title {
     -fx-font-weight: bold;
+}
+
+/* Tab drag-to-reorder: dim the tab being dragged, and show an insertion line on the
+   target tab's leading/trailing edge for the side it would drop on. */
+.tab-header.tab-dragging {
+    -fx-opacity: 0.4;
+}
+.tab-header.tab-drop-before {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 0 0 0 2;
+}
+.tab-header.tab-drop-after {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 0 2 0 0;
 }
 
 /* Compact toolbar: tighter padding so the overall bar is ~25-30% shorter. */

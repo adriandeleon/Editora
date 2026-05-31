@@ -27,11 +27,13 @@ import java.util.Optional;
 import java.util.Set;
 
 import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
 
 import javafx.application.Platform;
 import javafx.css.PseudoClass;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -49,12 +51,16 @@ import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.Dragboard;
+import javafx.scene.input.TransferMode;
+import javafx.geometry.Pos;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
@@ -134,6 +140,8 @@ public class MainController {
     private final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
     /** Guards programmatic tab reordering so the MRU list listener doesn't drop the moved tab. */
     private boolean reordering;
+    /** The tab currently being dragged to reorder the strip, or null. */
+    private Tab draggedTab;
     private RecentFiles recentFiles;
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
@@ -433,13 +441,100 @@ public class MainController {
     private void updateTabMeta(Tab tab, EditorBuffer buffer) {
         boolean dirty = buffer.isDirty();
         boolean isPinned = pinned.contains(tab);
-        tab.setText((dirty ? "• " : "") + buffer.getTitle());
-        // Pinned tabs are marked with an SVG pin graphic (matching the toolbar icons), not a glyph.
-        tab.setGraphic(isPinned ? Icons.pin() : null);
+        // The title lives in a graphic node (not tab.setText) so it can be a drag handle for
+        // mouse reordering. Pinned tabs show an SVG pin graphic (matching the toolbar icons).
+        Label title = new Label((dirty ? "• " : "") + buffer.getTitle());
+        title.getStyleClass().add("tab-title");
+        HBox header = new HBox(6);
+        header.getStyleClass().add("tab-header");
+        header.setAlignment(Pos.CENTER_LEFT);
+        if (isPinned) {
+            header.getChildren().add(Icons.pin());
+        }
+        header.getChildren().add(title);
+        enableTabDrag(header, tab);
+        tab.setText("");
+        tab.setGraphic(header);
         toggleClass(tab, "dirty", dirty);
         toggleClass(tab, "pinned", isPinned);
         Path p = buffer.getPath();
         tab.setTooltip(new Tooltip(p != null ? p.toAbsolutePath().toString() : "untitled"));
+    }
+
+    /** Wires drag-and-drop on a tab's header so the user can reorder the strip with the mouse. */
+    private void enableTabDrag(Node header, Tab tab) {
+        header.setOnDragDetected(e -> {
+            Dragboard db = header.startDragAndDrop(TransferMode.MOVE);
+            ClipboardContent content = new ClipboardContent();
+            content.putString("tab"); // marker; the dragged tab is tracked in draggedTab
+            db.setContent(content);
+            // A snapshot of the tab follows the cursor so it's clear what's being dragged.
+            SnapshotParameters params = new SnapshotParameters();
+            params.setFill(Color.TRANSPARENT);
+            db.setDragView(header.snapshot(params, null), e.getX(), e.getY());
+            draggedTab = tab;
+            header.getStyleClass().add("tab-dragging");
+            e.consume();
+        });
+        header.setOnDragOver(e -> {
+            if (draggedTab != null && draggedTab != tab) {
+                e.acceptTransferModes(TransferMode.MOVE);
+                // Show an insertion line on the side the tab would land.
+                boolean after = e.getX() > header.getBoundsInLocal().getWidth() / 2;
+                toggleStyle(header, "tab-drop-after", after);
+                toggleStyle(header, "tab-drop-before", !after);
+            }
+            e.consume();
+        });
+        header.setOnDragExited(e -> clearDropMarkers(header));
+        header.setOnDragDropped(e -> {
+            clearDropMarkers(header);
+            boolean done = false;
+            if (draggedTab != null && draggedTab != tab) {
+                // Drop on the right half of the target inserts after it, left half before it.
+                reorderTab(draggedTab, tab, e.getX() > header.getBoundsInLocal().getWidth() / 2);
+                done = true;
+            }
+            e.setDropCompleted(done);
+            e.consume();
+        });
+        header.setOnDragDone(e -> {
+            header.getStyleClass().remove("tab-dragging");
+            clearDropMarkers(header);
+            draggedTab = null;
+        });
+    }
+
+    private static void clearDropMarkers(Node header) {
+        header.getStyleClass().removeAll("tab-drop-before", "tab-drop-after");
+    }
+
+    private static void toggleStyle(Node node, String styleClass, boolean on) {
+        node.getStyleClass().remove(styleClass);
+        if (on) {
+            node.getStyleClass().add(styleClass);
+        }
+    }
+
+    /**
+     * Moves {@code dragged} next to {@code target} (after it when {@code after} is true, else before),
+     * keeping pinned tabs grouped at the front: a drop is clamped to the dragged tab's own group.
+     */
+    private void reorderTab(Tab dragged, Tab target, boolean after) {
+        ObservableList<Tab> tabs = tabPane.getTabs();
+        boolean draggedPinned = pinned.contains(dragged);
+        reordering = true;
+        try {
+            tabs.remove(dragged);
+            int idx = tabs.indexOf(target) + (after ? 1 : 0);
+            int pinnedInStrip = (int) tabs.stream().filter(pinned::contains).count();
+            int lo = draggedPinned ? 0 : pinnedInStrip;
+            int hi = draggedPinned ? pinnedInStrip : tabs.size();
+            tabs.add(Math.max(lo, Math.min(idx, hi)), dragged);
+        } finally {
+            reordering = false;
+        }
+        tabPane.getSelectionModel().select(dragged);
     }
 
     private static void toggleClass(Tab tab, String styleClass, boolean on) {
