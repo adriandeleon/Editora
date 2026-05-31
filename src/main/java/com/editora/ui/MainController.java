@@ -1252,6 +1252,14 @@ public class MainController {
         }
     }
 
+    /** Emacs-style vertical caret move (C-n/C-p) preserving the goal column; see {@link EditorBuffer#moveLine}. */
+    private void moveLine(int delta) {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.moveLine(delta);
+        }
+    }
+
     /** Run a navigation action and scroll the viewport to follow the caret. */
     private void moveAndFollow(java.util.function.Consumer<CodeArea> motion) {
         CodeArea area = activeArea();
@@ -1350,10 +1358,8 @@ public class MainController {
                 () -> moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1)))));
         registry.register(Command.of("nav.charBackward", "Go: Backward Char",
                 () -> moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1)))));
-        registry.register(Command.of("nav.lineDown", "Go: Next Line",
-                () -> moveAndFollow(a -> a.nextLine(SelectionPolicy.CLEAR))));
-        registry.register(Command.of("nav.lineUp", "Go: Previous Line",
-                () -> moveAndFollow(a -> a.prevLine(SelectionPolicy.CLEAR))));
+        registry.register(Command.of("nav.lineDown", "Go: Next Line", () -> moveLine(1)));
+        registry.register(Command.of("nav.lineUp", "Go: Previous Line", () -> moveLine(-1)));
         registry.register(Command.of("nav.wordForward", "Go: Forward Word",
                 () -> moveAndFollow(a -> a.moveTo(nextWordBoundary(a.getText(), a.getCaretPosition())))));
         registry.register(Command.of("nav.wordBackward", "Go: Backward Word",

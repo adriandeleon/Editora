@@ -11,6 +11,7 @@ import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
+import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
@@ -61,6 +62,14 @@ public class EditorBuffer {
     private boolean minimapVisible = true;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     private CodeArea focusedArea = area;
+    /**
+     * Emacs-style goal column for line-up/line-down ({@code C-p}/{@code C-n}): the column to aim for
+     * when moving vertically, preserved across short lines until any other caret move resets it.
+     * {@code -1} means "recompute from the caret on the next vertical move".
+     */
+    private int goalColumn = -1;
+    /** True only while {@link #moveLine} is updating the caret, so its own move doesn't reset the goal. */
+    private boolean movingByLine;
     private final Line columnRuler = new Line();
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
@@ -101,6 +110,7 @@ public class EditorBuffer {
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> applyHighlighting());
         area.textProperty().addListener((obs, old, now) -> dirty.set(true));
+        area.caretPositionProperty().addListener((obs, old, now) -> resetGoalColumn());
         area.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area;
@@ -234,6 +244,7 @@ public class EditorBuffer {
         area2.setWrapText(false);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
+        area2.caretPositionProperty().addListener((obs, old, now) -> resetGoalColumn());
         area2.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area2;
@@ -434,6 +445,38 @@ public class EditorBuffer {
             area.showParagraphAtTop(0);
         } catch (RuntimeException ignored) {
             // Viewport not laid out yet; it defaults to the top, so there is nothing more to do.
+        }
+    }
+
+    /**
+     * Moves the caret one line down ({@code delta == 1}) or up ({@code delta == -1}) in the focused
+     * view, Emacs-style: the target column is the "goal column" — the column the caret was at when the
+     * vertical run began — clamped to the target line's length, so passing through short lines does not
+     * lose the original column. Any non-vertical caret move resets the goal (see the caret listeners).
+     */
+    public void moveLine(int delta) {
+        CodeArea a = focusedArea;
+        if (goalColumn < 0) {
+            goalColumn = a.getCaretColumn();
+        }
+        int target = a.getCurrentParagraph() + delta;
+        if (target < 0 || target >= a.getParagraphs().size()) {
+            return; // already at the first/last line
+        }
+        int col = Math.min(goalColumn, a.getParagraphLength(target));
+        movingByLine = true;
+        try {
+            a.moveTo(target, col, SelectionPolicy.CLEAR);
+        } finally {
+            movingByLine = false;
+        }
+        a.requestFollowCaret();
+    }
+
+    /** Clears the goal column unless the caret change came from {@link #moveLine} itself. */
+    private void resetGoalColumn() {
+        if (!movingByLine) {
+            goalColumn = -1;
         }
     }
 

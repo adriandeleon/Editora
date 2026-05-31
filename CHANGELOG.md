@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Next/previous line (`C-n` / `C-p`) now move the caret like Emacs: they were
+  bound to RichTextFX's scroll-based `nextLine`/`prevLine` (which move relative to
+  the viewport and no-op when the caret is off-screen). They now move by paragraph
+  and preserve a goal column, so passing through short lines keeps the original
+  column.
 - Syntax highlighting no longer intermittently fails to load when multiple files
   of the same language are open. They share one TextMate grammar instance, and
   tm4e's tokenizer is not thread-safe, so concurrent highlighting on each buffer's
