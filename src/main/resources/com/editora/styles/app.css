@@ -346,12 +346,14 @@
 /* Inline remove button on each Recent Files dropdown row. */
 .recent-remove {
     -fx-padding: 0 4 0 4;
-    -fx-text-fill: #6e7781;
-    -fx-font-size: 11px;
 }
 
-.recent-remove:hover {
-    -fx-text-fill: #cf222e;
+.recent-remove .toolbar-icon {
+    -fx-fill: #6e7781;
+}
+
+.recent-remove:hover .toolbar-icon {
+    -fx-fill: #cf222e;
 }
 
 /* Toolbar SVG icons */

@@ -200,13 +200,15 @@ public class MainController {
         }
     }
 
-    /** A recent-file menu entry: filename label that opens the file, plus an inline ✕ to remove it. */
+    /** A recent-file menu entry: filename label that opens the file, plus an inline ✕ icon to remove it. */
     private CustomMenuItem recentMenuItem(Path path) {
         Label name = new Label(path.getFileName().toString());
-        Button removeBtn = new Button("✕");
+        Button removeBtn = new Button();
+        removeBtn.setGraphic(Icons.closeSmall());
         removeBtn.getStyleClass().addAll("button-icon", "flat", "recent-remove");
         removeBtn.setFocusTraversable(false);
-        // Remove just this entry without opening it or closing the menu.
+        removeBtn.setTooltip(new Tooltip("Remove from recent files"));
+        // Remove just this entry (no confirmation) without opening it or closing the menu.
         removeBtn.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> {
             recentFiles.remove(path);
             e.consume();
@@ -670,7 +672,18 @@ public class MainController {
 
     @FXML
     private void onClearRecent() {
-        if (recentFiles != null) {
+        if (recentFiles == null || recentFiles.getList().isEmpty()) {
+            return;
+        }
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.initOwner(stage);
+        alert.setTitle("Clear recent files");
+        alert.setHeaderText("Clear the entire recent files list?");
+        alert.setContentText(null);
+        ButtonType clear = new ButtonType("Clear");
+        ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(clear, cancel);
+        if (alert.showAndWait().filter(b -> b == clear).isPresent()) {
             recentFiles.clear();
             setStatus("Recent files cleared");
         }

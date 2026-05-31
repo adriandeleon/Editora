@@ -71,6 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Clearing the recent-files list now asks for confirmation; each entry in the
+  recent-files menu has an inline ✕ icon to remove just that file (no confirmation).
 - Go to Line (`M-g g`) now accepts an optional column as `line:column` (e.g.
   `342:35`); a bare number still goes to the line's start. The dialog notes the
   column is optional and the column is clamped to the target line's length. If the
