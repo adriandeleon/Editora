@@ -38,9 +38,9 @@ public class SettingsWindow {
 
     private static final String APP_NAME = "Editora";
     private static final String APP_VERSION = "1.0.0";
-    // Window size (10% larger than the original 520x560).
-    private static final double WIDTH = 572;
-    private static final double HEIGHT = 616;
+    // Window size (15% larger than the previous 572x616).
+    private static final double WIDTH = 658;
+    private static final double HEIGHT = 708;
     /** Build timestamp baked in by Maven resource filtering (see build-info.properties). */
     private static final String BUILD_TIME = loadBuildTime();
 
@@ -60,6 +60,7 @@ public class SettingsWindow {
     private CheckBox whitespaceCheck;
     private CheckBox toolbarCheck;
     private CheckBox statusBarCheck;
+    private CheckBox tabBarCheck;
     private boolean built;
     private boolean loading;
 
@@ -183,6 +184,12 @@ public class SettingsWindow {
             apply();
         });
 
+        tabBarCheck = new CheckBox("Show tab bar");
+        tabBarCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setShowTabBar(now);
+            apply();
+        });
+
         GridPane form = new GridPane();
         form.setHgap(12);
         form.setVgap(10);
@@ -203,8 +210,9 @@ public class SettingsWindow {
         form.add(whitespaceCheck, 1, 8);
         form.add(toolbarCheck, 1, 9);
         form.add(statusBarCheck, 1, 10);
+        form.add(tabBarCheck, 1, 11);
 
-        int row = 11;
+        int row = 12;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -290,6 +298,7 @@ public class SettingsWindow {
             whitespaceCheck.setSelected(settings.isShowWhitespace());
             toolbarCheck.setSelected(settings.isShowToolbar());
             statusBarCheck.setSelected(settings.isShowStatusBar());
+            tabBarCheck.setSelected(settings.isShowTabBar());
         } finally {
             loading = false;
         }

@@ -421,3 +421,11 @@
     -fx-spacing: 6;
     -fx-alignment: center-left;
 }
+
+/* Collapse the tab header when the tab bar is toggled off (view.toggleTabBar). */
+.tab-pane.no-tab-header > .tab-header-area {
+    -fx-pref-height: 0;
+    -fx-min-height: 0;
+    -fx-max-height: 0;
+    visibility: hidden;
+}

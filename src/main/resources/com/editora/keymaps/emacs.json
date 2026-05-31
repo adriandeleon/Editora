@@ -46,5 +46,6 @@
   "C-c w": "view.toggleWhitespace",
   "C-c t": "view.toggleToolbar",
   "C-c s": "view.toggleStatusBar",
+  "C-c b": "view.toggleTabBar",
   "M-g g": "nav.goToLine"
 }

@@ -189,6 +189,12 @@ public class MainController {
         toolBar.setManaged(s.isShowToolbar());
         statusBar.setVisible(s.isShowStatusBar());
         statusBar.setManaged(s.isShowStatusBar());
+        // The tab header is collapsed via a style class (see app.css) rather than visible/managed:
+        // the TabPane skin owns the header node, so toggling a CSS class is the supported way.
+        tabPane.getStyleClass().remove("no-tab-header");
+        if (!s.isShowTabBar()) {
+            tabPane.getStyleClass().add("no-tab-header");
+        }
     }
 
     private void setupRecentFiles() {
@@ -1324,6 +1330,14 @@ public class MainController {
         setStatus("Status bar: " + (s.isShowStatusBar() ? "on" : "off"));
     }
 
+    private void toggleTabBar() {
+        Settings s = config.getSettings();
+        s.setShowTabBar(!s.isShowTabBar());
+        config.save();
+        applyChromeVisibility();
+        setStatus("Tab bar: " + (s.isShowTabBar() ? "on" : "off"));
+    }
+
     /**
      * Emacs {@code C-x o}: cycles keyboard focus between the editor and any open tool windows.
      * Order: editor, then each open tool window (by side); wraps back to the editor.
@@ -1677,6 +1691,7 @@ public class MainController {
         registry.register(Command.of("view.toggleToolbar", "View: Toggle Toolbar", this::toggleToolbar));
         registry.register(Command.of("view.toggleStatusBar", "View: Toggle Status Bar",
                 this::toggleStatusBar));
+        registry.register(Command.of("view.toggleTabBar", "View: Toggle Tab Bar", this::toggleTabBar));
         registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
                 this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",
