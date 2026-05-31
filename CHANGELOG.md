@@ -63,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Quitting now asks for confirmation first (the Quit button, `C-x C-c`, and the
+  window close button), in addition to the existing per-buffer unsaved-changes prompts.
 - User preferences are now stored as TOML in `~/.editora-v2/settings.toml` (was
   `settings.json`). Session state (fold regions, tool-window layout) moved to a
   separate `workspace-state.json`; recent files stay in `recent-files.json`. No

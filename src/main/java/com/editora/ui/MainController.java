@@ -139,7 +139,7 @@ public class MainController {
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
         this.stage = stage;
         stage.setOnCloseRequest(e -> {
-            if (!confirmCloseAllBuffers()) {
+            if (!confirmQuit() || !confirmCloseAllBuffers()) {
                 e.consume();
             }
         });
@@ -885,9 +885,23 @@ public class MainController {
 
     @FXML
     private void onQuit() {
-        if (confirmCloseAllBuffers()) {
+        if (confirmQuit() && confirmCloseAllBuffers()) {
             Platform.exit();
         }
+    }
+
+    /** @return true if the user confirms quitting the app. */
+    private boolean confirmQuit() {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.initOwner(stage);
+        alert.setTitle("Quit Editora");
+        alert.setHeaderText("Quit Editora?");
+        alert.setContentText(null);
+        ButtonType quit = new ButtonType("Quit");
+        ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(quit, cancel);
+        Optional<ButtonType> result = alert.showAndWait();
+        return result.isPresent() && result.get() == quit;
     }
 
     /** Walks every tab and prompts to save/discard each dirty buffer. False = user cancelled. */
