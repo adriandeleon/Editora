@@ -586,7 +586,7 @@ public class EditorBuffer {
      * vertical run began — clamped to the target line's length, so passing through short lines does not
      * lose the original column. Any non-vertical caret move resets the goal (see the caret listeners).
      */
-    public void moveLine(int delta) {
+    public void moveLine(int delta, SelectionPolicy policy) {
         CodeArea a = focusedArea;
         if (goalColumn < 0) {
             goalColumn = a.getCaretColumn();
@@ -598,7 +598,7 @@ public class EditorBuffer {
         int col = Math.min(goalColumn, a.getParagraphLength(target));
         movingByLine = true;
         try {
-            a.moveTo(target, col, SelectionPolicy.CLEAR);
+            a.moveTo(target, col, policy);
         } finally {
             movingByLine = false;
         }

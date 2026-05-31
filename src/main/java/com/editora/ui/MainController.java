@@ -144,6 +144,8 @@ public class MainController {
     private Tab draggedTab;
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
     private String currentEditorThemeCss;
+    /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
+    private boolean markActive;
     private RecentFiles recentFiles;
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
@@ -228,6 +230,8 @@ public class MainController {
     }
 
     private void setupMruTracking() {
+        // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
+        tabPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> deactivateMark());
         tabPane.getSelectionModel().selectedItemProperty().addListener((obs, was, now) -> {
             if (now != null) {
                 mru.remove(now);
@@ -1162,16 +1166,19 @@ public class MainController {
     @FXML
     private void onCut() {
         withArea(CodeArea::cut);
+        deactivateMark();
     }
 
     @FXML
     private void onCopy() {
         withArea(CodeArea::copy);
+        deactivateMark();
     }
 
     @FXML
     private void onPaste() {
         withArea(CodeArea::paste);
+        deactivateMark();
     }
 
     @FXML
@@ -1486,12 +1493,46 @@ public class MainController {
         } else if (findBar.isShown()) {
             findBar.hideBar();
         } else {
+            markActive = false;
             CodeArea area = activeArea();
             if (area != null) {
                 area.deselect();
             }
         }
         setStatus("");
+    }
+
+    /** The selection policy for caret-movement commands: extend from the mark when it's active. */
+    private SelectionPolicy selPolicy() {
+        return markActive ? SelectionPolicy.ADJUST : SelectionPolicy.CLEAR;
+    }
+
+    /** Emacs {@code C-SPC}: drop the mark at the caret so subsequent movement selects from here. */
+    private void setMark() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int caret = area.getCaretPosition();
+        area.selectRange(caret, caret); // anchor = caret; ADJUST moves then extend from here
+        markActive = true;
+        setStatus("Mark set");
+    }
+
+    /** Emacs {@code C-x C-x}: move the caret to the mark (and the mark to the caret). */
+    private void exchangePointAndMark() {
+        CodeArea area = activeArea();
+        if (area == null || area.getSelection().getLength() == 0) {
+            return;
+        }
+        area.selectRange(area.getCaretPosition(), area.getAnchor());
+        markActive = true;
+        area.requestFollowCaret();
+    }
+
+    /** Clears the Emacs mark (e.g. after a clipboard action or a mouse click). */
+    private void deactivateMark() {
+        markActive = false;
     }
 
     private void withArea(java.util.function.Consumer<CodeArea> action) {
@@ -1505,7 +1546,7 @@ public class MainController {
     private void moveLine(int delta) {
         EditorBuffer buffer = activeBuffer();
         if (buffer != null) {
-            buffer.moveLine(delta);
+            buffer.moveLine(delta, selPolicy());
         }
     }
 
@@ -1596,27 +1637,30 @@ public class MainController {
         registry.register(Command.of("edit.redo", "Edit: Redo", this::onRedo));
         registry.register(Command.of("edit.cancel", "Cancel", this::cancel));
         registry.register(Command.of("nav.lineStart", "Go: Line Start",
-                () -> moveAndFollow(a -> a.lineStart(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.lineStart(selPolicy()))));
         registry.register(Command.of("nav.lineEnd", "Go: Line End",
-                () -> moveAndFollow(a -> a.lineEnd(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.lineEnd(selPolicy()))));
         registry.register(Command.of("nav.docStart", "Go: Document Start",
-                () -> moveAndFollow(a -> a.start(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.start(selPolicy()))));
         registry.register(Command.of("nav.docEnd", "Go: Document End",
-                () -> moveAndFollow(a -> a.end(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.end(selPolicy()))));
         registry.register(Command.of("nav.charForward", "Go: Forward Char",
-                () -> moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1)))));
+                () -> moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1), selPolicy()))));
         registry.register(Command.of("nav.charBackward", "Go: Backward Char",
-                () -> moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1)))));
+                () -> moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1), selPolicy()))));
         registry.register(Command.of("nav.lineDown", "Go: Next Line", () -> moveLine(1)));
         registry.register(Command.of("nav.lineUp", "Go: Previous Line", () -> moveLine(-1)));
         registry.register(Command.of("nav.wordForward", "Go: Forward Word",
-                () -> moveAndFollow(a -> a.moveTo(nextWordBoundary(a.getText(), a.getCaretPosition())))));
+                () -> moveAndFollow(a -> a.moveTo(nextWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of("nav.wordBackward", "Go: Backward Word",
-                () -> moveAndFollow(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition())))));
+                () -> moveAndFollow(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of("nav.pageDown", "Go: Page Down",
-                () -> moveAndFollow(a -> a.nextPage(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.nextPage(selPolicy()))));
         registry.register(Command.of("nav.pageUp", "Go: Page Up",
-                () -> moveAndFollow(a -> a.prevPage(SelectionPolicy.CLEAR))));
+                () -> moveAndFollow(a -> a.prevPage(selPolicy()))));
+        registry.register(Command.of("edit.setMark", "Edit: Set Mark", this::setMark));
+        registry.register(Command.of("edit.exchangePointAndMark", "Edit: Exchange Point and Mark",
+                this::exchangePointAndMark));
         registry.register(Command.of("edit.deleteChar", "Edit: Delete Forward Char",
                 () -> withArea(CodeArea::deleteNextChar)));
         registry.register(Command.of("edit.killWord", "Edit: Kill Forward Word",

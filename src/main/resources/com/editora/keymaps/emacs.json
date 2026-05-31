@@ -3,6 +3,8 @@
   "C-x C-s": "file.save",
   "C-x C-w": "file.saveAs",
   "C-x C-c": "app.quit",
+  "C-x C-x": "edit.exchangePointAndMark",
+  "C-space": "edit.setMark",
   "C-x b": "buffer.next",
   "C-x k": "buffer.close",
   "C-x 1": "view.unsplit",

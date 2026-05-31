@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Emacs-style text selection: `C-SPC` sets the mark, then any caret-movement chord
+  (`C-f`/`C-b`/`C-n`/`C-p`/`M-f`/`M-b`/`C-a`/`C-e`/`M-<`/`M->`/`C-v`/`M-v`) extends
+  the selection from it. `C-x C-x` exchanges point and mark; `C-g` (and a mouse
+  click, cut/copy/paste) clears the mark. The region works with `C-w`/`M-w`/`C-y`.
 - Bundled monospace fonts (no install needed): JetBrains Mono (the new default),
   Cascadia Code, Fira Code, IBM Plex Mono, and Source Code Pro. They're loaded at
   startup and listed first in the Settings font picker. (Existing configs keep their
