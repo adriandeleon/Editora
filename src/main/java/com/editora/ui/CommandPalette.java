@@ -18,6 +18,7 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -180,6 +181,13 @@ public class CommandPalette {
         CommandCell() {
             box.setAlignment(Pos.CENTER_LEFT);
             key.getStyleClass().add("keybinding");
+            // Click a command to run it (the keyboard runs the selected item on Enter).
+            setOnMouseClicked(e -> {
+                if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && getItem() != null) {
+                    getListView().getSelectionModel().select(getItem());
+                    runSelected();
+                }
+            });
         }
 
         private Region spacer() {

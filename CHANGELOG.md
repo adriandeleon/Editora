@@ -97,6 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Command palette entries can now be run with the mouse — clicking a command
+  runs it (previously only Enter on the keyboard-selected row worked).
 - Next/previous line (`C-n` / `C-p`) now move the caret like Emacs: they were
   bound to RichTextFX's scroll-based `nextLine`/`prevLine` (which move relative to
   the viewport and no-op when the caret is off-screen). They now move by paragraph
