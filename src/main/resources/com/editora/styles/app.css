@@ -224,6 +224,13 @@
     -fx-background-color: transparent;
 }
 
+/* Drop the TitledPane's default content border/padding (the boxed "lines" around each section). */
+.file-info-section > .content {
+    -fx-border-width: 0;
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+
 .file-info-section > .title {
     -fx-background-color: transparent;
     -fx-padding: 2 0 2 0;
@@ -233,9 +240,8 @@
 }
 
 .file-info-grid {
-    -fx-padding: 8;
-    -fx-background-color: #f6f8fa;
-    -fx-background-radius: 4;
+    -fx-padding: 4 2 4 2;
+    -fx-background-color: transparent;
 }
 
 .file-info-key {
@@ -243,10 +249,20 @@
     -fx-font-size: 12px;
 }
 
+/* Value fields are read-only TextFields, drawn as plain selectable text (no field chrome). */
 .file-info-value {
     -fx-text-fill: #57606a;
     -fx-font-size: 12px;
-    -fx-alignment: center-right;
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+    -fx-padding: 0;
+    -fx-highlight-fill: #cce5ff;
+}
+
+.file-info-value:focused {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
 }
 
 /* Switcher popup — two columns of recent files / tool windows. */

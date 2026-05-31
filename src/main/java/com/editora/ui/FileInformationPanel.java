@@ -19,8 +19,10 @@ import com.editora.editor.LanguageRegistry;
 import javafx.beans.value.ChangeListener;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
@@ -37,29 +39,29 @@ public class FileInformationPanel extends VBox {
             DateTimeFormatter.ofPattern("d MMM uuuu 'at' h:mm a", Locale.getDefault());
     private static final Pattern WORD = Pattern.compile("\\p{L}[\\p{L}\\p{N}_]*");
 
-    private final Label createdValue = value();
-    private final Label modifiedValue = value();
-    private final Label sizeValue = value();
-    private final Label tagsValue = value();
-    private final Label permissionsValue = value();
-    private final Label ownerValue = value();
-    private final Label fullPathValue = value();
+    private final TextField createdValue = value();
+    private final TextField modifiedValue = value();
+    private final TextField sizeValue = value();
+    private final TextField tagsValue = value();
+    private final TextField permissionsValue = value();
+    private final TextField ownerValue = value();
+    private final TextField fullPathValue = value();
 
-    private final Label encodingValue = value();
-    private final Label lineEndingsValue = value();
-    private final Label modeValue = value();
+    private final TextField encodingValue = value();
+    private final TextField lineEndingsValue = value();
+    private final TextField modeValue = value();
 
-    private final Label linesValue = value();
-    private final Label charsValue = value();
-    private final Label wordsValue = value();
-    private final Label locationValue = value();
-    private final Label lineValue = value();
-    private final Label columnValue = value();
+    private final TextField linesValue = value();
+    private final TextField charsValue = value();
+    private final TextField wordsValue = value();
+    private final TextField locationValue = value();
+    private final TextField lineValue = value();
+    private final TextField columnValue = value();
 
-    private final Label codePointValue = value();
-    private final Label charNameValue = value();
-    private final Label charBlockValue = value();
-    private final Label charCategoryValue = value();
+    private final TextField codePointValue = value();
+    private final TextField charNameValue = value();
+    private final TextField charBlockValue = value();
+    private final TextField charCategoryValue = value();
 
     private EditorBuffer attached;
     private final ChangeListener<Number> caretListener = (o, w, n) -> refresh();
@@ -123,7 +125,6 @@ public class FileInformationPanel extends VBox {
         addRow(g, r++, "Permissions", permissionsValue);
         addRow(g, r++, "Owner", ownerValue);
         addRow(g, r, "Full Path", fullPathValue);
-        fullPathValue.setWrapText(true);
         return g;
     }
 
@@ -167,21 +168,29 @@ public class FileInformationPanel extends VBox {
         return g;
     }
 
-    private void addRow(GridPane g, int row, String key, Label valueLabel) {
+    private void addRow(GridPane g, int row, String key, TextField valueField) {
         Label k = new Label(key);
         k.getStyleClass().add("file-info-key");
-        valueLabel.getStyleClass().add("file-info-value");
-        valueLabel.setMaxWidth(Double.MAX_VALUE);
-        GridPane.setHgrow(valueLabel, Priority.ALWAYS);
-        GridPane.setHalignment(valueLabel, HPos.RIGHT);
+        GridPane.setHgrow(valueField, Priority.ALWAYS);
+        GridPane.setHalignment(valueField, HPos.RIGHT);
         g.add(k, 0, row);
-        g.add(valueLabel, 1, row);
+        g.add(valueField, 1, row);
     }
 
-    private Label value() {
-        Label l = new Label("–");
-        l.setMaxWidth(Double.MAX_VALUE);
-        return l;
+    /**
+     * A value field rendered as a read-only, borderless text field so values can be selected and
+     * copied. {@code minWidth = 0} lets it shrink, so a long value (e.g. the full path) can't force
+     * the grid wider than the tool window and trigger scrollbars / truncate the key labels.
+     */
+    private TextField value() {
+        TextField f = new TextField("–");
+        f.setEditable(false);
+        f.getStyleClass().add("file-info-value");
+        f.setAlignment(Pos.CENTER_RIGHT);
+        f.setMaxWidth(Double.MAX_VALUE);
+        f.setMinWidth(0);
+        f.setPrefColumnCount(0);
+        return f;
     }
 
     // --- Live refresh ---
@@ -198,7 +207,7 @@ public class FileInformationPanel extends VBox {
     }
 
     private void clearAll() {
-        for (Label l : new Label[]{
+        for (TextField l : new TextField[]{
                 createdValue, modifiedValue, sizeValue, tagsValue,
                 permissionsValue, ownerValue, fullPathValue,
                 encodingValue, lineEndingsValue, modeValue,

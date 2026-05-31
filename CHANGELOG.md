@@ -71,6 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- File Information tool window: values are now selectable/copyable (read-only text
+  fields), with tighter padding and without the boxed section borders. Long values
+  (e.g. the full path) no longer overflow the panel, which previously truncated the
+  key labels to "..." and showed scrollbars.
 - The Settings font-family picker now lists only monospaced fonts, with a note
   explaining the filter (a previously saved non-monospaced font stays selectable).
 - Quitting now asks for confirmation first (the Quit button, `C-x C-c`, and the
