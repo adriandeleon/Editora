@@ -414,5 +414,71 @@
                 </plugins>
             </build>
         </profile>
+
+        <!-- `mvn -Pfatjar package` builds a single runnable uber-jar for the BUILD HOST'S platform:
+             target/Editora-<version>.jar, launchable with `java -jar` on that OS/arch. It runs
+             everything from the classpath (unnamed module) via the non-Application
+             com.editora.Launcher main class, so the JPMS module path / jlink dist build is
+             unaffected. JavaFX's host-platform classifier jar (resolved transitively) carries the
+             classes + native libraries; it is bundled as-is.
+
+             A single jar cannot be portable across all platforms: JavaFX's macOS/Linux x64 and arm64
+             native libraries share identical filenames, so they collide in one jar. The release CI
+             matrix instead runs this profile on each runner to produce one jar per platform
+             (see .github/workflows/release.yml). -->
+        <profile>
+            <id>fatjar</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-shade-plugin</artifactId>
+                        <version>3.6.0</version>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                                <configuration>
+                                    <finalName>Editora-${project.version}</finalName>
+                                    <createDependencyReducedPom>false</createDependencyReducedPom>
+                                    <transformers>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <mainClass>com.editora.Launcher</mainClass>
+                                            <manifestEntries>
+                                                <!-- Silence the JavaFX native-access warning on JDK 24+
+                                                     (ignored by older JDKs). -->
+                                                <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                                            </manifestEntries>
+                                        </transformer>
+                                        <!-- Merge META-INF/services (e.g. Jackson, tm4e SPI files). -->
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                    </transformers>
+                                    <filters>
+                                        <filter>
+                                            <artifact>*:*</artifact>
+                                            <excludes>
+                                                <!-- The tm4e jar is code-signed; its signature blocks
+                                                     would fail jar verification once repackaged. -->
+                                                <exclude>META-INF/*.SF</exclude>
+                                                <exclude>META-INF/*.RSA</exclude>
+                                                <exclude>META-INF/*.DSA</exclude>
+                                                <exclude>META-INF/*.EC</exclude>
+                                                <!-- Drop module descriptors: the fat jar runs from the
+                                                     classpath (unnamed module), and multiple
+                                                     module-info.class entries would otherwise collide. -->
+                                                <exclude>module-info.class</exclude>
+                                                <exclude>META-INF/versions/*/module-info.class</exclude>
+                                            </excludes>
+                                        </filter>
+                                    </filters>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>

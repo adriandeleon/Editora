@@ -10,6 +10,11 @@ Maven, modular (JPMS, module `com.editora`).
 - Build app image / native installer: `mvn -Pdist package`
   - Produces `target/dist/Editora.app` (macOS); OS profiles auto-select DMG/MSI/DEB.
   - Quick unpackaged bundle: `mvn -Pdist -DskipTests -Djpackage.type=APP_IMAGE package`
+- Build a runnable fat jar: `mvn -Pfatjar package` ⇒ `target/Editora-<version>.jar`, run with
+  `java -jar`. It bundles JavaFX (classes + natives) for **the build host's platform only** and runs
+  from the classpath via the non-`Application` `com.editora.Launcher` main class. A single
+  all-platforms jar is impossible (JavaFX's macOS/Linux x64 and arm64 natives share filenames and
+  collide), so the release CI builds one fat jar per runner.
 - Cut a release: bump `<version>` in `pom.xml`, push a `vX.Y.Z` tag (`-rcN` ⇒ pre-release).
 
 Run Maven from the project root (`/Users/adriandeleon/src/adl/Editora-V2`).
@@ -20,10 +25,11 @@ Run Maven from the project root (`/Users/adriandeleon/src/adl/Editora-V2`).
 matrix (linux x64/arm64, macOS x64/arm64, windows x64 — Windows arm64 is omitted, no hosted runner;
 each on its own GitHub-hosted runner) builds the native
 installer via the existing `-Pdist` profile — there is **no cross-building** (jpackage + JavaFX are
-host-specific), so each runner builds for itself. Installers are renamed per target (jpackage's
-DMG/MSI names omit the arch) and uploaded as artifacts; a final job hands them to **JReleaser**
-(`jreleaser.yml`, via `jreleaser/release-action`) which creates the GitHub release with all
-installers + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
+host-specific), so each runner builds for itself. Each runner also builds a per-platform runnable
+fat jar via `-Pfatjar` (`Editora-<version>-<target>.jar`). Installers are renamed per target
+(jpackage's DMG/MSI names omit the arch) and uploaded as artifacts alongside the fat jar; a final job
+hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) which creates the
+GitHub release with all installers + fat jars + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
 build (the `dist` profile is reused as-is) and there is **no `pom.xml`/Maven change**, so the normal
 build is unaffected. Installers are currently **unsigned** (signing/notarization is a follow-up).
 Uses the BellSoft **Liberica** JDK 25 in CI for full arch coverage (incl. linux aarch64).

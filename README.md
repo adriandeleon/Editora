@@ -42,16 +42,36 @@ A Maven wrapper is included, so no local Maven install is required — use `./mv
 
 # Build a native app image / installer (DMG on macOS, MSI on Windows, DEB on Linux)
 ./mvnw -Pdist package
+
+# Build a runnable fat jar, then launch it
+./mvnw -Pfatjar package
+java -jar target/Editora-<version>.jar
 ```
 
 The `dist` profile produces a platform installer under `target/dist/`.
 
+The `fatjar` profile produces a self-contained, runnable `target/Editora-<version>.jar` (no separate
+JavaFX install needed — `java -jar` is enough, on a JDK 25 runtime). It bundles JavaFX's classes and
+native libraries **for the build host's platform only**: a single jar can't be portable because
+JavaFX's macOS/Linux x64 and arm64 native libraries share filenames and would collide. To get a jar
+for another OS/arch, build the profile on that platform (or grab the per-platform jars from a
+[release](#releases)).
+
+On startup the fat jar prints `WARNING: Unsupported JavaFX configuration: classes were loaded from
+'unnamed module …'`. This is harmless and expected: JavaFX notes that it's running from the
+classpath rather than the module path (which is how a fat jar works). The app runs normally, and the
+warning cannot be cleanly suppressed — the native installers launch from the module path and don't
+show it.
+
 ## Releases
 
-Tagged releases publish native installers to
+Tagged releases publish native installers **and runnable fat jars** to
 [GitHub Releases](https://github.com/adriandeleon/Editora/releases) for Linux (x64 and arm64),
 macOS (x64 and arm64), and Windows (x64). A GitHub Actions matrix builds each installer with `-Pdist`
-on its own runner and [JReleaser](https://jreleaser.org) assembles the release (config in `jreleaser.yml`).
+and the matching `Editora-<version>-<platform>.jar` with `-Pfatjar` on its own runner, and
+[JReleaser](https://jreleaser.org) assembles the release (config in `jreleaser.yml`). Prefer the
+installer for a normal setup; the fat jar is handy if you already have a JDK 25 and just want
+`java -jar`.
 
 To cut a release: bump `<version>` in `pom.xml`, commit, then push a matching tag:
 

@@ -31,10 +31,11 @@ release:
       contributors:
         enabled: false
 
-# Attach the installers gathered from the build matrix (downloaded under ./artifacts).
-# Installers are renamed per target in CI, so names are unique across OS/arch.
+# Attach the installers and runnable fat jars gathered from the build matrix (downloaded under
+# ./artifacts). Both are renamed per target in CI, so names are unique across OS/arch.
 files:
   globs:
     - pattern: 'artifacts/**/*.dmg'
     - pattern: 'artifacts/**/*.msi'
     - pattern: 'artifacts/**/*.deb'
+    - pattern: 'artifacts/**/Editora-*.jar'

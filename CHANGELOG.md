@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Runnable fat jar: `mvn -Pfatjar package` builds `target/Editora-<version>.jar`, launchable
+  with `java -jar` (bundles JavaFX classes + natives for the build host's platform via a
+  non-`Application` `Launcher` main class). The release pipeline builds one per platform and
+  attaches them to the GitHub release alongside the native installers.
 - Zen mode (distraction-free): one toggle hides the editor view options (80-column ruler,
   current-line highlight, line numbers, minimap, hidden characters), the toolbar, status bar,
   and tab bar, and all open tool windows — leaving just the editor. While in Zen you can still

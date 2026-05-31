@@ -36,8 +36,14 @@ jobs:
         shell: bash
         run: ./mvnw -B --no-transfer-progress -Pdist -DskipTests package
 
+      # Runnable fat jar for this runner's platform (JavaFX natives are host-specific, so each
+      # runner produces its own jar — a single all-platforms jar isn't possible, see pom.xml).
+      - name: Build fat jar (-Pfatjar)
+        shell: bash
+        run: ./mvnw -B --no-transfer-progress -Pfatjar -DskipTests package
+
       # jpackage names DMG/MSI without an arch, so disambiguate per target before releasing.
-      - name: Stage installer
+      - name: Stage artifacts
         shell: bash
         run: |
           mkdir -p staging
@@ -45,6 +51,8 @@ jobs:
             [ -f "$f" ] || continue
             cp "$f" "staging/editora-${{ matrix.target }}.${f##*.}"
           done
+          jar="$(ls target/Editora-*.jar | head -1)"
+          cp "$jar" "staging/$(basename "$jar" .jar)-${{ matrix.target }}.jar"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
