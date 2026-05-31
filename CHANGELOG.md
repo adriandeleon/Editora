@@ -87,6 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pinned tabs are now remembered across sessions: a tab's pinned state is saved
+  on exit and restored on the next launch (alongside the open files and carets).
 - The 80-column ruler now tracks horizontal scroll instead of staying pinned to
   a fixed x-offset when a horizontal scrollbar is present.
 - The Structure tool window no longer shows "No structure" for documents whose

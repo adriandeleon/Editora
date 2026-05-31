@@ -351,6 +351,14 @@ public class MainController {
             Path p = Path.of(f.getPath());
             if (Files.isReadable(p)) {
                 restoreFile(p, f.getCaret());
+                // Pinned tabs were persisted grouped at the front, so re-mark them in place.
+                if (f.isPinned()) {
+                    Tab tab = tabForPath(p);
+                    if (tab != null) {
+                        pinned.add(tab);
+                        updateTabMeta(tab, bufferOf(tab));
+                    }
+                }
             }
         }
         if (tabPane.getTabs().isEmpty()) {
@@ -905,7 +913,9 @@ public class MainController {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
             if (buffer != null && buffer.getPath() != null) {
                 files.add(new WorkspaceState.OpenFile(
-                        buffer.getPath().toAbsolutePath().toString(), buffer.getArea().getCaretPosition()));
+                        buffer.getPath().toAbsolutePath().toString(),
+                        buffer.getArea().getCaretPosition(),
+                        pinned.contains(tab)));
             }
         }
         WorkspaceState state = config.getWorkspaceState();

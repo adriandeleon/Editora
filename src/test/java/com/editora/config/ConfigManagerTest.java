@@ -1,6 +1,7 @@
 package com.editora.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -81,8 +82,8 @@ class ConfigManagerTest {
         ConfigManager config = new ConfigManager(dir);
         config.load();
         WorkspaceState ws = config.getWorkspaceState();
-        ws.getOpenFiles().add(new WorkspaceState.OpenFile("/tmp/a/Main.java", 150));
-        ws.getOpenFiles().add(new WorkspaceState.OpenFile("/tmp/b/Util.java", 0));
+        ws.getOpenFiles().add(new WorkspaceState.OpenFile("/tmp/a/Main.java", 150, true));
+        ws.getOpenFiles().add(new WorkspaceState.OpenFile("/tmp/b/Util.java", 0, false));
         ws.setActiveFile("/tmp/b/Util.java");
         config.save();
 
@@ -91,6 +92,8 @@ class ConfigManagerTest {
         assertEquals(2, rc.getWorkspaceState().getOpenFiles().size());
         assertEquals("/tmp/a/Main.java", rc.getWorkspaceState().getOpenFiles().get(0).getPath());
         assertEquals(150, rc.getWorkspaceState().getOpenFiles().get(0).getCaret());
+        assertTrue(rc.getWorkspaceState().getOpenFiles().get(0).isPinned());
+        assertFalse(rc.getWorkspaceState().getOpenFiles().get(1).isPinned());
         assertEquals("/tmp/b/Util.java", rc.getWorkspaceState().getActiveFile());
     }
 }

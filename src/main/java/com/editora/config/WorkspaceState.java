@@ -34,17 +34,19 @@ public class WorkspaceState {
     /** Absolute path of the tab that was active at last exit ("" if none/untitled). */
     private String activeFile = "";
 
-    /** One persisted open file: its absolute path and the caret offset to restore. */
+    /** One persisted open file: its absolute path, the caret offset to restore, and whether it was pinned. */
     public static class OpenFile {
         private String path = "";
         private int caret;
+        private boolean pinned;
 
         public OpenFile() {
         }
 
-        public OpenFile(String path, int caret) {
+        public OpenFile(String path, int caret, boolean pinned) {
             this.path = path;
             this.caret = caret;
+            this.pinned = pinned;
         }
 
         public String getPath() {
@@ -61,6 +63,14 @@ public class WorkspaceState {
 
         public void setCaret(int caret) {
             this.caret = caret;
+        }
+
+        public boolean isPinned() {
+            return pinned;
+        }
+
+        public void setPinned(boolean pinned) {
+            this.pinned = pinned;
         }
     }
 
