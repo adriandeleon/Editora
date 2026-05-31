@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -19,9 +20,11 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Spinner;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
@@ -47,6 +50,7 @@ public class SettingsWindow {
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
     private final Consumer<Boolean> onToggleZen;
+    private final Consumer<Path> onOpenFile;
     private final ToolWindowManager toolWindows;
     private final Stage stage = new Stage();
 
@@ -68,11 +72,13 @@ public class SettingsWindow {
     private boolean loading;
 
     public SettingsWindow(ConfigManager config, ToolWindowManager toolWindows,
-                          Consumer<Settings> onApply, Consumer<Boolean> onToggleZen) {
+                          Consumer<Settings> onApply, Consumer<Boolean> onToggleZen,
+                          Consumer<Path> onOpenFile) {
         this.config = config;
         this.toolWindows = toolWindows;
         this.onApply = onApply;
         this.onToggleZen = onToggleZen;
+        this.onOpenFile = onOpenFile;
     }
 
     public void show(Window owner) {
@@ -281,7 +287,7 @@ public class SettingsWindow {
         }
 
         Button about = new Button("About");
-        about.setOnAction(e -> showAbout(stage));
+        about.setOnAction(e -> showAbout(stage, onOpenFile));
         Button close = new Button("Close");
         close.setOnAction(e -> stage.close());
         Region spacer = new Region();
@@ -410,8 +416,11 @@ public class SettingsWindow {
         onApply.accept(settings);
     }
 
-    /** Shows the About dialog. Shared by the settings window and the {@code help.about} command. */
-    public static void showAbout(Window owner) {
+    /**
+     * Shows the About dialog. Shared by the settings window and the {@code help.about} command.
+     * The settings-file path is a link that opens that file in the editor via {@code openFile}.
+     */
+    public static void showAbout(Window owner, Consumer<Path> openFile) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
         alert.setTitle("About " + APP_NAME);
@@ -423,17 +432,30 @@ public class SettingsWindow {
             logo.setFitHeight(72);
             alert.setGraphic(logo);
         }
-        alert.setContentText("""
+
+        Label info = new Label("""
                 A keyboard-driven, cross-platform programmer's text editor.
 
                 Java %s
                 JavaFX %s
-                Built %s
-                Settings: %s""".formatted(
+                Built %s""".formatted(
                 System.getProperty("java.version", "?"),
                 System.getProperty("javafx.runtime.version", "?"),
-                BUILD_TIME,
-                displaySettingsPath()));
+                BUILD_TIME));
+
+        Hyperlink settingsLink = new Hyperlink(displaySettingsPath());
+        settingsLink.setPadding(Insets.EMPTY);
+        settingsLink.setTooltip(new Tooltip("Open the settings file in Editora"));
+        settingsLink.setOnAction(e -> {
+            alert.close();
+            if (openFile != null) {
+                openFile.accept(ConfigManager.defaultSettingsFile());
+            }
+        });
+        HBox settingsRow = new HBox(4, new Label("Settings:"), settingsLink);
+        settingsRow.setAlignment(Pos.CENTER_LEFT);
+
+        alert.getDialogPane().setContent(new VBox(10, info, settingsRow));
         alert.showAndWait();
     }
 

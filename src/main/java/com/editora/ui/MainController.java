@@ -175,7 +175,7 @@ public class MainController {
         bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows,
-                this::applyViewSettingsToAllBuffers, this::setZenMode);
+                this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath);
         this.switcher = new Switcher(this::openTabsForSwitcher,
                 tab -> tabPane.getSelectionModel().select(tab),
                 this::closeTabFromSwitcher,
@@ -390,6 +390,9 @@ public class MainController {
         if (chord != null && !chord.isBlank()) {
             Label hint = new Label("Switcher: " + chord);
             hint.getStyleClass().add("toolbar-hint");
+            hint.setTooltip(new Tooltip(
+                    "Switcher (" + chord + "): quickly jump between open files and tool windows.\n"
+                    + "Navigate with C-n/C-p and C-f/C-b; Enter opens, C-d closes, Esc cancels."));
             items.add(hint);
         }
 
@@ -1353,7 +1356,7 @@ public class MainController {
 
     @FXML
     private void onAbout() {
-        SettingsWindow.showAbout(stage);
+        SettingsWindow.showAbout(stage, this::openPath);
     }
 
     private void toggleColumnRuler() {
