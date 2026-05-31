@@ -125,7 +125,15 @@ final class Minimap extends Region {
         }
         SnapshotParameters sp = new SnapshotParameters();
         sp.setFill(Color.TRANSPARENT);
-        contentImage = canvas.snapshot(sp, null);
+        try {
+            contentImage = canvas.snapshot(sp, null);
+        } catch (RuntimeException ignored) {
+            // snapshot() forces a synchronous full-scene layout pass; during early startup the
+            // CodeArea's VirtualFlow may have no visible cell yet, and Flowless throws
+            // "Cell 0 is not visible". Leave the cache empty — a later render (layout settle,
+            // refresh(), or the next edit) re-caches once a cell is laid out.
+            contentImage = null;
+        }
         drawViewport(g, w, h, total, rowHeight);
     }
 
