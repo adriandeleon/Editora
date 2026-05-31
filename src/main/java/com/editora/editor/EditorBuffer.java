@@ -21,6 +21,7 @@ import javafx.application.Platform;
 
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
+import javafx.geometry.Bounds;
 import javafx.geometry.Orientation;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
@@ -34,8 +35,6 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
-import javafx.scene.text.Font;
-import javafx.scene.text.Text;
 
 /** A single open document: a RichTextFX {@link CodeArea} plus its backing file, language, and dirty state. */
 public class EditorBuffer {
@@ -96,10 +95,12 @@ public class EditorBuffer {
     private int fontSize = 14;
     /** Visual tab width (columns); applied to the minimap and persisted via Settings. */
     private int tabSize = 4;
+    /** Whether the user enabled the 80-column ruler. The line is only actually shown when a visible
+     *  line reaches column 80 (see {@link #measureAndPlaceRuler}). */
     private boolean rulerVisible;
     private boolean lineNumbersVisible = true;
-    /** Document x of the column-80 ruler (before horizontal scroll is applied). */
-    private double rulerBaseX;
+    /** Coalesces ruler re-measurement onto a later pulse (see {@link #scheduleRulerMeasure}). */
+    private boolean rulerMeasurePending;
 
     public EditorBuffer() {
         refreshGutter();
@@ -127,8 +128,12 @@ public class EditorBuffer {
         columnRuler.setStartY(0);
         columnRuler.endYProperty().bind(root.heightProperty());
         columnRuler.setVisible(false);
-        // The ruler is pinned to the overlay pane, so re-place it as the text scrolls horizontally.
-        area.estimatedScrollXProperty().addListener((obs, old, now) -> positionColumnRuler());
+        // Re-measure the ruler whenever the rendered text moves: horizontal scroll, and any layout
+        // change (first paint, resize, vertical scroll, gutter widening). Always deferred via
+        // runLater so we never query character bounds synchronously inside the layout pass — doing
+        // that re-enters layout and blanks the editor.
+        area.estimatedScrollXProperty().addListener((obs, old, now) -> scheduleRulerMeasure());
+        area.viewportDirtyEvents().subscribe(ignore -> scheduleRulerMeasure());
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
@@ -281,15 +286,16 @@ public class EditorBuffer {
             area2.setStyle(style);
         }
         whitespace.setFont(family, size);
-        updateColumnRulerPosition();
+        scheduleRulerMeasure();
     }
 
     /** Show/hide the column-80 ruler overlay. */
     public void setColumnRulerVisible(boolean visible) {
         this.rulerVisible = visible;
-        columnRuler.setVisible(visible);
         if (visible) {
-            updateColumnRulerPosition();
+            scheduleRulerMeasure();
+        } else {
+            columnRuler.setVisible(false);
         }
     }
 
@@ -338,29 +344,86 @@ public class EditorBuffer {
         whitespace.setActive(visible);
     }
 
-    private void updateColumnRulerPosition() {
-        if (!rulerVisible) {
+    /**
+     * Coalesces a ruler re-measurement onto the next pulse. Measuring queries character bounds, which
+     * must not happen synchronously inside a layout/viewport event (it re-enters layout and blanks the
+     * editor), so we always defer it via {@link Platform#runLater}.
+     */
+    private void scheduleRulerMeasure() {
+        if (!rulerVisible || rulerMeasurePending) {
             return;
         }
-        Text probe = new Text("M");
-        probe.setFont(Font.font(fontFamily, fontSize));
-        double charWidth = probe.getLayoutBounds().getWidth();
-        if (charWidth <= 0) {
-            return;
-        }
-        rulerBaseX = charWidth * 80;
-        positionColumnRuler();
+        rulerMeasurePending = true;
+        Platform.runLater(() -> {
+            rulerMeasurePending = false;
+            measureAndPlaceRuler();
+        });
     }
 
-    /** Places the ruler at column 80, offset by the current horizontal scroll so it tracks the text. */
-    private void positionColumnRuler() {
+    /**
+     * Positions the ruler at the 80-column boundary, drawn whether or not any text reaches column 80.
+     * The boundary is found by extrapolating the (monospace) glyph advance from caret positions, so it
+     * is exact regardless of which glyphs are present. The ruler is hidden when column 80 falls outside
+     * the visible text width (e.g. the window is too narrow, or the text is scrolled past it).
+     */
+    private void measureAndPlaceRuler() {
         if (!rulerVisible) {
             return;
         }
-        Double scrollX = area.estimatedScrollXProperty().getValue();
-        double x = rulerBaseX - (scrollX == null || scrollX.isNaN() ? 0 : scrollX);
-        columnRuler.setStartX(x);
-        columnRuler.setEndX(x);
+        Double x = column80X();
+        double viewportWidth = scrollPane.getWidth();
+        boolean show = x != null && x >= 0 && x <= viewportWidth;
+        columnRuler.setVisible(show);
+        if (show) {
+            columnRuler.setStartX(x);
+            columnRuler.setEndX(x);
+        }
+    }
+
+    /**
+     * Root-local x of column 80, extrapolated from the live layout: the caret x at the start of the
+     * longest visible line and at its end give the exact per-column advance (querying caret positions,
+     * a {@code from == to} character-bounds call, avoids any dependence on glyph ink widths). Returns
+     * {@code null} if no visible line has any text to measure from.
+     */
+    private Double column80X() {
+        try {
+            int total = area.getParagraphs().size();
+            if (total == 0) {
+                return null;
+            }
+            int first = Math.max(0, area.firstVisibleParToAllParIndex());
+            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
+            int refPar = -1;
+            int refLen = 0;
+            for (int p = first; p <= last; p++) {
+                int len = area.getParagraphLength(p);
+                if (len > refLen) {
+                    refLen = len;
+                    refPar = p;
+                }
+            }
+            if (refPar < 0) {
+                return null; // all visible lines empty; nothing to measure the advance from
+            }
+            Bounds start = caretBounds(refPar, 0);
+            Bounds end = caretBounds(refPar, refLen);
+            if (start == null || end == null) {
+                return null;
+            }
+            double advance = (end.getMinX() - start.getMinX()) / refLen;
+            return start.getMinX() + 80 * advance;
+        } catch (RuntimeException ignored) {
+            // Viewport mid-layout; a later event will re-measure.
+        }
+        return null;
+    }
+
+    /** Root-local bounds of the caret at {@code column} in paragraph {@code p}, or {@code null}. */
+    private Bounds caretBounds(int p, int column) {
+        int abs = area.getAbsolutePosition(p, column);
+        Bounds screen = area.getCharacterBoundsOnScreen(abs, abs).orElse(null);
+        return screen == null ? null : root.screenToLocal(screen);
     }
 
     public Path getPath() {
