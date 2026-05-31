@@ -1165,20 +1165,37 @@ public class MainController {
 
     @FXML
     private void onCut() {
-        withArea(CodeArea::cut);
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        boolean had = area.getSelection().getLength() > 0;
+        area.cut();
         deactivateMark();
+        setStatus(had ? "Cut" : "Nothing to cut");
     }
 
     @FXML
     private void onCopy() {
-        withArea(CodeArea::copy);
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        boolean had = area.getSelection().getLength() > 0;
+        area.copy();
         deactivateMark();
+        setStatus(had ? "Copied" : "Nothing to copy (no selection)");
     }
 
     @FXML
     private void onPaste() {
-        withArea(CodeArea::paste);
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        area.paste();
         deactivateMark();
+        setStatus("Pasted");
     }
 
     @FXML
