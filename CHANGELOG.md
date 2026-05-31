@@ -97,6 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Folding no longer smears the hidden lines' numbers onto the fold-header row in
+  the gutter: a collapsed paragraph's gutter cell is laid out at zero height, but
+  its line-number label did not clip to it; the gutter is now clipped to its bounds.
 - "Show hidden characters" no longer piles stray space/tab/EOL markers onto the
   fold-header row when a region is collapsed: folded (hidden) paragraphs are now
   skipped by the whitespace overlay (and the 80-column ruler's measurement).

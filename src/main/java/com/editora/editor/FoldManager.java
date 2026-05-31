@@ -26,6 +26,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.shape.Rectangle;
 
 /**
  * Computes foldable regions for a {@link CodeArea}, drives folding/unfolding, and supplies the gutter
@@ -316,6 +317,13 @@ public final class FoldManager {
         HBox box = new HBox();
         box.getStyleClass().add("fold-gutter");
         box.setAlignment(Pos.CENTER_RIGHT);
+        // A folded paragraph's cell is laid out at zero height, but the line-number Label doesn't clip
+        // to it, so the hidden lines' numbers overflow and stack into a smear on the fold-header row.
+        // Clip the gutter to its own bounds so a collapsed (0-height) cell shows nothing.
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(box.widthProperty());
+        clip.heightProperty().bind(box.heightProperty());
+        box.setClip(clip);
 
         if (showLineNumbers) {
             Label lineNo = new Label();
