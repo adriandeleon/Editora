@@ -30,6 +30,9 @@ import javafx.stage.Window;
 /** A fuzzy-filtered command palette shown as a popup overlay (bound to {@code M-x}). */
 public class CommandPalette {
 
+    private static final boolean IS_MAC =
+            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+
     private final CommandRegistry registry;
     private final Map<String, String> commandToKey;
 
@@ -61,12 +64,16 @@ public class CommandPalette {
         // The opening chord (e.g. M-x) is Alt/Meta+key; on macOS that combination also emits a
         // KEY_TYPED for a special character (Option+x => "≈") that would land in the just-focused
         // field. Swallow any character typed while a chord modifier is held; plain query typing
-        // (no modifier, or only Shift) passes through.
-        input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
-                e.consume();
-            }
-        });
+        // (no modifier, or only Shift) passes through. macOS only — elsewhere chord modifiers don't
+        // emit query characters, and gating this avoids eating AltGr-composed characters on
+        // European layouts (AltGr reports as Ctrl+Alt).
+        if (IS_MAC) {
+            input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
+                    e.consume();
+                }
+            });
+        }
 
         VBox content = new VBox(6, input, list);
         content.getStyleClass().add("command-palette");
