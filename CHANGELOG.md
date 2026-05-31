@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Application icon: the Editora logo now appears as the window/dock/taskbar icon, in
+  the About dialog, and as the native installer icon (macOS `.icns`, Windows `.ico`,
+  Linux `.png`), all generated from `branding/editora-icon.svg`.
 - Emacs-style text selection: `C-SPC` sets the mark, then any caret-movement chord
   (`C-f`/`C-b`/`C-n`/`C-p`/`M-f`/`M-b`/`C-a`/`C-e`/`M-<`/`M->`/`C-v`/`M-v`) extends
   the selection from it. `C-x C-x` exchanges point and mark; `C-g` (and a mouse

@@ -13,6 +13,8 @@ import com.editora.config.Settings;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -342,6 +344,13 @@ public class SettingsWindow {
         alert.initOwner(owner);
         alert.setTitle("About " + APP_NAME);
         alert.setHeaderText(APP_NAME + " " + APP_VERSION);
+        var iconStream = SettingsWindow.class.getResourceAsStream("/com/editora/icons/icon-128.png");
+        if (iconStream != null) {
+            ImageView logo = new ImageView(new Image(iconStream));
+            logo.setFitWidth(72);
+            logo.setFitHeight(72);
+            alert.setGraphic(logo);
+        }
         alert.setContentText("""
                 A keyboard-driven, cross-platform programmer's text editor.
 

@@ -32,6 +32,8 @@
         <moditect.version>1.2.2.Final</moditect.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
+        <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
+        <jpackage.icon>${project.basedir}/branding/editora.png</jpackage.icon>
         <!-- Transitive automatic-module deps patched by moditect for jlink/jpackage. -->
         <reactfx.version>2.0-M5</reactfx.version>
         <undofx.version>2.1.1</undofx.version>
@@ -295,17 +297,26 @@
         <profile>
             <id>os-mac</id>
             <activation><os><family>mac</family></os></activation>
-            <properties><jpackage.type>DMG</jpackage.type></properties>
+            <properties>
+                <jpackage.type>DMG</jpackage.type>
+                <jpackage.icon>${project.basedir}/branding/editora.icns</jpackage.icon>
+            </properties>
         </profile>
         <profile>
             <id>os-windows</id>
             <activation><os><family>windows</family></os></activation>
-            <properties><jpackage.type>MSI</jpackage.type></properties>
+            <properties>
+                <jpackage.type>MSI</jpackage.type>
+                <jpackage.icon>${project.basedir}/branding/editora.ico</jpackage.icon>
+            </properties>
         </profile>
         <profile>
             <id>os-linux</id>
             <activation><os><name>Linux</name></os></activation>
-            <properties><jpackage.type>DEB</jpackage.type></properties>
+            <properties>
+                <jpackage.type>DEB</jpackage.type>
+                <jpackage.icon>${project.basedir}/branding/editora.png</jpackage.icon>
+            </properties>
         </profile>
 
         <!-- `mvn -Pdist package` builds a self-contained app image / native installer. -->
@@ -387,6 +398,7 @@
                                     <name>Editora</name>
                                     <appVersion>${project.version}</appVersion>
                                     <vendor>Editora</vendor>
+                                    <icon>${jpackage.icon}</icon>
                                     <module>com.editora/com.editora.App</module>
                                     <modulePaths>
                                         <modulePath>${project.build.directory}/mods</modulePath>

@@ -49,6 +49,7 @@ public class App extends Application {
 
         stage.setScene(scene);
         stage.setTitle("Editora");
+        loadAppIcons(stage);
         controller.applyEditorTheme(settings.getEditorTheme());
         restoreWindowBounds(stage, config.getWorkspaceState());
         stage.show();
@@ -76,6 +77,16 @@ public class App extends Application {
         }
         if (state.isWindowMaximized()) {
             stage.setMaximized(true);
+        }
+    }
+
+    /** Adds the app icon (multiple sizes) so it shows in the title bar, dock, and taskbar. */
+    private void loadAppIcons(Stage stage) {
+        for (int size : new int[]{16, 32, 48, 128, 256, 512}) {
+            var in = App.class.getResourceAsStream("/com/editora/icons/icon-" + size + ".png");
+            if (in != null) {
+                stage.getIcons().add(new javafx.scene.image.Image(in));
+            }
         }
     }
 

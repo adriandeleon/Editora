@@ -1,0 +1,19 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Editora">
+  <defs>
+    <linearGradient id="caretF" x1="256" y1="146" x2="256" y2="366" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5EEAD4"/>
+      <stop offset="1" stop-color="#22B8A6"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="#1B1E2A"/>
+  <g fill="none" stroke="#9AA2D4" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M168 160 C142 160 142 182 142 206 C142 236 138 252 116 256 C138 260 142 276 142 306 C142 330 142 352 168 352"/>
+    <path d="M344 160 C370 160 370 182 370 206 C370 236 374 252 396 256 C374 260 370 276 370 306 C370 330 370 352 344 352"/>
+  </g>
+  <g fill="url(#caretF)">
+    <rect x="212" y="146" width="34" height="220" rx="17"/>
+    <rect x="212" y="146" width="98" height="30" rx="15"/>
+    <rect x="212" y="241" width="84" height="30" rx="15"/>
+    <rect x="212" y="336" width="98" height="30" rx="15"/>
+  </g>
+</svg>
