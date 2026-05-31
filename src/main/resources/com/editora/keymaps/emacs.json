@@ -49,5 +49,6 @@
   "C-c b": "view.toggleTabBar",
   "C-c p": "view.toggleBreadcrumb",
   "C-c z": "view.toggleZen",
+  "C-c a": "file.toggleAutoSave",
   "M-g g": "nav.goToLine"
 }

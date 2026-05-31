@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Auto save (VS Code-style), off by default. Choose a mode in Settings: "After delay" saves a file
+  once it's been idle for a configurable number of seconds (default 1), or "On focus change" saves when
+  you switch editor tabs or the window loses focus. Only dirty, file-backed, writable buffers are
+  saved (untitled/read-only ones are skipped); writes happen off the UI thread. Cycle the mode with
+  the `file.toggleAutoSave` palette command or `C-c a`.
 - File breadcrumb bar (IntelliJ-style) along the bottom, above the status bar: shows the active
   file's path as clickable segments. Click a segment to drop down that folder's contents
   (sub-folders first, then files); pick a folder to drill in (it becomes the trailing crumb and the

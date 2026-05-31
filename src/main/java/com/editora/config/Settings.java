@@ -27,6 +27,9 @@ public class Settings {
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
     private boolean showBreadcrumb = false;
+    /** Auto-save mode: "off" | "afterDelay" | "onFocusChange" (parsed leniently; unknown ⇒ off). */
+    private String autoSave = "off";
+    private int autoSaveDelayMillis = 1000;
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -157,6 +160,22 @@ public class Settings {
 
     public void setShowBreadcrumb(boolean showBreadcrumb) {
         this.showBreadcrumb = showBreadcrumb;
+    }
+
+    public String getAutoSave() {
+        return autoSave;
+    }
+
+    public void setAutoSave(String autoSave) {
+        this.autoSave = autoSave;
+    }
+
+    public int getAutoSaveDelayMillis() {
+        return autoSaveDelayMillis;
+    }
+
+    public void setAutoSaveDelayMillis(int autoSaveDelayMillis) {
+        this.autoSaveDelayMillis = autoSaveDelayMillis;
     }
 
     public Map<String, String> getKeybindings() {

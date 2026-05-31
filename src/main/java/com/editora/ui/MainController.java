@@ -27,12 +27,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.css.PseudoClass;
+import javafx.util.Duration;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
 import javafx.scene.SnapshotParameters;
@@ -133,6 +137,17 @@ public class MainController {
     private StatusBar statusBar;
     private FileBreadcrumb breadcrumb;
     private SettingsWindow settingsWindow;
+
+    // Auto save. Mode keys: "off" | "afterDelay" | "onFocusChange".
+    static final String AUTOSAVE_OFF = "off";
+    static final String AUTOSAVE_DELAY = "afterDelay";
+    static final String AUTOSAVE_FOCUS = "onFocusChange";
+    private final PauseTransition autoSaveIdleTimer = new PauseTransition(Duration.millis(1000));
+    private final ExecutorService autoSaveExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "editora-autosave");
+        t.setDaemon(true);
+        return t;
+    });
     private ToolWindowManager toolWindows;
     private ToolWindow projectToolWindow;
     private ToolWindow structureToolWindow;
@@ -190,6 +205,15 @@ public class MainController {
         // persisted closed when Zen was entered).
         toolWindows.setZenStripesHidden(config.getWorkspaceState().isZenMode());
         applyChromeVisibility();
+
+        // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
+        autoSaveIdleTimer.setOnFinished(e -> autoSaveAllDirty());
+        stage.focusedProperty().addListener((obs, was, focused) -> {
+            if (!focused && AUTOSAVE_FOCUS.equals(autoSaveMode())) {
+                autoSaveAllDirty();
+            }
+        });
+        applyAutoSave();
     }
 
     /** Shows/hides the toolbar and status bar per the saved settings (hidden nodes also unmanaged so
@@ -274,6 +298,9 @@ public class MainController {
             structurePanel.attach(buffer);
             statusBar.attach(buffer);
             breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
+            if (AUTOSAVE_FOCUS.equals(autoSaveMode())) {
+                autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
+            }
             refreshSplitButtons();
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
@@ -578,6 +605,12 @@ public class MainController {
         });
         updateTabMeta(tab, buffer);
         buffer.dirtyProperty().addListener((obs, was, now) -> updateTabMeta(tab, buffer));
+        // Auto save (after-delay mode): each edit restarts the idle timer; cheap (no full-text build).
+        buffer.getArea().multiPlainChanges().subscribe(c -> {
+            if (AUTOSAVE_DELAY.equals(autoSaveMode())) {
+                autoSaveIdleTimer.playFromStart();
+            }
+        });
         installTabMenu(tab, buffer);
         tabPane.getTabs().add(tab);
         if (select) {
@@ -876,6 +909,78 @@ public class MainController {
             setStatus("Failed to save: " + e.getMessage());
             return false;
         }
+    }
+
+    /** Normalizes a stored auto-save mode string to a known key (unknown ⇒ off). */
+    static String autoSaveModeOf(String mode) {
+        return AUTOSAVE_DELAY.equals(mode) || AUTOSAVE_FOCUS.equals(mode) ? mode : AUTOSAVE_OFF;
+    }
+
+    /** Current auto-save mode, parsed leniently from settings. */
+    private String autoSaveMode() {
+        return autoSaveModeOf(config.getSettings().getAutoSave());
+    }
+
+    /** Applies the auto-save setting: refreshes the idle-timer delay and stops it unless in delay mode. */
+    private void applyAutoSave() {
+        autoSaveIdleTimer.setDuration(Duration.millis(Math.max(100, config.getSettings().getAutoSaveDelayMillis())));
+        if (!AUTOSAVE_DELAY.equals(autoSaveMode())) {
+            autoSaveIdleTimer.stop();
+        }
+    }
+
+    /** Auto-saves every dirty, file-backed, writable buffer (untitled/read-only buffers are skipped). */
+    private void autoSaveAllDirty() {
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            if (buffer != null && buffer.isDirty() && buffer.getPath() != null && !buffer.isReadOnly()) {
+                autoSaveBuffer(buffer);
+            }
+        }
+    }
+
+    /**
+     * Writes {@code buffer} to disk off the UI thread: snapshots the text + path here, writes on a
+     * background thread, then clears the dirty flag on the FX thread only if the content is unchanged
+     * (so we never mark clean over edits made after the snapshot).
+     */
+    private void autoSaveBuffer(EditorBuffer buffer) {
+        String content = buffer.getContent();
+        Path file = buffer.getPath();
+        autoSaveExecutor.submit(() -> {
+            try {
+                Files.writeString(file, content);
+                Platform.runLater(() -> {
+                    if (content.equals(buffer.getContent())) {
+                        buffer.markClean();
+                    }
+                    setStatus("Auto-saved " + file.getFileName());
+                });
+            } catch (IOException e) {
+                Platform.runLater(() -> setStatus("Auto-save failed: " + e.getMessage()));
+            }
+        });
+    }
+
+    private void toggleAutoSave() {
+        String next = switch (autoSaveMode()) {
+            case AUTOSAVE_OFF -> AUTOSAVE_DELAY;
+            case AUTOSAVE_DELAY -> AUTOSAVE_FOCUS;
+            default -> AUTOSAVE_OFF;
+        };
+        config.getSettings().setAutoSave(next);
+        config.save();
+        applyAutoSave();
+        setStatus("Auto save: " + autoSaveLabel(next));
+    }
+
+    /** Human-readable label for an auto-save mode key (also used by the settings combo). */
+    static String autoSaveLabel(String mode) {
+        return switch (mode) {
+            case AUTOSAVE_DELAY -> "After delay";
+            case AUTOSAVE_FOCUS -> "On focus change";
+            default -> "Off";
+        };
     }
 
     @FXML
@@ -1711,6 +1816,7 @@ public class MainController {
     private void applyViewSettingsToAllBuffers(Settings settings) {
         applyEditorTheme(settings.getEditorTheme());
         applyChromeVisibility();
+        applyAutoSave();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
             if (buffer != null) {
@@ -1869,6 +1975,7 @@ public class MainController {
         registry.register(Command.of("view.toggleBreadcrumb", "View: Toggle File Breadcrumb",
                 this::toggleBreadcrumb));
         registry.register(Command.of("view.toggleZen", "View: Toggle Zen Mode", this::toggleZen));
+        registry.register(Command.of("file.toggleAutoSave", "File: Toggle Auto Save", this::toggleAutoSave));
         registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
                 this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",

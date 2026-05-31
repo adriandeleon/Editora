@@ -68,6 +68,8 @@ public class SettingsWindow {
     private CheckBox tabBarCheck;
     private CheckBox breadcrumbCheck;
     private CheckBox zenCheck;
+    private ComboBox<String> autoSaveCombo;
+    private Spinner<Integer> autoSaveDelaySpinner;
     private boolean built;
     private boolean loading;
 
@@ -219,6 +221,39 @@ public class SettingsWindow {
             syncViewChecks();
         });
 
+        autoSaveCombo = new ComboBox<>();
+        autoSaveCombo.getItems().setAll(
+                MainController.AUTOSAVE_OFF, MainController.AUTOSAVE_DELAY, MainController.AUTOSAVE_FOCUS);
+        autoSaveCombo.setConverter(new javafx.util.StringConverter<>() {
+            @Override public String toString(String key) {
+                return key == null ? "" : MainController.autoSaveLabel(key);
+            }
+            @Override public String fromString(String label) {
+                return label;
+            }
+        });
+        autoSaveCombo.setPrefWidth(170);
+        autoSaveCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setAutoSave(now);
+            autoSaveDelaySpinner.setDisable(!MainController.AUTOSAVE_DELAY.equals(now));
+            apply();
+        });
+
+        // Shown in whole seconds (users think in seconds); stored internally as milliseconds.
+        autoSaveDelaySpinner = new Spinner<>(1, 300, 1, 1);
+        autoSaveDelaySpinner.setEditable(true);
+        autoSaveDelaySpinner.setPrefWidth(90);
+        autoSaveDelaySpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setAutoSaveDelayMillis(now * 1000);
+            apply();
+        });
+
         GridPane form = new GridPane();
         form.setHgap(12);
         form.setVgap(10);
@@ -242,8 +277,13 @@ public class SettingsWindow {
         form.add(tabBarCheck, 1, 11);
         form.add(breadcrumbCheck, 1, 12);
         form.add(zenCheck, 1, 13);
+        Label delayLabel = new Label("delay (seconds)");
+        delayLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -color-fg-muted;");
+        HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
+        autoSaveBox.setAlignment(Pos.CENTER_LEFT);
+        form.addRow(14, new Label("Auto save:"), autoSaveBox);
 
-        int row = 14;
+        int row = 15;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -332,6 +372,11 @@ public class SettingsWindow {
             tabBarCheck.setSelected(settings.isShowTabBar());
             breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
+            String mode = MainController.autoSaveModeOf(settings.getAutoSave());
+            autoSaveCombo.setValue(mode);
+            autoSaveDelaySpinner.getValueFactory()
+                    .setValue(Math.max(1, (int) Math.round(settings.getAutoSaveDelayMillis() / 1000.0)));
+            autoSaveDelaySpinner.setDisable(!MainController.AUTOSAVE_DELAY.equals(mode));
         } finally {
             loading = false;
         }
