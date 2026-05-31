@@ -349,47 +349,79 @@ public class MainController {
         button.setTooltip(new Tooltip(tooltip));
     }
 
-    /** Restores last session's open files (with their carets); falls back to one empty buffer. */
+    /**
+     * Restores last session's open files (with their carets); falls back to one empty buffer.
+     *
+     * <p>Two phases so the UI is responsive immediately: first every tab is created (empty), so all
+     * tab headers show at once; then content + folds are filled one file per pulse — the active file
+     * first. Filling a non-selected tab is cheap (its editor isn't rendered), so a heavily-folded
+     * background file can't freeze startup. Tab order and pinning are preserved.
+     */
     public void openInitialBuffer() {
         WorkspaceState state = config.getWorkspaceState();
+        List<WorkspaceState.OpenFile> files = new ArrayList<>();
         for (WorkspaceState.OpenFile f : state.getOpenFiles()) {
-            if (f.getPath() == null || f.getPath().isBlank()) {
-                continue;
-            }
-            Path p = Path.of(f.getPath());
-            if (Files.isReadable(p)) {
-                restoreFile(p, f.getCaret());
-                // Pinned tabs were persisted grouped at the front, so re-mark them in place.
-                if (f.isPinned()) {
-                    Tab tab = tabForPath(p);
-                    if (tab != null) {
-                        pinned.add(tab);
-                        updateTabMeta(tab, bufferOf(tab));
-                    }
-                }
+            if (f.getPath() != null && !f.getPath().isBlank() && Files.isReadable(Path.of(f.getPath()))) {
+                files.add(f);
             }
         }
-        if (tabPane.getTabs().isEmpty()) {
+        if (files.isEmpty()) {
             addBuffer(new EditorBuffer());
             return;
         }
-        Tab active = state.getActiveFile().isBlank() ? null : tabForPath(Path.of(state.getActiveFile()));
-        tabPane.getSelectionModel().select(active != null ? active : tabPane.getTabs().get(0));
+        String activePath = state.getActiveFile();
+        List<EditorBuffer> buffers = new ArrayList<>();
+        int activeIndex = 0;
+        for (int i = 0; i < files.size(); i++) {
+            WorkspaceState.OpenFile f = files.get(i);
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setPath(Path.of(f.getPath())); // sets the tab title/language; content comes later
+            boolean active = f.getPath().equals(activePath);
+            if (active) {
+                activeIndex = i;
+            }
+            Tab tab = addBuffer(buffer, active);
+            if (f.isPinned()) {
+                pinned.add(tab);
+                updateTabMeta(tab, buffer);
+            }
+            buffers.add(buffer);
+        }
+        // Fill order: the active file first, then the rest in tab order.
+        List<Integer> order = new ArrayList<>();
+        order.add(activeIndex);
+        for (int i = 0; i < files.size(); i++) {
+            if (i != activeIndex) {
+                order.add(i);
+            }
+        }
+        fillSessionFiles(files, buffers, order, 0);
     }
 
-    /** Opens {@code file} restoring the caret to {@code caretOffset} (no recent-files entry, no go-to-start). */
-    private void restoreFile(Path file, int caretOffset) {
+    /** Fills one restored buffer per pulse (in {@code order}), keeping the UI responsive between files. */
+    private void fillSessionFiles(List<WorkspaceState.OpenFile> files, List<EditorBuffer> buffers,
+            List<Integer> order, int k) {
+        if (k >= order.size()) {
+            return;
+        }
+        Platform.runLater(() -> {
+            int i = order.get(k);
+            fillSessionBuffer(files.get(i), buffers.get(i));
+            fillSessionFiles(files, buffers, order, k + 1);
+        });
+    }
+
+    /** Loads a restored tab's content, large-file mode, folds, and caret (the tab already exists). */
+    private void fillSessionBuffer(WorkspaceState.OpenFile f, EditorBuffer buffer) {
+        Path file = Path.of(f.getPath());
         try {
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(file);
             buffer.setContent(Files.readString(file));
             if (applyLargeFileMode(buffer, file)) {
                 setStatus(largeFileNote(file));
             }
-            addBuffer(buffer);
             restoreFolds(buffer);
             CodeArea area = buffer.getArea();
-            int caret = Math.max(0, Math.min(caretOffset, area.getLength()));
+            int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
             area.moveTo(caret);
             // Defer the scroll until the tab is laid out (mirrors goToStart / StructurePanel.navigateTo).
             Platform.runLater(() -> {
@@ -400,7 +432,7 @@ public class MainController {
                 }
             });
         } catch (IOException e) {
-            // Unreadable now — skip it.
+            // Unreadable now — leave the tab empty.
         }
     }
 
@@ -418,7 +450,12 @@ public class MainController {
         return buffer == null ? null : buffer.getFocusedArea();
     }
 
-    private void addBuffer(EditorBuffer buffer) {
+    private Tab addBuffer(EditorBuffer buffer) {
+        return addBuffer(buffer, true);
+    }
+
+    /** Adds a tab for {@code buffer}, appended to the strip; selects and focuses it when {@code select}. */
+    private Tab addBuffer(EditorBuffer buffer, boolean select) {
         applyViewSettings(buffer);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         Tab tab = new Tab();
@@ -433,8 +470,11 @@ public class MainController {
         buffer.dirtyProperty().addListener((obs, was, now) -> updateTabMeta(tab, buffer));
         installTabMenu(tab, buffer);
         tabPane.getTabs().add(tab);
-        tabPane.getSelectionModel().select(tab);
-        buffer.getArea().requestFocus();
+        if (select) {
+            tabPane.getSelectionModel().select(tab);
+            buffer.getArea().requestFocus();
+        }
+        return tab;
     }
 
     /** Refreshes a tab's title (pin + dirty markers), style classes, and full-path tooltip. */
@@ -584,8 +624,9 @@ public class MainController {
             buffer.setPath(file);
             buffer.setContent(content);
             boolean large = applyLargeFileMode(buffer, file);
-            addBuffer(buffer);
+            // Apply folds before the node is in the scene, so each fold skips per-fold layout.
             restoreFolds(buffer);
+            addBuffer(buffer);
             // Land on the first line: replaceText leaves the caret at the end, and fold restoration
             // moves it to a fold header. Defer so the viewport scroll runs after the tab is laid out.
             Platform.runLater(buffer::goToStart);

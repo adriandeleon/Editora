@@ -107,6 +107,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Much faster startup when restoring a session: all tab headers are created first
+  (so they appear at once), then each file's content and folds are loaded one per
+  pulse — the active file first — keeping the UI responsive. Previously a session
+  with a heavily-folded file could freeze the window for several seconds on launch.
 - Folding no longer smears the hidden lines' numbers onto the fold-header row in
   the gutter: a collapsed paragraph's gutter cell is laid out at zero height, but
   its line-number label did not clip to it; the gutter is now clipped to its bounds.
