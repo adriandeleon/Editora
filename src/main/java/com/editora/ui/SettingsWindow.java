@@ -50,6 +50,7 @@ public class SettingsWindow {
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
+    private ComboBox<String> editorThemeCombo;
     private CheckBox columnRulerCheck;
     private CheckBox lineHighlightCheck;
     private CheckBox lineNumbersCheck;
@@ -119,6 +120,26 @@ public class SettingsWindow {
             }
             config.getSettings().setTheme(now);
             javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(now));
+            // The editor theme follows the app theme until the user picks one explicitly.
+            if (!config.getSettings().isEditorThemeUserSet()) {
+                String match = EditorThemes.defaultFor(now);
+                config.getSettings().setEditorTheme(match);
+                loading = true;
+                editorThemeCombo.setValue(match);
+                loading = false;
+            }
+            apply();
+        });
+
+        editorThemeCombo = new ComboBox<>();
+        editorThemeCombo.getItems().setAll(EditorThemes.NAMES);
+        editorThemeCombo.setPrefWidth(220);
+        editorThemeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setEditorTheme(now);
+            config.getSettings().setEditorThemeUserSet(true);
             apply();
         });
 
@@ -157,13 +178,17 @@ public class SettingsWindow {
         form.addRow(0, new Label("Font family:"), fontFamilyBox);
         form.addRow(1, new Label("Font size:"), fontSize);
         form.addRow(2, new Label("Theme:"), themeCombo);
-        form.add(columnRulerCheck, 1, 3);
-        form.add(lineHighlightCheck, 1, 4);
-        form.add(lineNumbersCheck, 1, 5);
-        form.add(minimapCheck, 1, 6);
-        form.add(whitespaceCheck, 1, 7);
+        Label editorThemeNote = new Label("Follows the app theme until you pick one.");
+        editorThemeNote.setStyle("-fx-font-size: 11px; -fx-text-fill: -color-fg-muted;");
+        VBox editorThemeBox = new VBox(4, editorThemeCombo, editorThemeNote);
+        form.addRow(3, new Label("Editor theme:"), editorThemeBox);
+        form.add(columnRulerCheck, 1, 4);
+        form.add(lineHighlightCheck, 1, 5);
+        form.add(lineNumbersCheck, 1, 6);
+        form.add(minimapCheck, 1, 7);
+        form.add(whitespaceCheck, 1, 8);
 
-        int row = 8;
+        int row = 9;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -237,6 +262,11 @@ public class SettingsWindow {
                 settings.setTheme(theme);
             }
             themeCombo.setValue(theme);
+            String editorTheme = EditorThemes.normalize(settings.getEditorTheme());
+            if (!editorTheme.equals(settings.getEditorTheme())) {
+                settings.setEditorTheme(editorTheme);
+            }
+            editorThemeCombo.setValue(editorTheme);
             columnRulerCheck.setSelected(settings.isShowColumnRuler());
             lineHighlightCheck.setSelected(settings.isHighlightCurrentLine());
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());

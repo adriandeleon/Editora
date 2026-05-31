@@ -47,6 +47,7 @@ public class App extends Application {
 
         stage.setScene(scene);
         stage.setTitle("Editora");
+        controller.applyEditorTheme(settings.getEditorTheme());
         restoreWindowBounds(stage, config.getWorkspaceState());
         stage.show();
 

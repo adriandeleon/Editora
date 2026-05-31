@@ -142,6 +142,8 @@ public class MainController {
     private boolean reordering;
     /** The tab currently being dragged to reorder the strip, or null. */
     private Tab draggedTab;
+    /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
+    private String currentEditorThemeCss;
     private RecentFiles recentFiles;
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
@@ -432,6 +434,8 @@ public class MainController {
                 } catch (RuntimeException ignored) {
                     // Viewport not ready; ignore.
                 }
+                // The minimap's first render can run before layout settles; refresh once it has.
+                buffer.refreshMinimap();
             });
         } catch (IOException e) {
             // Unreadable now — leave the tab empty.
@@ -1428,13 +1432,45 @@ public class MainController {
         buffer.setMinimapVisible(s.isShowMinimap());
         buffer.setWhitespaceVisible(s.isShowWhitespace());
         buffer.setTabSize(s.getTabSize());
+        buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
+        buffer.setMinimapColors(EditorThemes.minimapTextFor(s.getEditorTheme()),
+                EditorThemes.minimapViewportFor(s.getEditorTheme()));
     }
 
     private void applyViewSettingsToAllBuffers(Settings settings) {
+        applyEditorTheme(settings.getEditorTheme());
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
             if (buffer != null) {
                 applyViewSettings(buffer);
+            }
+        }
+    }
+
+    /**
+     * Applies the editor color theme: swaps the override stylesheet on the scene (Primer Light uses
+     * none — the defaults in app.css/syntax.css) and updates each buffer's current-line highlight.
+     * Safe to call before the scene exists (the stylesheet swap is skipped until it does).
+     */
+    public void applyEditorTheme(String themeName) {
+        if (stage != null && stage.getScene() != null) {
+            ObservableList<String> sheets = stage.getScene().getStylesheets();
+            if (currentEditorThemeCss != null) {
+                sheets.remove(currentEditorThemeCss);
+            }
+            currentEditorThemeCss = EditorThemes.stylesheetFor(themeName);
+            if (currentEditorThemeCss != null && !sheets.contains(currentEditorThemeCss)) {
+                sheets.add(currentEditorThemeCss);
+            }
+        }
+        Color highlight = EditorThemes.lineHighlightFor(themeName);
+        Color mmText = EditorThemes.minimapTextFor(themeName);
+        Color mmViewport = EditorThemes.minimapViewportFor(themeName);
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            if (buffer != null) {
+                buffer.setLineHighlightColor(highlight);
+                buffer.setMinimapColors(mmText, mmViewport);
             }
         }
     }

@@ -1,0 +1,41 @@
+/* Editor theme: Primer Dark (GitHub dark palette). Overrides app.css + syntax.css defaults.
+   See syntax.css for why token rules use the compound `.text.<class>` selector. */
+
+.editor-area { -fx-background-color: #0d1117; }
+.editor-area .text { -fx-fill: #c9d1d9; }
+.editor-area .caret { -fx-stroke: #c9d1d9; }
+.editor-area .selection { -fx-fill: #1f6feb66; }
+.column-ruler { -fx-stroke: #30363d; }
+
+.minimap { -fx-background-color: #0d1117; -fx-border-color: #21262d; }
+
+.editor-area .lineno { -fx-background-color: #161b22; -fx-text-fill: #6e7681; }
+.editor-area .fold-header-line { -fx-background-color: #21262d; }
+.editor-area .fold-gutter { -fx-background-color: #161b22; }
+.editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
+.editor-area .fold-chevron { -fx-text-fill: #6e7681; }
+.editor-area .fold-chevron:hover { -fx-text-fill: #58a6ff; }
+
+.text.keyword    { -fx-fill: #ff7b72; -fx-font-weight: bold; }
+.text.string     { -fx-fill: #a5d6ff; }
+.text.regexp     { -fx-fill: #a5d6ff; -fx-font-style: italic; }
+.text.escape     { -fx-fill: #7ee787; }
+.text.comment    { -fx-fill: #8b949e; -fx-font-style: italic; }
+.text.number     { -fx-fill: #79c0ff; }
+.text.constant   { -fx-fill: #79c0ff; }
+.text.annotation { -fx-fill: #ffa657; }
+.text.type       { -fx-fill: #ffa657; }
+.text.function   { -fx-fill: #d2a8ff; }
+.text.variable   { -fx-fill: #c9d1d9; }
+.text.operator   { -fx-fill: #ff7b72; }
+.text.property   { -fx-fill: #79c0ff; }
+.text.punct      { -fx-fill: #c9d1d9; }
+.text.tag        { -fx-fill: #7ee787; }
+.text.attribute  { -fx-fill: #79c0ff; }
+.text.invalid    { -fx-fill: #ffffff; -rtfx-background-color: #ff7b72; }
+
+.text.heading    { -fx-fill: #79c0ff; -fx-font-weight: bold; }
+.text.code       { -fx-fill: #a5d6ff; }
+.text.link       { -fx-fill: #58a6ff; -fx-underline: true; }
+.text.bold       { -fx-fill: #c9d1d9; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: #c9d1d9; -fx-font-style: italic; }

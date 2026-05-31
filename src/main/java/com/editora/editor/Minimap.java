@@ -30,8 +30,10 @@ final class Minimap extends Region {
     /** Max vertical pixels per document line. Caps short files so they fill from the top rather than
      * stretching one line across a huge slice; long files compress below this to fit the column. */
     private static final double MAX_ROW_HEIGHT = 3.0;
-    private static final Color TEXT_COLOR = Color.web("#9aa5b1");
-    private static final Color VIEWPORT_COLOR = Color.web("#0969da", 0.14);
+
+    /** Block and viewport-overlay colors; theme-aware (see {@link #setColors}). */
+    private Color textColor = Color.web("#9aa5b1");
+    private Color viewportColor = Color.web("#0969da", 0.14);
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(WIDTH, 0);
@@ -62,6 +64,19 @@ final class Minimap extends Region {
             this.tabSize = tabSize;
             renderContent();
         }
+    }
+
+    /** Sets the document-block and viewport-overlay colors (theme-aware) and re-renders. */
+    void setColors(Color text, Color viewport) {
+        this.textColor = text;
+        this.viewportColor = viewport;
+        renderContent();
+    }
+
+    /** Forces a re-render (e.g. after layout/theme settle at startup, when the first render may have
+     *  run before the canvas was sized). */
+    void refresh() {
+        renderContent();
     }
 
     @Override
@@ -101,7 +116,7 @@ final class Minimap extends Region {
         }
         double rowHeight = rowHeight(h, total);
         double blockH = Math.max(0.75, Math.min(rowHeight * 0.8, 2.0));
-        g.setFill(TEXT_COLOR);
+        g.setFill(textColor);
         for (int i = 0; i < total; i++) {
             String text = area.getParagraph(i).getText();
             if (!text.isEmpty()) {
@@ -144,7 +159,7 @@ final class Minimap extends Region {
             int last = clamp(area.lastVisibleParToAllParIndex(), total);
             double vy = first * rowHeight;
             double vh = Math.max(rowHeight, (last - first + 1) * rowHeight);
-            g.setFill(VIEWPORT_COLOR);
+            g.setFill(viewportColor);
             g.fillRect(0, vy, w, vh);
         } catch (RuntimeException ignored) {
             // Viewport not laid out yet (e.g. before first render) — skip the indicator.

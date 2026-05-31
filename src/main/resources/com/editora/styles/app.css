@@ -83,7 +83,7 @@
 
 /* Structure tool window: search box + collapsible region tree. */
 .structure-panel {
-    -fx-background-color: #ffffff;
+    -fx-background-color: -color-bg-default;
 }
 
 .structure-panel .structure-filter {
@@ -97,14 +97,14 @@
 }
 
 .structure-tree .tree-cell {
-    -fx-text-fill: #24292f;
+    -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
 }
 
 /* IntelliJ-style tool window stripes + panels. */
 .tool-stripe {
-    -fx-background-color: #f6f8fa;
-    -fx-border-color: #d0d7de;
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
     -fx-spacing: 2;
 }
 
@@ -129,36 +129,36 @@
 }
 
 .tool-stripe-button .toolbar-icon {
-    -fx-fill: #57606a;
+    -fx-fill: -color-fg-muted;
 }
 
 .tool-stripe-button:hover .toolbar-icon {
-    -fx-fill: #24292f;
+    -fx-fill: -color-fg-default;
 }
 
 .tool-stripe-button:open {
-    -fx-background-color: #ddf4ff;
+    -fx-background-color: -color-accent-subtle;
 }
 
 .tool-stripe-button:open .toolbar-icon {
-    -fx-fill: #0969da;
+    -fx-fill: -color-accent-fg;
 }
 
 .tool-window {
-    -fx-background-color: #ffffff;
+    -fx-background-color: -color-bg-default;
 }
 
 .tool-window-header {
-    -fx-background-color: #f6f8fa;
+    -fx-background-color: -color-bg-subtle;
     -fx-padding: 4 4 4 8;
-    -fx-border-color: #d0d7de;
+    -fx-border-color: -color-border-default;
     -fx-border-width: 0 0 1 0;
 }
 
 .tool-window-title {
     -fx-font-size: 12px;
     -fx-font-weight: bold;
-    -fx-text-fill: #24292f;
+    -fx-text-fill: -color-fg-default;
 }
 
 .tool-window-close {
@@ -167,22 +167,22 @@
 
 .tool-window-content {
     -fx-padding: 8;
-    -fx-background-color: #ffffff;
+    -fx-background-color: -color-bg-default;
 }
 
 .tool-window-placeholder {
-    -fx-text-fill: #6e7781;
+    -fx-text-fill: -color-fg-muted;
     -fx-text-alignment: center;
 }
 
 /* File Information tool window */
 .file-info-panel {
-    -fx-background-color: #ffffff;
+    -fx-background-color: -color-bg-default;
 }
 
 .file-info-header {
     -fx-padding: 6 8 6 8;
-    -fx-border-color: #d0d7de;
+    -fx-border-color: -color-border-default;
     -fx-border-width: 0 0 1 0;
 }
 
@@ -197,19 +197,19 @@
 }
 
 .file-info-tab:hover .toolbar-icon {
-    -fx-fill: #24292f;
+    -fx-fill: -color-fg-default;
 }
 
 .file-info-tab:selected {
-    -fx-background-color: #ddf4ff;
+    -fx-background-color: -color-accent-subtle;
 }
 
 .file-info-tab:selected .toolbar-icon {
-    -fx-fill: #0969da;
+    -fx-fill: -color-accent-fg;
 }
 
 .file-info-tab .toolbar-icon {
-    -fx-fill: #57606a;
+    -fx-fill: -color-fg-muted;
 }
 
 .file-info-scroll {
@@ -235,7 +235,7 @@
     -fx-background-color: transparent;
     -fx-padding: 2 0 2 0;
     -fx-font-size: 11px;
-    -fx-text-fill: #6e7781;
+    -fx-text-fill: -color-fg-muted;
     -fx-font-weight: bold;
 }
 
@@ -245,19 +245,19 @@
 }
 
 .file-info-key {
-    -fx-text-fill: #24292f;
+    -fx-text-fill: -color-fg-default;
     -fx-font-size: 12px;
 }
 
 /* Value fields are read-only TextFields, drawn as plain selectable text (no field chrome). */
 .file-info-value {
-    -fx-text-fill: #57606a;
+    -fx-text-fill: -color-fg-muted;
     -fx-font-size: 12px;
     -fx-background-color: transparent;
     -fx-background-insets: 0;
     -fx-border-width: 0;
     -fx-padding: 0;
-    -fx-highlight-fill: #cce5ff;
+    -fx-highlight-fill: -color-accent-muted;
 }
 
 .file-info-value:focused {
@@ -267,8 +267,8 @@
 
 /* Switcher popup — two columns of recent files / tool windows. */
 .switcher {
-    -fx-background-color: #ffffff;
-    -fx-border-color: #d0d7de;
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
     -fx-border-width: 1;
     -fx-padding: 8;
     -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
@@ -279,13 +279,13 @@
 }
 
 .switcher-column:active .switcher-header {
-    -fx-text-fill: #0969da;
+    -fx-text-fill: -color-accent-fg;
 }
 
 .switcher-header {
     -fx-font-size: 11px;
     -fx-font-weight: bold;
-    -fx-text-fill: #6e7781;
+    -fx-text-fill: -color-fg-muted;
     -fx-padding: 2 4 2 4;
 }
 
@@ -358,25 +358,25 @@
 
 /* Toolbar SVG icons */
 .toolbar-icon {
-    -fx-fill: #57606a;
+    -fx-fill: -color-fg-muted;
 }
 
 .button:hover .toolbar-icon {
-    -fx-fill: #24292f;
+    -fx-fill: -color-fg-default;
 }
 
 /* Active state for toggle-like buttons (palette / find) while their overlay is open */
 .button:open {
-    -fx-background-color: #ddf4ff;
+    -fx-background-color: -color-accent-subtle;
 }
 
 .button:open .toolbar-icon {
-    -fx-fill: #0969da;
+    -fx-fill: -color-accent-fg;
 }
 
 .status-bar {
-    -fx-background-color: #f6f8fa;
-    -fx-border-color: #d0d7de transparent transparent transparent;
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default transparent transparent transparent;
     -fx-border-width: 1 0 0 0;
     -fx-padding: 0 6 0 10;
     -fx-alignment: center-left;
@@ -384,38 +384,38 @@
 
 /* Left echo area: transient command messages. */
 .status-bar .status-message {
-    -fx-text-fill: #57606a;
+    -fx-text-fill: -color-fg-muted;
     -fx-padding: 3 6 3 0;
 }
 
 /* Right-aligned segments, separated by a thin divider (VS Code style). */
 .status-bar .status-segment {
-    -fx-text-fill: #57606a;
+    -fx-text-fill: -color-fg-muted;
     -fx-padding: 3 8 3 8;
-    -fx-border-color: transparent transparent transparent #d8dee4;
+    -fx-border-color: transparent transparent transparent -color-border-muted;
     -fx-border-width: 0 0 0 1;
 }
 
 .status-bar .status-segment-clickable:hover {
-    -fx-background-color: #eaeef2;
+    -fx-background-color: -color-bg-inset;
     -fx-cursor: hand;
 }
 
-/* Command palette overlay (a Popup, so it is styled explicitly rather than by the theme) */
+/* Command palette overlay (a Popup; the global AtlantaFX vars still resolve inside it) */
 .command-palette {
-    -fx-background-color: #ffffff;
-    -fx-border-color: #d0d7de;
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
     -fx-border-width: 1;
     -fx-padding: 6;
     -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
 }
 
 .command-palette .list-cell .keybinding {
-    -fx-text-fill: #8c959f;
+    -fx-text-fill: -color-fg-muted;
 }
 
 .find-bar {
-    -fx-background-color: #f6f8fa;
+    -fx-background-color: -color-bg-subtle;
     -fx-padding: 4 8 4 8;
     -fx-spacing: 6;
     -fx-alignment: center-left;

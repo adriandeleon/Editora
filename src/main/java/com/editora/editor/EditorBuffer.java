@@ -97,6 +97,11 @@ public class EditorBuffer {
     private Runnable onSymbolsChanged = () -> { };
     private String fontFamily = "monospace";
     private int fontSize = 14;
+    /** Current-line highlight fill; varies per editor theme (see {@link #setLineHighlightColor}). */
+    private Color lineHighlightColor = Color.web("#dfe7f0");
+    /** Minimap block + viewport colors; vary per editor theme (see {@link #setMinimapColors}). */
+    private Color minimapText = Color.web("#9aa5b1");
+    private Color minimapViewport = Color.web("#0969da", 0.14);
     /** Visual tab width (columns); applied to the minimap and persisted via Settings. */
     private int tabSize = 4;
     /** Whether the user enabled the 80-column ruler. The line is only actually shown when a visible
@@ -110,7 +115,7 @@ public class EditorBuffer {
         refreshGutter();
         area.getStyleClass().add("editor-area");
         area.setWrapText(false);
-        area.setLineHighlighterFill(Color.web("#dfe7f0"));
+        area.setLineHighlighterFill(lineHighlightColor);
         area.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> applyHighlighting());
@@ -251,6 +256,7 @@ public class EditorBuffer {
         area2 = new CodeArea(area.getContent()); // shares the EditableStyledDocument
         area2.getStyleClass().add("editor-area");
         area2.setWrapText(false);
+        area2.setLineHighlighterFill(lineHighlightColor);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
         area2.caretPositionProperty().addListener((obs, old, now) -> resetGoalColumn());
@@ -263,6 +269,7 @@ public class EditorBuffer {
         // Give the secondary view its own minimap (tracks this pane's viewport), docked like the primary.
         minimap2 = new Minimap(area2);
         minimap2.setTabSize(tabSize);
+        minimap2.setColors(minimapText, minimapViewport);
         root2 = new AnchorPane(scrollPane2, minimap2);
         AnchorPane.setTopAnchor(scrollPane2, 0d);
         AnchorPane.setBottomAnchor(scrollPane2, 0d);
@@ -306,6 +313,33 @@ public class EditorBuffer {
     /** Toggle the highlight on the line containing the caret. */
     public void setLineHighlightOn(boolean on) {
         area.setLineHighlighterOn(on);
+    }
+
+    /** Sets the current-line highlight color (varies per editor theme; not stylable via CSS). */
+    public void setLineHighlightColor(Color color) {
+        this.lineHighlightColor = color;
+        area.setLineHighlighterFill(color);
+        if (area2 != null) {
+            area2.setLineHighlighterFill(color);
+        }
+    }
+
+    /** Forces the minimap(s) to re-render (after layout/theme settle; the first render may run early). */
+    public void refreshMinimap() {
+        minimap.refresh();
+        if (minimap2 != null) {
+            minimap2.refresh();
+        }
+    }
+
+    /** Sets the minimap's block and viewport-overlay colors (the minimap is canvas-drawn, not CSS). */
+    public void setMinimapColors(Color text, Color viewport) {
+        this.minimapText = text;
+        this.minimapViewport = viewport;
+        minimap.setColors(text, viewport);
+        if (minimap2 != null) {
+            minimap2.setColors(text, viewport);
+        }
     }
 
     /** Show/hide the line-number gutter. The fold-chevron column is always present. */

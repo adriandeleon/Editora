@@ -1,0 +1,40 @@
+/* Editor theme: Cupertino Light (Xcode-style light palette). */
+
+.editor-area { -fx-background-color: #ffffff; }
+.editor-area .text { -fx-fill: #1d1d1f; }
+.editor-area .caret { -fx-stroke: #1d1d1f; }
+.editor-area .selection { -fx-fill: #b3d7ff; }
+.column-ruler { -fx-stroke: #d2d2d7; }
+
+.minimap { -fx-background-color: #f5f5f7; -fx-border-color: #e0e0e5; }
+
+.editor-area .lineno { -fx-background-color: #f5f5f7; -fx-text-fill: #a0a0a8; }
+.editor-area .fold-header-line { -fx-background-color: #eceef2; }
+.editor-area .fold-gutter { -fx-background-color: #f5f5f7; }
+.editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
+.editor-area .fold-chevron { -fx-text-fill: #a0a0a8; }
+.editor-area .fold-chevron:hover { -fx-text-fill: #0a84ff; }
+
+.text.keyword    { -fx-fill: #ad3da4; -fx-font-weight: bold; }
+.text.string     { -fx-fill: #c41a16; }
+.text.regexp     { -fx-fill: #c41a16; -fx-font-style: italic; }
+.text.escape     { -fx-fill: #0f68a0; }
+.text.comment    { -fx-fill: #5d6c79; -fx-font-style: italic; }
+.text.number     { -fx-fill: #1c00cf; }
+.text.constant   { -fx-fill: #1c00cf; }
+.text.annotation { -fx-fill: #aa3700; }
+.text.type       { -fx-fill: #3900a0; }
+.text.function   { -fx-fill: #3e6d74; }
+.text.variable   { -fx-fill: #1d1d1f; }
+.text.operator   { -fx-fill: #ad3da4; }
+.text.property   { -fx-fill: #1c00cf; }
+.text.punct      { -fx-fill: #1d1d1f; }
+.text.tag        { -fx-fill: #608b4e; }
+.text.attribute  { -fx-fill: #836c28; }
+.text.invalid    { -fx-fill: #ffffff; -rtfx-background-color: #c41a16; }
+
+.text.heading    { -fx-fill: #1c00cf; -fx-font-weight: bold; }
+.text.code       { -fx-fill: #c41a16; }
+.text.link       { -fx-fill: #0a84ff; -fx-underline: true; }
+.text.bold       { -fx-fill: #1d1d1f; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: #1d1d1f; -fx-font-style: italic; }

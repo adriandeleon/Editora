@@ -15,7 +15,9 @@ Emacs-style keymap or a fuzzy command palette.
   for 21 languages: Java, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin,
   Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, and SQL.
 - **Editor view options** — 80-column ruler and current-line highlight.
-- **Themes** — switchable AtlantaFX themes (Primer, Nord, Cupertino, Dracula).
+- **Themes** — switchable AtlantaFX themes (Primer, Nord, Cupertino, Dracula), each
+  with a matching editor color theme (syntax + surface) that follows the app theme by
+  default and is independently selectable in Settings.
 - **Recent files** — persistent most-recently-used list.
 - **Tool windows** — IntelliJ-style dockable panels (Project, Bookmarks, File Information).
 

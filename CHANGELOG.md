@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Editor color themes (syntax tokens + editor surface) matching each AtlantaFX
+  theme — Primer Light/Dark, Nord Light/Dark, Cupertino Light/Dark, and Dracula —
+  chosen in Settings under "Editor theme". Selecting an AtlantaFX app theme switches
+  to the matching editor theme automatically, until you pick an editor theme yourself.
 - Editor tabs can be reordered by dragging them with the mouse. Pinned tabs stay
   grouped at the front (a drag is clamped to the dragged tab's group).
 - Large-file mode: opening a file 5 MB or larger skips syntax highlighting and the
@@ -71,6 +75,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- App chrome (toolbar/tool-window icons, status bar, tool windows, command palette,
+  switcher, find bar, File Information) now uses AtlantaFX theme variables instead of
+  hardcoded light colors, so it adapts to dark themes (icons and text stay legible).
 - Clearing the recent-files list now asks for confirmation; each entry in the
   recent-files menu has an inline ✕ icon to remove just that file (no confirmation).
 - Go to Line (`M-g g`) now accepts an optional column as `line:column` (e.g.

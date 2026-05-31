@@ -12,6 +12,10 @@ public class Settings {
     private String fontFamily = "monospace";
     private int fontSize = 14;
     private String theme = "Primer Light";
+    /** Editor color theme (syntax + surface). Follows {@link #theme} until the user picks one. */
+    private String editorTheme = "Primer Light";
+    /** True once the user explicitly picks an editor theme; stops it auto-following the app theme. */
+    private boolean editorThemeUserSet;
     private int tabSize = 4;
     private String keymap = "emacs";
     private boolean showColumnRuler = true;
@@ -45,6 +49,22 @@ public class Settings {
 
     public void setTheme(String theme) {
         this.theme = theme;
+    }
+
+    public String getEditorTheme() {
+        return editorTheme;
+    }
+
+    public void setEditorTheme(String editorTheme) {
+        this.editorTheme = editorTheme;
+    }
+
+    public boolean isEditorThemeUserSet() {
+        return editorThemeUserSet;
+    }
+
+    public void setEditorThemeUserSet(boolean editorThemeUserSet) {
+        this.editorThemeUserSet = editorThemeUserSet;
     }
 
     public int getTabSize() {

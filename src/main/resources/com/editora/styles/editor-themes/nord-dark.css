@@ -1,0 +1,40 @@
+/* Editor theme: Nord Dark (Polar Night background, Frost/Aurora accents). */
+
+.editor-area { -fx-background-color: #2e3440; }
+.editor-area .text { -fx-fill: #d8dee9; }
+.editor-area .caret { -fx-stroke: #d8dee9; }
+.editor-area .selection { -fx-fill: #434c5e; }
+.column-ruler { -fx-stroke: #434c5e; }
+
+.minimap { -fx-background-color: #2e3440; -fx-border-color: #3b4252; }
+
+.editor-area .lineno { -fx-background-color: #353c4a; -fx-text-fill: #6c7689; }
+.editor-area .fold-header-line { -fx-background-color: #3b4252; }
+.editor-area .fold-gutter { -fx-background-color: #353c4a; }
+.editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
+.editor-area .fold-chevron { -fx-text-fill: #6c7689; }
+.editor-area .fold-chevron:hover { -fx-text-fill: #88c0d0; }
+
+.text.keyword    { -fx-fill: #81a1c1; -fx-font-weight: bold; }
+.text.string     { -fx-fill: #a3be8c; }
+.text.regexp     { -fx-fill: #a3be8c; -fx-font-style: italic; }
+.text.escape     { -fx-fill: #b48ead; }
+.text.comment    { -fx-fill: #7b88a1; -fx-font-style: italic; }
+.text.number     { -fx-fill: #b48ead; }
+.text.constant   { -fx-fill: #b48ead; }
+.text.annotation { -fx-fill: #d08770; }
+.text.type       { -fx-fill: #8fbcbb; }
+.text.function   { -fx-fill: #88c0d0; }
+.text.variable   { -fx-fill: #d8dee9; }
+.text.operator   { -fx-fill: #81a1c1; }
+.text.property   { -fx-fill: #88c0d0; }
+.text.punct      { -fx-fill: #d8dee9; }
+.text.tag        { -fx-fill: #81a1c1; }
+.text.attribute  { -fx-fill: #8fbcbb; }
+.text.invalid    { -fx-fill: #eceff4; -rtfx-background-color: #bf616a; }
+
+.text.heading    { -fx-fill: #88c0d0; -fx-font-weight: bold; }
+.text.code       { -fx-fill: #a3be8c; }
+.text.link       { -fx-fill: #88c0d0; -fx-underline: true; }
+.text.bold       { -fx-fill: #d8dee9; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: #d8dee9; -fx-font-style: italic; }

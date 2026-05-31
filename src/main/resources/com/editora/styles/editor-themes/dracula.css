@@ -1,0 +1,40 @@
+/* Editor theme: Dracula (https://draculatheme.com palette). */
+
+.editor-area { -fx-background-color: #282a36; }
+.editor-area .text { -fx-fill: #f8f8f2; }
+.editor-area .caret { -fx-stroke: #f8f8f2; }
+.editor-area .selection { -fx-fill: #44475a; }
+.column-ruler { -fx-stroke: #44475a; }
+
+.minimap { -fx-background-color: #282a36; -fx-border-color: #191a21; }
+
+.editor-area .lineno { -fx-background-color: #21222c; -fx-text-fill: #6272a4; }
+.editor-area .fold-header-line { -fx-background-color: #343746; }
+.editor-area .fold-gutter { -fx-background-color: #21222c; }
+.editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
+.editor-area .fold-chevron { -fx-text-fill: #6272a4; }
+.editor-area .fold-chevron:hover { -fx-text-fill: #bd93f9; }
+
+.text.keyword    { -fx-fill: #ff79c6; -fx-font-weight: bold; }
+.text.string     { -fx-fill: #f1fa8c; }
+.text.regexp     { -fx-fill: #f1fa8c; -fx-font-style: italic; }
+.text.escape     { -fx-fill: #50fa7b; }
+.text.comment    { -fx-fill: #6272a4; -fx-font-style: italic; }
+.text.number     { -fx-fill: #bd93f9; }
+.text.constant   { -fx-fill: #bd93f9; }
+.text.annotation { -fx-fill: #ffb86c; }
+.text.type       { -fx-fill: #8be9fd; }
+.text.function   { -fx-fill: #50fa7b; }
+.text.variable   { -fx-fill: #f8f8f2; }
+.text.operator   { -fx-fill: #ff79c6; }
+.text.property   { -fx-fill: #8be9fd; }
+.text.punct      { -fx-fill: #f8f8f2; }
+.text.tag        { -fx-fill: #ff79c6; }
+.text.attribute  { -fx-fill: #50fa7b; }
+.text.invalid    { -fx-fill: #f8f8f2; -rtfx-background-color: #ff5555; }
+
+.text.heading    { -fx-fill: #bd93f9; -fx-font-weight: bold; }
+.text.code       { -fx-fill: #f1fa8c; }
+.text.link       { -fx-fill: #8be9fd; -fx-underline: true; }
+.text.bold       { -fx-fill: #f8f8f2; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: #f8f8f2; -fx-font-style: italic; }
