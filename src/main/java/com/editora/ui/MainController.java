@@ -1253,15 +1253,24 @@ public class MainController {
         TextInputDialog dialog = new TextInputDialog(String.valueOf(area.getCurrentParagraph() + 1));
         dialog.initOwner(stage);
         dialog.setTitle("Go to Line");
-        dialog.setHeaderText(null);
+        dialog.setHeaderText("Enter a line number, or line:column (column is optional).");
         dialog.setContentText("Line (1–" + total + "):");
         dialog.showAndWait().ifPresent(input -> {
+            String text = input.trim();
+            String[] parts = text.split(":", 2);
             try {
-                int target = Math.max(1, Math.min(total, Integer.parseInt(input.trim()))) - 1;
-                moveAndFollow(a -> a.moveTo(target, 0));
-                setStatus("Line " + (target + 1));
+                int line = Math.max(1, Math.min(total, Integer.parseInt(parts[0].trim()))) - 1;
+                int column = 0; // 0-based; default to the start of the line
+                if (parts.length > 1 && !parts[1].trim().isEmpty()) {
+                    int lineLen = area.getParagraphLength(line);
+                    column = Math.max(1, Math.min(lineLen + 1, Integer.parseInt(parts[1].trim()))) - 1;
+                }
+                int targetLine = line;
+                int targetColumn = column;
+                moveAndFollow(a -> a.moveTo(targetLine, targetColumn));
+                setStatus("Line " + (targetLine + 1) + ", Col " + (targetColumn + 1));
             } catch (NumberFormatException e) {
-                setStatus("Not a line number: " + input);
+                setStatus("Not a valid line or line:column — " + input);
             }
         });
     }

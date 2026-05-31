@@ -71,6 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Go to Line (`M-g g`) now accepts an optional column as `line:column` (e.g.
+  `342:35`); a bare number still goes to the line's start. The dialog notes the
+  column is optional and the column is clamped to the target line's length.
 - File Information tool window: values are now selectable/copyable (read-only text
   fields), with tighter padding and without the boxed section borders. Long values
   (e.g. the full path) no longer overflow the panel, which previously truncated the
