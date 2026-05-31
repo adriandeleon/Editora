@@ -97,6 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Command palette no longer inserts a stray character on macOS when opened with
+  its `M-x` chord (Option+x emits "≈"): characters typed with a chord modifier
+  held are now ignored by the palette input.
 - Command palette entries can now be run with the mouse — clicking a command
   runs it (previously only Enter on the keyboard-selected row worked).
 - Next/previous line (`C-n` / `C-p`) now move the caret like Emacs: they were

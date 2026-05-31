@@ -58,6 +58,15 @@ public class CommandPalette {
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
+        // The opening chord (e.g. M-x) is Alt/Meta+key; on macOS that combination also emits a
+        // KEY_TYPED for a special character (Option+x => "≈") that would land in the just-focused
+        // field. Swallow any character typed while a chord modifier is held; plain query typing
+        // (no modifier, or only Shift) passes through.
+        input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
+                e.consume();
+            }
+        });
 
         VBox content = new VBox(6, input, list);
         content.getStyleClass().add("command-palette");
