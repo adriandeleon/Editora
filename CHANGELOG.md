@@ -103,10 +103,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Show hidden characters" no longer piles stray space/tab/EOL markers onto the
   fold-header row when a region is collapsed: folded (hidden) paragraphs are now
   skipped by the whitespace overlay (and the 80-column ruler's measurement).
-- Command palette no longer inserts a stray character on macOS when opened with
-  its `M-x` chord (Option+x emits "≈"): on macOS, characters typed with a chord
-  modifier held are ignored by the palette input. (Scoped to macOS so AltGr-composed
-  characters keep working on other platforms.)
+- `M-` (Meta) chords no longer insert a stray character on macOS. Option is the
+  Meta key, and `Option+<key>` also emits a special character (e.g. `M-f` → "ƒ",
+  `M-x` → "≈") whose KEY_TYPED was inserted into the editor (or palette) after the
+  command ran. Characters typed with Alt held are now swallowed on macOS — globally
+  by the key dispatcher and in the command palette popup. (Scoped to macOS so
+  AltGr-composed characters keep working on other platforms.)
 - Command palette entries can now be run with the mouse — clicking a command
   runs it (previously only Enter on the keyboard-selected row worked).
 - Next/previous line (`C-n` / `C-p`) now move the caret like Emacs: they were

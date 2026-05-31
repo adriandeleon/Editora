@@ -15,6 +15,9 @@ import javafx.scene.input.KeyEvent;
  */
 public class KeyDispatcher {
 
+    private static final boolean IS_MAC =
+            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+
     private final CommandRegistry registry;
     private final KeymapManager keymap;
     private final Consumer<String> statusListener;
@@ -30,6 +33,17 @@ public class KeyDispatcher {
 
     public void install(Scene scene) {
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handle);
+        if (IS_MAC) {
+            // On macOS the Emacs Meta key is Option, and Option+<key> also emits a special character
+            // (e.g. Option+f => "ƒ") whose KEY_TYPED would be inserted into the focused control right
+            // after the M- chord runs. Option is reserved for Meta chords here, so swallow characters
+            // typed while Alt is held. (The command palette popup has its own scene/filter for this.)
+            scene.addEventFilter(KeyEvent.KEY_TYPED, event -> {
+                if (event.isAltDown()) {
+                    event.consume();
+                }
+            });
+        }
     }
 
     void handle(KeyEvent event) {
