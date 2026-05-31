@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- More Emacs movement keys: `M-m` (back to indentation), `C-l` (recenter the caret line in the
+  viewport), `M-{` / `M-}` (backward/forward paragraph), and `M-a` / `M-e` (backward/forward
+  sentence) — all registered commands, so they also appear in the palette. Note: on macOS the
+  Option dead keys (`Option`+`e`/`i`/`u`/`n`/`` ` ``) are intercepted by the OS for accent
+  composition and never reach the app, so `M-e` (forward sentence) can't be triggered by keyboard
+  there — use the palette command "Go: Forward Sentence" instead.
 - Auto save (VS Code-style), off by default. Choose a mode in Settings: "After delay" saves a file
   once it's been idle for a configurable number of seconds (default 1), or "On focus change" saves when
   you switch editor tabs or the window loses focus. Only dirty, file-backed, writable buffers are
@@ -167,6 +173,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `M-<` / `M->` (document start/end) and `M-%` (find & replace) keybindings now work. They were
+  stored in Emacs notation (`M-<`) but the dispatcher emits shifted symbols as `M-S-,` etc., so the
+  entries never matched; the keymap now uses the dispatcher's token form.
 - No more light-gray flash on startup with a dark theme: the scene is pre-filled with
   the theme's background color, so the first frame paints in the theme color instead of
   JavaFX's default background before the CSS is applied.

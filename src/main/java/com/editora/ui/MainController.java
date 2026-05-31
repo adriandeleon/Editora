@@ -1929,6 +1929,109 @@ public class MainController {
         area.requestFollowCaret();
     }
 
+    /** Absolute offset of the first non-whitespace char on the caret's line (Emacs M-m). */
+    private static int backToIndentation(CodeArea a) {
+        int par = a.getCurrentParagraph();
+        String line = a.getParagraph(par).getText();
+        int col = 0;
+        while (col < line.length() && (line.charAt(col) == ' ' || line.charAt(col) == '\t')) {
+            col++;
+        }
+        return a.getAbsolutePosition(par, col);
+    }
+
+    /** Start of the blank line below the current block, or document end (Emacs M-}). */
+    private static int forwardParagraph(CodeArea a) {
+        int n = a.getParagraphs().size();
+        int p = a.getCurrentParagraph() + 1;
+        while (p < n && a.getParagraph(p).getText().isBlank()) {
+            p++; // skip blank lines we're sitting on
+        }
+        while (p < n && !a.getParagraph(p).getText().isBlank()) {
+            p++; // through the text block
+        }
+        return p >= n ? a.getLength() : a.getAbsolutePosition(p, 0);
+    }
+
+    /** Start of the blank line above the current block, or document start (Emacs M-{). */
+    private static int backwardParagraph(CodeArea a) {
+        int p = a.getCurrentParagraph() - 1;
+        while (p >= 0 && a.getParagraph(p).getText().isBlank()) {
+            p--;
+        }
+        while (p >= 0 && !a.getParagraph(p).getText().isBlank()) {
+            p--;
+        }
+        return p < 0 ? 0 : a.getAbsolutePosition(p, 0);
+    }
+
+    /** Offset at the start of the next sentence after {@code caret} (Emacs M-e). */
+    private static int forwardSentence(String text, int caret) {
+        int n = text.length();
+        int i = caret;
+        while (i < n) {
+            char c = text.charAt(i++);
+            if (isSentenceEnd(c)) {
+                while (i < n && (text.charAt(i) == '"' || text.charAt(i) == '\''
+                        || text.charAt(i) == ')' || text.charAt(i) == ']')) {
+                    i++; // closing quotes/brackets stay with the sentence
+                }
+                if (i >= n || Character.isWhitespace(text.charAt(i))) {
+                    while (i < n && Character.isWhitespace(text.charAt(i))) {
+                        i++;
+                    }
+                    return i;
+                }
+            }
+        }
+        return n;
+    }
+
+    /** Offset at the start of the sentence containing/just before {@code caret} (Emacs M-a). */
+    private static int backwardSentence(String text, int caret) {
+        int i = caret - 1;
+        while (i >= 0 && Character.isWhitespace(text.charAt(i))) {
+            i--; // skip whitespace immediately before the caret
+        }
+        // If we're sitting right after a terminator (caret already at a sentence start), skip it so
+        // repeated presses keep moving back instead of landing on the same spot.
+        while (i >= 0 && isSentenceEnd(text.charAt(i))) {
+            i--;
+        }
+        while (i >= 0 && !isSentenceEnd(text.charAt(i))) {
+            i--; // back over the sentence body to the previous sentence's terminator
+        }
+        if (i < 0) {
+            return 0;
+        }
+        int j = i + 1;
+        while (j < text.length() && Character.isWhitespace(text.charAt(j))) {
+            j++;
+        }
+        return j;
+    }
+
+    private static boolean isSentenceEnd(char c) {
+        return c == '.' || c == '!' || c == '?';
+    }
+
+    /** Scrolls so the caret's line is vertically centered in the viewport (Emacs C-l, center). */
+    private void recenterCaret() {
+        CodeArea a = activeArea();
+        if (a == null) {
+            return;
+        }
+        try {
+            int cur = a.getCurrentParagraph();
+            int first = a.firstVisibleParToAllParIndex();
+            int last = a.lastVisibleParToAllParIndex();
+            int visible = Math.max(1, last - first + 1);
+            a.showParagraphAtTop(Math.max(0, cur - visible / 2));
+        } catch (RuntimeException ignored) {
+            // Viewport not laid out yet — nothing to recenter.
+        }
+    }
+
     private static Path pathOf(java.io.File file) {
         return file == null ? null : file.toPath();
     }
@@ -2035,6 +2138,17 @@ public class MainController {
                 () -> moveAndFollow(a -> a.nextPage(selPolicy()))));
         registry.register(Command.of("nav.pageUp", "Go: Page Up",
                 () -> moveAndFollow(a -> a.prevPage(selPolicy()))));
+        registry.register(Command.of("nav.backToIndentation", "Go: Back to Indentation",
+                () -> moveAndFollow(a -> a.moveTo(backToIndentation(a), selPolicy()))));
+        registry.register(Command.of("nav.paragraphForward", "Go: Forward Paragraph",
+                () -> moveAndFollow(a -> a.moveTo(forwardParagraph(a), selPolicy()))));
+        registry.register(Command.of("nav.paragraphBackward", "Go: Backward Paragraph",
+                () -> moveAndFollow(a -> a.moveTo(backwardParagraph(a), selPolicy()))));
+        registry.register(Command.of("nav.sentenceForward", "Go: Forward Sentence",
+                () -> moveAndFollow(a -> a.moveTo(forwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
+        registry.register(Command.of("nav.sentenceBackward", "Go: Backward Sentence",
+                () -> moveAndFollow(a -> a.moveTo(backwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
+        registry.register(Command.of("nav.recenter", "Go: Recenter on Caret", this::recenterCaret));
         registry.register(Command.of("edit.setMark", "Edit: Set Mark", this::setMark));
         registry.register(Command.of("edit.exchangePointAndMark", "Edit: Exchange Point and Mark",
                 this::exchangePointAndMark));

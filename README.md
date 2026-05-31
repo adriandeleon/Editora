@@ -11,6 +11,9 @@ Emacs-style keymap or a fuzzy command palette.
 - **Command-driven core** — every action is a `Command`; bind it to a chord or run it
   from the M-x command palette.
 - **Emacs-style keymap** — multi-key chord sequences (e.g. `C-x C-s`), with user overrides.
+  (On macOS, the Option dead keys `Option`+`e`/`i`/`u`/`n`/`` ` `` are intercepted by the OS for
+  accent composition, so a few `M-`-chords like `M-e` aren't reachable by keyboard there — the
+  command palette still works.)
 - **Syntax highlighting** — TextMate grammars (via [tm4e](https://github.com/eclipse/tm4e))
   for 21 languages: Java, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin,
   Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, and SQL.
