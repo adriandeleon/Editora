@@ -27,7 +27,7 @@ import javafx.scene.layout.VBox;
 /**
  * Lays out IntelliJ-style left/right/bottom stripes around the editor area, manages registered
  * tool windows (one open per side, toggled via stripe buttons), and persists open state +
- * divider positions to settings.json.
+ * divider positions to workspace-state.json.
  */
 public class ToolWindowManager {
 

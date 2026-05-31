@@ -33,7 +33,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.StringConverter;
 
-/** A small settings window. Changes are persisted to settings.json and applied live. */
+/** A small settings window. Changes are persisted to settings.toml and applied live. */
 public class SettingsWindow {
 
     private static final String APP_NAME = "Editora";
@@ -429,11 +429,19 @@ public class SettingsWindow {
                 Java %s
                 JavaFX %s
                 Built %s
-                Settings: ~/.editora-v2/settings.json""".formatted(
+                Settings: %s""".formatted(
                 System.getProperty("java.version", "?"),
                 System.getProperty("javafx.runtime.version", "?"),
-                BUILD_TIME));
+                BUILD_TIME,
+                displaySettingsPath()));
         alert.showAndWait();
+    }
+
+    /** The settings-file path with the home dir shown as {@code ~} (derived, never hardcoded). */
+    private static String displaySettingsPath() {
+        String path = ConfigManager.defaultSettingsFile().toString();
+        String home = System.getProperty("user.home", "");
+        return !home.isEmpty() && path.startsWith(home) ? "~" + path.substring(home.length()) : path;
     }
 
     /** Reads the Maven-filtered build timestamp; falls back gracefully for unfiltered/dev runs. */

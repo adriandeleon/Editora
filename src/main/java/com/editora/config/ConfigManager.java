@@ -10,14 +10,14 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 
 /**
- * Loads and saves the user config in {@code ~/.editora-v2/} ({@code user.home} maps to the user
+ * Loads and saves the user config in {@code ~/.editora/} ({@code user.home} maps to the user
  * profile on macOS, Linux, and Windows). Preferences ({@link Settings}) are stored as TOML in
  * {@code settings.toml}; session state ({@link WorkspaceState}: fold regions, tool-window layout) is
  * stored as JSON in {@code workspace-state.json}. Missing or malformed files fall back to defaults.
  */
 public class ConfigManager {
 
-    static final String APP_DIR_NAME = ".editora-v2";
+    static final String APP_DIR_NAME = ".editora";
     static final String SETTINGS_FILE_NAME = "settings.toml";
     static final String WORKSPACE_FILE_NAME = "workspace-state.json";
 
@@ -44,6 +44,11 @@ public class ConfigManager {
 
     public Path getSettingsFile() {
         return configDir.resolve(SETTINGS_FILE_NAME);
+    }
+
+    /** The settings file under the default config dir — for display (e.g. the About dialog). */
+    public static Path defaultSettingsFile() {
+        return defaultConfigDir().resolve(SETTINGS_FILE_NAME);
     }
 
     public Path getWorkspaceStateFile() {
@@ -87,7 +92,7 @@ public class ConfigManager {
         }
     }
 
-    /** Resolves {@code ~/.editora-v2} ({@code user.home} is the user profile on every platform). */
+    /** Resolves {@code ~/.editora} ({@code user.home} is the user profile on every platform). */
     static Path defaultConfigDir() {
         return Path.of(System.getProperty("user.home", "."), APP_DIR_NAME);
     }

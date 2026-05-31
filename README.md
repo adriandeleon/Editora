@@ -84,7 +84,7 @@ A `-rcN` suffix (e.g. `v1.2.3-rc1`) is published as a pre-release. Installers ar
 
 ## Configuration
 
-User preferences live in `~/.editora-v2/settings.toml` (font, theme, keymap, tab size,
+User preferences live in `~/.editora/settings.toml` (font, theme, keymap, tab size,
 view options, and keybinding overrides). Session state — collapsed fold regions and
 tool-window layout — is stored as JSON in `workspace-state.json`, and recent files in
 `recent-files.json`, both alongside it.
