@@ -91,6 +91,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Syntax highlighting no longer intermittently fails to load when multiple files
+  of the same language are open. They share one TextMate grammar instance, and
+  tm4e's tokenizer is not thread-safe, so concurrent highlighting on each buffer's
+  background thread could throw and silently drop a file's highlighting;
+  tokenization is now serialized per grammar.
+- The minimap no longer stretches short files across its full height (scattering
+  sparse blocks): line height is capped, so short documents fill from the top and
+  long documents still compress to fit.
 - Pinned tabs are now remembered across sessions: a tab's pinned state is saved
   on exit and restored on the next launch (alongside the open files and carets).
 - The 80-column ruler now tracks horizontal scroll instead of staying pinned to

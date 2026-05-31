@@ -27,6 +27,9 @@ final class Minimap extends Region {
 
     /** Horizontal scale: assume ~110 columns map across the full width. */
     private static final double CHAR_SCALE = WIDTH / 110.0;
+    /** Max vertical pixels per document line. Caps short files so they fill from the top rather than
+     * stretching one line across a huge slice; long files compress below this to fit the column. */
+    private static final double MAX_ROW_HEIGHT = 3.0;
     private static final Color TEXT_COLOR = Color.web("#9aa5b1");
     private static final Color VIEWPORT_COLOR = Color.web("#0969da", 0.14);
 
@@ -96,7 +99,7 @@ final class Minimap extends Region {
         if (total == 0) {
             return;
         }
-        double rowHeight = h / total;
+        double rowHeight = rowHeight(h, total);
         double blockH = Math.max(0.75, Math.min(rowHeight * 0.8, 2.0));
         g.setFill(TEXT_COLOR);
         for (int i = 0; i < total; i++) {
@@ -127,7 +130,12 @@ final class Minimap extends Region {
         if (contentImage != null) {
             g.drawImage(contentImage, 0, 0);
         }
-        drawViewport(g, w, h, total, h / total);
+        drawViewport(g, w, h, total, rowHeight(h, total));
+    }
+
+    /** Vertical pixels per line: a fixed size, but compressed to fit when the document is long. */
+    private static double rowHeight(double h, int total) {
+        return Math.min(MAX_ROW_HEIGHT, h / total);
     }
 
     private void drawViewport(GraphicsContext g, double w, double h, int total, double rowHeight) {

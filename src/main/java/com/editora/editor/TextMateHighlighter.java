@@ -55,6 +55,17 @@ public final class TextMateHighlighter {
         if (text == null || text.isEmpty() || grammar == null) {
             return null;
         }
+        // A grammar instance is shared across buffers (GrammarRegistry caches one per scope), and each
+        // buffer tokenizes on its own background thread. tm4e's tokenizeLine is not thread-safe, so two
+        // buffers of the same language highlighting at once would corrupt the grammar's internal state
+        // and throw — silently dropping one file's highlighting. Serialize per grammar instance:
+        // same-grammar passes run sequentially; different grammars still run in parallel.
+        synchronized (grammar) {
+            return analyzeLocked(text, grammar);
+        }
+    }
+
+    private static Analysis analyzeLocked(String text, IGrammar grammar) {
         // Adjacent runs with the same style are merged before they reach the builder: we collapse
         // many TextMate scopes onto a few coarse classes, so a single line yields long stretches of
         // identical (or empty) styling. RichTextFX materializes one Text node per span, so emitting
