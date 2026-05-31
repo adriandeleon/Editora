@@ -3,6 +3,7 @@ module com.editora {
     requires javafx.fxml;
     requires org.fxmisc.richtext;
     requires org.fxmisc.flowless;
+    requires org.fxmisc.undo;
     requires reactfx;
     requires atlantafx.base;
     requires com.fasterxml.jackson.databind;

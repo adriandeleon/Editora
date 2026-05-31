@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   automatically, until you pick an editor theme yourself.
 - Editor tabs can be reordered by dragging them with the mouse. Pinned tabs stay
   grouped at the front (a drag is clamped to the dragged tab's group).
+- Very large files (50 MB or larger) now open read-only with a capped load — at most
+  the first 50 MB is read (so a multi-GB log can't exhaust memory) and editing/undo are
+  disabled; the status bar notes the truncation.
+- Undo history is now bounded (300 entries per view) instead of unlimited, and is
+  disabled entirely in large/huge-file mode, capping undo memory.
 - Large-file mode: opening a file 5 MB or larger skips syntax highlighting and the
   minimap (regardless of view settings) to stay responsive, and the status bar
   announces this when it happens.

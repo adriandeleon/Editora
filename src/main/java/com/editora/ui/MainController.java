@@ -423,9 +423,9 @@ public class MainController {
     private void fillSessionBuffer(WorkspaceState.OpenFile f, EditorBuffer buffer) {
         Path file = Path.of(f.getPath());
         try {
-            buffer.setContent(Files.readString(file));
-            if (applyLargeFileMode(buffer, file)) {
-                setStatus(largeFileNote(file));
+            String note = loadInto(buffer, file);
+            if (!note.isEmpty()) {
+                setStatus(note);
             }
             restoreFolds(buffer);
             CodeArea area = buffer.getArea();
@@ -629,11 +629,9 @@ public class MainController {
             return;
         }
         try {
-            String content = Files.readString(file);
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
-            buffer.setContent(content);
-            boolean large = applyLargeFileMode(buffer, file);
+            String note = loadInto(buffer, file);
             // Apply folds before the node is in the scene, so each fold skips per-fold layout.
             restoreFolds(buffer);
             addBuffer(buffer);
@@ -643,7 +641,7 @@ public class MainController {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(large ? largeFileNote(file) : "Opened " + file);
+            setStatus(note.isEmpty() ? "Opened " + file : note);
         } catch (IOException e) {
             setStatus("Failed to open: " + e.getMessage());
             if (recentFiles != null) {
@@ -653,16 +651,44 @@ public class MainController {
     }
 
     /**
-     * For files at/above {@link EditorBuffer#LARGE_FILE_BYTES}, disables syntax highlighting and the
-     * minimap so the editor stays responsive. Returns true if large-file mode was applied (the caller
-     * announces it via {@link #largeFileNote}).
+     * Reads {@code file} into {@code buffer} and applies the size-based mode, returning a status note
+     * ({@code ""} for a normal file):
+     * <ul>
+     *   <li>≥ {@link EditorBuffer#HUGE_FILE_BYTES}: read at most that many chars (so a multi-GB file
+     *       can't exhaust memory) and open read-only;</li>
+     *   <li>≥ {@link EditorBuffer#LARGE_FILE_BYTES}: full read, but highlighting + minimap disabled;</li>
+     *   <li>otherwise: full read, normal editing.</li>
+     * </ul>
      */
-    private boolean applyLargeFileMode(EditorBuffer buffer, Path file) {
-        if (fileSize(file) < EditorBuffer.LARGE_FILE_BYTES) {
-            return false;
+    private String loadInto(EditorBuffer buffer, Path file) throws IOException {
+        long size = fileSize(file);
+        if (size >= EditorBuffer.HUGE_FILE_BYTES) {
+            String content = readCapped(file, (int) EditorBuffer.HUGE_FILE_BYTES);
+            buffer.setContent(content);
+            buffer.setReadOnly(true);
+            return file.getFileName() + " — very large file (" + StatusBar.formatSize(size)
+                    + "): read-only, showing first " + StatusBar.formatSize(content.length());
         }
-        buffer.setLargeFile(true);
-        return true;
+        buffer.setContent(Files.readString(file));
+        if (size >= EditorBuffer.LARGE_FILE_BYTES) {
+            buffer.setLargeFile(true);
+            return largeFileNote(file);
+        }
+        return "";
+    }
+
+    /** Reads up to {@code maxChars} characters (UTF-8) from {@code file}, bounding memory use. */
+    private static String readCapped(Path file, int maxChars) throws IOException {
+        StringBuilder sb = new StringBuilder(Math.min(maxChars, 1 << 20));
+        char[] buf = new char[1 << 16];
+        try (java.io.Reader r = Files.newBufferedReader(file, java.nio.charset.StandardCharsets.UTF_8)) {
+            int read;
+            while (sb.length() < maxChars
+                    && (read = r.read(buf, 0, Math.min(buf.length, maxChars - sb.length()))) != -1) {
+                sb.append(buf, 0, read);
+            }
+        }
+        return sb.toString();
     }
 
     private String largeFileNote(Path file) {

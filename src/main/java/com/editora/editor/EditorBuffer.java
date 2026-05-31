@@ -14,6 +14,9 @@ import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.fxmisc.richtext.util.UndoUtils;
+import org.fxmisc.undo.UndoManager;
+import org.fxmisc.undo.UndoManagerFactory;
 
 import java.nio.file.Path;
 
@@ -59,10 +62,14 @@ public class EditorBuffer {
     private Split split = Split.NONE;
     /** Files at/above this size skip syntax highlighting and the minimap to stay responsive. */
     public static final long LARGE_FILE_BYTES = 5L * 1024 * 1024;
+    /** Files at/above this size are opened read-only (and truncated by the loader). */
+    public static final long HUGE_FILE_BYTES = 50L * 1024 * 1024;
     /** Whether the minimap is shown; applied to every split pane's minimap. */
     private boolean minimapVisible = true;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
     private boolean largeFile;
+    /** Huge-file mode: implies large-file mode plus read-only (no undo, not editable). */
+    private boolean hugeFile;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     private CodeArea focusedArea = area;
     /**
@@ -111,10 +118,14 @@ public class EditorBuffer {
     /** Coalesces ruler re-measurement onto a later pulse (see {@link #scheduleRulerMeasure}). */
     private boolean rulerMeasurePending;
 
+    /** Max undo entries kept per view; caps undo memory (RichTextFX defaults to unlimited). */
+    private static final int UNDO_HISTORY = 300;
+
     public EditorBuffer() {
         refreshGutter();
         area.getStyleClass().add("editor-area");
         area.setWrapText(false);
+        area.setUndoManager(boundedUndoManager(area));
         area.setLineHighlighterFill(lineHighlightColor);
         area.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(150))
@@ -256,6 +267,8 @@ public class EditorBuffer {
         area2 = new CodeArea(area.getContent()); // shares the EditableStyledDocument
         area2.getStyleClass().add("editor-area");
         area2.setWrapText(false);
+        area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
+        area2.setEditable(area.isEditable());
         area2.setLineHighlighterFill(lineHighlightColor);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
@@ -308,6 +321,14 @@ public class EditorBuffer {
         } else {
             columnRuler.setVisible(false);
         }
+    }
+
+    /** A fixed-size undo manager so undo history can't grow without bound. */
+    private static UndoManager<?> boundedUndoManager(CodeArea a) {
+        UndoManagerFactory factory = UndoManagerFactory.fixedSizeHistoryFactory(UNDO_HISTORY);
+        return a.isPreserveStyle()
+                ? UndoUtils.richTextUndoManager(a, factory)
+                : UndoUtils.plainTextUndoManager(a, factory);
     }
 
     /** Toggle the highlight on the line containing the caret. */
@@ -551,9 +572,40 @@ public class EditorBuffer {
         this.largeFile = large;
         highlightGen++; // discard any in-flight highlight result
         setMinimapVisible(minimapVisible); // re-apply with the large-file guard
+        // Large files don't need (and shouldn't pay the memory for) undo history.
+        applyUndoMode();
         if (!large) {
             applyHighlighting(); // re-enable highlighting if we ever leave large-file mode
         }
+    }
+
+    /**
+     * Enables huge-file (read-only) mode: implies large-file mode, and makes the views non-editable
+     * with no undo. Used for files the loader had to truncate; see {@link #HUGE_FILE_BYTES}.
+     */
+    public void setReadOnly(boolean readOnly) {
+        this.hugeFile = readOnly;
+        area.setEditable(!readOnly);
+        if (area2 != null) {
+            area2.setEditable(!readOnly);
+        }
+        if (readOnly) {
+            setLargeFile(true); // also disables highlighting + minimap (and undo via applyUndoMode)
+        } else {
+            applyUndoMode();
+        }
+    }
+
+    /** Picks the undo manager for the current mode: none for large/huge files, bounded otherwise. */
+    private void applyUndoMode() {
+        area.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area));
+        if (area2 != null) {
+            area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
+        }
+    }
+
+    public boolean isReadOnly() {
+        return hugeFile;
     }
 
     public boolean isLargeFile() {
