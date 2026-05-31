@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.function.Consumer;
 
@@ -23,6 +25,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Font;
+import javafx.scene.text.Text;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
@@ -33,6 +36,9 @@ public class SettingsWindow {
 
     private static final String APP_NAME = "Editora";
     private static final String APP_VERSION = "1.0.0";
+    // Window size (10% larger than the original 520x560).
+    private static final double WIDTH = 572;
+    private static final double HEIGHT = 616;
     /** Build timestamp baked in by Maven resource filtering (see build-info.properties). */
     private static final String BUILD_TIME = loadBuildTime();
 
@@ -67,8 +73,18 @@ public class SettingsWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
+            centerOnOwner(owner);
             stage.show();
         }
+    }
+
+    /** Positions the window centered over the app's main window. */
+    private void centerOnOwner(Window owner) {
+        if (owner == null) {
+            return;
+        }
+        stage.setX(owner.getX() + (owner.getWidth() - WIDTH) / 2);
+        stage.setY(owner.getY() + (owner.getHeight() - HEIGHT) / 2);
     }
 
     private void build(Window owner) {
@@ -77,7 +93,7 @@ public class SettingsWindow {
         stage.initModality(Modality.NONE);
 
         fontFamily = new ComboBox<>();
-        fontFamily.getItems().setAll(Font.getFamilies());
+        fontFamily.getItems().setAll(monospaceFamilies());
         fontFamily.setPrefWidth(220);
         fontFamily.valueProperty().addListener((obs, old, now) -> apply());
 
@@ -135,7 +151,10 @@ public class SettingsWindow {
         GridPane form = new GridPane();
         form.setHgap(12);
         form.setVgap(10);
-        form.addRow(0, new Label("Font family:"), fontFamily);
+        Label fontNote = new Label("Only monospaced fonts are listed.");
+        fontNote.setStyle("-fx-font-size: 11px; -fx-text-fill: -color-fg-muted;");
+        VBox fontFamilyBox = new VBox(4, fontFamily, fontNote);
+        form.addRow(0, new Label("Font family:"), fontFamilyBox);
         form.addRow(1, new Label("Font size:"), fontSize);
         form.addRow(2, new Label("Theme:"), themeCombo);
         form.add(columnRulerCheck, 1, 3);
@@ -198,10 +217,10 @@ public class SettingsWindow {
 
         VBox rootBox = new VBox(16, form, buttons);
         rootBox.setPadding(new Insets(16));
-        rootBox.setPrefWidth(520);
-        rootBox.setPrefHeight(560);
+        rootBox.setPrefWidth(WIDTH);
+        rootBox.setPrefHeight(HEIGHT);
 
-        stage.setScene(new Scene(rootBox, 520, 560));
+        stage.setScene(new Scene(rootBox, WIDTH, HEIGHT));
     }
 
     private void load() {
@@ -226,6 +245,29 @@ public class SettingsWindow {
         } finally {
             loading = false;
         }
+    }
+
+    /**
+     * The installed font families that render as monospaced. JavaFX has no monospace flag, so we
+     * compare the advance width of a narrow glyph ("i") against a wide one ("W"): in a fixed-pitch
+     * font they are equal.
+     */
+    private static List<String> monospaceFamilies() {
+        Text narrow = new Text("iiiiiiiiii");
+        Text wide = new Text("WWWWWWWWWW");
+        List<String> families = new ArrayList<>();
+        for (String family : Font.getFamilies()) {
+            Font font = Font.font(family, 14);
+            if (font == null) {
+                continue;
+            }
+            narrow.setFont(font);
+            wide.setFont(font);
+            if (Math.abs(narrow.getLayoutBounds().getWidth() - wide.getLayoutBounds().getWidth()) < 0.5) {
+                families.add(family);
+            }
+        }
+        return families;
     }
 
     /** Parses the spinner's editor text, clamps it to range, and commits it to the value. */
