@@ -1,18 +1,16 @@
 package com.editora.ui;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-
-import com.editora.command.Command;
-import com.editora.command.CommandRegistry;
-import com.editora.command.KeymapManager;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
+import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
@@ -23,50 +21,55 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.scene.control.Label;
 import javafx.stage.Popup;
 import javafx.stage.Window;
 
-/** A fuzzy-filtered command palette shown as a popup overlay (bound to {@code M-x}). */
-public class CommandPalette {
+/**
+ * A generic fuzzy-filtered picker shown as a popup overlay — the keyboard-first counterpart to a list
+ * UI (e.g. recent files, the structure outline). Modeled on {@link CommandPalette}: type to fuzzily
+ * filter by each item's label, navigate with ↑/↓ or {@code C-n}/{@code C-p}, Enter chooses,
+ * {@code Esc}/{@code C-g} cancels. The item list is supplied fresh on each {@link #show(Window)} and
+ * snapshotted so typing filters a stable set.
+ *
+ * @param <T> the element type (e.g. {@code Path}, a structure entry)
+ */
+public class QuickOpen<T> {
 
     private static final boolean IS_MAC =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
-    private final CommandRegistry registry;
-    private final Map<String, String> commandToKey;
+    private final Supplier<List<T>> itemsSupplier;
+    private final Function<T, String> label;
+    private final Function<T, String> detail;
+    private final Consumer<T> onChoose;
 
     private final Popup popup = new Popup();
     private final TextField input = new TextField();
-    private final ListView<Command> list = new ListView<>();
-    private final ObservableList<Command> items = FXCollections.observableArrayList();
+    private final ListView<T> list = new ListView<>();
+    private final ObservableList<T> items = FXCollections.observableArrayList();
+    private List<T> all = List.of();
 
-    public CommandPalette(CommandRegistry registry, KeymapManager keymap) {
-        this.registry = registry;
-        this.commandToKey = invert(keymap.bindings());
-        build();
+    public QuickOpen(String title, String prompt, Supplier<List<T>> itemsSupplier,
+                     Function<T, String> label, Function<T, String> detail, Consumer<T> onChoose) {
+        this.itemsSupplier = itemsSupplier;
+        this.label = label;
+        this.detail = detail;
+        this.onChoose = onChoose;
+        build(title, prompt);
     }
 
-    private static Map<String, String> invert(Map<String, String> bindings) {
-        Map<String, String> byCommand = new LinkedHashMap<>();
-        bindings.forEach((sequence, id) -> byCommand.putIfAbsent(id, sequence));
-        return byCommand;
-    }
-
-    private void build() {
-        input.setPromptText("Run command…");
+    private void build(String title, String prompt) {
+        input.setPromptText(prompt);
         list.setItems(items);
         list.setPrefHeight(280);
-        list.setCellFactory(v -> new CommandCell());
+        list.setCellFactory(v -> new ItemCell());
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
-        // The opening chord (e.g. M-x) is Alt/Meta+key; on macOS that combination also emits a
-        // KEY_TYPED for a special character (Option+x => "≈") that would land in the just-focused
-        // field. Swallow any character typed while a chord modifier is held; plain query typing
-        // (no modifier, or only Shift) passes through. macOS only — elsewhere chord modifiers don't
-        // emit query characters, and gating this avoids eating AltGr-composed characters on
-        // European layouts (AltGr reports as Ctrl+Alt).
+        // The opening chord can be Alt/Meta+key; on macOS that also emits a KEY_TYPED special char
+        // that would land in the just-focused field. Swallow characters typed with a chord modifier
+        // held (plain typing — no modifier or only Shift — passes through). macOS only (see
+        // CommandPalette for the rationale).
         if (IS_MAC) {
             input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
                 if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
@@ -75,7 +78,7 @@ public class CommandPalette {
             });
         }
 
-        Label header = new Label("Command Palette");
+        Label header = new Label(title);
         header.getStyleClass().add("palette-title");
         VBox content = new VBox(6, header, input, list);
         content.getStyleClass().add("command-palette");
@@ -92,7 +95,7 @@ public class CommandPalette {
                 e.consume();
             }
             case ENTER -> {
-                runSelected();
+                chooseSelected();
                 e.consume();
             }
             case DOWN -> {
@@ -136,20 +139,20 @@ public class CommandPalette {
         list.scrollTo(idx);
     }
 
-    private void runSelected() {
-        Command command = list.getSelectionModel().getSelectedItem();
-        if (command != null) {
+    private void chooseSelected() {
+        T item = list.getSelectionModel().getSelectedItem();
+        if (item != null) {
             hide();
-            registry.run(command.id());
+            onChoose.accept(item);
         }
     }
 
     private void filter(String query) {
         String q = query.toLowerCase(Locale.ROOT).trim();
-        List<Command> matches = new ArrayList<>();
-        for (Command command : registry.all()) {
-            if (q.isEmpty() || isSubsequence(q, command.title().toLowerCase(Locale.ROOT))) {
-                matches.add(command);
+        List<T> matches = new ArrayList<>();
+        for (T item : all) {
+            if (q.isEmpty() || CommandPalette.isSubsequence(q, label.apply(item).toLowerCase(Locale.ROOT))) {
+                matches.add(item);
             }
         }
         items.setAll(matches);
@@ -158,18 +161,8 @@ public class CommandPalette {
         }
     }
 
-    /** True if every char of {@code needle} appears in {@code haystack} in order (fuzzy match). */
-    static boolean isSubsequence(String needle, String haystack) {
-        int i = 0;
-        for (int j = 0; i < needle.length() && j < haystack.length(); j++) {
-            if (needle.charAt(i) == haystack.charAt(j)) {
-                i++;
-            }
-        }
-        return i == needle.length();
-    }
-
     public void show(Window owner) {
+        all = itemsSupplier.get();
         input.clear();
         filter("");
         double width = 620;
@@ -187,23 +180,18 @@ public class CommandPalette {
         return popup.isShowing();
     }
 
-    public javafx.beans.value.ObservableValue<Boolean> showingProperty() {
-        return popup.showingProperty();
-    }
-
-    private final class CommandCell extends ListCell<Command> {
+    private final class ItemCell extends ListCell<T> {
         private final Label title = new Label();
-        private final Label key = new Label();
-        private final HBox box = new HBox(10, title, spacer(), key);
+        private final Label sub = new Label();
+        private final HBox box = new HBox(10, title, spacer(), sub);
 
-        CommandCell() {
+        ItemCell() {
             box.setAlignment(Pos.CENTER_LEFT);
-            key.getStyleClass().add("keybinding");
-            // Click a command to run it (the keyboard runs the selected item on Enter).
+            sub.getStyleClass().add("keybinding"); // reuse the palette's muted right-detail style
             setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && getItem() != null) {
                     getListView().getSelectionModel().select(getItem());
-                    runSelected();
+                    chooseSelected();
                 }
             });
         }
@@ -215,14 +203,15 @@ public class CommandPalette {
         }
 
         @Override
-        protected void updateItem(Command item, boolean empty) {
+        protected void updateItem(T item, boolean empty) {
             super.updateItem(item, empty);
             if (empty || item == null) {
                 setGraphic(null);
                 return;
             }
-            title.setText(item.title());
-            key.setText(commandToKey.getOrDefault(item.id(), ""));
+            title.setText(label.apply(item));
+            String d = detail == null ? null : detail.apply(item);
+            sub.setText(d == null ? "" : d);
             setGraphic(box);
         }
     }

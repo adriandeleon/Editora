@@ -11,6 +11,7 @@
   "C-x 2": "view.splitHorizontal",
   "C-x 3": "view.splitVertical",
   "C-x C-b": "switcher.show",
+  "C-x C-r": "recent.jump",
   "C-x o": "window.other",
   "M-x": "palette.show",
   "M-1": "tool.project",
@@ -56,5 +57,6 @@
   "C-c p": "view.toggleBreadcrumb",
   "C-c z": "view.toggleZen",
   "C-c a": "file.toggleAutoSave",
-  "M-g g": "nav.goToLine"
+  "M-g g": "nav.goToLine",
+  "M-g i": "structure.jump"
 }

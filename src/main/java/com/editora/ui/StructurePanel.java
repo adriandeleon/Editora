@@ -86,6 +86,26 @@ public class StructurePanel extends VBox {
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
     }
 
+    /** A flat structure entry for the keyboard "Jump to Structure" picker. */
+    public record Outline(String label, String kind, int line) {
+    }
+
+    /** The current structure as a flat, document-order list (for the Jump-to-Structure picker). */
+    public List<Outline> outline() {
+        List<Outline> out = new ArrayList<>();
+        collectOutline(roots, out);
+        return out;
+    }
+
+    private static void collectOutline(List<StructureNode> nodes, List<Outline> out) {
+        for (StructureNode n : nodes) {
+            if (n.line() >= 0) { // skip placeholder nodes ("No structure"/"No file open")
+                out.add(new Outline(n.label(), n.kind(), n.line()));
+            }
+            collectOutline(n.children(), out);
+        }
+    }
+
     /** Attaches to a buffer (or {@code null}), rebuilding the tree and watching it for region changes. */
     public void attach(EditorBuffer buffer) {
         if (this.buffer != null) {

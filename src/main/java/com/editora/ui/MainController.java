@@ -137,6 +137,8 @@ public class MainController {
     private StatusBar statusBar;
     private FileBreadcrumb breadcrumb;
     private SettingsWindow settingsWindow;
+    private QuickOpen<Path> recentPalette;
+    private QuickOpen<StructurePanel.Outline> structurePalette;
 
     // Auto save. Mode keys: "off" | "afterDelay" | "onFocusChange".
     static final String AUTOSAVE_OFF = "off";
@@ -199,6 +201,7 @@ public class MainController {
         registerCommands();
         setupToolbar();
         setupRecentFiles();
+        setupJumpPickers();
         toolWindows.restore();
         // Honor a persisted Zen state on launch: the view options + chrome already read the flag via
         // the apply paths; this hides the side stripes (restore() opened nothing — windows were
@@ -244,6 +247,38 @@ public class MainController {
         rebuildRecentMenu();
 
         setupButton(clearRecentButton, Icons.trash(), "Clear recent files");
+    }
+
+    /** Builds the keyboard "Jump to…" pickers (recent files, structure) — command-palette-style popups. */
+    private void setupJumpPickers() {
+        recentPalette = new QuickOpen<>("Jump to Recent File", "Type to filter recent files…",
+                () -> List.copyOf(recentFiles.getList()),
+                p -> p.getFileName() == null ? p.toString() : p.getFileName().toString(),
+                p -> p.getParent() == null ? "" : p.getParent().toString(),
+                this::openPath);
+        structurePalette = new QuickOpen<>("Jump to Structure", "Type to filter symbols…",
+                () -> structurePanel.outline(),
+                StructurePanel.Outline::label,
+                StructurePanel.Outline::kind,
+                entry -> navigateToLine(entry.line()));
+    }
+
+    /** Moves the active editor's caret to {@code line} and anchors it at the top of the viewport. */
+    private void navigateToLine(int line) {
+        CodeArea area = activeArea();
+        if (area == null || line < 0 || line >= area.getParagraphs().size()) {
+            return;
+        }
+        area.moveTo(line, 0);
+        Platform.runLater(() -> {
+            try {
+                area.showParagraphAtTop(line);
+            } catch (RuntimeException ignored) {
+                // Viewport not ready; ignore.
+            }
+        });
+        area.requestFollowCaret();
+        area.requestFocus();
     }
 
     /** Repopulates the recent-files menu from the persisted list (most-recent first). */
@@ -2079,6 +2114,10 @@ public class MainController {
                 this::toggleBreadcrumb));
         registry.register(Command.of("view.toggleZen", "View: Toggle Zen Mode", this::toggleZen));
         registry.register(Command.of("file.toggleAutoSave", "File: Toggle Auto Save", this::toggleAutoSave));
+        registry.register(Command.of("recent.jump", "Recent Files: Jump…",
+                () -> recentPalette.show(stage)));
+        registry.register(Command.of("structure.jump", "Structure: Jump…",
+                () -> structurePalette.show(stage)));
         registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
                 this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",

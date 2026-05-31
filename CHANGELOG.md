@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Keyboard "Jump to…" pickers — command-palette-style fuzzy popups: "Jump to Recent Files"
+  (`C-x C-r`) lists recent files to filter and open, and "Jump to Structure" (`M-g i`) lists the
+  active file's symbols to filter and jump to. Both are also in the command palette ("Recent Files:
+  Jump" / "Structure: Jump") and navigate with `C-n`/`C-p`, Enter, and `Esc`.
 - More Emacs movement keys: `M-m` (back to indentation), `C-l` (recenter the caret line in the
   viewport), `M-{` / `M-}` (backward/forward paragraph), and `M-a` / `M-e` (backward/forward
   sentence) — all registered commands, so they also appear in the palette. Note: on macOS the

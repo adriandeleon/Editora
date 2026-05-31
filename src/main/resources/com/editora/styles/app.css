@@ -504,6 +504,14 @@
     -fx-text-fill: -color-fg-muted;
 }
 
+/* Title header at the top of the palette / Jump-to popups, naming the action. */
+.command-palette .palette-title {
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 2 2 0 2;
+}
+
 .find-bar {
     -fx-background-color: -color-bg-subtle;
     -fx-padding: 4 8 4 8;
