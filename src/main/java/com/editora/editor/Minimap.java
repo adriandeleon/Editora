@@ -150,9 +150,14 @@ final class Minimap extends Region {
         if (total == 0) {
             return;
         }
-        if (contentImage != null) {
-            g.drawImage(contentImage, 0, 0);
+        if (contentImage == null) {
+            // No cached content yet — e.g. the first renderContent()'s snapshot lost the startup
+            // layout race. Regenerate (draws the runs and retries the cache) instead of leaving the
+            // minimap blank with only the viewport box.
+            renderContent();
+            return;
         }
+        g.drawImage(contentImage, 0, 0);
         drawViewport(g, w, h, total, rowHeight(h, total));
     }
 
