@@ -38,6 +38,21 @@ public final class TextMateHighlighter {
     }
 
     /**
+     * The result of an incremental pass tokenizing lines {@code [fromLine … end]}:
+     * <ul>
+     *   <li>{@code fromOffset} — character offset of {@code fromLine}'s start (pass to
+     *       {@code CodeArea.setStyleSpans(fromOffset, spans)});</li>
+     *   <li>{@code spans} — styles covering {@code [fromOffset … end]};</li>
+     *   <li>{@code endStates} — the grammar end-state of each tokenized line, so the next edit can
+     *       resume mid-document;</li>
+     *   <li>{@code symbols} — definitions found on the tokenized lines (absolute line indices).</li>
+     * </ul>
+     */
+    public record IncrementalAnalysis(int fromOffset, StyleSpans<Collection<String>> spans,
+            List<IStateStack> endStates, List<Symbol> symbols) {
+    }
+
+    /**
      * Style spans covering the whole text. Returns {@code null} for empty text or a null grammar
      * (RichTextFX cannot build zero-length spans) — callers should skip applying styles then.
      */
@@ -55,27 +70,45 @@ public final class TextMateHighlighter {
         if (text == null || text.isEmpty() || grammar == null) {
             return null;
         }
+        IncrementalAnalysis a = analyzeFrom(text, grammar, 0, null);
+        return a == null ? null : new Analysis(a.spans(), a.symbols());
+    }
+
+    /**
+     * Tokenizes {@code text} from line {@code fromLine} (with grammar {@code startState}, the end
+     * state of the previous line, or {@code null} for line 0) to the end. Used for incremental
+     * re-highlighting: the unchanged prefix before an edit is skipped. Returns {@code null} for a
+     * null grammar/text.
+     */
+    public static IncrementalAnalysis analyzeFrom(String text, IGrammar grammar, int fromLine,
+            IStateStack startState) {
+        if (text == null || grammar == null) {
+            return null;
+        }
         // A grammar instance is shared across buffers (GrammarRegistry caches one per scope), and each
         // buffer tokenizes on its own background thread. tm4e's tokenizeLine is not thread-safe, so two
         // buffers of the same language highlighting at once would corrupt the grammar's internal state
         // and throw — silently dropping one file's highlighting. Serialize per grammar instance:
         // same-grammar passes run sequentially; different grammars still run in parallel.
         synchronized (grammar) {
-            return analyzeLocked(text, grammar);
+            return analyzeFromLocked(text, grammar, fromLine, startState);
         }
     }
 
-    private static Analysis analyzeLocked(String text, IGrammar grammar) {
+    private static IncrementalAnalysis analyzeFromLocked(String text, IGrammar grammar, int fromLine,
+            IStateStack startState) {
         // Adjacent runs with the same style are merged before they reach the builder: we collapse
         // many TextMate scopes onto a few coarse classes, so a single line yields long stretches of
         // identical (or empty) styling. RichTextFX materializes one Text node per span, so emitting
         // every token as its own span balloons the node count and makes layout/scrolling crawl.
         SpanMerger spans = new SpanMerger();
+        List<IStateStack> endStates = new ArrayList<>();
         List<Symbol> symbols = new ArrayList<>();
-        IStateStack state = null;
-        int pos = 0;
+        IStateStack state = startState;
+        int fromOffset = offsetOfLine(text, fromLine);
+        int pos = fromOffset;
         int length = text.length();
-        int lineIndex = 0;
+        int lineIndex = fromLine;
         while (true) {
             int newline = text.indexOf('\n', pos);
             int lineEnd = newline < 0 ? length : newline;
@@ -93,6 +126,7 @@ public final class TextMateHighlighter {
             } catch (Exception | LinkageError e) {
                 spans.add(null, line.length());
             }
+            endStates.add(state); // end state of this line (carried unchanged on a tokenization failure)
             if (newline < 0) {
                 break;
             }
@@ -100,7 +134,23 @@ public final class TextMateHighlighter {
             pos = newline + 1;
             lineIndex++;
         }
-        return new Analysis(spans.build(), symbols);
+        return new IncrementalAnalysis(fromOffset, spans.build(), endStates, symbols);
+    }
+
+    /** Character offset where 0-based {@code line} starts; clamps to the text end if past the last line. */
+    private static int offsetOfLine(String text, int line) {
+        if (line <= 0) {
+            return 0;
+        }
+        int pos = 0;
+        for (int count = 0; count < line; count++) {
+            int newline = text.indexOf('\n', pos);
+            if (newline < 0) {
+                return text.length();
+            }
+            pos = newline + 1;
+        }
+        return pos;
     }
 
     /** Records the first definition name on a line (if any) for the structure view. */

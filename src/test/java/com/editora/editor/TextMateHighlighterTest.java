@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -77,6 +78,53 @@ class TextMateHighlighterTest {
         StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(text, java);
         assertEquals(text.length(), spans.length());
         assertTrue(hasStyle(spans, "comment"));
+    }
+
+    // --- incremental tokenization (re-highlight from a changed line) ---
+
+    private static List<Collection<String>> flatten(StyleSpans<Collection<String>> spans) {
+        List<Collection<String>> out = new ArrayList<>();
+        for (StyleSpan<Collection<String>> span : spans) {
+            for (int i = 0; i < span.getLength(); i++) {
+                out.add(span.getStyle());
+            }
+        }
+        return out;
+    }
+
+    @Test
+    void incrementalResumeMatchesFullPass() {
+        IGrammar java = GrammarRegistry.shared().forFileName("Foo.java");
+        assertNotNull(java);
+        String text = "public class Foo {\n    int x = 1;\n    String s = \"hi\";\n}\n";
+        TextMateHighlighter.IncrementalAnalysis full = TextMateHighlighter.analyzeFrom(text, java, 0, null);
+        assertEquals(0, full.fromOffset());
+        assertEquals(text.length(), full.spans().length());
+        List<Collection<String>> fullFlat = flatten(full.spans());
+
+        // Resume from line 2 using the stored end-state of line 1; the suffix styling must match.
+        int fromLine = 2;
+        TextMateHighlighter.IncrementalAnalysis inc =
+                TextMateHighlighter.analyzeFrom(text, java, fromLine, full.endStates().get(fromLine - 1));
+        assertTrue(inc.fromOffset() > 0);
+        assertEquals(text.length() - inc.fromOffset(), inc.spans().length());
+        List<Collection<String>> incFlat = flatten(inc.spans());
+        for (int i = 0; i < incFlat.size(); i++) {
+            assertEquals(fullFlat.get(inc.fromOffset() + i), incFlat.get(i),
+                    "style mismatch at offset " + (inc.fromOffset() + i));
+        }
+    }
+
+    @Test
+    void incrementalResumeInsideBlockCommentStaysComment() {
+        IGrammar java = GrammarRegistry.shared().forFileName("A.java");
+        assertNotNull(java);
+        String text = "/* open\n still inside\n closed */ int y;\n";
+        TextMateHighlighter.IncrementalAnalysis full = TextMateHighlighter.analyzeFrom(text, java, 0, null);
+        // Resume from line 1 ("still inside") carrying line 0's end-state — must still be comment.
+        TextMateHighlighter.IncrementalAnalysis inc =
+                TextMateHighlighter.analyzeFrom(text, java, 1, full.endStates().get(0));
+        assertTrue(hasStyle(inc.spans(), "comment"));
     }
 
     @Test

@@ -98,6 +98,12 @@ public class EditorBuffer {
     });
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
     private long highlightGen;
+    /** Per-line grammar end-states from the last tokenization (FX-thread confined), so an edit can
+     *  re-highlight only from the changed line forward instead of the whole document. */
+    private final java.util.ArrayList<org.eclipse.tm4e.core.grammar.IStateStack> lineStates =
+            new java.util.ArrayList<>();
+    /** Earliest line changed since the last highlight (0 = re-highlight the whole document). */
+    private int dirtyFromLine;
     /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
     private List<TextMateHighlighter.Symbol> symbols = List.of();
     /** Notified (on the FX thread) after {@link #symbols} is refreshed. */
@@ -127,6 +133,15 @@ public class EditorBuffer {
         area.setWrapText(false);
         area.setUndoManager(boundedUndoManager(area));
         area.setLineHighlighterFill(lineHighlightColor);
+        // Track the earliest changed line immediately (the debounced stream below drops intermediate
+        // emissions, so the dirty start must be accumulated here), then re-highlight after a pause.
+        area.multiPlainChanges().subscribe(changes -> {
+            for (var change : changes) {
+                int line = area.offsetToPosition(change.getPosition(),
+                        org.fxmisc.richtext.model.TwoDimensional.Bias.Backward).getMajor();
+                dirtyFromLine = Math.min(dirtyFromLine, line);
+            }
+        });
         area.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> applyHighlighting());
@@ -528,6 +543,7 @@ public class EditorBuffer {
         this.language = name;
         this.grammar = g;
         folds.setLanguage(language);
+        invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
         applyHighlighting();
     }
 
@@ -694,9 +710,17 @@ public class EditorBuffer {
         this.onSymbolsChanged = callback == null ? () -> { } : callback;
     }
 
+    /** Forces the next {@link #applyHighlighting()} to re-tokenize the whole document (e.g. after a
+     *  language/grammar change, where no text change occurred). */
+    private void invalidateHighlighting() {
+        dirtyFromLine = 0;
+        lineStates.clear();
+    }
+
     private void applyHighlighting() {
         if (largeFile) {
-            // Large-file mode: leave the document as plain text and drop any structure symbols.
+            // Large-file mode: leave the document as plain text and drop any structure symbols/state.
+            lineStates.clear();
             if (!symbols.isEmpty()) {
                 symbols = List.of();
                 onSymbolsChanged.run();
@@ -712,37 +736,63 @@ public class EditorBuffer {
                         .add(Collections.emptyList(), length)
                         .create());
             }
+            lineStates.clear();
             if (!symbols.isEmpty()) {
                 symbols = List.of();
                 onSymbolsChanged.run();
             }
             return;
         }
-        // Tokenizing a whole document is O(document length) — hundreds of milliseconds to over a
-        // second on large files. Running it on the FX thread froze scrolling and typing, so we
-        // compute the spans on a background thread and apply the result back on the FX thread. A
-        // generation counter discards stale results, and we re-check the document length before
-        // applying (the user may have edited since), since RichTextFX requires the spans to cover
-        // the document exactly.
+        // Tokenizing is O(lines): re-highlight only from the first changed line to the end, reusing
+        // the stored grammar end-states for the unchanged prefix. The work still runs on a background
+        // thread (a generation counter discards stale results) and the result is re-validated against
+        // the current document length before applying, since RichTextFX requires the spans to cover
+        // their range exactly.
+        // The start line is only valid if we have its predecessor's end-state; otherwise re-do all.
+        int from = dirtyFromLine;
+        if (from > 0 && (from - 1 >= lineStates.size() || lineStates.get(from - 1) == null)) {
+            from = 0;
+        }
+        var startState = from == 0 ? null : lineStates.get(from - 1);
         String text = area.getText();
         IGrammar g = grammar;
+        int fromLine = from;
         long gen = ++highlightGen;
+        dirtyFromLine = Integer.MAX_VALUE; // captured; reset so new edits set a fresh dirty start
         highlightExecutor.execute(() -> {
-            TextMateHighlighter.Analysis analysis;
+            TextMateHighlighter.IncrementalAnalysis a;
             try {
-                analysis = TextMateHighlighter.analyze(text, g);
+                a = TextMateHighlighter.analyzeFrom(text, g, fromLine, startState);
             } catch (Exception | LinkageError e) {
                 return; // never let a grammar/engine fault kill the highlighter thread
             }
-            if (analysis == null || analysis.spans() == null) {
+            if (a == null || a.spans() == null) {
                 return;
             }
             Platform.runLater(() -> {
-                if (gen == highlightGen && analysis.spans().length() == area.getLength()) {
-                    area.setStyleSpans(0, analysis.spans());
-                    symbols = analysis.symbols();
-                    onSymbolsChanged.run();
+                if (gen != highlightGen) {
+                    return; // a newer edit superseded this pass
                 }
+                // The spans cover [fromOffset … end of captured text]; bail if the doc has changed.
+                if (a.fromOffset() + a.spans().length() != area.getLength()) {
+                    return;
+                }
+                area.setStyleSpans(a.fromOffset(), a.spans());
+                // Replace per-line end-states from fromLine onward (the prefix is unchanged).
+                while (lineStates.size() > fromLine) {
+                    lineStates.remove(lineStates.size() - 1);
+                }
+                lineStates.addAll(a.endStates());
+                // Symbols: keep those before fromLine (unchanged), append the freshly tokenized ones.
+                List<TextMateHighlighter.Symbol> merged = new java.util.ArrayList<>();
+                for (TextMateHighlighter.Symbol s : symbols) {
+                    if (s.line() < fromLine) {
+                        merged.add(s);
+                    }
+                }
+                merged.addAll(a.symbols());
+                symbols = merged;
+                onSymbolsChanged.run();
             });
         });
     }

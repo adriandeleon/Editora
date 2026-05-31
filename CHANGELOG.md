@@ -92,6 +92,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Syntax highlighting is now incremental: an edit re-tokenizes only from the changed
+  line to the end of the document (reusing stored per-line grammar states for the
+  unchanged prefix) instead of the whole file, lowering highlight latency on larger
+  files. Still runs off the UI thread with stale-result discarding.
 - App chrome (toolbar/tool-window icons, status bar, tool windows, command palette,
   switcher, find bar, File Information) now uses AtlantaFX theme variables instead of
   hardcoded light colors, so it adapts to dark themes (icons and text stay legible).
