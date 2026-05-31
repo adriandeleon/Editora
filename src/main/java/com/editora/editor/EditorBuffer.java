@@ -45,6 +45,8 @@ public class EditorBuffer {
     private final CodeArea area = new CodeArea();
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
+    /** The last saved/loaded content; the buffer is dirty only when the text differs from this. */
+    private String cleanText = "";
 
     /** Orientation of an optional second, synced view of this document. */
     public enum Split { NONE, SIDE_BY_SIDE, STACKED }
@@ -145,7 +147,11 @@ public class EditorBuffer {
         area.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> applyHighlighting());
-        area.textProperty().addListener((obs, old, now) -> dirty.set(true));
+        // Dirty only when the content differs from the last saved/loaded text, so reverting an edit
+        // (undo or manual) clears the marker. The length check short-circuits the O(n) compare —
+        // it runs only when the length matches the saved length (i.e. near the original state).
+        area.textProperty().addListener((obs, old, now) ->
+                dirty.set(now.length() != cleanText.length() || !now.equals(cleanText)));
         area.caretPositionProperty().addListener((obs, old, now) -> resetGoalColumn());
         area.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
@@ -692,7 +698,9 @@ public class EditorBuffer {
         return dirty.get();
     }
 
+    /** Marks the current content as the saved baseline (after load/save); clears the dirty flag. */
     public void markClean() {
+        cleanText = area.getText();
         dirty.set(false);
     }
 
