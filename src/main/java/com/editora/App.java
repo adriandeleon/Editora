@@ -7,6 +7,7 @@ import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.config.WorkspaceState;
 import com.editora.ui.MainController;
 
 import com.editora.ui.Themes;
@@ -15,6 +16,7 @@ import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import javafx.scene.layout.BorderPane;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 public class App extends Application {
@@ -45,9 +47,33 @@ public class App extends Application {
 
         stage.setScene(scene);
         stage.setTitle("Editora");
+        restoreWindowBounds(stage, config.getWorkspaceState());
         stage.show();
 
         controller.openInitialBuffer();
+    }
+
+    /**
+     * Restores the main window's size, position, and maximized state from the last session. Bounds
+     * are only applied when they were saved (non-zero size) and still land on a connected screen, so
+     * a disconnected monitor or first launch falls back to the scene's default size and OS centering.
+     */
+    private void restoreWindowBounds(Stage stage, WorkspaceState state) {
+        double w = state.getWindowWidth();
+        double h = state.getWindowHeight();
+        if (w > 0 && h > 0) {
+            double x = state.getWindowX();
+            double y = state.getWindowY();
+            if (!Screen.getScreensForRectangle(x, y, w, h).isEmpty()) {
+                stage.setX(x);
+                stage.setY(y);
+            }
+            stage.setWidth(w);
+            stage.setHeight(h);
+        }
+        if (state.isWindowMaximized()) {
+            stage.setMaximized(true);
+        }
     }
 
     public static void main(String[] args) {

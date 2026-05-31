@@ -34,6 +34,14 @@ public class WorkspaceState {
     /** Absolute path of the tab that was active at last exit ("" if none/untitled). */
     private String activeFile = "";
 
+    // --- Main window bounds (0 width/height = "unset", use defaults). When maximized, the bounds
+    //     hold the last non-maximized geometry so un-maximizing restores a sensible size. ---
+    private double windowX;
+    private double windowY;
+    private double windowWidth;
+    private double windowHeight;
+    private boolean windowMaximized;
+
     /** One persisted open file: its absolute path, the caret offset to restore, and whether it was pinned. */
     public static class OpenFile {
         private String path = "";
@@ -160,5 +168,45 @@ public class WorkspaceState {
 
     public void setActiveFile(String activeFile) {
         this.activeFile = activeFile == null ? "" : activeFile;
+    }
+
+    public double getWindowX() {
+        return windowX;
+    }
+
+    public void setWindowX(double windowX) {
+        this.windowX = windowX;
+    }
+
+    public double getWindowY() {
+        return windowY;
+    }
+
+    public void setWindowY(double windowY) {
+        this.windowY = windowY;
+    }
+
+    public double getWindowWidth() {
+        return windowWidth;
+    }
+
+    public void setWindowWidth(double windowWidth) {
+        this.windowWidth = windowWidth;
+    }
+
+    public double getWindowHeight() {
+        return windowHeight;
+    }
+
+    public void setWindowHeight(double windowHeight) {
+        this.windowHeight = windowHeight;
+    }
+
+    public boolean isWindowMaximized() {
+        return windowMaximized;
+    }
+
+    public void setWindowMaximized(boolean windowMaximized) {
+        this.windowMaximized = windowMaximized;
     }
 }

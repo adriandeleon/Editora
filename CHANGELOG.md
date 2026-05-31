@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The main window now remembers its size, position, and maximized state across
+  launches (stored in `workspace-state.json`). A saved position that no longer
+  lands on a connected screen falls back to the default centered window.
 - Release pipeline: pushing a `vX.Y.Z` tag builds native installers for Linux
   (x64/arm64), macOS (x64/arm64), and Windows (x64) on per-platform GitHub runners
   and publishes a GitHub Release via JReleaser (`jreleaser.yml` + `release.yml`).

@@ -937,7 +937,23 @@ public class MainController {
         EditorBuffer active = activeBuffer();
         state.setActiveFile(active != null && active.getPath() != null
                 ? active.getPath().toAbsolutePath().toString() : "");
+        persistWindowBounds(state);
         config.save();
+    }
+
+    /** Records the main window's geometry. When maximized, keep the last normal bounds so
+     *  un-maximizing on the next launch restores a sensible size. */
+    private void persistWindowBounds(WorkspaceState state) {
+        if (stage == null) {
+            return;
+        }
+        state.setWindowMaximized(stage.isMaximized());
+        if (!stage.isMaximized()) {
+            state.setWindowX(stage.getX());
+            state.setWindowY(stage.getY());
+            state.setWindowWidth(stage.getWidth());
+            state.setWindowHeight(stage.getHeight());
+        }
     }
 
     private void nextBuffer() {
