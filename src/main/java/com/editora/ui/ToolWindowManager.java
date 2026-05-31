@@ -48,6 +48,9 @@ public class ToolWindowManager {
     private final Map<ToolWindow, Button> stripeButtons = new HashMap<>();
     private final Map<ToolWindow, Region> panels = new HashMap<>();
 
+    /** When true (Zen mode), all side stripes are force-hidden regardless of their buttons. */
+    private boolean zenHidesStripes;
+
     public ToolWindowManager(BorderPane workspace, Node editorArea, ConfigManager config, KeymapManager keymap) {
         this.config = config;
         this.keymap = keymap;
@@ -181,10 +184,35 @@ public class ToolWindowManager {
         setStripeShown(bottomStripe);
     }
 
-    private static void setStripeShown(Pane stripe) {
-        boolean shown = !stripe.getChildren().isEmpty();
+    private void setStripeShown(Pane stripe) {
+        boolean shown = !zenHidesStripes && !stripe.getChildren().isEmpty();
         stripe.setVisible(shown);
         stripe.setManaged(shown);
+    }
+
+    /** Zen mode: hide all three side stripes (without touching per-window visibility) or restore them. */
+    public void setZenStripesHidden(boolean hidden) {
+        zenHidesStripes = hidden;
+        updateStripeVisibility();
+    }
+
+    /** Closes every open tool window and returns their ids (most recent layout order), for Zen restore. */
+    public java.util.List<String> closeAllOpen() {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (ToolWindow tw : getOpenToolWindows()) {
+            ids.add(tw.getId());
+        }
+        for (String id : ids) {
+            close(byId.get(id));
+        }
+        return ids;
+    }
+
+    /** Reopens the given tool windows by id (used when leaving Zen mode). */
+    public void openByIds(java.util.List<String> ids) {
+        for (String id : ids) {
+            openById(id);
+        }
     }
 
     /** Opens any tool windows the settings file says were open last time. */

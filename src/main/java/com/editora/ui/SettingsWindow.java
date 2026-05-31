@@ -46,6 +46,7 @@ public class SettingsWindow {
 
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
+    private final Consumer<Boolean> onToggleZen;
     private final ToolWindowManager toolWindows;
     private final Stage stage = new Stage();
 
@@ -61,13 +62,16 @@ public class SettingsWindow {
     private CheckBox toolbarCheck;
     private CheckBox statusBarCheck;
     private CheckBox tabBarCheck;
+    private CheckBox zenCheck;
     private boolean built;
     private boolean loading;
 
-    public SettingsWindow(ConfigManager config, ToolWindowManager toolWindows, Consumer<Settings> onApply) {
+    public SettingsWindow(ConfigManager config, ToolWindowManager toolWindows,
+                          Consumer<Settings> onApply, Consumer<Boolean> onToggleZen) {
         this.config = config;
         this.toolWindows = toolWindows;
         this.onApply = onApply;
+        this.onToggleZen = onToggleZen;
     }
 
     public void show(Window owner) {
@@ -190,6 +194,18 @@ public class SettingsWindow {
             apply();
         });
 
+        zenCheck = new CheckBox("Zen mode (distraction-free)");
+        zenCheck.selectedProperty().addListener((obs, was, now) -> {
+            if (loading) {
+                return;
+            }
+            // Zen isn't a plain Settings field: route through the orchestration (it snapshots/hides
+            // tool windows and flips the view/chrome prefs off, or restores them). Then re-sync the
+            // other checkboxes, which Zen just changed underneath us.
+            onToggleZen.accept(now);
+            syncViewChecks();
+        });
+
         GridPane form = new GridPane();
         form.setHgap(12);
         form.setVgap(10);
@@ -211,8 +227,9 @@ public class SettingsWindow {
         form.add(toolbarCheck, 1, 9);
         form.add(statusBarCheck, 1, 10);
         form.add(tabBarCheck, 1, 11);
+        form.add(zenCheck, 1, 12);
 
-        int row = 12;
+        int row = 13;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -299,8 +316,28 @@ public class SettingsWindow {
             toolbarCheck.setSelected(settings.isShowToolbar());
             statusBarCheck.setSelected(settings.isShowStatusBar());
             tabBarCheck.setSelected(settings.isShowTabBar());
+            zenCheck.setSelected(config.getWorkspaceState().isZenMode());
         } finally {
             loading = false;
+        }
+    }
+
+    /** Re-syncs the view/chrome checkboxes from the current settings (used after a Zen toggle). */
+    private void syncViewChecks() {
+        boolean prev = loading;
+        loading = true;
+        try {
+            Settings s = config.getSettings();
+            columnRulerCheck.setSelected(s.isShowColumnRuler());
+            lineHighlightCheck.setSelected(s.isHighlightCurrentLine());
+            lineNumbersCheck.setSelected(s.isShowLineNumbers());
+            minimapCheck.setSelected(s.isShowMinimap());
+            whitespaceCheck.setSelected(s.isShowWhitespace());
+            toolbarCheck.setSelected(s.isShowToolbar());
+            statusBarCheck.setSelected(s.isShowStatusBar());
+            tabBarCheck.setSelected(s.isShowTabBar());
+        } finally {
+            loading = prev;
         }
     }
 

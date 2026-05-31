@@ -29,6 +29,14 @@ public class WorkspaceState {
     /** Persisted collapsed fold regions: absolute file path -> header line indices (0-based). */
     private Map<String, List<Integer>> foldedRegions = new LinkedHashMap<>();
 
+    // --- Zen (distraction-free) mode. Entering Zen snapshots the user's view/chrome prefs into
+    //     preZenView (key -> value) and the open tool windows into preZenToolWindows, then turns
+    //     those prefs off — so while in Zen the normal toggles can re-enable individual items, and
+    //     leaving Zen restores the snapshot exactly. ---
+    private boolean zenMode;
+    private List<String> preZenToolWindows = new ArrayList<>();
+    private Map<String, Boolean> preZenView = new LinkedHashMap<>();
+
     /** Files open at last exit, in tab order. */
     private List<OpenFile> openFiles = new ArrayList<>();
     /** Absolute path of the tab that was active at last exit ("" if none/untitled). */
@@ -152,6 +160,30 @@ public class WorkspaceState {
 
     public void setFoldedRegions(Map<String, List<Integer>> foldedRegions) {
         this.foldedRegions = foldedRegions == null ? new LinkedHashMap<>() : foldedRegions;
+    }
+
+    public boolean isZenMode() {
+        return zenMode;
+    }
+
+    public void setZenMode(boolean zenMode) {
+        this.zenMode = zenMode;
+    }
+
+    public List<String> getPreZenToolWindows() {
+        return preZenToolWindows;
+    }
+
+    public void setPreZenToolWindows(List<String> preZenToolWindows) {
+        this.preZenToolWindows = preZenToolWindows == null ? new ArrayList<>() : preZenToolWindows;
+    }
+
+    public Map<String, Boolean> getPreZenView() {
+        return preZenView;
+    }
+
+    public void setPreZenView(Map<String, Boolean> preZenView) {
+        this.preZenView = preZenView == null ? new LinkedHashMap<>() : preZenView;
     }
 
     public List<OpenFile> getOpenFiles() {

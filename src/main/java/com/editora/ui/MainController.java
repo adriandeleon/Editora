@@ -21,8 +21,10 @@ import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -169,7 +171,8 @@ public class MainController {
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
         bottomBox.getChildren().setAll(statusBar);
         setupToolWindows();
-        this.settingsWindow = new SettingsWindow(config, toolWindows, this::applyViewSettingsToAllBuffers);
+        this.settingsWindow = new SettingsWindow(config, toolWindows,
+                this::applyViewSettingsToAllBuffers, this::setZenMode);
         this.switcher = new Switcher(this::openTabsForSwitcher,
                 tab -> tabPane.getSelectionModel().select(tab),
                 this::closeTabFromSwitcher,
@@ -179,6 +182,10 @@ public class MainController {
         setupToolbar();
         setupRecentFiles();
         toolWindows.restore();
+        // Honor a persisted Zen state on launch: the view options + chrome already read the flag via
+        // the apply paths; this hides the side stripes (restore() opened nothing — windows were
+        // persisted closed when Zen was entered).
+        toolWindows.setZenStripesHidden(config.getWorkspaceState().isZenMode());
         applyChromeVisibility();
     }
 
@@ -1378,6 +1385,82 @@ public class MainController {
         setStatus("Hidden characters: " + (s.isShowWhitespace() ? "on" : "off"));
     }
 
+    private void toggleZen() {
+        setZenMode(!config.getWorkspaceState().isZenMode());
+    }
+
+    // Keys for the pre-Zen view/chrome snapshot (WorkspaceState.preZenView).
+    private static final String ZEN_RULER = "columnRuler";
+    private static final String ZEN_LINE_HIGHLIGHT = "lineHighlight";
+    private static final String ZEN_LINE_NUMBERS = "lineNumbers";
+    private static final String ZEN_MINIMAP = "minimap";
+    private static final String ZEN_WHITESPACE = "whitespace";
+    private static final String ZEN_TOOLBAR = "toolbar";
+    private static final String ZEN_STATUS_BAR = "statusBar";
+    private static final String ZEN_TAB_BAR = "tabBar";
+
+    /**
+     * Enters/leaves distraction-free Zen mode. Entering snapshots the user's view/chrome prefs and the
+     * open tool windows, then turns those prefs off — so while in Zen the normal toggles still work
+     * and can re-enable individual items (e.g. line numbers or the status bar); leaving Zen restores
+     * the snapshot exactly. Idempotent.
+     */
+    void setZenMode(boolean on) {
+        WorkspaceState ws = config.getWorkspaceState();
+        if (ws.isZenMode() == on) {
+            return;
+        }
+        Settings s = config.getSettings();
+        if (on) {
+            Map<String, Boolean> snap = new LinkedHashMap<>();
+            snap.put(ZEN_RULER, s.isShowColumnRuler());
+            snap.put(ZEN_LINE_HIGHLIGHT, s.isHighlightCurrentLine());
+            snap.put(ZEN_LINE_NUMBERS, s.isShowLineNumbers());
+            snap.put(ZEN_MINIMAP, s.isShowMinimap());
+            snap.put(ZEN_WHITESPACE, s.isShowWhitespace());
+            snap.put(ZEN_TOOLBAR, s.isShowToolbar());
+            snap.put(ZEN_STATUS_BAR, s.isShowStatusBar());
+            snap.put(ZEN_TAB_BAR, s.isShowTabBar());
+            ws.setPreZenView(snap);
+            ws.setPreZenToolWindows(toolWindows.closeAllOpen());
+            setZenViewSettings(s, false);
+        } else {
+            Map<String, Boolean> snap = ws.getPreZenView();
+            s.setShowColumnRuler(snap.getOrDefault(ZEN_RULER, true));
+            s.setHighlightCurrentLine(snap.getOrDefault(ZEN_LINE_HIGHLIGHT, true));
+            s.setShowLineNumbers(snap.getOrDefault(ZEN_LINE_NUMBERS, true));
+            s.setShowMinimap(snap.getOrDefault(ZEN_MINIMAP, true));
+            s.setShowWhitespace(snap.getOrDefault(ZEN_WHITESPACE, false));
+            s.setShowToolbar(snap.getOrDefault(ZEN_TOOLBAR, true));
+            s.setShowStatusBar(snap.getOrDefault(ZEN_STATUS_BAR, true));
+            s.setShowTabBar(snap.getOrDefault(ZEN_TAB_BAR, true));
+            ws.getPreZenView().clear();
+        }
+        ws.setZenMode(on);
+        toolWindows.setZenStripesHidden(on);
+        if (!on) {
+            toolWindows.openByIds(ws.getPreZenToolWindows());
+            ws.getPreZenToolWindows().clear();
+        }
+        applyChromeVisibility();
+        applyViewSettingsToAllBuffers(s);
+        config.save();
+        // When entering Zen the status bar is hidden, so this is mostly seen on exit.
+        setStatus("Zen mode: " + (on ? "on" : "off"));
+    }
+
+    /** Sets the five editor view options and the three chrome toggles to {@code value} at once. */
+    private void setZenViewSettings(Settings s, boolean value) {
+        s.setShowColumnRuler(value);
+        s.setHighlightCurrentLine(value);
+        s.setShowLineNumbers(value);
+        s.setShowMinimap(value);
+        s.setShowWhitespace(value);
+        s.setShowToolbar(value);
+        s.setShowStatusBar(value);
+        s.setShowTabBar(value);
+    }
+
     private void toggleToolbar() {
         Settings s = config.getSettings();
         s.setShowToolbar(!s.isShowToolbar());
@@ -1757,6 +1840,7 @@ public class MainController {
         registry.register(Command.of("view.toggleStatusBar", "View: Toggle Status Bar",
                 this::toggleStatusBar));
         registry.register(Command.of("view.toggleTabBar", "View: Toggle Tab Bar", this::toggleTabBar));
+        registry.register(Command.of("view.toggleZen", "View: Toggle Zen Mode", this::toggleZen));
         registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
                 this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",

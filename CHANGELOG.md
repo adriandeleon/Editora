@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Zen mode (distraction-free): one toggle hides the editor view options (80-column ruler,
+  current-line highlight, line numbers, minimap, hidden characters), the toolbar, status bar,
+  and tab bar, and all open tool windows — leaving just the editor. While in Zen you can still
+  switch individual items back on (e.g. line numbers or the status bar); toggling Zen off
+  restores your previous configuration exactly. The mode persists across restarts. Via the
+  Settings checkbox, the `view.toggleZen` palette command, or `C-c z`.
 - Toggle the toolbar, the status bar, and the tab bar — via Settings checkboxes
   ("Show toolbar", "Show status bar", "Show tab bar"), the `view.toggleToolbar`
   (`C-c t`) / `view.toggleStatusBar` (`C-c s`) / `view.toggleTabBar` (`C-c b`)
