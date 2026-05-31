@@ -45,9 +45,9 @@ The `dist` profile produces a platform installer under `target/dist/`.
 ## Releases
 
 Tagged releases publish native installers to
-[GitHub Releases](https://github.com/adriandeleon/Editora/releases) for Linux, macOS, and
-Windows (x64 and arm64). A GitHub Actions matrix builds each installer with `-Pdist` on its own
-runner and [JReleaser](https://jreleaser.org) assembles the release (config in `jreleaser.yml`).
+[GitHub Releases](https://github.com/adriandeleon/Editora/releases) for Linux (x64 and arm64),
+macOS (x64 and arm64), and Windows (x64). A GitHub Actions matrix builds each installer with `-Pdist`
+on its own runner and [JReleaser](https://jreleaser.org) assembles the release (config in `jreleaser.yml`).
 
 To cut a release: bump `<version>` in `pom.xml`, commit, then push a matching tag:
 

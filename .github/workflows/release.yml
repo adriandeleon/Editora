@@ -21,7 +21,6 @@ jobs:
           - { target: macos-x64,     os: macos-13 }
           - { target: macos-arm64,   os: macos-14 }
           - { target: windows-x64,   os: windows-latest }
-          - { target: windows-arm64, os: windows-11-arm }
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

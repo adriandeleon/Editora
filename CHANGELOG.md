@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Release pipeline: pushing a `vX.Y.Z` tag builds native installers for Linux,
-  macOS, and Windows (x64 and arm64) on per-platform GitHub runners and publishes
-  a GitHub Release via JReleaser (`jreleaser.yml` + `release.yml`). Installers are
-  currently unsigned.
+- Release pipeline: pushing a `vX.Y.Z` tag builds native installers for Linux
+  (x64/arm64), macOS (x64/arm64), and Windows (x64) on per-platform GitHub runners
+  and publishes a GitHub Release via JReleaser (`jreleaser.yml` + `release.yml`).
+  Installers are currently unsigned.
 - Session restore: on launch, reopens the files that were open at last exit (in tab
   order), reselects the active tab, and restores each file's caret position (scrolled
   into view). Missing files are skipped; an empty session opens a fresh buffer.

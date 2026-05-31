@@ -16,8 +16,9 @@ Run Maven from the project root (`/Users/adriandeleon/src/adl/Editora-V2`).
 
 ## Release pipeline
 
-`.github/workflows/release.yml` runs on a `v*` tag (or manual dispatch for a dry run): a 6-way
-matrix (linux/macOS/windows × x64/arm64, each on its own GitHub-hosted runner) builds the native
+`.github/workflows/release.yml` runs on a `v*` tag (or manual dispatch for a dry run): a 5-way
+matrix (linux x64/arm64, macOS x64/arm64, windows x64 — Windows arm64 is omitted, no hosted runner;
+each on its own GitHub-hosted runner) builds the native
 installer via the existing `-Pdist` profile — there is **no cross-building** (jpackage + JavaFX are
 host-specific), so each runner builds for itself. Installers are renamed per target (jpackage's
 DMG/MSI names omit the arch) and uploaded as artifacts; a final job hands them to **JReleaser**
@@ -25,7 +26,7 @@ DMG/MSI names omit the arch) and uploaded as artifacts; a final job hands them t
 installers + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
 build (the `dist` profile is reused as-is) and there is **no `pom.xml`/Maven change**, so the normal
 build is unaffected. Installers are currently **unsigned** (signing/notarization is a follow-up).
-Uses the BellSoft **Liberica** JDK 25 in CI for full arch coverage (incl. win/linux aarch64).
+Uses the BellSoft **Liberica** JDK 25 in CI for full arch coverage (incl. linux aarch64).
 
 ## Architecture
 
