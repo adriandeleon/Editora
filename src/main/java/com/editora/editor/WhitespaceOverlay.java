@@ -117,6 +117,11 @@ final class WhitespaceOverlay extends Region {
             // to anchor their ¶ to, so we reuse this x derived from a real character on any line.
             double contentLeftX = contentLeftX(first, last);
             for (int p = first; p <= last; p++) {
+                // Skip collapsed (folded) paragraphs: they aren't rendered, and their character
+                // bounds collapse onto the fold-header row, piling stray markers there.
+                if (area.isFolded(p)) {
+                    continue;
+                }
                 drawParagraph(g, p, total, w, contentLeftX);
             }
         } catch (RuntimeException ignored) {
@@ -130,7 +135,7 @@ final class WhitespaceOverlay extends Region {
      */
     private double contentLeftX(int first, int last) {
         for (int p = first; p <= last; p++) {
-            if (area.getParagraph(p).getText().isEmpty()) {
+            if (area.isFolded(p) || area.getParagraph(p).getText().isEmpty()) {
                 continue;
             }
             int abs = area.getAbsolutePosition(p, 0);

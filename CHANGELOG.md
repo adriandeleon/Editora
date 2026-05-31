@@ -97,6 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- "Show hidden characters" no longer piles stray space/tab/EOL markers onto the
+  fold-header row when a region is collapsed: folded (hidden) paragraphs are now
+  skipped by the whitespace overlay (and the 80-column ruler's measurement).
 - Command palette no longer inserts a stray character on macOS when opened with
   its `M-x` chord (Option+x emits "≈"): on macOS, characters typed with a chord
   modifier held are ignored by the palette input. (Scoped to macOS so AltGr-composed

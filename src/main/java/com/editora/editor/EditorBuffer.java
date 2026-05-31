@@ -403,6 +403,9 @@ public class EditorBuffer {
             int refPar = -1;
             int refLen = 0;
             for (int p = first; p <= last; p++) {
+                if (area.isFolded(p)) {
+                    continue; // collapsed line: its caret bounds would skew the advance measurement
+                }
                 int len = area.getParagraphLength(p);
                 if (len > refLen) {
                     refLen = len;
