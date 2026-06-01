@@ -98,7 +98,7 @@ public class ProjectCombo extends ComboBox<Project> {
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
             Button delete = new Button();
-            delete.setGraphic(Icons.closeSmall());
+            delete.setGraphic(Icons.trash());
             delete.getStyleClass().addAll("button-icon", "flat", "recent-remove");
             delete.setFocusTraversable(false);
             delete.setTooltip(new Tooltip("Delete project"));

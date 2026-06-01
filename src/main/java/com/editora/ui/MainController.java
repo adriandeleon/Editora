@@ -681,7 +681,7 @@ public class MainController {
     private CustomMenuItem recentMenuItem(Path path) {
         Label name = new Label(path.getFileName().toString());
         Button removeBtn = new Button();
-        removeBtn.setGraphic(Icons.closeSmall());
+        removeBtn.setGraphic(Icons.trash());
         removeBtn.getStyleClass().addAll("button-icon", "flat", "recent-remove");
         removeBtn.setFocusTraversable(false);
         removeBtn.setTooltip(new Tooltip("Remove from recent files"));
