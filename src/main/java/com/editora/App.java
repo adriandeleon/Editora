@@ -64,6 +64,14 @@ public class App extends Application {
 
         new KeyDispatcher(registry, keymap, controller::setStatus).install(scene);
 
+        // Ctrl + mouse wheel zooms the editor text (and is consumed so the editor doesn't also scroll).
+        scene.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
+            if (e.isControlDown() && e.getDeltaY() != 0) {
+                controller.textZoom(e.getDeltaY() > 0 ? 1 : -1);
+                e.consume();
+            }
+        });
+
         stage.setScene(scene);
         stage.setTitle("Editora");
         loadAppIcons(stage);

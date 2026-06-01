@@ -11,6 +11,9 @@ public class Settings {
 
     private String fontFamily = "JetBrains Mono";
     private int fontSize = 14;
+    /** Text zoom factor applied on top of {@link #fontSize} (1.0 = 100%). A quick, persisted zoom that
+     *  is intentionally NOT shown in the Settings window; effective size = round(fontSize * fontZoom). */
+    private double fontZoom = 1.0;
     private String theme = "Primer Light";
     /** Editor color theme (syntax + surface). Follows {@link #theme} until the user picks one. */
     private String editorTheme = "Primer Light";
@@ -50,6 +53,14 @@ public class Settings {
 
     public void setFontSize(int fontSize) {
         this.fontSize = fontSize;
+    }
+
+    public double getFontZoom() {
+        return fontZoom;
+    }
+
+    public void setFontZoom(double fontZoom) {
+        this.fontZoom = fontZoom;
     }
 
     public String getTheme() {

@@ -2418,6 +2418,32 @@ public class MainController {
         }
     }
 
+    /**
+     * Global text zoom: scales every editor's font on top of the configured size. {@code >0} zooms in,
+     * {@code <0} out (±10% steps, clamped 50%–300%), {@code 0} resets to 100%. Persisted in Settings
+     * (not shown in the Settings window) and reflected in the status bar.
+     */
+    public void textZoom(int direction) {
+        Settings s = config.getSettings();
+        double z = s.getFontZoom();
+        if (direction > 0) {
+            z += 0.1;
+        } else if (direction < 0) {
+            z -= 0.1;
+        } else {
+            z = 1.0;
+        }
+        z = Math.max(0.5, Math.min(3.0, Math.round(z * 10.0) / 10.0)); // snap to a clean 10% grid
+        if (z == s.getFontZoom() && direction != 0) {
+            return; // already at the clamp limit
+        }
+        s.setFontZoom(z);
+        config.save();
+        applyViewSettingsToAllBuffers(s);
+        statusBar.refresh();
+        setStatus("Text zoom: " + Math.round(z * 100) + "%");
+    }
+
     // --- Bookmark commands + panel actions ---------------------------------------------------------
 
     /** A flattened (file, bookmark) pair for the cross-file "Jump to Bookmark" picker. */
@@ -2587,7 +2613,8 @@ public class MainController {
 
     private void applyViewSettings(EditorBuffer buffer) {
         Settings s = config.getSettings();
-        buffer.setFont(s.getFontFamily(), s.getFontSize());
+        int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
+        buffer.setFont(s.getFontFamily(), effectiveFont);
         buffer.setColumnRulerVisible(s.isShowColumnRuler());
         buffer.setLineHighlightOn(s.isHighlightCurrentLine());
         buffer.setLineNumbersVisible(s.isShowLineNumbers());
@@ -2915,6 +2942,9 @@ public class MainController {
                 () -> markdownZoom(-1)));
         registry.register(Command.of("view.markdownZoomReset", "Markdown: Reset Preview Zoom",
                 () -> markdownZoom(0)));
+        registry.register(Command.of("view.textZoomIn", "View: Zoom In Text", () -> textZoom(1)));
+        registry.register(Command.of("view.textZoomOut", "View: Zoom Out Text", () -> textZoom(-1)));
+        registry.register(Command.of("view.textZoomReset", "View: Reset Text Zoom", () -> textZoom(0)));
         registry.register(Command.of("view.foldAll", "View: Fold All", this::foldAll));
         registry.register(Command.of("view.unfoldAll", "View: Unfold All", this::unfoldAll));
         registry.register(Command.of("view.fold", "View: Fold", this::foldAtCaret));

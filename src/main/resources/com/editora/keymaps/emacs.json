@@ -68,5 +68,9 @@
   "M-g b": "bookmarks.jump",
   "C-c m": "bookmarks.toggle",
   "C-c ]": "bookmarks.next",
-  "C-c [": "bookmarks.previous"
+  "C-c [": "bookmarks.previous",
+  "C-=": "view.textZoomIn",
+  "C-S-=": "view.textZoomIn",
+  "C--": "view.textZoomOut",
+  "C-0": "view.textZoomReset"
 }

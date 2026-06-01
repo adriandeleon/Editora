@@ -30,6 +30,8 @@ Emacs-style keymap or a fuzzy command palette.
 - **Bundled fonts** — JetBrains Mono (default), Cascadia Code, Fira Code, IBM Plex Mono,
   and Source Code Pro ship with the app; no system install required.
 - **Editor view options** — 80-column ruler and current-line highlight.
+- **Text zoom** — scale the editor text on top of the font size (status-bar `− 100% +`, `C-=`/`C--`/`C-0`,
+  Ctrl+mouse-wheel, or the palette); persists across restarts, separate from the font-size setting.
 - **Themes** — switchable AtlantaFX themes (Primer, Nord, Cupertino, Dracula), each
   with a matching editor color theme (syntax + surface) that follows the app theme by
   default and is independently selectable in Settings.

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Text zoom** — quickly scale the editor text up/down independent of the configured font size (the
+  set size is 100%). Use the status-bar `− 100% +` control, `C-=` / `C--` (and `Ctrl`+Plus) / `C-0` to
+  reset, **Ctrl + mouse-wheel**, or the palette ("View: Zoom In / Out / Reset Text"). The zoom level
+  persists across restarts and is separate from the font-size setting (it's not shown in Settings).
 - **Markdown preview** — an IntelliJ-style 3-mode view for Markdown files via a small floating control
   at the top-right of the editor: **Editor**, **Editor + Preview** (side-by-side), and **Preview**. The
   preview is rendered natively (no WebView) from CommonMark + GitHub-flavored Markdown (tables, task

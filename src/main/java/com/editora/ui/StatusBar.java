@@ -9,6 +9,7 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 
 import javafx.beans.InvalidationListener;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
@@ -38,6 +39,8 @@ public final class StatusBar extends HBox {
     private final Label endings = segment("buffer.convertLineEndings", "Convert line endings");
     private final Label size = new Label();
     private final Label encoding = new Label("UTF-8");
+    /** Text-zoom percentage (clickable to reset to 100%). */
+    private final Label zoomPercent = new Label("100%");
 
     private EditorBuffer attached;
     /** A single listener refreshes every segment on caret / text / selection changes. */
@@ -57,8 +60,29 @@ public final class StatusBar extends HBox {
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        getChildren().addAll(echo, spacer, position, language, indent, endings, size, encoding);
+        getChildren().addAll(echo, spacer, zoomGroup(), position, language, indent, endings, size, encoding);
         refresh();
+    }
+
+    /** The text-zoom control: {@code [ −  100%  + ]}, dispatching the zoom commands. */
+    private HBox zoomGroup() {
+        Button out = zoomButton("−", "view.textZoomOut", "Zoom out text");
+        Button in = zoomButton("+", "view.textZoomIn", "Zoom in text");
+        zoomPercent.getStyleClass().addAll("status-segment", "status-segment-clickable", "text-zoom-percent");
+        zoomPercent.setTooltip(new Tooltip("Text zoom — click to reset to 100%"));
+        zoomPercent.setOnMouseClicked(e -> registry.run("view.textZoomReset"));
+        HBox group = new HBox(out, zoomPercent, in);
+        group.getStyleClass().add("text-zoom");
+        return group;
+    }
+
+    private Button zoomButton(String text, String commandId, String hint) {
+        Button b = new Button(text);
+        b.getStyleClass().addAll("text-zoom-button", "flat");
+        b.setFocusTraversable(false);
+        b.setTooltip(new Tooltip(hint));
+        b.setOnAction(e -> registry.run(commandId));
+        return b;
     }
 
     /** Builds a clickable segment label that dispatches {@code commandId} when clicked. */
@@ -101,6 +125,7 @@ public final class StatusBar extends HBox {
         }
 
         indent.setText("Tab Size: " + settings.get().getTabSize());
+        zoomPercent.setText(Math.round(settings.get().getFontZoom() * 100) + "%");
         if (!hasBuffer) {
             return;
         }

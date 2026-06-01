@@ -658,6 +658,32 @@
     -fx-cursor: hand;
 }
 
+/* Text-zoom control in the status bar: a tight − % + group. */
+.status-bar .text-zoom {
+    -fx-alignment: center;
+    -fx-border-color: transparent transparent transparent -color-border-muted;
+    -fx-border-width: 0 0 0 1;
+}
+.status-bar .text-zoom-button {
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 1 6 1 6;
+    -fx-font-size: 12px;
+    -fx-background-radius: 3;
+    -fx-min-width: 20px;
+}
+.status-bar .text-zoom-button:hover {
+    -fx-text-fill: -color-fg-default;
+    -fx-background-color: -color-bg-inset;
+    -fx-cursor: hand;
+}
+/* The percentage reuses .status-segment but without its own left divider (the group carries it). */
+.status-bar .text-zoom .text-zoom-percent {
+    -fx-border-width: 0;
+    -fx-padding: 3 2 3 2;
+    -fx-min-width: 42px;
+    -fx-alignment: center;
+}
+
 /* Command palette overlay (a Popup; the global AtlantaFX vars still resolve inside it) */
 .command-palette {
     -fx-background-color: -color-bg-default;
