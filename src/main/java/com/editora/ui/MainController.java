@@ -768,9 +768,12 @@ public class MainController {
                 (obs, was, now) -> findButton.pseudoClassStateChanged(OPEN, now));
         // Project switcher (placed right of the Settings icon by arrangeToolbarTail); shown when enabled.
         toolbarProjectCombo = new ProjectCombo(this::switchToProject);
-        toolbarProjectCombo.setPrefWidth(160);
+        toolbarProjectCombo.setPrefWidth(184); // 15% longer than the previous 160
         projectToolbarLabel = new Label("Project:");
         projectToolbarLabel.getStyleClass().add("toolbar-hint");
+        projectToolbarLabel.setTooltip(new Tooltip(
+                "Projects are single-folder workspaces, each remembering its own open files and layout. "
+                + "Pick one to switch; \"No Project\" returns to the global session."));
         projectToolbarGap = new Region();
         projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between Settings and the combo
         projectToolbarGap.setPrefWidth(78);
