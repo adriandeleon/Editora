@@ -172,6 +172,9 @@ public class EditorBuffer {
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
+        // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
+        // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
+        bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         area.getStyleClass().add("editor-area");
         area.setWrapText(false);
         area.setUndoManager(boundedUndoManager(area));
@@ -690,10 +693,15 @@ public class EditorBuffer {
         refreshGutterLine(line);
     }
 
-    /** Replaces this buffer's bookmarks from persisted state and repaints the gutter. */
-    public void applyBookmarks(List<com.editora.config.Bookmark> saved) {
-        bookmarks.restore(saved);
+    /**
+     * Replaces this buffer's bookmarks from persisted state and repaints the gutter. Returns
+     * {@code true} if a bookmark was re-anchored to its content (the file changed outside the editor),
+     * so the caller can persist the corrected indices.
+     */
+    public boolean applyBookmarks(List<com.editora.config.Bookmark> saved) {
+        boolean reanchored = bookmarks.restore(saved);
         refreshGutter();
+        return reanchored;
     }
 
     /** Removes all bookmarks in this buffer and repaints the gutter. */

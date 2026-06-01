@@ -243,6 +243,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bookmarks no longer drift to the wrong line when a file is edited outside the editor.** Bookmarks
+  followed their content only for edits made inside Editora, so changing a file in another program
+  left its markers on stale lines. Each bookmark now re-anchors to its saved line text when the file
+  is opened (re-found at the nearest matching line), and the corrected position is saved back so the
+  session self-heals.
+- **Adding a bookmark no longer shifts that line's text indentation.** The gutter now reserves a
+  fixed-width bookmark column on every line, so the marker glyph no longer widens only the bookmarked
+  row (which had pushed its text rightward).
+- **A bookmark's gutter marker now follows its line when an edit moves it.** Inserting or deleting
+  lines above a bookmark already moved the bookmark (and its Bookmarks-panel entry), but the gutter
+  glyph wasn't repainted onto the new line; it is now.
 - Switching projects (or "No Project"), or closing/deleting a project, while in Zen mode no longer
   leaves the UI permanently mangled. Zen stores its "everything off" view state in the global
   settings while keeping the restore snapshot in the per-session state; swapping sessions orphaned

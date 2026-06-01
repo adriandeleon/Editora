@@ -23,10 +23,15 @@ import com.editora.config.Bookmark;
  */
 public final class BookmarkManager {
 
+    /** Bounds the outward line scan when re-anchoring a drifted bookmark (one-time, at file open). */
+    private static final int MAX_REANCHOR_SCAN = 2000;
+
     private final CodeArea area;
     /** line -> bookmark, sorted; at most one bookmark per line. */
     private NavigableMap<Integer, Bookmark> byLine = new TreeMap<>();
     private Runnable onChanged = () -> { };
+    /** Notified with the lines to repaint when an <em>edit</em> shifts bookmarks (old ∪ new lines). */
+    private java.util.function.Consumer<java.util.Collection<Integer>> onLinesRepaint = c -> { };
     /** Suppresses {@link #onChanged} while we programmatically restore saved bookmarks. */
     private boolean restoring;
 
@@ -38,6 +43,16 @@ public final class BookmarkManager {
     /** Notified after any change (toggle/note/remove or an edit-driven line shift) for persistence. */
     public void setOnChanged(Runnable onChanged) {
         this.onChanged = onChanged == null ? () -> { } : onChanged;
+    }
+
+    /**
+     * Sets the callback invoked when an <em>edit</em> moves bookmarks to new lines, with the set of
+     * lines (the old and new positions) whose gutter markers must be repainted. (Toggle/remove repaint
+     * their own line directly; only edit-driven {@link #shift}s need this, since the document edit
+     * rebuilds the gutter graphics with a possibly-stale bookmark set.)
+     */
+    public void setOnLinesRepaint(java.util.function.Consumer<java.util.Collection<Integer>> cb) {
+        this.onLinesRepaint = cb == null ? c -> { } : cb;
     }
 
     public boolean isBookmarked(int line) {
@@ -113,21 +128,104 @@ public final class BookmarkManager {
         return new ArrayList<>(byLine.values());
     }
 
-    /** Replaces the bookmark state from a persisted list, without firing {@link #onChanged}. */
-    public void restore(List<Bookmark> saved) {
+    /**
+     * Replaces the bookmark state from a persisted list, without firing {@link #onChanged}. Each
+     * bookmark is <em>re-anchored to its saved {@link Bookmark#lineText()}</em> (see {@link #reanchor})
+     * so it stays on its content even after the file was edited <em>outside</em> the editor (where
+     * {@link #onTextChange} never ran to shift indices). Returns {@code true} if any bookmark's
+     * resolved line differs from its stored line, so the caller can persist the self-healed indices.
+     */
+    public boolean restore(List<Bookmark> saved) {
         restoring = true;
         try {
-            byLine = new TreeMap<>();
-            if (saved != null) {
-                for (Bookmark bm : saved) {
-                    if (bm != null && bm.line() >= 0) {
-                        byLine.put(bm.line(), bm);
-                    }
-                }
-            }
+            byLine = reanchor(saved, area.getParagraphs().size(),
+                    line -> area.getParagraph(line).getText(), MAX_REANCHOR_SCAN);
+            return anyMoved(saved, byLine);
         } finally {
             restoring = false;
         }
+    }
+
+    /** True if a saved bookmark's line differs from where it was re-anchored to in {@code resolved}. */
+    private static boolean anyMoved(List<Bookmark> saved, NavigableMap<Integer, Bookmark> resolved) {
+        if (saved == null) {
+            return false;
+        }
+        for (Bookmark bm : saved) {
+            if (bm == null || bm.line() < 0) {
+                continue;
+            }
+            // A saved bookmark "moved" if no resolved entry sits at its original line carrying its text.
+            Bookmark at = resolved.get(bm.line());
+            if (at == null || !sameText(at.lineText(), bm.lineText())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean sameText(String a, String b) {
+        return (a == null ? "" : a).equals(b == null ? "" : b);
+    }
+
+    /**
+     * Pure, unit-testable re-anchoring (no toolkit): rebuilds the line→bookmark map from a persisted
+     * list, moving each bookmark to the nearest line whose stripped text equals its saved
+     * {@code lineText}. A bookmark whose stored line already matches stays put (the common O(1) case);
+     * one whose content has drifted (file edited outside the editor) is re-found within {@code maxScan}
+     * lines; one whose {@code lineText} is empty or no longer present is kept at its clamped stored
+     * line. Collisions dedup naturally via the map (last writer wins).
+     *
+     * @param lineTextAt returns the <em>raw</em> text of a 0-based line; it is stripped here for the
+     *                   comparison (matching how {@link #captureLineText} stores it).
+     */
+    public static NavigableMap<Integer, Bookmark> reanchor(List<Bookmark> saved, int paragraphCount,
+            java.util.function.IntFunction<String> lineTextAt, int maxScan) {
+        NavigableMap<Integer, Bookmark> out = new TreeMap<>();
+        if (saved == null || paragraphCount <= 0) {
+            return out;
+        }
+        int maxLine = paragraphCount - 1;
+        for (Bookmark bm : saved) {
+            if (bm == null || bm.line() < 0) {
+                continue;
+            }
+            int stored = Math.min(bm.line(), maxLine);
+            int resolved = resolveLine(stored, bm.lineText(), maxLine, lineTextAt, maxScan);
+            out.put(resolved, resolved == bm.line() ? bm : bm.withLine(resolved));
+        }
+        return out;
+    }
+
+    private static int resolveLine(int stored, String wanted, int maxLine,
+            java.util.function.IntFunction<String> lineTextAt, int maxScan) {
+        if (wanted == null || wanted.isEmpty()) {
+            return stored; // nothing to match against (e.g. a blank-line bookmark)
+        }
+        if (textAt(lineTextAt, stored).equals(wanted)) {
+            return stored; // already correct — the common case
+        }
+        for (int r = 1; r <= maxScan; r++) {
+            int down = stored + r;
+            int up = stored - r;
+            boolean downOk = down <= maxLine;
+            boolean upOk = up >= 0;
+            if (!downOk && !upOk) {
+                break;
+            }
+            if (downOk && textAt(lineTextAt, down).equals(wanted)) {
+                return down;
+            }
+            if (upOk && textAt(lineTextAt, up).equals(wanted)) {
+                return up;
+            }
+        }
+        return stored; // content gone — keep at the clamped stored line (the user can clear it)
+    }
+
+    private static String textAt(java.util.function.IntFunction<String> lineTextAt, int line) {
+        String t = lineTextAt.apply(line);
+        return t == null ? "" : t.strip();
     }
 
     private void onTextChange(PlainTextChange change) {
@@ -145,8 +243,14 @@ public final class BookmarkManager {
         NavigableMap<Integer, Bookmark> shifted =
                 shift(byLine, startLine, atLineStart, removedNL, insertedNL, area.getParagraphs().size());
         if (!shifted.equals(byLine)) {
+            // Both the vacated and the new lines need their gutter markers repainted: the document edit
+            // already rebuilds those graphics, but with the pre-shift bookmark set, so the moved marker
+            // would otherwise vanish until the next manual refresh.
+            java.util.Set<Integer> affected = new java.util.HashSet<>(byLine.keySet());
+            affected.addAll(shifted.keySet());
             byLine = shifted;
             fireChanged();
+            onLinesRepaint.accept(affected);
         }
     }
 

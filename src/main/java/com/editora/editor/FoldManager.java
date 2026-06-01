@@ -30,6 +30,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.SVGPath;
@@ -51,6 +52,9 @@ public final class FoldManager {
     private String language = "plaintext";
     /** Max number of lines shown in a collapsed region's hover preview. */
     private static final int PREVIEW_LINES = 40;
+    /** Fixed width of the gutter's bookmark-marker column, reserved on every row so the gutter (and
+     *  thus each line's text indentation) keeps a constant width whether or not the line is bookmarked. */
+    private static final double BOOKMARK_SLOT_WIDTH = 12;
 
     /** Notified after a user-driven fold/unfold so callers can persist the new state. */
     private Runnable onFoldStateChanged = () -> {
@@ -453,10 +457,19 @@ public final class FoldManager {
             }
         });
 
-        // A bookmark marker is created only for bookmarked lines, so unbookmarked rows pay nothing.
+        // A fixed-width bookmark slot is reserved on EVERY row, so toggling a bookmark only fills/empties
+        // the slot and never changes the gutter width — which would otherwise shift that line's text
+        // indentation rightward (the paragraph graphic's width is the text's left inset). The glyph
+        // itself is created only for bookmarked lines, so unbookmarked rows allocate just an empty slot.
+        StackPane bookmarkSlot = new StackPane();
+        bookmarkSlot.getStyleClass().add("bookmark-slot");
+        bookmarkSlot.setMinWidth(BOOKMARK_SLOT_WIDTH);
+        bookmarkSlot.setPrefWidth(BOOKMARK_SLOT_WIDTH);
+        bookmarkSlot.setMaxWidth(BOOKMARK_SLOT_WIDTH);
         if (isBookmarked.test(idx)) {
-            box.getChildren().add(bookmarkMarker());
+            bookmarkSlot.getChildren().add(bookmarkMarker());
         }
+        box.getChildren().add(bookmarkSlot);
 
         if (showLineNumbers) {
             Label lineNo = new Label();

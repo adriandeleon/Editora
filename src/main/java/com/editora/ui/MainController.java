@@ -2454,7 +2454,13 @@ public class MainController {
         if (file == null) {
             return;
         }
-        buffer.applyBookmarks(config.getWorkspaceState().getBookmarks().get(file.toString()));
+        boolean reanchored =
+                buffer.applyBookmarks(config.getWorkspaceState().getBookmarks().get(file.toString()));
+        // The file changed outside the editor and a bookmark followed its content to a new line —
+        // write the corrected indices back so the session self-heals (once; later opens match exactly).
+        if (reanchored) {
+            persistBookmarks(buffer);
+        }
     }
 
     /** Persists the buffer's Markdown view mode, keyed by file path (EDITOR is the unset default). */

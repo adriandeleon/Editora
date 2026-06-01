@@ -85,4 +85,97 @@ class BookmarkManagerTest {
         NavigableMap<Integer, Bookmark> out = BookmarkManager.shift(in, 3, false, 0, 0, 100);
         assertEquals(in, out);
     }
+
+    // --- reanchor(...): re-find a bookmark by its saved lineText after an external edit -------------
+
+    /** A document as an array of raw line texts, exposed as the IntFunction reanchor expects. */
+    private static java.util.function.IntFunction<String> doc(String... lines) {
+        return i -> (i >= 0 && i < lines.length) ? lines[i] : "";
+    }
+
+    private static java.util.List<Bookmark> saved(Bookmark... bms) {
+        return java.util.List.of(bms);
+    }
+
+    @Test
+    void exactMatchKeepsStoredLine() {
+        var lines = doc("alpha", "beta", "gamma");
+        var out = BookmarkManager.reanchor(saved(new Bookmark(1, "n", "beta")), 3, lines, 2000);
+        assertTrue(out.containsKey(1));
+        assertEquals("n", out.get(1).note());
+    }
+
+    @Test
+    void reanchorsWhenContentDriftedDown() {
+        // The user's case: a line inserted above pushed "KeyDispatcher" from stored 7 down to 8.
+        var lines = doc("a", "b", "c", "d", "e", "f", "g", "x", "KeyDispatcher");
+        var out = BookmarkManager.reanchor(saved(new Bookmark(7, "", "KeyDispatcher")), 9, lines, 2000);
+        assertFalse(out.containsKey(7));
+        assertTrue(out.containsKey(8));
+        assertEquals(8, out.get(8).line()); // bm.line() updated to the resolved line
+    }
+
+    @Test
+    void reanchorsWhenContentDriftedUp() {
+        // The real defect: stored 8 but the content sits on line 7 (a line was removed above).
+        var lines = doc("a", "b", "c", "d", "e", "f", "g", "KeyDispatcher", "ConfigManager");
+        var out = BookmarkManager.reanchor(saved(new Bookmark(8, "", "KeyDispatcher")), 9, lines, 2000);
+        assertFalse(out.containsKey(8));
+        assertTrue(out.containsKey(7));
+    }
+
+    @Test
+    void picksNearestOccurrenceAmongDuplicates() {
+        // stored=3, "import" at 0, 2, 4. Lines 2 (up) and 4 (down) are both distance 1; at each radius
+        // the scan checks downward first, so the tie resolves to line 4.
+        var lines = doc("import", "x", "import", "y", "import");
+        var out = BookmarkManager.reanchor(saved(new Bookmark(3, "", "import")), 5, lines, 2000);
+        assertTrue(out.containsKey(4));
+        assertFalse(out.containsKey(3));
+    }
+
+    @Test
+    void picksTrulyNearestOccurrence() {
+        // stored=4, "import" at 0 and 3: line 3 (distance 1) wins over line 0 (distance 4).
+        var lines = doc("import", "a", "b", "import", "c");
+        var out = BookmarkManager.reanchor(saved(new Bookmark(4, "", "import")), 5, lines, 2000);
+        assertTrue(out.containsKey(3));
+    }
+
+    @Test
+    void emptyLineTextKeptAtClampedStoredLine() {
+        var lines = doc("a", "", "c");
+        var out = BookmarkManager.reanchor(saved(new Bookmark(1, "", "")), 3, lines, 2000);
+        assertTrue(out.containsKey(1)); // can't match a blank/empty lineText — stay put
+    }
+
+    @Test
+    void noMatchKeptAtClampedStoredLine() {
+        var lines = doc("a", "b", "c");
+        var out = BookmarkManager.reanchor(saved(new Bookmark(1, "", "vanished")), 3, lines, 2000);
+        assertTrue(out.containsKey(1)); // content gone — keep at stored, don't drop
+    }
+
+    @Test
+    void outOfRangeStoredLineClamped() {
+        var lines = doc("a", "b", "c");
+        var out = BookmarkManager.reanchor(saved(new Bookmark(99, "", "c")), 3, lines, 2000);
+        assertTrue(out.containsKey(2)); // clamped to maxLine=2, which happens to match "c"
+    }
+
+    @Test
+    void scanCapIsRespected() {
+        var lines = doc("target", "a", "b", "c", "d"); // stored=4, "target" is 4 lines away
+        var out = BookmarkManager.reanchor(saved(new Bookmark(4, "", "target")), 5, lines, 2);
+        assertTrue(out.containsKey(4)); // within only 2 lines no match → kept at stored
+        var out2 = BookmarkManager.reanchor(saved(new Bookmark(4, "", "target")), 5, lines, 10);
+        assertTrue(out2.containsKey(0)); // wider scan finds it
+    }
+
+    @Test
+    void strippingMatchesStoredStrippedText() {
+        var lines = doc("a", "   beta  ", "c"); // raw line has surrounding whitespace
+        var out = BookmarkManager.reanchor(saved(new Bookmark(1, "", "beta")), 3, lines, 2000);
+        assertTrue(out.containsKey(1));
+    }
 }
