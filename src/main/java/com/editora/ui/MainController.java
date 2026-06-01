@@ -713,7 +713,8 @@ public class MainController {
     private void setupToolWindows() {
         toolWindows = new ToolWindowManager(workspace, tabPane, config, keymap);
         projectPanel = new ProjectPanel(this::openPath, this::switchToProject, this::closeProject,
-                this::deleteProject, this::onProjectFileRenamed, this::onProjectFileDeleted);
+                this::deleteProject, this::onProjectFileRenamed, this::onProjectFileDeleted,
+                this::isPathModified);
         projectToolWindow = new ToolWindow("project", "Project", ToolWindow.Side.RIGHT,
                 Icons::project, projectPanel, "tool.project");
         structurePanel = new StructurePanel();
@@ -989,7 +990,12 @@ public class MainController {
             }
         });
         updateTabMeta(tab, buffer);
-        buffer.dirtyProperty().addListener((obs, was, now) -> updateTabMeta(tab, buffer));
+        buffer.dirtyProperty().addListener((obs, was, now) -> {
+            updateTabMeta(tab, buffer);
+            if (projectPanel != null) {
+                projectPanel.refreshModified(); // reflect the dirty marker in the Project file tree
+            }
+        });
         // Auto save (after-delay mode): each edit restarts the idle timer; cheap (no full-text build).
         buffer.getArea().multiPlainChanges().subscribe(c -> {
             if (AUTOSAVE_DELAY.equals(autoSaveMode())) {
@@ -1712,6 +1718,16 @@ public class MainController {
      * compared as normalized absolute paths so relative vs. absolute (or {@code .}/{@code ..})
      * spellings of the same file still match. Untitled buffers (no path) are skipped.
      */
+    /** True if {@code file} is open in a tab whose buffer has unsaved changes. */
+    private boolean isPathModified(Path file) {
+        Tab tab = tabForPath(file);
+        if (tab == null) {
+            return false;
+        }
+        EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+        return buffer != null && buffer.isDirty();
+    }
+
     private Tab tabForPath(Path file) {
         Path target = file.toAbsolutePath().normalize();
         for (Tab tab : tabPane.getTabs()) {

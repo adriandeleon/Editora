@@ -39,3 +39,6 @@
 .text.link       { -fx-fill: #58a6ff; -fx-underline: true; }
 .text.bold       { -fx-fill: #c9d1d9; -fx-font-weight: bold; }
 .text.italic     { -fx-fill: #c9d1d9; -fx-font-style: italic; }
+
+/* Project tree: folder accent + muted file, matching this theme. */
+.project-tree { -project-folder-color: #58a6ff; -project-file-color: #6e7681; }

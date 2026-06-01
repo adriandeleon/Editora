@@ -102,6 +102,23 @@
     -fx-padding: 1 4 1 4;
 }
 
+/* Project file tree: themed folder/file icon colors. The two looked-up colors default to the GUI
+   theme's accent/muted (AtlantaFX), and each editor theme overrides them with palette-matched values
+   (see styles/editor-themes/*.css) so the tree tracks the active code theme. */
+.project-tree {
+    -project-folder-color: -color-accent-fg;
+    -project-file-color: -color-fg-muted;
+}
+.project-tree .tree-cell {
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 1 4 1 4;
+}
+.project-tree .folder-cell .toolbar-icon { -fx-fill: -project-folder-color; }
+.project-tree .file-cell .toolbar-icon { -fx-fill: -project-file-color; }
+/* Open file with unsaved changes — mirrors the dirty-tab treatment (amber italic + "• " prefix). */
+.project-tree .modified-file { -fx-text-fill: #bf8700; -fx-font-style: italic; }
+.project-tree .modified-file .toolbar-icon { -fx-fill: #bf8700; }
+
 /* IntelliJ-style tool window stripes + panels. */
 .tool-stripe {
     -fx-background-color: -color-bg-subtle;

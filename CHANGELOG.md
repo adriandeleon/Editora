@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The Project tool window's file tree now colors its icons to match the active theme: folders use the
+  theme accent and files a muted tone. The colors are driven by two looked-up CSS variables
+  (`-project-folder-color`/`-project-file-color`) that default to the GUI theme (AtlantaFX) and are
+  overridden per editor theme, so the tree tracks the chosen code theme. Files open with unsaved
+  changes are marked in the tree like dirty tabs — a "• " prefix and amber italic — updating live as
+  you edit and save.
 - Reorder the tool-window stripe icons: drag an icon up/down within its side, or use the new ▲/▼
   buttons next to each row in Settings → "Tool window placement". The order persists in the session
   state (`workspace-state.json`).

@@ -59,6 +59,7 @@ public class ProjectPanel extends VBox {
     private final Runnable onDeleteProject;
     private final BiConsumer<Path, Path> onFileRenamed;
     private final Consumer<Path> onFileDeleted;
+    private final java.util.function.Predicate<Path> isModified;
 
     private ProjectCombo projectCombo;
     private final Button closeButton = new Button();
@@ -74,13 +75,15 @@ public class ProjectPanel extends VBox {
 
     public ProjectPanel(Consumer<Path> onOpenFile, Consumer<Project> onSwitchProject,
                         Runnable onCloseProject, Runnable onDeleteProject,
-                        BiConsumer<Path, Path> onFileRenamed, Consumer<Path> onFileDeleted) {
+                        BiConsumer<Path, Path> onFileRenamed, Consumer<Path> onFileDeleted,
+                        java.util.function.Predicate<Path> isModified) {
         this.onOpenFile = onOpenFile;
         this.onSwitchProject = onSwitchProject;
         this.onCloseProject = onCloseProject;
         this.onDeleteProject = onDeleteProject;
         this.onFileRenamed = onFileRenamed;
         this.onFileDeleted = onFileDeleted;
+        this.isModified = isModified;
         getStyleClass().add("project-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -148,6 +151,11 @@ public class ProjectPanel extends VBox {
         boolean noActive = activeId == null || activeId.isEmpty();
         closeButton.setDisable(noActive);
         deleteButton.setDisable(noActive);
+    }
+
+    /** Re-renders the visible tree cells so each file's modified marker/color reflects current state. */
+    public void refreshModified() {
+        tree.refresh();
     }
 
     /** Points the tree at {@code root} (a project folder), or shows the placeholder when {@code null}. */
@@ -441,17 +449,28 @@ public class ProjectPanel extends VBox {
                 setText(null);
                 setGraphic(null);
                 setContextMenu(null);
+                getStyleClass().removeAll("folder-cell", "file-cell", "modified-file");
                 return;
             }
             boolean isDir = Files.isDirectory(item);
+            // An open file with unsaved changes: mark it like a dirty tab ("• " + amber italic).
+            boolean dirty = !isDir && isModified != null && isModified.test(item);
+            // Mark the cell so the stylesheet can theme the folder vs. file icon color.
+            getStyleClass().removeAll("folder-cell", "file-cell", "modified-file");
+            getStyleClass().add(isDir ? "folder-cell" : "file-cell");
+            if (dirty) {
+                getStyleClass().add("modified-file");
+            }
             // In filtered (flat) mode, show each match's path relative to the project root.
             boolean isRoot = item.equals(root);
+            String label;
             if (filtering && !isRoot && root != null) {
-                setText(root.relativize(item).toString());
+                label = root.relativize(item).toString();
             } else {
                 Path name = item.getFileName();
-                setText(name == null ? item.toString() : name.toString());
+                label = name == null ? item.toString() : name.toString();
             }
+            setText(dirty ? "• " + label : label);
             setGraphic(isDir ? Icons.project() : Icons.fileSheet());
             setContextMenu(isRoot ? null : contextMenuFor(getTreeItem(), isDir));
         }
