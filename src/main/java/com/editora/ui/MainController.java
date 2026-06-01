@@ -831,8 +831,7 @@ public class MainController {
             Label hint = new Label("Switcher: " + chord);
             hint.getStyleClass().add("toolbar-hint");
             hint.setTooltip(new Tooltip(
-                    "Switcher (" + chord + "): quickly jump between open files and tool windows.\n"
-                    + "Navigate with C-n/C-p and C-f/C-b; Enter opens, C-d closes, Esc cancels."));
+                    "Switcher (" + chord + "): quickly jump between open files and tool windows."));
             items.add(hint);
         }
 

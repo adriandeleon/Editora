@@ -41,9 +41,9 @@ public class SettingsWindow {
 
     private static final String APP_NAME = "Editora";
     private static final String APP_VERSION = "1.0.0";
-    // Window size; height bumped 20% (708 -> 850) to fit the added view options without scrolling.
-    private static final double WIDTH = 658;
-    private static final double HEIGHT = 850;
+    // Window size; bumped 10% in each dimension (658x850 -> 724x935) for a roomier layout.
+    private static final double WIDTH = 724;
+    private static final double HEIGHT = 935;
     /** Build timestamp baked in by Maven resource filtering (see build-info.properties). */
     private static final String BUILD_TIME = loadBuildTime();
 
@@ -222,13 +222,9 @@ public class SettingsWindow {
         });
         Label projectsInfo = new Label("ⓘ");
         projectsInfo.getStyleClass().add("info-badge");
-        Tooltip projectsTip = new Tooltip("""
-                Projects are VSCode-style single-folder workspaces. A project is a root folder plus its \
-                own remembered session: the files you had open (with caret + pinned state), the active \
-                file, code folds, and tool-window layout. Switching projects saves the current session \
-                and restores the target's; "No Project"/Close returns to the global session without \
-                deleting any project. Open a folder as a project from the toolbar or with C-x C-p, and \
-                switch with C-x p. Application settings stay global (not per-project).""");
+        Tooltip projectsTip = new Tooltip(
+                "Projects are single-folder workspaces, each remembering its own open files and layout. "
+                + "Pick one to switch; \"No Project\" returns to the global session.");
         projectsTip.setWrapText(true);
         projectsTip.setMaxWidth(380);
         Tooltip.install(projectsInfo, projectsTip);
