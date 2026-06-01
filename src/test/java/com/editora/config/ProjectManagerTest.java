@@ -52,4 +52,29 @@ class ProjectManagerTest {
         pm.setActive("");
         assertNull(pm.active());
     }
+
+    @Test
+    void deleteRemovesProjectClearsActiveAndDropsStateFile(@TempDir Path dir) throws Exception {
+        ProjectManager pm = new ProjectManager(dir);
+        Project a = pm.createOrGet("A", dir.resolve("a"));
+        Project b = pm.createOrGet("B", dir.resolve("b"));
+        pm.setActive(a.id());
+
+        // Simulate a saved per-project session file for A.
+        Path stateA = pm.stateFile(a);
+        java.nio.file.Files.createDirectories(stateA.getParent());
+        java.nio.file.Files.writeString(stateA, "{}");
+
+        assertTrue(pm.delete(a.id()));
+        assertEquals(1, pm.list().size());
+        assertEquals("B", pm.list().get(0).name());
+        assertNull(pm.active()); // deleting the active project clears it
+        assertTrue(java.nio.file.Files.notExists(stateA)); // its session file is removed
+
+        // Survives a reload.
+        pm.save();
+        ProjectManager reloaded = new ProjectManager(dir);
+        assertEquals(1, reloaded.list().size());
+        assertNull(reloaded.active());
+    }
 }

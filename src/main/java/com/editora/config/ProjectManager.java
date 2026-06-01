@@ -93,6 +93,27 @@ public class ProjectManager {
     }
 
     /**
+     * Removes the project from the index and deletes its per-project session-state file. The project's
+     * folder and its files on disk are left untouched. Clears the active project if it was the one
+     * removed. Callers persist via {@link #save()}.
+     */
+    public boolean delete(String projectId) {
+        if (projectId == null || projectId.isEmpty()) {
+            return false;
+        }
+        boolean removed = index.getProjects().removeIf(p -> p.id().equals(projectId));
+        if (projectId.equals(index.getActiveProjectId())) {
+            index.setActiveProjectId("");
+        }
+        try {
+            Files.deleteIfExists(configDir.resolve(PROJECTS_DIR).resolve(projectId + ".json"));
+        } catch (IOException ignored) {
+            // best effort — a leftover state file is harmless
+        }
+        return removed;
+    }
+
+    /**
      * Returns the existing project for {@code root} (matched by absolute path), or creates and stores a
      * new one named {@code name}. Does not change the active project or persist; callers do that.
      */

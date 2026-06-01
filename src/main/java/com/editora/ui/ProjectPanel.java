@@ -56,11 +56,13 @@ public class ProjectPanel extends VBox {
     private final Consumer<Path> onOpenFile;
     private final Consumer<Project> onSwitchProject;
     private final Runnable onCloseProject;
+    private final Runnable onDeleteProject;
     private final BiConsumer<Path, Path> onFileRenamed;
     private final Consumer<Path> onFileDeleted;
 
     private ProjectCombo projectCombo;
     private final Button closeButton = new Button();
+    private final Button deleteButton = new Button();
     private final TextField filterField = new TextField();
     private final TreeView<Path> tree = new TreeView<>();
     private final StackPane placeholderPane;
@@ -71,11 +73,12 @@ public class ProjectPanel extends VBox {
     private boolean loading;
 
     public ProjectPanel(Consumer<Path> onOpenFile, Consumer<Project> onSwitchProject,
-                        Runnable onCloseProject, BiConsumer<Path, Path> onFileRenamed,
-                        Consumer<Path> onFileDeleted) {
+                        Runnable onCloseProject, Runnable onDeleteProject,
+                        BiConsumer<Path, Path> onFileRenamed, Consumer<Path> onFileDeleted) {
         this.onOpenFile = onOpenFile;
         this.onSwitchProject = onSwitchProject;
         this.onCloseProject = onCloseProject;
+        this.onDeleteProject = onDeleteProject;
         this.onFileRenamed = onFileRenamed;
         this.onFileDeleted = onFileDeleted;
         getStyleClass().add("project-panel");
@@ -114,10 +117,15 @@ public class ProjectPanel extends VBox {
 
         closeButton.setGraphic(Icons.closeSmall());
         closeButton.getStyleClass().addAll("button-icon", "flat");
-        closeButton.setTooltip(new Tooltip("Close project"));
+        closeButton.setTooltip(new Tooltip("Close project (keeps it in your list)"));
         closeButton.setOnAction(e -> onCloseProject.run());
 
-        HBox header = new HBox(4, projectCombo, closeButton);
+        deleteButton.setGraphic(Icons.trash());
+        deleteButton.getStyleClass().addAll("button-icon", "flat");
+        deleteButton.setTooltip(new Tooltip("Delete project (remove from list; files on disk are kept)"));
+        deleteButton.setOnAction(e -> onDeleteProject.run());
+
+        HBox header = new HBox(4, projectCombo, deleteButton, closeButton);
         header.getStyleClass().add("project-header");
         header.setAlignment(Pos.CENTER_LEFT);
         getChildren().add(header);
@@ -137,7 +145,9 @@ public class ProjectPanel extends VBox {
     /** Populates the project switcher; {@code activeId} selects the current project (or "" for none). */
     public void setProjects(List<Project> all, String activeId) {
         projectCombo.setProjects(all, activeId);
-        closeButton.setDisable(activeId == null || activeId.isEmpty());
+        boolean noActive = activeId == null || activeId.isEmpty();
+        closeButton.setDisable(noActive);
+        deleteButton.setDisable(noActive);
     }
 
     /** Points the tree at {@code root} (a project folder), or shows the placeholder when {@code null}. */

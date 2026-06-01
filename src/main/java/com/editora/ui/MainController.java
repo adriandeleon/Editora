@@ -276,7 +276,7 @@ public class MainController {
                 () -> List.copyOf(recentFiles.getList()),
                 p -> p.getFileName() == null ? p.toString() : p.getFileName().toString(),
                 p -> p.getParent() == null ? "" : p.getParent().toString(),
-                this::openPath);
+                this::openRecent);
         structurePalette = new QuickOpen<>("Jump to Structure", "Type to filter symbols…",
                 () -> structurePanel.outline(),
                 StructurePanel.Outline::label,
@@ -430,18 +430,18 @@ public class MainController {
      * Switches the editor to {@code p}'s session (saving the current one first). An empty id is the
      * "No Project" sentinel — it returns to the default global session without closing any project.
      */
-    private void switchToProject(Project p) {
+    private boolean switchToProject(Project p) {
         if (p == null) {
-            return;
+            return false;
         }
         boolean toNoProject = p.id().isEmpty();
         Project active = projects.active();
         if (toNoProject ? active == null : p.equals(active)) {
-            return; // already there (e.g. re-selected in the combo)
+            return true; // already there (e.g. re-selected in the combo)
         }
         if (!confirmCloseAllBuffers()) {
             refreshProjectPanelList(); // cancelled — snap the combo back to the actual active project
-            return;
+            return false;
         }
         if (toNoProject) {
             projects.setActive("");
@@ -456,6 +456,7 @@ public class MainController {
             activateSession(Path.of(p.root()));
             setStatus("Project: " + p.name());
         }
+        return true;
     }
 
     /** Closes the active project (with confirmation), returning to the default global session. */
@@ -482,6 +483,38 @@ public class MainController {
         config.useDefaultWorkspaceStateFile();
         activateSession(null);
         setStatus("Project closed");
+    }
+
+    /**
+     * Deletes the active project from the managed list (with confirmation) and returns to the global
+     * session. Only the project entry + its saved session are removed — the folder and its files on
+     * disk are left untouched.
+     */
+    private void deleteProject() {
+        Project active = projects.active();
+        if (active == null) {
+            setStatus("No project open");
+            return;
+        }
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                "Delete project \"" + active.name() + "\" from your projects list? The folder and its "
+                + "files on disk are kept; only the project and its saved session are removed, and the "
+                + "global session is restored.", ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle("Delete Project");
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+            return;
+        }
+        if (!confirmCloseAllBuffers()) {
+            return;
+        }
+        String name = active.name();
+        projects.delete(active.id()); // also clears the active id
+        projects.save();
+        config.useDefaultWorkspaceStateFile();
+        activateSession(null);
+        setStatus("Deleted project " + name);
     }
 
     /** Replaces the editor + tool-window state with the freshly-loaded session (after the file swap). */
@@ -595,7 +628,7 @@ public class MainController {
         box.setPrefWidth(220);
 
         CustomMenuItem item = new CustomMenuItem(box);
-        item.setOnAction(e -> openPath(path));
+        item.setOnAction(e -> openRecent(path));
         Tooltip.install(box, new Tooltip(path.toString()));
         return item;
     }
@@ -656,7 +689,7 @@ public class MainController {
     private void setupToolWindows() {
         toolWindows = new ToolWindowManager(workspace, tabPane, config, keymap);
         projectPanel = new ProjectPanel(this::openPath, this::switchToProject, this::closeProject,
-                this::onProjectFileRenamed, this::onProjectFileDeleted);
+                this::deleteProject, this::onProjectFileRenamed, this::onProjectFileDeleted);
         projectToolWindow = new ToolWindow("project", "Project", ToolWindow.Side.RIGHT,
                 Icons::project, projectPanel, "tool.project");
         structurePanel = new StructurePanel();
@@ -1074,6 +1107,38 @@ public class MainController {
         if (file != null) {
             openPath(file);
         }
+    }
+
+    /**
+     * Opens a file chosen from the recent-files list, project-aware: if the file lives under a project
+     * other than the active one, switch to that project first (so it opens in that project's session,
+     * tree, and layout) and then open it. Files that belong to no project — or to the active one — open
+     * directly in the current context.
+     */
+    private void openRecent(Path file) {
+        Project owner = owningProject(file);
+        if (owner != null && !owner.equals(projects.active())) {
+            if (!switchToProject(owner)) {
+                return; // user cancelled the switch (e.g. unsaved changes) — don't open elsewhere
+            }
+        }
+        openPath(file);
+    }
+
+    /** The enabled project whose root is the closest ancestor of {@code file}, or {@code null}. */
+    private Project owningProject(Path file) {
+        if (projects == null || !projectsEnabled()) {
+            return null;
+        }
+        Path abs = file.toAbsolutePath().normalize();
+        Project best = null;
+        for (Project p : projects.list()) {
+            Path root = Path.of(p.root()).toAbsolutePath().normalize();
+            if (abs.startsWith(root) && (best == null || p.root().length() > best.root().length())) {
+                best = p; // prefer the deepest (most specific) matching project root
+            }
+        }
+        return best;
     }
 
     /** Open a file by path; refreshes recent files and reports status. */
@@ -2397,6 +2462,8 @@ public class MainController {
                 () -> { if (projectsEnabled()) { projectPicker.show(stage); } }));
         registry.register(Command.of("project.close", "Project: Close",
                 () -> { if (projectsEnabled()) { closeProject(); } }));
+        registry.register(Command.of("project.delete", "Project: Delete…",
+                () -> { if (projectsEnabled()) { deleteProject(); } }));
         registry.register(Command.of("file.save", "File: Save", this::onSave));
         registry.register(Command.of("file.saveAs", "File: Save As…", this::onSaveAs));
         registry.register(Command.of("buffer.close", "Buffer: Close", this::onCloseTab));
