@@ -73,6 +73,8 @@ public class EditorBuffer {
     private MarkdownViewMode markdownViewMode = MarkdownViewMode.EDITOR;
     /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
     private ScrollPane previewPane;
+    /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
+    private StackPane previewHost;
     /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
     private Node viewModeControl;
     /** Active debounced subscription driving live preview re-render (null when not previewing). */
@@ -392,42 +394,83 @@ public class EditorBuffer {
         });
     }
 
-    /** Rebuilds {@link #viewHost} for the current modes, keeping the floating control as the top overlay. */
+    /**
+     * Rebuilds {@link #viewHost} for the current modes. The floating control is parented to the editor
+     * pane ({@link #root}) in Editor/Split so it always sits at the right edge of the <em>code</em> area
+     * (at the divider when split); in Preview-only mode there is no code pane, so it overlays the
+     * preview instead.
+     */
     private void rebuildViewHost() {
+        detachViewModeControl();
         Node content;
         if (markdownViewMode == MarkdownViewMode.PREVIEW) {
-            content = previewPane();
+            StackPane host = previewHost();
+            host.getChildren().setAll(previewPane());
+            if (viewModeControl != null) {
+                StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
+                StackPane.setMargin(viewModeControl, new Insets(6, 10, 0, 0));
+                host.getChildren().add(viewModeControl);
+            }
+            content = host;
         } else if (markdownViewMode == MarkdownViewMode.SPLIT) {
             SplitPane pane = new SplitPane(root, previewPane());
             pane.setOrientation(Orientation.HORIZONTAL);
             pane.setDividerPositions(0.5);
+            attachControlToCodePane();
             content = pane;
         } else if (split != Split.NONE) {
             ensureSecondaryView();
             SplitPane pane = new SplitPane(root, root2);
             pane.setOrientation(split == Split.SIDE_BY_SIDE ? Orientation.HORIZONTAL : Orientation.VERTICAL);
             pane.setDividerPositions(0.5);
+            attachControlToCodePane();
             content = pane;
         } else {
+            attachControlToCodePane();
             content = root;
         }
-        if (viewModeControl != null) {
-            positionViewModeControl();
-            viewHost.getChildren().setAll(content, viewModeControl);
-        } else {
-            viewHost.getChildren().setAll(content);
-        }
+        viewHost.getChildren().setAll(content);
     }
 
-    /** Positions the floating control top-right, clear of the minimap (no view rebuild). */
-    private void positionViewModeControl() {
+    private StackPane previewHost() {
+        if (previewHost == null) {
+            previewHost = new StackPane();
+        }
+        return previewHost;
+    }
+
+    /** Removes the floating control from whichever pane currently hosts it. */
+    private void detachViewModeControl() {
         if (viewModeControl == null) {
             return;
         }
-        StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
-        double rightInset = (minimapVisible && !largeFile && markdownViewMode != MarkdownViewMode.PREVIEW)
-                ? Minimap.WIDTH + 6 : 10;
-        StackPane.setMargin(viewModeControl, new Insets(6, rightInset, 0, 0));
+        root.getChildren().remove(viewModeControl);
+        if (previewHost != null) {
+            previewHost.getChildren().remove(viewModeControl);
+        }
+    }
+
+    /** Overlays the control at the top-right of the code pane ({@link #root}), clear of its minimap. */
+    private void attachControlToCodePane() {
+        if (viewModeControl == null) {
+            return;
+        }
+        if (!root.getChildren().contains(viewModeControl)) {
+            root.getChildren().add(viewModeControl);
+        }
+        AnchorPane.setTopAnchor(viewModeControl, 6d);
+        AnchorPane.setRightAnchor(viewModeControl, codePaneControlInset());
+    }
+
+    private double codePaneControlInset() {
+        return (minimapVisible && !largeFile) ? Minimap.WIDTH + 6 : 10;
+    }
+
+    /** Keeps the control clear of the minimap when it toggles (no full view rebuild). */
+    private void positionViewModeControl() {
+        if (viewModeControl != null && root.getChildren().contains(viewModeControl)) {
+            AnchorPane.setRightAnchor(viewModeControl, codePaneControlInset());
+        }
     }
 
     /** Lazily builds the secondary view (scroll pane + its own minimap) sharing this document. */
