@@ -10,8 +10,9 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 
 /**
- * Loads and saves the user config in {@code ~/.editora/} ({@code user.home} maps to the user
- * profile on macOS, Linux, and Windows). Preferences ({@link Settings}) are stored as TOML in
+ * Loads and saves the user config in the config directory: the {@code EDITORA_CONFIG_DIR} environment
+ * variable when set, otherwise {@code ~/.editora/} ({@code user.home} maps to the user profile on
+ * macOS, Linux, and Windows). Preferences ({@link Settings}) are stored as TOML in
  * {@code settings.toml}; session state ({@link WorkspaceState}: fold regions, tool-window layout) is
  * stored as JSON in {@code workspace-state.json}. Missing or malformed files fall back to defaults.
  */
@@ -112,8 +113,22 @@ public class ConfigManager {
         }
     }
 
-    /** Resolves {@code ~/.editora} ({@code user.home} is the user profile on every platform). */
+    /**
+     * The config directory: the {@code EDITORA_CONFIG_DIR} environment variable if set (used verbatim as the
+     * config folder), otherwise {@code ~/.editora}. Works on macOS, Linux, and Windows.
+     */
     static Path defaultConfigDir() {
-        return Path.of(System.getProperty("user.home", "."), APP_DIR_NAME);
+        return resolveConfigDir(System.getenv("EDITORA_CONFIG_DIR"), System.getProperty("user.home", "."));
+    }
+
+    /**
+     * Pure resolver (unit-testable): {@code editoraHome} (trimmed) when set and non-blank, else
+     * {@code userHome/.editora}.
+     */
+    static Path resolveConfigDir(String editoraHome, String userHome) {
+        if (editoraHome != null && !editoraHome.isBlank()) {
+            return Path.of(editoraHome.trim());
+        }
+        return Path.of(userHome == null || userHome.isBlank() ? "." : userHome, APP_DIR_NAME);
     }
 }
