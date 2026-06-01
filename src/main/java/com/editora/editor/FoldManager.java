@@ -287,6 +287,58 @@ public final class FoldManager {
         }
     }
 
+    /** Collapses the innermost expanded foldable region around the caret; no-op if none applies. */
+    public void foldAtCaret() {
+        int line = area.getCurrentParagraph();
+        Region target = null; // innermost (largest startLine) containing, expanded region
+        for (Region r : regions) {
+            if (r.startLine() <= line && line <= r.endLine() && !isCollapsed(r.startLine())
+                    && (target == null || r.startLine() > target.startLine())) {
+                target = r;
+            }
+        }
+        if (target != null) {
+            fold(target);
+        }
+    }
+
+    /** Expands the collapsed region at the caret (its header line, or the innermost containing it). */
+    public void unfoldAtCaret() {
+        int line = area.getCurrentParagraph();
+        Region atHeader = byStart.get(line);
+        if (atHeader != null && isCollapsed(atHeader.startLine())) {
+            unfold(atHeader.startLine());
+            return;
+        }
+        Region target = null; // innermost containing, collapsed region
+        for (Region r : regions) {
+            if (r.startLine() <= line && line <= r.endLine() && isCollapsed(r.startLine())
+                    && (target == null || r.startLine() > target.startLine())) {
+                target = r;
+            }
+        }
+        if (target != null) {
+            unfold(target.startLine());
+        }
+    }
+
+    /** Toggles the region at the caret: expands it if collapsed, otherwise collapses it. */
+    public void toggleFoldAtCaret() {
+        int line = area.getCurrentParagraph();
+        boolean collapsedHere = false;
+        for (Region r : regions) {
+            if (r.startLine() <= line && line <= r.endLine() && isCollapsed(r.startLine())) {
+                collapsedHere = true;
+                break;
+            }
+        }
+        if (collapsedHere) {
+            unfoldAtCaret();
+        } else {
+            foldAtCaret();
+        }
+    }
+
     private int firstVisiblePar() {
         try {
             return area.firstVisibleParToAllParIndex();

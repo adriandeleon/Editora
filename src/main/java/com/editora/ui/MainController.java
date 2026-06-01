@@ -1739,6 +1739,27 @@ public class MainController {
         }
     }
 
+    private void foldAtCaret() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.getFoldManager().foldAtCaret();
+        }
+    }
+
+    private void unfoldAtCaret() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.getFoldManager().unfoldAtCaret();
+        }
+    }
+
+    private void toggleFoldAtCaret() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.getFoldManager().toggleFoldAtCaret();
+        }
+    }
+
     /** Prompts for a 1-based line number and moves the caret there (clamped to the document). */
     private void goToLine() {
         CodeArea area = activeArea();
@@ -2158,6 +2179,9 @@ public class MainController {
         registry.register(Command.of("view.unsplit", "View: Unsplit Editor", this::unsplit));
         registry.register(Command.of("view.foldAll", "View: Fold All", this::foldAll));
         registry.register(Command.of("view.unfoldAll", "View: Unfold All", this::unfoldAll));
+        registry.register(Command.of("view.fold", "View: Fold", this::foldAtCaret));
+        registry.register(Command.of("view.unfold", "View: Unfold", this::unfoldAtCaret));
+        registry.register(Command.of("view.toggleFold", "View: Toggle Fold", this::toggleFoldAtCaret));
         registry.register(Command.of("nav.goToLine", "Go: Go to Line…", this::goToLine));
         registry.register(Command.of("buffer.setLanguage", "Buffer: Set Language…", this::chooseLanguage));
         registry.register(Command.of("buffer.setTabSize", "Buffer: Set Tab Size…", this::chooseTabSize));

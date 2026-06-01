@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Fold/unfold the single region at the caret: `view.fold` (`C-c C-f`) collapses the innermost
+  region around the caret, `view.unfold` (`C-c C-u`) expands it, and `view.toggleFold` (`C-c C-t`)
+  toggles it — complementing the existing Fold All (`C-c f`) / Unfold All (`C-c u`).
 - Keyboard "Jump to…" pickers — command-palette-style fuzzy popups: recent files (`C-x C-r`),
   the active file's structure/symbols (`M-g i`), open files/tabs (`C-x b`), and tool windows
   (`M-g t`). Type to filter, `C-n`/`C-p` or ↑/↓ to navigate, Enter to act (open the file / jump to
