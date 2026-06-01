@@ -2905,6 +2905,11 @@ public class MainController {
                 this::chooseLineEndings));
         registry.register(Command.of("window.other", "Window: Other (Editor / Tool Window)",
                 this::otherWindow));
+        // Cross-platform via JavaFX Stage (handles the per-OS window manager specifics on macOS/Linux/Windows).
+        registry.register(Command.of("window.maximize", "Window: Toggle Maximize",
+                () -> stage.setMaximized(!stage.isMaximized())));
+        registry.register(Command.of("window.fullScreen", "Window: Toggle Full Screen",
+                () -> stage.setFullScreen(!stage.isFullScreen())));
         registry.register(Command.of("file.clearRecent", "File: Clear Recent Files", this::onClearRecent));
         registry.register(Command.of("help.about", "About Editora", this::onAbout));
         registry.register(Command.of("tool.project", "Tool Window: Project",
