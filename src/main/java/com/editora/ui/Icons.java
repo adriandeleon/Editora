@@ -184,4 +184,21 @@ final class Icons {
         return of("M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 "
                 + "2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z");
     }
+
+    /** Markdown view: Editor only (Material "subject" — text lines). */
+    static Node previewEditor() {
+        return of("M14 17H4v2h10v-2zm6-8H4v2h16V9zM4 15h16v-2H4v2zM4 5v2h16V5H4z");
+    }
+
+    /** Markdown view: Editor + Preview (two side-by-side panes). */
+    static Node previewSplit() {
+        return of("M4 5h6v14H4V5zm10 0h6v14h-6V5z");
+    }
+
+    /** Markdown view: Preview only (Material "visibility" — eye). */
+    static Node previewOnly() {
+        return of("M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-"
+                + "11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 "
+                + "1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z");
+    }
 }

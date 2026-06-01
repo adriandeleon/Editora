@@ -29,6 +29,8 @@
         <joni.version>2.2.6</joni.version>
         <jcodings.version>1.0.58</jcodings.version>
         <gson.version>2.11.0</gson.version>
+        <commonmark.version>0.28.0</commonmark.version>
+        <autolink.version>0.12.0</autolink.version>
         <moditect.version>1.2.2.Final</moditect.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
@@ -61,6 +63,37 @@
             <groupId>io.github.mkpaz</groupId>
             <artifactId>atlantafx-base</artifactId>
             <version>${atlantafx.version}</version>
+        </dependency>
+        <!-- Markdown preview: commonmark-java + GFM extensions (all proper JPMS modules). -->
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-gfm-tables</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-gfm-strikethrough</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-task-list-items</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-autolink</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.nibor.autolink</groupId>
+            <artifactId>autolink</artifactId>
+            <version>${autolink.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

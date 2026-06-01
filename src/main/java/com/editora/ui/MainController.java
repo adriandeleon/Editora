@@ -1008,6 +1008,7 @@ public class MainController {
             }
             restoreFolds(buffer);
             restoreBookmarks(buffer);
+            restoreMarkdownMode(buffer);
             CodeArea area = buffer.getArea();
             int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
             area.moveTo(caret);
@@ -1050,6 +1051,14 @@ public class MainController {
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> persistBookmarks(buffer));
         buffer.setGutterBookmarkClick(this::onGutterBookmarkClick);
+        if (buffer.isMarkdown()) {
+            MarkdownViewToggle toggle = new MarkdownViewToggle(buffer);
+            buffer.setOnViewModeChanged(() -> {
+                persistMarkdownMode(buffer);
+                toggle.sync();
+            });
+            buffer.setViewModeControl(toggle); // floating Editor/Split/Preview control, top-right
+        }
         Tab tab = new Tab();
         tab.setContent(buffer.getNode());
         tab.setUserData(buffer);
@@ -1261,6 +1270,7 @@ public class MainController {
             restoreFolds(buffer);
             restoreBookmarks(buffer);
             addBuffer(buffer);
+            restoreMarkdownMode(buffer); // after addBuffer so the toggle is wired
             // Land on the first line: replaceText leaves the caret at the end, and fold restoration
             // moves it to a fold header. Defer so the viewport scroll runs after the tab is laid out.
             Platform.runLater(buffer::goToStart);
@@ -2349,6 +2359,49 @@ public class MainController {
         buffer.applyBookmarks(config.getWorkspaceState().getBookmarks().get(file.toString()));
     }
 
+    /** Persists the buffer's Markdown view mode, keyed by file path (EDITOR is the unset default). */
+    private void persistMarkdownMode(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null) {
+            return;
+        }
+        var map = config.getWorkspaceState().getMarkdownViewModes();
+        EditorBuffer.MarkdownViewMode mode = buffer.getMarkdownViewMode();
+        if (mode == EditorBuffer.MarkdownViewMode.EDITOR) {
+            map.remove(file.toString());
+        } else {
+            map.put(file.toString(), mode.name());
+        }
+        config.save();
+    }
+
+    /** Restores a Markdown file's saved view mode after it is opened (and its toggle is wired). */
+    private void restoreMarkdownMode(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null || !buffer.isMarkdown()) {
+            return;
+        }
+        String saved = config.getWorkspaceState().getMarkdownViewModes().get(file.toString());
+        if (saved == null) {
+            return;
+        }
+        try {
+            buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.valueOf(saved));
+        } catch (IllegalArgumentException ignored) {
+            // unknown persisted value — leave in EDITOR mode
+        }
+    }
+
+    /** Sets the active Markdown buffer's view mode (no-op for non-Markdown files). */
+    private void setActiveMarkdownMode(EditorBuffer.MarkdownViewMode mode) {
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.isMarkdown()) {
+            b.setMarkdownViewMode(mode);
+        } else {
+            setStatus("Not a Markdown file");
+        }
+    }
+
     // --- Bookmark commands + panel actions ---------------------------------------------------------
 
     /** A flattened (file, bookmark) pair for the cross-file "Jump to Bookmark" picker. */
@@ -2834,6 +2887,12 @@ public class MainController {
         registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",
                 this::onSplitHorizontal));
         registry.register(Command.of("view.unsplit", "View: Unsplit Editor", this::unsplit));
+        registry.register(Command.of("view.markdownEditor", "Markdown: Editor",
+                () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.EDITOR)));
+        registry.register(Command.of("view.markdownSplit", "Markdown: Editor and Preview",
+                () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.SPLIT)));
+        registry.register(Command.of("view.markdownPreview", "Markdown: Preview",
+                () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.PREVIEW)));
         registry.register(Command.of("view.foldAll", "View: Fold All", this::foldAll));
         registry.register(Command.of("view.unfoldAll", "View: Unfold All", this::unfoldAll));
         registry.register(Command.of("view.fold", "View: Fold", this::foldAtCaret));

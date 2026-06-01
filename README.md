@@ -33,6 +33,9 @@ Emacs-style keymap or a fuzzy command palette.
 - **Themes** — switchable AtlantaFX themes (Primer, Nord, Cupertino, Dracula), each
   with a matching editor color theme (syntax + surface) that follows the app theme by
   default and is independently selectable in Settings.
+- **Markdown preview** — IntelliJ-style 3-mode view (Editor / Editor + Preview / Preview) via a
+  floating control top-right of the editor, rendered natively (CommonMark + GFM: tables, task lists,
+  strikethrough, autolinks), live-updating and theme-matched; the mode is remembered per file.
 - **Recent files** — persistent most-recently-used list.
 - **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
   Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`

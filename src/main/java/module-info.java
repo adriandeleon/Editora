@@ -9,6 +9,11 @@ module com.editora {
     requires com.fasterxml.jackson.databind;
     requires com.fasterxml.jackson.dataformat.toml;
     requires org.eclipse.tm4e.core;
+    requires org.commonmark;
+    requires org.commonmark.ext.gfm.tables;
+    requires org.commonmark.ext.gfm.strikethrough;
+    requires org.commonmark.ext.task.list.items;
+    requires org.commonmark.ext.autolink;
     requires java.logging;
 
     opens com.editora to javafx.fxml;

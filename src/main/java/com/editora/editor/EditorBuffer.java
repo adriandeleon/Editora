@@ -9,6 +9,7 @@ import java.util.concurrent.Executors;
 
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
+import org.reactfx.Subscription;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
@@ -25,10 +26,14 @@ import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.geometry.Bounds;
+import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
+import javafx.geometry.Pos;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.Node;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.MouseButton;
@@ -62,6 +67,25 @@ public class EditorBuffer {
     private AnchorPane root2;
     private Minimap minimap2;
     private Split split = Split.NONE;
+
+    /** IntelliJ-style Markdown preview modes (only meaningful for Markdown files). */
+    public enum MarkdownViewMode { EDITOR, SPLIT, PREVIEW }
+    private MarkdownViewMode markdownViewMode = MarkdownViewMode.EDITOR;
+    /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
+    private ScrollPane previewPane;
+    /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
+    private Node viewModeControl;
+    /** Active debounced subscription driving live preview re-render (null when not previewing). */
+    private Subscription previewSub;
+    /** Bumped per preview render request; background results discard if stale. */
+    private long previewGen;
+    /** Off-thread Markdown parser so a large document never blocks the UI. */
+    private final ExecutorService previewExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "markdown-preview");
+        t.setDaemon(true);
+        return t;
+    });
+    private Runnable onViewModeChanged = () -> { };
     /** Files at/above this size skip syntax highlighting and the minimap to stay responsive. */
     public static final long LARGE_FILE_BYTES = 5L * 1024 * 1024;
     /** Files at/above this size are opened read-only (and truncated by the loader). */
@@ -277,14 +301,133 @@ public class EditorBuffer {
         this.split = orientation;
         if (orientation == Split.NONE) {
             focusedArea = area;
-            viewHost.getChildren().setAll(root);
+        } else {
+            this.markdownViewMode = MarkdownViewMode.EDITOR; // a code split supersedes the Markdown preview
+            unsubscribePreview();
+            ensureSecondaryView();
+        }
+        rebuildViewHost();
+    }
+
+    // --- Markdown preview (IntelliJ-style 3-mode view) -----------------------------------------
+
+    public boolean isMarkdown() {
+        return "markdown".equals(language);
+    }
+
+    public MarkdownViewMode getMarkdownViewMode() {
+        return markdownViewMode;
+    }
+
+    public void setOnViewModeChanged(Runnable callback) {
+        this.onViewModeChanged = callback == null ? () -> { } : callback;
+    }
+
+    /** Overlays the Editor/Split/Preview control top-right of this buffer's view (Markdown buffers only). */
+    public void setViewModeControl(Node control) {
+        this.viewModeControl = control;
+        rebuildViewHost();
+    }
+
+    /** Switches the Markdown view mode, (un)subscribing the live preview and rebuilding the view host. */
+    public void setMarkdownViewMode(MarkdownViewMode mode) {
+        MarkdownViewMode target = mode == null ? MarkdownViewMode.EDITOR : mode;
+        boolean changed = this.markdownViewMode != target;
+        this.markdownViewMode = target;
+        if (target == MarkdownViewMode.EDITOR) {
+            unsubscribePreview();
+        } else {
+            this.split = Split.NONE; // preview supersedes any code split
+            ensurePreviewSubscription();
+            scheduleRenderPreview();
+        }
+        rebuildViewHost();
+        if (changed) {
+            onViewModeChanged.run();
+        }
+    }
+
+    private ScrollPane previewPane() {
+        if (previewPane == null) {
+            previewPane = new ScrollPane();
+            previewPane.setFitToWidth(true);
+            previewPane.getStyleClass().add("markdown-preview-pane");
+        }
+        return previewPane;
+    }
+
+    private void ensurePreviewSubscription() {
+        if (previewSub != null || largeFile) {
+            return; // large files render once (no live updates), mirroring the highlight/minimap guard
+        }
+        previewSub = area.multiPlainChanges()
+                .successionEnds(Duration.ofMillis(250))
+                .subscribe(ignore -> scheduleRenderPreview());
+    }
+
+    private void unsubscribePreview() {
+        if (previewSub != null) {
+            previewSub.unsubscribe();
+            previewSub = null;
+        }
+    }
+
+    private void scheduleRenderPreview() {
+        if (markdownViewMode == MarkdownViewMode.EDITOR) {
             return;
         }
-        ensureSecondaryView();
-        SplitPane pane = new SplitPane(root, root2);
-        pane.setOrientation(orientation == Split.SIDE_BY_SIDE ? Orientation.HORIZONTAL : Orientation.VERTICAL);
-        pane.setDividerPositions(0.5);
-        viewHost.getChildren().setAll(pane);
+        String md = area.getText();
+        Path baseDir = path == null ? null : path.getParent();
+        long gen = ++previewGen;
+        previewExecutor.submit(() -> {
+            org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
+            Platform.runLater(() -> {
+                if (gen != previewGen) {
+                    return; // a newer render superseded this one
+                }
+                double v = previewPane().getVvalue();
+                previewPane().setContent(MarkdownRenderer.renderDocument(ast, baseDir));
+                Platform.runLater(() -> previewPane().setVvalue(v)); // best-effort scroll preserve
+            });
+        });
+    }
+
+    /** Rebuilds {@link #viewHost} for the current modes, keeping the floating control as the top overlay. */
+    private void rebuildViewHost() {
+        Node content;
+        if (markdownViewMode == MarkdownViewMode.PREVIEW) {
+            content = previewPane();
+        } else if (markdownViewMode == MarkdownViewMode.SPLIT) {
+            SplitPane pane = new SplitPane(root, previewPane());
+            pane.setOrientation(Orientation.HORIZONTAL);
+            pane.setDividerPositions(0.5);
+            content = pane;
+        } else if (split != Split.NONE) {
+            ensureSecondaryView();
+            SplitPane pane = new SplitPane(root, root2);
+            pane.setOrientation(split == Split.SIDE_BY_SIDE ? Orientation.HORIZONTAL : Orientation.VERTICAL);
+            pane.setDividerPositions(0.5);
+            content = pane;
+        } else {
+            content = root;
+        }
+        if (viewModeControl != null) {
+            positionViewModeControl();
+            viewHost.getChildren().setAll(content, viewModeControl);
+        } else {
+            viewHost.getChildren().setAll(content);
+        }
+    }
+
+    /** Positions the floating control top-right, clear of the minimap (no view rebuild). */
+    private void positionViewModeControl() {
+        if (viewModeControl == null) {
+            return;
+        }
+        StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
+        double rightInset = (minimapVisible && !largeFile && markdownViewMode != MarkdownViewMode.PREVIEW)
+                ? Minimap.WIDTH + 6 : 10;
+        StackPane.setMargin(viewModeControl, new Insets(6, rightInset, 0, 0));
     }
 
     /** Lazily builds the secondary view (scroll pane + its own minimap) sharing this document. */
@@ -479,6 +622,7 @@ public class EditorBuffer {
         if (minimap2 != null) {
             applyMinimap(scrollPane2, minimap2, effective);
         }
+        positionViewModeControl(); // keep the floating Markdown control clear of the minimap
     }
 
     /** Show/hide the "hidden characters" markers (spaces, tabs, line ends). */

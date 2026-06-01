@@ -128,6 +128,84 @@
     -fx-text-fill: -color-fg-muted;
 }
 
+/* ---- Markdown preview (in-editor, native render). Primer Light defaults; editor themes override the
+   color-bearing rules so the preview tracks the active theme. ---- */
+.markdown-preview-pane {
+    -fx-background-color: -color-bg-default;
+    -fx-background: -color-bg-default;
+}
+.markdown-preview {
+    -fx-background-color: -color-bg-default;
+    -fx-padding: 12 16 12 16;
+    -fx-spacing: 8;
+    -fx-font-size: 14px;
+}
+.markdown-preview .md-text { -fx-fill: -color-fg-default; }
+.markdown-preview .md-paragraph { -fx-line-spacing: 2; }
+.markdown-preview .md-h1 { -fx-font-size: 26px; -fx-font-weight: bold; -fx-padding: 6 0 2 0; }
+.markdown-preview .md-h2 { -fx-font-size: 21px; -fx-font-weight: bold; -fx-padding: 6 0 2 0; }
+.markdown-preview .md-h3 { -fx-font-size: 17px; -fx-font-weight: bold; -fx-padding: 4 0 2 0; }
+.markdown-preview .md-h4 { -fx-font-size: 15px; -fx-font-weight: bold; }
+.markdown-preview .md-h5 { -fx-font-size: 14px; -fx-font-weight: bold; }
+.markdown-preview .md-h6 { -fx-font-size: 13px; -fx-font-weight: bold; -fx-fill: -color-fg-muted; }
+.markdown-preview .md-h1 .md-text,
+.markdown-preview .md-h2 .md-text,
+.markdown-preview .md-h3 .md-text,
+.markdown-preview .md-h4 .md-text,
+.markdown-preview .md-h5 .md-text { -fx-fill: -color-fg-default; }
+.markdown-preview .md-h6 .md-text { -fx-fill: -color-fg-muted; }
+.markdown-preview .md-bold { -fx-font-weight: bold; }
+.markdown-preview .md-italic { -fx-font-style: italic; }
+.markdown-preview .md-strike { -fx-strikethrough: true; }
+.markdown-preview .md-link { -fx-fill: -color-accent-fg; -fx-underline: true; }
+.markdown-preview .md-inline-code {
+    -fx-font-family: monospace;
+    -fx-fill: -color-accent-fg;
+}
+.markdown-preview .md-code-block {
+    -fx-font-family: monospace;
+    -fx-background-color: -color-bg-subtle;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 8 10 8 10;
+}
+.markdown-preview .md-list { -fx-spacing: 3; }
+.markdown-preview .md-list-item { -fx-spacing: 6; }
+.markdown-preview .md-list-marker { -fx-text-fill: -color-fg-muted; -fx-min-width: 18; }
+.markdown-preview .md-quote {
+    -fx-border-color: -color-border-muted;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 2 0 2 10;
+}
+.markdown-preview .md-hr { -fx-padding: 6 0 6 0; }
+.markdown-preview .md-table { -fx-hgap: 0; -fx-vgap: 0; }
+.markdown-preview .md-table-cell,
+.markdown-preview .md-table-header {
+    -fx-border-color: -color-border-muted;
+    -fx-border-width: 1;
+    -fx-padding: 4 8 4 8;
+}
+.markdown-preview .md-table-header { -fx-background-color: -color-bg-subtle; }
+.markdown-preview .md-table-header .md-text { -fx-font-weight: bold; }
+
+/* The floating Editor/Split/Preview control, top-right of a Markdown editor. */
+.md-viewmode-toggle {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 1;
+    -fx-spacing: 0;
+    -fx-opacity: 0.92;
+}
+.md-viewmode-segment {
+    -fx-padding: 2 5 2 5;
+    -fx-background-radius: 3;
+}
+.md-viewmode-segment .toolbar-icon { -fx-fill: -color-fg-muted; }
+.md-viewmode-segment:hover .toolbar-icon { -fx-fill: -color-fg-default; }
+.md-viewmode-segment:selected { -fx-background-color: -color-accent-subtle; }
+.md-viewmode-segment:selected .toolbar-icon { -fx-fill: -color-accent-fg; }
+
 /* Project file tree: themed folder/file icon colors. The two looked-up colors default to the GUI
    theme's accent/muted (AtlantaFX), and each editor theme overrides them with palette-matched values
    (see styles/editor-themes/*.css) so the tree tracks the active code theme. */

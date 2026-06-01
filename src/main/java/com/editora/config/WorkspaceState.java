@@ -32,6 +32,8 @@ public class WorkspaceState {
     private Map<String, List<Integer>> foldedRegions = new LinkedHashMap<>();
     /** Persisted bookmarks: absolute file path -> bookmarks (line + optional note + captured text). */
     private Map<String, List<Bookmark>> bookmarks = new LinkedHashMap<>();
+    /** Persisted Markdown view mode per file: absolute path -> "EDITOR"|"SPLIT"|"PREVIEW". */
+    private Map<String, String> markdownViewModes = new LinkedHashMap<>();
 
     // --- Zen (distraction-free) mode. Entering Zen snapshots the user's view/chrome prefs into
     //     preZenView (key -> value) and the open tool windows into preZenToolWindows, then turns
@@ -180,6 +182,14 @@ public class WorkspaceState {
 
     public void setBookmarks(Map<String, List<Bookmark>> bookmarks) {
         this.bookmarks = bookmarks == null ? new LinkedHashMap<>() : bookmarks;
+    }
+
+    public Map<String, String> getMarkdownViewModes() {
+        return markdownViewModes;
+    }
+
+    public void setMarkdownViewModes(Map<String, String> markdownViewModes) {
+        this.markdownViewModes = markdownViewModes == null ? new LinkedHashMap<>() : markdownViewModes;
     }
 
     public boolean isZenMode() {
