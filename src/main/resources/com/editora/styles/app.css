@@ -145,6 +145,29 @@
     -fx-fill: -color-accent-fg;
 }
 
+/* Stripe-icon reordering (mirrors the tab-strip drag UI): dim the dragged icon, draw an accent
+   insertion line on the side the dropped icon would land (top/bottom for vertical stripes,
+   left/right for the horizontal bottom stripe). */
+.tool-stripe-button.tool-stripe-button-dragging {
+    -fx-opacity: 0.4;
+}
+.tool-stripe-button.tool-drop-top {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 2 0 0 0;
+}
+.tool-stripe-button.tool-drop-bottom {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 0 0 2 0;
+}
+.tool-stripe-button.tool-drop-left {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 0 0 0 2;
+}
+.tool-stripe-button.tool-drop-right {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 0 2 0 0;
+}
+
 .tool-window {
     -fx-background-color: -color-bg-default;
 }
@@ -509,6 +532,19 @@
     -fx-text-fill: -color-accent-fg;
     -fx-font-size: 13px;
     -fx-cursor: hand;
+}
+
+/* Muted explanatory line under a Settings heading. */
+.settings-hint {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+
+/* Compact up/down reorder buttons in the tool-window placement rows. */
+.reorder-button {
+    -fx-font-size: 10px;
+    -fx-padding: 1 5 1 5;
+    -fx-min-width: 22px;
 }
 
 /* Title header at the top of the palette / Jump-to popups, naming the action. */

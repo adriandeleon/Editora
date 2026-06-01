@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Reorder the tool-window stripe icons: drag an icon up/down within its side, or use the new ▲/▼
+  buttons next to each row in Settings → "Tool window placement". The order persists in the session
+  state (`workspace-state.json`).
+
 - Projects (VSCode single-folder-workspace style), **off by default** — enable via Settings →
   "Enable projects" (when off, the Project tool window, the toolbar open-folder icon + project
   switcher, and the project commands are all hidden). Each project is a root folder plus its own

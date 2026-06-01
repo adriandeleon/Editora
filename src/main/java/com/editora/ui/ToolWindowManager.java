@@ -1,9 +1,12 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.editora.command.KeymapManager;
@@ -15,14 +18,19 @@ import javafx.css.PseudoClass;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Button;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.Dragboard;
+import javafx.scene.input.TransferMode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 
 /**
  * Lays out IntelliJ-style left/right/bottom stripes around the editor area, manages registered
@@ -77,16 +85,86 @@ public class ToolWindowManager {
 
     public void register(ToolWindow tw) {
         byId.put(tw.getId(), tw);
+        ensureInOrder(tw.getId());
         Button button = new Button();
         button.setGraphic(tw.createIcon());
         button.getStyleClass().addAll("tool-stripe-button", "flat");
         button.setTooltip(new Tooltip(tooltipFor(tw)));
         button.setOnAction(e -> toggle(tw));
+        enableReorderDrag(tw, button);
         stripeButtons.put(tw, button);
         if (isVisible(tw)) {
-            stripeFor(currentSide(tw)).getChildren().add(button);
+            addButtonOrdered(tw, button);
         }
         updateStripeVisibility();
+    }
+
+    /**
+     * Drag-and-drop reorder of a stripe button among its same-side neighbours. Mirrors the editor
+     * tab-strip reordering UI: a translucent drag snapshot follows the cursor, the source dims while
+     * dragging, and the target shows an accent insertion line on the side the icon would land.
+     */
+    private void enableReorderDrag(ToolWindow tw, Button button) {
+        button.setOnDragDetected(e -> {
+            Dragboard db = button.startDragAndDrop(TransferMode.MOVE);
+            ClipboardContent content = new ClipboardContent();
+            content.putString(tw.getId());
+            db.setContent(content);
+            SnapshotParameters params = new SnapshotParameters();
+            params.setFill(Color.TRANSPARENT);
+            db.setDragView(button.snapshot(params, null), e.getX(), e.getY());
+            button.getStyleClass().add("tool-stripe-button-dragging");
+            e.consume();
+        });
+        button.setOnDragOver(e -> {
+            ToolWindow src = dragSource(e.getDragboard());
+            if (src != null && src != tw && currentSide(src) == currentSide(tw)) {
+                e.acceptTransferModes(TransferMode.MOVE);
+                showDropMarker(button, currentSide(tw) != ToolWindow.Side.BOTTOM, dropAfter(button, tw, e));
+            }
+            e.consume();
+        });
+        button.setOnDragExited(e -> clearDropMarkers(button));
+        button.setOnDragDropped(e -> {
+            clearDropMarkers(button);
+            ToolWindow src = dragSource(e.getDragboard());
+            boolean ok = false;
+            if (src != null && src != tw && currentSide(src) == currentSide(tw)) {
+                reorderOnto(src, tw, dropAfter(button, tw, e));
+                ok = true;
+            }
+            e.setDropCompleted(ok);
+            e.consume();
+        });
+        button.setOnDragDone(e -> {
+            button.getStyleClass().remove("tool-stripe-button-dragging");
+            clearDropMarkers(button);
+        });
+    }
+
+    /** The tool window being dragged, if the dragboard carries a known tool-window id. */
+    private ToolWindow dragSource(Dragboard db) {
+        return db.hasString() ? byId.get(db.getString()) : null;
+    }
+
+    /** Whether a drop lands after the target: past the midpoint along the stripe's axis. */
+    private boolean dropAfter(Button target, ToolWindow tw, javafx.scene.input.DragEvent e) {
+        boolean vertical = currentSide(tw) != ToolWindow.Side.BOTTOM;
+        double pos = vertical ? e.getY() : e.getX();
+        double extent = vertical ? target.getHeight() : target.getWidth();
+        return pos > extent / 2;
+    }
+
+    private static void showDropMarker(Node button, boolean vertical, boolean after) {
+        clearDropMarkers(button);
+        String cls = vertical
+                ? (after ? "tool-drop-bottom" : "tool-drop-top")
+                : (after ? "tool-drop-right" : "tool-drop-left");
+        button.getStyleClass().add(cls);
+    }
+
+    private static void clearDropMarkers(Node button) {
+        button.getStyleClass().removeAll("tool-drop-top", "tool-drop-bottom", "tool-drop-left", "tool-drop-right");
     }
 
     /** True if this tool window's stripe button should be shown. Defaults to visible. */
@@ -113,7 +191,7 @@ public class ToolWindowManager {
                 stripe.remove(button); // no-op if absent
             }
         } else if (button != null && !stripe.contains(button)) {
-            stripe.add(button); // contains-guard: adding a duplicate child throws
+            addButtonOrdered(tw, button); // contains-guard above: adding a duplicate child throws
         }
         Boolean prev = config.getWorkspaceState().getToolWindowVisible().get(tw.getId());
         config.getWorkspaceState().getToolWindowVisible().put(tw.getId(), visible);
@@ -176,11 +254,11 @@ public class ToolWindowManager {
             close(tw);
         }
         Button button = stripeButtons.get(tw);
+        config.getWorkspaceState().getToolWindowSides().put(tw.getId(), newSide.name());
         if (button != null && isVisible(tw)) {
             stripeFor(oldSide).getChildren().remove(button);
-            stripeFor(newSide).getChildren().add(button);
+            addButtonOrdered(tw, button);
         }
-        config.getWorkspaceState().getToolWindowSides().put(tw.getId(), newSide.name());
         updateStripeVisibility();
         config.save();
     }
@@ -323,6 +401,105 @@ public class ToolWindowManager {
             case RIGHT -> rightStripe;
             case BOTTOM -> bottomStripe;
         };
+    }
+
+    // --- Stripe ordering -------------------------------------------------------------------------
+
+    /** The tool window owning a given stripe button, or null. */
+    private ToolWindow toolWindowFor(Node button) {
+        for (Map.Entry<ToolWindow, Button> e : stripeButtons.entrySet()) {
+            if (e.getValue() == button) {
+                return e.getKey();
+            }
+        }
+        return null;
+    }
+
+    /** Display order rank for a tool window (its index in the persisted order list; absent = last). */
+    private int orderIndex(ToolWindow tw) {
+        if (tw == null) {
+            return Integer.MAX_VALUE;
+        }
+        int i = config.getWorkspaceState().getToolWindowOrder().indexOf(tw.getId());
+        return i < 0 ? Integer.MAX_VALUE : i;
+    }
+
+    private void ensureInOrder(String id) {
+        List<String> order = config.getWorkspaceState().getToolWindowOrder();
+        if (!order.contains(id)) {
+            order.add(id);
+        }
+    }
+
+    /** Adds the button to its current side's stripe at the position dictated by the order list. */
+    private void addButtonOrdered(ToolWindow tw, Button button) {
+        Pane stripe = stripeFor(currentSide(tw));
+        int rank = orderIndex(tw);
+        int insert = 0;
+        for (Node child : stripe.getChildren()) {
+            ToolWindow other = toolWindowFor(child);
+            if (other != null && other != tw && orderIndex(other) < rank) {
+                insert++;
+            }
+        }
+        stripe.getChildren().add(insert, button);
+    }
+
+    /** Re-sorts the buttons already in a stripe to match the order list. */
+    private void relayoutStripe(ToolWindow.Side side) {
+        Pane stripe = stripeFor(side);
+        List<Node> buttons = new ArrayList<>(stripe.getChildren());
+        buttons.sort(Comparator.comparingInt(b -> orderIndex(toolWindowFor(b))));
+        stripe.getChildren().setAll(buttons);
+    }
+
+    /** All registered tool windows currently assigned to a side, in display order. */
+    public List<ToolWindow> orderedOnSide(ToolWindow.Side side) {
+        List<ToolWindow> list = new ArrayList<>();
+        for (ToolWindow tw : byId.values()) {
+            if (currentSide(tw) == side) {
+                list.add(tw);
+            }
+        }
+        list.sort(Comparator.comparingInt(this::orderIndex));
+        return list;
+    }
+
+    /** Whether {@code tw} can move by {@code delta} (-1 earlier / +1 later) among its same-side peers. */
+    public boolean canMove(ToolWindow tw, int delta) {
+        List<ToolWindow> peers = orderedOnSide(currentSide(tw));
+        int idx = peers.indexOf(tw);
+        int target = idx + delta;
+        return idx >= 0 && target >= 0 && target < peers.size();
+    }
+
+    /** Moves {@code tw} one slot earlier (-1) or later (+1) among its same-side peers; persists. */
+    public boolean move(ToolWindow tw, int delta) {
+        if (!canMove(tw, delta)) {
+            return false;
+        }
+        List<ToolWindow> peers = orderedOnSide(currentSide(tw));
+        ToolWindow other = peers.get(peers.indexOf(tw) + delta);
+        List<String> order = config.getWorkspaceState().getToolWindowOrder();
+        ensureInOrder(tw.getId());
+        ensureInOrder(other.getId());
+        Collections.swap(order, order.indexOf(tw.getId()), order.indexOf(other.getId()));
+        relayoutStripe(currentSide(tw));
+        config.save();
+        return true;
+    }
+
+    /** Drops {@code src} immediately before/after {@code target} (same side); persists. */
+    private void reorderOnto(ToolWindow src, ToolWindow target, boolean after) {
+        List<String> order = config.getWorkspaceState().getToolWindowOrder();
+        for (String id : byId.keySet()) {
+            ensureInOrder(id); // make every id present so indices are meaningful
+        }
+        order.remove(src.getId());
+        int ti = order.indexOf(target.getId());
+        order.add(after ? ti + 1 : ti, src.getId());
+        relayoutStripe(currentSide(target));
+        config.save();
     }
 
     private void persist() {

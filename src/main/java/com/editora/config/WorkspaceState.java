@@ -26,6 +26,8 @@ public class WorkspaceState {
     private Map<String, String> toolWindowSides = new LinkedHashMap<>();
     /** Per-tool-window visibility: id -> true/false. Missing = visible. */
     private Map<String, Boolean> toolWindowVisible = new LinkedHashMap<>();
+    /** Tool-window stripe order: ids in display order. Ids absent here fall back to registration order. */
+    private List<String> toolWindowOrder = new ArrayList<>();
     /** Persisted collapsed fold regions: absolute file path -> header line indices (0-based). */
     private Map<String, List<Integer>> foldedRegions = new LinkedHashMap<>();
 
@@ -152,6 +154,14 @@ public class WorkspaceState {
 
     public void setToolWindowVisible(Map<String, Boolean> toolWindowVisible) {
         this.toolWindowVisible = toolWindowVisible == null ? new LinkedHashMap<>() : toolWindowVisible;
+    }
+
+    public List<String> getToolWindowOrder() {
+        return toolWindowOrder;
+    }
+
+    public void setToolWindowOrder(List<String> toolWindowOrder) {
+        this.toolWindowOrder = toolWindowOrder == null ? new ArrayList<>() : toolWindowOrder;
     }
 
     public Map<String, List<Integer>> getFoldedRegions() {

@@ -311,11 +311,16 @@ public class SettingsWindow {
         form.addRow(15, new Label("Auto save:"), autoSaveBox);
 
         int row = 16;
+        List<Runnable> moveRefreshers = new ArrayList<>();
+        Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
             heading.setStyle("-fx-font-weight: bold;");
             form.add(heading, 0, row++, 2, 1);
+            Label orderHint = new Label("Use ▲ ▼ (or drag the stripe icons) to reorder.");
+            orderHint.getStyleClass().add("settings-hint");
+            form.add(orderHint, 0, row++, 4, 1);
             for (ToolWindow tw : toolWindows.getRegisteredToolWindows()) {
                 CheckBox showCheck = new CheckBox("Show");
                 showCheck.setSelected(toolWindows.isVisible(tw));
@@ -339,13 +344,37 @@ public class SettingsWindow {
                 sideCombo.setValue(toolWindows.currentSide(tw));
                 sideCombo.setDisable(!showCheck.isSelected());
 
+                Button moveUp = new Button("▲");
+                Button moveDown = new Button("▼");
+                moveUp.getStyleClass().addAll("flat", "reorder-button");
+                moveDown.getStyleClass().addAll("flat", "reorder-button");
+                moveUp.setTooltip(new Tooltip("Move earlier in the stripe"));
+                moveDown.setTooltip(new Tooltip("Move later in the stripe"));
+                Runnable refreshThisRow = () -> {
+                    boolean shown = showCheck.isSelected();
+                    moveUp.setDisable(!shown || !toolWindows.canMove(tw, -1));
+                    moveDown.setDisable(!shown || !toolWindows.canMove(tw, 1));
+                };
+                moveRefreshers.add(refreshThisRow);
+                moveUp.setOnAction(e -> {
+                    toolWindows.move(tw, -1);
+                    refreshMoves.run();
+                });
+                moveDown.setOnAction(e -> {
+                    toolWindows.move(tw, 1);
+                    refreshMoves.run();
+                });
+                HBox reorder = new HBox(2, moveUp, moveDown);
+
                 showCheck.selectedProperty().addListener((obs, was, visible) -> {
                     toolWindows.setVisible(tw, visible);
                     sideCombo.setDisable(!visible);
+                    refreshMoves.run();
                 });
                 sideCombo.valueProperty().addListener((obs, old, now) -> {
                     if (now != null) {
                         toolWindows.setSide(tw, now);
+                        refreshMoves.run();
                     }
                 });
 
@@ -354,8 +383,9 @@ public class SettingsWindow {
                     projectSideCombo = sideCombo;
                     projectToolWindowRef = tw;
                 }
-                form.addRow(row++, new Label(tw.getTitle() + ":"), showCheck, sideCombo);
+                form.addRow(row++, new Label(tw.getTitle() + ":"), showCheck, sideCombo, reorder);
             }
+            refreshMoves.run();
         }
         updateProjectRowEnabled();
 
