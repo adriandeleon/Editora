@@ -512,37 +512,48 @@ public class MainController {
         setStatus("Project closed");
     }
 
-    /**
-     * Deletes the active project from the managed list (with confirmation) and returns to the global
-     * session. Only the project entry + its saved session are removed — the folder and its files on
-     * disk are left untouched.
-     */
+    /** Deletes the active project (with confirmation). */
     private void deleteProject() {
-        Project active = projects.active();
-        if (active == null) {
-            setStatus("No project open");
+        deleteProject(projects.active());
+    }
+
+    /**
+     * Deletes a specific project from the managed list (with confirmation). Only the project entry + its
+     * saved session are removed — the folder and its files on disk are left untouched. If it's the
+     * active project, the global session is restored; otherwise the current session is untouched.
+     */
+    private void deleteProject(Project p) {
+        if (p == null || p.id().isEmpty()) {
+            setStatus("No project to delete");
             return;
         }
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                "Delete project \"" + active.name() + "\" from your projects list? The folder and its "
-                + "files on disk are kept; only the project and its saved session are removed, and the "
-                + "global session is restored.", ButtonType.OK, ButtonType.CANCEL);
+                "Delete project \"" + p.name() + "\" from your projects list? The folder and its files "
+                + "on disk are kept; only the project and its saved session are removed.",
+                ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setTitle("Delete Project");
         confirm.setHeaderText(null);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        if (!confirmCloseAllBuffers()) {
-            return;
+        if (p.equals(projects.active())) {
+            // Deleting the open project: save/close its buffers and fall back to the global session.
+            if (!confirmCloseAllBuffers()) {
+                return;
+            }
+            exitZenIfActive();
+            projects.delete(p.id()); // also clears the active id
+            projects.save();
+            config.useDefaultWorkspaceStateFile();
+            activateSession(null); // restores the global session + refreshes the combos/panel
+        } else {
+            // Deleting a project we're not in: just drop it from the list; the session is unaffected.
+            projects.delete(p.id());
+            projects.save();
+            refreshProjectPanelList();
         }
-        exitZenIfActive();
-        String name = active.name();
-        projects.delete(active.id()); // also clears the active id
-        projects.save();
-        config.useDefaultWorkspaceStateFile();
-        activateSession(null);
-        setStatus("Deleted project " + name);
+        setStatus("Deleted project " + p.name());
     }
 
     /**
@@ -822,6 +833,7 @@ public class MainController {
         projectToolbarLabel.setTooltip(new Tooltip(
                 "Projects are single-folder workspaces, each remembering its own open files and layout. "
                 + "Pick one to switch; \"No Project\" returns to the global session."));
+        toolbarProjectCombo.setOnDeleteProject(this::deleteProject); // per-item delete in the dropdown
         projectToolbarGap = new Region();
         projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between Settings and the combo
         projectToolbarGap.setPrefWidth(78);
@@ -842,9 +854,13 @@ public class MainController {
         if (!items.isEmpty() && items.get(items.size() - 1) instanceof Separator) {
             items.remove(items.size() - 1);
         }
+        // The "Open Folder as Project" icon moves out of the left file-icon group to sit just right of
+        // the project combobox (per-project delete lives inside the combo's dropdown).
+        items.remove(openFolderButton);
 
-        // Project switcher just right of the Settings icon (a ~3-icon gap), before the flexible spacer.
-        items.addAll(projectToolbarGap, projectToolbarLabel, toolbarProjectCombo);
+        // Project switcher just right of the Settings icon (a ~3-icon gap), with the open-folder icon
+        // immediately to the right of the combobox, before the flexible spacer.
+        items.addAll(projectToolbarGap, projectToolbarLabel, toolbarProjectCombo, openFolderButton);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
