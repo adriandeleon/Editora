@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bookmarks** — mark lines and jump back to them, across files. Toggle a bookmark on the caret line
+  with `C-c m`, or click the gutter to add one (clicking an existing bookmark asks before removing it);
+  a light-orange bookmark glyph appears in the line-number gutter. Each bookmark
+  can carry an optional note ("Bookmarks: Edit Note…"). The **Bookmarks** tool window (`M-2`) lists every bookmark across all files (open
+  or closed), grouped by file, with a filter box; Enter opens the file and jumps to the line, and
+  right-click edits the note or deletes. `C-c ]` / `C-c [` cycle through the current file's bookmarks,
+  and `M-g b` ("Bookmarks: Jump…") is a fuzzy cross-file picker. Bookmarks persist with the session
+  (per project) and track their line as you edit above them.
 - The Project tool window's file tree now colors its icons to match the active theme: folders use the
   theme accent and files a muted tone. The colors are driven by two looked-up CSS variables
   (`-project-folder-color`/`-project-file-color`) that default to the GUI theme (AtlantaFX) and are

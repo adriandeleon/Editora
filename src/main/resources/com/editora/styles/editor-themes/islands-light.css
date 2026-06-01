@@ -43,3 +43,6 @@
 
 /* Project tree: folder accent + muted file, matching this theme. */
 .project-tree { -project-folder-color: #3574f0; -project-file-color: #adadad; }
+
+/* Bookmark gutter marker (theme accent). */
+.editor-area .fold-gutter .bookmark-marker { -fx-fill: #e08a33; }

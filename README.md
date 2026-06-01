@@ -34,6 +34,9 @@ Emacs-style keymap or a fuzzy command palette.
   with a matching editor color theme (syntax + surface) that follows the app theme by
   default and is independently selectable in Settings.
 - **Recent files** — persistent most-recently-used list.
+- **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
+  Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`
+  is a cross-file jump picker. Saved per project (with the global session when no project is open).
 - **Tool windows** — IntelliJ-style dockable panels (Project, Bookmarks, File Information).
 
 ## Requirements

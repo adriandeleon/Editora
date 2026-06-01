@@ -86,6 +86,10 @@ public class EditorBuffer {
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final FoldManager folds = new FoldManager(area);
+    private final BookmarkManager bookmarks = new BookmarkManager(area);
+    /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
+    private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBookmarkClick =
+            (buffer, line) -> buffer.toggleBookmark(line);
 
     private Path path;
     /** Language name for the current file (drives fold strategy); see {@link LanguageRegistry}. */
@@ -131,6 +135,9 @@ public class EditorBuffer {
 
     public EditorBuffer() {
         refreshGutter();
+        // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
+        // defaults to a plain toggle so the editor works standalone (and in tests).
+        folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
         area.getStyleClass().add("editor-area");
         area.setWrapText(false);
         area.setUndoManager(boundedUndoManager(area));
@@ -402,6 +409,54 @@ public class EditorBuffer {
 
     public FoldManager getFoldManager() {
         return folds;
+    }
+
+    public BookmarkManager getBookmarkManager() {
+        return bookmarks;
+    }
+
+    /** Sets the gutter-click handler ({@code (buffer, line)}): used to add or confirm-remove bookmarks. */
+    public void setGutterBookmarkClick(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
+        if (handler != null) {
+            this.gutterBookmarkClick = handler;
+        }
+    }
+
+    /** Callback fired after any bookmark change (for persistence + the global Bookmarks panel). */
+    public void setOnBookmarksChanged(Runnable callback) {
+        bookmarks.setOnChanged(callback);
+    }
+
+    /** Rebuilds a single line's gutter graphic (cheap, viewport-safe — same primitive folds use). */
+    public void refreshGutterLine(int line) {
+        if (line >= 0 && line < area.getParagraphs().size()) {
+            area.recreateParagraphGraphic(line);
+        }
+    }
+
+    /** Toggles the bookmark on {@code line} and refreshes just that line's gutter marker. */
+    public boolean toggleBookmark(int line) {
+        boolean on = bookmarks.toggle(line);
+        refreshGutterLine(line);
+        return on;
+    }
+
+    /** Removes the bookmark on {@code line} (if any) and refreshes that line's gutter. */
+    public void removeBookmark(int line) {
+        bookmarks.remove(line);
+        refreshGutterLine(line);
+    }
+
+    /** Replaces this buffer's bookmarks from persisted state and repaints the gutter. */
+    public void applyBookmarks(List<com.editora.config.Bookmark> saved) {
+        bookmarks.restore(saved);
+        refreshGutter();
+    }
+
+    /** Removes all bookmarks in this buffer and repaints the gutter. */
+    public void clearBookmarks() {
+        bookmarks.clear();
+        refreshGutter();
     }
 
     /** Collapse every foldable region in the document. */

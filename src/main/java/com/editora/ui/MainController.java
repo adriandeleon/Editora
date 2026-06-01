@@ -146,6 +146,7 @@ public class MainController {
     private QuickOpen<StructurePanel.Outline> structurePalette;
     private QuickOpen<Tab> openFilesPalette;
     private QuickOpen<ToolWindow> toolWindowPalette;
+    private QuickOpen<BookmarkEntry> bookmarkPalette;
     private FileFinder fileFinder;
     private FileFinder folderFinder;
     private ProjectPanel projectPanel;
@@ -174,6 +175,7 @@ public class MainController {
     private ToolWindow fileInfoToolWindow;
     private FileInformationPanel fileInfoPanel;
     private StructurePanel structurePanel;
+    private BookmarksPanel bookmarksPanel;
     private Switcher switcher;
     /** Most-recently-used tab order, head = most recent. */
     private final LinkedList<Tab> mru = new LinkedList<>();
@@ -302,6 +304,11 @@ public class MainController {
                 ToolWindow::getTitle,
                 tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
                 toolWindows::open);
+        bookmarkPalette = new QuickOpen<>("Jump to Bookmark", "Type to filter bookmarks…",
+                this::allBookmarkEntries,
+                e -> bookmarkLabel(e.bm()),
+                e -> e.file().getFileName() + ":" + (e.bm().line() + 1),
+                e -> bookmarkActivate(e.file(), e.bm().line()));
         fileFinder = new FileFinder(this::finderStartDir, this::findFileChosen);
     }
 
@@ -574,6 +581,9 @@ public class MainController {
         applyChromeVisibility();
         projectPanel.setRoot(root);
         refreshProjectPanelList();
+        if (bookmarksPanel != null) {
+            bookmarksPanel.refresh(); // the swapped session has its own bookmarks
+        }
         if (keepProjectPanelOpen && projectsEnabled() && !toolWindows.isOpen(projectToolWindow)) {
             toolWindows.open(projectToolWindow);
         }
@@ -744,9 +754,23 @@ public class MainController {
         structurePanel = new StructurePanel();
         structureToolWindow = new ToolWindow("structure", "Structure", ToolWindow.Side.RIGHT,
                 Icons::structure, structurePanel, "tool.structure");
+        bookmarksPanel = new BookmarksPanel(() -> config.getWorkspaceState().getBookmarks(),
+                new BookmarksPanel.Actions() {
+                    @Override public void openAndJump(java.nio.file.Path file, int line) {
+                        bookmarkActivate(file, line);
+                    }
+                    @Override public void setNote(java.nio.file.Path file, int line, String note) {
+                        bookmarkSetNote(file, line, note);
+                    }
+                    @Override public void delete(java.nio.file.Path file, int line) {
+                        bookmarkDelete(file, line);
+                    }
+                    @Override public void deleteAll(java.nio.file.Path file) {
+                        bookmarkDeleteAll(file);
+                    }
+                });
         bookmarksToolWindow = new ToolWindow("bookmarks", "Bookmarks", ToolWindow.Side.RIGHT,
-                Icons::bookmark, placeholder("Bookmarks tool window\n(content coming soon)"),
-                "tool.bookmarks");
+                Icons::bookmark, bookmarksPanel, "tool.bookmarks");
         fileInfoPanel = new FileInformationPanel();
         fileInfoToolWindow = new ToolWindow("file-information", "File Information", ToolWindow.Side.RIGHT,
                 Icons::about, fileInfoPanel, "tool.fileInformation");
@@ -967,6 +991,7 @@ public class MainController {
                 setStatus(note);
             }
             restoreFolds(buffer);
+            restoreBookmarks(buffer);
             CodeArea area = buffer.getArea();
             int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
             area.moveTo(caret);
@@ -1007,6 +1032,8 @@ public class MainController {
     private Tab addBuffer(EditorBuffer buffer, boolean select) {
         applyViewSettings(buffer);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
+        buffer.setOnBookmarksChanged(() -> persistBookmarks(buffer));
+        buffer.setGutterBookmarkClick(this::onGutterBookmarkClick);
         Tab tab = new Tab();
         tab.setContent(buffer.getNode());
         tab.setUserData(buffer);
@@ -1216,6 +1243,7 @@ public class MainController {
             String note = loadInto(buffer, file);
             // Apply folds before the node is in the scene, so each fold skips per-fold layout.
             restoreFolds(buffer);
+            restoreBookmarks(buffer);
             addBuffer(buffer);
             // Land on the first line: replaceText leaves the caret at the end, and fold restoration
             // moves it to a fold header. Defer so the viewport scroll runs after the tab is laid out.
@@ -2277,6 +2305,201 @@ public class MainController {
         buffer.markClean();
     }
 
+    /** Persists the buffer's bookmarks, keyed by its file path, and refreshes the Bookmarks panel. */
+    private void persistBookmarks(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null) {
+            return;
+        }
+        List<com.editora.config.Bookmark> marks = buffer.getBookmarkManager().snapshot();
+        var map = config.getWorkspaceState().getBookmarks();
+        if (marks.isEmpty()) {
+            map.remove(file.toString());
+        } else {
+            map.put(file.toString(), marks);
+        }
+        config.save();
+        if (bookmarksPanel != null) {
+            bookmarksPanel.refresh();
+        }
+    }
+
+    /** Re-applies a file's saved bookmarks after it is opened (and paints their gutter markers). */
+    private void restoreBookmarks(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null) {
+            return;
+        }
+        buffer.applyBookmarks(config.getWorkspaceState().getBookmarks().get(file.toString()));
+    }
+
+    // --- Bookmark commands + panel actions ---------------------------------------------------------
+
+    /** A flattened (file, bookmark) pair for the cross-file "Jump to Bookmark" picker. */
+    private record BookmarkEntry(Path file, com.editora.config.Bookmark bm) { }
+
+    /**
+     * Handles a click in the gutter: adds a bookmark on an unbookmarked line, or asks for confirmation
+     * before removing an existing one. (The keyboard toggle {@code C-c m} removes without a prompt.)
+     */
+    private void onGutterBookmarkClick(EditorBuffer buffer, int line) {
+        if (buffer.getBookmarkManager().isBookmarked(line)) {
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                    "Remove the bookmark on line " + (line + 1) + "?", ButtonType.OK, ButtonType.CANCEL);
+            confirm.initOwner(stage);
+            confirm.setTitle("Remove Bookmark");
+            confirm.setHeaderText(null);
+            if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+                buffer.removeBookmark(line);
+            }
+        } else {
+            buffer.toggleBookmark(line); // add
+        }
+    }
+
+    /** Toggles a bookmark on the active editor's caret line. */
+    private void toggleBookmarkAtCaret() {
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.getPath() != null) {
+            b.toggleBookmark(b.getArea().getCurrentParagraph());
+        } else if (b != null) {
+            setStatus("Save the file before bookmarking");
+        }
+    }
+
+    /** Adds (if absent) or edits the note on the bookmark at the active editor's caret line. */
+    private void editBookmarkNoteAtCaret() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null) {
+            return;
+        }
+        int line = b.getArea().getCurrentParagraph();
+        var mgr = b.getBookmarkManager();
+        String current = "";
+        for (com.editora.config.Bookmark bm : mgr.snapshot()) {
+            if (bm.line() == line) {
+                current = bm.note();
+                break;
+            }
+        }
+        TextInputDialog dialog = new TextInputDialog(current);
+        dialog.initOwner(stage);
+        dialog.setTitle("Bookmark Note");
+        dialog.setHeaderText(null);
+        dialog.setContentText("Note:");
+        dialog.showAndWait().ifPresent(note -> {
+            if (!mgr.isBookmarked(line)) {
+                mgr.add(line, note.strip());
+                b.refreshGutterLine(line);
+            } else {
+                mgr.setNote(line, note.strip());
+            }
+        });
+    }
+
+    /** Jumps to the next/previous bookmark within the active file (wrapping). */
+    private void jumpBookmark(boolean forward) {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            return;
+        }
+        int from = b.getArea().getCurrentParagraph();
+        Integer target = forward ? b.getBookmarkManager().next(from) : b.getBookmarkManager().previous(from);
+        if (target != null) {
+            navigateToLine(target);
+        } else {
+            setStatus("No bookmarks in this file");
+        }
+    }
+
+    /** Clears every bookmark in the active file. */
+    private void clearBookmarksInFile() {
+        EditorBuffer b = activeBuffer();
+        if (b != null) {
+            b.clearBookmarks();
+        }
+    }
+
+    /** All bookmarks across all files, flattened for the jump picker (sorted by file then line). */
+    private List<BookmarkEntry> allBookmarkEntries() {
+        List<BookmarkEntry> out = new ArrayList<>();
+        config.getWorkspaceState().getBookmarks().forEach((path, marks) -> {
+            if (marks != null) {
+                Path file = Path.of(path);
+                marks.forEach(bm -> out.add(new BookmarkEntry(file, bm)));
+            }
+        });
+        out.sort(java.util.Comparator
+                .comparing((BookmarkEntry e) -> e.file().toString(), String.CASE_INSENSITIVE_ORDER)
+                .thenComparingInt(e -> e.bm().line()));
+        return out;
+    }
+
+    private static String bookmarkLabel(com.editora.config.Bookmark bm) {
+        if (!bm.note().isEmpty()) {
+            return bm.note();
+        }
+        return bm.lineText().isEmpty() ? "line " + (bm.line() + 1) : bm.lineText();
+    }
+
+    /** Opens the file (if needed) and jumps to the bookmarked line. */
+    private void bookmarkActivate(Path file, int line) {
+        openPath(file);
+        Platform.runLater(() -> navigateToLine(line));
+    }
+
+    /** Sets a bookmark's note — via the open buffer if loaded, else directly in the persisted map. */
+    private void bookmarkSetNote(Path file, int line, String note) {
+        Tab tab = tabForPath(file);
+        if (tab != null) {
+            ((EditorBuffer) tab.getUserData()).getBookmarkManager().setNote(line, note);
+        } else {
+            updateClosedFileBookmarks(file, marks -> marks.replaceAll(
+                    bm -> bm.line() == line ? bm.withNote(note) : bm));
+        }
+    }
+
+    /** Deletes one bookmark — via the open buffer if loaded, else directly in the persisted map. */
+    private void bookmarkDelete(Path file, int line) {
+        Tab tab = tabForPath(file);
+        if (tab != null) {
+            ((EditorBuffer) tab.getUserData()).removeBookmark(line);
+        } else {
+            updateClosedFileBookmarks(file, marks -> marks.removeIf(bm -> bm.line() == line));
+        }
+    }
+
+    /** Deletes all bookmarks in a file — via the open buffer if loaded, else the persisted map. */
+    private void bookmarkDeleteAll(Path file) {
+        Tab tab = tabForPath(file);
+        if (tab != null) {
+            ((EditorBuffer) tab.getUserData()).clearBookmarks();
+        } else {
+            config.getWorkspaceState().getBookmarks().remove(file.toString());
+            config.save();
+            bookmarksPanel.refresh();
+        }
+    }
+
+    /** Applies a mutation to a closed file's bookmark list in the persisted map, then saves + refreshes. */
+    private void updateClosedFileBookmarks(Path file,
+            java.util.function.Consumer<List<com.editora.config.Bookmark>> mutator) {
+        var map = config.getWorkspaceState().getBookmarks();
+        List<com.editora.config.Bookmark> marks = map.get(file.toString());
+        if (marks == null) {
+            return;
+        }
+        marks = new ArrayList<>(marks);
+        mutator.accept(marks);
+        if (marks.isEmpty()) {
+            map.remove(file.toString());
+        } else {
+            map.put(file.toString(), marks);
+        }
+        config.save();
+        bookmarksPanel.refresh();
+    }
+
     private void applyViewSettings(EditorBuffer buffer) {
         Settings s = config.getSettings();
         buffer.setFont(s.getFontFamily(), s.getFontSize());
@@ -2578,6 +2801,18 @@ public class MainController {
                 () -> openFilesPalette.show(stage)));
         registry.register(Command.of("tool.jump", "Tool Windows: Jump…",
                 () -> toolWindowPalette.show(stage)));
+        registry.register(Command.of("bookmarks.toggle", "Bookmarks: Toggle on Line",
+                this::toggleBookmarkAtCaret));
+        registry.register(Command.of("bookmarks.editNote", "Bookmarks: Edit Note…",
+                this::editBookmarkNoteAtCaret));
+        registry.register(Command.of("bookmarks.next", "Bookmarks: Next in File",
+                () -> jumpBookmark(true)));
+        registry.register(Command.of("bookmarks.previous", "Bookmarks: Previous in File",
+                () -> jumpBookmark(false)));
+        registry.register(Command.of("bookmarks.jump", "Bookmarks: Jump…",
+                () -> bookmarkPalette.show(stage)));
+        registry.register(Command.of("bookmarks.clearFile", "Bookmarks: Clear in File",
+                this::clearBookmarksInFile));
         registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
                 this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",

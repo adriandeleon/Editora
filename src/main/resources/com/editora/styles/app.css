@@ -69,6 +69,12 @@
     -fx-text-fill: #0969da;
 }
 
+/* Bookmark glyph in the gutter (light orange; a brighter shade is used on dark editor themes). A node
+   is only created for bookmarked lines, so this rule never touches unbookmarked rows. */
+.editor-area .fold-gutter .bookmark-marker {
+    -fx-fill: #e08a33;
+}
+
 /* Hover preview of a collapsed region's hidden content. The colors are set inline per editor theme
    (FoldManager.setPreviewColors); these defaults match the default (Primer Light) editor theme. */
 .fold-preview-tooltip {
@@ -100,6 +106,26 @@
 .structure-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
+}
+
+/* Bookmarks tool window: same look as the Structure panel. */
+.bookmarks-panel {
+    -fx-background-color: -color-bg-default;
+}
+.bookmarks-panel .bookmarks-filter {
+    -fx-font-size: 12px;
+}
+.bookmarks-tree {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-font-size: 12px;
+}
+.bookmarks-tree .tree-cell {
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 1 4 1 4;
+}
+.bookmarks-tree .bookmark-file-row {
+    -fx-text-fill: -color-fg-muted;
 }
 
 /* Project file tree: themed folder/file icon colors. The two looked-up colors default to the GUI

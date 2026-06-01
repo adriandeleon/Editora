@@ -8,7 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
+import java.util.function.IntPredicate;
 
 import org.fxmisc.richtext.CharacterHit;
 import org.fxmisc.richtext.CodeArea;
@@ -21,13 +23,16 @@ import com.editora.editor.FoldRegions.Region;
 import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
+import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.shape.SVGPath;
 
 /**
  * Computes foldable regions for a {@link CodeArea}, drives folding/unfolding, and supplies the gutter
@@ -55,6 +60,11 @@ public final class FoldManager {
     };
     /** Suppresses change notifications while we programmatically restore saved folds. */
     private boolean restoring;
+
+    /** Whether a line carries a bookmark (drawn as a gutter marker); default none. */
+    private IntPredicate isBookmarked = i -> false;
+    /** Invoked when the user clicks a line's gutter bookmark marker. */
+    private IntConsumer onBookmarkToggle = i -> { };
 
     /** Shared hover preview of a collapsed line's hidden content; reused across all lines. */
     private final Tooltip linePreview = new Tooltip();
@@ -178,6 +188,12 @@ public final class FoldManager {
             }
         }
         onRegionsChanged.run();
+    }
+
+    /** Wires the bookmark gutter marker: a predicate for which lines are bookmarked + a click handler. */
+    public void setBookmarkHooks(IntPredicate isBookmarked, IntConsumer onToggle) {
+        this.isBookmarked = isBookmarked == null ? i -> false : isBookmarked;
+        this.onBookmarkToggle = onToggle == null ? i -> { } : onToggle;
     }
 
     public Optional<Region> regionStartingAt(int line) {
@@ -428,6 +444,19 @@ public final class FoldManager {
         clip.widthProperty().bind(box.widthProperty());
         clip.heightProperty().bind(box.heightProperty());
         box.setClip(clip);
+        // Clicking the gutter toggles a bookmark on that line (add, or — handled upstream — confirm a
+        // removal). The fold chevron consumes its own click so folding doesn't also toggle a bookmark.
+        box.setCursor(Cursor.HAND);
+        box.setOnMouseClicked(e -> {
+            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 1) {
+                onBookmarkToggle.accept(idx);
+            }
+        });
+
+        // A bookmark marker is created only for bookmarked lines, so unbookmarked rows pay nothing.
+        if (isBookmarked.test(idx)) {
+            box.getChildren().add(bookmarkMarker());
+        }
 
         if (showLineNumbers) {
             Label lineNo = new Label();
@@ -451,10 +480,23 @@ public final class FoldManager {
                 } else {
                     fold(region.get());
                 }
+                e.consume(); // don't let a fold click also toggle a bookmark on the gutter
             });
         }
         box.getChildren().add(chevron);
         return box;
+    }
+
+    /** A small bookmark glyph for the gutter (Material "bookmark"); colored via the {@code .bookmark-marker}
+     *  CSS class (an SVG fill). Clicking it toggles the bookmark on that line. */
+    private Node bookmarkMarker() {
+        SVGPath svg = new SVGPath();
+        svg.setContent("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
+        svg.getStyleClass().add("bookmark-marker");
+        svg.setScaleX(0.55);
+        svg.setScaleY(0.55);
+        // No own click handler: the gutter box handles clicks (so clicking the marker isn't a double toggle).
+        return new Group(svg); // Group bounds reflect the scaled glyph, so the gutter stays narrow
     }
 
     /** The collapsed region's text (header through end line), capped at {@link #PREVIEW_LINES}. */
