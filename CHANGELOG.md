@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`EDITORA_CONFIG_DIR`** — set this environment variable to point Editora's config folder somewhere other
-  than the default `~/.editora/` (used verbatim as the config directory). Works on macOS, Linux, and
-  Windows.
+- **Custom config folder** — point Editora's config directory somewhere other than the default
+  `~/.editora/` with the `--config-dir <path>` command-line argument (or `--config-dir=<path>`) or the
+  `EDITORA_CONFIG_DIR` environment variable. Precedence: `--config-dir` > `EDITORA_CONFIG_DIR` >
+  `~/.editora/`. Works on macOS, Linux, and Windows.
 - **Text zoom** — quickly scale the editor text up/down independent of the configured font size (the
   set size is 100%). Use the status-bar `− 100% +` control, `C-=` / `C--` (and `Ctrl`+Plus) / `C-0` to
   reset, **Ctrl + mouse-wheel**, or the palette ("View: Zoom In / Out / Reset Text"). The zoom level

@@ -110,9 +110,9 @@ view options, auto-save mode, and keybinding overrides). Session state — colla
 regions and tool-window layout — is stored as JSON in `workspace-state.json`, and recent
 files in `recent-files.json`, both alongside it.
 
-Set the `EDITORA_CONFIG_DIR` environment variable to use a different config folder (it's used as the
-config directory verbatim); when unset, Editora uses `~/.editora/`. Works on macOS, Linux, and
-Windows.
+To use a different config folder, pass `--config-dir <path>` (or `--config-dir=<path>`) on the command
+line, or set the `EDITORA_CONFIG_DIR` environment variable. Precedence is **`--config-dir` >
+`EDITORA_CONFIG_DIR` > the default `~/.editora/`**. Works on macOS, Linux, and Windows.
 
 Auto save is off by default; enable it in Settings ("After delay" or "On focus change")
 or cycle the mode with `C-c a`. It only saves files that already have a path.

@@ -37,7 +37,11 @@ public class App extends Application {
     public void start(Stage stage) throws IOException {
         com.editora.ui.Fonts.load(); // register bundled fonts before any UI/CSS uses them
 
-        ConfigManager config = new ConfigManager();
+        // Config dir precedence: --config-dir CLI arg > EDITORA_CONFIG_DIR env var > ~/.editora.
+        String cliConfigDir = configDirArg(getParameters().getRaw());
+        ConfigManager config = cliConfigDir != null
+                ? new ConfigManager(java.nio.file.Path.of(cliConfigDir))
+                : new ConfigManager();
         Settings settings = config.load();
 
         Application.setUserAgentStylesheet(Themes.stylesheetFor(settings.getTheme()));
@@ -80,6 +84,33 @@ public class App extends Application {
         stage.show();
 
         controller.openInitialBuffer();
+    }
+
+    /**
+     * Extracts the {@code --config-dir} program argument (supporting both {@code --config-dir=PATH} and
+     * {@code --config-dir PATH}); returns the trimmed path, or {@code null} when not given. Pure +
+     * unit-testable.
+     */
+    static String configDirArg(java.util.List<String> args) {
+        if (args == null) {
+            return null;
+        }
+        String prefix = "--config-dir=";
+        for (int i = 0; i < args.size(); i++) {
+            String a = args.get(i);
+            if (a == null) {
+                continue;
+            }
+            if (a.startsWith(prefix)) {
+                String v = a.substring(prefix.length()).trim();
+                return v.isEmpty() ? null : v;
+            }
+            if (a.equals("--config-dir") && i + 1 < args.size() && args.get(i + 1) != null) {
+                String v = args.get(i + 1).trim();
+                return v.isEmpty() ? null : v;
+            }
+        }
+        return null;
     }
 
     /**
