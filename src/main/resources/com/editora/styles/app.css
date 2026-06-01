@@ -142,12 +142,14 @@
 }
 .markdown-preview .md-text { -fx-fill: -color-fg-default; }
 .markdown-preview .md-paragraph { -fx-line-spacing: 2; }
-.markdown-preview .md-h1 { -fx-font-size: 26px; -fx-font-weight: bold; -fx-padding: 6 0 2 0; }
-.markdown-preview .md-h2 { -fx-font-size: 21px; -fx-font-weight: bold; -fx-padding: 6 0 2 0; }
-.markdown-preview .md-h3 { -fx-font-size: 17px; -fx-font-weight: bold; -fx-padding: 4 0 2 0; }
-.markdown-preview .md-h4 { -fx-font-size: 15px; -fx-font-weight: bold; }
-.markdown-preview .md-h5 { -fx-font-size: 14px; -fx-font-weight: bold; }
-.markdown-preview .md-h6 { -fx-font-size: 13px; -fx-font-weight: bold; -fx-fill: -color-fg-muted; }
+/* Heading sizes are em-relative to the preview's base font, so the −/+ zoom (which overrides the base
+   font size inline) scales everything proportionally. */
+.markdown-preview .md-h1 { -fx-font-size: 1.86em; -fx-font-weight: bold; -fx-padding: 6 0 2 0; }
+.markdown-preview .md-h2 { -fx-font-size: 1.5em; -fx-font-weight: bold; -fx-padding: 6 0 2 0; }
+.markdown-preview .md-h3 { -fx-font-size: 1.21em; -fx-font-weight: bold; -fx-padding: 4 0 2 0; }
+.markdown-preview .md-h4 { -fx-font-size: 1.07em; -fx-font-weight: bold; }
+.markdown-preview .md-h5 { -fx-font-size: 1em; -fx-font-weight: bold; }
+.markdown-preview .md-h6 { -fx-font-size: 0.93em; -fx-font-weight: bold; -fx-fill: -color-fg-muted; }
 .markdown-preview .md-h1 .md-text,
 .markdown-preview .md-h2 .md-text,
 .markdown-preview .md-h3 .md-text,
@@ -205,6 +207,27 @@
 .md-viewmode-segment:hover .toolbar-icon { -fx-fill: -color-fg-default; }
 .md-viewmode-segment:selected { -fx-background-color: -color-accent-subtle; }
 .md-viewmode-segment:selected .toolbar-icon { -fx-fill: -color-accent-fg; }
+
+/* The preview's −/+ zoom control (top-left of the preview pane). */
+.md-zoom {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 1;
+    -fx-opacity: 0.92;
+}
+.md-zoom-button {
+    -fx-padding: 1 8 1 8;
+    -fx-font-size: 13px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-radius: 3;
+    -fx-min-width: 24px;
+}
+.md-zoom-button:hover {
+    -fx-text-fill: -color-fg-default;
+    -fx-background-color: -color-bg-default;
+}
 
 /* Project file tree: themed folder/file icon colors. The two looked-up colors default to the GUI
    theme's accent/muted (AtlantaFX), and each editor theme overrides them with palette-matched values

@@ -33,12 +33,14 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.Node;
+import javafx.scene.control.Button;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
@@ -75,6 +77,12 @@ public class EditorBuffer {
     private ScrollPane previewPane;
     /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
     private StackPane previewHost;
+    /** The preview's −/+ zoom control (overlaid top-left of the preview when previewing). */
+    private HBox zoomControl;
+    /** Preview text zoom factor (1.0 = 100%); scales the rendered preview's base font size. */
+    private double previewFontScale = 1.0;
+    /** Base preview font size in px (matches {@code .markdown-preview} in app.css); headings use em. */
+    private static final double BASE_PREVIEW_FONT = 14;
     /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
     private Node viewModeControl;
     /** Active debounced subscription driving live preview re-render (null when not previewing). */
@@ -389,6 +397,7 @@ public class EditorBuffer {
                 }
                 double v = previewPane().getVvalue();
                 previewPane().setContent(MarkdownRenderer.renderDocument(ast, baseDir));
+                applyPreviewScale(); // keep the current zoom on the freshly rendered content
                 Platform.runLater(() -> previewPane().setVvalue(v)); // best-effort scroll preserve
             });
         });
@@ -404,8 +413,7 @@ public class EditorBuffer {
         detachViewModeControl();
         Node content;
         if (markdownViewMode == MarkdownViewMode.PREVIEW) {
-            StackPane host = previewHost();
-            host.getChildren().setAll(previewPane());
+            StackPane host = previewHost(); // preview + zoom control
             if (viewModeControl != null) {
                 StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
                 StackPane.setMargin(viewModeControl, new Insets(6, 10, 0, 0));
@@ -413,7 +421,7 @@ public class EditorBuffer {
             }
             content = host;
         } else if (markdownViewMode == MarkdownViewMode.SPLIT) {
-            SplitPane pane = new SplitPane(root, previewPane());
+            SplitPane pane = new SplitPane(root, previewHost());
             pane.setOrientation(Orientation.HORIZONTAL);
             pane.setDividerPositions(0.5);
             attachControlToCodePane();
@@ -436,7 +444,56 @@ public class EditorBuffer {
         if (previewHost == null) {
             previewHost = new StackPane();
         }
+        // preview content + the −/+ zoom control (top-left, clear of the mode toggle at top-right).
+        previewHost.getChildren().setAll(previewPane(), zoomControl());
+        StackPane.setAlignment(zoomControl(), Pos.TOP_LEFT);
+        StackPane.setMargin(zoomControl(), new Insets(6, 0, 0, 6));
         return previewHost;
+    }
+
+    private HBox zoomControl() {
+        if (zoomControl == null) {
+            Button out = zoomButton("−", this::zoomPreviewOut); // − (minus sign)
+            Button in = zoomButton("+", this::zoomPreviewIn);
+            zoomControl = new HBox(out, in);
+            zoomControl.getStyleClass().add("md-zoom");
+            zoomControl.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+            zoomControl.setPickOnBounds(false);
+        }
+        return zoomControl;
+    }
+
+    private Button zoomButton(String text, Runnable action) {
+        Button b = new Button(text);
+        b.getStyleClass().addAll("md-zoom-button", "flat");
+        b.setFocusTraversable(false);
+        b.setOnAction(e -> action.run());
+        return b;
+    }
+
+    /** Zooms the preview text in/out (multiplicative steps, clamped) or resets to 100%. */
+    public void zoomPreviewIn() {
+        setPreviewFontScale(previewFontScale * 1.1);
+    }
+
+    public void zoomPreviewOut() {
+        setPreviewFontScale(previewFontScale / 1.1);
+    }
+
+    public void resetPreviewZoom() {
+        setPreviewFontScale(1.0);
+    }
+
+    private void setPreviewFontScale(double scale) {
+        previewFontScale = Math.max(0.5, Math.min(3.0, scale));
+        applyPreviewScale();
+    }
+
+    /** Applies the current zoom by overriding the rendered preview root's base font size (headings use em). */
+    private void applyPreviewScale() {
+        if (previewPane != null && previewPane.getContent() != null) {
+            previewPane.getContent().setStyle("-fx-font-size: " + (BASE_PREVIEW_FONT * previewFontScale) + "px;");
+        }
     }
 
     /** Removes the floating control from whichever pane currently hosts it. */

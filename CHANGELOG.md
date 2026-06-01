@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at the top-right of the editor: **Editor**, **Editor + Preview** (side-by-side), and **Preview**. The
   preview is rendered natively (no WebView) from CommonMark + GitHub-flavored Markdown (tables, task
   lists, strikethrough, autolinks), updates live as you type (debounced, off-thread), follows the
-  active theme, and remembers its mode per file. Also available as palette commands ("Markdown:
-  Editor / Editor and Preview / Preview").
+  active theme, and remembers its mode per file. The preview has −/+ buttons (top-left) to zoom the
+  text in/out. Also available as palette commands ("Markdown: Editor / Editor and Preview / Preview",
+  and "Markdown: Zoom In / Out / Reset Preview").
 - **Bookmarks** — mark lines and jump back to them, across files. Toggle a bookmark on the caret line
   with `C-c m`, or click the gutter to add one (clicking an existing bookmark asks before removing it);
   a light-orange bookmark glyph appears in the line-number gutter. Each bookmark

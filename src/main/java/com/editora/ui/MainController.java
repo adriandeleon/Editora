@@ -2402,6 +2402,22 @@ public class MainController {
         }
     }
 
+    /** Zooms the active Markdown buffer's preview text: {@code >0} in, {@code <0} out, {@code 0} reset. */
+    private void markdownZoom(int direction) {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isMarkdown()) {
+            setStatus("Not a Markdown file");
+            return;
+        }
+        if (direction > 0) {
+            b.zoomPreviewIn();
+        } else if (direction < 0) {
+            b.zoomPreviewOut();
+        } else {
+            b.resetPreviewZoom();
+        }
+    }
+
     // --- Bookmark commands + panel actions ---------------------------------------------------------
 
     /** A flattened (file, bookmark) pair for the cross-file "Jump to Bookmark" picker. */
@@ -2893,6 +2909,12 @@ public class MainController {
                 () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.SPLIT)));
         registry.register(Command.of("view.markdownPreview", "Markdown: Preview",
                 () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.PREVIEW)));
+        registry.register(Command.of("view.markdownZoomIn", "Markdown: Zoom In Preview",
+                () -> markdownZoom(1)));
+        registry.register(Command.of("view.markdownZoomOut", "Markdown: Zoom Out Preview",
+                () -> markdownZoom(-1)));
+        registry.register(Command.of("view.markdownZoomReset", "Markdown: Reset Preview Zoom",
+                () -> markdownZoom(0)));
         registry.register(Command.of("view.foldAll", "View: Fold All", this::foldAll));
         registry.register(Command.of("view.unfoldAll", "View: Unfold All", this::unfoldAll));
         registry.register(Command.of("view.fold", "View: Fold", this::foldAtCaret));
