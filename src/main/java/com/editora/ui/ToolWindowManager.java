@@ -95,25 +95,32 @@ public class ToolWindowManager {
         return v == null || v;
     }
 
-    /** Hide/show the tool window's stripe button. When hidden, also closes it if open. */
+    /**
+     * Hide/show the tool window's stripe button (when hidden, also closes it if open). Reconciles the
+     * actual stripe membership rather than trusting the persisted flag — the visibility map can desync
+     * from the real children (e.g. {@code register} runs against the default state, then the session
+     * file is swapped for a project), so an early "no change" return would leave a stale button shown
+     * or throw on a duplicate add.
+     */
     public void setVisible(ToolWindow tw, boolean visible) {
-        if (isVisible(tw) == visible) {
-            return;
-        }
         Button button = stripeButtons.get(tw);
+        var stripe = stripeFor(currentSide(tw)).getChildren();
         if (!visible) {
             if (openBySide.get(currentSide(tw)) == tw) {
                 close(tw);
             }
             if (button != null) {
-                stripeFor(currentSide(tw)).getChildren().remove(button);
+                stripe.remove(button); // no-op if absent
             }
-        } else if (button != null) {
-            stripeFor(currentSide(tw)).getChildren().add(button);
+        } else if (button != null && !stripe.contains(button)) {
+            stripe.add(button); // contains-guard: adding a duplicate child throws
         }
+        Boolean prev = config.getWorkspaceState().getToolWindowVisible().get(tw.getId());
         config.getWorkspaceState().getToolWindowVisible().put(tw.getId(), visible);
         updateStripeVisibility();
-        config.save();
+        if (prev == null || prev != visible) {
+            config.save(); // persist only on an actual change
+        }
     }
 
     public Collection<ToolWindow> getRegisteredToolWindows() {

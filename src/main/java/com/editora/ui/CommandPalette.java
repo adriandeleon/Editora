@@ -35,6 +35,8 @@ public class CommandPalette {
 
     private final CommandRegistry registry;
     private final Map<String, String> commandToKey;
+    /** Only commands matching this predicate are listed (e.g. project commands hidden when disabled). */
+    private final java.util.function.Predicate<Command> visible;
 
     private final Popup popup = new Popup();
     private final TextField input = new TextField();
@@ -42,8 +44,14 @@ public class CommandPalette {
     private final ObservableList<Command> items = FXCollections.observableArrayList();
 
     public CommandPalette(CommandRegistry registry, KeymapManager keymap) {
+        this(registry, keymap, c -> true);
+    }
+
+    public CommandPalette(CommandRegistry registry, KeymapManager keymap,
+                          java.util.function.Predicate<Command> visible) {
         this.registry = registry;
         this.commandToKey = invert(keymap.bindings());
+        this.visible = visible;
         build();
     }
 
@@ -148,6 +156,9 @@ public class CommandPalette {
         String q = query.toLowerCase(Locale.ROOT).trim();
         List<Command> matches = new ArrayList<>();
         for (Command command : registry.all()) {
+            if (!visible.test(command)) {
+                continue; // e.g. project commands when project support is disabled
+            }
             if (q.isEmpty() || isSubsequence(q, command.title().toLowerCase(Locale.ROOT))) {
                 matches.add(command);
             }

@@ -67,7 +67,12 @@ public class SettingsWindow {
     private CheckBox statusBarCheck;
     private CheckBox tabBarCheck;
     private CheckBox breadcrumbCheck;
+    private CheckBox projectsCheck;
     private CheckBox zenCheck;
+    // The Project tool-window-placement row, disabled until projects are enabled.
+    private CheckBox projectShowCheck;
+    private ComboBox<ToolWindow.Side> projectSideCombo;
+    private ToolWindow projectToolWindowRef;
     private ComboBox<String> autoSaveCombo;
     private Spinner<Integer> autoSaveDelaySpinner;
     private boolean built;
@@ -209,6 +214,27 @@ public class SettingsWindow {
             apply();
         });
 
+        projectsCheck = new CheckBox("Enable projects");
+        projectsCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setProjectSupport(now);
+            apply();
+            updateProjectRowEnabled();
+        });
+        Label projectsInfo = new Label("ⓘ");
+        projectsInfo.getStyleClass().add("info-badge");
+        Tooltip projectsTip = new Tooltip("""
+                Projects are VSCode-style single-folder workspaces. A project is a root folder plus its \
+                own remembered session: the files you had open (with caret + pinned state), the active \
+                file, code folds, and tool-window layout. Switching projects saves the current session \
+                and restores the target's; "No Project"/Close returns to the global session without \
+                deleting any project. Open a folder as a project from the toolbar or with C-x C-p, and \
+                switch with C-x p. Application settings stay global (not per-project).""");
+        projectsTip.setWrapText(true);
+        projectsTip.setMaxWidth(380);
+        Tooltip.install(projectsInfo, projectsTip);
+        HBox projectsRow = new HBox(6, projectsCheck, projectsInfo);
+        projectsRow.setAlignment(Pos.CENTER_LEFT);
+
         zenCheck = new CheckBox("Zen mode (distraction-free)");
         zenCheck.selectedProperty().addListener((obs, was, now) -> {
             if (loading) {
@@ -276,14 +302,15 @@ public class SettingsWindow {
         form.add(statusBarCheck, 1, 10);
         form.add(tabBarCheck, 1, 11);
         form.add(breadcrumbCheck, 1, 12);
-        form.add(zenCheck, 1, 13);
+        form.add(projectsRow, 1, 13);
+        form.add(zenCheck, 1, 14);
         Label delayLabel = new Label("delay (seconds)");
         delayLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -color-fg-muted;");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
-        form.addRow(14, new Label("Auto save:"), autoSaveBox);
+        form.addRow(15, new Label("Auto save:"), autoSaveBox);
 
-        int row = 15;
+        int row = 16;
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
             form.add(new Separator(), 0, row++, 2, 1);
             Label heading = new Label("Tool window placement");
@@ -322,9 +349,15 @@ public class SettingsWindow {
                     }
                 });
 
+                if ("project".equals(tw.getId())) {
+                    projectShowCheck = showCheck; // disabled until projects are enabled
+                    projectSideCombo = sideCombo;
+                    projectToolWindowRef = tw;
+                }
                 form.addRow(row++, new Label(tw.getTitle() + ":"), showCheck, sideCombo);
             }
         }
+        updateProjectRowEnabled();
 
         Button about = new Button("About");
         about.setOnAction(e -> showAbout(stage, onOpenFile));
@@ -371,6 +404,8 @@ public class SettingsWindow {
             statusBarCheck.setSelected(settings.isShowStatusBar());
             tabBarCheck.setSelected(settings.isShowTabBar());
             breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
+            projectsCheck.setSelected(settings.isProjectSupport());
+            updateProjectRowEnabled();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());
             autoSaveCombo.setValue(mode);
@@ -380,6 +415,22 @@ public class SettingsWindow {
         } finally {
             loading = false;
         }
+    }
+
+    /**
+     * Enables/disables the "Project" tool-window-placement row to match the "Enable projects" setting:
+     * when projects are off the row is unchecked + disabled (you can't show the panel until enabled).
+     * Mirrors the real visibility, so the show-checkbox listener's {@code setVisible} is a no-op.
+     */
+    private void updateProjectRowEnabled() {
+        if (projectShowCheck == null) {
+            return;
+        }
+        boolean on = config.getSettings().isProjectSupport();
+        boolean visible = on && projectToolWindowRef != null && toolWindows.isVisible(projectToolWindowRef);
+        projectShowCheck.setSelected(visible);
+        projectShowCheck.setDisable(!on);
+        projectSideCombo.setDisable(!visible);
     }
 
     /** Re-syncs the view/chrome checkboxes from the current settings (used after a Zen toggle). */
@@ -397,6 +448,7 @@ public class SettingsWindow {
             statusBarCheck.setSelected(s.isShowStatusBar());
             tabBarCheck.setSelected(s.isShowTabBar());
             breadcrumbCheck.setSelected(s.isShowBreadcrumb());
+            projectsCheck.setSelected(s.isProjectSupport());
         } finally {
             loading = prev;
         }

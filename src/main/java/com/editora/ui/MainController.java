@@ -8,6 +8,8 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
+import com.editora.config.Project;
+import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
@@ -69,6 +71,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
@@ -93,6 +96,8 @@ public class MainController {
     private Button newButton;
     @FXML
     private Button openButton;
+    @FXML
+    private Button openFolderButton;
     @FXML
     private Button saveButton;
     @FXML
@@ -142,6 +147,15 @@ public class MainController {
     private QuickOpen<Tab> openFilesPalette;
     private QuickOpen<ToolWindow> toolWindowPalette;
     private FileFinder fileFinder;
+    private FileFinder folderFinder;
+    private ProjectPanel projectPanel;
+    private ProjectManager projects;
+    private QuickOpen<Project> projectPicker;
+    private ProjectCombo toolbarProjectCombo;
+    private Label projectToolbarLabel;
+    private Region projectToolbarGap;
+    /** Tracks the last-applied project-support state to detect off→on transitions (reveal the panel). */
+    private boolean projectSupportApplied;
 
     // Auto save. Mode keys: "off" | "afterDelay" | "onFocusChange".
     static final String AUTOSAVE_OFF = "off";
@@ -185,7 +199,9 @@ public class MainController {
         this.config = config;
         this.registry = registry;
         this.keymap = keymap;
-        this.palette = new CommandPalette(registry, keymap);
+        // Project commands are hidden from the palette unless project support is enabled.
+        this.palette = new CommandPalette(registry, keymap,
+                c -> config.getSettings().isProjectSupport() || !c.id().startsWith("project."));
         this.findBar = new FindReplaceBar(this::activeArea, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -205,12 +221,14 @@ public class MainController {
         setupToolbar();
         setupRecentFiles();
         setupJumpPickers();
+        setupProjects();
         toolWindows.restore();
         // Honor a persisted Zen state on launch: the view options + chrome already read the flag via
         // the apply paths; this hides the side stripes (restore() opened nothing — windows were
         // persisted closed when Zen was entered).
         toolWindows.setZenStripesHidden(config.getWorkspaceState().isZenMode());
         applyChromeVisibility();
+        applyProjectSupport(); // hide project UI when disabled (default)
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
         autoSaveIdleTimer.setOnFinished(e -> autoSaveAllDirty());
@@ -290,6 +308,10 @@ public class MainController {
         if (path != null && path.getParent() != null) {
             return path.getParent();
         }
+        Project active = projects == null ? null : projects.active();
+        if (active != null) {
+            return Path.of(active.root());
+        }
         return Path.of(System.getProperty("user.home", "."));
     }
 
@@ -320,6 +342,205 @@ public class MainController {
         EditorBuffer b = (EditorBuffer) tab.getUserData();
         Path p = b == null ? null : b.getPath();
         return p == null || p.getParent() == null ? "" : p.getParent().toString();
+    }
+
+    // --- Projects (single-folder, VSCode-style) ---
+
+    /** Loads the projects index and, if a project is active, points the session at it before restore. */
+    private void setupProjects() {
+        projects = new ProjectManager(config.getConfigDir());
+        projectPicker = new QuickOpen<>("Switch Project", "Type to filter projects…",
+                this::projectsWithNoProject,
+                Project::name,
+                p -> p.id().isEmpty() ? "global session" : p.root(),
+                this::switchToProject);
+        // Keyboard "Open Project Folder" — mirrors the file finder, but picks a directory.
+        folderFinder = new FileFinder(this::finderStartDir, this::openProjectRoot,
+                true, "Open Project Folder");
+        Project active = projects.active();
+        if (active != null) {
+            // Restore this project's session (openInitialBuffer + toolWindows.restore run after init).
+            config.setWorkspaceStateFile(projects.stateFile(active));
+            projectPanel.setRoot(Path.of(active.root()));
+        }
+        refreshProjectPanelList();
+        updateWindowTitle();
+    }
+
+    /** Toolbar "Open Folder" icon: native folder dialog (the palette/keybinding uses the finder). */
+    @FXML
+    private void onOpenFolder() {
+        DirectoryChooser chooser = new DirectoryChooser();
+        chooser.setTitle("Open Folder as Project");
+        java.io.File dir = chooser.showDialog(stage);
+        if (dir != null) {
+            openProjectRoot(dir.toPath());
+        }
+    }
+
+    /** Creates/reuses a project for {@code root} and switches to it. */
+    private void openProjectRoot(Path root) {
+        String name = root.getFileName() == null ? root.toString() : root.getFileName().toString();
+        switchToProject(projects.createOrGet(name, root));
+    }
+
+    private void refreshProjectPanelList() {
+        Project active = projects.active();
+        String activeId = active == null ? "" : active.id();
+        projectPanel.setProjects(projects.list(), activeId);
+        if (toolbarProjectCombo != null) {
+            toolbarProjectCombo.setProjects(projects.list(), activeId);
+        }
+    }
+
+    private boolean projectsEnabled() {
+        return config.getSettings().isProjectSupport();
+    }
+
+    /** The projects list with a leading "No Project" entry (returns to the global session). */
+    private List<Project> projectsWithNoProject() {
+        List<Project> all = new ArrayList<>();
+        all.add(ProjectCombo.NO_PROJECT);
+        all.addAll(projects.list());
+        return all;
+    }
+
+    /** Shows/hides all project UI per the "Enable projects" setting: toolbar icon + combo, tool window. */
+    private void applyProjectSupport() {
+        boolean on = projectsEnabled();
+        openFolderButton.setVisible(on);
+        openFolderButton.setManaged(on);
+        toolbarProjectCombo.setVisible(on);
+        toolbarProjectCombo.setManaged(on);
+        projectToolbarLabel.setVisible(on);
+        projectToolbarLabel.setManaged(on);
+        projectToolbarGap.setVisible(on);
+        projectToolbarGap.setManaged(on);
+        // Project tool window: force-hide when off; reveal once on the off→on transition; otherwise
+        // leave it to the user (so it can be hidden/shown normally while projects are enabled).
+        if (!on) {
+            toolWindows.setVisible(projectToolWindow, false);
+        } else if (!projectSupportApplied) {
+            toolWindows.setVisible(projectToolWindow, true);
+        }
+        projectSupportApplied = on;
+    }
+
+    /**
+     * Switches the editor to {@code p}'s session (saving the current one first). An empty id is the
+     * "No Project" sentinel — it returns to the default global session without closing any project.
+     */
+    private void switchToProject(Project p) {
+        if (p == null) {
+            return;
+        }
+        boolean toNoProject = p.id().isEmpty();
+        Project active = projects.active();
+        if (toNoProject ? active == null : p.equals(active)) {
+            return; // already there (e.g. re-selected in the combo)
+        }
+        if (!confirmCloseAllBuffers()) {
+            refreshProjectPanelList(); // cancelled — snap the combo back to the actual active project
+            return;
+        }
+        if (toNoProject) {
+            projects.setActive("");
+            projects.save();
+            config.useDefaultWorkspaceStateFile();
+            activateSession(null);
+            setStatus("No project");
+        } else {
+            projects.setActive(p.id());
+            projects.save();
+            config.setWorkspaceStateFile(projects.stateFile(p));
+            activateSession(Path.of(p.root()));
+            setStatus("Project: " + p.name());
+        }
+    }
+
+    /** Closes the active project (with confirmation), returning to the default global session. */
+    private void closeProject() {
+        Project active = projects.active();
+        if (active == null) {
+            setStatus("No project open");
+            return;
+        }
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                "Close project \"" + active.name() + "\"? Open files will be saved/closed and the "
+                + "global session restored.", ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle("Close Project");
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+            return;
+        }
+        if (!confirmCloseAllBuffers()) {
+            return;
+        }
+        projects.setActive("");
+        projects.save();
+        config.useDefaultWorkspaceStateFile();
+        activateSession(null);
+        setStatus("Project closed");
+    }
+
+    /** Replaces the editor + tool-window state with the freshly-loaded session (after the file swap). */
+    private void activateSession(Path root) {
+        tabPane.getTabs().clear(); // the tabs listener clears mru/pinned for removed tabs
+        mru.clear();
+        pinned.clear();
+        openInitialBuffer();
+        toolWindows.closeAllOpen();
+        toolWindows.restore();
+        toolWindows.setZenStripesHidden(config.getWorkspaceState().isZenMode());
+        applyChromeVisibility();
+        projectPanel.setRoot(root);
+        refreshProjectPanelList();
+        updateWindowTitle();
+    }
+
+    private void updateWindowTitle() {
+        Project active = projects == null ? null : projects.active();
+        stage.setTitle(active == null ? "Editora" : "Editora — " + active.name());
+    }
+
+    /** Syncs editor/session state after the Project tree renames a file on disk (old → target). */
+    private void onProjectFileRenamed(Path old, Path target) {
+        Tab tab = tabForPath(old);
+        if (tab != null) {
+            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            buffer.setPath(target);
+            updateTabMeta(tab, buffer);
+            if (buffer == activeBuffer()) {
+                breadcrumb.setActiveFile(target);
+                statusBar.refresh();
+            }
+        }
+        // Migrate persisted state keyed by the absolute path string.
+        var folded = config.getWorkspaceState().getFoldedRegions();
+        List<Integer> folds = folded.remove(old.toString());
+        if (folds != null) {
+            folded.put(target.toString(), folds);
+        }
+        if (recentFiles != null) {
+            recentFiles.remove(old);
+        }
+        config.save();
+        setStatus("Renamed to " + target.getFileName());
+    }
+
+    /** Syncs editor/session state after the Project tree deletes a file on disk. */
+    private void onProjectFileDeleted(Path path) {
+        Tab tab = tabForPath(path);
+        if (tab != null) {
+            tabPane.getTabs().remove(tab); // file is gone; close without a save prompt
+        }
+        config.getWorkspaceState().getFoldedRegions().remove(path.toString());
+        if (recentFiles != null) {
+            recentFiles.remove(path);
+        }
+        config.save();
+        setStatus("Deleted " + path.getFileName());
     }
 
     /** Moves the active editor's caret to {@code line} and anchors it at the top of the viewport. */
@@ -434,9 +655,10 @@ public class MainController {
 
     private void setupToolWindows() {
         toolWindows = new ToolWindowManager(workspace, tabPane, config, keymap);
+        projectPanel = new ProjectPanel(this::openPath, this::switchToProject, this::closeProject,
+                this::onProjectFileRenamed, this::onProjectFileDeleted);
         projectToolWindow = new ToolWindow("project", "Project", ToolWindow.Side.RIGHT,
-                Icons::project, placeholder("Project tool window\n(content coming soon)"),
-                "tool.project");
+                Icons::project, projectPanel, "tool.project");
         structurePanel = new StructurePanel();
         structureToolWindow = new ToolWindow("structure", "Structure", ToolWindow.Side.RIGHT,
                 Icons::structure, structurePanel, "tool.structure");
@@ -464,6 +686,7 @@ public class MainController {
     private void setupToolbar() {
         setupButton(newButton, Icons.newFile(), "New");
         setupButton(openButton, Icons.open(), "Open (C-x C-f)");
+        setupButton(openFolderButton, Icons.openFolder(), "Open Folder as Project…");
         setupButton(saveButton, Icons.save(), "Save (C-x C-s)");
         setupButton(saveAsButton, Icons.saveAs(), "Save As (C-x C-w)");
         setupButton(undoButton, Icons.undo(), "Undo (C-/)");
@@ -485,6 +708,14 @@ public class MainController {
                 (obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
         findBar.visibleProperty().addListener(
                 (obs, was, now) -> findButton.pseudoClassStateChanged(OPEN, now));
+        // Project switcher (placed right of the Settings icon by arrangeToolbarTail); shown when enabled.
+        toolbarProjectCombo = new ProjectCombo(this::switchToProject);
+        toolbarProjectCombo.setPrefWidth(160);
+        projectToolbarLabel = new Label("Project:");
+        projectToolbarLabel.getStyleClass().add("toolbar-hint");
+        projectToolbarGap = new Region();
+        projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between Settings and the combo
+        projectToolbarGap.setPrefWidth(78);
         arrangeToolbarTail();
         refreshSplitButtons();
     }
@@ -502,6 +733,9 @@ public class MainController {
         if (!items.isEmpty() && items.get(items.size() - 1) instanceof Separator) {
             items.remove(items.size() - 1);
         }
+
+        // Project switcher just right of the Settings icon (a ~3-icon gap), before the flexible spacer.
+        items.addAll(projectToolbarGap, projectToolbarLabel, toolbarProjectCombo);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -1931,6 +2165,7 @@ public class MainController {
     private void applyViewSettingsToAllBuffers(Settings settings) {
         applyEditorTheme(settings.getEditorTheme());
         applyChromeVisibility();
+        applyProjectSupport();
         applyAutoSave();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
@@ -2155,6 +2390,13 @@ public class MainController {
         registry.register(Command.of("file.new", "File: New", this::onNew));
         registry.register(Command.of("file.open", "File: Open…", this::onOpen));
         registry.register(Command.of("file.find", "File: Find File…", () -> fileFinder.show(stage)));
+        // Project commands no-op when project support is disabled (fully gated).
+        registry.register(Command.of("project.open", "Project: Open Folder…",
+                () -> { if (projectsEnabled()) { folderFinder.show(stage); } }));
+        registry.register(Command.of("project.switch", "Project: Switch…",
+                () -> { if (projectsEnabled()) { projectPicker.show(stage); } }));
+        registry.register(Command.of("project.close", "Project: Close",
+                () -> { if (projectsEnabled()) { closeProject(); } }));
         registry.register(Command.of("file.save", "File: Save", this::onSave));
         registry.register(Command.of("file.saveAs", "File: Save As…", this::onSaveAs));
         registry.register(Command.of("buffer.close", "Buffer: Close", this::onCloseTab));

@@ -42,6 +42,9 @@ public class FileFinder {
 
     private final Supplier<Path> startDir;
     private final Consumer<Path> onChoose;
+    /** When true, only directories are listed and Enter chooses a folder (instead of opening a file). */
+    private final boolean pickDirectory;
+    private final String title;
 
     private final Popup popup = new Popup();
     private final TextField input = new TextField();
@@ -54,8 +57,15 @@ public class FileFinder {
     private boolean swallowNextTyped;
 
     public FileFinder(Supplier<Path> startDir, Consumer<Path> onChoose) {
+        this(startDir, onChoose, false, "Find File");
+    }
+
+    public FileFinder(Supplier<Path> startDir, Consumer<Path> onChoose, boolean pickDirectory,
+                      String title) {
         this.startDir = startDir;
         this.onChoose = onChoose;
+        this.pickDirectory = pickDirectory;
+        this.title = title;
         build();
     }
 
@@ -78,7 +88,7 @@ public class FileFinder {
             }
         });
 
-        Label header = new Label("Find File");
+        Label header = new Label(title);
         header.getStyleClass().add("palette-title");
         VBox content = new VBox(6, header, input, list);
         content.getStyleClass().add("command-palette");
@@ -153,14 +163,20 @@ public class FileFinder {
     }
 
     /** Directory children, sorted directories-first then files, case-insensitive; empty if unreadable. */
-    private static List<Path> listDir(Path dir) {
+    private List<Path> listDir(Path dir) {
         if (!Files.isDirectory(dir)) {
             return List.of();
         }
         List<Path> dirs = new ArrayList<>();
         List<Path> files = new ArrayList<>();
         try (Stream<Path> entries = Files.list(dir)) {
-            entries.forEach(p -> (Files.isDirectory(p) ? dirs : files).add(p));
+            entries.forEach(p -> {
+                if (Files.isDirectory(p)) {
+                    dirs.add(p);
+                } else if (!pickDirectory) {
+                    files.add(p); // in directory-pick mode, list only folders
+                }
+            });
         } catch (IOException | RuntimeException ex) {
             return List.of();
         }
@@ -229,10 +245,20 @@ public class FileFinder {
         list.scrollTo(idx);
     }
 
-    /** Enter: descend into a directory, or hand a file/new path to {@code onChoose}. */
+    /**
+     * Enter: in directory-pick mode, choose the target folder; otherwise descend into a directory or
+     * hand a file/new path to {@code onChoose}. (In directory mode, {@code Tab} is used to descend.)
+     */
     private void chooseSelected() {
         Path target = targetPath();
         if (target == null) {
+            return;
+        }
+        if (pickDirectory) {
+            if (Files.isDirectory(target)) {
+                hide();
+                onChoose.accept(target);
+            }
             return;
         }
         if (Files.isDirectory(target)) {
@@ -262,6 +288,14 @@ public class FileFinder {
     /** Tab: extend the field to the longest common prefix of the matches; lone dir match → descend. */
     private void autocomplete() {
         if (items.isEmpty()) {
+            return;
+        }
+        if (pickDirectory) {
+            // Folder picker: Tab descends into the highlighted folder (Enter chooses it).
+            Path selected = list.getSelectionModel().getSelectedItem();
+            if (selected != null && Files.isDirectory(selected)) {
+                descendInto(selected);
+            }
             return;
         }
         String lcp = items.get(0).getFileName().toString();

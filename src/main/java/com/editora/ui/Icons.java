@@ -127,6 +127,12 @@ final class Icons {
         return of("M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3z");
     }
 
+    static Node openFolder() {
+        // Material "folder_open" — opening a project folder.
+        return of("M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 "
+                + "2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z");
+    }
+
     static Node bookmark() {
         return of("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
     }

@@ -30,6 +30,8 @@ public class Settings {
     /** Auto-save mode: "off" | "afterDelay" | "onFocusChange" (parsed leniently; unknown ⇒ off). */
     private String autoSave = "off";
     private int autoSaveDelayMillis = 1000;
+    /** Projects feature: off by default — hides all project UI/commands until enabled. */
+    private boolean projectSupport = false;
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -176,6 +178,14 @@ public class Settings {
 
     public void setAutoSaveDelayMillis(int autoSaveDelayMillis) {
         this.autoSaveDelayMillis = autoSaveDelayMillis;
+    }
+
+    public boolean isProjectSupport() {
+        return projectSupport;
+    }
+
+    public void setProjectSupport(boolean projectSupport) {
+        this.projectSupport = projectSupport;
     }
 
     public Map<String, String> getKeybindings() {

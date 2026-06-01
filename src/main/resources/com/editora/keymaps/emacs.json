@@ -12,6 +12,8 @@
   "C-x 3": "view.splitVertical",
   "C-x C-b": "switcher.show",
   "C-x C-r": "recent.jump",
+  "C-x p": "project.switch",
+  "C-x C-p": "project.open",
   "C-x o": "window.other",
   "M-x": "palette.show",
   "M-1": "tool.project",

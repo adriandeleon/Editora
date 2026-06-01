@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Projects (VSCode single-folder-workspace style), **off by default** — enable via Settings →
+  "Enable projects" (when off, the Project tool window, the toolbar open-folder icon + project
+  switcher, and the project commands are all hidden). Each project is a root folder plus its own
+  saved session (open files with carets/pins, active file, folds, tool-window layout). Open one via
+  the toolbar's open-folder icon (native dialog) or "Project: Open Folder…" (`C-x C-p`, a keyboard
+  folder picker like `C-x C-f`); "Project: Switch…" (`C-x p`) saves the current session and restores
+  another's; "Project: Close" returns to the global session (with confirmation). The active project
+  is shown in the window title and a project switcher combobox in both the toolbar and the Project
+  tool window (each with a "No Project" entry that returns to the global session without closing any
+  project). The Project tool window shows the project's files as a lazy tree with Emacs-style
+  keyboard navigation (C-n/C-p, C-f/C-b, Enter to open), a filter box that runs a bounded
+  project-wide filename search (like the Structure filter), and a right-click menu to rename or
+  delete files (syncing open tabs). Settings stay global.
 - Keyboard file finder (Emacs `find-file` style) on `C-x C-f`: a path popup with a live directory
   listing that prefix-autocompletes as you type. `Tab` completes the common prefix, Enter descends
   into a folder or opens a file (a non-existent path opens a new buffer, written on save),

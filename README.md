@@ -16,6 +16,10 @@ Emacs-style keymap or a fuzzy command palette.
 - **Keyboard file finder** (`C-x C-f`) — Emacs `find-file`-style path popup with prefix
   autocomplete; type/`Tab` to complete, Enter to descend folders or open (or create) a file. The
   Open toolbar icon still uses the native OS dialog.
+- **Projects** (off by default; enable in Settings) — VSCode single-folder-workspace style: a root
+  folder + its own saved session (open files, layout, folds), shown as a filterable file tree in the
+  Project tool window with a project switcher in the toolbar. Open (`C-x C-p`)/switch (`C-x p`)/close
+  via the palette or toolbar; switching restores that project's files and layout.
 - **Emacs-style keymap** — multi-key chord sequences (e.g. `C-x C-s`), with user overrides.
   (On macOS, the Option dead keys `Option`+`e`/`i`/`u`/`n`/`` ` `` are intercepted by the OS for
   accent composition, so a few `M-`-chords like `M-e` aren't reachable by keyboard there — the

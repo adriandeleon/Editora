@@ -29,6 +29,8 @@ public class ConfigManager {
     private final Path configDir;
     private Settings settings = new Settings();
     private WorkspaceState workspaceState = new WorkspaceState();
+    /** The session-state file currently in use — the default, or a project's state file. */
+    private Path workspaceStateFile;
 
     public ConfigManager() {
         this(defaultConfigDir());
@@ -36,6 +38,7 @@ public class ConfigManager {
 
     public ConfigManager(Path configDir) {
         this.configDir = configDir;
+        this.workspaceStateFile = configDir.resolve(WORKSPACE_FILE_NAME);
     }
 
     public Path getConfigDir() {
@@ -52,7 +55,22 @@ public class ConfigManager {
     }
 
     public Path getWorkspaceStateFile() {
-        return configDir.resolve(WORKSPACE_FILE_NAME);
+        return workspaceStateFile;
+    }
+
+    /**
+     * Switches the active session-state file (e.g. to a project's state) and reloads it into
+     * {@link #getWorkspaceState()} — a missing/malformed file yields a fresh {@link WorkspaceState}.
+     * Subsequent {@link #save()} calls write back to this file.
+     */
+    public void setWorkspaceStateFile(Path file) {
+        this.workspaceStateFile = file;
+        this.workspaceState = read(file, json, new WorkspaceState());
+    }
+
+    /** Points the session back at the default {@code workspace-state.json} (no project) and reloads it. */
+    public void useDefaultWorkspaceStateFile() {
+        setWorkspaceStateFile(configDir.resolve(WORKSPACE_FILE_NAME));
     }
 
     public Settings getSettings() {
@@ -86,7 +104,9 @@ public class ConfigManager {
         try {
             Files.createDirectories(configDir);
             toml.writeValue(getSettingsFile().toFile(), settings);
-            json.writeValue(getWorkspaceStateFile().toFile(), workspaceState);
+            // The workspace-state file may live in a sub-dir (a project's state file).
+            Files.createDirectories(workspaceStateFile.getParent());
+            json.writeValue(workspaceStateFile.toFile(), workspaceState);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write config to " + configDir, e);
         }

@@ -504,6 +504,13 @@
     -fx-text-fill: -color-fg-muted;
 }
 
+/* Small "ⓘ" info badge (e.g. next to the Enable-projects setting); hover shows a tooltip. */
+.info-badge {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+}
+
 /* Title header at the top of the palette / Jump-to popups, naming the action. */
 .command-palette .palette-title {
     -fx-font-weight: bold;
