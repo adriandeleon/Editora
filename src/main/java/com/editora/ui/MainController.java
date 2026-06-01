@@ -461,6 +461,7 @@ public class MainController {
             refreshProjectPanelList(); // cancelled — snap the combo back to the actual active project
             return false;
         }
+        exitZenIfActive();
         if (toNoProject) {
             projects.setActive("");
             projects.save();
@@ -496,6 +497,7 @@ public class MainController {
         if (!confirmCloseAllBuffers()) {
             return;
         }
+        exitZenIfActive();
         projects.setActive("");
         projects.save();
         config.useDefaultWorkspaceStateFile();
@@ -527,6 +529,7 @@ public class MainController {
         if (!confirmCloseAllBuffers()) {
             return;
         }
+        exitZenIfActive();
         String name = active.name();
         projects.delete(active.id()); // also clears the active id
         projects.save();
@@ -535,18 +538,39 @@ public class MainController {
         setStatus("Deleted project " + name);
     }
 
+    /**
+     * Leaves Zen before a session switch, restoring the real view settings. The snapshot needed to
+     * restore them lives in the *current* session's {@link WorkspaceState}; once the workspace-state
+     * file is swapped that snapshot is orphaned, so exiting Zen first prevents a permanently mangled
+     * UI (all chrome off with no way back).
+     */
+    private void exitZenIfActive() {
+        if (config.getWorkspaceState().isZenMode()) {
+            setZenMode(false);
+        }
+    }
+
     /** Replaces the editor + tool-window state with the freshly-loaded session (after the file swap). */
     private void activateSession(Path root) {
         // Switching from the Project tool window's own combo shouldn't close the panel the user is in,
         // even if the target session didn't have it open — keep it open across the switch if it was.
         boolean keepProjectPanelOpen = toolWindows.isOpen(projectToolWindow);
+        // A live session switch lands in normal (non-Zen) view. Zen is transient and its restore
+        // snapshot belongs to the previous session, so drop any persisted Zen flag on the incoming
+        // session to keep it consistent with the chrome already restored by exitZenIfActive().
+        WorkspaceState incoming = config.getWorkspaceState();
+        if (incoming.isZenMode()) {
+            incoming.setZenMode(false);
+            incoming.getPreZenView().clear();
+            incoming.getPreZenToolWindows().clear();
+        }
         tabPane.getTabs().clear(); // the tabs listener clears mru/pinned for removed tabs
         mru.clear();
         pinned.clear();
         openInitialBuffer();
         toolWindows.closeAllOpen();
         toolWindows.restore();
-        toolWindows.setZenStripesHidden(config.getWorkspaceState().isZenMode());
+        toolWindows.setZenStripesHidden(false);
         applyChromeVisibility();
         projectPanel.setRoot(root);
         refreshProjectPanelList();

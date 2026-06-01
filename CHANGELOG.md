@@ -216,6 +216,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Switching projects (or "No Project"), or closing/deleting a project, while in Zen mode no longer
+  leaves the UI permanently mangled. Zen stores its "everything off" view state in the global
+  settings while keeping the restore snapshot in the per-session state; swapping sessions orphaned
+  that snapshot. The editor now exits Zen (restoring the real view settings) before a session switch
+  and lands the incoming session in normal view.
 - The `M-<` / `M->` (document start/end) and `M-%` (find & replace) keybindings now work. They were
   stored in Emacs notation (`M-<`) but the dispatcher emits shifted symbols as `M-S-,` etc., so the
   entries never matched; the keymap now uses the dispatcher's token form.
