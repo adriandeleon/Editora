@@ -463,6 +463,18 @@ public class SettingsWindow {
         projectSideCombo.setDisable(!visible);
     }
 
+    /** Re-checks the "Enable projects" box from the current setting without re-firing its listener. */
+    public void syncProjectsCheck() {
+        boolean prev = loading;
+        loading = true;
+        try {
+            projectsCheck.setSelected(config.getSettings().isProjectSupport());
+            updateProjectRowEnabled();
+        } finally {
+            loading = prev;
+        }
+    }
+
     /** Re-syncs the view/chrome checkboxes from the current settings (used after a Zen toggle). */
     private void syncViewChecks() {
         boolean prev = loading;

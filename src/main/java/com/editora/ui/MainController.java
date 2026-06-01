@@ -199,9 +199,11 @@ public class MainController {
         this.config = config;
         this.registry = registry;
         this.keymap = keymap;
-        // Project commands are hidden from the palette unless project support is enabled.
+        // Project commands (incl. the Project tool window) are hidden from the palette unless project
+        // support is enabled.
         this.palette = new CommandPalette(registry, keymap,
-                c -> config.getSettings().isProjectSupport() || !c.id().startsWith("project."));
+                c -> config.getSettings().isProjectSupport()
+                        || (!c.id().startsWith("project.") && !c.id().equals("tool.project")));
         this.findBar = new FindReplaceBar(this::activeArea, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -294,7 +296,9 @@ public class MainController {
                     }
                 });
         toolWindowPalette = new QuickOpen<>("Jump to Tool Window", "Type to filter tool windows…",
-                () -> new ArrayList<>(toolWindows.getRegisteredToolWindows()),
+                () -> toolWindows.getRegisteredToolWindows().stream()
+                        .filter(tw -> projectsEnabled() || !"tool.project".equals(tw.getCommandId()))
+                        .collect(java.util.stream.Collectors.toCollection(ArrayList::new)),
                 ToolWindow::getTitle,
                 tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
                 toolWindows::open);
@@ -408,6 +412,20 @@ public class MainController {
     /** Shows/hides all project UI per the "Enable projects" setting: toolbar icon + combo, tool window. */
     private void applyProjectSupport() {
         boolean on = projectsEnabled();
+        // Turning projects off while one is active: return to the global session first (saving the
+        // project's session) so the editor isn't stranded in a now-hidden project. If the user cancels
+        // the unsaved-changes prompt, abort the disable and re-check the box. The projectSupportApplied
+        // guard limits this to the runtime on→off toggle (it's false during the initial apply).
+        if (!on && projectSupportApplied && projects != null && projects.active() != null) {
+            if (!switchToProject(ProjectCombo.NO_PROJECT)) {
+                config.getSettings().setProjectSupport(true);
+                config.save();
+                if (settingsWindow != null) {
+                    settingsWindow.syncProjectsCheck();
+                }
+                return; // leave the project UI in place
+            }
+        }
         openFolderButton.setVisible(on);
         openFolderButton.setManaged(on);
         toolbarProjectCombo.setVisible(on);
@@ -519,6 +537,9 @@ public class MainController {
 
     /** Replaces the editor + tool-window state with the freshly-loaded session (after the file swap). */
     private void activateSession(Path root) {
+        // Switching from the Project tool window's own combo shouldn't close the panel the user is in,
+        // even if the target session didn't have it open — keep it open across the switch if it was.
+        boolean keepProjectPanelOpen = toolWindows.isOpen(projectToolWindow);
         tabPane.getTabs().clear(); // the tabs listener clears mru/pinned for removed tabs
         mru.clear();
         pinned.clear();
@@ -529,6 +550,9 @@ public class MainController {
         applyChromeVisibility();
         projectPanel.setRoot(root);
         refreshProjectPanelList();
+        if (keepProjectPanelOpen && projectsEnabled() && !toolWindows.isOpen(projectToolWindow)) {
+            toolWindows.open(projectToolWindow);
+        }
         updateWindowTitle();
     }
 
@@ -2532,7 +2556,7 @@ public class MainController {
         registry.register(Command.of("file.clearRecent", "File: Clear Recent Files", this::onClearRecent));
         registry.register(Command.of("help.about", "About Editora", this::onAbout));
         registry.register(Command.of("tool.project", "Tool Window: Project",
-                () -> toolWindows.toggle(projectToolWindow)));
+                () -> { if (projectsEnabled()) { toolWindows.toggle(projectToolWindow); } }));
         registry.register(Command.of("tool.structure", "Tool Window: Structure",
                 () -> toolWindows.toggle(structureToolWindow)));
         registry.register(Command.of("tool.bookmarks", "Tool Window: Bookmarks",

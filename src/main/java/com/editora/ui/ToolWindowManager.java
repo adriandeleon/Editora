@@ -205,6 +205,11 @@ public class ToolWindowManager {
         return Collections.unmodifiableCollection(byId.values());
     }
 
+    /** True if this tool window is the one currently open on its side. */
+    public boolean isOpen(ToolWindow tw) {
+        return tw != null && openBySide.get(currentSide(tw)) == tw;
+    }
+
     /** The currently open tool windows, ordered by side (left, bottom, right), for focus cycling. */
     public java.util.List<ToolWindow> getOpenToolWindows() {
         java.util.List<ToolWindow> open = new java.util.ArrayList<>();
