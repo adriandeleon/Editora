@@ -1,5 +1,5 @@
 {
-  "C-x C-f": "file.open",
+  "C-x C-f": "file.find",
   "C-x C-s": "file.save",
   "C-x C-w": "file.saveAs",
   "C-x C-c": "app.quit",

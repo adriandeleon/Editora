@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Keyboard file finder (Emacs `find-file` style) on `C-x C-f`: a path popup with a live directory
+  listing that prefix-autocompletes as you type. `Tab` completes the common prefix, Enter descends
+  into a folder or opens a file (a non-existent path opens a new buffer, written on save),
+  `C-n`/`C-p` move, `Esc` cancels — no mouse needed. Also the `file.find` palette command. The
+  toolbar Open icon (and `file.open`) still uses the native OS dialog.
 - Fold/unfold the single region at the caret: `view.fold` (`C-c C-f`) collapses the innermost
   region around the caret, `view.unfold` (`C-c C-u`) expands it, and `view.toggleFold` (`C-c C-t`)
   toggles it — complementing the existing Fold All (`C-c f`) / Unfold All (`C-c u`).

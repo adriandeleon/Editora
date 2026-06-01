@@ -141,6 +141,7 @@ public class MainController {
     private QuickOpen<StructurePanel.Outline> structurePalette;
     private QuickOpen<Tab> openFilesPalette;
     private QuickOpen<ToolWindow> toolWindowPalette;
+    private FileFinder fileFinder;
 
     // Auto save. Mode keys: "off" | "afterDelay" | "onFocusChange".
     static final String AUTOSAVE_OFF = "off";
@@ -279,6 +280,35 @@ public class MainController {
                 ToolWindow::getTitle,
                 tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
                 toolWindows::open);
+        fileFinder = new FileFinder(this::finderStartDir, this::findFileChosen);
+    }
+
+    /** Start directory for the keyboard file finder: the active file's folder, else the home dir. */
+    private Path finderStartDir() {
+        EditorBuffer buffer = activeBuffer();
+        Path path = buffer == null ? null : buffer.getPath();
+        if (path != null && path.getParent() != null) {
+            return path.getParent();
+        }
+        return Path.of(System.getProperty("user.home", "."));
+    }
+
+    /** Opens an existing file, or creates a new buffer for a not-yet-existing path (written on save). */
+    private void findFileChosen(Path target) {
+        if (Files.isRegularFile(target)) {
+            openPath(target);
+            return;
+        }
+        Tab existing = tabForPath(target);
+        if (existing != null) {
+            tabPane.getSelectionModel().select(existing);
+            ((EditorBuffer) existing.getUserData()).getArea().requestFocus();
+            return;
+        }
+        EditorBuffer buffer = new EditorBuffer();
+        buffer.setPath(target);
+        addBuffer(buffer);
+        setStatus("New file: " + target.getFileName());
     }
 
     private static String bufferTitle(Tab tab) {
@@ -2124,6 +2154,7 @@ public class MainController {
     private void registerCommands() {
         registry.register(Command.of("file.new", "File: New", this::onNew));
         registry.register(Command.of("file.open", "File: Open…", this::onOpen));
+        registry.register(Command.of("file.find", "File: Find File…", () -> fileFinder.show(stage)));
         registry.register(Command.of("file.save", "File: Save", this::onSave));
         registry.register(Command.of("file.saveAs", "File: Save As…", this::onSaveAs));
         registry.register(Command.of("buffer.close", "Buffer: Close", this::onCloseTab));

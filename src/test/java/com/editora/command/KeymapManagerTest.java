@@ -23,7 +23,7 @@ class KeymapManagerTest {
     @Test
     void resolvesMultiKeyChord() {
         assertEquals("file.save", keymap.commandFor("C-x C-s"));
-        assertEquals("file.open", keymap.commandFor("C-x C-f"));
+        assertEquals("file.find", keymap.commandFor("C-x C-f"));
     }
 
     @Test

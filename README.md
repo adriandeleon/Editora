@@ -13,6 +13,9 @@ Emacs-style keymap or a fuzzy command palette.
 - **Keyboard "Jump to…" popups** — fuzzy pickers for recent files (`C-x C-r`), the active file's
   structure/symbols (`M-g i`), open files/tabs (`C-x b`), and tool windows (`M-g t`) — keyboard-first
   alternatives to their list/tool-window UIs.
+- **Keyboard file finder** (`C-x C-f`) — Emacs `find-file`-style path popup with prefix
+  autocomplete; type/`Tab` to complete, Enter to descend folders or open (or create) a file. The
+  Open toolbar icon still uses the native OS dialog.
 - **Emacs-style keymap** — multi-key chord sequences (e.g. `C-x C-s`), with user overrides.
   (On macOS, the Option dead keys `Option`+`e`/`i`/`u`/`n`/`` ` `` are intercepted by the OS for
   accent composition, so a few `M-`-chords like `M-e` aren't reachable by keyboard there — the
