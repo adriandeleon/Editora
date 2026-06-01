@@ -130,6 +130,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Silenced the benign tm4e/Oniguruma grammar warnings that flooded the console
+  (`'…]' without escape`, `No grammar source for scope …`) by raising the `org.eclipse.tm4e`
+  log level to `SEVERE` at startup. They were harmless bundled-grammar quirks; real errors still
+  surface.
 - The Switcher (`C-x C-b`) now lists all open files (labeled "Open Files", most-recently-used
   first) instead of only previously-activated ones. It is also larger with bigger column
   headers; the selection bar now tracks the active column (vivid in the focused column, dimmed

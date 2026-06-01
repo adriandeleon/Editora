@@ -1,6 +1,8 @@
 package com.editora;
 
 import java.io.IOException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeyDispatcher;
@@ -20,6 +22,16 @@ import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 public class App extends Application {
+
+    // Quiet tm4e/Oniguruma grammar-compile WARNINGs ("']' without escape", "No grammar source for
+    // scope …") — benign noise from bundled-grammar regex quirks. Held in a static field so the JUL
+    // logger isn't garbage-collected (which would silently drop the configured level). SEVERE still
+    // surfaces real errors.
+    private static final Logger TM4E_LOG = Logger.getLogger("org.eclipse.tm4e");
+
+    static {
+        TM4E_LOG.setLevel(Level.SEVERE);
+    }
 
     @Override
     public void start(Stage stage) throws IOException {
