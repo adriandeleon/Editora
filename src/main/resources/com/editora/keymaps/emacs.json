@@ -5,7 +5,7 @@
   "C-x C-c": "app.quit",
   "C-x C-x": "edit.exchangePointAndMark",
   "C-space": "edit.setMark",
-  "C-x b": "buffer.next",
+  "C-x b": "buffer.jump",
   "C-x k": "buffer.close",
   "C-x 1": "view.unsplit",
   "C-x 2": "view.splitHorizontal",
@@ -58,5 +58,6 @@
   "C-c z": "view.toggleZen",
   "C-c a": "file.toggleAutoSave",
   "M-g g": "nav.goToLine",
-  "M-g i": "structure.jump"
+  "M-g i": "structure.jump",
+  "M-g t": "tool.jump"
 }

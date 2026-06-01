@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
@@ -48,6 +49,8 @@ public class QuickOpen<T> {
     private final ListView<T> list = new ListView<>();
     private final ObservableList<T> items = FXCollections.observableArrayList();
     private List<T> all = List.of();
+    /** Swallows the one KEY_TYPED that leaks from the opening keybinding's final key. */
+    private boolean swallowNextTyped;
 
     public QuickOpen(String title, String prompt, Supplier<List<T>> itemsSupplier,
                      Function<T, String> label, Function<T, String> detail, Consumer<T> onChoose) {
@@ -66,17 +69,21 @@ public class QuickOpen<T> {
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
-        // The opening chord can be Alt/Meta+key; on macOS that also emits a KEY_TYPED special char
-        // that would land in the just-focused field. Swallow characters typed with a chord modifier
-        // held (plain typing — no modifier or only Shift — passes through). macOS only (see
-        // CommandPalette for the rationale).
-        if (IS_MAC) {
-            input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
-                    e.consume();
-                }
-            });
-        }
+        input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            // The opening keybinding's final key (e.g. the trailing 'b' of C-x b, or 'i' of M-g i)
+            // is consumed as a key-press by the dispatcher, but its paired KEY_TYPED is delivered to
+            // this just-focused field. Swallow that first typed char so it doesn't seed the filter.
+            if (swallowNextTyped) {
+                swallowNextTyped = false;
+                e.consume();
+                return;
+            }
+            // On macOS the opening chord can also emit an Option-composed character; swallow chars
+            // typed with a chord modifier held (plain typing passes through). See CommandPalette.
+            if (IS_MAC && (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown())) {
+                e.consume();
+            }
+        });
 
         Label header = new Label(title);
         header.getStyleClass().add("palette-title");
@@ -165,11 +172,16 @@ public class QuickOpen<T> {
         all = itemsSupplier.get();
         input.clear();
         filter("");
+        swallowNextTyped = true;
         double width = 620;
         double x = owner.getX() + (owner.getWidth() - width) / 2;
         double y = owner.getY() + 90;
         popup.show(owner, x, y);
         input.requestFocus();
+        // If no chord-tail char leaks in (e.g. opened from the palette/mouse), clear the guard next
+        // pulse so the user's first real keystroke isn't eaten. The leaked KEY_TYPED, when present,
+        // is delivered before this runs.
+        Platform.runLater(() -> swallowNextTyped = false);
     }
 
     public void hide() {

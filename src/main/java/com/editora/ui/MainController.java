@@ -139,6 +139,8 @@ public class MainController {
     private SettingsWindow settingsWindow;
     private QuickOpen<Path> recentPalette;
     private QuickOpen<StructurePanel.Outline> structurePalette;
+    private QuickOpen<Tab> openFilesPalette;
+    private QuickOpen<ToolWindow> toolWindowPalette;
 
     // Auto save. Mode keys: "off" | "afterDelay" | "onFocusChange".
     static final String AUTOSAVE_OFF = "off";
@@ -261,6 +263,33 @@ public class MainController {
                 StructurePanel.Outline::label,
                 StructurePanel.Outline::kind,
                 entry -> navigateToLine(entry.line()));
+        openFilesPalette = new QuickOpen<>("Jump to Open File", "Type to filter open files…",
+                this::openTabsForSwitcher,
+                tab -> bufferTitle(tab),
+                tab -> bufferParentDir(tab),
+                tab -> {
+                    tabPane.getSelectionModel().select(tab);
+                    EditorBuffer b = (EditorBuffer) tab.getUserData();
+                    if (b != null) {
+                        b.getArea().requestFocus();
+                    }
+                });
+        toolWindowPalette = new QuickOpen<>("Jump to Tool Window", "Type to filter tool windows…",
+                () -> new ArrayList<>(toolWindows.getRegisteredToolWindows()),
+                ToolWindow::getTitle,
+                tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
+                toolWindows::open);
+    }
+
+    private static String bufferTitle(Tab tab) {
+        EditorBuffer b = (EditorBuffer) tab.getUserData();
+        return b == null ? "" : b.getTitle();
+    }
+
+    private static String bufferParentDir(Tab tab) {
+        EditorBuffer b = (EditorBuffer) tab.getUserData();
+        Path p = b == null ? null : b.getPath();
+        return p == null || p.getParent() == null ? "" : p.getParent().toString();
     }
 
     /** Moves the active editor's caret to {@code line} and anchors it at the top of the viewport. */
@@ -2118,6 +2147,10 @@ public class MainController {
                 () -> recentPalette.show(stage)));
         registry.register(Command.of("structure.jump", "Structure: Jump…",
                 () -> structurePalette.show(stage)));
+        registry.register(Command.of("buffer.jump", "Open Files: Jump…",
+                () -> openFilesPalette.show(stage)));
+        registry.register(Command.of("tool.jump", "Tool Windows: Jump…",
+                () -> toolWindowPalette.show(stage)));
         registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
                 this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",
