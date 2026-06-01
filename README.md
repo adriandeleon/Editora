@@ -103,6 +103,24 @@ git tag v1.2.3 && git push origin v1.2.3
 A `-rcN` suffix (e.g. `v1.2.3-rc1`) is published as a pre-release. Installers are currently
 **unsigned**, so macOS Gatekeeper / Windows SmartScreen will warn on first launch.
 
+## Command line
+
+```
+editora [options] [FILE[:LINE[:COLUMN]] ...]
+
+  --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)
+  --project[=]<dir>     Open <dir> as a project (only when Projects are enabled; ignored otherwise)
+  --zen                 Start in Zen (distraction-free) mode
+  --version, -V         Print the version and exit
+  --help, -h            Print help and exit
+
+  FILE                  Open FILE (also FILE:LINE and FILE:LINE:COLUMN to jump)
+```
+
+File and `--project` arguments are **additive**: your previous session restores as usual, then the
+given file(s) open on top (focused) and the editor jumps to any `LINE:COLUMN`. `--version`/`--help`
+print and exit without opening a window. Works on macOS, Linux, and Windows.
+
 ## Configuration
 
 User preferences live in `~/.editora/settings.toml` (font, theme, keymap, tab size,

@@ -1,13 +1,18 @@
 package com.editora;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-/** Tests parsing the --config-dir program argument (pure; no JavaFX launch). */
+import com.editora.ui.MainController.OpenTarget;
+
+/** Tests parsing the command-line program arguments (pure; no JavaFX launch). */
 class AppArgsTest {
 
     @Test
@@ -31,5 +36,47 @@ class AppArgsTest {
         assertNull(App.configDirArg(List.of("--other", "x")));
         assertNull(App.configDirArg(List.of("--config-dir=")));
         assertNull(App.configDirArg(List.of("--config-dir"))); // no following value
+    }
+
+    @Test
+    void projectArgBothForms() {
+        assertEquals("/repo", App.projectArg(List.of("--project=/repo")));
+        assertEquals("/repo", App.projectArg(List.of("--project", "/repo")));
+        assertNull(App.projectArg(List.of("README.md")));
+    }
+
+    @Test
+    void zenFlag() {
+        assertTrue(App.zenFlag(List.of("--zen")));
+        assertFalse(App.zenFlag(List.of("--config-dir", "/x", "f.txt")));
+    }
+
+    @Test
+    void parseTargetPositions() {
+        assertEquals(new OpenTarget(Path.of("foo.txt"), 0, 0), App.parseTarget("foo.txt"));
+        assertEquals(new OpenTarget(Path.of("foo.txt"), 42, 0), App.parseTarget("foo.txt:42"));
+        assertEquals(new OpenTarget(Path.of("foo.txt"), 42, 5), App.parseTarget("foo.txt:42:5"));
+    }
+
+    @Test
+    void parseTargetHandlesWindowsPaths() {
+        assertEquals(new OpenTarget(Path.of("C:\\dir\\f.txt"), 0, 0), App.parseTarget("C:\\dir\\f.txt"));
+        assertEquals(new OpenTarget(Path.of("C:\\dir\\f.txt"), 10, 0), App.parseTarget("C:\\dir\\f.txt:10"));
+        assertEquals(new OpenTarget(Path.of("C:\\dir\\f.txt"), 10, 3), App.parseTarget("C:\\dir\\f.txt:10:3"));
+    }
+
+    @Test
+    void fileTargetsSkipsOptionsAndTheirValues() {
+        List<OpenTarget> targets = App.fileTargets(List.of(
+                "--config-dir", "/cfg", "--project", "/repo", "--zen", "a.txt", "b.txt:7:2"));
+        assertEquals(2, targets.size());
+        assertEquals(Path.of("a.txt"), targets.get(0).file());
+        assertEquals(new OpenTarget(Path.of("b.txt"), 7, 2), targets.get(1));
+    }
+
+    @Test
+    void fileTargetsSkipsEqualsFormOptions() {
+        List<OpenTarget> targets = App.fileTargets(List.of("--config-dir=/cfg", "--project=/repo", "x.md"));
+        assertEquals(List.of(new OpenTarget(Path.of("x.md"), 0, 0)), targets);
     }
 }

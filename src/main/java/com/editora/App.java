@@ -83,7 +83,12 @@ public class App extends Application {
         restoreWindowBounds(stage, config.getWorkspaceState());
         stage.show();
 
-        controller.openInitialBuffer();
+        // Startup CLI actions: open a project (if enabled), restore the session, open any FILE(s)
+        // (jumping to LINE:COLUMN), and enter Zen — all on top of the restored session.
+        var raw = getParameters().getRaw();
+        String project = projectArg(raw);
+        controller.startup(project == null ? null : java.nio.file.Path.of(project),
+                fileTargets(raw), zenFlag(raw));
     }
 
     /**
@@ -147,6 +152,112 @@ public class App extends Application {
     }
 
     public static void main(String[] args) {
+        // --version / --help print and exit BEFORE the GUI launches (works for every entry point,
+        // since the fat-jar Launcher and the jpackage module both run this main).
+        for (String a : args) {
+            if ("--help".equals(a) || "-h".equals(a)) {
+                System.out.println(helpText());
+                return;
+            }
+            if ("--version".equals(a) || "-V".equals(a)) {
+                System.out.println(AppInfo.versionLine());
+                return;
+            }
+        }
         launch(args);
+    }
+
+    static String helpText() {
+        return """
+                %s — a keyboard-driven, cross-platform programmer's text editor.
+
+                Usage: editora [options] [FILE[:LINE[:COLUMN]] ...]
+
+                Options:
+                  --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)
+                  --project[=]<dir>     Open <dir> as a project (only when Projects are enabled)
+                  --zen                 Start in Zen (distraction-free) mode
+                  --version, -V         Print the version and exit
+                  --help, -h            Print this help and exit
+
+                Arguments:
+                  FILE                  Open FILE
+                  FILE:LINE             Open FILE and jump to LINE
+                  FILE:LINE:COLUMN      Open FILE and jump to LINE and COLUMN""".formatted(AppInfo.NAME);
+    }
+
+    /** The {@code --project=DIR} / {@code --project DIR} value, or {@code null} when not given. */
+    static String projectArg(java.util.List<String> args) {
+        return optionValue(args, "--project");
+    }
+
+    /** True if {@code --zen} is present. */
+    static boolean zenFlag(java.util.List<String> args) {
+        return args != null && args.contains("--zen");
+    }
+
+    private static String optionValue(java.util.List<String> args, String name) {
+        if (args == null) {
+            return null;
+        }
+        String prefix = name + "=";
+        for (int i = 0; i < args.size(); i++) {
+            String a = args.get(i);
+            if (a == null) {
+                continue;
+            }
+            if (a.startsWith(prefix)) {
+                String v = a.substring(prefix.length()).trim();
+                return v.isEmpty() ? null : v;
+            }
+            if (a.equals(name) && i + 1 < args.size() && args.get(i + 1) != null) {
+                String v = args.get(i + 1).trim();
+                return v.isEmpty() ? null : v;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Positional file arguments (parsed for an optional {@code :LINE[:COLUMN]} suffix), skipping option
+     * flags and the value tokens consumed by {@code --config-dir} / {@code --project}.
+     */
+    static java.util.List<com.editora.ui.MainController.OpenTarget> fileTargets(java.util.List<String> args) {
+        java.util.List<com.editora.ui.MainController.OpenTarget> out = new java.util.ArrayList<>();
+        if (args == null) {
+            return out;
+        }
+        for (int i = 0; i < args.size(); i++) {
+            String a = args.get(i);
+            if (a == null || a.isEmpty()) {
+                continue;
+            }
+            if (a.equals("--config-dir") || a.equals("--project")) {
+                i++; // skip the value token
+                continue;
+            }
+            if (a.startsWith("-")) {
+                continue; // any other option (incl. --xxx=yyy, --zen, --version, --help)
+            }
+            out.add(parseTarget(a));
+        }
+        return out;
+    }
+
+    /**
+     * Parses {@code PATH}, {@code PATH:LINE}, or {@code PATH:LINE:COLUMN} into an {@link
+     * com.editora.ui.MainController.OpenTarget} (line/column 1-based, 0 = unspecified). A trailing
+     * {@code :digits[:digits]} is the position; everything before it is the path, so Windows paths like
+     * {@code C:\dir} (no trailing {@code :digits}) and {@code C:\dir:10} parse correctly.
+     */
+    static com.editora.ui.MainController.OpenTarget parseTarget(String arg) {
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("^(.+?):(\\d+)(?::(\\d+))?$").matcher(arg);
+        if (m.matches()) {
+            int line = Integer.parseInt(m.group(2));
+            int col = m.group(3) != null ? Integer.parseInt(m.group(3)) : 0;
+            return new com.editora.ui.MainController.OpenTarget(java.nio.file.Path.of(m.group(1)), line, col);
+        }
+        return new com.editora.ui.MainController.OpenTarget(java.nio.file.Path.of(arg), 0, 0);
     }
 }

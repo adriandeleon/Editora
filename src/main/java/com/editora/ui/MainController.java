@@ -954,6 +954,7 @@ public class MainController {
         }
         if (files.isEmpty()) {
             addBuffer(new EditorBuffer());
+            runPendingAfterRestore();
             return;
         }
         String activePath = state.getActiveFile();
@@ -989,6 +990,7 @@ public class MainController {
     private void fillSessionFiles(List<WorkspaceState.OpenFile> files, List<EditorBuffer> buffers,
             List<Integer> order, int k) {
         if (k >= order.size()) {
+            runPendingAfterRestore(); // session fully restored — now safe to apply CLI targets
             return;
         }
         Platform.runLater(() -> {
@@ -996,6 +998,102 @@ public class MainController {
             fillSessionBuffer(files.get(i), buffers.get(i));
             fillSessionFiles(files, buffers, order, k + 1);
         });
+    }
+
+    /** A startup file to open, with an optional 1-based line/column ({@code 0} = unspecified). */
+    public record OpenTarget(Path file, int line, int column) { }
+
+    /** A one-shot action run after {@link #openInitialBuffer()} finishes restoring the session. */
+    private Runnable pendingAfterRestore;
+
+    /**
+     * Startup entry point (replaces the bare {@code openInitialBuffer()} call): optionally activates a
+     * project, restores the session, then — once restore completes — opens any command-line files
+     * (jumping to line:column) and enters Zen, all additive on top of the restored session. With no
+     * arguments it's exactly the old {@code openInitialBuffer()}.
+     */
+    public void startup(Path projectDir, List<OpenTarget> targets, boolean zen) {
+        if (projectDir != null && projectsEnabled()) {
+            activateStartupProject(projectDir); // swap to the project's session before it's restored
+        }
+        // Run CLI actions AFTER the (deferred, pulse-paced) session restore, so a restored caret can't
+        // override a requested line:column.
+        pendingAfterRestore = () -> applyStartupTargets(targets, zen);
+        openInitialBuffer();
+    }
+
+    private void applyStartupTargets(List<OpenTarget> targets, boolean zen) {
+        if (targets != null) {
+            for (OpenTarget t : targets) {
+                openPath(t.file().toAbsolutePath().normalize());
+            }
+            if (targets.stream().anyMatch(t -> t.line() > 0)) {
+                // Defer once more so it runs after openPath's own goToStart for any newly-opened file.
+                Platform.runLater(() -> {
+                    for (OpenTarget t : targets) {
+                        if (t.line() > 0) {
+                            gotoInFile(t.file().toAbsolutePath().normalize(), t.line(), t.column());
+                        }
+                    }
+                });
+            }
+        }
+        if (zen) {
+            setZenMode(true);
+        }
+    }
+
+    /** Invokes the one-shot {@link #pendingAfterRestore} action (if any), deferred one pulse. */
+    private void runPendingAfterRestore() {
+        Runnable r = pendingAfterRestore;
+        pendingAfterRestore = null;
+        if (r != null) {
+            Platform.runLater(r);
+        }
+    }
+
+    /** Activates {@code dir} as the active project (startup-safe; no open buffers to confirm). */
+    private void activateStartupProject(Path dir) {
+        Path root = dir.toAbsolutePath().normalize();
+        String name = root.getFileName() == null ? root.toString() : root.getFileName().toString();
+        Project p = projects.createOrGet(name, root);
+        projects.setActive(p.id());
+        projects.save();
+        config.setWorkspaceStateFile(projects.stateFile(p)); // openInitialBuffer() then restores it
+        projectPanel.setRoot(Path.of(p.root()));
+        refreshProjectPanelList();
+        updateWindowTitle();
+    }
+
+    /** Selects the tab for {@code file} (if open) and moves the caret to a 1-based line/column. */
+    private void gotoInFile(Path file, int line1, int col1) {
+        Tab tab = tabForPath(file);
+        if (tab == null) {
+            return;
+        }
+        tabPane.getSelectionModel().select(tab);
+        EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+        CodeArea area = buffer.getArea();
+        int total = area.getParagraphs().size();
+        int line = Math.max(1, Math.min(total, line1)) - 1;
+        int col = 0;
+        if (col1 > 0) {
+            int lineLen = area.getParagraphLength(line);
+            col = Math.max(1, Math.min(lineLen + 1, col1)) - 1;
+        }
+        buffer.getFoldManager().unfoldContaining(line);
+        int targetLine = line;
+        int targetCol = col;
+        area.moveTo(targetLine, targetCol);
+        area.requestFollowCaret();
+        Platform.runLater(() -> {
+            try {
+                area.showParagraphAtTop(targetLine);
+            } catch (RuntimeException ignored) {
+                // Viewport not ready; ignore.
+            }
+        });
+        area.requestFocus();
     }
 
     /** Loads a restored tab's content, large-file mode, folds, and caret (the tab already exists). */

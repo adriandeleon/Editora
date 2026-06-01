@@ -1,11 +1,8 @@
 package com.editora.ui;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
 import java.util.function.Consumer;
 
 import com.editora.config.ConfigManager;
@@ -39,13 +36,9 @@ import javafx.util.StringConverter;
 /** A small settings window. Changes are persisted to settings.toml and applied live. */
 public class SettingsWindow {
 
-    private static final String APP_NAME = "Editora";
-    private static final String APP_VERSION = "1.0.0";
     // Window size; bumped 10% in each dimension (658x850 -> 724x935) for a roomier layout.
     private static final double WIDTH = 724;
     private static final double HEIGHT = 935;
-    /** Build timestamp baked in by Maven resource filtering (see build-info.properties). */
-    private static final String BUILD_TIME = loadBuildTime();
 
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
@@ -558,8 +551,8 @@ public class SettingsWindow {
     public static void showAbout(Window owner, Consumer<Path> openFile) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
-        alert.setTitle("About " + APP_NAME);
-        alert.setHeaderText(APP_NAME + " " + APP_VERSION);
+        alert.setTitle("About " + com.editora.AppInfo.NAME);
+        alert.setHeaderText(com.editora.AppInfo.NAME + " " + com.editora.AppInfo.VERSION);
         var iconStream = SettingsWindow.class.getResourceAsStream("/com/editora/icons/icon-128.png");
         if (iconStream != null) {
             ImageView logo = new ImageView(new Image(iconStream));
@@ -576,7 +569,7 @@ public class SettingsWindow {
                 Built %s""".formatted(
                 System.getProperty("java.version", "?"),
                 System.getProperty("javafx.runtime.version", "?"),
-                BUILD_TIME));
+                com.editora.AppInfo.buildTime()));
 
         Hyperlink settingsLink = new Hyperlink(displaySettingsPath());
         settingsLink.setPadding(Insets.EMPTY);
@@ -599,21 +592,5 @@ public class SettingsWindow {
         String path = ConfigManager.defaultSettingsFile().toString();
         String home = System.getProperty("user.home", "");
         return !home.isEmpty() && path.startsWith(home) ? "~" + path.substring(home.length()) : path;
-    }
-
-    /** Reads the Maven-filtered build timestamp; falls back gracefully for unfiltered/dev runs. */
-    private static String loadBuildTime() {
-        try (InputStream in = SettingsWindow.class.getResourceAsStream("/com/editora/build-info.properties")) {
-            if (in == null) {
-                return "unknown";
-            }
-            Properties props = new Properties();
-            props.load(in);
-            String time = props.getProperty("build.time", "");
-            // Unfiltered (e.g. run straight from an IDE) leaves the literal Maven placeholder.
-            return time.isEmpty() || time.startsWith("${") ? "(dev build)" : time;
-        } catch (IOException e) {
-            return "unknown";
-        }
     }
 }

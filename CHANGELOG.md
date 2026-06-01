@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **More command-line options** — `--version`/`-V` and `--help`/`-h` (print and exit, no window);
+  positional `FILE`, `FILE:LINE`, and `FILE:LINE:COLUMN` to open a file (and jump); `--project[=]<dir>`
+  to open a folder as a project (only when Projects are enabled, else ignored); and `--zen` to start in
+  Zen mode. File/project args are additive on top of the restored session. Cross-platform.
 - **Custom config folder** — point Editora's config directory somewhere other than the default
   `~/.editora/` with the `--config-dir <path>` command-line argument (or `--config-dir=<path>`) or the
   `EDITORA_CONFIG_DIR` environment variable. Precedence: `--config-dir` > `EDITORA_CONFIG_DIR` >
