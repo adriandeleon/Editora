@@ -67,6 +67,7 @@
   "M-g i": "structure.jump",
   "M-g t": "tool.jump",
   "M-g b": "bookmarks.jump",
+  "C-c i": "snippets.insert",
   "C-c m": "bookmarks.toggle",
   "C-c ]": "bookmarks.next",
   "C-c [": "bookmarks.previous",

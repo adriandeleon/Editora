@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Snippets** (VS Code / TextMate-style) — expand templates with interactive tab stops. Type a
+  prefix and press **Tab** to expand (Tab still indents when nothing matches), or pick from the
+  **"Snippet: Insert…"** fuzzy list (`C-c i`). After expanding, **Tab / Shift-Tab** cycle the fields,
+  placeholders are pre-selected to overtype, mirrored fields update live, and `$0` is the final caret.
+  Bodies use the standard syntax — `$1`, `${1:default}`, mirrors, `${1|a,b|}` choices (a dropdown
+  appears on the field), variables (`$TM_FILENAME`, `$TM_DIRECTORY`, `$CLIPBOARD`, `$CURRENT_YEAR`,
+  the selection, …) and `\$` escapes. Snippets ship for **all 21 highlighted languages** — most from
+  the MIT-licensed [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection
+  (attributed in `NOTICE`), the rest written for Editora. Add your own in
+  `~/.editora/snippets/<language>.json` (or `global.json`) — "Snippet: Edit User Snippets…" opens the
+  file and "Snippet: Reload Snippets" picks up changes. User snippets override bundled ones.
+
 - **Read-only / View mode** — toggle a buffer read-only with `C-x C-q` (or the palette: "View: Toggle
   Read-Only"), so it can't be edited by accident. Typing and the editor's own edit commands are blocked
   (with a status-bar hint), while highlighting, minimap, folding, scrolling, and copy keep working. A

@@ -147,6 +147,8 @@ public class MainController {
     private QuickOpen<Tab> openFilesPalette;
     private QuickOpen<ToolWindow> toolWindowPalette;
     private QuickOpen<BookmarkEntry> bookmarkPalette;
+    private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
+    private com.editora.snippet.SnippetManager snippets;
     private FileFinder fileFinder;
     private FileFinder folderFinder;
     private ProjectPanel projectPanel;
@@ -201,6 +203,7 @@ public class MainController {
         this.config = config;
         this.registry = registry;
         this.keymap = keymap;
+        this.snippets = new com.editora.snippet.SnippetManager(config);
         // Project commands (incl. the Project tool window) are hidden from the palette unless project
         // support is enabled.
         this.palette = new CommandPalette(registry, keymap,
@@ -309,6 +312,19 @@ public class MainController {
                 e -> bookmarkLabel(e.bm()),
                 e -> e.file().getFileName() + ":" + (e.bm().line() + 1),
                 e -> bookmarkActivate(e.file(), e.bm().line()));
+        snippetPalette = new QuickOpen<>("Insert Snippet", "Type to filter snippets…",
+                () -> {
+                    EditorBuffer b = activeBuffer();
+                    return new ArrayList<>(snippets.forLanguage(b == null ? "global" : b.getLanguage()));
+                },
+                s -> s.prefix() + " — " + s.name(),
+                com.editora.snippet.Snippet::description,
+                s -> {
+                    EditorBuffer b = activeBuffer();
+                    if (b != null) {
+                        b.insertSnippet(s);
+                    }
+                });
         fileFinder = new FileFinder(this::finderStartDir, this::findFileChosen);
     }
 
@@ -1151,6 +1167,7 @@ public class MainController {
         buffer.setOnBookmarksChanged(() -> persistBookmarks(buffer));
         buffer.setGutterBookmarkClick(this::onGutterBookmarkClick);
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
+        buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         if (buffer.isMarkdown()) {
             MarkdownViewToggle toggle = new MarkdownViewToggle(buffer);
             buffer.setOnViewModeChanged(() -> {
@@ -2727,6 +2744,46 @@ public class MainController {
         }
     }
 
+    /** Opens the snippet picker for the active buffer's language (plus global snippets). */
+    private void insertSnippetPicker() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            return;
+        }
+        if (snippets.forLanguage(b.getLanguage()).isEmpty()) {
+            setStatus("No snippets available for this file");
+            return;
+        }
+        snippetPalette.show(stage);
+    }
+
+    /** Opens (creating from a template if needed) the user snippet file for the active language. */
+    private void editUserSnippets() {
+        EditorBuffer b = activeBuffer();
+        String lang = b == null ? "global" : b.getLanguage();
+        Path file = snippets.userFile(lang);
+        try {
+            if (!Files.exists(file)) {
+                Files.createDirectories(file.getParent());
+                Files.writeString(file, USER_SNIPPET_TEMPLATE);
+            }
+            openPath(file);
+            setStatus("Editing user snippets for " + lang + " — run \"Snippet: Reload Snippets\" after saving");
+        } catch (IOException e) {
+            setStatus("Could not open snippets file: " + e.getMessage());
+        }
+    }
+
+    private static final String USER_SNIPPET_TEMPLATE = """
+            {
+              "Example": {
+                "prefix": "ex",
+                "body": ["// ${1:summary}", "$0"],
+                "description": "Example snippet — edit or add your own, then reload"
+              }
+            }
+            """;
+
     /** Clears every bookmark in the active file. */
     private void clearBookmarksInFile() {
         EditorBuffer b = activeBuffer();
@@ -3149,6 +3206,13 @@ public class MainController {
                 () -> bookmarkPalette.show(stage)));
         registry.register(Command.of("bookmarks.clearFile", "Bookmarks: Clear in File",
                 this::clearBookmarksInFile));
+        registry.register(Command.of("snippets.insert", "Snippet: Insert…", this::insertSnippetPicker));
+        registry.register(Command.of("snippets.reload", "Snippet: Reload Snippets", () -> {
+            snippets.reload();
+            setStatus("Snippets reloaded");
+        }));
+        registry.register(Command.of("snippets.editUser", "Snippet: Edit User Snippets…",
+                this::editUserSnippets));
         registry.register(Command.of("view.splitVertical", "View: Split Editor — Side by Side",
                 this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", "View: Split Editor — Stacked",

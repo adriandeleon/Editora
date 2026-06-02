@@ -1,0 +1,32 @@
+{
+  "XML declaration": {
+    "prefix": "?xml",
+    "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n$0",
+    "description": "XML prolog"
+  },
+  "Element": {
+    "prefix": "tag",
+    "body": "<${1:element}>$0</${1:element}>",
+    "description": "Open/close element (name mirrored)"
+  },
+  "Self-closing element": {
+    "prefix": "tagc",
+    "body": "<${1:element} ${2:attr}=\"${3:value}\" />$0",
+    "description": "Self-closing element"
+  },
+  "Attribute": {
+    "prefix": "attr",
+    "body": "${1:name}=\"${2:value}\"",
+    "description": "Attribute"
+  },
+  "Comment": {
+    "prefix": "comment",
+    "body": "<!-- $0 -->",
+    "description": "XML comment"
+  },
+  "CDATA": {
+    "prefix": "cdata",
+    "body": "<![CDATA[$0]]>",
+    "description": "CDATA section"
+  }
+}

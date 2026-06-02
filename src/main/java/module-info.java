@@ -19,6 +19,9 @@ module com.editora {
     opens com.editora to javafx.fxml;
     opens com.editora.ui to javafx.fxml;
     opens com.editora.config to com.fasterxml.jackson.databind;
+    // Jackson reflects on the snippet JSON DTO (SnippetManager.Dto). The bundled snippet *resources*
+    // need no opens — our own SnippetManager reads them via Class.getResourceAsStream.
+    opens com.editora.snippet to com.fasterxml.jackson.databind;
     // tm4e (a separate module) reads these grammar resources via Class.getResourceAsStream;
     // without opening the package, JPMS encapsulates the .tmLanguage.json files and grammar
     // loading silently fails, falling back to the legacy regex highlighter.

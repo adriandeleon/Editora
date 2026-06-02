@@ -1,0 +1,12 @@
+{
+  "Date": {
+    "prefix": "date",
+    "body": "${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}",
+    "description": "Current date (YYYY-MM-DD)"
+  },
+  "Time": {
+    "prefix": "time",
+    "body": "${CURRENT_HOUR}:${CURRENT_MINUTE}:${CURRENT_SECOND}",
+    "description": "Current time (HH:MM:SS)"
+  }
+}

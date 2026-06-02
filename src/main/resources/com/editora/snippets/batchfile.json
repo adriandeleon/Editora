@@ -1,0 +1,37 @@
+{
+  "echo off header": {
+    "prefix": "off",
+    "body": ["@echo off", "$0"],
+    "description": "@echo off header"
+  },
+  "set variable": {
+    "prefix": "set",
+    "body": "set ${1:VAR}=${2:value}",
+    "description": "Set a variable"
+  },
+  "if": {
+    "prefix": "if",
+    "body": ["if ${1:condition} (", "\t$0", ")"],
+    "description": "if block"
+  },
+  "if exist": {
+    "prefix": "ifexist",
+    "body": ["if exist ${1:path} (", "\t$0", ")"],
+    "description": "if exist block"
+  },
+  "for loop": {
+    "prefix": "for",
+    "body": ["for %%${1:i} in (${2:set}) do (", "\t$0", ")"],
+    "description": "for loop"
+  },
+  "label": {
+    "prefix": "label",
+    "body": [":${1:label}", "$0"],
+    "description": "Label target"
+  },
+  "comment": {
+    "prefix": "rem",
+    "body": "rem $0",
+    "description": "Comment"
+  }
+}

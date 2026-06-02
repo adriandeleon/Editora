@@ -1,0 +1,22 @@
+{
+  "object": {
+    "prefix": "obj",
+    "body": ["{", "\t$0", "}"],
+    "description": "Object"
+  },
+  "array": {
+    "prefix": "arr",
+    "body": ["[", "\t$0", "]"],
+    "description": "Array"
+  },
+  "key/value": {
+    "prefix": "kv",
+    "body": "\"${1:key}\": \"${2:value}\"",
+    "description": "String key/value pair"
+  },
+  "key/object": {
+    "prefix": "kobj",
+    "body": ["\"${1:key}\": {", "\t$0", "}"],
+    "description": "Key with object value"
+  }
+}

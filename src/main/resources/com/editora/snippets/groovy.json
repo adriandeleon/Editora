@@ -1,0 +1,37 @@
+{
+  "def variable": {
+    "prefix": "def",
+    "body": "def ${1:name} = $0",
+    "description": "Define a variable"
+  },
+  "method": {
+    "prefix": "method",
+    "body": ["def ${1:name}(${2:args}) {", "\t$0", "}"],
+    "description": "Method definition"
+  },
+  "class": {
+    "prefix": "class",
+    "body": ["class ${1:Name} {", "\t$0", "}"],
+    "description": "Class definition"
+  },
+  "println": {
+    "prefix": "sout",
+    "body": "println $0",
+    "description": "Print to stdout"
+  },
+  "each closure": {
+    "prefix": "each",
+    "body": ["${1:list}.each { ${2:item} ->", "\t$0", "}"],
+    "description": "Iterate with a closure"
+  },
+  "if": {
+    "prefix": "if",
+    "body": ["if (${1:condition}) {", "\t$0", "}"],
+    "description": "if block"
+  },
+  "closure": {
+    "prefix": "closure",
+    "body": "{ ${1:args} -> $0 }",
+    "description": "Closure literal"
+  }
+}

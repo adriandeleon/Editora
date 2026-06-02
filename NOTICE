@@ -58,6 +58,23 @@ https://openfontlicense.org. The OFL permits bundling and redistribution within
 this application.
 
 ================================================================================
+Bundled snippets
+================================================================================
+
+Most snippet files under src/main/resources/com/editora/snippets/ (the
+VS Code-format *.json files for C, C++, C#, CSS, Go, HTML, Java, Kotlin,
+Markdown, PowerShell, Python, Ruby, Rust, shell, and SQL) are taken from the
+"friendly-snippets" collection and redistributed under the MIT License:
+
+    friendly-snippets — https://github.com/rafamadriz/friendly-snippets
+    Copyright (c) 2021 Rafael Madriz
+    License: MIT
+
+The core language files are vendored unmodified (framework-specific extras are
+not included). The remaining snippet files (xml, batchfile, groovy, json, yaml,
+ini, global) are original to Editora and covered by Editora's own MIT License.
+
+================================================================================
 Third-party libraries
 ================================================================================
 

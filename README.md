@@ -43,6 +43,12 @@ Emacs-style keymap or a fuzzy command palette.
 - **Markdown preview** — IntelliJ-style 3-mode view (Editor / Editor + Preview / Preview) via a
   floating control top-right of the editor, rendered natively (CommonMark + GFM: tables, task lists,
   strikethrough, autolinks), live-updating and theme-matched; the mode is remembered per file.
+- **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a prefix + Tab to
+  expand (or pick via `C-c i` / "Snippet: Insert…"); Tab/Shift-Tab cycle fields, placeholders are
+  pre-selected, mirrors update live, `$0` is the final caret. Standard body syntax (`$1`,
+  `${1:default}`, mirrors, choices, variables, escapes). Snippets ship for all 21 highlighted languages
+  (most from the MIT [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection);
+  add your own in `~/.editora/snippets/<language>.json` (user snippets override bundled).
 - **Recent files** — persistent most-recently-used list.
 - **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
   Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`

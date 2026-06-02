@@ -1,0 +1,22 @@
+{
+  "key/value": {
+    "prefix": "kv",
+    "body": "${1:key}: ${2:value}",
+    "description": "Scalar key/value"
+  },
+  "mapping": {
+    "prefix": "map",
+    "body": ["${1:key}:", "\t${2:subkey}: ${3:value}"],
+    "description": "Nested mapping"
+  },
+  "sequence": {
+    "prefix": "list",
+    "body": ["${1:key}:", "\t- ${2:item}"],
+    "description": "Key with a list value"
+  },
+  "document separator": {
+    "prefix": "---",
+    "body": ["---", "$0"],
+    "description": "Document separator"
+  }
+}

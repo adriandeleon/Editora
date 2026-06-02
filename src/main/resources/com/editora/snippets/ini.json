@@ -1,0 +1,17 @@
+{
+  "section": {
+    "prefix": "section",
+    "body": ["[${1:section}]", "$0"],
+    "description": "Section header"
+  },
+  "key/value": {
+    "prefix": "kv",
+    "body": "${1:key} = ${2:value}",
+    "description": "Key/value pair"
+  },
+  "comment": {
+    "prefix": "comment",
+    "body": "; $0",
+    "description": "Comment"
+  }
+}

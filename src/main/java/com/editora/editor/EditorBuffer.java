@@ -15,6 +15,12 @@ import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+
+import com.editora.snippet.ParsedSnippet;
+import com.editora.snippet.Snippet;
+import com.editora.snippet.SnippetParser;
+import com.editora.snippet.SnippetSession;
+import com.editora.snippet.VariableResolver;
 import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.fxmisc.undo.UndoManagerFactory;
@@ -122,6 +128,10 @@ public class EditorBuffer {
     private boolean viewMode;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     private CodeArea focusedArea = area;
+    /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
+    private SnippetSession snippetSession;
+    /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
+    private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
     /**
      * Emacs-style goal column for line-up/line-down ({@code C-p}/{@code C-n}): the column to aim for
      * when moving vertically, preserved across short lines until any other caret move resets it.
@@ -187,6 +197,7 @@ public class EditorBuffer {
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
         addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
+        addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -559,6 +570,7 @@ public class EditorBuffer {
         area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
         area2.setEditable(area.isEditable());
         addViewModePaging(area2); // same pager keys in the secondary split view
+        addSnippetKeys(area2);
         area2.setLineHighlighterFill(lineHighlightColor);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
@@ -1037,6 +1049,120 @@ public class EditorBuffer {
                 e.consume();
             }
         });
+    }
+
+    /** Injects the snippet lookup used by Tab-expand (set by the controller). */
+    public void setSnippetProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
+        if (provider != null) {
+            this.snippetProvider = provider;
+        }
+    }
+
+    /** True while a snippet's tab stops are being navigated (Tab cycles fields). */
+    public boolean hasActiveSnippet() {
+        return snippetSession != null && snippetSession.isActive();
+    }
+
+    /**
+     * Tab/Shift-Tab/Escape handling for snippets, as a key filter (runs before RichTextFX's own Tab
+     * indent). With an active snippet, Tab/Shift-Tab cycle fields and Escape cancels; otherwise Tab
+     * tries to expand the identifier before the caret and only consumes the event when one matched —
+     * so a plain Tab still indents.
+     */
+    private void addSnippetKeys(CodeArea a) {
+        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (hasActiveSnippet()) {
+                if (e.getCode() == KeyCode.TAB) {
+                    if (e.isShiftDown()) {
+                        snippetSession.previous();
+                    } else {
+                        snippetSession.next();
+                    }
+                    e.consume();
+                } else if (e.getCode() == KeyCode.ESCAPE) {
+                    snippetSession.cancel();
+                    e.consume();
+                }
+                return;
+            }
+            if (e.getCode() == KeyCode.TAB && !e.isShiftDown()
+                    && !e.isControlDown() && !e.isAltDown() && !e.isMetaDown()
+                    && expandPrefixAtCaret(a)) {
+                e.consume();
+            }
+        });
+    }
+
+    /** Inserts a snippet from the picker, replacing the selection (if any), and starts its session. */
+    public void insertSnippet(Snippet snippet) {
+        if (snippet == null || !isEditable()) {
+            return;
+        }
+        CodeArea a = focusedArea;
+        int from = a.getSelection().getLength() > 0 ? a.getSelection().getStart() : a.getCaretPosition();
+        int to = a.getSelection().getLength() > 0 ? a.getSelection().getEnd() : from;
+        startSnippet(a, snippet, from, to);
+        a.requestFocus();
+    }
+
+    /** Expands the identifier before the caret if it matches a snippet prefix; returns whether it did. */
+    private boolean expandPrefixAtCaret(CodeArea a) {
+        if (!isEditable() || a.getSelection().getLength() > 0) {
+            return false;
+        }
+        int caret = a.getCaretPosition();
+        String text = a.getText();
+        int start = caret;
+        while (start > 0 && isPrefixChar(text.charAt(start - 1))) {
+            start--;
+        }
+        if (start == caret) {
+            return false;
+        }
+        Snippet snippet = snippetProvider.apply(language, text.substring(start, caret));
+        if (snippet == null) {
+            return false;
+        }
+        startSnippet(a, snippet, start, caret);
+        return true;
+    }
+
+    /** Parses {@code snippet}, replaces {@code [from,to)} with the expansion, and begins a session. */
+    private void startSnippet(CodeArea a, Snippet snippet, int from, int to) {
+        if (snippetSession != null) {
+            snippetSession.cancel();
+            snippetSession = null;
+        }
+        String fileName = path == null ? "" : path.getFileName().toString();
+        String directory = path == null || path.toAbsolutePath().getParent() == null
+                ? "" : path.toAbsolutePath().getParent().toString();
+        String filePath = path == null ? "" : path.toAbsolutePath().toString();
+        String clip = javafx.scene.input.Clipboard.getSystemClipboard().hasString()
+                ? javafx.scene.input.Clipboard.getSystemClipboard().getString() : "";
+        int line = a.offsetToPosition(from, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward).getMajor();
+        String currentLine = a.getParagraph(line).getText();
+        VariableResolver vars = new VariableResolver(fileName, directory, filePath,
+                a.getSelectedText(), clip, line, currentLine);
+        ParsedSnippet parsed = SnippetParser.parse(snippet.body(), vars);
+        String indent = leadingIndent(currentLine);
+        SnippetSession session = new SnippetSession(a, parsed, from, to, indent);
+        if (session.isActive()) {
+            snippetSession = session;
+            session.setOnEnd(() -> snippetSession = null);
+        }
+    }
+
+    /** Leading whitespace (spaces/tabs) of a line, used to indent a snippet's continuation lines. */
+    private static String leadingIndent(String line) {
+        int i = 0;
+        while (i < line.length() && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) {
+            i++;
+        }
+        return line.substring(0, i);
+    }
+
+    private static boolean isPrefixChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
     }
 
     private static void toggleStyleClass(Node node, String styleClass, boolean on) {
