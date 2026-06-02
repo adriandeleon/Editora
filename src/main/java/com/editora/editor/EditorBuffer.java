@@ -132,6 +132,10 @@ public class EditorBuffer {
     private SnippetSession snippetSession;
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
+    /** The two document offsets currently carrying the {@code brace-match} style, or null. */
+    private int[] braceMatch;
+    /** Coalesces brace-match recomputes to one per pulse (caret moves rapidly while typing). */
+    private boolean braceMatchPending;
     /**
      * Emacs-style goal column for line-up/line-down ({@code C-p}/{@code C-n}): the column to aim for
      * when moving vertically, preserved across short lines until any other caret move resets it.
@@ -198,6 +202,7 @@ public class EditorBuffer {
         folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
         addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
+        addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
         addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
@@ -224,6 +229,7 @@ public class EditorBuffer {
         area.textProperty().addListener((obs, old, now) ->
                 dirty.set(now.length() != cleanText.length() || !now.equals(cleanText)));
         area.caretPositionProperty().addListener((obs, old, now) -> resetGoalColumn());
+        area.caretPositionProperty().addListener((obs, old, now) -> scheduleBraceMatch());
         area.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area;
@@ -572,11 +578,13 @@ public class EditorBuffer {
         area2.setEditable(area.isEditable());
         addViewModePaging(area2); // same pager keys in the secondary split view
         addSnippetKeys(area2);
+        addAutoClose(area2);
         addAutoIndent(area2);
         area2.setLineHighlighterFill(lineHighlightColor);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
         area2.caretPositionProperty().addListener((obs, old, now) -> resetGoalColumn());
+        area2.caretPositionProperty().addListener((obs, old, now) -> scheduleBraceMatch());
         area2.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area2;
@@ -1146,6 +1154,124 @@ public class EditorBuffer {
         });
     }
 
+    /**
+     * Auto-closes brackets/quotes (installed on {@code area}/{@code area2}). A {@code KEY_TYPED} filter
+     * inserts the matching closer / types over an existing one / wraps a selection (see {@link AutoClose});
+     * a {@code KEY_PRESSED} filter removes both halves of an empty pair on Backspace. Added before
+     * {@link #addAutoIndent} so it sees the keystroke first; when it does nothing it leaves the event
+     * for normal typing (and the indent closer-dedent).
+     */
+    private void addAutoClose(CodeArea a) {
+        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (!isEditable() || hasActiveSnippet() || e.getCharacter().length() != 1
+                    || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                return;
+            }
+            char c = e.getCharacter().charAt(0);
+            if (AutoClose.closerFor(c) == 0 && !AutoClose.isCloser(c)) {
+                return; // not a bracket or quote
+            }
+            int caret = a.getCaretPosition();
+            int len = a.getLength();
+            char prev = caret > 0 ? a.getText(caret - 1, caret).charAt(0) : 0;
+            char next = caret < len ? a.getText(caret, caret + 1).charAt(0) : 0;
+            boolean hasSel = a.getSelection().getLength() > 0;
+            AutoClose.Decision d = AutoClose.decide(c, prev, next, hasSel);
+            switch (d.action()) {
+                case INSERT_PAIR -> {
+                    a.replaceText(caret, caret, "" + c + d.closer());
+                    a.moveTo(caret + 1);
+                    e.consume();
+                }
+                case SKIP_OVER -> {
+                    a.moveTo(caret + 1);
+                    e.consume();
+                }
+                case WRAP_SELECTION -> {
+                    int s = a.getSelection().getStart();
+                    String sel = a.getSelectedText();
+                    a.replaceText(s, a.getSelection().getEnd(), "" + c + sel + d.closer());
+                    a.selectRange(s + 1, s + 1 + sel.length());
+                    e.consume();
+                }
+                case NONE -> { } // normal typing (and the auto-indent closer-dedent may run)
+            }
+        });
+        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() != KeyCode.BACK_SPACE || viewMode || !isEditable() || hasActiveSnippet()
+                    || e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShiftDown()
+                    || a.getSelection().getLength() > 0) {
+                return;
+            }
+            int caret = a.getCaretPosition();
+            if (caret <= 0 || caret >= a.getLength()) {
+                return;
+            }
+            char prev = a.getText(caret - 1, caret).charAt(0);
+            char next = a.getText(caret, caret + 1).charAt(0);
+            if (AutoClose.isEmptyPair(prev, next)) {
+                a.deleteText(caret - 1, caret + 1); // remove both halves of the empty pair
+                e.consume();
+            }
+        });
+    }
+
+    /** Coalesces a matching-bracket recompute to the next pulse (caret moves rapidly while typing). */
+    private void scheduleBraceMatch() {
+        if (braceMatchPending) {
+            return;
+        }
+        braceMatchPending = true;
+        Platform.runLater(this::updateBraceMatch);
+    }
+
+    /** Clears any previous match highlight and highlights the pair adjacent to the focused caret. */
+    private void updateBraceMatch() {
+        braceMatchPending = false;
+        clearBraceMatch();
+        if (largeFile) {
+            return; // brace matching off in large-file mode (highlighting is disabled there too)
+        }
+        CodeArea a = focusedArea;
+        int[] m = BraceMatcher.match(a.getText(), a.getCaretPosition(), BraceMatcher.DEFAULT_MAX_SCAN);
+        if (m != null) {
+            addBraceClass(m[0]);
+            addBraceClass(m[1]);
+            braceMatch = m;
+        }
+    }
+
+    private void clearBraceMatch() {
+        if (braceMatch != null) {
+            removeBraceClass(braceMatch[0]);
+            removeBraceClass(braceMatch[1]);
+            braceMatch = null;
+        }
+    }
+
+    // The match style combines with the char's syntax classes, so the brace keeps its token color; the
+    // syntax highlighter overwrites it on re-highlight, after which scheduleBraceMatch() re-applies.
+    private void addBraceClass(int pos) {
+        if (pos < 0 || pos >= area.getLength()) {
+            return;
+        }
+        java.util.List<String> style = new java.util.ArrayList<>(area.getStyleOfChar(pos));
+        if (!style.contains("brace-match")) {
+            style.add("brace-match");
+            area.setStyle(pos, pos + 1, style);
+        }
+    }
+
+    private void removeBraceClass(int pos) {
+        if (pos < 0 || pos >= area.getLength()) {
+            return;
+        }
+        java.util.List<String> style = new java.util.ArrayList<>(area.getStyleOfChar(pos));
+        if (style.remove("brace-match")) {
+            area.setStyle(pos, pos + 1, style);
+        }
+    }
+
     /** Inserts a snippet from the picker, replacing the selection (if any), and starts its session. */
     public void insertSnippet(Snippet snippet) {
         if (snippet == null || !isEditable()) {
@@ -1396,6 +1522,7 @@ public class EditorBuffer {
                     return;
                 }
                 area.setStyleSpans(a.fromOffset(), a.spans());
+                scheduleBraceMatch(); // re-apply the match highlight the spans just overwrote
                 // Replace per-line end-states from fromLine onward (the prefix is unchanged).
                 while (lineStates.size() > fromLine) {
                     lineStates.remove(lineStates.size() - 1);

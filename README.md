@@ -34,6 +34,9 @@ Emacs-style keymap or a fuzzy command palette.
   (per language: braces, `:` for Python/YAML, `do`/`then` for shell, `def`/`class`/`do` for Ruby, open
   tags for XML/HTML); Enter between a matching pair opens an indented stanza; typing a closing
   bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred from the file.
+- **Auto-close & matching brackets** — typing `([{`/quotes inserts the matching closer (type over it to
+  skip, wrap a selection by typing a bracket/quote around it, Backspace clears an empty pair); the
+  bracket matching the one next to the caret is highlighted.
 - **Read-only / View mode** — toggle a buffer read-only (`C-x C-q` or the palette) to view without
   editing; typing and edit commands are blocked while everything else keeps working. Files that aren't
   writable on disk open read-only automatically, and the per-file state is remembered across restarts.

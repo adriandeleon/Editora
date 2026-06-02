@@ -6,8 +6,8 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Auto indent
 - [x] Smart indentation
 - [x] Language indentation aware for the 21 languages we support
-- [ ] Autoclose `()[]{}` and quotes
-- [ ] Highlight matching braces
+- [x] Autoclose `()[]{}` and quotes
+- [x] Highlight matching braces
 - [ ] Comment/uncomment code region
 - [ ] Format document
 - [ ] Column select support

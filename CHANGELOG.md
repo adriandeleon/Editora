@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Auto-close brackets and quotes** — typing `(`, `[`, `{`, `"`, `'`, or `` ` `` inserts the matching
+  closer and keeps the caret between; typing the closer (or a quote) when it's already next to the
+  caret types over it; typing an opener/quote with a selection wraps the selection; and Backspace
+  inside an empty pair deletes both halves. Quotes are not auto-paired next to a word character (so
+  apostrophes in `don't` are left alone).
+- **Highlight matching brackets** — when the caret is next to a `()`, `[]`, or `{}`, both it and its
+  match are highlighted.
+
 - **Auto / smart indentation** for all 21 languages. Enter keeps the current line's indentation; a
   block-opener adds a level (braces `{ ( [`; `:` in Python/YAML; `do`/`then`/`in` in shell;
   `def`/`class`/`do`/… in Ruby; an open tag in XML/HTML); pressing Enter between a matching pair
