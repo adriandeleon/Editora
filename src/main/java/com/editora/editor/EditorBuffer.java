@@ -154,6 +154,9 @@ public class EditorBuffer {
             (buffer, line) -> buffer.toggleBookmark(line);
 
     private Path path;
+    /** Last-known on-disk modified time (epoch millis) and size, to detect external changes; -1 = unknown. */
+    private long diskModifiedMillis = -1;
+    private long diskSize = -1;
     /** Language name for the current file (drives fold strategy); see {@link LanguageRegistry}. */
     private String language = LanguageRegistry.plaintext();
     /** TextMate grammar for the current file, or {@code null} when no grammar is bundled. */
@@ -863,6 +866,17 @@ public class EditorBuffer {
 
     public Path getPath() {
         return path;
+    }
+
+    /** Records the file's on-disk modified time + size as last loaded/saved, for external-change detection. */
+    public void setDiskSnapshot(long modifiedMillis, long size) {
+        this.diskModifiedMillis = modifiedMillis;
+        this.diskSize = size;
+    }
+
+    /** Whether {@code modifiedMillis}/{@code size} differ from the last recorded on-disk snapshot. */
+    public boolean diskChangedFrom(long modifiedMillis, long size) {
+        return diskModifiedMillis >= 0 && (modifiedMillis != diskModifiedMillis || size != diskSize);
     }
 
     /** Associates this buffer with a file and selects the grammar and fold language from its extension. */

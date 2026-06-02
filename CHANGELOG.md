@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Detect external file changes** — when the file in the active tab is modified by another program,
+  Editora notices (on window focus or when you switch to that tab) and offers to reload it, or keep your
+  version (also when you have unsaved edits). The prompt only appears for the tab you're looking at.
+  Deleted files are left untouched. Editora's own saves never trigger the prompt.
 - **Smart backspace** — pressing Backspace while the caret is in a line's leading indentation deletes
   the whole indent in one press instead of one space at a time. On a blank, auto-indented line a single
   Backspace jumps back to the end of the previous line (undoing the Enter); on an indented line that has

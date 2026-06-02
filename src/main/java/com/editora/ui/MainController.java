@@ -193,6 +193,8 @@ public class MainController {
     private Button zenExitButton;
     /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
     private boolean markActive;
+    /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
+    private boolean checkingExternalChanges;
     private RecentFiles recentFiles;
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
@@ -200,6 +202,12 @@ public class MainController {
         stage.setOnCloseRequest(e -> {
             if (!confirmQuit() || !confirmCloseAllBuffers()) {
                 e.consume();
+            }
+        });
+        // Detect files changed by another program: re-check open files whenever the window regains focus.
+        stage.focusedProperty().addListener((obs, was, now) -> {
+            if (Boolean.TRUE.equals(now)) {
+                checkExternalChanges();
             }
         });
         this.config = config;
@@ -781,6 +789,7 @@ public class MainController {
             }
             refreshSplitButtons();
             updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
+            checkExternalChanges(); // prompt if the file we just switched to changed on disk
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
@@ -1480,6 +1489,7 @@ public class MainController {
      */
     private String loadInto(EditorBuffer buffer, Path file) throws IOException {
         long size = fileSize(file);
+        buffer.setDiskSnapshot(lastModifiedMillis(file), size); // baseline for external-change detection
         if (size >= EditorBuffer.HUGE_FILE_BYTES) {
             String content = readCapped(file, (int) EditorBuffer.HUGE_FILE_BYTES);
             buffer.setContent(content);
@@ -1519,6 +1529,84 @@ public class MainController {
             return Files.size(file);
         } catch (IOException e) {
             return 0;
+        }
+    }
+
+    /** The file's last-modified time in epoch millis, or {@code -1} when unavailable. */
+    private static long lastModifiedMillis(Path file) {
+        try {
+            return Files.getLastModifiedTime(file).toMillis();
+        } catch (IOException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * Checks the <em>active</em> tab's file against its on-disk snapshot (taken at load/save) and, if it
+     * was modified by another program, prompts to reload or keep the in-editor version. Run when the
+     * window regains focus and when the user switches tabs — so the prompt only appears for the file the
+     * user is actually looking at (background tabs are checked when switched to). Deleted files are left
+     * alone (the in-editor copy is kept).
+     */
+    private void checkExternalChanges() {
+        if (checkingExternalChanges || tabPane == null) {
+            return;
+        }
+        checkingExternalChanges = true;
+        try {
+            Tab tab = tabPane.getSelectionModel().getSelectedItem();
+            EditorBuffer buffer = tab != null && tab.getUserData() instanceof EditorBuffer b ? b : null;
+            if (buffer == null || buffer.getPath() == null) {
+                return;
+            }
+            Path file = buffer.getPath();
+            if (!Files.exists(file)) {
+                return; // deleted/renamed externally — keep what's open (no prompt)
+            }
+            long mtime = lastModifiedMillis(file);
+            long size = fileSize(file);
+            if (buffer.diskChangedFrom(mtime, size)) {
+                promptExternalChange(tab, buffer, mtime, size);
+            }
+        } finally {
+            checkingExternalChanges = false;
+        }
+    }
+
+    /** Asks whether to reload an externally-modified file; "keep" just re-baselines so it stops prompting. */
+    private void promptExternalChange(Tab tab, EditorBuffer buffer, long mtime, long size) {
+        String name = buffer.getPath().getFileName().toString();
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.initOwner(stage);
+        alert.setTitle("File Changed on Disk");
+        alert.setHeaderText("\"" + name + "\" was modified outside Editora.");
+        alert.setContentText(buffer.isDirty()
+                ? "You have unsaved changes here. Reload from disk (discarding your edits), or keep your version?"
+                : "Reload it from disk?");
+        ButtonType reload = new ButtonType("Reload");
+        ButtonType keep = new ButtonType(buffer.isDirty() ? "Keep Mine" : "Keep",
+                ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(reload, keep);
+        if (alert.showAndWait().filter(b -> b == reload).isPresent()) {
+            reloadFromDisk(tab, buffer);
+        } else {
+            buffer.setDiskSnapshot(mtime, size); // keep the editor's version, stop nagging about this change
+        }
+    }
+
+    /** Reloads a buffer's content from disk, preserving the caret position as best it can. */
+    private void reloadFromDisk(Tab tab, EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        try {
+            CodeArea area = buffer.getArea();
+            int caret = area.getCaretPosition();
+            String note = loadInto(buffer, file); // replaces content + re-baselines the disk snapshot
+            buffer.markClean();
+            area.moveTo(Math.min(caret, area.getLength()));
+            updateTabMeta(tab, buffer);
+            setStatus(note.isEmpty() ? "Reloaded " + file.getFileName() + " from disk" : note);
+        } catch (IOException e) {
+            setStatus("Failed to reload " + file.getFileName() + ": " + e.getMessage());
         }
     }
 
@@ -1588,6 +1676,7 @@ public class MainController {
         try {
             Files.writeString(file, buffer.getContent());
             buffer.markClean();
+            buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
             setStatus("Saved " + file);
             return true;
         } catch (IOException e) {
@@ -1639,6 +1728,7 @@ public class MainController {
                     if (content.equals(buffer.getContent())) {
                         buffer.markClean();
                     }
+                    buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our write, not external
                     setStatus("Auto-saved " + file.getFileName());
                 });
             } catch (IOException e) {
