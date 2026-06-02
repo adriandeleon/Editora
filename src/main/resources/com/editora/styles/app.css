@@ -791,6 +791,16 @@
     -fx-padding: 2 2 0 2;
 }
 
+/* Static legend of the navigation keys at the bottom of the palette / Jump-to popups (mirrors the
+   Switcher's footer), separated from the list above it. */
+.command-palette .palette-hint {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+    -fx-padding: 6 4 2 4;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+
 .find-bar {
     -fx-background-color: -color-bg-subtle;
     -fx-padding: 4 8 4 8;

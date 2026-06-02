@@ -85,7 +85,9 @@ public class CommandPalette {
 
         Label header = new Label("Command Palette");
         header.getStyleClass().add("palette-title");
-        VBox content = new VBox(6, header, input, list);
+        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ run  ·  esc cancel");
+        hint.getStyleClass().add("palette-hint");
+        VBox content = new VBox(6, header, input, list, hint);
         content.getStyleClass().add("command-palette");
         content.setPrefWidth(620);
 

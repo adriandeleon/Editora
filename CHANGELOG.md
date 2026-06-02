@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Navigation key hints in the pickers** — the Command Palette, the "Jump to…" pickers (recent files,
+  bookmarks, structure, tool windows, snippets), and the file finder now show a footer legend of their
+  relevant keys (move / select / cancel, plus Tab-complete in the file finder), matching the Switcher.
 - **Focused tool window is highlighted** — the panel that currently holds keyboard focus (Project,
   Structure, Bookmarks, File Information) gets an accent-tinted header, so it's clear where you are when
   moving between panels and the editor.
