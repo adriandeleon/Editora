@@ -68,10 +68,11 @@ public class App extends Application {
 
         new KeyDispatcher(registry, keymap, controller::setStatus).install(scene);
 
-        // Ctrl + mouse wheel zooms the editor text (and is consumed so the editor doesn't also scroll).
+        // Ctrl + mouse wheel zooms (and is consumed so the editor/preview doesn't also scroll): the
+        // Markdown preview when the pointer is over it, otherwise the editor text.
         scene.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
             if (e.isControlDown() && e.getDeltaY() != 0) {
-                controller.textZoom(e.getDeltaY() > 0 ? 1 : -1);
+                controller.zoomFromWheel(e);
                 e.consume();
             }
         });

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ctrl + mouse wheel zooms the Markdown preview** while in Preview mode (scroll up/down to zoom
+  in/out, driving the preview's `−`/`+`); the editor text zoom is left untouched there. In Editor and
+  Split modes Ctrl+wheel still zooms the editor text.
+
 - **Snippets** (VS Code / TextMate-style) — expand templates with interactive tab stops. Type a
   prefix and press **Tab** to expand (Tab still indents when nothing matches), or pick from the
   **"Snippet: Insert…"** fuzzy list (`C-c i`). After expanding, **Tab / Shift-Tab** cycle the fields,

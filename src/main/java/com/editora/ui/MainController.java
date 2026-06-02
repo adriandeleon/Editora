@@ -2645,6 +2645,22 @@ public class MainController {
     }
 
     /**
+     * Routes a Ctrl + mouse-wheel zoom: in Markdown <em>Preview</em> mode it drives the preview's
+     * {@code −}/{@code +} zoom (the rendered text), so the editor text zoom is left untouched there;
+     * in every other case (Editor or Split) it zooms the editor text. Called from the scene-level
+     * scroll filter in {@code App}.
+     */
+    public void zoomFromWheel(javafx.scene.input.ScrollEvent e) {
+        int direction = e.getDeltaY() > 0 ? 1 : -1;
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.PREVIEW) {
+            markdownZoom(direction);
+        } else {
+            textZoom(direction);
+        }
+    }
+
+    /**
      * Global text zoom: scales every editor's font on top of the configured size. {@code >0} zooms in,
      * {@code <0} out (±10% steps, clamped 50%–300%), {@code 0} resets to 100%. Persisted in Settings
      * (not shown in the Settings window) and reflected in the status bar.
