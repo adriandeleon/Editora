@@ -663,9 +663,14 @@ public class MainController {
 
     /** Moves the active editor's caret to {@code line} and anchors it at the top of the viewport. */
     private void navigateToLine(int line) {
+        EditorBuffer buffer = activeBuffer();
         CodeArea area = activeArea();
         if (area == null || line < 0 || line >= area.getParagraphs().size()) {
             return;
+        }
+        // Reveal the target if it's hidden inside a collapsed fold, so we don't scroll to a hidden line.
+        if (buffer != null) {
+            buffer.getFoldManager().unfoldContaining(line);
         }
         area.moveTo(line, 0);
         Platform.runLater(() -> {
