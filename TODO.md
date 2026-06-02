@@ -3,9 +3,9 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Editing
-- [ ] Auto indent
-- [ ] Smart indentation
-- [ ] Language indentation aware for the 21 languages we support
+- [x] Auto indent
+- [x] Smart indentation
+- [x] Language indentation aware for the 21 languages we support
 - [ ] Autoclose `()[]{}` and quotes
 - [ ] Highlight matching braces
 - [ ] Comment/uncomment code region

@@ -30,6 +30,10 @@ Emacs-style keymap or a fuzzy command palette.
 - **Bundled fonts** — JetBrains Mono (default), Cascadia Code, Fira Code, IBM Plex Mono,
   and Source Code Pro ship with the app; no system install required.
 - **Editor view options** — 80-column ruler and current-line highlight.
+- **Auto / smart indentation** — Enter keeps the indentation and adds a level after a block opener
+  (per language: braces, `:` for Python/YAML, `do`/`then` for shell, `def`/`class`/`do` for Ruby, open
+  tags for XML/HTML); Enter between a matching pair opens an indented stanza; typing a closing
+  bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred from the file.
 - **Read-only / View mode** — toggle a buffer read-only (`C-x C-q` or the palette) to view without
   editing; typing and edit commands are blocked while everything else keeps working. Files that aren't
   writable on disk open read-only automatically, and the per-file state is remembered across restarts.

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Auto / smart indentation** for all 21 languages. Enter keeps the current line's indentation; a
+  block-opener adds a level (braces `{ ( [`; `:` in Python/YAML; `do`/`then`/`in` in shell;
+  `def`/`class`/`do`/… in Ruby; an open tag in XML/HTML); pressing Enter between a matching pair
+  (`{}`/`()`/`[]` or `<a>|</a>`) opens an indented stanza with the closer dropped below; and typing a
+  closer (a `)]}` bracket alone on the line, or a keyword like `end`/`fi`/`done`) re-aligns the line to
+  its opener. The indent unit (tab vs spaces) is inferred from the file.
+
 - **Ctrl + mouse wheel zooms the Markdown preview** while in Preview mode (scroll up/down to zoom
   in/out, driving the preview's `−`/`+`); the editor text zoom is left untouched there. In Editor and
   Split modes Ctrl+wheel still zooms the editor text.

@@ -198,6 +198,7 @@ public class EditorBuffer {
         folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
         addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
+        addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -571,6 +572,7 @@ public class EditorBuffer {
         area2.setEditable(area.isEditable());
         addViewModePaging(area2); // same pager keys in the secondary split view
         addSnippetKeys(area2);
+        addAutoIndent(area2);
         area2.setLineHighlighterFill(lineHighlightColor);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
@@ -1089,6 +1091,57 @@ public class EditorBuffer {
                     && !e.isControlDown() && !e.isAltDown() && !e.isMetaDown()
                     && expandPrefixAtCaret(a)) {
                 e.consume();
+            }
+        });
+    }
+
+    /**
+     * Auto/smart indentation (installed on {@code area}/{@code area2}). On <b>Enter</b>, inserts a
+     * newline indented per {@link Indenter} (inherit + block-opener +1 + matching-pair split). When a
+     * <b>closing token</b> is typed — a {@code )]}} bracket alone on the line, or a closer keyword like
+     * {@code end}/{@code fi} completed — the line is re-aligned to its opener's indent. Inert in
+     * read-only mode and while a snippet session owns the keys.
+     */
+    private void addAutoIndent(CodeArea a) {
+        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() != KeyCode.ENTER || e.isShiftDown() || e.isControlDown()
+                    || e.isAltDown() || e.isMetaDown()) {
+                return;
+            }
+            if (!isEditable() || hasActiveSnippet()) {
+                return;
+            }
+            if (a.getSelection().getLength() > 0) {
+                a.replaceSelection("");
+            }
+            int caret = a.getCaretPosition();
+            Indenter.EnterEdit edit = Indenter.enterEdit(a.getText(), caret, language, tabSize);
+            a.replaceText(caret, caret, edit.insert());
+            a.moveTo(caret + edit.caretOffset());
+            a.requestFollowCaret();
+            e.consume(); // we inserted the newline+indent ourselves
+        });
+        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (!isEditable() || hasActiveSnippet() || e.getCharacter().length() != 1
+                    || e.isControlDown() || e.isAltDown() || e.isMetaDown()
+                    || a.getSelection().getLength() > 0) {
+                return;
+            }
+            char c = e.getCharacter().charAt(0);
+            Indenter.Style style = Indenter.styleFor(language);
+            int caret = a.getCaretPosition();
+            int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
+            String beforeCaret = a.getText(lineStart, caret);
+            boolean bracket = Indenter.isCloserChar(style, c) && !beforeCaret.isEmpty() && beforeCaret.isBlank();
+            boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c);
+            if (!bracket && !keyword) {
+                return;
+            }
+            // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
+            String currentIndent = leadingIndent(beforeCaret);
+            String aligned = Indenter.closerAlignIndent(a.getText(), caret, tabSize);
+            if (!aligned.equals(currentIndent)) {
+                a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             }
         });
     }
