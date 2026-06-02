@@ -4,9 +4,19 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 
 /**
@@ -23,6 +33,8 @@ public class ConfigManager {
     static final String APP_DIR_NAME_DEV = ".editora-dev";
     static final String SETTINGS_FILE_NAME = "settings.toml";
     static final String WORKSPACE_FILE_NAME = "workspace-state.json";
+    static final String BOOKMARKS_FILE_NAME = "bookmarks.json";
+    static final String PROJECTS_DIR_NAME = "projects";
 
     /** TOML for preferences. */
     private final TomlMapper toml = new TomlMapper();
@@ -34,6 +46,8 @@ public class ConfigManager {
     private final boolean dev;
     private Settings settings = new Settings();
     private WorkspaceState workspaceState = new WorkspaceState();
+    /** Global bookmarks (all files/projects), stored in {@code bookmarks.json} — see {@link BookmarkStore}. */
+    private BookmarkStore bookmarkStore = new BookmarkStore();
     /** The session-state file currently in use — the default, or a project's state file. */
     private Path workspaceStateFile;
 
@@ -101,11 +115,95 @@ public class ConfigManager {
         return workspaceState;
     }
 
-    /** Reads both files, merging stored values onto defaults. Falls back to defaults on any error. */
+    public Path getBookmarksFile() {
+        return configDir.resolve(BOOKMARKS_FILE_NAME);
+    }
+
+    /** The global bookmark map (absolute file path -> bookmarks). Persist changes with {@link #saveBookmarks()}. */
+    public Map<String, List<Bookmark>> getBookmarks() {
+        return bookmarkStore.getBookmarks();
+    }
+
+    /** Reads all config files, merging stored values onto defaults. Falls back to defaults on any error. */
     public Settings load() {
         settings = read(getSettingsFile(), toml, new Settings());
         workspaceState = read(getWorkspaceStateFile(), json, new WorkspaceState());
+        loadBookmarks();
         return settings;
+    }
+
+    /**
+     * Loads the global {@code bookmarks.json}. On first run (no {@code bookmarks.json} yet) it migrates
+     * any bookmarks previously stored inside {@code workspace-state.json} and the per-project
+     * {@code projects/*.json} session files into the global store, strips them from those files, and
+     * writes {@code bookmarks.json} so the migration runs only once.
+     */
+    private void loadBookmarks() {
+        if (Files.exists(getBookmarksFile())) {
+            bookmarkStore = read(getBookmarksFile(), json, new BookmarkStore());
+            return;
+        }
+        bookmarkStore = new BookmarkStore();
+        migrateLegacyBookmarks(bookmarkStore.getBookmarks());
+        saveBookmarks(); // create bookmarks.json so migration is one-time (even if empty)
+    }
+
+    /** Merges bookmarks out of the legacy session files into {@code into}, stripping them from each. */
+    private void migrateLegacyBookmarks(Map<String, List<Bookmark>> into) {
+        List<Path> sessionFiles = new ArrayList<>();
+        sessionFiles.add(configDir.resolve(WORKSPACE_FILE_NAME));
+        Path projectsDir = configDir.resolve(PROJECTS_DIR_NAME);
+        if (Files.isDirectory(projectsDir)) {
+            try (Stream<Path> s = Files.list(projectsDir)) {
+                s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().forEach(sessionFiles::add);
+            } catch (IOException ignored) {
+                // best-effort migration; a missing/unreadable projects dir just means nothing to migrate
+            }
+        }
+        for (Path f : sessionFiles) {
+            extractAndStripBookmarks(f, into);
+        }
+    }
+
+    /** Pulls the {@code bookmarks} node out of a legacy session file into {@code into} and rewrites it without that node. */
+    private void extractAndStripBookmarks(Path file, Map<String, List<Bookmark>> into) {
+        if (!Files.isReadable(file)) {
+            return;
+        }
+        try {
+            JsonNode root = json.readTree(Files.readString(file));
+            if (!(root instanceof ObjectNode obj)) {
+                return;
+            }
+            if (!obj.has("bookmarks")) {
+                return;
+            }
+            JsonNode bm = obj.get("bookmarks");
+            if (bm != null && bm.isObject() && !bm.isEmpty()) {
+                Map<String, List<Bookmark>> legacy =
+                        json.convertValue(bm, new TypeReference<LinkedHashMap<String, List<Bookmark>>>() { });
+                legacy.forEach((path, marks) -> mergeBookmarkList(into, path, marks));
+            }
+            obj.remove("bookmarks"); // drop the legacy node (even when empty) so it stops lingering
+            json.writeValue(file.toFile(), obj);
+        } catch (IOException | IllegalArgumentException e) {
+            // a malformed legacy file simply contributes no bookmarks
+        }
+    }
+
+    /** Unions {@code add} into {@code into[path]}, de-duplicating by line (keeps the already-present entry). */
+    private static void mergeBookmarkList(Map<String, List<Bookmark>> into, String path, List<Bookmark> add) {
+        if (add == null || add.isEmpty()) {
+            return;
+        }
+        List<Bookmark> existing = into.computeIfAbsent(path, k -> new ArrayList<>());
+        Set<Integer> lines = new HashSet<>();
+        existing.forEach(b -> lines.add(b.line()));
+        for (Bookmark b : add) {
+            if (lines.add(b.line())) {
+                existing.add(b);
+            }
+        }
     }
 
     /** Reads {@code file} with {@code mapper}, merging onto {@code defaults}; returns defaults on error. */
@@ -129,6 +227,16 @@ public class ConfigManager {
             json.writeValue(workspaceStateFile.toFile(), workspaceState);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write config to " + configDir, e);
+        }
+    }
+
+    /** Writes the global bookmarks to {@code bookmarks.json}. Bookmarks are saved independently of {@link #save()}. */
+    public void saveBookmarks() {
+        try {
+            Files.createDirectories(configDir);
+            json.writeValue(getBookmarksFile().toFile(), bookmarkStore);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write bookmarks to " + getBookmarksFile(), e);
         }
     }
 

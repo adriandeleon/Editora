@@ -787,7 +787,7 @@ public class MainController {
         structurePanel = new StructurePanel();
         structureToolWindow = new ToolWindow("structure", "Structure", ToolWindow.Side.RIGHT,
                 Icons::structure, structurePanel, "tool.structure");
-        bookmarksPanel = new BookmarksPanel(() -> config.getWorkspaceState().getBookmarks(),
+        bookmarksPanel = new BookmarksPanel(config::getBookmarks,
                 new BookmarksPanel.Actions() {
                     @Override public void openAndJump(java.nio.file.Path file, int line) {
                         bookmarkActivate(file, line);
@@ -2483,13 +2483,13 @@ public class MainController {
             return;
         }
         List<com.editora.config.Bookmark> marks = buffer.getBookmarkManager().snapshot();
-        var map = config.getWorkspaceState().getBookmarks();
+        var map = config.getBookmarks();
         if (marks.isEmpty()) {
             map.remove(file.toString());
         } else {
             map.put(file.toString(), marks);
         }
-        config.save();
+        config.saveBookmarks();
         if (bookmarksPanel != null) {
             bookmarksPanel.refresh();
         }
@@ -2502,7 +2502,7 @@ public class MainController {
             return;
         }
         boolean reanchored =
-                buffer.applyBookmarks(config.getWorkspaceState().getBookmarks().get(file.toString()));
+                buffer.applyBookmarks(config.getBookmarks().get(file.toString()));
         // The file changed outside the editor and a bookmark followed its content to a new line —
         // write the corrected indices back so the session self-heals (once; later opens match exactly).
         if (reanchored) {
@@ -2828,7 +2828,7 @@ public class MainController {
     /** All bookmarks across all files, flattened for the jump picker (sorted by file then line). */
     private List<BookmarkEntry> allBookmarkEntries() {
         List<BookmarkEntry> out = new ArrayList<>();
-        config.getWorkspaceState().getBookmarks().forEach((path, marks) -> {
+        config.getBookmarks().forEach((path, marks) -> {
             if (marks != null) {
                 Path file = Path.of(path);
                 marks.forEach(bm -> out.add(new BookmarkEntry(file, bm)));
@@ -2880,8 +2880,8 @@ public class MainController {
         if (tab != null) {
             ((EditorBuffer) tab.getUserData()).clearBookmarks();
         } else {
-            config.getWorkspaceState().getBookmarks().remove(file.toString());
-            config.save();
+            config.getBookmarks().remove(file.toString());
+            config.saveBookmarks();
             bookmarksPanel.refresh();
         }
     }
@@ -2889,7 +2889,7 @@ public class MainController {
     /** Applies a mutation to a closed file's bookmark list in the persisted map, then saves + refreshes. */
     private void updateClosedFileBookmarks(Path file,
             java.util.function.Consumer<List<com.editora.config.Bookmark>> mutator) {
-        var map = config.getWorkspaceState().getBookmarks();
+        var map = config.getBookmarks();
         List<com.editora.config.Bookmark> marks = map.get(file.toString());
         if (marks == null) {
             return;
@@ -2901,7 +2901,7 @@ public class MainController {
         } else {
             map.put(file.toString(), marks);
         }
-        config.save();
+        config.saveBookmarks();
         bookmarksPanel.refresh();
     }
 

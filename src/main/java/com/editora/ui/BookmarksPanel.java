@@ -30,8 +30,8 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 /**
- * The Bookmarks tool window: a GLOBAL list of every bookmark across all files in the session (open or
- * closed), grouped by file in a tree. Enter / double-click opens the file and jumps to the line; a
+ * The Bookmarks tool window: a GLOBAL list of every bookmark across all files (open or closed),
+ * grouped by file in a tree. Enter / double-click opens the file and jumps to the line; a
  * right-click menu edits the note or deletes bookmarks.
  *
  * <p>It reads the persisted bookmark map directly (so it includes files that aren't open) and routes
@@ -55,8 +55,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private record MarkRow(Path file, Bookmark bm) implements Row { }
 
     private static final String SCOPE_HINT =
-            "Bookmarks are saved per project (and with the global session when no project is open). "
-            + "Switching projects shows that project's bookmarks.";
+            "Bookmarks are global — saved in bookmarks.json in your config directory and shared across "
+            + "all files and projects.";
 
     private final Supplier<Map<String, List<Bookmark>>> source;
     private final Actions actions;
@@ -97,7 +97,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             }
         });
 
-        Label placeholder = new Label("No bookmarks in this project");
+        Label placeholder = new Label("No bookmarks yet");
         placeholder.getStyleClass().add("tool-window-placeholder");
         placeholder.setWrapText(true);
         placeholderPane = new StackPane(placeholder);

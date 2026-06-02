@@ -30,8 +30,6 @@ public class WorkspaceState {
     private List<String> toolWindowOrder = new ArrayList<>();
     /** Persisted collapsed fold regions: absolute file path -> header line indices (0-based). */
     private Map<String, List<Integer>> foldedRegions = new LinkedHashMap<>();
-    /** Persisted bookmarks: absolute file path -> bookmarks (line + optional note + captured text). */
-    private Map<String, List<Bookmark>> bookmarks = new LinkedHashMap<>();
     /** Persisted Markdown view mode per file: absolute path -> "EDITOR"|"SPLIT"|"PREVIEW". */
     private Map<String, String> markdownViewModes = new LinkedHashMap<>();
     /** Files the user pinned read-only ("View mode"): absolute paths. */
@@ -176,14 +174,6 @@ public class WorkspaceState {
 
     public void setFoldedRegions(Map<String, List<Integer>> foldedRegions) {
         this.foldedRegions = foldedRegions == null ? new LinkedHashMap<>() : foldedRegions;
-    }
-
-    public Map<String, List<Bookmark>> getBookmarks() {
-        return bookmarks;
-    }
-
-    public void setBookmarks(Map<String, List<Bookmark>> bookmarks) {
-        this.bookmarks = bookmarks == null ? new LinkedHashMap<>() : bookmarks;
     }
 
     public Map<String, String> getMarkdownViewModes() {

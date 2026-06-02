@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bookmarks are now global**, stored in their own `bookmarks.json` (in the config directory) instead
+  of inside each session's `workspace-state.json` / per-project state. They're shared across all files
+  and projects and survive project switches. Existing bookmarks are migrated automatically on first run
+  (merged out of the old session files, which are then cleaned up). This also fixes the cross-file
+  "Jump to Bookmark" picker (`M-g b`) showing an empty list when a project was active.
+
 ### Added
 
 - **`--dev` command-line flag** — runs Editora against a separate `~/.editora-dev/` config directory so
