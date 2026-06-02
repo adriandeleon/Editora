@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (merged out of the old session files, which are then cleaned up). This also fixes the cross-file
   "Jump to Bookmark" picker (`M-g b`) showing an empty list when a project was active.
 
+### Fixed
+
+- The About dialog now shows the **live** config/settings path, so `--dev` (`~/.editora-dev/`) and
+  `--config-dir` are reflected (it previously always showed the default `~/.editora/settings.toml`).
+
 ### Added
 
 - **`--dev` command-line flag** — runs Editora against a separate `~/.editora-dev/` config directory so
