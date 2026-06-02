@@ -4,8 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
  * A bookmark on a single line of a file: a 0-based line index, an optional user note/label, and a
- * captured snapshot of the line's text (so the global Bookmarks panel can label bookmarks in files
- * that aren't open without reading them from disk). Persisted globally (per file path) in the
+ * captured snapshot of the line's text (so the Bookmarks panel can label bookmarks in files that
+ * aren't open without reading them from disk). Persisted (per file path, bucketed per project) in the
  * {@link BookmarkStore} ({@code bookmarks.json}).
  *
  * <p>A Jackson-serialized record; the {@code com.editora.config} package is already opened to

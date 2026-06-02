@@ -9,11 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Bookmarks are now global**, stored in their own `bookmarks.json` (in the config directory) instead
-  of inside each session's `workspace-state.json` / per-project state. They're shared across all files
-  and projects and survive project switches. Existing bookmarks are migrated automatically on first run
-  (merged out of the old session files, which are then cleaned up). This also fixes the cross-file
-  "Jump to Bookmark" picker (`M-g b`) showing an empty list when a project was active.
+- **Bookmarks now live in their own `bookmarks.json`** (in the config directory) instead of inside each
+  session's `workspace-state.json`, so they're all in one easy-to-find file. They remain **scoped per
+  project** — switching projects shows only that project's bookmarks (the global session has its own),
+  and deleting a project deletes its bookmarks. Existing bookmarks are migrated automatically on first
+  run (moved into the right per-project bucket; the old session files are cleaned up). This also fixes
+  the cross-file "Jump to Bookmark" picker (`M-g b`) showing an empty list when a project was active.
+- **Reorder bookmarks in the Bookmarks tool window** — move a bookmark within its file, or a whole file
+  group, with **Alt+Up/Down**, the right-click **Move Up/Down** menu, or **drag-and-drop**. The order
+  you set is exactly the order the `M-g b` jump picker uses, and it persists (and survives edits to the
+  file).
 
 ### Fixed
 

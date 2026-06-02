@@ -4,12 +4,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Stream;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -114,9 +111,38 @@ public class ConfigManager {
         return configDir.resolve(BOOKMARKS_FILE_NAME);
     }
 
-    /** The global bookmark map (absolute file path -> bookmarks). Persist changes with {@link #saveBookmarks()}. */
+    /**
+     * The bookmark map (absolute file path -> bookmarks) for the <em>active</em> project — the bucket is
+     * chosen by the current session file, so switching projects (via {@link #setWorkspaceStateFile} /
+     * {@link #useDefaultWorkspaceStateFile}) automatically swaps which bookmarks are visible. Persist
+     * changes with {@link #saveBookmarks()}.
+     */
     public Map<String, List<Bookmark>> getBookmarks() {
-        return bookmarkStore.getBookmarks();
+        return bookmarkStore.bucket(currentBookmarkKey());
+    }
+
+    /** Removes a project's entire bookmark bucket (called when the project is deleted) and persists. */
+    public void deleteBookmarksForProject(String projectKey) {
+        if (bookmarkStore.getByProject().remove(projectKey == null ? "" : projectKey) != null) {
+            saveBookmarks();
+        }
+    }
+
+    /**
+     * The project key for the active session: {@code ""} for the default {@code workspace-state.json}
+     * (no project), otherwise the project id (the {@code projects/<id>.json} base name). Bookmarks are
+     * bucketed by this key in {@code bookmarks.json}.
+     */
+    private String currentBookmarkKey() {
+        Path name = workspaceStateFile.getFileName();
+        if (name == null) {
+            return "";
+        }
+        String file = name.toString();
+        if (file.equals(WORKSPACE_FILE_NAME)) {
+            return "";
+        }
+        return file.endsWith(".json") ? file.substring(0, file.length() - ".json".length()) : file;
     }
 
     /** Reads all config files, merging stored values onto defaults. Falls back to defaults on any error. */
@@ -128,10 +154,10 @@ public class ConfigManager {
     }
 
     /**
-     * Loads the global {@code bookmarks.json}. On first run (no {@code bookmarks.json} yet) it migrates
-     * any bookmarks previously stored inside {@code workspace-state.json} and the per-project
-     * {@code projects/*.json} session files into the global store, strips them from those files, and
-     * writes {@code bookmarks.json} so the migration runs only once.
+     * Loads {@code bookmarks.json}. On first run (no {@code bookmarks.json} yet) it migrates any bookmarks
+     * previously stored inside {@code workspace-state.json} (→ the {@code ""} / no-project bucket) and
+     * each per-project {@code projects/<id>.json} session file (→ that project's bucket), strips them from
+     * those files, and writes {@code bookmarks.json} so the migration runs only once.
      */
     private void loadBookmarks() {
         if (Files.exists(getBookmarksFile())) {
@@ -139,29 +165,28 @@ public class ConfigManager {
             return;
         }
         bookmarkStore = new BookmarkStore();
-        migrateLegacyBookmarks(bookmarkStore.getBookmarks());
+        migrateLegacyBookmarks();
         saveBookmarks(); // create bookmarks.json so migration is one-time (even if empty)
     }
 
-    /** Merges bookmarks out of the legacy session files into {@code into}, stripping them from each. */
-    private void migrateLegacyBookmarks(Map<String, List<Bookmark>> into) {
-        List<Path> sessionFiles = new ArrayList<>();
-        sessionFiles.add(configDir.resolve(WORKSPACE_FILE_NAME));
+    /** Migrates bookmarks out of the legacy session files into their per-project buckets, stripping each. */
+    private void migrateLegacyBookmarks() {
+        extractAndStripBookmarks(configDir.resolve(WORKSPACE_FILE_NAME), ""); // no-project bucket
         Path projectsDir = configDir.resolve(PROJECTS_DIR_NAME);
         if (Files.isDirectory(projectsDir)) {
             try (Stream<Path> s = Files.list(projectsDir)) {
-                s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().forEach(sessionFiles::add);
+                s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().forEach(f -> {
+                    String fn = f.getFileName().toString();
+                    extractAndStripBookmarks(f, fn.substring(0, fn.length() - ".json".length()));
+                });
             } catch (IOException ignored) {
                 // best-effort migration; a missing/unreadable projects dir just means nothing to migrate
             }
         }
-        for (Path f : sessionFiles) {
-            extractAndStripBookmarks(f, into);
-        }
     }
 
-    /** Pulls the {@code bookmarks} node out of a legacy session file into {@code into} and rewrites it without that node. */
-    private void extractAndStripBookmarks(Path file, Map<String, List<Bookmark>> into) {
+    /** Pulls the {@code bookmarks} node out of a legacy session file into {@code projectKey}'s bucket and rewrites it without that node. */
+    private void extractAndStripBookmarks(Path file, String projectKey) {
         if (!Files.isReadable(file)) {
             return;
         }
@@ -177,27 +202,13 @@ public class ConfigManager {
             if (bm != null && bm.isObject() && !bm.isEmpty()) {
                 Map<String, List<Bookmark>> legacy =
                         json.convertValue(bm, new TypeReference<LinkedHashMap<String, List<Bookmark>>>() { });
-                legacy.forEach((path, marks) -> mergeBookmarkList(into, path, marks));
+                Map<String, List<Bookmark>> into = bookmarkStore.bucket(projectKey);
+                legacy.forEach(into::putIfAbsent);
             }
             obj.remove("bookmarks"); // drop the legacy node (even when empty) so it stops lingering
             json.writeValue(file.toFile(), obj);
         } catch (IOException | IllegalArgumentException e) {
             // a malformed legacy file simply contributes no bookmarks
-        }
-    }
-
-    /** Unions {@code add} into {@code into[path]}, de-duplicating by line (keeps the already-present entry). */
-    private static void mergeBookmarkList(Map<String, List<Bookmark>> into, String path, List<Bookmark> add) {
-        if (add == null || add.isEmpty()) {
-            return;
-        }
-        List<Bookmark> existing = into.computeIfAbsent(path, k -> new ArrayList<>());
-        Set<Integer> lines = new HashSet<>();
-        existing.forEach(b -> lines.add(b.line()));
-        for (Bookmark b : add) {
-            if (lines.add(b.line())) {
-                existing.add(b);
-            }
         }
     }
 

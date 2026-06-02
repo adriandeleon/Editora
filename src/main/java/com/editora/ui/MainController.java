@@ -562,12 +562,14 @@ public class MainController {
             exitZenIfActive();
             projects.delete(p.id()); // also clears the active id
             projects.save();
+            config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
             config.useDefaultWorkspaceStateFile();
             activateSession(null); // restores the global session + refreshes the combos/panel
         } else {
             // Deleting a project we're not in: just drop it from the list; the session is unaffected.
             projects.delete(p.id());
             projects.save();
+            config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
             refreshProjectPanelList();
         }
         setStatus("Deleted project " + p.name());
@@ -800,6 +802,12 @@ public class MainController {
                     }
                     @Override public void deleteAll(java.nio.file.Path file) {
                         bookmarkDeleteAll(file);
+                    }
+                    @Override public void moveBookmark(java.nio.file.Path file, int from, int to) {
+                        MainController.this.moveBookmark(file, from, to);
+                    }
+                    @Override public void moveFile(int from, int to) {
+                        moveBookmarkFile(from, to);
                     }
                 });
         bookmarksToolWindow = new ToolWindow("bookmarks", "Bookmarks", ToolWindow.Side.RIGHT,
@@ -2487,7 +2495,9 @@ public class MainController {
         if (marks.isEmpty()) {
             map.remove(file.toString());
         } else {
-            map.put(file.toString(), marks);
+            // Keep any custom order the user set in the Bookmarks tool window (the snapshot is line-order).
+            map.put(file.toString(),
+                    com.editora.config.BookmarkStore.mergePreservingOrder(map.get(file.toString()), marks));
         }
         config.saveBookmarks();
         if (bookmarksPanel != null) {
@@ -2825,7 +2835,11 @@ public class MainController {
         }
     }
 
-    /** All bookmarks across all files, flattened for the jump picker (sorted by file then line). */
+    /**
+     * The active project's bookmarks, flattened for the jump picker in the <em>stored order</em> — files
+     * in their map order, bookmarks in their list order — i.e. exactly the order the Bookmarks tool
+     * window shows (including any custom drag/move reordering), so the picker and the panel always agree.
+     */
     private List<BookmarkEntry> allBookmarkEntries() {
         List<BookmarkEntry> out = new ArrayList<>();
         config.getBookmarks().forEach((path, marks) -> {
@@ -2834,10 +2848,40 @@ public class MainController {
                 marks.forEach(bm -> out.add(new BookmarkEntry(file, bm)));
             }
         });
-        out.sort(java.util.Comparator
-                .comparing((BookmarkEntry e) -> e.file().toString(), String.CASE_INSENSITIVE_ORDER)
-                .thenComparingInt(e -> e.bm().line()));
         return out;
+    }
+
+    /** Reorders a bookmark within its file (Bookmarks tool window drag / Alt+Up/Down), then persists. */
+    private void moveBookmark(Path file, int fromIndex, int toIndex) {
+        var marks = config.getBookmarks().get(file.toString());
+        if (marks == null || !inRange(fromIndex, marks.size()) || !inRange(toIndex, marks.size())) {
+            return;
+        }
+        List<com.editora.config.Bookmark> list = new ArrayList<>(marks);
+        list.add(toIndex, list.remove(fromIndex));
+        config.getBookmarks().put(file.toString(), list);
+        config.saveBookmarks();
+        bookmarksPanel.refresh();
+    }
+
+    /** Reorders a whole file group among the file headers (Bookmarks tool window drag / Alt+Up/Down). */
+    private void moveBookmarkFile(int fromIndex, int toIndex) {
+        var map = config.getBookmarks();
+        List<String> keys = new ArrayList<>(map.keySet());
+        if (!inRange(fromIndex, keys.size()) || !inRange(toIndex, keys.size())) {
+            return;
+        }
+        keys.add(toIndex, keys.remove(fromIndex));
+        var reordered = new java.util.LinkedHashMap<String, List<com.editora.config.Bookmark>>();
+        keys.forEach(k -> reordered.put(k, map.get(k)));
+        map.clear();
+        map.putAll(reordered);
+        config.saveBookmarks();
+        bookmarksPanel.refresh();
+    }
+
+    private static boolean inRange(int i, int size) {
+        return i >= 0 && i < size;
     }
 
     private static String bookmarkLabel(com.editora.config.Bookmark bm) {

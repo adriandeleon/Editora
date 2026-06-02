@@ -62,7 +62,10 @@ Emacs-style keymap or a fuzzy command palette.
 - **Recent files** — persistent most-recently-used list.
 - **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
   Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`
-  is a cross-file jump picker. Saved globally in `bookmarks.json`, shared across all files and projects.
+  is a cross-file jump picker. Reorder bookmarks (and file groups) in the tool window with Alt+Up/Down,
+  the right-click menu, or drag-and-drop — the jump picker follows the same order. Saved in
+  `bookmarks.json`, scoped per project (switching projects shows that project's bookmarks; deleting a
+  project deletes its bookmarks).
 - **Tool windows** — IntelliJ-style dockable panels (Project, Bookmarks, File Information).
 
 ## Requirements
@@ -148,8 +151,8 @@ print and exit without opening a window. Works on macOS, Linux, and Windows.
 User preferences live in `~/.editora/settings.toml` (font, theme, keymap, tab size,
 view options, auto-save mode, and keybinding overrides). Session state — collapsed fold
 regions and tool-window layout — is stored as JSON in `workspace-state.json`, recent
-files in `recent-files.json`, and bookmarks (global, shared across files and projects) in
-`bookmarks.json`, all alongside it.
+files in `recent-files.json`, and bookmarks (scoped per project) in `bookmarks.json`, all
+alongside it.
 
 To use a different config folder, pass `--config-dir <path>` (or `--config-dir=<path>`) on the command
 line, or set the `EDITORA_CONFIG_DIR` environment variable. Precedence is **`--config-dir` >
