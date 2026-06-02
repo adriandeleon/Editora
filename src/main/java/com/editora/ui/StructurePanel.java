@@ -40,7 +40,7 @@ import javafx.scene.layout.VBox;
  * move, {@code C-f}/{@code C-b} expand/collapse (or descend/ascend), {@code Enter} jumps to the line,
  * and {@code C-g}/{@code Esc} clears the filter or returns focus to the editor.
  */
-public class StructurePanel extends VBox {
+public class StructurePanel extends VBox implements ToolWindowContent {
 
     private final TextField filterField = new TextField();
     private final TreeView<StructureNode> tree = new TreeView<>();
@@ -129,6 +129,20 @@ public class StructurePanel extends VBox {
     /** Moves keyboard focus into the panel (the search field), for window-switching. */
     public void focusContent() {
         filterField.requestFocus();
+    }
+
+    @Override
+    public void focusFirstItem() {
+        if (tree.getExpandedItemCount() > 0 && tree.getSelectionModel().isEmpty()) {
+            suppressNavigation = true; // highlight the first symbol without jumping the editor
+            try {
+                tree.getSelectionModel().select(0);
+                tree.scrollTo(0);
+            } finally {
+                suppressNavigation = false;
+            }
+        }
+        tree.requestFocus();
     }
 
     // --- Keyboard handling (Emacs defaults) ---

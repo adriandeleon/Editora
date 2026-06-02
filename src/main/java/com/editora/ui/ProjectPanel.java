@@ -47,7 +47,7 @@ import javafx.util.Duration;
  * list; clearing it restores the lazy tree. Emacs-style keyboard nav (C-n/C-p, C-f/C-b, Enter) like
  * the Structure panel; Enter/double-click opens a file; a right-click menu renames/deletes files.
  */
-public class ProjectPanel extends VBox {
+public class ProjectPanel extends VBox implements ToolWindowContent {
 
     private static final int MAX_VISIT = 20_000;
     private static final int MAX_MATCHES = 300;
@@ -267,6 +267,15 @@ public class ProjectPanel extends VBox {
                 }
             }
         }
+    }
+
+    @Override
+    public void focusFirstItem() {
+        if (tree.getExpandedItemCount() > 0 && tree.getSelectionModel().isEmpty()) {
+            tree.getSelectionModel().select(0);
+            tree.scrollTo(0);
+        }
+        tree.requestFocus();
     }
 
     private void move(int delta) {

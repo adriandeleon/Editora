@@ -233,6 +233,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Opening a tool window now moves keyboard focus into it and selects its first item (the first
+  folder/file in Project, the first bookmark, the first symbol in Structure), so you can navigate it
+  with the keyboard immediately. Restoring tool windows on startup/session-switch does not steal focus.
+  While a tool window is focused, global commands still work — `M-x`, the tool-window toggles
+  (`M-1`/`M-2`/…), the `M-g …` jumps, and `C-x …` prefixes; the panel only intercepts the editor
+  navigation chords it reuses (`C-n`/`C-p`, `C-f`/`C-b`, …).
 - The **Switcher** (`C-x C-b`) now lists only the open files — the Tool Windows column was removed. It's
   a single column in **tab order**, with a **bold header** and a **fixed width** (sized to the longest
   file path on open) so it no longer resizes while you navigate. Tool windows are still reachable via

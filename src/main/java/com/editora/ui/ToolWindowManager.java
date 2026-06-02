@@ -323,6 +323,11 @@ public class ToolWindowManager {
     }
 
     public void open(ToolWindow tw) {
+        open(tw, true); // a direct/user open focuses the panel
+    }
+
+    /** Opens {@code tw}; when {@code focus}, moves keyboard focus into it and selects its first item. */
+    public void open(ToolWindow tw, boolean focus) {
         ToolWindow.Side side = currentSide(tw);
         ToolWindow current = openBySide.get(side);
         if (current == tw) {
@@ -354,6 +359,11 @@ public class ToolWindowManager {
         }
         stripeButtons.get(tw).pseudoClassStateChanged(OPEN, true);
         persist();
+        // Move focus into the freshly shown panel and select its first item (deferred until it's laid
+        // out). Skipped on session restore so a restored-open tool window doesn't steal startup focus.
+        if (focus && tw.getContent() instanceof ToolWindowContent content) {
+            Platform.runLater(content::focusFirstItem);
+        }
     }
 
     public void close(ToolWindow tw) {
@@ -396,7 +406,7 @@ public class ToolWindowManager {
         }
         ToolWindow tw = byId.get(id);
         if (tw != null && isVisible(tw)) {
-            open(tw);
+            open(tw, false); // restore (incl. session + Zen exit) must not steal focus from the editor
         }
     }
 

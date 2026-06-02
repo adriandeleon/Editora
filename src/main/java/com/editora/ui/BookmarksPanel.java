@@ -39,7 +39,7 @@ import javafx.scene.layout.VBox;
  * persisted map for a closed file. Marks itself {@code editora.ownsKeys} for local Emacs navigation,
  * mirroring {@link StructurePanel}.
  */
-public class BookmarksPanel extends VBox {
+public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     /** Mutations the panel asks the controller to perform (it knows which files are open). */
     public interface Actions {
@@ -142,6 +142,15 @@ public class BookmarksPanel extends VBox {
     /** Moves keyboard focus into the panel (the filter field), for window-switching. */
     public void focusContent() {
         filterField.requestFocus();
+    }
+
+    @Override
+    public void focusFirstItem() {
+        if (tree.getExpandedItemCount() > 0 && tree.getSelectionModel().isEmpty()) {
+            tree.getSelectionModel().select(0);
+            tree.scrollTo(0);
+        }
+        tree.requestFocus();
     }
 
     // --- keyboard navigation (mirrors StructurePanel) ---

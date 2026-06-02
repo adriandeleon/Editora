@@ -613,7 +613,7 @@ public class MainController {
             bookmarksPanel.refresh(); // the swapped session has its own bookmarks
         }
         if (keepProjectPanelOpen && projectsEnabled() && !toolWindows.isOpen(projectToolWindow)) {
-            toolWindows.open(projectToolWindow);
+            toolWindows.open(projectToolWindow, false); // keep-open across a session swap; don't grab focus
         }
         updateWindowTitle();
     }

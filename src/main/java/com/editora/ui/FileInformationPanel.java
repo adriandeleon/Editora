@@ -33,7 +33,7 @@ import javafx.scene.layout.VBox;
  * Tool window content showing live information about the active editor: file metadata,
  * text settings, counts, caret position, and the character under the caret.
  */
-public class FileInformationPanel extends VBox {
+public class FileInformationPanel extends VBox implements ToolWindowContent {
 
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern("d MMM uuuu 'at' h:mm a", Locale.getDefault());
@@ -72,6 +72,13 @@ public class FileInformationPanel extends VBox {
         setSpacing(6);
         buildUI();
         refresh();
+    }
+
+    @Override
+    public void focusFirstItem() {
+        // No navigable list here — just move focus into the panel (it's read-only info).
+        setFocusTraversable(true);
+        requestFocus();
     }
 
     public void attach(EditorBuffer buffer) {

@@ -1,7 +1,9 @@
 package com.editora.command;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -37,5 +39,18 @@ class KeyDispatcherTest {
     @Test
     void modifierOnlyEventHasNoChord() {
         assertNull(KeyDispatcher.chord(press(KeyCode.CONTROL, false, true, false, false)));
+    }
+
+    @Test
+    void editorContextCommandsAreDeferredToFocusedToolWindows() {
+        // Only caret/text commands are swallowed by a focused key-owning window…
+        assertTrue(KeyDispatcher.isEditorContext("nav.lineDown"));
+        assertTrue(KeyDispatcher.isEditorContext("edit.killLine"));
+        // …jump/window/view commands stay global so they work while a tool window is focused.
+        assertFalse(KeyDispatcher.isEditorContext("palette.show"));
+        assertFalse(KeyDispatcher.isEditorContext("tool.project"));
+        assertFalse(KeyDispatcher.isEditorContext("tool.jump"));
+        assertFalse(KeyDispatcher.isEditorContext("view.toggleZen"));
+        assertFalse(KeyDispatcher.isEditorContext(null));
     }
 }

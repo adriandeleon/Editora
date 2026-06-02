@@ -63,11 +63,12 @@ public class KeyDispatcher {
         String commandId = keymap.commandFor(sequence);
         boolean prefix = keymap.isPrefix(sequence);
 
-        // A window that owns its keys (e.g. the Structure tool window) handles its own single-key
-        // chords locally. Multi-key chords (those continuing a pending prefix, like C-x o) stay
-        // global, so the user can always switch windows or invoke C-x / C-c commands from anywhere.
-        if (pending.isEmpty() && !prefix && ownsKeys(event.getTarget())) {
-            return; // let the focused window handle this key
+        // A window that owns its keys (e.g. a tool window) handles only the editor navigation/edit
+        // chords it repurposes for local navigation (C-n/C-p, C-f/C-b, …) — those are left to it.
+        // Everything else stays global so jump/window commands (M-x, M-1, M-g …) and prefixes (C-x …)
+        // work even while a tool window is focused.
+        if (pending.isEmpty() && !prefix && isEditorContext(commandId) && ownsKeys(event.getTarget())) {
+            return; // let the focused window handle this editor-context key
         }
 
         if (commandId != null) {
@@ -102,6 +103,15 @@ public class KeyDispatcher {
      * {@code editora.ownsKeys} node property. Such components (e.g. the Structure tool window)
      * implement their own keyboard handling and must receive raw key events, including bound chords.
      */
+    /**
+     * Editor-context commands — caret movement and text manipulation — are the only bound chords a
+     * focused key-owning window swallows (it reuses them for its own navigation). Jump/window/view
+     * commands stay global. Keyed by id prefix: {@code nav.*} (caret) and {@code edit.*} (text).
+     */
+    static boolean isEditorContext(String commandId) {
+        return commandId != null && (commandId.startsWith("nav.") || commandId.startsWith("edit."));
+    }
+
     private static boolean ownsKeys(EventTarget target) {
         Node node = target instanceof Node n ? n : null;
         while (node != null) {
