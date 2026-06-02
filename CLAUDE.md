@@ -19,6 +19,24 @@ Maven, modular (JPMS, module `com.editora`).
 
 Run Maven from the project root (`/Users/adriandeleon/src/adl/Editora-V2`).
 
+## Worktrees — one per task (important)
+
+This repo is worked on by multiple Claude Code sessions. **Each task gets its own
+`git worktree`** so sessions don't share a single working tree (which previously caused commits to
+land on the wrong branch when a parallel session ran `git checkout` in the shared checkout).
+
+- **Start a task:** `scripts/worktree.sh new <branch>` (e.g. `feat/foo`, base defaults to
+  `origin/master`). It creates an isolated checkout at `../Editora-V2-worktrees/<slug>` on a new
+  branch; `cd` into it and do the work there. `list` shows all worktrees; `rm <branch>` removes the
+  worktree + branch after merging; `prune` cleans stale metadata.
+- **Never `git checkout` a different branch in the main checkout** (`/Users/adriandeleon/src/adl/Editora-V2`)
+  while other sessions may be active — switch by creating/entering a worktree instead. Keep the main
+  checkout on `master`.
+- **Subagents:** spawn them with the Agent tool's `isolation: "worktree"` so background work can't
+  disturb the main checkout.
+- Worktrees live in the sibling `../Editora-V2-worktrees/` dir (outside the repo), so nothing needs
+  to be gitignored. They share the same `.git`, so all branches/commits are visible everywhere.
+
 ## Release pipeline
 
 `.github/workflows/release.yml` runs on a `v*` tag (or manual dispatch for a dry run): a 5-way
