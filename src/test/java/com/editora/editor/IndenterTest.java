@@ -141,4 +141,28 @@ class IndenterTest {
         assertEquals("\n\t", enterAtEnd("rescue", "ruby"));
         assertEquals("\n", enterAtEnd("end", "ruby"));      // end does not open
     }
+
+    @Test
+    void smartBackspaceOutdentsToPreviousTabStop() {
+        assertEquals(4, Indenter.smartBackspaceCount("        ", 4)); // 8 spaces → drop one level
+        assertEquals(4, Indenter.smartBackspaceCount("    ", 4));     // 4 spaces → back to col 1
+        assertEquals(2, Indenter.smartBackspaceCount("      ", 4));   // 6 spaces → align to 4
+        assertEquals(3, Indenter.smartBackspaceCount("   ", 4));      // 3 spaces → back to col 1
+        assertEquals(1, Indenter.smartBackspaceCount(" ", 4));        // 1 space  → single char
+        assertEquals(2, Indenter.smartBackspaceCount("  ", 2));       // tabSize 2
+    }
+
+    @Test
+    void smartBackspaceWithTabsDeletesOneLevel() {
+        assertEquals(1, Indenter.smartBackspaceCount("\t", 4));
+        assertEquals(1, Indenter.smartBackspaceCount("\t\t", 4));   // trailing tab → one level
+        assertEquals(1, Indenter.smartBackspaceCount("  \t", 4));   // ends with a tab
+    }
+
+    @Test
+    void smartBackspaceNoOpOutsideLeadingWhitespace() {
+        assertEquals(0, Indenter.smartBackspaceCount("", 4));            // column 0
+        assertEquals(0, Indenter.smartBackspaceCount("    foo", 4));     // caret after code
+        assertEquals(0, Indenter.smartBackspaceCount("foo", 4));         // no leading whitespace
+    }
 }

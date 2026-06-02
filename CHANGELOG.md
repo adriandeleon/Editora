@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Smart backspace** — pressing Backspace while the caret is in a line's leading indentation now
+  removes a whole indent level (back to the previous tab stop) in one press, instead of one space at a
+  time. Outside leading whitespace, Backspace behaves normally.
+
 ### Changed
 
 - **Bookmarks now live in their own `bookmarks.json`** (in the config directory) instead of inside each
