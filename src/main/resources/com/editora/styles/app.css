@@ -433,7 +433,7 @@
     -fx-background-insets: 0;
 }
 
-/* Switcher popup — two columns of recent files / tool windows. */
+/* Switcher popup — a single column of the open files (most-recently-used first). */
 .switcher {
     -fx-background-color: -color-bg-default;
     -fx-border-color: -color-border-default;
@@ -453,7 +453,7 @@
 .switcher-header {
     -fx-font-size: 14px;
     -fx-font-weight: bold;
-    -fx-text-fill: -color-fg-muted;
+    -fx-text-fill: -color-fg-default;
     -fx-padding: 2 4 2 4;
 }
 

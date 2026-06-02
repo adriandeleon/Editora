@@ -219,10 +219,11 @@ public class MainController {
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows,
                 this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath);
-        this.switcher = new Switcher(this::openTabsForSwitcher,
+        this.switcher = new Switcher(
+                () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
+                () -> tabPane.getSelectionModel().getSelectedItem(),
                 tab -> tabPane.getSelectionModel().select(tab),
-                this::closeTabFromSwitcher,
-                toolWindows);
+                this::closeTabFromSwitcher);
         setupMruTracking();
         registerCommands();
         setupToolbar();
@@ -892,7 +893,7 @@ public class MainController {
             Label hint = new Label("Switcher: " + chord);
             hint.getStyleClass().add("toolbar-hint");
             hint.setTooltip(new Tooltip(
-                    "Switcher (" + chord + "): quickly jump between open files and tool windows."));
+                    "Switcher (" + chord + "): quickly jump between open files."));
             items.add(hint);
         }
 

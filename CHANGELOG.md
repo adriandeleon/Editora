@@ -233,6 +233,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The **Switcher** (`C-x C-b`) now lists only the open files — the Tool Windows column was removed. It's
+  a single column in **tab order**, with a **bold header** and a **fixed width** (sized to the longest
+  file path on open) so it no longer resizes while you navigate. Tool windows are still reachable via
+  their stripe icons and the "Tool Windows: Jump" picker (`M-g t`).
 - Silenced the benign tm4e/Oniguruma grammar warnings that flooded the console
   (`'…]' without escape`, `No grammar source for scope …`) by raising the `org.eclipse.tm4e`
   log level to `SEVERE` at startup. They were harmless bundled-grammar quirks; real errors still
