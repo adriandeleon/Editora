@@ -161,5 +161,10 @@
         "prefix": "import",
         "body": ["import ${1:PackageName}"],
         "description": "Import statement"
+    },
+    "field": {
+        "prefix": "field",
+        "body": ["${1|private,protected,public|} ${2:Type} ${3:name};"],
+        "description": "Field with an access-modifier choice"
     }
 }
