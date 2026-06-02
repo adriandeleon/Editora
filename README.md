@@ -30,6 +30,11 @@ Emacs-style keymap or a fuzzy command palette.
 - **Bundled fonts** — JetBrains Mono (default), Cascadia Code, Fira Code, IBM Plex Mono,
   and Source Code Pro ship with the app; no system install required.
 - **Editor view options** — 80-column ruler and current-line highlight.
+- **Read-only / View mode** — toggle a buffer read-only (`C-x C-q` or the palette) to view without
+  editing; typing and edit commands are blocked while everything else keeps working. Files that aren't
+  writable on disk open read-only automatically, and the per-file state is remembered across restarts.
+  A Word-style "View Mode" banner docks above the editor with an **Enable Editing** button (when the
+  file is writable). While read-only, Space pages down and Backspace pages up (pager-style).
 - **Text zoom** — scale the editor text on top of the font size (status-bar `− 100% +`, `C-=`/`C--`/`C-0`,
   Ctrl+mouse-wheel, or the palette); persists across restarts, separate from the font-size setting.
 - **Themes** — switchable AtlantaFX themes (Primer, Nord, Cupertino, Dracula), each

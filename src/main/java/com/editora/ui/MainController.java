@@ -1106,6 +1106,7 @@ public class MainController {
             }
             restoreFolds(buffer);
             restoreBookmarks(buffer);
+            restoreReadOnly(buffer);
             restoreMarkdownMode(buffer);
             CodeArea area = buffer.getArea();
             int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
@@ -1149,6 +1150,7 @@ public class MainController {
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> persistBookmarks(buffer));
         buffer.setGutterBookmarkClick(this::onGutterBookmarkClick);
+        buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         if (buffer.isMarkdown()) {
             MarkdownViewToggle toggle = new MarkdownViewToggle(buffer);
             buffer.setOnViewModeChanged(() -> {
@@ -1207,6 +1209,7 @@ public class MainController {
         tab.setGraphic(header);
         toggleClass(tab, "dirty", dirty);
         toggleClass(tab, "pinned", isPinned);
+        toggleClass(tab, "read-only", !buffer.isEditable());
         Path p = buffer.getPath();
         tab.setTooltip(new Tooltip(p != null ? p.toAbsolutePath().toString() : "untitled"));
     }
@@ -1367,6 +1370,7 @@ public class MainController {
             // Apply folds before the node is in the scene, so each fold skips per-fold layout.
             restoreFolds(buffer);
             restoreBookmarks(buffer);
+            restoreReadOnly(buffer); // before addBuffer so the tab meta reflects read-only
             addBuffer(buffer);
             restoreMarkdownMode(buffer); // after addBuffer so the toggle is wired
             // Land on the first line: replaceText leaves the caret at the end, and fold restoration
@@ -1534,7 +1538,7 @@ public class MainController {
     private void autoSaveAllDirty() {
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
-            if (buffer != null && buffer.isDirty() && buffer.getPath() != null && !buffer.isReadOnly()) {
+            if (buffer != null && buffer.isDirty() && buffer.getPath() != null && buffer.isEditable()) {
                 autoSaveBuffer(buffer);
             }
         }
@@ -2013,6 +2017,9 @@ public class MainController {
 
     @FXML
     private void onCut() {
+        if (!activeEditable()) {
+            return;
+        }
         CodeArea area = activeArea();
         if (area == null) {
             return;
@@ -2037,6 +2044,9 @@ public class MainController {
 
     @FXML
     private void onPaste() {
+        if (!activeEditable()) {
+            return;
+        }
         CodeArea area = activeArea();
         if (area == null) {
             return;
@@ -2386,6 +2396,9 @@ public class MainController {
 
     /** Converts the active buffer's line endings between LF and CRLF. */
     private void chooseLineEndings() {
+        if (!activeEditable()) {
+            return;
+        }
         EditorBuffer buffer = activeBuffer();
         if (buffer == null) {
             return;
@@ -2461,6 +2474,93 @@ public class MainController {
         if (reanchored) {
             persistBookmarks(buffer);
         }
+    }
+
+    /**
+     * Toggles the active buffer's read-only ("View") mode, persists it, and refreshes the indicators.
+     * Huge files are already read-only by necessity (truncated load) and can't be made editable.
+     */
+    private void toggleReadOnly() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (buffer.isReadOnly()) { // huge-file mode
+            setStatus("Large file is read-only and can't be made editable");
+            return;
+        }
+        buffer.setViewMode(!buffer.isViewMode());
+        afterReadOnlyChange(buffer);
+        setStatus(buffer.isViewMode() ? "Read-only (View mode) — C-x C-q to edit" : "Editable");
+    }
+
+    /** Turns off read-only ("Enable Editing" banner button); persists + refreshes the indicators. */
+    private void enableEditing(EditorBuffer buffer) {
+        if (buffer == null || !buffer.isViewMode()) {
+            return;
+        }
+        buffer.setViewMode(false);
+        afterReadOnlyChange(buffer);
+        setStatus("Editing enabled");
+    }
+
+    /** Persists the read-only state and refreshes the tab + status-bar indicators for {@code buffer}. */
+    private void afterReadOnlyChange(EditorBuffer buffer) {
+        persistReadOnly(buffer);
+        Tab tab = tabForBuffer(buffer);
+        if (tab != null) {
+            updateTabMeta(tab, buffer);
+        }
+        statusBar.refresh();
+    }
+
+    /** The tab hosting {@code buffer}, or null if not open. */
+    private Tab tabForBuffer(EditorBuffer buffer) {
+        for (Tab t : tabPane.getTabs()) {
+            if (t.getUserData() == buffer) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    /** Persists whether a file is pinned read-only (View mode), keyed by absolute path. */
+    private void persistReadOnly(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null) {
+            return;
+        }
+        List<String> list = config.getWorkspaceState().getReadOnlyFiles();
+        String key = file.toString();
+        if (buffer.isViewMode()) {
+            if (!list.contains(key)) {
+                list.add(key);
+            }
+        } else {
+            list.remove(key);
+        }
+        config.save();
+    }
+
+    /**
+     * Applies read-only ("View") mode to a freshly opened file: on when the user pinned it read-only
+     * in a previous session, or when the file isn't writable on disk. Huge files are already read-only
+     * and left untouched.
+     */
+    private void restoreReadOnly(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null || buffer.isReadOnly()) {
+            return;
+        }
+        boolean persisted = config.getWorkspaceState().getReadOnlyFiles().contains(file.toString());
+        if (shouldOpenReadOnly(persisted, Files.isWritable(file))) {
+            buffer.setViewMode(true);
+        }
+    }
+
+    /** Whether a file should open in View mode: pinned read-only, or not writable on disk. Pure. */
+    public static boolean shouldOpenReadOnly(boolean persisted, boolean writable) {
+        return persisted || !writable;
     }
 
     /** Persists the buffer's Markdown view mode, keyed by file path (EDITOR is the unset default). */
@@ -2825,10 +2925,28 @@ public class MainController {
     }
 
     private void withArea(java.util.function.Consumer<CodeArea> action) {
+        if (!activeEditable()) {
+            return;
+        }
         CodeArea area = activeArea();
         if (area != null) {
             action.accept(area);
         }
+    }
+
+    /**
+     * Guards mutating commands: returns {@code false} (and echoes a hint) when the active buffer is
+     * read-only (huge-file or user View mode), so edits are refused instead of bypassing
+     * {@code setEditable(false)} via the app's own commands. Returns {@code true} when there is no
+     * buffer or it is editable.
+     */
+    private boolean activeEditable() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null && !buffer.isEditable()) {
+            setStatus("Buffer is read-only — C-x C-q to allow edits");
+            return false;
+        }
+        return true;
     }
 
     /** Emacs-style vertical caret move (C-n/C-p) preserving the goal column; see {@link EditorBuffer#moveLine}. */
@@ -3008,6 +3126,8 @@ public class MainController {
         registry.register(Command.of("view.toggleBreadcrumb", "View: Toggle File Breadcrumb",
                 this::toggleBreadcrumb));
         registry.register(Command.of("view.toggleZen", "View: Toggle Zen Mode", this::toggleZen));
+        registry.register(Command.of("view.toggleReadOnly", "View: Toggle Read-Only (View Mode)",
+                this::toggleReadOnly));
         registry.register(Command.of("file.toggleAutoSave", "File: Toggle Auto Save", this::toggleAutoSave));
         registry.register(Command.of("recent.jump", "Recent Files: Jump…",
                 () -> recentPalette.show(stage)));

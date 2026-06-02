@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Read-only / View mode** — toggle a buffer read-only with `C-x C-q` (or the palette: "View: Toggle
+  Read-Only"), so it can't be edited by accident. Typing and the editor's own edit commands are blocked
+  (with a status-bar hint), while highlighting, minimap, folding, scrolling, and copy keep working. A
+  file opens read-only automatically when it isn't writable on disk, a status-bar toggle flips it
+  either way ("Read-Only" ⇄ "Editable") and the tab title is muted, and the per-file state is
+  remembered across restarts. A Word-style "View Mode" banner docks above the editor with the
+  navigation hint and an **Enable Editing** button (shown only when the file is writable). While
+  read-only, **Space pages down and Backspace pages up** (pager-style, like `less`/man).
 - **More command-line options** — `--version`/`-V` and `--help`/`-h` (print and exit, no window);
   positional `FILE`, `FILE:LINE`, and `FILE:LINE:COLUMN` to open a file (and jump); `--project[=]<dir>`
   to open a folder as a project (only when Projects are enabled, else ignored); and `--zen` to start in

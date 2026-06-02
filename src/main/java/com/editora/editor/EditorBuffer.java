@@ -19,6 +19,7 @@ import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.fxmisc.undo.UndoManagerFactory;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import javafx.application.Platform;
@@ -34,9 +35,12 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.input.Clipboard;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
@@ -62,6 +66,14 @@ public class EditorBuffer {
     private final AnchorPane root = new AnchorPane();
     /** Tab content: shows either {@link #root} alone or a SplitPane of [root, secondary view]. */
     private final StackPane viewHost = new StackPane(root);
+    /** Outermost tab content: a "View Mode" banner (top, read-only only) above {@link #viewHost}. */
+    private final javafx.scene.layout.BorderPane outer = new javafx.scene.layout.BorderPane(viewHost);
+    /** The MS-Word-style read-only banner (lazy); its "Enable Editing" runs {@link #onEnableEditing}. */
+    private HBox viewModeBar;
+    private Button enableEditingButton;
+    private Label viewModeNote;
+    /** Invoked by the banner's "Enable Editing" button; the controller persists + refreshes indicators. */
+    private Runnable onEnableEditing = () -> setViewMode(false);
     /** A second editable view sharing this document (created lazily on first split). */
     private CodeArea area2;
     private VirtualizedScrollPane<CodeArea> scrollPane2;
@@ -106,6 +118,8 @@ public class EditorBuffer {
     private boolean largeFile;
     /** Huge-file mode: implies large-file mode plus read-only (no undo, not editable). */
     private boolean hugeFile;
+    /** User "View mode": non-editable but keeps all normal editor features (separate from huge-file). */
+    private boolean viewMode;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     private CodeArea focusedArea = area;
     /**
@@ -172,6 +186,7 @@ public class EditorBuffer {
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
+        addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -295,9 +310,9 @@ public class EditorBuffer {
         return focusedArea;
     }
 
-    /** The node to place in the scene: the primary view, or a SplitPane when split. */
+    /** The node to place in the scene: the read-only banner (when shown) above the editor view. */
     public Region getNode() {
-        return viewHost;
+        return outer;
     }
 
     public Split getSplit() {
@@ -543,6 +558,7 @@ public class EditorBuffer {
         area2.setWrapText(false);
         area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
         area2.setEditable(area.isEditable());
+        addViewModePaging(area2); // same pager keys in the secondary split view
         area2.setLineHighlighterFill(lineHighlightColor);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
@@ -914,14 +930,122 @@ public class EditorBuffer {
      */
     public void setReadOnly(boolean readOnly) {
         this.hugeFile = readOnly;
-        area.setEditable(!readOnly);
-        if (area2 != null) {
-            area2.setEditable(!readOnly);
-        }
+        applyEditable();
         if (readOnly) {
             setLargeFile(true); // also disables highlighting + minimap (and undo via applyUndoMode)
         } else {
             applyUndoMode();
+        }
+    }
+
+    /**
+     * User "View mode": makes the buffer non-editable without disabling any normal editor feature
+     * (highlighting, minimap, folding, scrolling, and undo all stay on) — unlike {@link #setReadOnly},
+     * which is the huge-file mechanism. Edits are blocked at the keyboard via {@code setEditable(false)};
+     * the controller additionally guards its own edit commands (see {@code MainController.activeEditable}).
+     */
+    public void setViewMode(boolean viewMode) {
+        this.viewMode = viewMode;
+        applyEditable();
+    }
+
+    public boolean isViewMode() {
+        return viewMode;
+    }
+
+    /** True when the buffer accepts edits — neither huge-file mode nor user View mode is active. */
+    public boolean isEditable() {
+        return !hugeFile && !viewMode;
+    }
+
+    /** Applies editability to both views from the current flags, and tags the surface for CSS. */
+    private void applyEditable() {
+        boolean editable = isEditable();
+        area.setEditable(editable);
+        if (area2 != null) {
+            area2.setEditable(editable);
+        }
+        toggleStyleClass(area, "read-only", !editable);
+        if (area2 != null) {
+            toggleStyleClass(area2, "read-only", !editable);
+        }
+        updateViewModeBar();
+    }
+
+    /** Lets the controller wire the banner's "Enable Editing" action (persist + refresh indicators). */
+    public void setOnEnableEditing(Runnable onEnableEditing) {
+        this.onEnableEditing = onEnableEditing == null ? () -> setViewMode(false) : onEnableEditing;
+    }
+
+    /**
+     * Shows/hides the MS-Word-style "View Mode" banner above the editor: visible only in user View mode
+     * (not huge-file mode, which can't be made editable). The "Enable Editing" button appears only when
+     * the file is writable; otherwise a "read-only on disk" note replaces it.
+     */
+    private void updateViewModeBar() {
+        boolean show = viewMode && !hugeFile;
+        if (!show) {
+            outer.setTop(null);
+            return;
+        }
+        if (viewModeBar == null) {
+            viewModeBar = buildViewModeBar();
+        }
+        boolean canEdit = path == null || Files.isWritable(path);
+        enableEditingButton.setVisible(canEdit);
+        enableEditingButton.setManaged(canEdit);
+        viewModeNote.setVisible(!canEdit);
+        viewModeNote.setManaged(!canEdit);
+        outer.setTop(viewModeBar);
+    }
+
+    private HBox buildViewModeBar() {
+        Label title = new Label("View Mode");
+        title.getStyleClass().add("view-mode-title");
+        Label desc = new Label(
+                "This file is open for viewing. Space pages down, Backspace pages up.");
+        desc.getStyleClass().add("view-mode-desc");
+        javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+        HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+        enableEditingButton = new Button("Enable Editing");
+        enableEditingButton.getStyleClass().add("accent"); // AtlantaFX accent button — themed, not a hard yellow
+        enableEditingButton.setOnAction(e -> onEnableEditing.run());
+        viewModeNote = new Label("Read-only on disk (no write permission)");
+        viewModeNote.getStyleClass().add("view-mode-note");
+        HBox bar = new HBox(10, title, desc, spacer, viewModeNote, enableEditingButton);
+        bar.getStyleClass().add("view-mode-bar");
+        bar.setAlignment(Pos.CENTER_LEFT);
+        return bar;
+    }
+
+    /**
+     * Pager-style navigation while in read-only View mode: an unmodified Space pages down and Backspace
+     * pages up (like {@code less}/man). Installed as a key <em>filter</em> so it runs before RichTextFX's
+     * own (no-op, since non-editable) handling, and only acts while {@link #viewMode} is on — normal
+     * editing keeps Space/Backspace untouched. Modifier combos (Ctrl/Alt/Meta) are left for the keymap.
+     */
+    private void addViewModePaging(CodeArea a) {
+        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (!viewMode || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                return;
+            }
+            if (e.getCode() == KeyCode.SPACE) {
+                a.nextPage(SelectionPolicy.CLEAR);
+                e.consume();
+            } else if (e.getCode() == KeyCode.BACK_SPACE) {
+                a.prevPage(SelectionPolicy.CLEAR);
+                e.consume();
+            }
+        });
+    }
+
+    private static void toggleStyleClass(Node node, String styleClass, boolean on) {
+        if (on) {
+            if (!node.getStyleClass().contains(styleClass)) {
+                node.getStyleClass().add(styleClass);
+            }
+        } else {
+            node.getStyleClass().remove(styleClass);
         }
     }
 

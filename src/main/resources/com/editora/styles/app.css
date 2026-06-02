@@ -523,6 +523,12 @@
     -fx-font-weight: bold;
 }
 
+/* Read-only (View mode) tab: muted/italic label, echoing the status-bar "Read-Only" indicator. */
+.tab.read-only .tab-title {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-style: italic;
+}
+
 /* Tab drag-to-reorder: dim the tab being dragged, and show an insertion line on the
    target tab's leading/trailing edge for the side it would drop on. */
 .tab-header.tab-dragging {
@@ -656,6 +662,34 @@
 .status-bar .status-segment-clickable:hover {
     -fx-background-color: -color-bg-inset;
     -fx-cursor: hand;
+}
+
+/* Read-only (View mode) toggle: muted "Editable" by default, amber/bold "Read-Only" when active. */
+.status-bar .status-readonly.active {
+    -fx-text-fill: #bf8700;
+    -fx-font-weight: bold;
+}
+
+/* MS-Word-style "View Mode" banner docked above a read-only editor. */
+.view-mode-bar {
+    -fx-background-color: #fff8e1;
+    -fx-border-color: transparent transparent #e0c060 transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 6 12 6 12;
+}
+
+.view-mode-bar .view-mode-title {
+    -fx-text-fill: #8a6d00;
+    -fx-font-weight: bold;
+}
+
+.view-mode-bar .view-mode-desc {
+    -fx-text-fill: #6b5800;
+}
+
+.view-mode-bar .view-mode-note {
+    -fx-text-fill: #6b5800;
+    -fx-font-style: italic;
 }
 
 /* Text-zoom control in the status bar: a tight − % + group. */

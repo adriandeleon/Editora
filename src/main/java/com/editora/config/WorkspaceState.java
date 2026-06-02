@@ -34,6 +34,8 @@ public class WorkspaceState {
     private Map<String, List<Bookmark>> bookmarks = new LinkedHashMap<>();
     /** Persisted Markdown view mode per file: absolute path -> "EDITOR"|"SPLIT"|"PREVIEW". */
     private Map<String, String> markdownViewModes = new LinkedHashMap<>();
+    /** Files the user pinned read-only ("View mode"): absolute paths. */
+    private List<String> readOnlyFiles = new ArrayList<>();
 
     // --- Zen (distraction-free) mode. Entering Zen snapshots the user's view/chrome prefs into
     //     preZenView (key -> value) and the open tool windows into preZenToolWindows, then turns
@@ -190,6 +192,14 @@ public class WorkspaceState {
 
     public void setMarkdownViewModes(Map<String, String> markdownViewModes) {
         this.markdownViewModes = markdownViewModes == null ? new LinkedHashMap<>() : markdownViewModes;
+    }
+
+    public List<String> getReadOnlyFiles() {
+        return readOnlyFiles;
+    }
+
+    public void setReadOnlyFiles(List<String> readOnlyFiles) {
+        this.readOnlyFiles = readOnlyFiles == null ? new ArrayList<>() : readOnlyFiles;
     }
 
     public boolean isZenMode() {

@@ -3,6 +3,7 @@
   "C-x C-s": "file.save",
   "C-x C-w": "file.saveAs",
   "C-x C-c": "app.quit",
+  "C-x C-q": "view.toggleReadOnly",
   "C-x C-x": "edit.exchangePointAndMark",
   "C-space": "edit.setMark",
   "C-x b": "buffer.jump",

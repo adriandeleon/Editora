@@ -39,6 +39,8 @@ public final class StatusBar extends HBox {
     private final Label endings = segment("buffer.convertLineEndings", "Convert line endings");
     private final Label size = new Label();
     private final Label encoding = new Label("UTF-8");
+    /** Read-only ("View mode") indicator; shown only when the active buffer is non-editable. */
+    private final Label readOnly = segment("view.toggleReadOnly", "Read-only — click to allow edits (C-x C-q)");
     /** Text-zoom percentage (clickable to reset to 100%). */
     private final Label zoomPercent = new Label("100%");
 
@@ -58,9 +60,13 @@ public final class StatusBar extends HBox {
         size.setTooltip(new Tooltip("File size"));
         encoding.getStyleClass().add("status-segment");
 
+        readOnly.setText("Read-Only");
+        readOnly.getStyleClass().add("status-readonly");
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        getChildren().addAll(echo, spacer, zoomGroup(), position, language, indent, endings, size, encoding);
+        getChildren().addAll(echo, spacer, readOnly, zoomGroup(), position, language, indent, endings,
+                size, encoding);
         refresh();
     }
 
@@ -122,6 +128,24 @@ public final class StatusBar extends HBox {
         for (Label seg : new Label[]{position, language, endings, size}) {
             seg.setVisible(hasBuffer);
             seg.setManaged(hasBuffer);
+        }
+        // The read-only segment is a toggle: always shown (when there's a buffer), reflecting and
+        // flipping the state. "Read-Only" (amber/active) ⇄ "Editable" (muted); click runs the command.
+        readOnly.setVisible(hasBuffer);
+        readOnly.setManaged(hasBuffer);
+        if (hasBuffer) {
+            boolean ro = !buffer.isEditable();
+            readOnly.setText(ro ? "Read-Only" : "Editable");
+            if (ro) {
+                if (!readOnly.getStyleClass().contains("active")) {
+                    readOnly.getStyleClass().add("active");
+                }
+            } else {
+                readOnly.getStyleClass().remove("active");
+            }
+            readOnly.getTooltip().setText(ro
+                    ? "Read-only — click to allow edits (C-x C-q)"
+                    : "Editable — click to make read-only (C-x C-q)");
         }
 
         indent.setText("Tab Size: " + settings.get().getTabSize());
