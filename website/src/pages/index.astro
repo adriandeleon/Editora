@@ -149,7 +149,7 @@ const platforms = [
     background:
       radial-gradient(
         1200px 600px at 50% -20%,
-        rgba(88, 166, 255, 0.14),
+        color-mix(in srgb, var(--accent) 16%, transparent),
         transparent 60%
       ),
       var(--bg);
@@ -204,7 +204,7 @@ const platforms = [
 
   .btn-primary {
     background: var(--accent);
-    color: #06101f;
+    color: var(--on-accent);
   }
 
   .btn-ghost {

@@ -42,6 +42,16 @@ const isActive = (href: string) => {
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <link rel="icon" type="image/png" href={url("favicon.png")} />
+    <script is:inline>
+      // Apply the saved theme before paint to avoid a flash of the default.
+      (function () {
+        try {
+          var t = localStorage.getItem("editora-theme");
+          if (t && t !== "primer-dark")
+            document.documentElement.dataset.theme = t;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <header class="site-nav">
@@ -59,9 +69,38 @@ const isActive = (href: string) => {
               </a>
             ))
           }
+          <label class="theme-picker" title="Editor theme">
+            <span class="sr-only">Theme</span>
+            <select id="theme-select" aria-label="Editor theme">
+              <option value="primer-dark">Primer Dark</option>
+              <option value="primer-light">Primer Light</option>
+              <option value="dracula">Dracula</option>
+              <option value="nord">Nord</option>
+              <option value="cupertino-dark">Cupertino Dark</option>
+              <option value="islands-dark">Islands Dark</option>
+            </select>
+          </label>
         </nav>
       </div>
     </header>
+
+    <script is:inline>
+      // Sync the picker with the active theme and persist changes.
+      (function () {
+        var sel = document.getElementById("theme-select");
+        if (!sel) return;
+        var current = document.documentElement.dataset.theme || "primer-dark";
+        sel.value = current;
+        sel.addEventListener("change", function () {
+          var t = sel.value;
+          if (t === "primer-dark") delete document.documentElement.dataset.theme;
+          else document.documentElement.dataset.theme = t;
+          try {
+            localStorage.setItem("editora-theme", t);
+          } catch (e) {}
+        });
+      })();
+    </script>
 
     <slot />
 
@@ -89,6 +128,7 @@ const isActive = (href: string) => {
     --faint: #6e7681; /* line-number text */
     --accent: #58a6ff; /* link / fold-chevron:hover */
     --accent-soft: rgba(31, 111, 235, 0.12); /* selection #1f6feb */
+    --on-accent: #06101f; /* readable text on an accent fill */
     --bookmark: #f2a65c; /* bookmark gutter marker */
 
     /* Syntax token colors, straight from primer-dark.css. */
@@ -107,6 +147,110 @@ const isActive = (href: string) => {
       Arial, sans-serif;
   }
 
+  /* Theme overrides — each mirrors an Editora editor theme under
+     src/main/resources/com/editora/styles/editor-themes/. :root above is the
+     Primer Dark default, so only the non-default themes need a block. */
+  [data-theme="primer-light"] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --bg-soft: #f6f8fa;
+    --border: #d0d7de;
+    --border-soft: #eaeef2;
+    --text: #24292f;
+    --muted: #6e7781;
+    --faint: #8c959f;
+    --accent: #0969da;
+    --accent-soft: rgba(9, 105, 218, 0.1);
+    --on-accent: #ffffff;
+    --bookmark: #d29922;
+    --tok-keyword: #cf222e;
+    --tok-string: #0a3069;
+    --tok-comment: #6e7781;
+    --tok-number: #0550ae;
+    --tok-function: #8250df;
+    --tok-type: #953800;
+  }
+
+  [data-theme="dracula"] {
+    --bg: #282a36;
+    --bg-soft: #21222c;
+    --border: #44475a;
+    --border-soft: #191a21;
+    --text: #f8f8f2;
+    --muted: #6272a4;
+    --faint: #6272a4;
+    --accent: #bd93f9;
+    --accent-soft: rgba(189, 147, 249, 0.15);
+    --on-accent: #21222c;
+    --bookmark: #f2a65c;
+    --tok-keyword: #ff79c6;
+    --tok-string: #f1fa8c;
+    --tok-comment: #6272a4;
+    --tok-number: #bd93f9;
+    --tok-function: #50fa7b;
+    --tok-type: #8be9fd;
+  }
+
+  [data-theme="nord"] {
+    --bg: #2e3440;
+    --bg-soft: #353c4a;
+    --border: #434c5e;
+    --border-soft: #3b4252;
+    --text: #d8dee9;
+    --muted: #7b88a1;
+    --faint: #6c7689;
+    --accent: #88c0d0;
+    --accent-soft: rgba(136, 192, 208, 0.15);
+    --on-accent: #2e3440;
+    --bookmark: #f2a65c;
+    --tok-keyword: #81a1c1;
+    --tok-string: #a3be8c;
+    --tok-comment: #7b88a1;
+    --tok-number: #b48ead;
+    --tok-function: #88c0d0;
+    --tok-type: #8fbcbb;
+  }
+
+  [data-theme="cupertino-dark"] {
+    --bg: #1e1e1e;
+    --bg-soft: #262626;
+    --border: #3a3a3c;
+    --border-soft: #2c2c2e;
+    --text: #dfdfe0;
+    --muted: #6c7986;
+    --faint: #6f6f73;
+    --accent: #0a84ff;
+    --accent-soft: rgba(10, 132, 255, 0.15);
+    --on-accent: #ffffff;
+    --bookmark: #f2a65c;
+    --tok-keyword: #fc5fa3;
+    --tok-string: #fc6a5d;
+    --tok-comment: #6c7986;
+    --tok-number: #d0bf69;
+    --tok-function: #67b7a4;
+    --tok-type: #5dd8ff;
+  }
+
+  [data-theme="islands-dark"] {
+    --bg: #191a1c;
+    --bg-soft: #1f2024;
+    --border: #323438;
+    --border-soft: #2b2d30;
+    --text: #bcbec4;
+    --muted: #7a7e85;
+    --faint: #4b5059;
+    --accent: #56a8f5;
+    --accent-soft: rgba(86, 168, 245, 0.15);
+    --on-accent: #ffffff;
+    --bookmark: #f2a65c;
+    --tok-keyword: #cf8e6d;
+    --tok-string: #6aab73;
+    --tok-comment: #7a7e85;
+    --tok-number: #2aacb8;
+    --tok-function: #56a8f5;
+    --tok-type: #d5b778;
+  }
+
   * {
     box-sizing: border-box;
   }
@@ -122,6 +266,9 @@ const isActive = (href: string) => {
     font-family: var(--sans);
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    transition:
+      background 0.2s ease,
+      color 0.2s ease;
   }
 
   a {
@@ -219,6 +366,7 @@ const isActive = (href: string) => {
 
   .nav-links {
     display: flex;
+    align-items: center;
     gap: 1.25rem;
     font-size: 0.95rem;
   }
@@ -231,6 +379,45 @@ const isActive = (href: string) => {
   .nav-links a.active {
     color: var(--text);
     text-decoration: none;
+  }
+
+  .theme-picker select {
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: var(--sans);
+    font-size: 0.85rem;
+    color: var(--text);
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.3rem 1.9rem 0.3rem 0.8rem;
+    cursor: pointer;
+    /* chevron drawn with the theme's muted color */
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position:
+      right 0.95rem center,
+      right 0.65rem center;
+    background-size:
+      5px 5px,
+      5px 5px;
+    background-repeat: no-repeat;
+  }
+
+  .theme-picker select:hover {
+    border-color: var(--accent);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .footer {
