@@ -26,6 +26,9 @@ public class Settings {
     private boolean showLineNumbers = true;
     private boolean showMinimap = true;
     private boolean showWhitespace = false;
+    private boolean spellCheck = true;
+    /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
+    private String spellLanguage = "en_US";
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
@@ -141,6 +144,22 @@ public class Settings {
 
     public void setShowWhitespace(boolean showWhitespace) {
         this.showWhitespace = showWhitespace;
+    }
+
+    public boolean isSpellCheck() {
+        return spellCheck;
+    }
+
+    public void setSpellCheck(boolean spellCheck) {
+        this.spellCheck = spellCheck;
+    }
+
+    public String getSpellLanguage() {
+        return spellLanguage == null || spellLanguage.isBlank() ? "en_US" : spellLanguage;
+    }
+
+    public void setSpellLanguage(String spellLanguage) {
+        this.spellLanguage = spellLanguage == null || spellLanguage.isBlank() ? "en_US" : spellLanguage;
     }
 
     public boolean isShowToolbar() {

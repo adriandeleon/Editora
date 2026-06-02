@@ -32,6 +32,8 @@ public class WorkspaceState {
     private Map<String, List<Integer>> foldedRegions = new LinkedHashMap<>();
     /** Persisted Markdown view mode per file: absolute path -> "EDITOR"|"SPLIT"|"PREVIEW". */
     private Map<String, String> markdownViewModes = new LinkedHashMap<>();
+    /** Per-file spell-check dictionary override: absolute path -> language id (e.g. "en_GB"). */
+    private Map<String, String> spellLanguages = new LinkedHashMap<>();
     /** Files the user pinned read-only ("View mode"): absolute paths. */
     private List<String> readOnlyFiles = new ArrayList<>();
 
@@ -182,6 +184,14 @@ public class WorkspaceState {
 
     public void setMarkdownViewModes(Map<String, String> markdownViewModes) {
         this.markdownViewModes = markdownViewModes == null ? new LinkedHashMap<>() : markdownViewModes;
+    }
+
+    public Map<String, String> getSpellLanguages() {
+        return spellLanguages;
+    }
+
+    public void setSpellLanguages(Map<String, String> spellLanguages) {
+        this.spellLanguages = spellLanguages == null ? new LinkedHashMap<>() : spellLanguages;
     }
 
     public List<String> getReadOnlyFiles() {

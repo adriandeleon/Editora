@@ -28,7 +28,7 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] Column select support
 - [ ] Multiple cursors support
 - [ ] Advanced Undo/Redo support
-- [ ] Spell check support
+- [x] Spell check support — Lucene Hunspell, red squiggles, suggestions, user dictionary, en_US/en_GB
 - [ ] Private comments/notes
 
 ## Search

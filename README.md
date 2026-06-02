@@ -39,6 +39,11 @@ Emacs-style keymap or a fuzzy command palette.
   bracket matching the one next to the caret is highlighted.
 - **Comment / uncomment** (`M-;`) — toggles a line comment for a single line and a block/region comment
   for a multi-line selection, using the language's comment syntax (`//`, `#`, `<!-- -->`, `/* */`, `--`, …).
+- **Spell checking** — red wavy underlines on misspelled words, with right-click suggestions,
+  Add-to-Dictionary, and Ignore. Source files only check comments and string literals; plaintext and
+  Markdown are checked in full. Toggle via "View: Toggle Spell Check"; choose a dictionary per file
+  ("Spell Check: Set Language…", ships English en_US/en_GB, Spanish, and French). Pure-Java (Apache
+  Lucene Hunspell).
 - **Read-only / View mode** — toggle a buffer read-only (`C-x C-q` or the palette) to view without
   editing; typing and edit commands are blocked while everything else keeps working. Files that aren't
   writable on disk open read-only automatically, and the per-file state is remembered across restarts.

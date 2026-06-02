@@ -147,6 +147,7 @@ public class EditorBuffer {
     private final Line columnRuler = new Line();
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
+    private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
     private final FoldManager folds = new FoldManager(area);
     private final BookmarkManager bookmarks = new BookmarkManager(area);
     /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
@@ -161,6 +162,12 @@ public class EditorBuffer {
     private String language = LanguageRegistry.plaintext();
     /** TextMate grammar for the current file, or {@code null} when no grammar is bundled. */
     private IGrammar grammar;
+    // --- Spell checking (Lucene Hunspell via SpellCheckOverlay); off until enabled by the controller. ---
+    private SpellChecker spellChecker;
+    private boolean spellCheckOn;
+    private String spellLanguage = "en_US";
+    private java.util.Set<String> spellUserWords = new java.util.HashSet<>();
+    private java.util.function.Consumer<String> onAddToDictionary = w -> { };
     /** Off-thread tokenizer so highlighting a large document never blocks the UI (see applyHighlighting). */
     private final ExecutorService highlightExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "editor-highlighter");
@@ -258,7 +265,7 @@ public class EditorBuffer {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, whitespace, minimap, columnRuler);
+        root.getChildren().addAll(scrollPane, whitespace, spellOverlay, minimap, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -269,45 +276,37 @@ public class EditorBuffer {
         AnchorPane.setBottomAnchor(whitespace, 0d);
         AnchorPane.setLeftAnchor(whitespace, 0d);
         AnchorPane.setRightAnchor(whitespace, Minimap.WIDTH);
+        // The spell-check overlay (red squiggles) shares the same text rectangle, mouse-transparent.
+        AnchorPane.setTopAnchor(spellOverlay, 0d);
+        AnchorPane.setBottomAnchor(spellOverlay, 0d);
+        AnchorPane.setLeftAnchor(spellOverlay, 0d);
+        AnchorPane.setRightAnchor(spellOverlay, Minimap.WIDTH);
+        spellChecker = new SpellChecker(spellLanguage, spellUserWords);
+        spellOverlay.setChecker(spellChecker);
+        spellOverlay.setProseMode(isProse());
         AnchorPane.setTopAnchor(minimap, 0d);
         AnchorPane.setBottomAnchor(minimap, 0d);
         AnchorPane.setRightAnchor(minimap, 0d);
     }
 
+    /** A misspelled word under the cursor: its text and absolute [start, end) offsets. */
+    private record SpellHit(String word, int start, int end) {
+    }
+
+    private final ContextMenu contextMenu = new ContextMenu();
+
     private void installContextMenu() {
-        MenuItem cut = new MenuItem("Cut");
-        cut.setOnAction(e -> area.cut());
-        MenuItem copy = new MenuItem("Copy");
-        copy.setOnAction(e -> area.copy());
-        MenuItem paste = new MenuItem("Paste");
-        paste.setOnAction(e -> area.paste());
-        MenuItem undo = new MenuItem("Undo");
-        undo.setOnAction(e -> area.undo());
-        MenuItem redo = new MenuItem("Redo");
-        redo.setOnAction(e -> area.redo());
-        MenuItem selectAll = new MenuItem("Select All");
-        selectAll.setOnAction(e -> area.selectAll());
-
-        ContextMenu menu = new ContextMenu(
-                cut, copy, paste,
-                new SeparatorMenuItem(),
-                undo, redo,
-                new SeparatorMenuItem(),
-                selectAll);
-        menu.getStyleClass().add("editor-context-menu");
-
-        menu.setOnShowing(e -> {
-            boolean hasSelection = area.getSelection().getLength() > 0;
-            boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
-            cut.setDisable(!hasSelection);
-            copy.setDisable(!hasSelection);
-            paste.setDisable(!hasClipboardText);
-            undo.setDisable(!area.isUndoAvailable());
-            redo.setDisable(!area.isRedoAvailable());
-        });
-
+        contextMenu.getStyleClass().add("editor-context-menu");
         area.setOnContextMenuRequested(e -> {
-            menu.show(area, e.getScreenX(), e.getScreenY());
+            List<MenuItem> items = new java.util.ArrayList<>();
+            SpellHit hit = spellHitAt(e.getX(), e.getY());
+            if (hit != null) {
+                items.addAll(spellMenuItems(hit));
+                items.add(new SeparatorMenuItem());
+            }
+            items.addAll(standardMenuItems());
+            contextMenu.getItems().setAll(items);
+            contextMenu.show(area, e.getScreenX(), e.getScreenY());
             e.consume();
         });
 
@@ -315,10 +314,117 @@ public class EditorBuffer {
         // mouse press before the popup's auto-hide fires, so close it explicitly. The event is
         // not consumed, so the click still positions the caret as usual.
         area.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
-            if (menu.isShowing() && e.getButton() == MouseButton.PRIMARY) {
-                menu.hide();
+            if (contextMenu.isShowing() && e.getButton() == MouseButton.PRIMARY) {
+                contextMenu.hide();
             }
         });
+    }
+
+    /** The Cut/Copy/Paste/Undo/Redo/Select All items, with state for the current selection/clipboard. */
+    private List<MenuItem> standardMenuItems() {
+        boolean hasSelection = area.getSelection().getLength() > 0;
+        boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
+        MenuItem cut = new MenuItem("Cut");
+        cut.setOnAction(e -> area.cut());
+        cut.setDisable(!hasSelection);
+        MenuItem copy = new MenuItem("Copy");
+        copy.setOnAction(e -> area.copy());
+        copy.setDisable(!hasSelection);
+        MenuItem paste = new MenuItem("Paste");
+        paste.setOnAction(e -> area.paste());
+        paste.setDisable(!hasClipboardText);
+        MenuItem undo = new MenuItem("Undo");
+        undo.setOnAction(e -> area.undo());
+        undo.setDisable(!area.isUndoAvailable());
+        MenuItem redo = new MenuItem("Redo");
+        redo.setOnAction(e -> area.redo());
+        redo.setDisable(!area.isRedoAvailable());
+        MenuItem selectAll = new MenuItem("Select All");
+        selectAll.setOnAction(e -> area.selectAll());
+        return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo,
+                new SeparatorMenuItem(), selectAll);
+    }
+
+    /** Suggestion items (replace the word) plus "Add to Dictionary"/"Ignore" for a misspelled word. */
+    private List<MenuItem> spellMenuItems(SpellHit hit) {
+        List<MenuItem> items = new java.util.ArrayList<>();
+        List<String> suggestions = spellChecker.suggest(hit.word());
+        if (suggestions.isEmpty()) {
+            MenuItem none = new MenuItem("No suggestions");
+            none.setDisable(true);
+            items.add(none);
+        } else {
+            for (String s : suggestions) {
+                MenuItem mi = new MenuItem(s);
+                mi.getStyleClass().add("spell-suggestion");
+                mi.setOnAction(e -> {
+                    if (isEditable()) {
+                        area.replaceText(hit.start(), hit.end(), s);
+                    }
+                });
+                items.add(mi);
+            }
+        }
+        items.add(new SeparatorMenuItem());
+        MenuItem add = new MenuItem("Add to Dictionary");
+        add.setOnAction(e -> addToDictionary(hit.word()));
+        MenuItem ignore = new MenuItem("Ignore");
+        ignore.setOnAction(e -> {
+            spellChecker.ignore(hit.word());
+            spellOverlay.refresh();
+        });
+        items.add(add);
+        items.add(ignore);
+        return items;
+    }
+
+    /** The misspelled word at editor coordinates {@code (x, y)}, or {@code null}. */
+    private SpellHit spellHitAt(double x, double y) {
+        if (!spellCheckOn || spellChecker == null || !spellChecker.ready() || largeFile) {
+            return null;
+        }
+        int offset;
+        try {
+            offset = area.hit(x, y).getInsertionIndex();
+        } catch (RuntimeException ex) {
+            return null;
+        }
+        if (offset < 0 || offset > area.getLength()) {
+            return null;
+        }
+        var pos = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
+        int paragraph = pos.getMajor();
+        int col = pos.getMinor();
+        String line = area.getParagraph(paragraph).getText();
+        for (int[] span : SpellChecker.wordSpans(line)) {
+            if (col >= span[0] && col <= span[1]) {
+                int absStart = area.getAbsolutePosition(paragraph, span[0]);
+                if (!spellEligible(absStart)) {
+                    return null;
+                }
+                String word = line.substring(span[0], span[1]);
+                return spellChecker.isMisspelled(word)
+                        ? new SpellHit(word, absStart, area.getAbsolutePosition(paragraph, span[1]))
+                        : null;
+            }
+        }
+        return null;
+    }
+
+    /** Mirror of {@link SpellCheckOverlay}'s eligibility: which words are checked in this buffer. */
+    private boolean spellEligible(int abs) {
+        java.util.Collection<String> style = area.getStyleOfChar(abs);
+        return isProse() ? !style.contains("code") : style.contains("comment") || style.contains("string");
+    }
+
+    private void addToDictionary(String word) {
+        if (word == null || word.isBlank()) {
+            return;
+        }
+        String lower = word.toLowerCase(java.util.Locale.ROOT);
+        spellUserWords.add(lower);
+        onAddToDictionary.accept(lower);
+        spellOverlay.refresh();
     }
 
     /** The primary view. Tool windows, overlays, folding and highlighting all bind to this one. */
@@ -908,6 +1014,7 @@ public class EditorBuffer {
         this.language = name;
         this.grammar = g;
         folds.setLanguage(language);
+        spellOverlay.setProseMode(isProse()); // prose checks all words; code only comments/strings
         invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
         applyHighlighting();
     }
@@ -941,6 +1048,62 @@ public class EditorBuffer {
         return tabSize;
     }
 
+    // --- Spell checking ---------------------------------------------------------------------------
+
+    /** Whether this buffer is prose (plaintext/Markdown → check all words) vs code (comments/strings only). */
+    public boolean isProse() {
+        return LanguageRegistry.plaintext().equals(language) || "markdown".equals(language);
+    }
+
+    /** Enables/disables spell checking for this buffer (driven from Settings by the controller). */
+    public void setSpellCheckEnabled(boolean on) {
+        this.spellCheckOn = on;
+        if (on) {
+            SpellDictionaries.ensureBuilt(spellLanguage, spellOverlay::refresh);
+        }
+        applySpellActive();
+    }
+
+    public boolean isSpellCheckEnabled() {
+        return spellCheckOn;
+    }
+
+    /** Sets the dictionary language id (e.g. {@code en_US}); rebuilds the checker and redraws when ready. */
+    public void setSpellLanguage(String langId) {
+        if (langId == null || langId.equals(spellLanguage)) {
+            return;
+        }
+        this.spellLanguage = langId;
+        if (spellChecker != null) {
+            spellChecker.setLanguage(langId, spellOverlay::refresh);
+        }
+        spellOverlay.refresh();
+    }
+
+    public String getSpellLanguage() {
+        return spellLanguage;
+    }
+
+    /** Supplies the shared (persisted) user-dictionary word set; words added here are never flagged. */
+    public void setSpellUserWords(java.util.Set<String> words) {
+        if (words == null || words == spellUserWords) {
+            return;
+        }
+        this.spellUserWords = words;
+        spellChecker = new SpellChecker(spellLanguage, spellUserWords);
+        spellOverlay.setChecker(spellChecker);
+    }
+
+    /** Called when the user picks "Add to Dictionary"; the controller persists the word. */
+    public void setOnAddToDictionary(java.util.function.Consumer<String> callback) {
+        this.onAddToDictionary = callback == null ? w -> { } : callback;
+    }
+
+    /** The overlay is active only when enabled and not in large-file mode (highlighting is off there). */
+    private void applySpellActive() {
+        spellOverlay.setActive(spellCheckOn && !largeFile);
+    }
+
     /**
      * Enables large-file mode: skips syntax highlighting and hides the minimap (regardless of the
      * user's view settings) so very large documents stay responsive. Should be set right after the
@@ -953,6 +1116,7 @@ public class EditorBuffer {
         this.largeFile = large;
         highlightGen++; // discard any in-flight highlight result
         setMinimapVisible(minimapVisible); // re-apply with the large-file guard
+        applySpellActive(); // spell checking is off in large-file mode (like highlighting)
         // Large files don't need (and shouldn't pay the memory for) undo history.
         applyUndoMode();
         if (!large) {

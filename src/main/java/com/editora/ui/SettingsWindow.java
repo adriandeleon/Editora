@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.SpellDictionaries;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -56,6 +57,8 @@ public class SettingsWindow {
     private CheckBox lineNumbersCheck;
     private CheckBox minimapCheck;
     private CheckBox whitespaceCheck;
+    private CheckBox spellCheckBox;
+    private ComboBox<String> spellLanguageCombo;
     private CheckBox toolbarCheck;
     private CheckBox statusBarCheck;
     private CheckBox tabBarCheck;
@@ -184,6 +187,35 @@ public class SettingsWindow {
             config.getSettings().setShowWhitespace(now);
             apply();
         });
+        spellCheckBox = new CheckBox("Enable spell check");
+        spellCheckBox.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setSpellCheck(now);
+            if (spellLanguageCombo != null) {
+                spellLanguageCombo.setDisable(!now);
+            }
+            apply();
+        });
+        spellLanguageCombo = new ComboBox<>();
+        spellLanguageCombo.getItems().setAll(SpellDictionaries.available());
+        spellLanguageCombo.setPrefWidth(220);
+        spellLanguageCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String id) {
+                return id == null ? "" : spellLanguageName(id);
+            }
+
+            @Override
+            public String fromString(String s) {
+                return s;
+            }
+        });
+        spellLanguageCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setSpellLanguage(now);
+            apply();
+        });
         toolbarCheck = new CheckBox("Show toolbar");
         toolbarCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setShowToolbar(now);
@@ -298,8 +330,10 @@ public class SettingsWindow {
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
         form.addRow(15, new Label("Auto save:"), autoSaveBox);
+        form.add(spellCheckBox, 1, 16);
+        form.addRow(17, new Label("Spell check language:"), spellLanguageCombo);
 
-        int row = 16;
+        int row = 18;
         List<Runnable> moveRefreshers = new ArrayList<>();
         Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
         if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
@@ -419,6 +453,9 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
             minimapCheck.setSelected(settings.isShowMinimap());
             whitespaceCheck.setSelected(settings.isShowWhitespace());
+            spellCheckBox.setSelected(settings.isSpellCheck());
+            spellLanguageCombo.setValue(settings.getSpellLanguage());
+            spellLanguageCombo.setDisable(!settings.isSpellCheck());
             toolbarCheck.setSelected(settings.isShowToolbar());
             statusBarCheck.setSelected(settings.isShowStatusBar());
             tabBarCheck.setSelected(settings.isShowTabBar());
@@ -475,6 +512,9 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(s.isShowLineNumbers());
             minimapCheck.setSelected(s.isShowMinimap());
             whitespaceCheck.setSelected(s.isShowWhitespace());
+            spellCheckBox.setSelected(s.isSpellCheck());
+            spellLanguageCombo.setValue(s.getSpellLanguage());
+            spellLanguageCombo.setDisable(!s.isSpellCheck());
             toolbarCheck.setSelected(s.isShowToolbar());
             statusBarCheck.setSelected(s.isShowStatusBar());
             tabBarCheck.setSelected(s.isShowTabBar());
@@ -585,6 +625,17 @@ public class SettingsWindow {
 
         alert.getDialogPane().setContent(new VBox(10, info, settingsRow));
         alert.showAndWait();
+    }
+
+    /** A friendly display name for a spell-check dictionary id (falls back to the id itself). */
+    private static String spellLanguageName(String id) {
+        return switch (id) {
+            case "en_US" -> "English (US)";
+            case "en_GB" -> "English (UK)";
+            case "es" -> "Spanish";
+            case "fr" -> "French";
+            default -> id;
+        };
     }
 
     /** The given settings-file path with the home dir shown as {@code ~} (derived, never hardcoded). */

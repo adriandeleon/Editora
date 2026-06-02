@@ -120,3 +120,30 @@ JavaFX
     UI toolkit.
     License: GPL-2.0-with-classpath-exception
     https://openjfx.io
+
+================================================================================
+Spell checking
+================================================================================
+
+Apache Lucene (lucene-core, lucene-analysis-common)
+    Pure-Java spell-check engine (the org.apache.lucene.analysis.hunspell
+    package) and its in-memory store.
+    License: Apache License 2.0
+    https://lucene.apache.org
+
+Bundled Hunspell dictionaries (under src/main/resources/com/editora/dictionaries/)
+    Packaged by the "dictionaries" project (https://github.com/wooorm/dictionaries);
+    each dictionary folder includes its upstream LICENSE with full terms/attribution.
+
+    en_US, en_GB — English, derived from SCOWL (Spell Checker Oriented Word Lists).
+        License: permissive (SCOWL / wordlist.sourceforge.net).
+        http://wordlist.sourceforge.net
+
+    es — Spanish (RLA / LibreOffice). The dictionary is offered under
+        "GPL-3.0 OR LGPL-3.0 OR MPL-1.1"; Editora redistributes it under the
+        Mozilla Public License, Version 1.1.
+        https://www.mozilla.org/MPL/1.1/
+
+    fr — French (Dicollecte / Grammalecte). Redistributed under the
+        Mozilla Public License, Version 2.0.
+        https://www.mozilla.org/MPL/2.0/

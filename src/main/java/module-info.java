@@ -9,6 +9,11 @@ module com.editora {
     requires com.fasterxml.jackson.databind;
     requires com.fasterxml.jackson.dataformat.toml;
     requires org.eclipse.tm4e.core;
+    // Apache Lucene's pure-Java Hunspell spell checker (analysis.common) + its store/FST (core).
+    requires org.apache.lucene.analysis.common;
+    requires org.apache.lucene.core;
+    // Lets Lucene read JVM internals for its optimizations (silences a startup warning); jlink bundles it.
+    requires jdk.management;
     requires org.commonmark;
     requires org.commonmark.ext.gfm.tables;
     requires org.commonmark.ext.gfm.strikethrough;

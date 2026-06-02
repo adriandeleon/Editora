@@ -31,6 +31,7 @@ public class ConfigManager {
     static final String SETTINGS_FILE_NAME = "settings.toml";
     static final String WORKSPACE_FILE_NAME = "workspace-state.json";
     static final String BOOKMARKS_FILE_NAME = "bookmarks.json";
+    static final String DICTIONARY_FILE_NAME = "dictionary.txt";
     static final String PROJECTS_DIR_NAME = "projects";
 
     /** TOML for preferences. */
@@ -45,6 +46,8 @@ public class ConfigManager {
     private WorkspaceState workspaceState = new WorkspaceState();
     /** Global bookmarks (all files/projects), stored in {@code bookmarks.json} — see {@link BookmarkStore}. */
     private BookmarkStore bookmarkStore = new BookmarkStore();
+    /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
+    private final java.util.Set<String> userDictionary = new java.util.LinkedHashSet<>();
     /** The session-state file currently in use — the default, or a project's state file. */
     private Path workspaceStateFile;
 
@@ -150,7 +153,53 @@ public class ConfigManager {
         settings = read(getSettingsFile(), toml, new Settings());
         workspaceState = read(getWorkspaceStateFile(), json, new WorkspaceState());
         loadBookmarks();
+        loadUserDictionary();
         return settings;
+    }
+
+    /** The user's added spell-check words (lower-cased). Mutated in place; persisted by {@link #addUserWord}. */
+    public java.util.Set<String> getUserDictionary() {
+        return userDictionary;
+    }
+
+    public Path getUserDictionaryFile() {
+        return configDir.resolve(DICTIONARY_FILE_NAME);
+    }
+
+    /** Adds a word to the user dictionary (lower-cased) and appends it to {@code dictionary.txt}. */
+    public void addUserWord(String word) {
+        if (word == null || word.isBlank()) {
+            return;
+        }
+        String w = word.strip().toLowerCase(java.util.Locale.ROOT);
+        if (!userDictionary.add(w)) {
+            return; // already present
+        }
+        try {
+            Files.createDirectories(configDir);
+            Files.writeString(getUserDictionaryFile(), w + System.lineSeparator(),
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            // non-fatal: the word still applies for this session, just isn't persisted
+        }
+    }
+
+    private void loadUserDictionary() {
+        userDictionary.clear();
+        Path file = getUserDictionaryFile();
+        if (!Files.isReadable(file)) {
+            return;
+        }
+        try {
+            for (String line : Files.readAllLines(file)) {
+                String w = line.strip().toLowerCase(java.util.Locale.ROOT);
+                if (!w.isEmpty()) {
+                    userDictionary.add(w);
+                }
+            }
+        } catch (IOException ignored) {
+            // missing/unreadable dictionary just means no user words
+        }
     }
 
     /**

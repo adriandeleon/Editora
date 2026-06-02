@@ -1,0 +1,148 @@
+package com.editora.editor;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+import org.apache.lucene.analysis.hunspell.Hunspell;
+
+/**
+ * Per-buffer spell checker: wraps the (shared, cached) {@link Hunspell} engine for a language plus the
+ * user's added words and a per-session "ignored" set, and supplies the pure word-splitting used by the
+ * overlay. Lookups are cheap; {@link #suggest} is only called on demand (right-click).
+ *
+ * <p>{@link #wordSpans} and {@link #skip} are pure and unit-tested; spelling itself defers to Hunspell.
+ */
+public final class SpellChecker {
+
+    private final Set<String> userWords;          // shared, persisted (ConfigManager)
+    private final Set<String> ignored = new HashSet<>(); // per-session "Ignore" choices
+    private volatile String langId;
+
+    public SpellChecker(String langId, Set<String> userWords) {
+        this.langId = langId;
+        this.userWords = userWords == null ? new HashSet<>() : userWords;
+        SpellDictionaries.ensureBuilt(langId, null);
+    }
+
+    public void setLanguage(String langId, Runnable onReady) {
+        this.langId = langId;
+        SpellDictionaries.ensureBuilt(langId, onReady);
+    }
+
+    public String getLanguage() {
+        return langId;
+    }
+
+    /** Whether the active dictionary is loaded; until then nothing is flagged. */
+    public boolean ready() {
+        return SpellDictionaries.ifReady(langId).isPresent();
+    }
+
+    /** Adds a word to the per-session ignore set (not persisted). */
+    public void ignore(String word) {
+        if (word != null && !word.isBlank()) {
+            ignored.add(word.toLowerCase(Locale.ROOT));
+        }
+    }
+
+    /** Whether {@code word} is misspelled. Returns {@code false} for skipped words, user/ignored words,
+     *  and when the dictionary isn't ready (so we never flag while loading). */
+    public boolean isMisspelled(String word) {
+        if (skip(word)) {
+            return false;
+        }
+        String lower = word.toLowerCase(Locale.ROOT);
+        if (userWords.contains(lower) || ignored.contains(lower)) {
+            return false;
+        }
+        Hunspell h = SpellDictionaries.ifReady(langId).orElse(null);
+        if (h == null) {
+            return false;
+        }
+        return !h.spell(word);
+    }
+
+    /** Up to a handful of suggestions for a misspelled word (empty if the dictionary isn't ready). */
+    public List<String> suggest(String word) {
+        Hunspell h = SpellDictionaries.ifReady(langId).orElse(null);
+        if (h == null || word == null || word.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> all = h.suggest(word);
+            return all.size() > 8 ? all.subList(0, 8) : all;
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Words that should not be spell-checked: too short, containing digits, ALL-CAPS acronyms, and
+     * camel/Pascal-case identifiers (an uppercase letter after the first char) — these are almost always
+     * code or abbreviations rather than prose.
+     */
+    public static boolean skip(String word) {
+        if (word == null || word.length() < 2) {
+            return true;
+        }
+        boolean allUpper = true;
+        for (int i = 0; i < word.length(); i++) {
+            char c = word.charAt(i);
+            if (Character.isDigit(c)) {
+                return true;
+            }
+            if (i > 0 && Character.isUpperCase(c)) {
+                return true; // camelCase / PascalCase identifier
+            }
+            if (!Character.isUpperCase(c) && Character.isLetter(c)) {
+                allUpper = false;
+            }
+        }
+        return allUpper; // ALL-CAPS acronym (e.g. HTTP, NASA)
+    }
+
+    /**
+     * Splits a line into checkable word spans ({@code [start, end)} offsets) — maximal runs of letters
+     * with intra-word apostrophes (so {@code don't} stays one word), trimming leading/trailing
+     * apostrophes. Pure; no toolkit. Eligibility (comment/string scope, etc.) is decided by the caller.
+     */
+    public static List<int[]> wordSpans(String line) {
+        List<int[]> spans = new ArrayList<>();
+        if (line == null || line.isEmpty()) {
+            return spans;
+        }
+        int n = line.length();
+        int i = 0;
+        while (i < n) {
+            char c = line.charAt(i);
+            if (!Character.isLetter(c)) {
+                i++;
+                continue;
+            }
+            int start = i;
+            int end = i;
+            while (end < n) {
+                char ch = line.charAt(end);
+                if (Character.isLetter(ch)) {
+                    end++;
+                } else if (ch == '\'' && end + 1 < n && Character.isLetter(line.charAt(end + 1))) {
+                    end++; // apostrophe between letters stays in the word
+                } else {
+                    break;
+                }
+            }
+            // Trim a trailing apostrophe that slipped in (shouldn't, given the look-ahead, but be safe).
+            while (end > start && line.charAt(end - 1) == '\'') {
+                end--;
+            }
+            if (end > start) {
+                spans.add(new int[] {start, end});
+            }
+            i = Math.max(end, start + 1);
+        }
+        return spans;
+    }
+}

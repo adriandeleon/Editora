@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Spell checking** — misspelled words get a red wavy underline; right-click for suggestions (click one
+  to replace), **Add to Dictionary**, or **Ignore**. In source files only comments and string literals
+  are checked (identifiers aren't flagged); plaintext and Markdown are checked in full. Toggle it with
+  "View: Toggle Spell Check" (or the **Settings window**, where you can also choose the default
+  dictionary language); pick the dictionary per file with "Spell Check: Set Language…" (ships
+  **English (en_US, en_GB)**, **Spanish (es)**, and **French (fr)**; your added words live in
+  `dictionary.txt`). Powered by Apache Lucene's pure-Java Hunspell engine.
 - **Detect external file changes** — when the file in the active tab is modified by another program,
   Editora notices (on window focus or when you switch to that tab) and offers to reload it, or keep your
   version (also when you have unsaved edits). The prompt only appears for the tab you're looking at.

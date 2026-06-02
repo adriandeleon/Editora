@@ -16,6 +16,7 @@ import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LanguageRegistry;
+import com.editora.editor.SpellDictionaries;
 
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
@@ -1234,6 +1235,10 @@ public class MainController {
 
     /** Adds a tab for {@code buffer}, appended to the strip; selects and focuses it when {@code select}. */
     private Tab addBuffer(EditorBuffer buffer, boolean select) {
+        // Spell checking: share the user dictionary + persist "Add to Dictionary" (before applyViewSettings,
+        // which sets the per-file language and enables checking).
+        buffer.setSpellUserWords(config.getUserDictionary());
+        buffer.setOnAddToDictionary(config::addUserWord);
         applyViewSettings(buffer);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> persistBookmarks(buffer));
@@ -2295,6 +2300,40 @@ public class MainController {
         setStatus("Hidden characters: " + (s.isShowWhitespace() ? "on" : "off"));
     }
 
+    private void toggleSpellCheck() {
+        Settings s = config.getSettings();
+        s.setSpellCheck(!s.isSpellCheck());
+        config.save();
+        applyViewSettingsToAllBuffers(s);
+        setStatus("Spell check: " + (s.isSpellCheck() ? "on" : "off"));
+    }
+
+    /** Opens a picker to set the spell-check dictionary language for the active file (persisted per file). */
+    private void chooseSpellLanguage() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            setStatus("No file open");
+            return;
+        }
+        QuickOpen<String> picker = new QuickOpen<>(
+                "Set Spell Check Language", "Type to filter languages…",
+                SpellDictionaries::available,
+                id -> id,
+                id -> "",
+                id -> setSpellLanguage(buffer, id));
+        picker.show(stage);
+    }
+
+    private void setSpellLanguage(EditorBuffer buffer, String langId) {
+        buffer.setSpellLanguage(langId);
+        Path p = buffer.getPath();
+        if (p != null) {
+            config.getWorkspaceState().getSpellLanguages().put(p.toString(), langId);
+            config.save();
+        }
+        setStatus("Spell check language: " + langId);
+    }
+
     private void toggleZen() {
         setZenMode(!config.getWorkspaceState().isZenMode());
     }
@@ -3092,6 +3131,19 @@ public class MainController {
                 EditorThemes.minimapViewportFor(s.getEditorTheme()));
         buffer.setFoldPreviewColors(EditorThemes.editorBackgroundFor(s.getEditorTheme()),
                 EditorThemes.editorForegroundFor(s.getEditorTheme()));
+        buffer.setSpellLanguage(spellLanguageFor(buffer)); // per-file override, else the global default
+        buffer.setSpellCheckEnabled(s.isSpellCheck());
+    }
+
+    /** The spell-check language for a buffer: its per-file override (if any/valid), else the global default. */
+    private String spellLanguageFor(EditorBuffer buffer) {
+        String def = config.getSettings().getSpellLanguage();
+        Path p = buffer.getPath();
+        if (p == null) {
+            return def;
+        }
+        String override = config.getWorkspaceState().getSpellLanguages().get(p.toString());
+        return override != null && SpellDictionaries.isAvailable(override) ? override : def;
     }
 
     private void applyViewSettingsToAllBuffers(Settings settings) {
@@ -3407,6 +3459,10 @@ public class MainController {
                 this::toggleMinimap));
         registry.register(Command.of("view.toggleWhitespace", "View: Toggle Hidden Characters",
                 this::toggleWhitespace));
+        registry.register(Command.of("view.toggleSpellCheck", "View: Toggle Spell Check",
+                this::toggleSpellCheck));
+        registry.register(Command.of("spell.setLanguage", "Spell Check: Set Language…",
+                this::chooseSpellLanguage));
         registry.register(Command.of("view.toggleToolbar", "View: Toggle Toolbar", this::toggleToolbar));
         registry.register(Command.of("view.toggleStatusBar", "View: Toggle Status Bar",
                 this::toggleStatusBar));
