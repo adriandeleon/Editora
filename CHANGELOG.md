@@ -16,9 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run (moved into the right per-project bucket; the old session files are cleaned up). This also fixes
   the cross-file "Jump to Bookmark" picker (`M-g b`) showing an empty list when a project was active.
 - **Reorder bookmarks in the Bookmarks tool window** — move a bookmark within its file, or a whole file
-  group, with **Alt+Up/Down**, the right-click **Move Up/Down** menu, or **drag-and-drop**. The order
-  you set is exactly the order the `M-g b` jump picker uses, and it persists (and survives edits to the
-  file).
+  group, with **Alt+Up/Down**, the right-click **Move Up/Down** menu, or **drag-and-drop** (with the
+  same drag visuals as the editor tab strip: a translucent ghost, the dragged row dimmed, and an accent
+  insertion line on the drop target). The order you set is exactly the order the `M-g b` jump picker
+  uses, and it persists (and survives edits to the file).
 
 ### Fixed
 

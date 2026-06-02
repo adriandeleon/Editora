@@ -543,6 +543,20 @@
     -fx-border-width: 0 2 0 0;
 }
 
+/* Bookmark tool-window drag-to-reorder — same visuals as the tab strip, but vertical: dim the
+   dragged row and show an accent insertion line on the target row's top/bottom edge. */
+.bookmarks-tree .tree-cell.bookmark-dragging {
+    -fx-opacity: 0.4;
+}
+.bookmarks-tree .tree-cell.bookmark-drop-above {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 2 0 0 0;
+}
+.bookmarks-tree .tree-cell.bookmark-drop-below {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 0 0 2 0;
+}
+
 /* Compact toolbar: tighter padding so the overall bar is ~25-30% shorter. */
 .tool-bar {
     -fx-padding: 2 6 2 6;

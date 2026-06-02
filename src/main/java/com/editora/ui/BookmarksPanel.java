@@ -20,10 +20,13 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.Dragboard;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.TransferMode;
+import javafx.scene.paint.Color;
 import javafx.geometry.Pos;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -325,18 +328,32 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         return src.getValue() instanceof FileRow && target.getValue() instanceof FileRow;
     }
 
-    private void handleDrop(TreeItem<Row> src, TreeItem<Row> target) {
+    private void handleDrop(TreeItem<Row> src, TreeItem<Row> target, boolean after) {
         if (!canDrop(src, target) || !reorderEnabled()) {
             return;
         }
         if (src.getValue() instanceof MarkRow sm) {
-            TreeItem<Row> parent = src.getParent();
-            moveMark(sm.file(), sm.bm().line(),
-                    parent.getChildren().indexOf(src), parent.getChildren().indexOf(target),
-                    parent.getChildren().size());
+            var siblings = src.getParent().getChildren();
+            int from = siblings.indexOf(src);
+            moveMark(sm.file(), sm.bm().line(), from, insertIndex(from, siblings.indexOf(target), after),
+                    siblings.size());
         } else if (src.getValue() instanceof FileRow sf) {
             var roots = tree.getRoot().getChildren();
-            moveFileGroup(sf.file(), roots.indexOf(src), roots.indexOf(target), roots.size());
+            int from = roots.indexOf(src);
+            moveFileGroup(sf.file(), from, insertIndex(from, roots.indexOf(target), after), roots.size());
+        }
+    }
+
+    /** Index to insert at after removing {@code from}, so the row lands before/after {@code target}. */
+    static int insertIndex(int from, int target, boolean after) {
+        int t = target > from ? target - 1 : target; // removing 'from' shifts later indices down by one
+        return t + (after ? 1 : 0);
+    }
+
+    private static void toggleStyle(javafx.scene.Node node, String styleClass, boolean on) {
+        node.getStyleClass().remove(styleClass);
+        if (on) {
+            node.getStyleClass().add(styleClass);
         }
     }
 
@@ -386,32 +403,50 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     private final class BookmarkCell extends TreeCell<Row> {
         BookmarkCell() {
-            // Drag-and-drop reordering: drag a bookmark onto a sibling, or a file header onto another.
+            // Drag-and-drop reordering (mirrors the tab strip's visuals): a translucent ghost follows
+            // the cursor, the dragged row dims, and an accent insertion line shows on the target row's
+            // top/bottom edge for the side it would drop on.
             setOnDragDetected(e -> {
                 if (!reorderEnabled() || getItem() == null) {
                     return;
                 }
                 draggedItem = getTreeItem();
+                Dragboard db = startDragAndDrop(TransferMode.MOVE);
                 ClipboardContent content = new ClipboardContent();
                 content.putString("bookmark-row"); // a drag needs a payload, even if unused
-                startDragAndDrop(TransferMode.MOVE).setContent(content);
+                db.setContent(content);
+                SnapshotParameters params = new SnapshotParameters();
+                params.setFill(Color.TRANSPARENT);
+                db.setDragView(snapshot(params, null), e.getX(), e.getY());
+                tree.refresh(); // repaint so the dragged row picks up the dimmed style
                 e.consume();
             });
             setOnDragOver(e -> {
                 if (canDrop(draggedItem, getTreeItem())) {
                     e.acceptTransferModes(TransferMode.MOVE);
+                    boolean after = e.getY() > getHeight() / 2;
+                    toggleStyle(this, "bookmark-drop-below", after);
+                    toggleStyle(this, "bookmark-drop-above", !after);
                 }
                 e.consume();
             });
+            setOnDragExited(e -> clearDropMarkers());
             setOnDragDropped(e -> {
-                handleDrop(draggedItem, getTreeItem());
+                clearDropMarkers();
+                handleDrop(draggedItem, getTreeItem(), e.getY() > getHeight() / 2);
                 e.setDropCompleted(true);
                 e.consume();
             });
             setOnDragDone(e -> {
                 draggedItem = null;
+                clearDropMarkers();
+                tree.refresh(); // clear the dimmed style
                 e.consume();
             });
+        }
+
+        private void clearDropMarkers() {
+            getStyleClass().removeAll("bookmark-drop-above", "bookmark-drop-below");
         }
 
         /** "Move Up"/"Move Down" items that act on this row (disabled while a filter is active). */
@@ -428,6 +463,10 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         @Override
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
+            // Cells are reused as the tree scrolls/rebuilds; never let drag styling leak onto a reused
+            // cell. The dragged row stays dimmed via a re-applied style each repaint.
+            clearDropMarkers();
+            toggleStyle(this, "bookmark-dragging", !empty && item != null && getTreeItem() == draggedItem);
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
