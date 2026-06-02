@@ -34,6 +34,15 @@ land on the wrong branch when a parallel session ran `git checkout` in the share
   checkout on `master`.
 - **Subagents:** spawn them with the Agent tool's `isolation: "worktree"` so background work can't
   disturb the main checkout.
+- **A session/terminal does not "move into" a worktree by creating one.** A session is anchored to
+  the directory it launched in; a worktree is just a separate folder. To actually *work inside* one
+  interactively, open a **new terminal / Claude Code session** in that directory
+  (`cd ../Editora-V2-worktrees/<slug>`). A long-running session pinned to the main checkout (e.g. the
+  one whose terminal sits on `master`) instead operates on a worktree **by path** — absolute paths for
+  edits, `cd <worktree> && ./mvnw …` for builds — and stays on `master`; commit/merge from there but
+  **never `git checkout` another branch in the main checkout**. (Claude's Bash tool also resets its
+  working dir to the project root after each command, so it can only reach a worktree by path, not by
+  persistently `cd`-ing in.)
 - Worktrees live in the sibling `../Editora-V2-worktrees/` dir (outside the repo), so nothing needs
   to be gitignored. They share the same `.git`, so all branches/commits are visible everywhere.
 
