@@ -52,6 +52,18 @@ class AppArgsTest {
     }
 
     @Test
+    void devFlag() {
+        assertTrue(App.devFlag(List.of("--dev")));
+        assertFalse(App.devFlag(List.of("--zen", "f.txt")));
+    }
+
+    @Test
+    void devIsNotTreatedAsAFileTarget() {
+        assertEquals(List.of(new OpenTarget(Path.of("a.txt"), 0, 0)),
+                App.fileTargets(List.of("--dev", "a.txt")));
+    }
+
+    @Test
     void parseTargetPositions() {
         assertEquals(new OpenTarget(Path.of("foo.txt"), 0, 0), App.parseTarget("foo.txt"));
         assertEquals(new OpenTarget(Path.of("foo.txt"), 42, 0), App.parseTarget("foo.txt:42"));

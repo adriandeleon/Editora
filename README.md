@@ -130,6 +130,7 @@ A `-rcN` suffix (e.g. `v1.2.3-rc1`) is published as a pre-release. Installers ar
 editora [options] [FILE[:LINE[:COLUMN]] ...]
 
   --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)
+  --dev                 Dev mode: use ~/.editora-dev (separate from production config)
   --project[=]<dir>     Open <dir> as a project (only when Projects are enabled; ignored otherwise)
   --zen                 Start in Zen (distraction-free) mode
   --version, -V         Print the version and exit
@@ -151,7 +152,12 @@ files in `recent-files.json`, both alongside it.
 
 To use a different config folder, pass `--config-dir <path>` (or `--config-dir=<path>`) on the command
 line, or set the `EDITORA_CONFIG_DIR` environment variable. Precedence is **`--config-dir` >
-`EDITORA_CONFIG_DIR` > the default `~/.editora/`**. Works on macOS, Linux, and Windows.
+`EDITORA_CONFIG_DIR` > `--dev` (`~/.editora-dev/`) > the default `~/.editora/`**. Works on macOS,
+Linux, and Windows.
+
+For running a development instance alongside your everyday editor, pass `--dev` to use a separate
+`~/.editora-dev/` config directory, so the two never share settings or session state. (`--config-dir`
+and `EDITORA_CONFIG_DIR` still take precedence if you also set them.)
 
 Auto save is off by default; enable it in Settings ("After delay" or "On focus change")
 or cycle the mode with `C-c a`. It only saves files that already have a path.

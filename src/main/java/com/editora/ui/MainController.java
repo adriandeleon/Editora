@@ -897,6 +897,17 @@ public class MainController {
             items.add(hint);
         }
 
+        // Dev-mode badge (just left of the About icon) when running with --dev, so a development
+        // instance is visually distinct from the production one.
+        if (config.isDev()) {
+            Label devBadge = new Label("dev mode");
+            devBadge.getStyleClass().add("dev-mode-badge");
+            devBadge.setTooltip(new Tooltip(
+                    "Running in dev mode (--dev): using the separate " + config.getConfigDir()
+                    + " config directory."));
+            items.addAll(toolbarGap(), devBadge);
+        }
+
         items.addAll(toolbarGap(), aboutButton, toolbarGap(), quitButton);
     }
 

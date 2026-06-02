@@ -28,4 +28,18 @@ class ConfigDirTest {
         assertEquals(Path.of("/Users/jane", ".editora"),
                 ConfigManager.resolveConfigDir("   ", "/Users/jane")); // blank ⇒ ignored
     }
+
+    @Test
+    void devModeUsesDotEditoraDev() {
+        assertEquals(Path.of("/Users/jane", ".editora-dev"),
+                ConfigManager.resolveConfigDir(null, "/Users/jane", true));
+        assertEquals(Path.of("/Users/jane", ".editora"),
+                ConfigManager.resolveConfigDir(null, "/Users/jane", false));
+    }
+
+    @Test
+    void envVarStillWinsOverDevMode() {
+        assertEquals(Path.of("/opt/cfg"),
+                ConfigManager.resolveConfigDir("/opt/cfg", "/Users/jane", true));
+    }
 }

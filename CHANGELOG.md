@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--dev` command-line flag** — runs Editora against a separate `~/.editora-dev/` config directory so
+  a development instance can run alongside your everyday editor without sharing settings or session
+  state. Config-dir precedence is now `--config-dir` > `EDITORA_CONFIG_DIR` > `--dev` > `~/.editora/`.
+  A light-red "dev mode" badge appears in the toolbar (just left of the About icon) so the dev instance
+  is visually distinct.
 - **Comment / uncomment** (`M-;` or the palette: "Edit: Toggle Comment"). A single line toggles a line
   comment; a multi-line selection toggles a block/region comment — using whichever the language has
   (e.g. `//` and `/* */` for Java/C-likes, `#` for Python/shell/YAML, `<!-- -->` for XML/HTML/Markdown,

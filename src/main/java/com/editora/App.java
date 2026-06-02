@@ -37,11 +37,13 @@ public class App extends Application {
     public void start(Stage stage) throws IOException {
         com.editora.ui.Fonts.load(); // register bundled fonts before any UI/CSS uses them
 
-        // Config dir precedence: --config-dir CLI arg > EDITORA_CONFIG_DIR env var > ~/.editora.
-        String cliConfigDir = configDirArg(getParameters().getRaw());
+        // Config dir precedence: --config-dir CLI arg > EDITORA_CONFIG_DIR env var > default
+        // (~/.editora, or ~/.editora-dev with --dev so a dev instance can't disturb production).
+        var rawArgs = getParameters().getRaw();
+        String cliConfigDir = configDirArg(rawArgs);
         ConfigManager config = cliConfigDir != null
                 ? new ConfigManager(java.nio.file.Path.of(cliConfigDir))
-                : new ConfigManager();
+                : new ConfigManager(devFlag(rawArgs));
         Settings settings = config.load();
 
         Application.setUserAgentStylesheet(Themes.stylesheetFor(settings.getTheme()));
@@ -176,6 +178,7 @@ public class App extends Application {
 
                 Options:
                   --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)
+                  --dev                 Dev mode: use ~/.editora-dev (separate from production config)
                   --project[=]<dir>     Open <dir> as a project (only when Projects are enabled)
                   --zen                 Start in Zen (distraction-free) mode
                   --version, -V         Print the version and exit
@@ -190,6 +193,11 @@ public class App extends Application {
     /** The {@code --project=DIR} / {@code --project DIR} value, or {@code null} when not given. */
     static String projectArg(java.util.List<String> args) {
         return optionValue(args, "--project");
+    }
+
+    /** True if {@code --dev} is present (dev mode: separate ~/.editora-dev config; future: more logging). */
+    static boolean devFlag(java.util.List<String> args) {
+        return args != null && args.contains("--dev");
     }
 
     /** True if {@code --zen} is present. */

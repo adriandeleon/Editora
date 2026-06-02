@@ -19,6 +19,8 @@ import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 public class ConfigManager {
 
     static final String APP_DIR_NAME = ".editora";
+    /** Dev-mode config dir (--dev), kept separate from the production config so they don't interfere. */
+    static final String APP_DIR_NAME_DEV = ".editora-dev";
     static final String SETTINGS_FILE_NAME = "settings.toml";
     static final String WORKSPACE_FILE_NAME = "workspace-state.json";
 
@@ -28,18 +30,35 @@ public class ConfigManager {
     private final ObjectMapper json = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
     private final Path configDir;
+    /** Whether this instance was started in dev mode ({@code --dev}); surfaced in the UI (toolbar badge). */
+    private final boolean dev;
     private Settings settings = new Settings();
     private WorkspaceState workspaceState = new WorkspaceState();
     /** The session-state file currently in use — the default, or a project's state file. */
     private Path workspaceStateFile;
 
     public ConfigManager() {
-        this(defaultConfigDir());
+        this(defaultConfigDir(), false);
+    }
+
+    /** Uses the default config dir, or {@code ~/.editora-dev} when {@code dev} (the {@code --dev} flag). */
+    public ConfigManager(boolean dev) {
+        this(defaultConfigDir(dev), dev);
     }
 
     public ConfigManager(Path configDir) {
+        this(configDir, false);
+    }
+
+    private ConfigManager(Path configDir, boolean dev) {
         this.configDir = configDir;
+        this.dev = dev;
         this.workspaceStateFile = configDir.resolve(WORKSPACE_FILE_NAME);
+    }
+
+    /** True when started in dev mode ({@code --dev}); the UI shows a "dev mode" badge in this case. */
+    public boolean isDev() {
+        return dev;
     }
 
     public Path getConfigDir() {
@@ -115,20 +134,31 @@ public class ConfigManager {
 
     /**
      * The config directory: the {@code EDITORA_CONFIG_DIR} environment variable if set (used verbatim as the
-     * config folder), otherwise {@code ~/.editora}. Works on macOS, Linux, and Windows.
+     * config folder), otherwise {@code ~/.editora} (or {@code ~/.editora-dev} in dev mode). Works on
+     * macOS, Linux, and Windows.
      */
     static Path defaultConfigDir() {
-        return resolveConfigDir(System.getenv("EDITORA_CONFIG_DIR"), System.getProperty("user.home", "."));
+        return defaultConfigDir(false);
+    }
+
+    static Path defaultConfigDir(boolean dev) {
+        return resolveConfigDir(System.getenv("EDITORA_CONFIG_DIR"), System.getProperty("user.home", "."), dev);
+    }
+
+    static Path resolveConfigDir(String editoraHome, String userHome) {
+        return resolveConfigDir(editoraHome, userHome, false);
     }
 
     /**
      * Pure resolver (unit-testable): {@code editoraHome} (trimmed) when set and non-blank, else
-     * {@code userHome/.editora}.
+     * {@code userHome/.editora} — or {@code userHome/.editora-dev} when {@code dev} (so the {@code --dev}
+     * instance never shares config with production). The env var still wins, so it can override either.
      */
-    static Path resolveConfigDir(String editoraHome, String userHome) {
+    static Path resolveConfigDir(String editoraHome, String userHome, boolean dev) {
         if (editoraHome != null && !editoraHome.isBlank()) {
             return Path.of(editoraHome.trim());
         }
-        return Path.of(userHome == null || userHome.isBlank() ? "." : userHome, APP_DIR_NAME);
+        return Path.of(userHome == null || userHome.isBlank() ? "." : userHome,
+                dev ? APP_DIR_NAME_DEV : APP_DIR_NAME);
     }
 }

@@ -606,6 +606,14 @@
     -fx-padding: 0 6 0 6;
 }
 
+/* "dev mode" toolbar badge, shown only when launched with --dev (light red). */
+.dev-mode-badge {
+    -fx-text-fill: #e57373;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 6 0 6;
+}
+
 /* Inline remove button on each Recent Files dropdown row. */
 .recent-remove {
     -fx-padding: 0 4 0 4;
