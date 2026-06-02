@@ -329,6 +329,16 @@
     -fx-text-fill: -color-fg-default;
 }
 
+/* The tool window that currently holds keyboard focus: tint its header and accent the title, so it's
+   clear where you are when navigating between panels and the editor. */
+.tool-window:active > .tool-window-header {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: -color-accent-emphasis;
+}
+.tool-window:active .tool-window-title {
+    -fx-text-fill: -color-accent-fg;
+}
+
 .tool-window-close {
     -fx-padding: 2;
 }

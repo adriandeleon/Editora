@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import javafx.css.PseudoClass;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -12,6 +13,9 @@ import javafx.scene.layout.StackPane;
 
 /** Wraps a {@link ToolWindow}'s content with an IntelliJ-style header (title + close button). */
 final class ToolWindowPanel extends BorderPane {
+
+    /** Set while keyboard focus is anywhere inside this tool window, so its header can be highlighted. */
+    private static final PseudoClass ACTIVE = PseudoClass.getPseudoClass("active");
 
     ToolWindowPanel(ToolWindow tw, Runnable onClose) {
         getStyleClass().add("tool-window");
@@ -37,5 +41,10 @@ final class ToolWindowPanel extends BorderPane {
 
         setTop(header);
         setCenter(content);
+    }
+
+    /** Highlights this panel's header when it holds keyboard focus (driven by the scene's focus owner). */
+    void setActive(boolean active) {
+        pseudoClassStateChanged(ACTIVE, active);
     }
 }

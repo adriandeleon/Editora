@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Focused tool window is highlighted** — the panel that currently holds keyboard focus (Project,
+  Structure, Bookmarks, File Information) gets an accent-tinted header, so it's clear where you are when
+  moving between panels and the editor.
 - **`--dev` command-line flag** — runs Editora against a separate `~/.editora-dev/` config directory so
   a development instance can run alongside your everyday editor without sharing settings or session
   state. Config-dir precedence is now `--config-dir` > `EDITORA_CONFIG_DIR` > `--dev` > `~/.editora/`.

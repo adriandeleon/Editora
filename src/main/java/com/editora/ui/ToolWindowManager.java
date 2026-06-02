@@ -81,6 +81,35 @@ public class ToolWindowManager {
         workspace.setBottom(bottomStripe);
         workspace.setCenter(vSplit);
         updateStripeVisibility();
+
+        // Highlight whichever tool window holds keyboard focus. Tracked centrally via the scene's single
+        // focus owner — more reliable than per-node focusWithin for deeply nested controls (e.g. the
+        // tree panels), whose ancestor focusWithin didn't always clear on blur.
+        vSplit.sceneProperty().addListener((obs, oldScene, scene) -> {
+            if (scene != null) {
+                scene.focusOwnerProperty().addListener((o, oldOwner, owner) -> updateActivePanel(owner));
+                updateActivePanel(scene.getFocusOwner());
+            }
+        });
+    }
+
+    /** Marks the tool window panel that contains the scene's focus owner as active (others inactive). */
+    private void updateActivePanel(Node focusOwner) {
+        for (Region panel : panels.values()) {
+            if (panel instanceof ToolWindowPanel p) {
+                p.setActive(focusOwner != null && isDescendant(focusOwner, p));
+            }
+        }
+    }
+
+    /** Whether {@code node} is {@code ancestor} or sits somewhere beneath it in the scene graph. */
+    private static boolean isDescendant(Node node, Node ancestor) {
+        for (Node n = node; n != null; n = n.getParent()) {
+            if (n == ancestor) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void register(ToolWindow tw) {
