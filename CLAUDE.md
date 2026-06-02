@@ -65,7 +65,12 @@ Uses the BellSoft **Liberica** JDK 25 in CI for full arch coverage (incl. linux 
 
 Single module `com.editora` (see `src/main/java/module-info.java`). `App` is the
 JavaFX entry point: it loads config, builds the command + keymap system, installs
-the key dispatcher on the scene, applies the theme, and loads `ui/main.fxml`.
+the key dispatcher on the scene, applies the theme, and loads `ui/main.fxml`. It
+wraps the FXML root in a `StackPane` so a floating overlay can sit on top — used by
+`MainController.installZenOverlay` for the **Zen-mode exit button** (a small floating "Z",
+`Icons.zen()`, styled `.zen-exit` like the Markdown preview controls, shown top-right only while
+`WorkspaceState.isZenMode()` — toggled in `applyChromeVisibility` via `updateZenButton` — and
+clicking it runs `setZenMode(false)`).
 
 - `command/` — the keyboard-driven core.
   - `Command` / `CommandRegistry`: every action is a registered `Command` (id + title + runnable). The registry feeds both keybindings and the palette.

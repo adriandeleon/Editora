@@ -189,6 +189,8 @@ public class MainController {
     private Tab draggedTab;
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
     private String currentEditorThemeCss;
+    /** Floating "exit Zen" button overlaid top-right of the window; shown only while in Zen mode. */
+    private Button zenExitButton;
     /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
     private boolean markActive;
     private RecentFiles recentFiles;
@@ -263,6 +265,33 @@ public class MainController {
             tabPane.getStyleClass().add("no-tab-header");
         }
         breadcrumb.setEnabled(s.isShowBreadcrumb());
+        updateZenButton();
+    }
+
+    /**
+     * Installs the floating "exit Zen" button into the scene-root overlay (top-right of the window).
+     * Called by {@code App} after the scene is built. Hidden until Zen mode is entered.
+     */
+    public void installZenOverlay(StackPane sceneRoot) {
+        zenExitButton = new Button();
+        zenExitButton.setGraphic(Icons.zen());
+        zenExitButton.getStyleClass().addAll("zen-exit", "flat");
+        zenExitButton.setTooltip(new Tooltip("Exit Zen mode"));
+        zenExitButton.setFocusTraversable(false);
+        zenExitButton.setOnAction(e -> setZenMode(false));
+        StackPane.setAlignment(zenExitButton, Pos.TOP_RIGHT);
+        StackPane.setMargin(zenExitButton, new javafx.geometry.Insets(8, 12, 0, 0));
+        sceneRoot.getChildren().add(zenExitButton);
+        updateZenButton();
+    }
+
+    /** Shows the floating exit button only while in Zen mode (so it never overlaps normal chrome). */
+    private void updateZenButton() {
+        if (zenExitButton != null) {
+            boolean zen = config.getWorkspaceState().isZenMode();
+            zenExitButton.setVisible(zen);
+            zenExitButton.setManaged(zen);
+        }
     }
 
     private void setupRecentFiles() {

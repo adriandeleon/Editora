@@ -58,7 +58,10 @@ public class App extends Application {
         MainController controller = loader.getController();
         controller.init(stage, config, registry, keymap);
 
-        Scene scene = new Scene(root, 1000, 700);
+        // Wrap the UI in a StackPane so a floating overlay (the Zen-mode exit button) can sit on top.
+        javafx.scene.layout.StackPane sceneRoot = new javafx.scene.layout.StackPane(root);
+        controller.installZenOverlay(sceneRoot);
+        Scene scene = new Scene(sceneRoot, 1000, 700);
         // Pre-fill with the theme background so the first frame isn't JavaFX's default light gray
         // (which otherwise flashes before the CSS is applied — most visible with a dark theme). The
         // root and editor are transparent until CSS paints them, so this fill shows through. (Scene

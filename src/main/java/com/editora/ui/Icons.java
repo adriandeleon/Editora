@@ -143,6 +143,11 @@ final class Icons {
                 + "2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4z");
     }
 
+    /** A filled "Z" glyph (top + bottom bars joined by a diagonal), for the Zen-mode exit button. */
+    static Node zen() {
+        return of("M4 4 H20 V7 L8 17 H20 V20 H4 V17 L16 7 H4 Z");
+    }
+
     static Node closeSmall() {
         // Same outline as closeTab() — used by the tool window header.
         return of("M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 "

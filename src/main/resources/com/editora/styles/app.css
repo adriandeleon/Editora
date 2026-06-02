@@ -229,6 +229,19 @@
     -fx-background-color: -color-bg-default;
 }
 
+/* Floating "exit Zen" button, shown only in Zen mode (same look as the Markdown preview controls). */
+.zen-exit {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 3 6 3 6;
+    -fx-opacity: 0.92;
+}
+.zen-exit .toolbar-icon { -fx-fill: -color-fg-muted; }
+.zen-exit:hover { -fx-background-color: -color-bg-default; -fx-opacity: 1.0; }
+.zen-exit:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
+
 /* Project file tree: themed folder/file icon colors. The two looked-up colors default to the GUI
    theme's accent/muted (AtlantaFX), and each editor theme overrides them with palette-matched values
    (see styles/editor-themes/*.css) so the tree tracks the active code theme. */
