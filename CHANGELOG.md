@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Markdown preview now renders closer to GitHub** — task lists (`- [x]`/`- [ ]`) show real checkboxes
+  instead of bullets, inline `code` gets a rounded gray pill (instead of blue text), `#`/`##` headings
+  get an underline rule, and links are no longer permanently underlined. Standalone images now render as
+  block images (with the alt text / title as a tooltip), in addition to inline images; relative image
+  paths resolve against the file's folder, and `http(s)`/`file`/`data:` URLs are supported.
+
 ### Added
 
 - **Spell checking** — misspelled words get a red wavy underline; right-click for suggestions (click one

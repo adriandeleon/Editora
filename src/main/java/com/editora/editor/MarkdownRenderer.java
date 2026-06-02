@@ -103,6 +103,10 @@ public final class MarkdownRenderer {
             return tf;
         }
         if (node instanceof Paragraph p) {
+            // A paragraph that is just an image renders as a block image (not squeezed into a TextFlow).
+            if (p.getFirstChild() instanceof org.commonmark.node.Image img && img.getNext() == null) {
+                return imageNode(img, baseDir);
+            }
             TextFlow tf = inlineFlow(p, baseDir);
             tf.getStyleClass().add("md-paragraph");
             return tf;
@@ -236,7 +240,7 @@ public final class MarkdownRenderer {
         if (n instanceof org.commonmark.node.Text t) {
             flow.getChildren().add(styledText(t.getLiteral(), styles));
         } else if (n instanceof Code c) {
-            flow.getChildren().add(styledText(c.getLiteral(), with(styles, "md-inline-code")));
+            flow.getChildren().add(inlineCode(c.getLiteral()));
         } else if (n instanceof Emphasis) {
             appendInline(n, flow, with(styles, "md-italic"), baseDir);
         } else if (n instanceof StrongEmphasis) {
@@ -254,12 +258,20 @@ public final class MarkdownRenderer {
         } else if (n instanceof HardLineBreak) {
             flow.getChildren().add(new Text("\n"));
         } else if (n instanceof HtmlInline h) {
-            flow.getChildren().add(styledText(h.getLiteral(), with(styles, "md-inline-code")));
+            flow.getChildren().add(inlineCode(h.getLiteral()));
         } else if (n instanceof TaskListItemMarker) {
             // rendered as a CheckBox by renderList — skip here
         } else {
             appendInline(n, flow, styles, baseDir); // unknown inline: descend
         }
+    }
+
+    /** Inline code as a {@code Label} so it can carry a GitHub-style rounded gray background (a
+     *  {@link Text} can only fill its glyphs). Flows inline inside the surrounding {@link TextFlow}. */
+    private static Label inlineCode(String literal) {
+        Label code = new Label(literal);
+        code.getStyleClass().add("md-inline-code");
+        return code;
     }
 
     private static Text styledText(String s, List<String> styles) {
@@ -280,20 +292,40 @@ public final class MarkdownRenderer {
     }
 
     private static Node imageNode(org.commonmark.node.Image img, Path baseDir) {
+        String alt = imageAlt(img);
         String url = resolveUrl(img.getDestination(), baseDir);
         if (url == null) {
-            return styledText("[image: " + img.getDestination() + "]", List.of("md-inline-code"));
+            return inlineCode(alt.isBlank() ? "[image]" : "[image: " + alt + "]");
         }
         ImageView view = new ImageView();
+        view.getStyleClass().add("md-image");
         view.setPreserveRatio(true);
-        Image image = new Image(url, true); // background load
+        Image image = new Image(url, true); // background load (off the FX thread)
         view.setImage(image);
-        image.widthProperty().addListener((o, was, w) -> {
-            if (w.doubleValue() > MAX_IMAGE_WIDTH) {
+        // Cap very wide images to the pane width; re-check once the size is known.
+        Runnable cap = () -> {
+            if (image.getWidth() > MAX_IMAGE_WIDTH) {
                 view.setFitWidth(MAX_IMAGE_WIDTH);
             }
-        });
+        };
+        image.widthProperty().addListener((o, was, w) -> cap.run());
+        cap.run();
+        String tip = img.getTitle() != null && !img.getTitle().isBlank() ? img.getTitle() : alt;
+        if (tip != null && !tip.isBlank()) {
+            Tooltip.install(view, new Tooltip(tip));
+        }
         return view;
+    }
+
+    /** The alt text of an image (its inline text children). */
+    private static String imageAlt(org.commonmark.node.Image img) {
+        StringBuilder sb = new StringBuilder();
+        for (org.commonmark.node.Node c = img.getFirstChild(); c != null; c = c.getNext()) {
+            if (c instanceof org.commonmark.node.Text t) {
+                sb.append(t.getLiteral());
+            }
+        }
+        return sb.toString();
     }
 
     private static String resolveUrl(String dest, Path baseDir) {
@@ -314,8 +346,8 @@ public final class MarkdownRenderer {
     }
 
     private static TaskListItemMarker firstTaskMarker(org.commonmark.node.Node listItem) {
-        org.commonmark.node.Node first = listItem.getFirstChild();
-        if (first != null && first.getFirstChild() instanceof TaskListItemMarker m) {
+        // commonmark-java inserts the marker as the list item's first child (a sibling of the paragraph).
+        if (listItem.getFirstChild() instanceof TaskListItemMarker m) {
             return m;
         }
         return null;

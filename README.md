@@ -56,8 +56,10 @@ Emacs-style keymap or a fuzzy command palette.
   default and is independently selectable in Settings.
 - **Markdown preview** — IntelliJ-style 3-mode view (Editor / Editor + Preview / Preview) via a
   floating control top-right of the editor, rendered natively (CommonMark + GFM: tables, task lists,
-  strikethrough, autolinks), live-updating and theme-matched; the mode is remembered per file. Zoom the
-  preview text with its `−`/`+` control or, in Preview mode, **Ctrl + mouse wheel**.
+  strikethrough, autolinks) with **GitHub-style** output — task-list checkboxes, inline-code pills,
+  underlined h1/h2, and **images** (local and remote). Live-updating and theme-matched; the mode is
+  remembered per file. Zoom the preview text with its `−`/`+` control or, in Preview mode,
+  **Ctrl + mouse wheel**.
 - **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a prefix + Tab to
   expand (or pick via `C-c i` / "Snippet: Insert…"); Tab/Shift-Tab cycle fields, placeholders are
   pre-selected, mirrors update live, `$0` is the final caret. Standard body syntax (`$1`,

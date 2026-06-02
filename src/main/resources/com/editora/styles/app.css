@@ -144,8 +144,10 @@
 .markdown-preview .md-paragraph { -fx-line-spacing: 2; }
 /* Heading sizes are em-relative to the preview's base font, so the −/+ zoom (which overrides the base
    font size inline) scales everything proportionally. */
-.markdown-preview .md-h1 { -fx-font-size: 1.86em; -fx-font-weight: bold; -fx-padding: 6 0 2 0; }
-.markdown-preview .md-h2 { -fx-font-size: 1.5em; -fx-font-weight: bold; -fx-padding: 6 0 2 0; }
+.markdown-preview .md-h1 { -fx-font-size: 1.86em; -fx-font-weight: bold; -fx-padding: 6 0 5 0;
+    -fx-border-color: -color-border-muted; -fx-border-width: 0 0 1 0; }
+.markdown-preview .md-h2 { -fx-font-size: 1.5em; -fx-font-weight: bold; -fx-padding: 6 0 5 0;
+    -fx-border-color: -color-border-muted; -fx-border-width: 0 0 1 0; }
 .markdown-preview .md-h3 { -fx-font-size: 1.21em; -fx-font-weight: bold; -fx-padding: 4 0 2 0; }
 .markdown-preview .md-h4 { -fx-font-size: 1.07em; -fx-font-weight: bold; }
 .markdown-preview .md-h5 { -fx-font-size: 1em; -fx-font-weight: bold; }
@@ -159,10 +161,15 @@
 .markdown-preview .md-bold { -fx-font-weight: bold; }
 .markdown-preview .md-italic { -fx-font-style: italic; }
 .markdown-preview .md-strike { -fx-strikethrough: true; }
-.markdown-preview .md-link { -fx-fill: -color-accent-fg; -fx-underline: true; }
+.markdown-preview .md-link { -fx-fill: -color-accent-fg; }
+/* Inline code as a GitHub-style pill (a Label, so it can carry a rounded gray background). */
 .markdown-preview .md-inline-code {
     -fx-font-family: monospace;
-    -fx-fill: -color-accent-fg;
+    -fx-font-size: 0.92em;
+    -fx-text-fill: -color-fg-default;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 4;
+    -fx-padding: 0.05em 0.4em 0.05em 0.4em;
 }
 .markdown-preview .md-code-block {
     -fx-font-family: monospace;
