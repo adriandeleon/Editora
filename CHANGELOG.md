@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Theme commands in the palette** — "Theme: Set App Theme…" and "Theme: Set Editor Theme…" open a
+  fuzzy picker. The app-theme picker switches the chrome theme *and* the editor theme to match; the
+  editor-theme picker changes only the editor colors (and pins it so it won't follow the app theme).
+
 - **Spell checking** — misspelled words get a red wavy underline; right-click for suggestions (click one
   to replace), **Add to Dictionary**, or **Ignore**. In source files only comments and string literals
   are checked (identifiers aren't flagged); plaintext and Markdown are checked in full. Toggle it with

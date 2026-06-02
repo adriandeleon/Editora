@@ -501,6 +501,21 @@ public class SettingsWindow {
         }
     }
 
+    /** Re-syncs the theme combos from settings (used after the palette theme commands change them). */
+    public void syncThemes() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            themeCombo.setValue(config.getSettings().getTheme());
+            editorThemeCombo.setValue(EditorThemes.normalize(config.getSettings().getEditorTheme()));
+        } finally {
+            loading = prev;
+        }
+    }
+
     /** Re-syncs the view/chrome checkboxes from the current settings (used after a Zen toggle). */
     private void syncViewChecks() {
         boolean prev = loading;

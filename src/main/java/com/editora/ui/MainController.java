@@ -2334,6 +2334,56 @@ public class MainController {
         setStatus("Spell check language: " + langId);
     }
 
+    /** Picker for the app (chrome) theme — also switches the editor theme to match. */
+    private void chooseAppTheme() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                "Set App Theme", "Type to filter themes…",
+                () -> Themes.NAMES,
+                name -> name,
+                name -> "",
+                this::applyAppTheme);
+        picker.show(stage);
+    }
+
+    /** Picker for the editor color theme only (leaves the chrome theme untouched). */
+    private void chooseEditorTheme() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                "Set Editor Theme", "Type to filter themes…",
+                () -> EditorThemes.NAMES,
+                name -> name,
+                name -> "",
+                this::applyEditorThemeChoice);
+        picker.show(stage);
+    }
+
+    /** Applies a chrome theme and follows it with the matching editor theme (clears the user-set flag). */
+    private void applyAppTheme(String name) {
+        Settings s = config.getSettings();
+        s.setTheme(name);
+        javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(name));
+        s.setEditorTheme(EditorThemes.defaultFor(name)); // chrome theme drives the editor theme
+        s.setEditorThemeUserSet(false);
+        config.save();
+        applyViewSettingsToAllBuffers(s); // swaps the editor-theme stylesheet + per-buffer colors
+        if (settingsWindow != null) {
+            settingsWindow.syncThemes();
+        }
+        setStatus("App theme: " + name);
+    }
+
+    /** Applies only the editor color theme (marks it user-set so it won't follow the chrome theme). */
+    private void applyEditorThemeChoice(String name) {
+        Settings s = config.getSettings();
+        s.setEditorTheme(name);
+        s.setEditorThemeUserSet(true);
+        config.save();
+        applyViewSettingsToAllBuffers(s);
+        if (settingsWindow != null) {
+            settingsWindow.syncThemes();
+        }
+        setStatus("Editor theme: " + name);
+    }
+
     private void toggleZen() {
         setZenMode(!config.getWorkspaceState().isZenMode());
     }
@@ -3449,6 +3499,10 @@ public class MainController {
         registry.register(Command.of("app.quit", "Application: Quit", this::onQuit));
         registry.register(Command.of("palette.show", "Command Palette", this::onPalette));
         registry.register(Command.of("view.settings", "Settings", this::onSettings));
+        registry.register(Command.of("theme.setAppTheme", "Theme: Set App Theme…",
+                this::chooseAppTheme));
+        registry.register(Command.of("theme.setEditorTheme", "Theme: Set Editor Theme…",
+                this::chooseEditorTheme));
         registry.register(Command.of("view.toggleColumnRuler", "View: Toggle 80-Column Ruler",
                 this::toggleColumnRuler));
         registry.register(Command.of("view.toggleLineHighlight", "View: Toggle Current Line Highlight",
