@@ -69,11 +69,6 @@ public class ConfigManager {
         return configDir.resolve(SETTINGS_FILE_NAME);
     }
 
-    /** The settings file under the default config dir — for display (e.g. the About dialog). */
-    public static Path defaultSettingsFile() {
-        return defaultConfigDir().resolve(SETTINGS_FILE_NAME);
-    }
-
     public Path getWorkspaceStateFile() {
         return workspaceStateFile;
     }

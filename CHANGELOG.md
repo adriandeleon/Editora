@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The About dialog now shows the **live** config/settings path, so `--dev` (`~/.editora-dev/`) and
+  `--config-dir` are reflected (it previously always showed the default `~/.editora/settings.toml`).
+
 ### Added
 
 - **`--dev` command-line flag** — runs Editora against a separate `~/.editora-dev/` config directory so

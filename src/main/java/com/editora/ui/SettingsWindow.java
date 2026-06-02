@@ -379,7 +379,7 @@ public class SettingsWindow {
         updateProjectRowEnabled();
 
         Button about = new Button("About");
-        about.setOnAction(e -> showAbout(stage, onOpenFile));
+        about.setOnAction(e -> showAbout(stage, config.getSettingsFile(), onOpenFile));
         Button close = new Button("Close");
         close.setOnAction(e -> stage.close());
         Region spacer = new Region();
@@ -548,7 +548,7 @@ public class SettingsWindow {
      * Shows the About dialog. Shared by the settings window and the {@code help.about} command.
      * The settings-file path is a link that opens that file in the editor via {@code openFile}.
      */
-    public static void showAbout(Window owner, Consumer<Path> openFile) {
+    public static void showAbout(Window owner, Path settingsFile, Consumer<Path> openFile) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
         alert.setTitle("About " + com.editora.AppInfo.NAME);
@@ -571,13 +571,13 @@ public class SettingsWindow {
                 System.getProperty("javafx.runtime.version", "?"),
                 com.editora.AppInfo.buildTime()));
 
-        Hyperlink settingsLink = new Hyperlink(displaySettingsPath());
+        Hyperlink settingsLink = new Hyperlink(displaySettingsPath(settingsFile));
         settingsLink.setPadding(Insets.EMPTY);
         settingsLink.setTooltip(new Tooltip("Open the settings file in Editora"));
         settingsLink.setOnAction(e -> {
             alert.close();
             if (openFile != null) {
-                openFile.accept(ConfigManager.defaultSettingsFile());
+                openFile.accept(settingsFile);
             }
         });
         HBox settingsRow = new HBox(4, new Label("Settings:"), settingsLink);
@@ -587,9 +587,9 @@ public class SettingsWindow {
         alert.showAndWait();
     }
 
-    /** The settings-file path with the home dir shown as {@code ~} (derived, never hardcoded). */
-    private static String displaySettingsPath() {
-        String path = ConfigManager.defaultSettingsFile().toString();
+    /** The given settings-file path with the home dir shown as {@code ~} (derived, never hardcoded). */
+    static String displaySettingsPath(Path settingsFile) {
+        String path = settingsFile.toString();
         String home = System.getProperty("user.home", "");
         return !home.isEmpty() && path.startsWith(home) ? "~" + path.substring(home.length()) : path;
     }

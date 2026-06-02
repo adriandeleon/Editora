@@ -2116,7 +2116,7 @@ public class MainController {
 
     @FXML
     private void onAbout() {
-        SettingsWindow.showAbout(stage, this::openPath);
+        SettingsWindow.showAbout(stage, config.getSettingsFile(), this::openPath);
     }
 
     private void toggleColumnRuler() {
