@@ -1,0 +1,255 @@
+---
+import { version, repo } from "../lib/editora";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "Editora — a keyboard-driven programmer's text editor",
+  description = "Editora is a fast, keyboard-driven, cross-platform programmer's text editor built with JDK 25 and JavaFX. Every action is a command, reachable by an Emacs-style keymap or a fuzzy palette.",
+} = Astro.props;
+
+const base = import.meta.env.BASE_URL;
+const url = (p: string) => `${base}/${p}`.replace(/\/{2,}/g, "/");
+
+const nav = [
+  { href: url(""), label: "Home" },
+  { href: url("keybindings"), label: "Keybindings" },
+  { href: url("screenshots"), label: "Screenshots" },
+  { href: repo, label: "GitHub" },
+];
+
+// Highlight the active top-level page.
+const path = Astro.url.pathname.replace(/\/$/, "");
+const isActive = (href: string) => {
+  const h = href.replace(/\/$/, "");
+  if (h === url("").replace(/\/$/, "")) return path === h;
+  return path.startsWith(h) && h.startsWith(base);
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/png" href={url("favicon.png")} />
+  </head>
+  <body>
+    <header class="site-nav">
+      <div class="nav-inner">
+        <a class="brand" href={url("")}>
+          <img src={url("editora-icon.svg")} alt="" width="26" height="26" />
+          <span>Editora</span>
+          <span class="version">v{version}</span>
+        </a>
+        <nav class="nav-links">
+          {
+            nav.map((item) => (
+              <a href={item.href} class={isActive(item.href) ? "active" : ""}>
+                {item.label}
+              </a>
+            ))
+          }
+        </nav>
+      </div>
+    </header>
+
+    <slot />
+
+    <footer class="footer">
+      <p>
+        Editora v{version} — open source.
+        <a href={repo}>Source on GitHub</a> ·
+        <a href={`${repo}/issues`}>Report an issue</a>
+      </p>
+    </footer>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    /* Palette mirrors Editora's "Primer Dark" editor theme
+       (src/main/resources/com/editora/styles/editor-themes/primer-dark.css),
+       the GitHub-dark palette AtlantaFX Primer Dark uses. */
+    --bg: #0d1117; /* .editor-area background */
+    --bg-soft: #161b22; /* line-number gutter background */
+    --border: #30363d;
+    --border-soft: #21262d; /* minimap border */
+    --text: #c9d1d9; /* .editor-area .text fill */
+    --muted: #8b949e; /* comment fill */
+    --faint: #6e7681; /* line-number text */
+    --accent: #58a6ff; /* link / fold-chevron:hover */
+    --accent-soft: rgba(31, 111, 235, 0.12); /* selection #1f6feb */
+    --bookmark: #f2a65c; /* bookmark gutter marker */
+
+    /* Syntax token colors, straight from primer-dark.css. */
+    --tok-keyword: #ff7b72;
+    --tok-string: #a5d6ff;
+    --tok-comment: #8b949e;
+    --tok-number: #79c0ff;
+    --tok-function: #d2a8ff;
+    --tok-type: #ffa657;
+
+    --radius: 12px;
+    --maxw: 980px;
+    --mono: "JetBrains Mono", "Cascadia Code", "Fira Code", ui-monospace,
+      SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+      Arial, sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  code,
+  kbd {
+    font-family: var(--mono);
+    font-size: 0.875em;
+  }
+
+  /* Inline code reads like a token on the editor surface. */
+  :not(pre) > code {
+    background: var(--bg-soft);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 0.1em 0.4em;
+    color: var(--tok-string);
+  }
+
+  kbd {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    padding: 0.1em 0.45em;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  /* Syntax tokens for hand-highlighted code blocks (Primer Dark palette). */
+  .tok-comment {
+    color: var(--tok-comment);
+    font-style: italic;
+  }
+  .tok-keyword {
+    color: var(--tok-keyword);
+  }
+  .tok-string {
+    color: var(--tok-string);
+  }
+  .tok-flag {
+    color: var(--tok-type);
+  }
+
+  /* --- shared chrome --- */
+  .site-nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(13, 17, 23, 0.8);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-inner {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0.85rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 700;
+    color: var(--text);
+    font-size: 1.05rem;
+  }
+
+  .brand:hover {
+    text-decoration: none;
+  }
+
+  .brand .version {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--muted);
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 1.25rem;
+    font-size: 0.95rem;
+  }
+
+  .nav-links a {
+    color: var(--muted);
+  }
+
+  .nav-links a:hover,
+  .nav-links a.active {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .footer {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 600px) {
+    .nav-links {
+      gap: 0.9rem;
+      font-size: 0.85rem;
+    }
+    .brand .version {
+      display: none;
+    }
+  }
+</style>

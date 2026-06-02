@@ -1,0 +1,283 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+// Mirrors resources/com/editora/keymaps/emacs.json, grouped for humans.
+// Keep in sync when bindings change.
+type Binding = { keys: string; desc: string };
+type Group = { title: string; bindings: Binding[] };
+
+const groups: Group[] = [
+  {
+    title: "Files & buffers",
+    bindings: [
+      { keys: "C-x C-f", desc: "Find file (open by path)" },
+      { keys: "C-x C-s", desc: "Save" },
+      { keys: "C-x C-w", desc: "Save as…" },
+      { keys: "C-x C-r", desc: "Recent files" },
+      { keys: "C-x b", desc: "Jump to open buffer" },
+      { keys: "C-x C-b", desc: "Buffer switcher" },
+      { keys: "C-x k", desc: "Close buffer" },
+      { keys: "C-c a", desc: "Toggle auto-save" },
+      { keys: "C-x C-c", desc: "Quit" },
+    ],
+  },
+  {
+    title: "Editing",
+    bindings: [
+      { keys: "C-space", desc: "Set mark" },
+      { keys: "C-x C-x", desc: "Exchange point and mark" },
+      { keys: "C-w", desc: "Cut (kill region)" },
+      { keys: "M-w", desc: "Copy" },
+      { keys: "C-y", desc: "Paste (yank)" },
+      { keys: "C-d", desc: "Delete character forward" },
+      { keys: "M-d", desc: "Kill word" },
+      { keys: "C-k", desc: "Kill to end of line" },
+      { keys: "C-/", desc: "Undo" },
+      { keys: "C-S-/", desc: "Redo" },
+      { keys: "C-c i", desc: "Insert snippet" },
+      { keys: "C-g", desc: "Cancel" },
+    ],
+  },
+  {
+    title: "Navigation",
+    bindings: [
+      { keys: "C-a", desc: "Line start" },
+      { keys: "C-e", desc: "Line end" },
+      { keys: "C-f", desc: "Forward character" },
+      { keys: "C-b", desc: "Backward character" },
+      { keys: "C-n", desc: "Next line" },
+      { keys: "C-p", desc: "Previous line" },
+      { keys: "M-f", desc: "Forward word" },
+      { keys: "M-b", desc: "Backward word" },
+      { keys: "M-m", desc: "Back to indentation" },
+      { keys: "C-v", desc: "Page down" },
+      { keys: "M-v", desc: "Page up" },
+      { keys: "C-l", desc: "Recenter view" },
+      { keys: "M-S-,", desc: "Document start" },
+      { keys: "M-S-.", desc: "Document end" },
+      { keys: "M-S-[", desc: "Previous paragraph" },
+      { keys: "M-S-]", desc: "Next paragraph" },
+      { keys: "M-a", desc: "Previous sentence" },
+      { keys: "M-e", desc: "Next sentence" },
+      { keys: "M-g g", desc: "Go to line" },
+      { keys: "M-g i", desc: "Jump to symbol / structure" },
+      { keys: "M-g b", desc: "Jump to bookmark (cross-file)" },
+      { keys: "M-g t", desc: "Jump to tool window" },
+    ],
+  },
+  {
+    title: "Search & replace",
+    bindings: [
+      { keys: "C-s", desc: "Find" },
+      { keys: "C-r", desc: "Find backward" },
+      { keys: "M-S-5", desc: "Replace" },
+      { keys: "M-x", desc: "Command palette" },
+    ],
+  },
+  {
+    title: "View & folding",
+    bindings: [
+      { keys: "C-c C-t", desc: "Toggle fold at cursor" },
+      { keys: "C-c C-f", desc: "Fold" },
+      { keys: "C-c C-u", desc: "Unfold" },
+      { keys: "C-c f", desc: "Fold all" },
+      { keys: "C-c u", desc: "Unfold all" },
+      { keys: "C-c w", desc: "Toggle whitespace" },
+      { keys: "C-c t", desc: "Toggle toolbar" },
+      { keys: "C-c s", desc: "Toggle status bar" },
+      { keys: "C-c b", desc: "Toggle tab bar" },
+      { keys: "C-c p", desc: "Toggle breadcrumb" },
+      { keys: "C-c z", desc: "Toggle Zen mode" },
+      { keys: "C-x C-q", desc: "Toggle read-only / View mode" },
+    ],
+  },
+  {
+    title: "Windows & splits",
+    bindings: [
+      { keys: "C-x 2", desc: "Split horizontally" },
+      { keys: "C-x 3", desc: "Split vertically" },
+      { keys: "C-x 1", desc: "Unsplit" },
+      { keys: "C-x o", desc: "Other window" },
+    ],
+  },
+  {
+    title: "Tool windows",
+    bindings: [
+      { keys: "M-1", desc: "Project" },
+      { keys: "M-2", desc: "Bookmarks" },
+      { keys: "M-3", desc: "File Information" },
+      { keys: "M-7", desc: "Structure" },
+    ],
+  },
+  {
+    title: "Bookmarks",
+    bindings: [
+      { keys: "C-c m", desc: "Toggle bookmark" },
+      { keys: "C-c ]", desc: "Next bookmark (in file)" },
+      { keys: "C-c [", desc: "Previous bookmark (in file)" },
+    ],
+  },
+  {
+    title: "Projects",
+    bindings: [
+      { keys: "C-x C-p", desc: "Open project" },
+      { keys: "C-x p", desc: "Switch project" },
+    ],
+  },
+  {
+    title: "Zoom",
+    bindings: [
+      { keys: "C-=", desc: "Zoom text in" },
+      { keys: "C--", desc: "Zoom text out" },
+      { keys: "C-0", desc: "Reset zoom" },
+    ],
+  },
+];
+---
+
+<Layout
+  title="Keybindings — Editora"
+  description="The full Emacs-style keymap for Editora: files, editing, navigation, search, folding, tool windows, bookmarks, projects, and zoom."
+>
+  <main class="page">
+    <h1>Keybindings</h1>
+    <p class="lead">
+      Editora ships with an Emacs-style keymap. Every binding maps to a
+      <strong>command</strong>, so the same actions are reachable from the
+      <kbd>M-x</kbd> palette and can be rebound in Settings.
+    </p>
+
+    <div class="legend">
+      <span><kbd>C-</kbd> Control</span>
+      <span><kbd>M-</kbd> Alt / Option (Meta)</span>
+      <span><kbd>S-</kbd> Shift</span>
+      <span>Space-separated = a chord sequence, e.g. <kbd>C-x</kbd> then <kbd
+          >C-s</kbd
+        ></span>
+    </div>
+
+    <div class="columns">
+      {
+        groups.map((g) => (
+          <section class="group">
+            <h2>{g.title}</h2>
+            <table>
+              <tbody>
+                {g.bindings.map((b) => (
+                  <tr>
+                    <td class="keys">
+                      {b.keys.split(" ").map((tok) => (
+                        <kbd>{tok}</kbd>
+                      ))}
+                    </td>
+                    <td class="desc">{b.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ))
+      }
+    </div>
+
+    <p class="note">
+      <strong>macOS note:</strong> the Option dead keys
+      (<kbd>Option</kbd>+<kbd>e</kbd>/<kbd>i</kbd>/<kbd>u</kbd>/<kbd>n</kbd>/<kbd
+        >`</kbd
+      >) are intercepted by the OS for accent composition, so a few
+      <kbd>M-</kbd> chords like <kbd>M-e</kbd> aren't reachable by keyboard
+      there — the command palette still works.
+    </p>
+  </main>
+</Layout>
+
+<style>
+  .page {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 3rem 1.25rem 2rem;
+  }
+
+  h1 {
+    font-size: 2.4rem;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .lead {
+    color: var(--muted);
+    max-width: 44rem;
+    margin: 0 0 1.5rem;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    padding: 1rem 1.25rem;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin-bottom: 2.5rem;
+  }
+
+  .columns {
+    columns: 2;
+    column-gap: 2rem;
+  }
+
+  .group {
+    break-inside: avoid;
+    margin-bottom: 2rem;
+  }
+
+  .group h2 {
+    font-size: 1.15rem;
+    margin: 0 0 0.5rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  td {
+    padding: 0.3rem 0;
+    vertical-align: top;
+  }
+
+  td.keys {
+    white-space: nowrap;
+    padding-right: 1rem;
+    width: 1%;
+  }
+
+  td.keys kbd + kbd {
+    margin-left: 0.25rem;
+  }
+
+  td.desc {
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+
+  .note {
+    margin-top: 1.5rem;
+    padding: 1rem 1.25rem;
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+
+  @media (max-width: 720px) {
+    .columns {
+      columns: 1;
+    }
+  }
+</style>
