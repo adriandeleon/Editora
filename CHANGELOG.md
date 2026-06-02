@@ -37,7 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Zen-mode exit button** — a small floating "Z" button appears at the top-right of the window while
   in Zen mode (same look as the Markdown preview controls); click it (tooltip: "Exit Zen mode") to leave
-  Zen. It's hidden whenever Zen is off.
+  Zen. It's hidden whenever Zen is off, and on Markdown files it sits just below the preview controls so
+  the two don't overlap.
 - **Navigation key hints in the pickers** — the Command Palette, the "Jump to…" pickers (recent files,
   bookmarks, structure, tool windows, snippets), and the file finder now show a footer legend of their
   relevant keys (move / select / cancel, plus Tab-complete in the file finder), matching the Switcher.

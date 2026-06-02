@@ -280,18 +280,26 @@ public class MainController {
         zenExitButton.setFocusTraversable(false);
         zenExitButton.setOnAction(e -> setZenMode(false));
         StackPane.setAlignment(zenExitButton, Pos.TOP_RIGHT);
-        StackPane.setMargin(zenExitButton, new javafx.geometry.Insets(8, 12, 0, 0));
         sceneRoot.getChildren().add(zenExitButton);
         updateZenButton();
     }
 
-    /** Shows the floating exit button only while in Zen mode (so it never overlaps normal chrome). */
+    /**
+     * Shows the floating exit button only while in Zen mode (so it never overlaps normal chrome). When
+     * the active file is Markdown its floating preview controls also sit top-right, so the Z is dropped
+     * below them to avoid overlapping.
+     */
     private void updateZenButton() {
-        if (zenExitButton != null) {
-            boolean zen = config.getWorkspaceState().isZenMode();
-            zenExitButton.setVisible(zen);
-            zenExitButton.setManaged(zen);
+        if (zenExitButton == null) {
+            return;
         }
+        boolean zen = config.getWorkspaceState().isZenMode();
+        zenExitButton.setVisible(zen);
+        zenExitButton.setManaged(zen);
+        EditorBuffer active = activeBuffer();
+        boolean belowMarkdownControls = zen && active != null && active.isMarkdown();
+        double top = belowMarkdownControls ? 44 : 8; // clear the Markdown preview toggle when present
+        StackPane.setMargin(zenExitButton, new javafx.geometry.Insets(top, 12, 0, 0));
     }
 
     private void setupRecentFiles() {
@@ -772,6 +780,7 @@ public class MainController {
                 autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
             }
             refreshSplitButtons();
+            updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {

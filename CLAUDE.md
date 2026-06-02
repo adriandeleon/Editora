@@ -70,7 +70,9 @@ wraps the FXML root in a `StackPane` so a floating overlay can sit on top — us
 `MainController.installZenOverlay` for the **Zen-mode exit button** (a small floating "Z",
 `Icons.zen()`, styled `.zen-exit` like the Markdown preview controls, shown top-right only while
 `WorkspaceState.isZenMode()` — toggled in `applyChromeVisibility` via `updateZenButton` — and
-clicking it runs `setZenMode(false)`).
+clicking it runs `setZenMode(false)`). `updateZenButton` also drops the Z below the Markdown preview
+controls (a larger top margin) when the active buffer is Markdown, since those also float top-right; it
+re-runs on tab switches so the offset tracks the active file.
 
 - `command/` — the keyboard-driven core.
   - `Command` / `CommandRegistry`: every action is a registered `Command` (id + title + runnable). The registry feeds both keybindings and the palette.
