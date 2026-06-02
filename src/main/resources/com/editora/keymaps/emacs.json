@@ -33,6 +33,7 @@
   "C-/": "edit.undo",
   "C-S-/": "edit.redo",
   "C-g": "edit.cancel",
+  "M-;": "edit.toggleComment",
   "C-a": "nav.lineStart",
   "C-e": "nav.lineEnd",
   "C-f": "nav.charForward",

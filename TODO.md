@@ -8,7 +8,7 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Language indentation aware for the 21 languages we support
 - [x] Autoclose `()[]{}` and quotes
 - [x] Highlight matching braces
-- [ ] Comment/uncomment code region
+- [x] Comment/uncomment code region
 - [ ] Format document
 - [ ] Column select support
 - [ ] Multiple cursors support

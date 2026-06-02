@@ -3027,6 +3027,32 @@ public class MainController {
         return true;
     }
 
+    /**
+     * Toggles comments on the selection/current line: a line comment for a single line, a block/region
+     * comment for a multi-line selection, depending on the language (see {@link com.editora.editor.Commenter}).
+     */
+    private void toggleComment() {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        com.editora.editor.Commenter.CommentStyle style =
+                com.editora.editor.Commenter.styleFor(buffer.getLanguage());
+        com.editora.editor.Commenter.Edit edit = com.editora.editor.Commenter.toggle(
+                area.getText(), area.getSelection().getStart(), area.getSelection().getEnd(), style);
+        if (edit == null) {
+            setStatus("No comment syntax for this file");
+            return;
+        }
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.selectRange(edit.selStart(), edit.selEnd());
+        area.requestFocus();
+    }
+
     /** Emacs-style vertical caret move (C-n/C-p) preserving the goal column; see {@link EditorBuffer#moveLine}. */
     private void moveLine(int delta) {
         EditorBuffer buffer = activeBuffer();
@@ -3294,6 +3320,7 @@ public class MainController {
         registry.register(Command.of("edit.undo", "Edit: Undo", this::onUndo));
         registry.register(Command.of("edit.redo", "Edit: Redo", this::onRedo));
         registry.register(Command.of("edit.cancel", "Cancel", this::cancel));
+        registry.register(Command.of("edit.toggleComment", "Edit: Toggle Comment", this::toggleComment));
         registry.register(Command.of("nav.lineStart", "Go: Line Start",
                 () -> moveAndFollow(a -> a.lineStart(selPolicy()))));
         registry.register(Command.of("nav.lineEnd", "Go: Line End",

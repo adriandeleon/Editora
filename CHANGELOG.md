@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Comment / uncomment** (`M-;` or the palette: "Edit: Toggle Comment"). A single line toggles a line
+  comment; a multi-line selection toggles a block/region comment — using whichever the language has
+  (e.g. `//` and `/* */` for Java/C-likes, `#` for Python/shell/YAML, `<!-- -->` for XML/HTML/Markdown,
+  `/* */` for CSS, `--` for SQL). Falls back gracefully (block-only languages always wrap; line-only
+  languages comment each line), preserves indentation, and is a no-op for languages without comments.
+
 - **Auto-close brackets and quotes** — typing `(`, `[`, `{`, `"`, `'`, or `` ` `` inserts the matching
   closer and keeps the caret between; typing the closer (or a quote) when it's already next to the
   caret types over it; typing an opener/quote with a selection wraps the selection; and Backspace
