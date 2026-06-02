@@ -118,16 +118,27 @@ public final class Indenter {
     }
 
     /**
-     * How many characters Backspace should delete to <b>clear the whole indent in one press</b> when the
-     * caret sits in a line's leading whitespace — so a single Backspace jumps back to column 1 instead of
-     * deleting one space at a time. {@code beforeCaret} is the line text from its start to the caret.
-     *
-     * <p>Returns the full count of that leading whitespace, or {@code 0} when the caret is not within
-     * leading-only whitespace (there's non-whitespace before it, or it's empty) — the caller should then
-     * let a normal single-character Backspace run (e.g. to join the previous line at column 0).
+     * How many characters Backspace should delete in one press when the caret sits in a line's leading
+     * whitespace. Counting backward from the caret:
+     * <ul>
+     *   <li><b>Blank line</b> (everything before and after the caret is whitespace) with a line above it:
+     *       the leading whitespace <em>plus the preceding newline</em> — so one press jumps back to the
+     *       end of the previous line (undoing an auto-indented Enter, "back to where you hit Enter").</li>
+     *   <li><b>Indented content line</b> (whitespace before the caret, real text after): just the leading
+     *       whitespace — clears the indent back to column 1 without joining lines.</li>
+     *   <li>Otherwise {@code 0} (caret not in leading-only whitespace) — let a normal Backspace run.</li>
+     * </ul>
+     * {@code beforeCaret}/{@code afterCaret} are the line text on each side of the caret;
+     * {@code hasPreviousLine} is whether a line exists above the current one.
      */
-    public static int smartBackspaceCount(String beforeCaret) {
-        return (!beforeCaret.isEmpty() && beforeCaret.isBlank()) ? beforeCaret.length() : 0;
+    public static int smartBackspaceCount(String beforeCaret, String afterCaret, boolean hasPreviousLine) {
+        if (beforeCaret.isEmpty() || !beforeCaret.isBlank()) {
+            return 0;
+        }
+        if (afterCaret.isBlank() && hasPreviousLine) {
+            return beforeCaret.length() + 1; // + the newline → join to the end of the previous line
+        }
+        return beforeCaret.length();
     }
 
     // --- block-open detection ---------------------------------------------------------------------

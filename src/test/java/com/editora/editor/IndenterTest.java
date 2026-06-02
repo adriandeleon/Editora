@@ -143,18 +143,30 @@ class IndenterTest {
     }
 
     @Test
-    void smartBackspaceClearsTheWholeIndentInOnePress() {
-        assertEquals(8, Indenter.smartBackspaceCount("        ")); // 8 spaces → all, back to col 1
-        assertEquals(4, Indenter.smartBackspaceCount("    "));
-        assertEquals(1, Indenter.smartBackspaceCount(" "));
-        assertEquals(2, Indenter.smartBackspaceCount("\t\t"));    // tabs counted as chars too
-        assertEquals(3, Indenter.smartBackspaceCount("  \t"));    // mixed whitespace
+    void smartBackspaceJoinsToPreviousLineOnABlankLine() {
+        // Blank auto-indented line with a line above: delete the indent + the newline (back to where
+        // Enter was pressed) → count is the leading whitespace length plus one.
+        assertEquals(9, Indenter.smartBackspaceCount("        ", "", true)); // 8 spaces + newline
+        assertEquals(5, Indenter.smartBackspaceCount("    ", "", true));
+        assertEquals(3, Indenter.smartBackspaceCount("\t\t", "", true));     // two tabs + newline
+        // Whitespace after the caret still counts the line as blank; only the indent before the caret
+        // (plus the newline) is removed, so the count is 4 + 1.
+        assertEquals(5, Indenter.smartBackspaceCount("    ", "  ", true));
+    }
+
+    @Test
+    void smartBackspaceClearsIndentOnAContentLineOrFirstLine() {
+        // Indented content line (text after the caret): clear just the indent, no join.
+        assertEquals(8, Indenter.smartBackspaceCount("        ", "foo", true));
+        assertEquals(4, Indenter.smartBackspaceCount("    ", "x = 1;", true));
+        // No previous line (first line): can't join up, so clear the indent.
+        assertEquals(4, Indenter.smartBackspaceCount("    ", "", false));
     }
 
     @Test
     void smartBackspaceNoOpOutsideLeadingWhitespace() {
-        assertEquals(0, Indenter.smartBackspaceCount(""));            // column 0
-        assertEquals(0, Indenter.smartBackspaceCount("    foo"));     // caret after code
-        assertEquals(0, Indenter.smartBackspaceCount("foo"));         // no leading whitespace
+        assertEquals(0, Indenter.smartBackspaceCount("", "", true));           // column 0
+        assertEquals(0, Indenter.smartBackspaceCount("    foo", "", true));    // caret after code
+        assertEquals(0, Indenter.smartBackspaceCount("foo", "", true));        // no leading whitespace
     }
 }

@@ -1130,21 +1130,25 @@ public class EditorBuffer {
             e.consume(); // we inserted the newline+indent ourselves
         });
         // Smart backspace: when the caret is in a line's leading whitespace, one Backspace clears the
-        // whole indent (back to column 1) instead of deleting one space at a time. Only consumes when it
-        // removes more than one char, so a normal single-char Backspace still runs everywhere else (and
-        // the auto-close empty-pair handler, registered earlier, gets first dibs).
+        // whole indent — and on an otherwise-blank (auto-indented) line it also removes the newline, so
+        // a single press jumps back to the end of the previous line ("back to where you hit Enter").
+        // Only consumes when it removes more than one char, so a normal single-char Backspace still runs
+        // everywhere else (and the auto-close empty-pair handler, registered earlier, gets first dibs).
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() != KeyCode.BACK_SPACE || viewMode || !isEditable() || hasActiveSnippet()
                     || e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShiftDown()
                     || a.getSelection().getLength() > 0) {
                 return;
             }
+            int par = a.getCurrentParagraph();
+            int lineStart = a.getAbsolutePosition(par, 0);
             int caret = a.getCaretPosition();
-            int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
-            if (caret <= lineStart) {
+            int col = caret - lineStart;
+            if (col <= 0) {
                 return; // at column 0 — let normal Backspace join the previous line
             }
-            int del = Indenter.smartBackspaceCount(a.getText(lineStart, caret));
+            String line = a.getParagraph(par).getText();
+            int del = Indenter.smartBackspaceCount(line.substring(0, col), line.substring(col), par > 0);
             if (del > 1) {
                 a.deleteText(caret - del, caret);
                 e.consume();

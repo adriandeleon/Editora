@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Smart backspace** — pressing Backspace while the caret is in a line's leading indentation now
-  clears the whole indent (back to column 1) in a single press, instead of one space at a time. Outside
-  leading whitespace, Backspace behaves normally.
+- **Smart backspace** — pressing Backspace while the caret is in a line's leading indentation deletes
+  the whole indent in one press instead of one space at a time. On a blank, auto-indented line a single
+  Backspace jumps back to the end of the previous line (undoing the Enter); on an indented line that has
+  content, it clears the indent. Outside leading whitespace, Backspace behaves normally.
 
 ### Changed
 
