@@ -1129,10 +1129,10 @@ public class EditorBuffer {
             a.requestFollowCaret();
             e.consume(); // we inserted the newline+indent ourselves
         });
-        // Smart backspace: in a line's leading whitespace, delete a whole indent level (back to the
-        // previous tab stop) per press instead of one space at a time. Only consumes when it removes
-        // more than one char, so a normal single-char Backspace still runs everywhere else (and the
-        // auto-close empty-pair handler, registered earlier, gets first dibs).
+        // Smart backspace: when the caret is in a line's leading whitespace, one Backspace clears the
+        // whole indent (back to column 1) instead of deleting one space at a time. Only consumes when it
+        // removes more than one char, so a normal single-char Backspace still runs everywhere else (and
+        // the auto-close empty-pair handler, registered earlier, gets first dibs).
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() != KeyCode.BACK_SPACE || viewMode || !isEditable() || hasActiveSnippet()
                     || e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShiftDown()
@@ -1144,7 +1144,7 @@ public class EditorBuffer {
             if (caret <= lineStart) {
                 return; // at column 0 — let normal Backspace join the previous line
             }
-            int del = Indenter.smartBackspaceCount(a.getText(lineStart, caret), tabSize);
+            int del = Indenter.smartBackspaceCount(a.getText(lineStart, caret));
             if (del > 1) {
                 a.deleteText(caret - del, caret);
                 e.consume();

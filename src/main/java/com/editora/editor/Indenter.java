@@ -118,29 +118,16 @@ public final class Indenter {
     }
 
     /**
-     * How many characters Backspace should delete to <b>outdent one level</b> when the caret sits in a
-     * line's leading whitespace — so a single press jumps back to the previous tab stop instead of
+     * How many characters Backspace should delete to <b>clear the whole indent in one press</b> when the
+     * caret sits in a line's leading whitespace — so a single Backspace jumps back to column 1 instead of
      * deleting one space at a time. {@code beforeCaret} is the line text from its start to the caret.
      *
-     * <p>Returns {@code 0} when the caret is not within leading-only whitespace (there's non-whitespace
-     * before it, or it's empty) — the caller should then let a normal single-character Backspace run.
-     * A trailing tab counts as one level (delete 1); otherwise it deletes the trailing run of spaces
-     * back to the previous multiple of {@code tabSize}.
+     * <p>Returns the full count of that leading whitespace, or {@code 0} when the caret is not within
+     * leading-only whitespace (there's non-whitespace before it, or it's empty) — the caller should then
+     * let a normal single-character Backspace run (e.g. to join the previous line at column 0).
      */
-    public static int smartBackspaceCount(String beforeCaret, int tabSize) {
-        if (beforeCaret.isEmpty() || !beforeCaret.isBlank()) {
-            return 0;
-        }
-        if (beforeCaret.charAt(beforeCaret.length() - 1) == '\t') {
-            return 1; // a tab is a whole indent level
-        }
-        int spaces = 0;
-        for (int i = beforeCaret.length() - 1; i >= 0 && beforeCaret.charAt(i) == ' '; i--) {
-            spaces++;
-        }
-        int unit = Math.max(1, tabSize);
-        int rem = spaces % unit;
-        return rem == 0 ? Math.min(unit, spaces) : rem;
+    public static int smartBackspaceCount(String beforeCaret) {
+        return (!beforeCaret.isEmpty() && beforeCaret.isBlank()) ? beforeCaret.length() : 0;
     }
 
     // --- block-open detection ---------------------------------------------------------------------
