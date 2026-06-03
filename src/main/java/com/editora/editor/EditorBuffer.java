@@ -50,6 +50,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
+import javafx.scene.text.Font;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -140,14 +141,21 @@ public class EditorBuffer {
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
     /** Resolves completions for the typed prefix; injected by the controller (default: none). */
     private CompletionProvider completionProvider = (s, d, p, prose) -> List.of();
-    /** When false the whole autocomplete feature is inert (Settings toggle). */
+    /** When false the whole autocomplete feature is inert (master Settings toggle). */
     private boolean autocompleteEnabled = true;
+    /** Per-source autocomplete toggles (gated by {@link #autocompleteEnabled}). */
+    private boolean autocompleteProse = true;
+    private boolean autocompleteSnippets = true;
     /** The caret-anchored completion dropdown (lazily created). */
     private CompletionPopup completionPopup;
     /** The view the completion popup is currently driven by (for click-accept routing). */
     private CodeArea completionArea;
     /** Suppresses one auto-trigger pass right after we programmatically accept a completion. */
     private boolean suppressCompletion;
+    /** Inline "ghost text" suggestion (prose buffers): a single muted suffix drawn after the caret. */
+    private Label ghostLabel;
+    private String ghostSuffix;
+    private CodeArea ghostArea;
     /** The two document offsets currently carrying the {@code brace-match} style, or null. */
     private int[] braceMatch;
     /** Coalesces brace-match recomputes to one per pulse (caret moves rapidly while typing). */
@@ -1613,9 +1621,11 @@ public class EditorBuffer {
         }
     }
 
-    /** Enables/disables the whole autocomplete feature (the Settings toggle). */
-    public void setAutocompleteEnabled(boolean enabled) {
+    /** Applies the autocomplete settings: the master toggle plus per-source toggles (prose / snippets). */
+    public void setAutocomplete(boolean enabled, boolean prose, boolean snippets) {
         this.autocompleteEnabled = enabled;
+        this.autocompleteProse = prose;
+        this.autocompleteSnippets = snippets;
         if (!enabled) {
             hideCompletion();
         }
@@ -1641,8 +1651,44 @@ public class EditorBuffer {
      */
     private void addCompletionKeys(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            // Inline ghost text (prose): Tab accepts, Esc dismisses; anything else lets the caret move
+            // (the caret listener then clears it and the debounce recomputes).
+            if (ghostVisible()) {
+                switch (e.getCode()) {
+                    case TAB -> {
+                        if (e.isShiftDown() || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                            hideGhost();
+                        } else {
+                            acceptGhost();
+                            e.consume();
+                        }
+                    }
+                    case ESCAPE -> { hideGhost(); e.consume(); }
+                    default -> { } // typing/Backspace/arrows fall through
+                }
+                return;
+            }
             if (completionPopup == null || !completionPopup.isShowing()) {
                 return;
+            }
+            // Emacs-style C-n / C-p move the selection too (the area owns these keys while the popup is
+            // open — see setOwnsKeys — so the global dispatcher leaves them for us).
+            if (e.isControlDown() && !e.isAltDown() && !e.isMetaDown()) {
+                if (e.getCode() == KeyCode.N) {
+                    completionPopup.moveDown();
+                    e.consume();
+                    return;
+                }
+                if (e.getCode() == KeyCode.P) {
+                    completionPopup.moveUp();
+                    e.consume();
+                    return;
+                }
+                if (e.getCode() == KeyCode.G) { // C-g cancels (Emacs); Esc is handled below
+                    hideCompletion();
+                    e.consume();
+                    return;
+                }
             }
             switch (e.getCode()) {
                 case DOWN -> { completionPopup.moveDown(); e.consume(); }
@@ -1672,15 +1718,30 @@ public class EditorBuffer {
         });
     }
 
-    /** Debounced auto-trigger: after typing settles (~120 ms), refresh the popup for the caret word. */
+    /** Debounced auto-trigger: completion only appears after typing pauses (~280 ms), so it never
+     *  flickers while the user is typing continuously. */
     private void installCompletionTrigger(CodeArea a) {
         a.multiPlainChanges()
-                .successionEnds(Duration.ofMillis(120))
+                .successionEnds(Duration.ofMillis(280))
                 .subscribe(ignored -> {
                     if (a.isFocused()) {
                         updateCompletion(a, false);
                     }
                 });
+        // Any caret move or scroll invalidates the inline ghost's position; clear it (the debounce
+        // re-shows it after the next pause in typing). The popup manages its own key/caret handling.
+        a.caretPositionProperty().addListener((o, ov, nv) -> hideGhost());
+        a.estimatedScrollYProperty().addListener((o, ov, nv) -> hideGhost());
+    }
+
+    /** True while the completion popup or the inline ghost is visible. */
+    public boolean completionShowing() {
+        return ghostVisible() || (completionPopup != null && completionPopup.isShowing());
+    }
+
+    /** Dismisses any active completion (popup or ghost) — the {@code edit.cancel} / Escape path. */
+    public void cancelCompletion() {
+        hideCompletion();
     }
 
     /** Manual trigger (the {@code edit.completion} command), on the focused view. */
@@ -1709,12 +1770,46 @@ public class EditorBuffer {
             hideCompletion();
             return;
         }
-        List<Completion> items = completionProvider.complete(language, getSpellLanguage(), prefix, isProse());
-        if (items.isEmpty()) {
+        // Per-source toggle: prose buffers use the word/dictionary source, code buffers the snippet source.
+        if (isProse() ? !autocompleteProse : !autocompleteSnippets) {
             hideCompletion();
             return;
         }
+        List<Completion> items = completionProvider.complete(language, getSpellLanguage(), prefix, isProse());
         if (a.getScene() == null) {
+            return;
+        }
+        // Prose: a single inline "ghost text" suffix after the caret (only at end-of-line content, so it
+        // never overlaps following text). Code: the multi-choice popup. Handle prose BEFORE any
+        // empty-items return, so the dictionary-load retry still gets registered on the first keystrokes.
+        if (isProse()) {
+            int lineEnd = caret;
+            while (lineEnd < text.length() && text.charAt(lineEnd) != '\n') {
+                lineEnd++;
+            }
+            String suffix = text.substring(caret, lineEnd).isBlank() ? bestGhostSuffix(items, prefix) : null;
+            if (suffix != null && !suffix.isEmpty()) {
+                hidePopup();
+                showGhost(a, suffix);
+                return;
+            }
+            hideCompletion();
+            // The word list loads off-thread; if it isn't ready yet, re-run once it lands so the first
+            // suggestion appears without needing another keystroke.
+            String dl = getSpellLanguage();
+            if (com.editora.completion.DictionaryWords.isAvailable(dl)
+                    && !com.editora.completion.DictionaryWords.isReady(dl)) {
+                com.editora.completion.DictionaryWords.ensureLoaded(dl, () -> {
+                    if (a.isFocused()) {
+                        updateCompletion(a, manual);
+                    }
+                });
+            }
+            return;
+        }
+        hideGhost();
+        if (items.isEmpty()) {
+            hidePopup();
             return;
         }
         Bounds caretScreen = a.getCharacterBoundsOnScreen(caret, caret).orElse(null);
@@ -1722,7 +1817,110 @@ public class EditorBuffer {
             return;
         }
         completionArea = a;
+        // Take ownership of editor-context chords so C-n/C-p reach the popup instead of moving the caret.
+        a.getProperties().put("editora.ownsKeys", Boolean.TRUE);
         completionPopup().show(a.getScene().getWindow(), caretScreen, items);
+    }
+
+    /** The suffix of the best word completion that continues {@code prefix}, or null if none qualifies. */
+    private static String bestGhostSuffix(List<Completion> items, String prefix) {
+        for (Completion c : items) {
+            if (c.kind() == Completion.Kind.WORD && c.insert().length() > prefix.length()
+                    && c.insert().regionMatches(true, 0, prefix, 0, prefix.length())) {
+                return c.insert().substring(prefix.length());
+            }
+        }
+        return null;
+    }
+
+    private Label ghostLabel() {
+        if (ghostLabel == null) {
+            ghostLabel = new Label();
+            ghostLabel.getStyleClass().add("completion-ghost");
+            ghostLabel.setMouseTransparent(true);
+            ghostLabel.setManaged(false); // free-positioned via layoutX/Y, ignored by AnchorPane layout
+            ghostLabel.setFocusTraversable(false);
+            ghostLabel.setAlignment(Pos.CENTER_LEFT); // center text in the line-box height (vertical align)
+            ghostLabel.setVisible(false);
+        }
+        return ghostLabel;
+    }
+
+    private boolean ghostVisible() {
+        return ghostLabel != null && ghostLabel.isVisible();
+    }
+
+    /** Draws the ghost suffix as a muted overlay label starting exactly at the caret. */
+    private void showGhost(CodeArea a, String suffix) {
+        int caret = a.getCaretPosition();
+        // At end-of-line there's no glyph *at* the caret, so measure the char *before* it and use its
+        // right edge as the start x (getCharacterBoundsOnScreen(caret, caret) would be empty there).
+        boolean usePrev = caret > 0;
+        Bounds screen = (usePrev
+                ? a.getCharacterBoundsOnScreen(caret - 1, caret)
+                : a.getCharacterBoundsOnScreen(caret, caret + 1)).orElse(null);
+        if (screen == null) {
+            return;
+        }
+        AnchorPane target = (a == area2 && root2 != null) ? root2 : root;
+        Bounds local = target.screenToLocal(screen);
+        if (local == null) {
+            return;
+        }
+        Label g = ghostLabel();
+        if (g.getParent() != target) {
+            if (g.getParent() instanceof AnchorPane ap) {
+                ap.getChildren().remove(g);
+            }
+            target.getChildren().add(g);
+        }
+        g.setFont(Font.font(fontFamily, fontSize));
+        g.setText(suffix);
+        // Unmanaged node: AnchorPane won't lay it out, so size + place it ourselves. applyCss() first so
+        // the Label's skin exists and prefWidth reflects the text (otherwise it stays 0×0). Use the
+        // measured line-box height and let the Label center the text in it, so it aligns with the line.
+        g.applyCss();
+        double w = Math.ceil(g.prefWidth(-1));
+        double h = local.getHeight() > 0 ? local.getHeight() : Math.ceil(g.prefHeight(w));
+        g.resizeRelocate(usePrev ? local.getMaxX() : local.getMinX(), local.getMinY(), w, h);
+        g.setVisible(true);
+        g.toFront();
+        ghostSuffix = suffix;
+        ghostArea = a;
+    }
+
+    /** Inserts the pending ghost suffix at the caret (the Tab-accept path for inline completion). */
+    private void acceptGhost() {
+        if (ghostSuffix == null || ghostArea == null) {
+            return;
+        }
+        CodeArea a = ghostArea;
+        String s = ghostSuffix;
+        hideGhost();
+        suppressCompletion = true;
+        try {
+            a.insertText(a.getCaretPosition(), s);
+        } finally {
+            Platform.runLater(() -> suppressCompletion = false);
+        }
+        a.requestFocus();
+    }
+
+    private void hideGhost() {
+        if (ghostLabel != null) {
+            ghostLabel.setVisible(false);
+        }
+        ghostSuffix = null;
+        ghostArea = null;
+    }
+
+    private void hidePopup() {
+        if (completionArea != null) {
+            completionArea.getProperties().remove("editora.ownsKeys"); // release the C-n/C-p ownership
+        }
+        if (completionPopup != null) {
+            completionPopup.hide();
+        }
     }
 
     /** Replaces the typed prefix with the accepted completion (a snippet starts a tab-stop session). */
@@ -1748,9 +1946,8 @@ public class EditorBuffer {
     }
 
     private void hideCompletion() {
-        if (completionPopup != null) {
-            completionPopup.hide();
-        }
+        hidePopup();
+        hideGhost();
     }
 
     private static void toggleStyleClass(Node node, String styleClass, boolean on) {

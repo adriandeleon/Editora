@@ -111,6 +111,8 @@ public class SettingsWindow {
     private CheckBox minimapCheck;
     private CheckBox whitespaceCheck;
     private CheckBox autocompleteCheck;
+    private CheckBox autocompleteProseCheck;
+    private CheckBox autocompleteSnippetsCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
     private CheckBox toolbarCheck;
@@ -343,6 +345,13 @@ public class SettingsWindow {
         minimapCheck = viewCheck(tr("settings.showMinimap"), Settings::setShowMinimap);
         whitespaceCheck = viewCheck(tr("settings.showWhitespace"), Settings::setShowWhitespace);
         autocompleteCheck = viewCheck(tr("settings.enableAutocomplete"), Settings::setAutocomplete);
+        autocompleteProseCheck = viewCheck(tr("settings.autocomplete.prose"), Settings::setAutocompleteProse);
+        autocompleteSnippetsCheck = viewCheck(tr("settings.autocomplete.snippets"), Settings::setAutocompleteSnippets);
+        // The per-source toggles are only meaningful while the master switch is on.
+        autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
+            autocompleteProseCheck.setDisable(!now);
+            autocompleteSnippetsCheck.setDisable(!now);
+        });
 
         spellCheckBox = new CheckBox(tr("settings.enableSpell"));
         spellCheckBox.selectedProperty().addListener((obs, was, now) -> {
@@ -491,7 +500,15 @@ public class SettingsWindow {
         row(p, Category.EDITOR, indent, labeled(tr("settings.tabSize"), tabSizeSpinner), "tab size indent width spaces");
         Label completion = section(p, tr("settings.section.completion"));
         row(p, Category.EDITOR, completion, autocompleteCheck,
-                "autocomplete completion suggestions snippets dictionary words popup");
+                "autocomplete completion suggestions enable popup");
+        HBox proseRow = new HBox(autocompleteProseCheck);
+        proseRow.setPadding(new Insets(0, 0, 0, 20));
+        row(p, Category.EDITOR, completion, proseRow,
+                "autocomplete prose words dictionary ghost text spelling");
+        HBox snippetsRow = new HBox(autocompleteSnippetsCheck);
+        snippetsRow.setPadding(new Insets(0, 0, 0, 20));
+        row(p, Category.EDITOR, completion, snippetsRow,
+                "autocomplete snippets popup templates");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -927,6 +944,10 @@ public class SettingsWindow {
             minimapCheck.setSelected(settings.isShowMinimap());
             whitespaceCheck.setSelected(settings.isShowWhitespace());
             autocompleteCheck.setSelected(settings.isAutocomplete());
+            autocompleteProseCheck.setSelected(settings.isAutocompleteProse());
+            autocompleteSnippetsCheck.setSelected(settings.isAutocompleteSnippets());
+            autocompleteProseCheck.setDisable(!settings.isAutocomplete());
+            autocompleteSnippetsCheck.setDisable(!settings.isAutocomplete());
             spellCheckBox.setSelected(settings.isSpellCheck());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
             spellLanguageCombo.setDisable(!settings.isSpellCheck());
@@ -995,6 +1016,25 @@ public class SettingsWindow {
         try {
             projectsCheck.setSelected(config.getSettings().isProjectSupport());
             updateProjectRowEnabled();
+        } finally {
+            loading = prev;
+        }
+    }
+
+    /** Re-syncs the autocomplete checkboxes to the current settings (used after a palette toggle). */
+    public void syncAutocompleteChecks() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            Settings s = config.getSettings();
+            autocompleteCheck.setSelected(s.isAutocomplete());
+            autocompleteProseCheck.setSelected(s.isAutocompleteProse());
+            autocompleteSnippetsCheck.setSelected(s.isAutocompleteSnippets());
+            autocompleteProseCheck.setDisable(!s.isAutocomplete());
+            autocompleteSnippetsCheck.setDisable(!s.isAutocomplete());
         } finally {
             loading = prev;
         }

@@ -31,8 +31,11 @@ public class Settings {
     private boolean spellCheck = true;
     /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
     private String spellLanguage = "en_US";
-    /** Autocomplete (snippet + dictionary-word completion popup); on by default. */
+    /** Autocomplete master switch (gates all sources); on by default. */
     private boolean autocomplete = true;
+    /** Per-source autocomplete toggles (gated by {@link #autocomplete}); on by default. */
+    private boolean autocompleteProse = true;
+    private boolean autocompleteSnippets = true;
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
@@ -175,6 +178,22 @@ public class Settings {
 
     public void setAutocomplete(boolean autocomplete) {
         this.autocomplete = autocomplete;
+    }
+
+    public boolean isAutocompleteProse() {
+        return autocompleteProse;
+    }
+
+    public void setAutocompleteProse(boolean autocompleteProse) {
+        this.autocompleteProse = autocompleteProse;
+    }
+
+    public boolean isAutocompleteSnippets() {
+        return autocompleteSnippets;
+    }
+
+    public void setAutocompleteSnippets(boolean autocompleteSnippets) {
+        this.autocompleteSnippets = autocompleteSnippets;
     }
 
     public String getSpellLanguage() {

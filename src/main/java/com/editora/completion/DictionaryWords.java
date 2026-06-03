@@ -33,6 +33,8 @@ public final class DictionaryWords {
     /** langId -> sorted (case-insensitive), de-duplicated base words. */
     private static final Map<String, String[]> CACHE = new ConcurrentHashMap<>();
     private static final Set<String> BUILDING = ConcurrentHashMap.newKeySet();
+    /** onReady callbacks waiting for an in-flight build (fired once, on the FX thread, when it lands). */
+    private static final Map<String, java.util.List<Runnable>> PENDING = new ConcurrentHashMap<>();
     private static final ExecutorService BUILDER = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "completion-dictionary-builder");
         t.setDaemon(true);
@@ -55,25 +57,35 @@ public final class DictionaryWords {
      * on the FX thread. No-op if already loaded/loading or unavailable. {@code onReady} may be null.
      */
     public static void ensureLoaded(String langId, Runnable onReady) {
-        if (langId == null || CACHE.containsKey(langId) || !AVAILABLE.contains(langId)) {
+        if (langId == null || !AVAILABLE.contains(langId)) {
             return;
         }
-        if (!BUILDING.add(langId)) {
+        if (CACHE.containsKey(langId)) {
+            if (onReady != null) {
+                Platform.runLater(onReady);
+            }
             return;
+        }
+        if (onReady != null) {
+            PENDING.computeIfAbsent(langId, k -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(onReady);
+        }
+        if (!BUILDING.add(langId)) {
+            return; // a build is already in flight; the callback (if any) was queued above
         }
         BUILDER.execute(() -> {
             try {
                 String[] sorted = load(langId);
                 if (sorted != null) {
                     CACHE.put(langId, sorted);
-                    if (onReady != null) {
-                        Platform.runLater(onReady);
-                    }
                 }
             } catch (Exception | LinkageError ignored) {
                 // Leave uncached; a later ensureLoaded() can retry. Never crash the app over a dictionary.
             } finally {
                 BUILDING.remove(langId);
+                java.util.List<Runnable> waiting = PENDING.remove(langId);
+                if (waiting != null && CACHE.containsKey(langId)) {
+                    Platform.runLater(() -> waiting.forEach(Runnable::run));
+                }
             }
         });
     }
@@ -250,6 +262,7 @@ public final class DictionaryWords {
     static void clearCache() {
         CACHE.clear();
         BUILDING.clear();
+        PENDING.clear();
     }
 
     /** Installs a prebuilt list for a language (tests, to avoid resource loading). */

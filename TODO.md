@@ -46,9 +46,8 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] AceJump support
 
 ## Code intelligence
-- [x] Autocomplete support — caret popup, snippet + spell-dictionary-word sources, auto + `C-M-i`/`M-/`
-      trigger, Enter/Tab accept (snippets expand with tab stops); Settings toggle. (Next: document-words,
-      LSP, fuzzy matching.)
+- [x] Autocomplete support — code: snippet popup (Enter/Tab); prose: inline ghost text (Tab); auto +
+      `C-M-i`/`M-/` trigger; Settings toggle. (Next: document-words, LSP, fuzzy matching.)
 - [ ] LSP support
 - [ ] Fix structure for the 21 languages we support
 - [ ] Multi language support

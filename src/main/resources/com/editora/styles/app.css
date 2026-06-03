@@ -1008,7 +1008,14 @@
 .completion-list {
     -fx-background-color: transparent;
     -fx-background-insets: 0;
-    -fx-padding: 2;
+    -fx-padding: 0;
+}
+/* Keyboard-driven + exact-fit, so never reserve a horizontal scrollbar; the vertical one shows only on
+   real overflow (more than the visible rows). */
+.completion-list .scroll-bar:horizontal {
+    -fx-pref-height: 0;
+    -fx-max-height: 0;
+    -fx-opacity: 0;
 }
 .completion-list .list-cell {
     -fx-background-color: transparent;
@@ -1032,4 +1039,13 @@
 /* Snippet rows get an accent label so they read as "expandable" vs plain words. */
 .completion-kind-snippet .completion-label {
     -fx-text-fill: -color-accent-fg;
+}
+
+/* Inline "ghost text" completion suffix drawn after the caret (prose buffers). Muted + transparent so
+   it reads as a suggestion, not real text; font is set in code to match the editor. */
+.completion-ghost {
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+    -fx-opacity: 0.65;
 }

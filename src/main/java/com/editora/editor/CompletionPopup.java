@@ -86,7 +86,11 @@ public final class CompletionPopup {
         int i = list.getSelectionModel().getSelectedIndex();
         int next = Math.floorMod((i < 0 ? 0 : i) + delta, n);
         list.getSelectionModel().select(next);
-        list.scrollTo(next);
+        // Only scroll when the list actually overflows; otherwise scrollTo() would force the selected
+        // row to the top and push a visible row out of view (all rows already fit when n <= VISIBLE_ROWS).
+        if (n > VISIBLE_ROWS) {
+            list.scrollTo(next);
+        }
     }
 
     /**
@@ -100,9 +104,15 @@ public final class CompletionPopup {
         }
         list.getItems().setAll(items);
         list.getSelectionModel().select(0);
-        list.scrollTo(0);
+        if (items.size() > VISIBLE_ROWS) {
+            list.scrollTo(0);
+        }
         int rows = Math.min(items.size(), VISIBLE_ROWS);
-        list.setPrefHeight(rows * ROW_HEIGHT + 4);
+        // Exact fit so no vertical scrollbar shows unless the list actually overflows (> VISIBLE_ROWS).
+        double h = rows * ROW_HEIGHT + 2; // +2 for the list's 1px top/bottom border
+        list.setPrefHeight(h);
+        list.setMinHeight(h);
+        list.setMaxHeight(h);
         double x = caretScreen.getMinX();
         double y = caretScreen.getMaxY() + 2;
         if (popup.isShowing()) {

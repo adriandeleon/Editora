@@ -1784,7 +1784,8 @@ public class MainController {
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         buffer.setCompletionProvider(completion::complete);
-        buffer.setAutocompleteEnabled(config.getSettings().isAutocomplete());
+        Settings acs = config.getSettings();
+        buffer.setAutocomplete(acs.isAutocomplete(), acs.isAutocompleteProse(), acs.isAutocompleteSnippets());
         if (buffer.isMarkdown()) {
             MarkdownViewToggle toggle = new MarkdownViewToggle(buffer);
             buffer.setOnViewModeChanged(() -> {
@@ -2858,6 +2859,33 @@ public class MainController {
         setStatus(tr("status.toggle.spellCheck", tr(s.isSpellCheck() ? "common.on" : "common.off")));
     }
 
+    private void toggleAutocomplete() {
+        Settings s = config.getSettings();
+        s.setAutocomplete(!s.isAutocomplete());
+        config.save();
+        applyAutocomplete();
+        settingsWindow.syncAutocompleteChecks(); // keep the Settings window in step if it's open
+        setStatus(tr("status.toggle.autocomplete", tr(s.isAutocomplete() ? "common.on" : "common.off")));
+    }
+
+    private void toggleAutocompleteProse() {
+        Settings s = config.getSettings();
+        s.setAutocompleteProse(!s.isAutocompleteProse());
+        config.save();
+        applyAutocomplete();
+        settingsWindow.syncAutocompleteChecks();
+        setStatus(tr("status.toggle.autocompleteProse", tr(s.isAutocompleteProse() ? "common.on" : "common.off")));
+    }
+
+    private void toggleAutocompleteSnippets() {
+        Settings s = config.getSettings();
+        s.setAutocompleteSnippets(!s.isAutocompleteSnippets());
+        config.save();
+        applyAutocomplete();
+        settingsWindow.syncAutocompleteChecks();
+        setStatus(tr("status.toggle.autocompleteSnippets", tr(s.isAutocompleteSnippets() ? "common.on" : "common.off")));
+    }
+
     /** Opens a picker to set the spell-check dictionary language for the active file (persisted per file). */
     private void chooseSpellLanguage() {
         EditorBuffer buffer = activeBuffer();
@@ -3761,13 +3789,13 @@ public class MainController {
         }
     }
 
-    /** Enables/disables autocomplete on every open buffer per the Settings toggle. */
+    /** Pushes the autocomplete settings (master + per-source) to every open buffer. */
     private void applyAutocomplete() {
-        boolean on = config.getSettings().isAutocomplete();
+        Settings s = config.getSettings();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
             if (buffer != null) {
-                buffer.setAutocompleteEnabled(on);
+                buffer.setAutocomplete(s.isAutocomplete(), s.isAutocompleteProse(), s.isAutocompleteSnippets());
             }
         }
     }
@@ -3804,6 +3832,12 @@ public class MainController {
     }
 
     private void cancel() {
+        EditorBuffer completing = activeBuffer();
+        if (completing != null && completing.completionShowing()) {
+            completing.cancelCompletion(); // C-g cancels the inline ghost (the popup is caught in-buffer)
+            setStatus("");
+            return;
+        }
         if (palette.isShown()) {
             palette.hide();
         } else if (findBar.isShown()) {
@@ -4106,6 +4140,9 @@ public class MainController {
                 this::toggleWhitespace));
         registry.register(Command.of("view.toggleSpellCheck",
                 this::toggleSpellCheck));
+        registry.register(Command.of("view.toggleAutocomplete", this::toggleAutocomplete));
+        registry.register(Command.of("view.toggleAutocompleteProse", this::toggleAutocompleteProse));
+        registry.register(Command.of("view.toggleAutocompleteSnippets", this::toggleAutocompleteSnippets));
         registry.register(Command.of("spell.setLanguage",
                 this::chooseSpellLanguage));
         registry.register(Command.of("view.toggleToolbar", this::toggleToolbar));

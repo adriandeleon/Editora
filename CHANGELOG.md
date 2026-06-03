@@ -9,13 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Autocomplete** — a caret-anchored completion popup that appears as you type (debounced) and on
-  demand (`C-M-i` / `M-/`, command "Edit: Trigger Autocomplete"). Two sources: **snippets** (prefix-
-  matched for the buffer's language — accepting one expands the snippet with its tab stops) and, in
-  prose files, **dictionary words** from the bundled spell dictionary plus your personal dictionary.
-  **Enter/Tab** accept, ↑/↓ navigate, Esc dismisses. Gated by a "Enable autocomplete" toggle in
-  Settings → Editor (default on). The dictionary word list is parsed off-thread and cached; prefix
-  lookup is a binary-search range, so typing/scrolling stay unaffected.
+- **Autocomplete** — appears as you type (debounced) and on demand (`C-M-i` / `M-/`, command
+  "Edit: Trigger Autocomplete"). **Code** files show a caret-anchored popup of **snippet** completions
+  (accepting one expands the snippet with its tab stops); **Enter/Tab** accept, ↑/↓ navigate, Esc
+  dismisses. **Prose** files (plain text / Markdown) instead show **inline "ghost text"** — a single
+  greyed continuation drawn after the caret, completed from the bundled spell dictionary plus your
+  personal dictionary; press **Tab** to accept, Esc (or just keep typing / move the caret) to dismiss.
+  In the code popup, ↑/↓ and **C-n/C-p** move the selection. Settings → Editor has a master "Enable
+  autocomplete" toggle plus per-source checkboxes — **Words (prose)** and **Snippets (code)** — all on
+  by default (more sources can be added later), and there are command-palette toggles for each
+  ("View: Toggle Autocomplete", "… Words (Prose)", "… Snippets"). The dictionary word list is parsed
+  off-thread and cached; prefix lookup is a binary-search range, so typing/scrolling stay unaffected.
 
 - **Multi-language interface (i18n)** — Editora's UI can now run in **English, Italian, Spanish,
   French, Portuguese, or German**. Command-palette titles, toolbar tooltips, tool-window titles, and
