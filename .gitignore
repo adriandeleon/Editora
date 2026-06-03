@@ -28,6 +28,9 @@ buildNumber.properties
 .classpath
 *.code-workspace
 
+# Claude Code local dev helper (settings.local.json is covered by global ignore)
+.claude/launch.json
+
 # OS
 .DS_Store
 Thumbs.db
