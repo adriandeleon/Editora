@@ -909,6 +909,51 @@
     -fx-min-width: 22px;
 }
 
+/* ---- Settings window (sidebar + category pages) ---- */
+.settings-search {
+    -fx-font-size: 13px;
+}
+.settings-sidebar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: transparent -color-border-muted transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+.settings-sidebar .list-cell {
+    -fx-padding: 7 12 7 12;
+    -fx-font-size: 13px;
+    -fx-background-color: transparent;
+}
+.settings-sidebar .list-cell:filled:selected {
+    -fx-background-color: -color-accent-subtle;
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
+.settings-content {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+}
+.settings-content > .viewport {
+    -fx-background-color: transparent;
+}
+.settings-page {
+    -fx-padding: 4 4 4 16;
+}
+.settings-page-title {
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 4 0;
+}
+.settings-section {
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 8 0 0 0;
+}
+.settings-coming-soon {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-style: italic;
+    -fx-padding: 8 0 0 0;
+}
+
 /* Title header at the top of the palette / Jump-to popups, naming the action. */
 .command-palette .palette-title {
     -fx-font-weight: bold;

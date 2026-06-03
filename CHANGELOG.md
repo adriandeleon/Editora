@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings window redesigned** — a scalable left **category sidebar** (Appearance, Editor, Tool
+  Windows, Spell Check, Application, Advanced, plus "coming soon" placeholders for Keymaps/Plugins/Git/AI)
+  replaces the single stacked list, with a **search** box that filters settings + jumps to matches, a
+  **live preview** on Appearance (sample code that recolors/re-fonts as you change theme/font), and a
+  **Reset to Defaults** on the Advanced page. Changes still apply live. Tool-window placement moved to
+  its own page; the new **Tab size** control lives on the Editor page. **About** moved out of Settings
+  (it's on the toolbar + the "About Editora" command); the settings-file link now lives on the Advanced
+  page.
+
 - **Markdown preview now renders closer to GitHub** — task lists (`- [x]`/`- [ ]`) show real checkboxes
   instead of bullets, inline `code` gets a rounded gray pill (instead of blue text), `#`/`##` headings
   get an underline rule, and links are no longer permanently underlined. Standalone images now render as

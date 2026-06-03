@@ -3,6 +3,8 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Settings window redesign — sidebar categories, search, live preview, Reset to Defaults; Tool
+      Windows + About moved out
 - [x] Git support — native CLI: status-bar branch + ahead/behind, gutter change bars vs HEAD, Git tool
       window (stage/unstage/discard/commit), and fetch/pull/push + branch switch/create commands
 - [x] Bookmarks — per-project, gutter markers + notes, tool window (filter, reorder via Alt+Up/Down /
@@ -69,7 +71,7 @@ A backlog of planned features and improvements. Unordered within each section.
 
 ## UI / UX
 - [ ] UI final touches (fonts, colors, etc.)
-- [ ] Pretty up Settings Window
+- [x] Pretty up Settings Window — sidebar categories, search, live preview, reset
 - [ ] Upgrade breadcrumbs support
 - [ ] Fix Zen mode
 

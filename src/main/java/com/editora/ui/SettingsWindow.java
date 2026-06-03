@@ -2,29 +2,47 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
+
+import org.eclipse.tm4e.core.grammar.IGrammar;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
+import com.editora.editor.GrammarRegistry;
 import com.editora.editor.SpellDictionaries;
+import com.editora.editor.TextMateHighlighter;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.Scene;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
-import javafx.scene.control.Separator;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Spinner;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
-import javafx.scene.layout.GridPane;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Font;
@@ -34,12 +52,41 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.StringConverter;
 
-/** A small settings window. Changes are persisted to settings.toml and applied live. */
+/**
+ * The Settings window: a left category sidebar + per-category pages, a search box, and a live
+ * preview, scalable as Editora grows. Changes are <em>applied live</em> — each control writes its
+ * {@link Settings} field and calls {@link #apply()} (persist to {@code settings.toml} + notify the
+ * controller), so there is no OK/Cancel; only Reset + Close.
+ */
 public class SettingsWindow {
 
-    // Window size; bumped 10% in each dimension (658x850 -> 724x935) for a roomier layout.
-    private static final double WIDTH = 724;
-    private static final double HEIGHT = 935;
+    private static final double WIDTH = 860;
+    private static final double HEIGHT = 620;
+
+    /** Settings categories shown in the sidebar. Placeholder pages are roadmap features (no settings yet). */
+    private enum Category {
+        APPEARANCE("Appearance", false),
+        EDITOR("Editor", false),
+        TOOL_WINDOWS("Tool Windows", false),
+        SPELL_CHECK("Spell Check", false),
+        APPLICATION("Application", false),
+        KEYMAPS("Keymaps", true),
+        PLUGINS("Plugins", true),
+        GIT("Git", true),
+        AI("AI", true),
+        ADVANCED("Advanced", false);
+
+        final String display;
+        final boolean placeholder;
+
+        Category(String display, boolean placeholder) {
+            this.display = display;
+            this.placeholder = placeholder;
+        }
+    }
+
+    /** A searchable settings row: its page, its node (hidden when filtered out), and its keywords. */
+    private record SettingRow(Category category, Node node, String keywords, Label section) { }
 
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
@@ -48,10 +95,12 @@ public class SettingsWindow {
     private final ToolWindowManager toolWindows;
     private final Stage stage = new Stage();
 
+    // --- controls (same set as before, regrouped into pages) ---
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
     private ComboBox<String> editorThemeCombo;
+    private Spinner<Integer> tabSizeSpinner;
     private CheckBox columnRulerCheck;
     private CheckBox lineHighlightCheck;
     private CheckBox lineNumbersCheck;
@@ -65,12 +114,33 @@ public class SettingsWindow {
     private CheckBox breadcrumbCheck;
     private CheckBox projectsCheck;
     private CheckBox zenCheck;
-    // The Project tool-window-placement row, disabled until projects are enabled.
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
     private ToolWindow projectToolWindowRef;
     private ComboBox<String> autoSaveCombo;
     private Spinner<Integer> autoSaveDelaySpinner;
+
+    // --- shell ---
+    private ListView<Category> sidebar;
+    private ScrollPane contentScroll;
+    private TextField searchField;
+    private final Map<Category, Region> pages = new EnumMap<>(Category.class);
+    private final List<SettingRow> rows = new ArrayList<>();
+    private final List<Label> sectionLabels = new ArrayList<>();
+    private final Set<Category> searchHiddenCats = EnumSet.noneOf(Category.class);
+
+    // --- live preview ---
+    private CodeArea preview;
+    private String currentPreviewCss; // editor-theme override sheet on the settings scene, or null
+    private static final String PREVIEW_SAMPLE = """
+            public class Greeter {
+                // Editora live preview
+                public static void main(String[] args) {
+                    String name = "world";
+                    System.out.println("Hello, " + name + "!");
+                }
+            }""";
+
     private boolean built;
     private boolean loading;
 
@@ -98,7 +168,6 @@ public class SettingsWindow {
         }
     }
 
-    /** Positions the window centered over the app's main window. */
     private void centerOnOwner(Window owner) {
         if (owner == null) {
             return;
@@ -112,6 +181,60 @@ public class SettingsWindow {
         stage.initOwner(owner);
         stage.initModality(Modality.NONE);
 
+        buildControls();
+        buildPreview();
+        buildPages();
+
+        searchField = new TextField();
+        searchField.setPromptText("Search settings…");
+        searchField.getStyleClass().add("settings-search");
+        searchField.textProperty().addListener((o, a, b) -> filter(b));
+
+        sidebar = new ListView<>();
+        sidebar.getStyleClass().add("settings-sidebar");
+        sidebar.getItems().setAll(Category.values());
+        sidebar.setPrefWidth(180);
+        sidebar.setMinWidth(180);
+        sidebar.setCellFactory(v -> new CategoryCell());
+        sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
+            if (b != null) {
+                contentScroll.setContent(pages.get(b));
+            }
+        });
+
+        contentScroll = new ScrollPane();
+        contentScroll.setFitToWidth(true);
+        contentScroll.getStyleClass().add("settings-content");
+        HBox.setHgrow(contentScroll, Priority.ALWAYS);
+
+        HBox body = new HBox(sidebar, contentScroll);
+        VBox.setVgrow(body, Priority.ALWAYS);
+
+        Button close = new Button("Close");
+        close.setOnAction(e -> stage.close());
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox buttons = new HBox(8, spacer, close);
+        buttons.setAlignment(Pos.CENTER_LEFT);
+
+        VBox root = new VBox(10, searchField, body, buttons);
+        root.setPadding(new Insets(12));
+        root.setPrefWidth(WIDTH);
+        root.setPrefHeight(HEIGHT);
+
+        Scene scene = new Scene(root, WIDTH, HEIGHT);
+        // The live preview needs the editor surface + token colors; the dialog controls keep AtlantaFX.
+        scene.getStylesheets().addAll(
+                SettingsWindow.class.getResource("/com/editora/styles/app.css").toExternalForm(),
+                SettingsWindow.class.getResource("/com/editora/styles/syntax.css").toExternalForm());
+        stage.setScene(scene);
+
+        sidebar.getSelectionModel().select(Category.APPEARANCE);
+    }
+
+    // --- control construction (logic unchanged from the flat window) -----------------------------
+
+    private void buildControls() {
         fontFamily = new ComboBox<>();
         fontFamily.getItems().setAll(fontFamilyChoices());
         fontFamily.setPrefWidth(220);
@@ -121,8 +244,6 @@ public class SettingsWindow {
         fontSize.setEditable(true);
         fontSize.setPrefWidth(90);
         fontSize.valueProperty().addListener((obs, old, now) -> apply());
-        // An editable Spinner does not commit typed text to its value automatically; do it on
-        // Enter and on focus loss (e.g. when clicking Close) so the typed size is saved.
         fontSize.getEditor().setOnAction(e -> commitFontSize());
         fontSize.getEditor().focusedProperty().addListener((obs, was, focused) -> {
             if (!focused) {
@@ -139,7 +260,6 @@ public class SettingsWindow {
             }
             config.getSettings().setTheme(now);
             javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(now));
-            // The editor theme follows the app theme until the user picks one explicitly.
             if (!config.getSettings().isEditorThemeUserSet()) {
                 String match = EditorThemes.defaultFor(now);
                 config.getSettings().setEditorTheme(match);
@@ -154,6 +274,9 @@ public class SettingsWindow {
         editorThemeCombo.getItems().setAll(EditorThemes.NAMES);
         editorThemeCombo.setPrefWidth(220);
         editorThemeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (now != null) {
+                applyPreviewTheme(now); // keep the preview in sync even on programmatic set
+            }
             if (loading || now == null) {
                 return;
             }
@@ -162,31 +285,23 @@ public class SettingsWindow {
             apply();
         });
 
-        columnRulerCheck = new CheckBox("Show 80-column ruler");
-        columnRulerCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setShowColumnRuler(now);
+        tabSizeSpinner = new Spinner<>(1, 16, 4);
+        tabSizeSpinner.setEditable(true);
+        tabSizeSpinner.setPrefWidth(90);
+        tabSizeSpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setTabSize(now);
             apply();
         });
-        lineHighlightCheck = new CheckBox("Highlight current line");
-        lineHighlightCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setHighlightCurrentLine(now);
-            apply();
-        });
-        lineNumbersCheck = new CheckBox("Show line numbers");
-        lineNumbersCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setShowLineNumbers(now);
-            apply();
-        });
-        minimapCheck = new CheckBox("Show minimap");
-        minimapCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setShowMinimap(now);
-            apply();
-        });
-        whitespaceCheck = new CheckBox("Show hidden characters (spaces, tabs, EOL)");
-        whitespaceCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setShowWhitespace(now);
-            apply();
-        });
+
+        columnRulerCheck = viewCheck("Show 80-column ruler", Settings::setShowColumnRuler);
+        lineHighlightCheck = viewCheck("Highlight current line", Settings::setHighlightCurrentLine);
+        lineNumbersCheck = viewCheck("Show line numbers", Settings::setShowLineNumbers);
+        minimapCheck = viewCheck("Show minimap", Settings::setShowMinimap);
+        whitespaceCheck = viewCheck("Show hidden characters (spaces, tabs, EOL)", Settings::setShowWhitespace);
+
         spellCheckBox = new CheckBox("Enable spell check");
         spellCheckBox.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setSpellCheck(now);
@@ -199,13 +314,10 @@ public class SettingsWindow {
         spellLanguageCombo.getItems().setAll(SpellDictionaries.available());
         spellLanguageCombo.setPrefWidth(220);
         spellLanguageCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String id) {
+            @Override public String toString(String id) {
                 return id == null ? "" : spellLanguageName(id);
             }
-
-            @Override
-            public String fromString(String s) {
+            @Override public String fromString(String s) {
                 return s;
             }
         });
@@ -216,28 +328,11 @@ public class SettingsWindow {
             config.getSettings().setSpellLanguage(now);
             apply();
         });
-        toolbarCheck = new CheckBox("Show toolbar");
-        toolbarCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setShowToolbar(now);
-            apply();
-        });
-        statusBarCheck = new CheckBox("Show status bar");
-        statusBarCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setShowStatusBar(now);
-            apply();
-        });
 
-        tabBarCheck = new CheckBox("Show tab bar");
-        tabBarCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setShowTabBar(now);
-            apply();
-        });
-
-        breadcrumbCheck = new CheckBox("Show file breadcrumb");
-        breadcrumbCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setShowBreadcrumb(now);
-            apply();
-        });
+        toolbarCheck = viewCheck("Show toolbar", Settings::setShowToolbar);
+        statusBarCheck = viewCheck("Show status bar", Settings::setShowStatusBar);
+        tabBarCheck = viewCheck("Show tab bar", Settings::setShowTabBar);
+        breadcrumbCheck = viewCheck("Show file breadcrumb", Settings::setShowBreadcrumb);
 
         projectsCheck = new CheckBox("Enable projects");
         projectsCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -245,25 +340,12 @@ public class SettingsWindow {
             apply();
             updateProjectRowEnabled();
         });
-        Label projectsInfo = new Label("ⓘ");
-        projectsInfo.getStyleClass().add("info-badge");
-        Tooltip projectsTip = new Tooltip(
-                "Projects are single-folder workspaces, each remembering its own open files and layout. "
-                + "Pick one to switch; \"No Project\" returns to the global session.");
-        projectsTip.setWrapText(true);
-        projectsTip.setMaxWidth(380);
-        Tooltip.install(projectsInfo, projectsTip);
-        HBox projectsRow = new HBox(6, projectsCheck, projectsInfo);
-        projectsRow.setAlignment(Pos.CENTER_LEFT);
 
         zenCheck = new CheckBox("Zen mode (distraction-free)");
         zenCheck.selectedProperty().addListener((obs, was, now) -> {
             if (loading) {
                 return;
             }
-            // Zen isn't a plain Settings field: route through the orchestration (it snapshots/hides
-            // tool windows and flips the view/chrome prefs off, or restores them). Then re-sync the
-            // other checkboxes, which Zen just changed underneath us.
             onToggleZen.accept(now);
             syncViewChecks();
         });
@@ -271,7 +353,7 @@ public class SettingsWindow {
         autoSaveCombo = new ComboBox<>();
         autoSaveCombo.getItems().setAll(
                 MainController.AUTOSAVE_OFF, MainController.AUTOSAVE_DELAY, MainController.AUTOSAVE_FOCUS);
-        autoSaveCombo.setConverter(new javafx.util.StringConverter<>() {
+        autoSaveCombo.setConverter(new StringConverter<>() {
             @Override public String toString(String key) {
                 return key == null ? "" : MainController.autoSaveLabel(key);
             }
@@ -289,7 +371,6 @@ public class SettingsWindow {
             apply();
         });
 
-        // Shown in whole seconds (users think in seconds); stored internally as milliseconds.
         autoSaveDelaySpinner = new Spinner<>(1, 300, 1, 1);
         autoSaveDelaySpinner.setEditable(true);
         autoSaveDelaySpinner.setPrefWidth(90);
@@ -300,134 +381,425 @@ public class SettingsWindow {
             config.getSettings().setAutoSaveDelayMillis(now * 1000);
             apply();
         });
+    }
 
-        GridPane form = new GridPane();
-        form.setHgap(12);
-        form.setVgap(10);
-        Label fontNote = new Label("Only monospaced fonts are listed.");
-        fontNote.setStyle("-fx-font-size: 11px; -fx-text-fill: -color-fg-muted;");
-        VBox fontFamilyBox = new VBox(4, fontFamily, fontNote);
-        form.addRow(0, new Label("Font family:"), fontFamilyBox);
-        form.addRow(1, new Label("Font size:"), fontSize);
-        form.addRow(2, new Label("Theme:"), themeCombo);
-        Label editorThemeNote = new Label("Follows the app theme until you pick one.");
-        editorThemeNote.setStyle("-fx-font-size: 11px; -fx-text-fill: -color-fg-muted;");
-        VBox editorThemeBox = new VBox(4, editorThemeCombo, editorThemeNote);
-        form.addRow(3, new Label("Editor theme:"), editorThemeBox);
-        form.add(columnRulerCheck, 1, 4);
-        form.add(lineHighlightCheck, 1, 5);
-        form.add(lineNumbersCheck, 1, 6);
-        form.add(minimapCheck, 1, 7);
-        form.add(whitespaceCheck, 1, 8);
-        form.add(toolbarCheck, 1, 9);
-        form.add(statusBarCheck, 1, 10);
-        form.add(tabBarCheck, 1, 11);
-        form.add(breadcrumbCheck, 1, 12);
-        form.add(projectsRow, 1, 13);
-        form.add(zenCheck, 1, 14);
-        Label delayLabel = new Label("delay (seconds)");
-        delayLabel.setStyle("-fx-font-size: 11px; -fx-text-fill: -color-fg-muted;");
+    /** A view-toggle checkbox that writes {@code setter} and applies live. */
+    private CheckBox viewCheck(String label, java.util.function.BiConsumer<Settings, Boolean> setter) {
+        CheckBox check = new CheckBox(label);
+        check.selectedProperty().addListener((obs, was, now) -> {
+            setter.accept(config.getSettings(), now);
+            apply();
+        });
+        return check;
+    }
+
+    // --- pages -----------------------------------------------------------------------------------
+
+    private void buildPages() {
+        pages.put(Category.APPEARANCE, appearancePage());
+        pages.put(Category.EDITOR, editorPage());
+        pages.put(Category.TOOL_WINDOWS, toolWindowsPage());
+        pages.put(Category.SPELL_CHECK, spellPage());
+        pages.put(Category.APPLICATION, applicationPage());
+        pages.put(Category.ADVANCED, advancedPage());
+        for (Category c : Category.values()) {
+            if (c.placeholder) {
+                pages.put(c, placeholderPage(c.display));
+            }
+        }
+    }
+
+    private VBox appearancePage() {
+        VBox p = page("Appearance");
+        Label fontNote = note("Only monospaced fonts are listed.");
+        VBox fontBox = new VBox(4, fontFamily, fontNote);
+        row(p, Category.APPEARANCE, null, labeled("Font family", fontBox), "font family typeface monospace");
+        row(p, Category.APPEARANCE, null, labeled("Font size", fontSize), "font size text");
+        row(p, Category.APPEARANCE, null, labeled("Theme", themeCombo), "theme appearance dark light app chrome");
+        Label etNote = note("Follows the app theme until you pick one.");
+        VBox etBox = new VBox(4, editorThemeCombo, etNote);
+        row(p, Category.APPEARANCE, null, labeled("Editor theme", etBox),
+                "editor theme syntax colors highlighting");
+        Label previewSection = section(p, "Live preview");
+        row(p, Category.APPEARANCE, previewSection, preview, "preview sample code");
+        return p;
+    }
+
+    private VBox editorPage() {
+        VBox p = page("Editor");
+        Label display = section(p, "Display");
+        row(p, Category.EDITOR, display, columnRulerCheck, "80 column ruler guide margin");
+        row(p, Category.EDITOR, display, lineHighlightCheck, "highlight current line caret");
+        row(p, Category.EDITOR, display, lineNumbersCheck, "line numbers gutter");
+        row(p, Category.EDITOR, display, minimapCheck, "minimap overview");
+        row(p, Category.EDITOR, display, whitespaceCheck, "hidden characters whitespace spaces tabs eol");
+        Label indent = section(p, "Indentation");
+        row(p, Category.EDITOR, indent, labeled("Tab size", tabSizeSpinner), "tab size indent width spaces");
+        Label saving = section(p, "Saving");
+        Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
-        form.addRow(15, new Label("Auto save:"), autoSaveBox);
-        form.add(spellCheckBox, 1, 16);
-        form.addRow(17, new Label("Spell check language:"), spellLanguageCombo);
+        row(p, Category.EDITOR, saving, labeled("Auto save", autoSaveBox),
+                "auto save autosave delay inactivity focus");
+        return p;
+    }
 
-        int row = 18;
+    private VBox spellPage() {
+        VBox p = page("Spell Check");
+        row(p, Category.SPELL_CHECK, null, spellCheckBox, "spell check spelling enable");
+        row(p, Category.SPELL_CHECK, null, labeled("Language", spellLanguageCombo),
+                "spell language dictionary english spanish french");
+        return p;
+    }
+
+    private VBox applicationPage() {
+        VBox p = page("Application");
+        Label chrome = section(p, "Window chrome");
+        row(p, Category.APPLICATION, chrome, toolbarCheck, "toolbar buttons");
+        row(p, Category.APPLICATION, chrome, statusBarCheck, "status bar");
+        row(p, Category.APPLICATION, chrome, tabBarCheck, "tab bar tabs");
+        row(p, Category.APPLICATION, chrome, breadcrumbCheck, "breadcrumb file path");
+        Label features = section(p, "Features");
+        Label projectsInfo = new Label("ⓘ");
+        projectsInfo.getStyleClass().add("info-badge");
+        Tooltip projectsTip = new Tooltip(
+                "Projects are single-folder workspaces, each remembering its own open files and layout. "
+                + "Pick one to switch; \"No Project\" returns to the global session.");
+        projectsTip.setWrapText(true);
+        projectsTip.setMaxWidth(380);
+        Tooltip.install(projectsInfo, projectsTip);
+        HBox projectsRow = new HBox(6, projectsCheck, projectsInfo);
+        projectsRow.setAlignment(Pos.CENTER_LEFT);
+        row(p, Category.APPLICATION, features, projectsRow, "projects workspace folder");
+        row(p, Category.APPLICATION, features, zenCheck, "zen distraction free focus");
+        return p;
+    }
+
+    /** The tool-window placement page: one row per registered tool window (Show / Side / ▲▼ reorder). */
+    private VBox toolWindowsPage() {
+        VBox p = page("Tool Windows");
+        Label hint = note("Use ▲ ▼ (or drag the stripe icons) to reorder. Some windows appear only in context.");
+        p.getChildren().add(hint);
+
         List<Runnable> moveRefreshers = new ArrayList<>();
         Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
-        if (!toolWindows.getRegisteredToolWindows().isEmpty()) {
-            form.add(new Separator(), 0, row++, 2, 1);
-            Label heading = new Label("Tool window placement");
-            heading.setStyle("-fx-font-weight: bold;");
-            form.add(heading, 0, row++, 2, 1);
-            Label orderHint = new Label("Use ▲ ▼ (or drag the stripe icons) to reorder.");
-            orderHint.getStyleClass().add("settings-hint");
-            form.add(orderHint, 0, row++, 4, 1);
-            for (ToolWindow tw : toolWindows.getRegisteredToolWindows()) {
-                CheckBox showCheck = new CheckBox("Show");
-                showCheck.setSelected(toolWindows.isVisible(tw));
+        for (ToolWindow tw : toolWindows.getRegisteredToolWindows()) {
+            CheckBox showCheck = new CheckBox("Show");
+            showCheck.setSelected(toolWindows.isVisible(tw));
 
-                ComboBox<ToolWindow.Side> sideCombo = new ComboBox<>();
-                sideCombo.getItems().setAll(ToolWindow.Side.values());
-                sideCombo.setConverter(new StringConverter<>() {
-                    @Override
-                    public String toString(ToolWindow.Side side) {
-                        if (side == null) {
-                            return "";
-                        }
-                        return side.name().charAt(0) + side.name().substring(1).toLowerCase();
-                    }
-
-                    @Override
-                    public ToolWindow.Side fromString(String s) {
-                        return ToolWindow.Side.valueOf(s.toUpperCase());
-                    }
-                });
-                sideCombo.setValue(toolWindows.currentSide(tw));
-                sideCombo.setDisable(!showCheck.isSelected());
-
-                Button moveUp = new Button("▲");
-                Button moveDown = new Button("▼");
-                moveUp.getStyleClass().addAll("flat", "reorder-button");
-                moveDown.getStyleClass().addAll("flat", "reorder-button");
-                moveUp.setTooltip(new Tooltip("Move earlier in the stripe"));
-                moveDown.setTooltip(new Tooltip("Move later in the stripe"));
-                Runnable refreshThisRow = () -> {
-                    boolean shown = showCheck.isSelected();
-                    moveUp.setDisable(!shown || !toolWindows.canMove(tw, -1));
-                    moveDown.setDisable(!shown || !toolWindows.canMove(tw, 1));
-                };
-                moveRefreshers.add(refreshThisRow);
-                moveUp.setOnAction(e -> {
-                    toolWindows.move(tw, -1);
-                    refreshMoves.run();
-                });
-                moveDown.setOnAction(e -> {
-                    toolWindows.move(tw, 1);
-                    refreshMoves.run();
-                });
-                HBox reorder = new HBox(2, moveUp, moveDown);
-
-                showCheck.selectedProperty().addListener((obs, was, visible) -> {
-                    toolWindows.setVisible(tw, visible);
-                    sideCombo.setDisable(!visible);
-                    refreshMoves.run();
-                });
-                sideCombo.valueProperty().addListener((obs, old, now) -> {
-                    if (now != null) {
-                        toolWindows.setSide(tw, now);
-                        refreshMoves.run();
-                    }
-                });
-
-                if ("project".equals(tw.getId())) {
-                    projectShowCheck = showCheck; // disabled until projects are enabled
-                    projectSideCombo = sideCombo;
-                    projectToolWindowRef = tw;
+            ComboBox<ToolWindow.Side> sideCombo = new ComboBox<>();
+            sideCombo.getItems().setAll(ToolWindow.Side.values());
+            sideCombo.setConverter(new StringConverter<>() {
+                @Override public String toString(ToolWindow.Side side) {
+                    return side == null ? "" : side.name().charAt(0) + side.name().substring(1).toLowerCase();
                 }
-                form.addRow(row++, new Label(tw.getTitle() + ":"), showCheck, sideCombo, reorder);
+                @Override public ToolWindow.Side fromString(String s) {
+                    return ToolWindow.Side.valueOf(s.toUpperCase());
+                }
+            });
+            sideCombo.setValue(toolWindows.currentSide(tw));
+            sideCombo.setDisable(!showCheck.isSelected());
+
+            Button moveUp = new Button("▲");
+            Button moveDown = new Button("▼");
+            moveUp.getStyleClass().addAll("flat", "reorder-button");
+            moveDown.getStyleClass().addAll("flat", "reorder-button");
+            moveUp.setTooltip(new Tooltip("Move earlier in the stripe"));
+            moveDown.setTooltip(new Tooltip("Move later in the stripe"));
+            Runnable refreshThisRow = () -> {
+                boolean shown = showCheck.isSelected();
+                moveUp.setDisable(!shown || !toolWindows.canMove(tw, -1));
+                moveDown.setDisable(!shown || !toolWindows.canMove(tw, 1));
+            };
+            moveRefreshers.add(refreshThisRow);
+            moveUp.setOnAction(e -> {
+                toolWindows.move(tw, -1);
+                refreshMoves.run();
+            });
+            moveDown.setOnAction(e -> {
+                toolWindows.move(tw, 1);
+                refreshMoves.run();
+            });
+
+            showCheck.selectedProperty().addListener((obs, was, visible) -> {
+                toolWindows.setVisible(tw, visible);
+                sideCombo.setDisable(!visible);
+                refreshMoves.run();
+            });
+            sideCombo.valueProperty().addListener((obs, old, now) -> {
+                if (now != null) {
+                    toolWindows.setSide(tw, now);
+                    refreshMoves.run();
+                }
+            });
+            if ("project".equals(tw.getId())) {
+                projectShowCheck = showCheck;
+                projectSideCombo = sideCombo;
+                projectToolWindowRef = tw;
             }
-            refreshMoves.run();
+
+            Label title = new Label(tw.getTitle());
+            title.setMinWidth(130);
+            title.setPrefWidth(130);
+            HBox reorder = new HBox(2, moveUp, moveDown);
+            HBox rowBox = new HBox(10, title, showCheck, sideCombo, reorder);
+            rowBox.setAlignment(Pos.CENTER_LEFT);
+            row(p, Category.TOOL_WINDOWS, null, rowBox, "tool window " + tw.getTitle() + " placement side show");
         }
+        refreshMoves.run();
         updateProjectRowEnabled();
-
-        Button about = new Button("About");
-        about.setOnAction(e -> showAbout(stage, config.getSettingsFile(), onOpenFile));
-        Button close = new Button("Close");
-        close.setOnAction(e -> stage.close());
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-        HBox buttons = new HBox(8, about, spacer, close);
-        buttons.setAlignment(Pos.CENTER_LEFT);
-
-        VBox rootBox = new VBox(16, form, buttons);
-        rootBox.setPadding(new Insets(16));
-        rootBox.setPrefWidth(WIDTH);
-        rootBox.setPrefHeight(HEIGHT);
-
-        stage.setScene(new Scene(rootBox, WIDTH, HEIGHT));
+        return p;
     }
+
+    private VBox advancedPage() {
+        VBox p = page("Advanced");
+        Label fileSection = section(p, "Settings file");
+        Hyperlink link = new Hyperlink(displaySettingsPath(config.getSettingsFile()));
+        link.setTooltip(new Tooltip("Open the settings file in Editora"));
+        link.setOnAction(e -> {
+            if (onOpenFile != null) {
+                onOpenFile.accept(config.getSettingsFile());
+            }
+        });
+        HBox fileRow = new HBox(6, new Label("Path:"), link);
+        fileRow.setAlignment(Pos.CENTER_LEFT);
+        row(p, Category.ADVANCED, fileSection, fileRow, "settings file path toml config location");
+
+        Label resetSection = section(p, "Reset");
+        Button reset = new Button("Reset to Defaults");
+        reset.setOnAction(e -> resetAll());
+        row(p, Category.ADVANCED, resetSection, reset, "reset defaults restore factory clear");
+
+        Label ioSection = section(p, "Import / Export");
+        Label io = new Label("Coming soon.");
+        io.getStyleClass().add("settings-coming-soon");
+        row(p, Category.ADVANCED, ioSection, io, "import export backup settings");
+        return p;
+    }
+
+    private VBox placeholderPage(String title) {
+        VBox p = page(title);
+        Label soon = new Label("Coming soon.");
+        soon.getStyleClass().add("settings-coming-soon");
+        p.getChildren().add(soon);
+        return p;
+    }
+
+    // --- page helpers ---
+
+    private VBox page(String title) {
+        Label heading = new Label(title);
+        heading.getStyleClass().add("settings-page-title");
+        VBox box = new VBox(10, heading);
+        box.getStyleClass().add("settings-page");
+        box.setPadding(new Insets(4, 4, 4, 16));
+        return box;
+    }
+
+    private Label section(VBox page, String name) {
+        Label h = new Label(name);
+        h.getStyleClass().add("settings-section");
+        page.getChildren().add(h);
+        sectionLabels.add(h);
+        return h;
+    }
+
+    private void row(VBox page, Category cat, Label section, Node node, String keywords) {
+        page.getChildren().add(node);
+        rows.add(new SettingRow(cat, node, keywords, section));
+    }
+
+    private Region labeled(String label, Node control) {
+        Label l = new Label(label);
+        l.setMinWidth(130);
+        l.setPrefWidth(130);
+        HBox h = new HBox(10, l, control);
+        h.setAlignment(Pos.CENTER_LEFT);
+        return h;
+    }
+
+    private static Label note(String text) {
+        Label l = new Label(text);
+        l.getStyleClass().add("settings-hint");
+        return l;
+    }
+
+    // --- search ----------------------------------------------------------------------------------
+
+    /** Whether {@code keywords} matches the search {@code query} (case-insensitive substring). Pure. */
+    static boolean matches(String query, String keywords) {
+        if (query == null || query.isBlank()) {
+            return true;
+        }
+        return keywords != null
+                && keywords.toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT).strip());
+    }
+
+    private void filter(String query) {
+        searchHiddenCats.clear();
+        boolean searching = query != null && !query.isBlank();
+        if (!searching) {
+            rows.forEach(r -> setShown(r.node(), true));
+            sectionLabels.forEach(s -> setShown(s, true));
+            sidebar.refresh();
+            return;
+        }
+        Set<Category> matched = EnumSet.noneOf(Category.class);
+        Set<Label> visibleSections = new HashSet<>();
+        for (SettingRow r : rows) {
+            boolean m = matches(query, r.keywords());
+            setShown(r.node(), m);
+            if (m) {
+                matched.add(r.category());
+                if (r.section() != null) {
+                    visibleSections.add(r.section());
+                }
+            }
+        }
+        sectionLabels.forEach(s -> setShown(s, visibleSections.contains(s)));
+        for (Category c : Category.values()) {
+            if (c.placeholder || !matched.contains(c)) {
+                searchHiddenCats.add(c);
+            }
+        }
+        sidebar.refresh();
+        Category sel = sidebar.getSelectionModel().getSelectedItem();
+        if (!matched.isEmpty() && (sel == null || !matched.contains(sel))) {
+            for (Category c : Category.values()) {
+                if (matched.contains(c)) {
+                    sidebar.getSelectionModel().select(c);
+                    break;
+                }
+            }
+        }
+    }
+
+    private static void setShown(Node node, boolean shown) {
+        node.setVisible(shown);
+        node.setManaged(shown);
+    }
+
+    private final class CategoryCell extends ListCell<Category> {
+        @Override
+        protected void updateItem(Category item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty || item == null) {
+                setText(null);
+                setDisable(false);
+                return;
+            }
+            setText(item.display);
+            setDisable(searchHiddenCats.contains(item));
+        }
+    }
+
+    // --- live preview ----------------------------------------------------------------------------
+
+    private void buildPreview() {
+        preview = new CodeArea(PREVIEW_SAMPLE);
+        preview.getStyleClass().add("editor-area");
+        preview.setEditable(false);
+        preview.setFocusTraversable(false);
+        preview.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
+        preview.setPrefHeight(170);
+        preview.setMinHeight(170);
+        preview.setWrapText(false);
+        try {
+            IGrammar g = GrammarRegistry.shared().forLanguageName("java");
+            if (g != null) {
+                StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(PREVIEW_SAMPLE, g);
+                preview.setStyleSpans(0, spans);
+            }
+        } catch (RuntimeException ignored) {
+            // Grammar unavailable: the preview still shows the sample in the theme's plain text color.
+        }
+    }
+
+    /** Swaps the editor-theme override sheet on the settings scene so the preview recolors to {@code name}. */
+    private void applyPreviewTheme(String name) {
+        if (stage.getScene() == null) {
+            return;
+        }
+        var sheets = stage.getScene().getStylesheets();
+        if (currentPreviewCss != null) {
+            sheets.remove(currentPreviewCss);
+        }
+        currentPreviewCss = EditorThemes.stylesheetFor(name);
+        if (currentPreviewCss != null && !sheets.contains(currentPreviewCss)) {
+            sheets.add(currentPreviewCss);
+        }
+    }
+
+    private void updatePreviewFont() {
+        if (preview == null || fontFamily.getValue() == null || fontSize.getValue() == null) {
+            return;
+        }
+        preview.setStyle("-fx-font-family: \"" + fontFamily.getValue() + "\"; -fx-font-size: "
+                + fontSize.getValue() + "px;");
+    }
+
+    // --- reset -----------------------------------------------------------------------------------
+
+    private void resetAll() {
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                "Reset all settings to their defaults?", ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle("Reset Settings");
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+            return;
+        }
+        Settings d = new Settings();
+        Settings s = config.getSettings();
+        resetAppearanceFields(d, s);
+        resetEditorFields(d, s);
+        resetSpellFields(d, s);
+        resetApplicationFields(d, s);
+        commitReset();
+    }
+
+    private void resetAppearanceFields(Settings d, Settings s) {
+        s.setFontFamily(d.getFontFamily());
+        s.setFontSize(d.getFontSize());
+        s.setTheme(d.getTheme());
+        s.setEditorTheme(d.getEditorTheme());
+        s.setEditorThemeUserSet(false);
+    }
+
+    private void resetEditorFields(Settings d, Settings s) {
+        s.setShowColumnRuler(d.isShowColumnRuler());
+        s.setHighlightCurrentLine(d.isHighlightCurrentLine());
+        s.setShowLineNumbers(d.isShowLineNumbers());
+        s.setShowMinimap(d.isShowMinimap());
+        s.setShowWhitespace(d.isShowWhitespace());
+        s.setTabSize(d.getTabSize());
+        s.setAutoSave(d.getAutoSave());
+        s.setAutoSaveDelayMillis(d.getAutoSaveDelayMillis());
+    }
+
+    private void resetSpellFields(Settings d, Settings s) {
+        s.setSpellCheck(d.isSpellCheck());
+        s.setSpellLanguage(d.getSpellLanguage());
+    }
+
+    private void resetApplicationFields(Settings d, Settings s) {
+        s.setShowToolbar(d.isShowToolbar());
+        s.setShowStatusBar(d.isShowStatusBar());
+        s.setShowTabBar(d.isShowTabBar());
+        s.setShowBreadcrumb(d.isShowBreadcrumb());
+        s.setProjectSupport(d.isProjectSupport());
+    }
+
+    /** Persists + applies a reset, re-themes the app, and reloads the controls + preview. */
+    private void commitReset() {
+        Settings s = config.getSettings();
+        config.save();
+        javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(s.getTheme()));
+        onApply.accept(s);
+        load();
+    }
+
+    // --- load + sync (unchanged behavior) --------------------------------------------------------
 
     private void load() {
         loading = true;
@@ -448,6 +820,7 @@ public class SettingsWindow {
                 settings.setEditorTheme(editorTheme);
             }
             editorThemeCombo.setValue(editorTheme);
+            tabSizeSpinner.getValueFactory().setValue(settings.getTabSize());
             columnRulerCheck.setSelected(settings.isShowColumnRuler());
             lineHighlightCheck.setSelected(settings.isHighlightCurrentLine());
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
@@ -471,13 +844,10 @@ public class SettingsWindow {
         } finally {
             loading = false;
         }
+        applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
+        updatePreviewFont();
     }
 
-    /**
-     * Enables/disables the "Project" tool-window-placement row to match the "Enable projects" setting:
-     * when projects are off the row is unchecked + disabled (you can't show the panel until enabled).
-     * Mirrors the real visibility, so the show-checkbox listener's {@code setVisible} is a no-op.
-     */
     private void updateProjectRowEnabled() {
         if (projectShowCheck == null) {
             return;
@@ -489,8 +859,10 @@ public class SettingsWindow {
         projectSideCombo.setDisable(!visible);
     }
 
-    /** Re-checks the "Enable projects" box from the current setting without re-firing its listener. */
     public void syncProjectsCheck() {
+        if (!built) {
+            return;
+        }
         boolean prev = loading;
         loading = true;
         try {
@@ -501,7 +873,6 @@ public class SettingsWindow {
         }
     }
 
-    /** Re-syncs the theme combos from settings (used after the palette theme commands change them). */
     public void syncThemes() {
         if (!built) {
             return;
@@ -514,9 +885,9 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
+        applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
     }
 
-    /** Re-syncs the view/chrome checkboxes from the current settings (used after a Zen toggle). */
     private void syncViewChecks() {
         boolean prev = loading;
         loading = true;
@@ -540,11 +911,8 @@ public class SettingsWindow {
         }
     }
 
-    /**
-     * The installed font families that render as monospaced. JavaFX has no monospace flag, so we
-     * compare the advance width of a narrow glyph ("i") against a wide one ("W"): in a fixed-pitch
-     * font they are equal.
-     */
+    // --- monospace font discovery ----------------------------------------------------------------
+
     private static List<String> monospaceFamilies() {
         Text narrow = new Text("iiiiiiiiii");
         Text wide = new Text("WWWWWWWWWW");
@@ -563,7 +931,6 @@ public class SettingsWindow {
         return families;
     }
 
-    /** Bundled fonts first (always offered), then the other installed monospaced families. */
     private static List<String> fontFamilyChoices() {
         List<String> choices = new ArrayList<>(Fonts.BUNDLED);
         for (String family : monospaceFamilies()) {
@@ -574,7 +941,6 @@ public class SettingsWindow {
         return choices;
     }
 
-    /** Parses the spinner's editor text, clamps it to range, and commits it to the value. */
     private void commitFontSize() {
         try {
             int value = Math.max(8, Math.min(48, Integer.parseInt(fontSize.getEditor().getText().trim())));
@@ -597,10 +963,11 @@ public class SettingsWindow {
         settings.setFontSize(fontSize.getValue());
         config.save();
         onApply.accept(settings);
+        updatePreviewFont();
     }
 
     /**
-     * Shows the About dialog. Shared by the settings window and the {@code help.about} command.
+     * Shows the About dialog. Shared by the {@code help.about} command and the toolbar About button.
      * The settings-file path is a link that opens that file in the editor via {@code openFile}.
      */
     public static void showAbout(Window owner, Path settingsFile, Consumer<Path> openFile) {
@@ -642,7 +1009,6 @@ public class SettingsWindow {
         alert.showAndWait();
     }
 
-    /** A friendly display name for a spell-check dictionary id (falls back to the id itself). */
     private static String spellLanguageName(String id) {
         return switch (id) {
             case "en_US" -> "English (US)";

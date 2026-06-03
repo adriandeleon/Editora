@@ -81,6 +81,8 @@ Emacs-style keymap or a fuzzy command palette.
   repo and opens a file from it — independent of projects). All off the UI thread; hidden when not in a
   repo or when `git` isn't on `PATH`.
 - **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Bookmarks, Structure, File Information).
+- **Settings** — a category sidebar (Appearance, Editor, Tool Windows, Spell Check, Application, …) with a
+  search box, a live font/theme preview, and Reset to Defaults. Changes apply instantly.
 
 ## Requirements
 
