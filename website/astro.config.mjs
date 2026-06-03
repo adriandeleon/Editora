@@ -1,9 +1,8 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 
-// Project page served at https://adriandeleon.github.io/Editora/
-// `site` + `base` make Astro emit correct absolute/relative URLs and asset paths.
+// Served at the custom apex domain editora-project.dev (www. redirects to it).
+// No `base` — the site lives at the domain root, so asset/link paths are "/".
 export default defineConfig({
-  site: "https://adriandeleon.github.io",
-  base: "/Editora",
+  site: "https://editora-project.dev",
 });
