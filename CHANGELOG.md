@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Column (rectangular / block) selection** — select a rectangle with **Option/Alt-drag**, or extend
+  one from the caret with **Shift+Alt+arrows** (also "Edit: Column Selection" / `C-x SPC`). Copy / cut /
+  delete the block, and type to insert on every selected line at once; Backspace/Delete remove a column.
+  (RichTextFX is single-caret, so this is a self-drawn block overlay rather than live multi-cursors;
+  primary editor view.)
+
 - **Emacs transpose commands** — transpose characters (`C-t`), words (`M-t`), and lines (`C-x C-t`),
   also in the command palette ("Edit: Transpose …"). At end of line, `C-t` swaps the two preceding
   characters (typo fix); `C-x C-t` swaps the current line with the one above.

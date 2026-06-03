@@ -29,7 +29,7 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Highlight matching braces
 - [x] Comment/uncomment code region
 - [ ] Format document
-- [ ] Column select support
+- [x] Column select support — rectangular block (Alt-drag / Shift+Alt+arrows), copy/cut/delete + column type
 - [ ] Multiple cursors support
 - [ ] Advanced Undo/Redo support
 - [x] Spell check support — Lucene Hunspell, red squiggles, suggestions, user dictionary, en_US/en_GB

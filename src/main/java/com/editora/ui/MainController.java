@@ -2744,6 +2744,12 @@ public class MainController {
         if (!activeEditable()) {
             return;
         }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null && buffer.hasColumnSelection()) {
+            buffer.columnCut();
+            setStatus("Cut column");
+            return;
+        }
         CodeArea area = activeArea();
         if (area == null) {
             return;
@@ -2756,6 +2762,12 @@ public class MainController {
 
     @FXML
     private void onCopy() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null && buffer.hasColumnSelection()) {
+            buffer.columnCopy();
+            setStatus("Copied column");
+            return;
+        }
         CodeArea area = activeArea();
         if (area == null) {
             return;
@@ -4210,6 +4222,13 @@ public class MainController {
                 () -> transpose(com.editora.editor.Transposer::transposeWords)));
         registry.register(Command.of("edit.transposeLines", "Edit: Transpose Lines",
                 () -> transpose(com.editora.editor.Transposer::transposeLines)));
+        registry.register(Command.of("edit.columnSelection", "Edit: Column Selection (rectangle)", () -> {
+            EditorBuffer b = activeBuffer();
+            if (b != null) {
+                b.startColumnSelection();
+                setStatus("Column selection — Option-drag or Shift+Alt+arrows to extend");
+            }
+        }));
         registry.register(Command.of("nav.lineStart", "Go: Line Start",
                 () -> moveAndFollow(a -> a.lineStart(selPolicy()))));
         registry.register(Command.of("nav.lineEnd", "Go: Line End",

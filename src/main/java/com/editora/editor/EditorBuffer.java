@@ -148,6 +148,10 @@ public class EditorBuffer {
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
+    /** Rectangular ("column") selection on the primary view (its key/mouse filters are installed in its
+     *  constructor — i.e. during field init, before the constructor-body input filters — so it intercepts
+     *  typing/Backspace first while a block is active). */
+    private final ColumnSelection columnSelection = new ColumnSelection(area);
     private final FoldManager folds = new FoldManager(area);
     private final BookmarkManager bookmarks = new BookmarkManager(area);
     /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
@@ -271,11 +275,16 @@ public class EditorBuffer {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, whitespace, spellOverlay, minimap, columnRuler);
+        root.getChildren().addAll(scrollPane, columnSelection, whitespace, spellOverlay, minimap, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
         AnchorPane.setRightAnchor(scrollPane, Minimap.WIDTH);
+        // The column-selection overlay shares the text rectangle, mouse-transparent (input is on the area).
+        AnchorPane.setTopAnchor(columnSelection, 0d);
+        AnchorPane.setBottomAnchor(columnSelection, 0d);
+        AnchorPane.setLeftAnchor(columnSelection, 0d);
+        AnchorPane.setRightAnchor(columnSelection, Minimap.WIDTH);
         // The whitespace overlay shares the text rectangle with the scroll pane (and tracks it when
         // the minimap is toggled); it is mouse-transparent so clicks reach the editor.
         AnchorPane.setTopAnchor(whitespace, 0d);
@@ -441,6 +450,35 @@ public class EditorBuffer {
     /** The view that currently has focus (primary or the split's secondary); for caret/edit commands. */
     public CodeArea getFocusedArea() {
         return focusedArea;
+    }
+
+    // --- Column (rectangular) selection (primary view) ---
+
+    /** Whether a rectangular/column selection is currently active. */
+    public boolean hasColumnSelection() {
+        return columnSelection.isActive();
+    }
+
+    /** Starts a zero-width column selection at the caret (the {@code edit.columnSelection} command). */
+    public void startColumnSelection() {
+        if (isEditable()) {
+            area.requestFocus();
+            columnSelection.startAtCaret();
+        }
+    }
+
+    /** Copies the active column selection's rectangle to the clipboard. */
+    public void columnCopy() {
+        columnSelection.copy();
+    }
+
+    /** Cuts the active column selection's rectangle to the clipboard. */
+    public void columnCut() {
+        if (isEditable()) {
+            columnSelection.cut();
+        } else {
+            columnSelection.copy();
+        }
     }
 
     /** The node to place in the scene: the read-only banner (when shown) above the editor view. */

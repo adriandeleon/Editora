@@ -39,6 +39,7 @@
   "C-t": "edit.transposeChars",
   "M-t": "edit.transposeWords",
   "C-x C-t": "edit.transposeLines",
+  "C-x space": "edit.columnSelection",
   "C-a": "nav.lineStart",
   "C-e": "nav.lineEnd",
   "C-f": "nav.charForward",
