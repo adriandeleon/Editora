@@ -1,0 +1,138 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { commandGroups, commandCount } from "../lib/commands";
+---
+
+<Layout
+  title="Commands — Editora"
+  description="The full list of Editora commands — every action available from the M-x command palette, with descriptions and default keybindings."
+>
+  <main class="page">
+    <h1>Commands</h1>
+    <p class="lead">
+      Every action in Editora is a <strong>command</strong> — all
+      {commandCount} of them are reachable from the <kbd>M-x</kbd> command
+      palette and can be bound to a key. Commands with a default binding show it
+      on the right; see the <a href="/keybindings">keybindings reference</a> for
+      the chord legend.
+    </p>
+
+    {
+      commandGroups.map((g) => (
+        <section class="group">
+          <h2>{g.title}</h2>
+          <table>
+            <tbody>
+              {g.commands.map((c) => (
+                <tr>
+                  <td class="cmd">
+                    <span class="cmd-title">{c.title}</span>
+                    <code class="cmd-id">{c.id}</code>
+                  </td>
+                  <td class="cmd-desc">{c.desc}</td>
+                  <td class="cmd-keys">
+                    {c.keys
+                      ? c.keys.split(" ").map((tok) => <kbd>{tok}</kbd>)
+                      : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ))
+    }
+  </main>
+</Layout>
+
+<style>
+  .page {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 3rem 1.25rem 2rem;
+  }
+
+  h1 {
+    font-size: 2.4rem;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .lead {
+    color: var(--muted);
+    max-width: 46rem;
+    margin: 0 0 2.5rem;
+  }
+
+  .group {
+    margin-bottom: 2.5rem;
+  }
+
+  .group h2 {
+    font-size: 1.2rem;
+    margin: 0 0 0.75rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  tr {
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  tr:last-child {
+    border-bottom: none;
+  }
+
+  td {
+    padding: 0.55rem 0.75rem 0.55rem 0;
+    vertical-align: top;
+  }
+
+  .cmd {
+    width: 30%;
+    min-width: 12rem;
+  }
+
+  .cmd-title {
+    display: block;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+
+  .cmd-id {
+    color: var(--faint);
+    font-size: 0.75rem;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .cmd-desc {
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  .cmd-keys {
+    width: 1%;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .cmd-keys kbd + kbd {
+    margin-left: 0.25rem;
+  }
+
+  @media (max-width: 720px) {
+    .cmd-id {
+      display: none;
+    }
+    .cmd {
+      width: 40%;
+    }
+  }
+</style>
