@@ -91,6 +91,16 @@ const platforms = [
         <a class="btn btn-ghost" href={url("keybindings")}>Keybindings</a>
       </div>
     </div>
+
+    <div class="hero-shot">
+      <img
+        src={url("screenshots/editor.jpg")}
+        alt="The Editora editor: a Java file with syntax highlighting, line-number gutter with bookmarks, minimap, and status bar"
+        width="2000"
+        height="1541"
+        fetchpriority="high"
+      />
+    </div>
   </section>
 
   <main>
@@ -179,8 +189,25 @@ const platforms = [
   .hero-inner {
     max-width: 760px;
     margin: 0 auto;
-    padding: 4rem 1.25rem 5rem;
+    padding: 4rem 1.25rem 2.5rem;
     text-align: center;
+  }
+
+  .hero-shot {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 1.25rem 4rem;
+  }
+
+  .hero-shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow:
+      0 20px 50px -20px rgba(0, 0, 0, 0.6),
+      0 0 0 1px var(--border-soft);
   }
 
   .hero-logo {

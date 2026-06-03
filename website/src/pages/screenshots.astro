@@ -12,7 +12,18 @@ const url = (p: string) => `${base}/${p}`.replace(/\/{2,}/g, "/");
 // derived from its filename. Drop images into public/screenshots/ and they
 // appear here automatically.
 const captions: Record<string, string> = {
-  // "editor.png": "The editor with syntax highlighting and the gutter",
+  "editor.jpg":
+    "Editing a Java file — syntax highlighting, line-number gutter with bookmarks, minimap, and the status bar",
+  "command-palette.jpg":
+    "The M-x command palette — fuzzy-search and run any command",
+  "bookmarks-panel.jpg":
+    "The Bookmarks tool window, listing bookmarks across every file",
+  "file-information.jpg":
+    "The File Information panel — encoding, line endings, counts, and character details",
+  "markdown-split.jpg":
+    "Markdown split view — source on the left, live GitHub-style preview on the right",
+  "markdown-preview-zen.jpg":
+    "Markdown preview in Zen mode — distraction-free reading with rendered task lists",
 };
 
 const here = dirname(fileURLToPath(import.meta.url));
