@@ -20,8 +20,20 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class BookmarkStore {
 
+    /** Current on-disk schema version of {@code bookmarks.json}. */
+    public static final int SCHEMA_VERSION = 1;
+    private int schemaVersion = SCHEMA_VERSION;
+
     /** Project key ({@code ""} = no project) -> (absolute file path -> bookmarks). */
     private Map<String, Map<String, List<Bookmark>>> byProject = new LinkedHashMap<>();
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
+    }
 
     public Map<String, Map<String, List<Bookmark>>> getByProject() {
         return byProject;

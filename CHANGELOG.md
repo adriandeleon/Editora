@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Config schema versioning + migrations** — every structured config file (`settings.toml`,
+  `workspace-state.json`, `projects/<id>.json`, `projects.json`, `bookmarks.json`, `recent-files.json`)
+  now carries a per-file integer `schemaVersion` (baseline 1), and reads go through a small migration
+  framework (`config/migration/`) so future releases can evolve a file's format with one registered
+  `v→v+1` step. Existing unversioned files load unchanged and get stamped on the next save (no data
+  loss); `recent-files.json` (previously a bare array) is migrated to a versioned object. If a file is
+  **newer** than the running build (e.g. after a downgrade), it's backed up to `<name>.v<n>.bak` and
+  defaults are loaded rather than overwriting newer data.
+
 - **Autocomplete** — appears as you type (debounced) and on demand (`C-M-i` / `M-/`, command
   "Edit: Trigger Autocomplete"). **Code** files show a caret-anchored popup of **snippet** completions
   (accepting one expands the snippet with its tab stops); **Enter/Tab** accept, ↑/↓ navigate, Esc

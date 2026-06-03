@@ -9,6 +9,10 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Settings {
 
+    /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
+    public static final int SCHEMA_VERSION = 1;
+    private int schemaVersion = SCHEMA_VERSION;
+
     private String fontFamily = "JetBrains Mono";
     private int fontSize = 14;
     /** Text zoom factor applied on top of {@link #fontSize} (1.0 = 100%). A quick, persisted zoom that
@@ -51,6 +55,14 @@ public class Settings {
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
+    }
 
     public String getFontFamily() {
         return fontFamily;

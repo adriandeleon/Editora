@@ -12,6 +12,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
+import com.editora.config.migration.ConfigMigrations;
+import com.editora.config.migration.ConfigSchema;
+
 /**
  * Tracks the user's projects and the active one, persisted as JSON in {@code <configDir>/projects.json}.
  * Each project's session state ({@link WorkspaceState}) lives in its own
@@ -26,8 +29,19 @@ public class ProjectManager {
     /** The serialized index: the known projects and which one is active ("" = none). */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Index {
+        /** Current on-disk schema version of {@code projects.json}. */
+        public static final int SCHEMA_VERSION = 1;
+        private int schemaVersion = SCHEMA_VERSION;
         private List<Project> projects = new ArrayList<>();
         private String activeProjectId = "";
+
+        public int getSchemaVersion() {
+            return schemaVersion;
+        }
+
+        public void setSchemaVersion(int schemaVersion) {
+            this.schemaVersion = schemaVersion;
+        }
 
         public List<Project> getProjects() {
             return projects;
@@ -56,14 +70,8 @@ public class ProjectManager {
     }
 
     private void load() {
-        Path file = configDir.resolve(INDEX_FILE_NAME);
-        if (Files.isReadable(file)) {
-            try {
-                index = json.readValue(Files.readString(file), Index.class);
-            } catch (IOException e) {
-                index = new Index();
-            }
-        }
+        index = ConfigMigrations.readVersioned(
+                configDir.resolve(INDEX_FILE_NAME), json, new Index(), ConfigSchema.PROJECTS);
     }
 
     public void save() {

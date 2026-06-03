@@ -16,6 +16,9 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 
+import com.editora.config.migration.ConfigMigrations;
+import com.editora.config.migration.ConfigSchema;
+
 /**
  * Loads and saves the user config in the config directory: the {@code EDITORA_CONFIG_DIR} environment
  * variable when set, otherwise {@code ~/.editora/} ({@code user.home} maps to the user profile on
@@ -94,7 +97,7 @@ public class ConfigManager {
      */
     public void setWorkspaceStateFile(Path file) {
         this.workspaceStateFile = file;
-        this.workspaceState = read(file, json, new WorkspaceState());
+        this.workspaceState = ConfigMigrations.readVersioned(file, json, new WorkspaceState(), ConfigSchema.WORKSPACE);
     }
 
     /** Points the session back at the default {@code workspace-state.json} (no project) and reloads it. */
@@ -150,8 +153,9 @@ public class ConfigManager {
 
     /** Reads all config files, merging stored values onto defaults. Falls back to defaults on any error. */
     public Settings load() {
-        settings = read(getSettingsFile(), toml, new Settings());
-        workspaceState = read(getWorkspaceStateFile(), json, new WorkspaceState());
+        settings = ConfigMigrations.readVersioned(getSettingsFile(), toml, new Settings(), ConfigSchema.SETTINGS);
+        workspaceState = ConfigMigrations.readVersioned(
+                getWorkspaceStateFile(), json, new WorkspaceState(), ConfigSchema.WORKSPACE);
         loadBookmarks();
         loadUserDictionary();
         return settings;
@@ -210,7 +214,8 @@ public class ConfigManager {
      */
     private void loadBookmarks() {
         if (Files.exists(getBookmarksFile())) {
-            bookmarkStore = read(getBookmarksFile(), json, new BookmarkStore());
+            bookmarkStore = ConfigMigrations.readVersioned(
+                    getBookmarksFile(), json, new BookmarkStore(), ConfigSchema.BOOKMARKS);
             return;
         }
         bookmarkStore = new BookmarkStore();
@@ -258,18 +263,6 @@ public class ConfigManager {
             json.writeValue(file.toFile(), obj);
         } catch (IOException | IllegalArgumentException e) {
             // a malformed legacy file simply contributes no bookmarks
-        }
-    }
-
-    /** Reads {@code file} with {@code mapper}, merging onto {@code defaults}; returns defaults on error. */
-    private static <T> T read(Path file, ObjectMapper mapper, T defaults) {
-        if (!Files.isReadable(file)) {
-            return defaults;
-        }
-        try {
-            return mapper.readerForUpdating(defaults).readValue(Files.readString(file));
-        } catch (IOException e) {
-            return defaults;
         }
     }
 

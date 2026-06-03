@@ -15,6 +15,18 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class WorkspaceState {
 
+    /** Current on-disk schema version of {@code workspace-state.json} / {@code projects/<id>.json}. */
+    public static final int SCHEMA_VERSION = 1;
+    private int schemaVersion = SCHEMA_VERSION;
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
+    }
+
     // --- Tool window layout state (id of the open window per side, or "" if none) ---
     private String openLeftToolWindow = "";
     private String openRightToolWindow = "";
