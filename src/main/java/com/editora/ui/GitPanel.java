@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.util.List;
 
 import com.editora.git.GitStatus;
@@ -51,10 +53,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     /** Which group a file row sits under. */
     private enum Group {
-        STAGED("Staged"), MODIFIED("Changes"), UNTRACKED("Untracked");
-        final String title;
-        Group(String title) {
-            this.title = title;
+        STAGED("gitpanel.group.staged"), MODIFIED("gitpanel.group.modified"), UNTRACKED("gitpanel.group.untracked");
+        final String key;
+        Group(String key) {
+            this.key = key;
         }
     }
 
@@ -65,14 +67,14 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private final Actions actions;
     private final TreeView<Row> tree = new TreeView<>();
     private final TextArea message = new TextArea();
-    private final Button commitButton = new Button("Commit");
+    private final Button commitButton = new Button(tr("gitpanel.commit"));
     private final Label branchLabel = new Label();
     /** Push indicator: "↑N" (commits to push), "↑ publish" (no upstream), or "✓ pushed". */
     private final Label aheadLabel = new Label();
     private Button pushButton;
     private final StackPane placeholderPane;
-    private final Label placeholder = new Label("Not a Git repository");
-    private final Button cloneButton = new Button("Clone Repository…");
+    private final Label placeholder = new Label(tr("gitpanel.placeholder"));
+    private final Button cloneButton = new Button(tr("gitpanel.clone"));
     private Runnable onClone = () -> { };
 
     public GitPanel(Actions actions) {
@@ -87,9 +89,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         branchLabel.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(branchLabel, Priority.ALWAYS);
         aheadLabel.getStyleClass().add("git-ahead");
-        Button stageAll = iconButton(Icons.stageAll(), "Stage all changes", actions::stageAll);
-        pushButton = iconButton(Icons.gitPush(), "Push commits to the remote", actions::push);
-        Button refresh = iconButton(Icons.refresh(), "Refresh", actions::refresh);
+        Button stageAll = iconButton(Icons.stageAll(), tr("gitpanel.stageAllTip"), actions::stageAll);
+        pushButton = iconButton(Icons.gitPush(), tr("gitpanel.pushTip"), actions::push);
+        Button refresh = iconButton(Icons.refresh(), tr("gitpanel.refreshTip"), actions::refresh);
         HBox header = new HBox(2, branchLabel, aheadLabel, stageAll, pushButton, refresh);
         header.getStyleClass().add("git-toolbar");
         header.setAlignment(Pos.CENTER_LEFT);
@@ -104,7 +106,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         });
         VBox.setVgrow(tree, Priority.ALWAYS);
 
-        message.setPromptText("Commit message");
+        message.setPromptText(tr("gitpanel.commitPrompt"));
         message.getStyleClass().add("git-commit-message");
         message.setWrapText(true);
         message.setPrefRowCount(3);
@@ -181,10 +183,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         tree.setRoot(root);
 
         commitButton.setDisable(status.files().stream().noneMatch(FileEntry::staged));
-        commitButton.setText("Commit");
+        commitButton.setText(tr("gitpanel.commit"));
 
         if (root.getChildren().isEmpty()) {
-            Label clean = new Label("Nothing to commit — working tree clean");
+            Label clean = new Label(tr("gitpanel.clean"));
             clean.getStyleClass().add("tool-window-placeholder");
             clean.setWrapText(true);
             StackPane cleanPane = new StackPane(clean);
@@ -209,20 +211,20 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         String text;
         String tip;
         if (noUpstream) {
-            text = "↑ publish";
-            tip = "Branch has no upstream yet — Push to publish it";
+            text = tr("gitpanel.publish");
+            tip = tr("gitpanel.publishTip");
         } else if (ahead > 0 && behind > 0) {
             text = "↑" + ahead + " ↓" + behind;
-            tip = ahead + " to push, " + behind + " to pull";
+            tip = tr("gitpanel.pushPull", ahead, behind);
         } else if (ahead > 0) {
             text = "↑" + ahead;
-            tip = ahead + (ahead == 1 ? " commit" : " commits") + " to push";
+            tip = tr(ahead == 1 ? "gitpanel.toPush.one" : "gitpanel.toPush.many", ahead);
         } else if (behind > 0) {
             text = "↓" + behind;
-            tip = behind + (behind == 1 ? " commit" : " commits") + " to pull";
+            tip = tr(behind == 1 ? "gitpanel.toPull.one" : "gitpanel.toPull.many", behind);
         } else {
-            text = "✓ pushed";
-            tip = "Up to date with " + status.upstream();
+            text = tr("gitpanel.pushed");
+            tip = tr("gitpanel.upToDate", status.upstream());
         }
         aheadLabel.setText(text);
         aheadLabel.setTooltip(new Tooltip(tip));
@@ -302,7 +304,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 return;
             }
             if (item instanceof GroupRow g) {
-                setText(g.group().title + " (" + g.count() + ")");
+                setText(tr(g.group().key) + " (" + g.count() + ")");
                 getStyleClass().add("git-group-row");
                 setGraphic(null);
                 setContextMenu(null);
@@ -317,20 +319,20 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
         private ContextMenu buildMenu(FileRow f) {
             FileEntry e = f.entry();
-            MenuItem open = new MenuItem("Open");
+            MenuItem open = new MenuItem(tr("gitpanel.menu.open"));
             open.setOnAction(a -> actions.open(e.path()));
             ContextMenu menu = new ContextMenu(open);
             if (f.group() == Group.STAGED) {
-                MenuItem unstage = new MenuItem("Unstage");
+                MenuItem unstage = new MenuItem(tr("gitpanel.menu.unstage"));
                 unstage.setOnAction(a -> actions.unstage(e.path()));
                 menu.getItems().add(unstage);
             } else {
-                MenuItem stage = new MenuItem("Stage");
+                MenuItem stage = new MenuItem(tr("gitpanel.menu.stage"));
                 stage.setOnAction(a -> actions.stage(e.path()));
                 menu.getItems().add(stage);
             }
             if (f.group() != Group.STAGED) {
-                MenuItem discard = new MenuItem(e.untracked() ? "Delete (untracked)" : "Discard changes");
+                MenuItem discard = new MenuItem(e.untracked() ? tr("gitpanel.menu.deleteUntracked") : tr("gitpanel.menu.discard"));
                 discard.setOnAction(a -> actions.discard(e.path(), e.untracked()));
                 menu.getItems().add(discard);
             }

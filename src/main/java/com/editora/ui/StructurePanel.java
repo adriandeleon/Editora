@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -58,7 +60,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     private void build() {
-        filterField.setPromptText("Search structure…");
+        filterField.setPromptText(tr("structure.filterPrompt"));
         filterField.getStyleClass().add("structure-filter");
         filterField.textProperty().addListener((o, w, n) -> applyFilter(n));
 
@@ -427,7 +429,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
         }
         if (root.getChildren().isEmpty()) {
-            String message = buffer == null ? "No file open" : (q.isEmpty() ? "No structure" : "No matches");
+            String message = buffer == null ? tr("structure.noFileOpen") : (q.isEmpty() ? tr("structure.noStructure") : tr("structure.noMatches"));
             root.getChildren().add(new TreeItem<>(new StructureNode(null, message, null, -1)));
             tree.setRoot(root);
         } else {

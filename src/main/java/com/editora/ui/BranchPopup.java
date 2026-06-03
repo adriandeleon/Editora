@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -47,7 +49,7 @@ public final class BranchPopup {
                              int ahead, int behind, boolean gone, Runnable run) implements Row { }
 
     private final Popup popup = new Popup();
-    private final Label titleLabel = new Label("Branches");
+    private final Label titleLabel = new Label(tr("branchpopup.title"));
     /** Remote URL shown in the header (origin's), ellipsized; empty when there's no remote. */
     private final Label remoteUrlLabel = new Label();
     private final TextField search = new TextField();
@@ -56,7 +58,7 @@ public final class BranchPopup {
     private List<Row> all = List.of();
 
     public BranchPopup() {
-        search.setPromptText("Search for branches and actions");
+        search.setPromptText(tr("branchpopup.searchPrompt"));
         list.setItems(items);
         list.setPrefHeight(360);
         list.setFocusTraversable(false);
@@ -101,7 +103,7 @@ public final class BranchPopup {
         for (MenuAction a : actions) {
             rows.add(new ActionRow(a.label(), a.accel(), a.run()));
         }
-        rows.add(new Header("Local"));
+        rows.add(new Header(tr("branchpopup.local")));
         List<com.editora.git.GitService.BranchInfo> locals = new ArrayList<>(local);
         locals.sort((x, y) -> {
             if (x.name().equals(current)) {
@@ -118,14 +120,14 @@ public final class BranchPopup {
                     cur ? this::hide : () -> onCheckoutLocal.accept(b.name())));
         }
         if (!remote.isEmpty()) {
-            rows.add(new Header("Remote"));
+            rows.add(new Header(tr("branchpopup.remote")));
             List<String> rem = new ArrayList<>(remote);
             rem.sort(String.CASE_INSENSITIVE_ORDER);
             for (String b : rem) {
                 rows.add(new BranchRow(b, true, false, "", 0, 0, false, () -> onCheckoutRemote.accept(b)));
             }
         }
-        titleLabel.setText("Branches");
+        titleLabel.setText(tr("branchpopup.title"));
         remoteUrlLabel.setText(remoteUrl == null ? "" : remoteUrl);
         if (remoteUrl != null && !remoteUrl.isBlank()) {
             remoteUrlLabel.setTooltip(new Tooltip(remoteUrl));
@@ -139,9 +141,9 @@ public final class BranchPopup {
      * "Clone Git repository…". Opened from the always-visible status-bar segment.
      */
     public void showNoVcs(Window owner, Node anchor, Runnable onClone) {
-        titleLabel.setText("No VCS");
+        titleLabel.setText(tr("branchpopup.noVcs"));
         remoteUrlLabel.setText("");
-        all = List.of(new ActionRow("Clone Git repository…", "", onClone));
+        all = List.of(new ActionRow(tr("branchpopup.clone"), "", onClone));
         present(owner, anchor);
     }
 
@@ -312,7 +314,7 @@ public final class BranchPopup {
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
             // Right detail: the upstream (e.g. "origin/main"), or "remote" for a remote row.
-            String detail = br.remote() ? "remote" : (br.gone() ? br.upstream() + " (gone)" : br.upstream());
+            String detail = br.remote() ? tr("branchpopup.remoteLabel") : (br.gone() ? tr("branchpopup.gone", br.upstream()) : br.upstream());
             Label up = new Label(detail);
             up.getStyleClass().add("branch-upstream");
 
@@ -339,26 +341,24 @@ public final class BranchPopup {
 
         private String branchTooltip(BranchRow br) {
             if (br.remote()) {
-                return "Remote branch " + br.name();
+                return tr("branchpopup.tip.remote", br.name());
             }
-            StringBuilder sb = new StringBuilder("Git Branch: ").append(br.name());
+            StringBuilder sb = new StringBuilder(tr("branchpopup.tip.header", br.name()));
             if (br.upstream().isEmpty()) {
-                sb.append("\nNo upstream (not pushed)");
+                sb.append("\n").append(tr("branchpopup.tip.noUpstream"));
             } else {
-                sb.append("\nTracks ").append(br.upstream());
+                sb.append("\n").append(tr("branchpopup.tip.tracks", br.upstream()));
                 if (br.gone()) {
-                    sb.append(" (gone)");
+                    sb.append(tr("branchpopup.tip.goneSuffix"));
                 }
                 if (br.behind() > 0) {
-                    sb.append("\n").append(br.behind())
-                            .append(br.behind() == 1 ? " incoming commit" : " incoming commits");
+                    sb.append("\n").append(tr(br.behind() == 1 ? "branchpopup.tip.incoming.one" : "branchpopup.tip.incoming.many", br.behind()));
                 }
                 if (br.ahead() > 0) {
-                    sb.append("\n").append(br.ahead())
-                            .append(br.ahead() == 1 ? " outgoing commit" : " outgoing commits");
+                    sb.append("\n").append(tr(br.ahead() == 1 ? "branchpopup.tip.outgoing.one" : "branchpopup.tip.outgoing.many", br.ahead()));
                 }
                 if (br.ahead() == 0 && br.behind() == 0 && !br.gone()) {
-                    sb.append("\nUp to date");
+                    sb.append("\n").append(tr("branchpopup.tip.upToDate"));
                 }
             }
             return sb.toString();

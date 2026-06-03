@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -65,16 +67,16 @@ public class SettingsWindow {
 
     /** Settings categories shown in the sidebar. Placeholder pages are roadmap features (no settings yet). */
     private enum Category {
-        APPEARANCE("Appearance", false),
-        EDITOR("Editor", false),
-        TOOL_WINDOWS("Tool Windows", false),
-        SPELL_CHECK("Spell Check", false),
-        APPLICATION("Application", false),
-        GIT("Git", false),
-        KEYMAPS("Keymaps", true),
-        PLUGINS("Plugins", true),
-        AI("AI", true),
-        ADVANCED("Advanced", false);
+        APPEARANCE(tr("settings.cat.appearance"), false),
+        EDITOR(tr("settings.cat.editor"), false),
+        TOOL_WINDOWS(tr("settings.cat.toolWindows"), false),
+        SPELL_CHECK(tr("settings.cat.spellCheck"), false),
+        APPLICATION(tr("settings.cat.application"), false),
+        GIT(tr("settings.cat.git"), false),
+        KEYMAPS(tr("settings.cat.keymaps"), true),
+        PLUGINS(tr("settings.cat.plugins"), true),
+        AI(tr("settings.cat.ai"), true),
+        ADVANCED(tr("settings.cat.advanced"), false);
 
         final String display;
         final boolean placeholder;
@@ -97,6 +99,7 @@ public class SettingsWindow {
     private final Stage stage = new Stage();
 
     // --- controls (same set as before, regrouped into pages) ---
+    private ComboBox<String> languageCombo;
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
@@ -107,6 +110,7 @@ public class SettingsWindow {
     private CheckBox lineNumbersCheck;
     private CheckBox minimapCheck;
     private CheckBox whitespaceCheck;
+    private CheckBox autocompleteCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
     private CheckBox toolbarCheck;
@@ -188,7 +192,7 @@ public class SettingsWindow {
     }
 
     private void build(Window owner) {
-        stage.setTitle("Settings");
+        stage.setTitle(tr("settings.window.title"));
         stage.initOwner(owner);
         stage.initModality(Modality.NONE);
 
@@ -197,7 +201,7 @@ public class SettingsWindow {
         buildPages();
 
         searchField = new TextField();
-        searchField.setPromptText("Search settings…");
+        searchField.setPromptText(tr("settings.search.prompt"));
         searchField.getStyleClass().add("settings-search");
         searchField.textProperty().addListener((o, a, b) -> filter(b));
 
@@ -221,7 +225,7 @@ public class SettingsWindow {
         HBox body = new HBox(sidebar, contentScroll);
         VBox.setVgrow(body, Priority.ALWAYS);
 
-        Button close = new Button("Close");
+        Button close = new Button(tr("settings.close"));
         close.setOnAction(e -> stage.close());
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -246,6 +250,32 @@ public class SettingsWindow {
     // --- control construction (logic unchanged from the flat window) -----------------------------
 
     private void buildControls() {
+        languageCombo = new ComboBox<>();
+        languageCombo.getItems().add(""); // "" = automatic (system language)
+        languageCombo.getItems().addAll(com.editora.i18n.Messages.available().keySet());
+        languageCombo.setPrefWidth(220);
+        languageCombo.setConverter(new StringConverter<>() {
+            @Override public String toString(String code) {
+                return code == null || code.isEmpty()
+                        ? tr("settings.language.auto") : com.editora.i18n.Messages.languageName(code);
+            }
+            @Override public String fromString(String s) {
+                return s;
+            }
+        });
+        languageCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setUiLanguage(now);
+            config.save();
+            Alert restart = new Alert(Alert.AlertType.INFORMATION, tr("dialog.language.restart"), ButtonType.OK);
+            restart.initOwner(stage);
+            restart.setTitle(tr("dialog.language.title"));
+            restart.setHeaderText(null);
+            restart.showAndWait();
+        });
+
         fontFamily = new ComboBox<>();
         fontFamily.getItems().setAll(fontFamilyChoices());
         fontFamily.setPrefWidth(220);
@@ -307,13 +337,14 @@ public class SettingsWindow {
             apply();
         });
 
-        columnRulerCheck = viewCheck("Show 80-column ruler", Settings::setShowColumnRuler);
-        lineHighlightCheck = viewCheck("Highlight current line", Settings::setHighlightCurrentLine);
-        lineNumbersCheck = viewCheck("Show line numbers", Settings::setShowLineNumbers);
-        minimapCheck = viewCheck("Show minimap", Settings::setShowMinimap);
-        whitespaceCheck = viewCheck("Show hidden characters (spaces, tabs, EOL)", Settings::setShowWhitespace);
+        columnRulerCheck = viewCheck(tr("settings.showRuler"), Settings::setShowColumnRuler);
+        lineHighlightCheck = viewCheck(tr("settings.highlightLine"), Settings::setHighlightCurrentLine);
+        lineNumbersCheck = viewCheck(tr("settings.showLineNumbers"), Settings::setShowLineNumbers);
+        minimapCheck = viewCheck(tr("settings.showMinimap"), Settings::setShowMinimap);
+        whitespaceCheck = viewCheck(tr("settings.showWhitespace"), Settings::setShowWhitespace);
+        autocompleteCheck = viewCheck(tr("settings.enableAutocomplete"), Settings::setAutocomplete);
 
-        spellCheckBox = new CheckBox("Enable spell check");
+        spellCheckBox = new CheckBox(tr("settings.enableSpell"));
         spellCheckBox.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setSpellCheck(now);
             if (spellLanguageCombo != null) {
@@ -340,26 +371,26 @@ public class SettingsWindow {
             apply();
         });
 
-        toolbarCheck = viewCheck("Show toolbar", Settings::setShowToolbar);
-        statusBarCheck = viewCheck("Show status bar", Settings::setShowStatusBar);
-        tabBarCheck = viewCheck("Show tab bar", Settings::setShowTabBar);
-        breadcrumbCheck = viewCheck("Show file breadcrumb", Settings::setShowBreadcrumb);
+        toolbarCheck = viewCheck(tr("settings.showToolbar"), Settings::setShowToolbar);
+        statusBarCheck = viewCheck(tr("settings.showStatusBar"), Settings::setShowStatusBar);
+        tabBarCheck = viewCheck(tr("settings.showTabBar"), Settings::setShowTabBar);
+        breadcrumbCheck = viewCheck(tr("settings.showBreadcrumb"), Settings::setShowBreadcrumb);
 
-        projectsCheck = new CheckBox("Enable projects");
+        projectsCheck = new CheckBox(tr("settings.enableProjects"));
         projectsCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setProjectSupport(now);
             apply();
             updateProjectRowEnabled();
         });
 
-        gitCheck = new CheckBox("Enable Git");
+        gitCheck = new CheckBox(tr("settings.enableGit"));
         gitCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setGitSupport(now);
             apply();
             updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
         });
 
-        zenCheck = new CheckBox("Zen mode (distraction-free)");
+        zenCheck = new CheckBox(tr("settings.zen"));
         zenCheck.selectedProperty().addListener((obs, was, now) -> {
             if (loading) {
                 return;
@@ -429,61 +460,66 @@ public class SettingsWindow {
     }
 
     private VBox appearancePage() {
-        VBox p = page("Appearance");
-        Label fontNote = note("Only monospaced fonts are listed.");
+        VBox p = page(tr("settings.cat.appearance"));
+        Label langNote = note(tr("settings.uiLanguage.note"));
+        VBox langBox = new VBox(4, languageCombo, langNote);
+        row(p, Category.APPEARANCE, null, labeled(tr("settings.uiLanguage"), langBox),
+                "language interface ui locale translation");
+        Label fontNote = note(tr("settings.fontNote"));
         VBox fontBox = new VBox(4, fontFamily, fontNote);
-        row(p, Category.APPEARANCE, null, labeled("Font family", fontBox), "font family typeface monospace");
-        row(p, Category.APPEARANCE, null, labeled("Font size", fontSize), "font size text");
-        row(p, Category.APPEARANCE, null, labeled("Theme", themeCombo), "theme appearance dark light app chrome");
-        Label etNote = note("Follows the app theme until you pick one.");
+        row(p, Category.APPEARANCE, null, labeled(tr("settings.fontFamily"), fontBox), "font family typeface monospace");
+        row(p, Category.APPEARANCE, null, labeled(tr("settings.fontSize"), fontSize), "font size text");
+        row(p, Category.APPEARANCE, null, labeled(tr("settings.theme"), themeCombo), "theme appearance dark light app chrome");
+        Label etNote = note(tr("settings.editorThemeNote"));
         VBox etBox = new VBox(4, editorThemeCombo, etNote);
-        row(p, Category.APPEARANCE, null, labeled("Editor theme", etBox),
+        row(p, Category.APPEARANCE, null, labeled(tr("settings.editorTheme"), etBox),
                 "editor theme syntax colors highlighting");
-        Label previewSection = section(p, "Live preview");
+        Label previewSection = section(p, tr("settings.livePreview"));
         row(p, Category.APPEARANCE, previewSection, preview, "preview sample code");
         return p;
     }
 
     private VBox editorPage() {
-        VBox p = page("Editor");
-        Label display = section(p, "Display");
+        VBox p = page(tr("settings.cat.editor"));
+        Label display = section(p, tr("settings.section.display"));
         row(p, Category.EDITOR, display, columnRulerCheck, "80 column ruler guide margin");
         row(p, Category.EDITOR, display, lineHighlightCheck, "highlight current line caret");
         row(p, Category.EDITOR, display, lineNumbersCheck, "line numbers gutter");
         row(p, Category.EDITOR, display, minimapCheck, "minimap overview");
         row(p, Category.EDITOR, display, whitespaceCheck, "hidden characters whitespace spaces tabs eol");
-        Label indent = section(p, "Indentation");
-        row(p, Category.EDITOR, indent, labeled("Tab size", tabSizeSpinner), "tab size indent width spaces");
-        Label saving = section(p, "Saving");
+        Label indent = section(p, tr("settings.section.indentation"));
+        row(p, Category.EDITOR, indent, labeled(tr("settings.tabSize"), tabSizeSpinner), "tab size indent width spaces");
+        Label completion = section(p, tr("settings.section.completion"));
+        row(p, Category.EDITOR, completion, autocompleteCheck,
+                "autocomplete completion suggestions snippets dictionary words popup");
+        Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
-        row(p, Category.EDITOR, saving, labeled("Auto save", autoSaveBox),
+        row(p, Category.EDITOR, saving, labeled(tr("settings.autoSave"), autoSaveBox),
                 "auto save autosave delay inactivity focus");
         return p;
     }
 
     private VBox spellPage() {
-        VBox p = page("Spell Check");
+        VBox p = page(tr("settings.cat.spellCheck"));
         row(p, Category.SPELL_CHECK, null, spellCheckBox, "spell check spelling enable");
-        row(p, Category.SPELL_CHECK, null, labeled("Language", spellLanguageCombo),
+        row(p, Category.SPELL_CHECK, null, labeled(tr("settings.language"), spellLanguageCombo),
                 "spell language dictionary english spanish french");
         return p;
     }
 
     private VBox applicationPage() {
-        VBox p = page("Application");
-        Label chrome = section(p, "Window chrome");
+        VBox p = page(tr("settings.cat.application"));
+        Label chrome = section(p, tr("settings.section.chrome"));
         row(p, Category.APPLICATION, chrome, toolbarCheck, "toolbar buttons");
         row(p, Category.APPLICATION, chrome, statusBarCheck, "status bar");
         row(p, Category.APPLICATION, chrome, tabBarCheck, "tab bar tabs");
         row(p, Category.APPLICATION, chrome, breadcrumbCheck, "breadcrumb file path");
-        Label features = section(p, "Features");
+        Label features = section(p, tr("settings.section.features"));
         Label projectsInfo = new Label("ⓘ");
         projectsInfo.getStyleClass().add("info-badge");
-        Tooltip projectsTip = new Tooltip(
-                "Projects are single-folder workspaces, each remembering its own open files and layout. "
-                + "Pick one to switch; \"No Project\" returns to the global session.");
+        Tooltip projectsTip = new Tooltip(tr("settings.projects.tip"));
         projectsTip.setWrapText(true);
         projectsTip.setMaxWidth(380);
         Tooltip.install(projectsInfo, projectsTip);
@@ -495,15 +531,14 @@ public class SettingsWindow {
     }
 
     private VBox gitPage() {
-        VBox p = page("Git");
-        gitStatusLabel = new Label("Checking for git…");
+        VBox p = page(tr("settings.cat.git"));
+        gitStatusLabel = new Label(tr("settings.git.checking"));
         gitStatusLabel.getStyleClass().add("settings-git-status");
         gitStatusLabel.setWrapText(true);
         gitStatusLabel.setMaxWidth(440);
         row(p, Category.GIT, null, gitStatusLabel, "git command found version installed not found");
         row(p, Category.GIT, null, gitCheck, "git version control vcs enable");
-        Label hint = note("Uses your installed git. When off, the status-bar branch, the Commit tool "
-                + "window, gutter change markers, and Git commands are all hidden.");
+        Label hint = note(tr("settings.git.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
         row(p, Category.GIT, null, hint, "git version control vcs enable");
@@ -519,28 +554,28 @@ public class SettingsWindow {
             return;
         }
         gitStatusLabel.getStyleClass().setAll("settings-git-status");
-        gitStatusLabel.setText("Checking for git…");
+        gitStatusLabel.setText(tr("settings.git.checking"));
         gitService.version(version -> {
             boolean found = version != null && !version.isBlank();
             gitStatusLabel.getStyleClass().setAll("settings-git-status",
                     found ? "settings-git-found" : "settings-git-missing");
             gitStatusLabel.setText(found
-                    ? "✓ git command found — " + version
-                    : "✗ git command not found — install git to enable Git integration");
+                    ? tr("settings.git.found", version)
+                    : tr("settings.git.notFound"));
             gitCheck.setDisable(!found);
         });
     }
 
     /** The tool-window placement page: one row per registered tool window (Show / Side / ▲▼ reorder). */
     private VBox toolWindowsPage() {
-        VBox p = page("Tool Windows");
-        Label hint = note("Use ▲ ▼ (or drag the stripe icons) to reorder. Some windows appear only in context.");
+        VBox p = page(tr("settings.cat.toolWindows"));
+        Label hint = note(tr("settings.toolWindows.hint"));
         p.getChildren().add(hint);
 
         List<Runnable> moveRefreshers = new ArrayList<>();
         Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
         for (ToolWindow tw : toolWindows.getRegisteredToolWindows()) {
-            CheckBox showCheck = new CheckBox("Show");
+            CheckBox showCheck = new CheckBox(tr("settings.show"));
             showCheck.setSelected(toolWindows.isVisible(tw));
 
             ComboBox<ToolWindow.Side> sideCombo = new ComboBox<>();
@@ -560,8 +595,8 @@ public class SettingsWindow {
             Button moveDown = new Button("▼");
             moveUp.getStyleClass().addAll("flat", "reorder-button");
             moveDown.getStyleClass().addAll("flat", "reorder-button");
-            moveUp.setTooltip(new Tooltip("Move earlier in the stripe"));
-            moveDown.setTooltip(new Tooltip("Move later in the stripe"));
+            moveUp.setTooltip(new Tooltip(tr("settings.moveEarlier")));
+            moveDown.setTooltip(new Tooltip(tr("settings.moveLater")));
             Runnable refreshThisRow = () -> {
                 boolean shown = showCheck.isSelected();
                 moveUp.setDisable(!shown || !toolWindows.canMove(tw, -1));
@@ -615,26 +650,26 @@ public class SettingsWindow {
     }
 
     private VBox advancedPage() {
-        VBox p = page("Advanced");
-        Label fileSection = section(p, "Settings file");
+        VBox p = page(tr("settings.cat.advanced"));
+        Label fileSection = section(p, tr("settings.section.file"));
         Hyperlink link = new Hyperlink(displaySettingsPath(config.getSettingsFile()));
-        link.setTooltip(new Tooltip("Open the settings file in Editora"));
+        link.setTooltip(new Tooltip(tr("settings.openFileTip")));
         link.setOnAction(e -> {
             if (onOpenFile != null) {
                 onOpenFile.accept(config.getSettingsFile());
             }
         });
-        HBox fileRow = new HBox(6, new Label("Path:"), link);
+        HBox fileRow = new HBox(6, new Label(tr("settings.path")), link);
         fileRow.setAlignment(Pos.CENTER_LEFT);
         row(p, Category.ADVANCED, fileSection, fileRow, "settings file path toml config location");
 
-        Label resetSection = section(p, "Reset");
-        Button reset = new Button("Reset to Defaults");
+        Label resetSection = section(p, tr("settings.section.reset"));
+        Button reset = new Button(tr("settings.resetDefaults"));
         reset.setOnAction(e -> resetAll());
         row(p, Category.ADVANCED, resetSection, reset, "reset defaults restore factory clear");
 
-        Label ioSection = section(p, "Import / Export");
-        Label io = new Label("Coming soon.");
+        Label ioSection = section(p, tr("settings.section.io"));
+        Label io = new Label(tr("settings.comingSoon"));
         io.getStyleClass().add("settings-coming-soon");
         row(p, Category.ADVANCED, ioSection, io, "import export backup settings");
         return p;
@@ -642,7 +677,7 @@ public class SettingsWindow {
 
     private VBox placeholderPage(String title) {
         VBox p = page(title);
-        Label soon = new Label("Coming soon.");
+        Label soon = new Label(tr("settings.comingSoon"));
         soon.getStyleClass().add("settings-coming-soon");
         p.getChildren().add(soon);
         return p;
@@ -805,9 +840,9 @@ public class SettingsWindow {
 
     private void resetAll() {
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                "Reset all settings to their defaults?", ButtonType.OK, ButtonType.CANCEL);
+                tr("settings.reset.confirm"), ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(stage);
-        confirm.setTitle("Reset Settings");
+        confirm.setTitle(tr("settings.reset.title"));
         confirm.setHeaderText(null);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
@@ -872,6 +907,7 @@ public class SettingsWindow {
             if (!fontFamily.getItems().contains(settings.getFontFamily())) {
                 fontFamily.getItems().add(0, settings.getFontFamily());
             }
+            languageCombo.setValue(settings.getUiLanguage());
             fontFamily.setValue(settings.getFontFamily());
             fontSize.getValueFactory().setValue(settings.getFontSize());
             String theme = Themes.normalize(settings.getTheme());
@@ -890,6 +926,7 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
             minimapCheck.setSelected(settings.isShowMinimap());
             whitespaceCheck.setSelected(settings.isShowWhitespace());
+            autocompleteCheck.setSelected(settings.isAutocomplete());
             spellCheckBox.setSelected(settings.isSpellCheck());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
             spellLanguageCombo.setDisable(!settings.isSpellCheck());
@@ -1063,7 +1100,7 @@ public class SettingsWindow {
     public static void showAbout(Window owner, Path settingsFile, Consumer<Path> openFile) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
-        alert.setTitle("About " + com.editora.AppInfo.NAME);
+        alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));
         alert.setHeaderText(com.editora.AppInfo.NAME + " " + com.editora.AppInfo.VERSION);
         var iconStream = SettingsWindow.class.getResourceAsStream("/com/editora/icons/icon-128.png");
         if (iconStream != null) {
@@ -1073,26 +1110,21 @@ public class SettingsWindow {
             alert.setGraphic(logo);
         }
 
-        Label info = new Label("""
-                A keyboard-driven, cross-platform programmer's text editor.
-
-                Java %s
-                JavaFX %s
-                Built %s""".formatted(
-                System.getProperty("java.version", "?"),
-                System.getProperty("javafx.runtime.version", "?"),
-                com.editora.AppInfo.buildTime()));
+        Label info = new Label(tr("about.tagline") + "\n\n"
+                + "Java " + System.getProperty("java.version", "?") + "\n"
+                + "JavaFX " + System.getProperty("javafx.runtime.version", "?") + "\n"
+                + tr("about.built", com.editora.AppInfo.buildTime()));
 
         Hyperlink settingsLink = new Hyperlink(displaySettingsPath(settingsFile));
         settingsLink.setPadding(Insets.EMPTY);
-        settingsLink.setTooltip(new Tooltip("Open the settings file in Editora"));
+        settingsLink.setTooltip(new Tooltip(tr("settings.openFileTip")));
         settingsLink.setOnAction(e -> {
             alert.close();
             if (openFile != null) {
                 openFile.accept(settingsFile);
             }
         });
-        HBox settingsRow = new HBox(4, new Label("Settings:"), settingsLink);
+        HBox settingsRow = new HBox(4, new Label(tr("settings.aboutSettingsLabel")), settingsLink);
         settingsRow.setAlignment(Pos.CENTER_LEFT);
 
         alert.getDialogPane().setContent(new VBox(10, info, settingsRow));
@@ -1101,10 +1133,10 @@ public class SettingsWindow {
 
     private static String spellLanguageName(String id) {
         return switch (id) {
-            case "en_US" -> "English (US)";
-            case "en_GB" -> "English (UK)";
-            case "es" -> "Spanish";
-            case "fr" -> "French";
+            case "en_US" -> tr("spell.lang.en_US");
+            case "en_GB" -> tr("spell.lang.en_GB");
+            case "es" -> tr("spell.lang.es");
+            case "fr" -> tr("spell.lang.fr");
             default -> id;
         };
     }

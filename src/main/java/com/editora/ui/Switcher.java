@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
@@ -71,7 +73,7 @@ public class Switcher {
             }
         });
 
-        Label header = new Label("Open Files");
+        Label header = new Label(tr("switcher.header"));
         header.getStyleClass().add("switcher-header");
         VBox column = new VBox(4, header, filesList);
         column.getStyleClass().add("switcher-column");

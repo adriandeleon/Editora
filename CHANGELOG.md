@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Autocomplete** — a caret-anchored completion popup that appears as you type (debounced) and on
+  demand (`C-M-i` / `M-/`, command "Edit: Trigger Autocomplete"). Two sources: **snippets** (prefix-
+  matched for the buffer's language — accepting one expands the snippet with its tab stops) and, in
+  prose files, **dictionary words** from the bundled spell dictionary plus your personal dictionary.
+  **Enter/Tab** accept, ↑/↓ navigate, Esc dismisses. Gated by a "Enable autocomplete" toggle in
+  Settings → Editor (default on). The dictionary word list is parsed off-thread and cached; prefix
+  lookup is a binary-search range, so typing/scrolling stay unaffected.
+
+- **Multi-language interface (i18n)** — Editora's UI can now run in **English, Italian, Spanish,
+  French, Portuguese, or German**. Command-palette titles, toolbar tooltips, tool-window titles, and
+  the full Settings window are translated; pick a language under **Settings → Appearance → Language**
+  (default *Automatic* follows the system language, falling back to English). A language change
+  applies on the next restart. Strings live in a `messages[_<lang>].properties` catalog loaded by the
+  new `com.editora.i18n.Messages` helper; a key-parity unit test keeps every translation complete.
+  **Essentially the entire interface is translated** — command palette, toolbar tooltips, tool-window
+  titles and panel contents (Project, Structure, Bookmarks, File Information, Commit/Git), the full
+  Settings window, status-bar segments, echo-area status messages, every dialog (titles, bodies and
+  buttons), context menus, and popups (branch dropdown, command palette, file finder, switcher). The
+  chosen language also drives `Locale.setDefault`, so JavaFX's own OK/Cancel buttons match.
+
 ### Changed
 
 - **Settings window redesigned** — a scalable left **category sidebar** (Appearance, Editor, Tool

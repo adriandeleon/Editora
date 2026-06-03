@@ -3,6 +3,8 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] UI localization (i18n) — interface translated to English, Italian, Spanish, French, Portuguese,
+      German; language picker in Settings → Appearance (applies on restart); key-parity test
 - [x] Settings window redesign — sidebar categories, search, live preview, Reset to Defaults; Tool
       Windows + About moved out
 - [x] Git support — native CLI: status-bar branch + ahead/behind, gutter change bars vs HEAD, Git tool
@@ -44,7 +46,9 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] AceJump support
 
 ## Code intelligence
-- [ ] Autocomplete support
+- [x] Autocomplete support — caret popup, snippet + spell-dictionary-word sources, auto + `C-M-i`/`M-/`
+      trigger, Enter/Tab accept (snippets expand with tab stops); Settings toggle. (Next: document-words,
+      LSP, fuzzy matching.)
 - [ ] LSP support
 - [ ] Fix structure for the 21 languages we support
 - [ ] Multi language support

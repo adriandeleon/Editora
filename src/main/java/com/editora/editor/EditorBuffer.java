@@ -1,5 +1,11 @@
 package com.editora.editor;
 
+import static com.editora.i18n.Messages.tr;
+
+import com.editora.completion.Completion;
+import com.editora.completion.CompletionEngine;
+import com.editora.completion.CompletionProvider;
+
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
@@ -132,6 +138,16 @@ public class EditorBuffer {
     private SnippetSession snippetSession;
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
+    /** Resolves completions for the typed prefix; injected by the controller (default: none). */
+    private CompletionProvider completionProvider = (s, d, p, prose) -> List.of();
+    /** When false the whole autocomplete feature is inert (Settings toggle). */
+    private boolean autocompleteEnabled = true;
+    /** The caret-anchored completion dropdown (lazily created). */
+    private CompletionPopup completionPopup;
+    /** The view the completion popup is currently driven by (for click-accept routing). */
+    private CodeArea completionArea;
+    /** Suppresses one auto-trigger pass right after we programmatically accept a completion. */
+    private boolean suppressCompletion;
     /** The two document offsets currently carrying the {@code brace-match} style, or null. */
     private int[] braceMatch;
     /** Coalesces brace-match recomputes to one per pulse (caret moves rapidly while typing). */
@@ -220,6 +236,8 @@ public class EditorBuffer {
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
         addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
         addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
+        addCompletionKeys(area); // registered last → runs first, so popup nav/accept beats Tab/Enter
+        installCompletionTrigger(area);
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -330,22 +348,22 @@ public class EditorBuffer {
     private List<MenuItem> standardMenuItems() {
         boolean hasSelection = area.getSelection().getLength() > 0;
         boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
-        MenuItem cut = new MenuItem("Cut");
+        MenuItem cut = new MenuItem(tr("editmenu.cut"));
         cut.setOnAction(e -> area.cut());
         cut.setDisable(!hasSelection);
-        MenuItem copy = new MenuItem("Copy");
+        MenuItem copy = new MenuItem(tr("editmenu.copy"));
         copy.setOnAction(e -> area.copy());
         copy.setDisable(!hasSelection);
-        MenuItem paste = new MenuItem("Paste");
+        MenuItem paste = new MenuItem(tr("editmenu.paste"));
         paste.setOnAction(e -> area.paste());
         paste.setDisable(!hasClipboardText);
-        MenuItem undo = new MenuItem("Undo");
+        MenuItem undo = new MenuItem(tr("editmenu.undo"));
         undo.setOnAction(e -> area.undo());
         undo.setDisable(!area.isUndoAvailable());
-        MenuItem redo = new MenuItem("Redo");
+        MenuItem redo = new MenuItem(tr("editmenu.redo"));
         redo.setOnAction(e -> area.redo());
         redo.setDisable(!area.isRedoAvailable());
-        MenuItem selectAll = new MenuItem("Select All");
+        MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
         selectAll.setOnAction(e -> area.selectAll());
         return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo,
                 new SeparatorMenuItem(), selectAll);
@@ -356,7 +374,7 @@ public class EditorBuffer {
         List<MenuItem> items = new java.util.ArrayList<>();
         List<String> suggestions = spellChecker.suggest(hit.word());
         if (suggestions.isEmpty()) {
-            MenuItem none = new MenuItem("No suggestions");
+            MenuItem none = new MenuItem(tr("editmenu.noSuggestions"));
             none.setDisable(true);
             items.add(none);
         } else {
@@ -372,9 +390,9 @@ public class EditorBuffer {
             }
         }
         items.add(new SeparatorMenuItem());
-        MenuItem add = new MenuItem("Add to Dictionary");
+        MenuItem add = new MenuItem(tr("editmenu.addToDictionary"));
         add.setOnAction(e -> addToDictionary(hit.word()));
-        MenuItem ignore = new MenuItem("Ignore");
+        MenuItem ignore = new MenuItem(tr("editmenu.ignore"));
         ignore.setOnAction(e -> {
             spellChecker.ignore(hit.word());
             spellOverlay.refresh();
@@ -695,6 +713,8 @@ public class EditorBuffer {
         addSnippetKeys(area2);
         addAutoClose(area2);
         addAutoIndent(area2);
+        addCompletionKeys(area2);
+        installCompletionTrigger(area2);
         area2.setLineHighlighterFill(lineHighlightColor);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
@@ -1238,17 +1258,16 @@ public class EditorBuffer {
     }
 
     private HBox buildViewModeBar() {
-        Label title = new Label("View Mode");
+        Label title = new Label(tr("viewmode.title"));
         title.getStyleClass().add("view-mode-title");
-        Label desc = new Label(
-                "This file is open for viewing. Space pages down, Backspace pages up.");
+        Label desc = new Label(tr("viewmode.desc"));
         desc.getStyleClass().add("view-mode-desc");
         javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
         HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-        enableEditingButton = new Button("Enable Editing");
+        enableEditingButton = new Button(tr("viewmode.enableEditing"));
         enableEditingButton.getStyleClass().add("accent"); // AtlantaFX accent button — themed, not a hard yellow
         enableEditingButton.setOnAction(e -> onEnableEditing.run());
-        viewModeNote = new Label("Read-only on disk (no write permission)");
+        viewModeNote = new Label(tr("viewmode.note"));
         viewModeNote.getStyleClass().add("view-mode-note");
         HBox bar = new HBox(10, title, desc, spacer, viewModeNote, enableEditingButton);
         bar.getStyleClass().add("view-mode-bar");
@@ -1583,6 +1602,155 @@ public class EditorBuffer {
 
     private static boolean isPrefixChar(char c) {
         return Character.isLetterOrDigit(c) || c == '_';
+    }
+
+    // ---- Autocomplete (snippet + dictionary completions; see com.editora.completion) ----
+
+    /** Injects the completion lookup (set by the controller), mirroring {@link #setSnippetProvider}. */
+    public void setCompletionProvider(CompletionProvider provider) {
+        if (provider != null) {
+            this.completionProvider = provider;
+        }
+    }
+
+    /** Enables/disables the whole autocomplete feature (the Settings toggle). */
+    public void setAutocompleteEnabled(boolean enabled) {
+        this.autocompleteEnabled = enabled;
+        if (!enabled) {
+            hideCompletion();
+        }
+    }
+
+    private CompletionPopup completionPopup() {
+        if (completionPopup == null) {
+            completionPopup = new CompletionPopup();
+            completionPopup.setOnAccept(c -> {
+                if (completionArea != null) {
+                    acceptCompletion(completionArea, c);
+                }
+            });
+        }
+        return completionPopup;
+    }
+
+    /**
+     * Popup navigation/accept/dismiss while it's open. Registered <b>after</b> the snippet/indent filters
+     * so it runs first: with the popup open, Tab/Enter accept the selection (instead of expanding a
+     * snippet or inserting a newline); ↑/↓ move; Esc closes; caret-moving keys dismiss. With the popup
+     * closed it does nothing, so normal Tab/Enter behavior is unaffected.
+     */
+    private void addCompletionKeys(CodeArea a) {
+        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (completionPopup == null || !completionPopup.isShowing()) {
+                return;
+            }
+            switch (e.getCode()) {
+                case DOWN -> { completionPopup.moveDown(); e.consume(); }
+                case UP -> { completionPopup.moveUp(); e.consume(); }
+                case ENTER, TAB -> {
+                    if (e.isShiftDown() || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                        hideCompletion();
+                        return;
+                    }
+                    Completion sel = completionPopup.selected();
+                    if (sel != null) {
+                        acceptCompletion(a, sel);
+                        e.consume();
+                    } else {
+                        hideCompletion();
+                    }
+                }
+                case ESCAPE -> { hideCompletion(); e.consume(); }
+                case LEFT, RIGHT, HOME, END, PAGE_UP, PAGE_DOWN -> hideCompletion(); // let the caret move
+                default -> { } // letters/Backspace fall through; the debounced trigger refreshes the list
+            }
+        });
+        a.focusedProperty().addListener((obs, was, now) -> {
+            if (!now) {
+                hideCompletion();
+            }
+        });
+    }
+
+    /** Debounced auto-trigger: after typing settles (~120 ms), refresh the popup for the caret word. */
+    private void installCompletionTrigger(CodeArea a) {
+        a.multiPlainChanges()
+                .successionEnds(Duration.ofMillis(120))
+                .subscribe(ignored -> {
+                    if (a.isFocused()) {
+                        updateCompletion(a, false);
+                    }
+                });
+    }
+
+    /** Manual trigger (the {@code edit.completion} command), on the focused view. */
+    public void triggerCompletion() {
+        CodeArea a = (area2 != null && area2.isFocused()) ? area2 : area;
+        updateCompletion(a, true);
+    }
+
+    /** Recomputes the word at the caret and shows/refreshes/hides the popup. {@code manual} lowers the
+     *  minimum prefix length so an explicit invoke works on a single character. */
+    private void updateCompletion(CodeArea a, boolean manual) {
+        if (!autocompleteEnabled || hugeFile || !isEditable() || hasActiveSnippet()
+                || (suppressCompletion && !manual) || a.getSelection().getLength() > 0) {
+            hideCompletion();
+            return;
+        }
+        int caret = a.getCaretPosition();
+        String text = a.getText();
+        int start = caret;
+        while (start > 0 && isPrefixChar(text.charAt(start - 1))) {
+            start--;
+        }
+        String prefix = text.substring(start, caret);
+        int min = manual ? 1 : CompletionEngine.MIN_PREFIX;
+        if (prefix.length() < min) {
+            hideCompletion();
+            return;
+        }
+        List<Completion> items = completionProvider.complete(language, getSpellLanguage(), prefix, isProse());
+        if (items.isEmpty()) {
+            hideCompletion();
+            return;
+        }
+        if (a.getScene() == null) {
+            return;
+        }
+        Bounds caretScreen = a.getCharacterBoundsOnScreen(caret, caret).orElse(null);
+        if (caretScreen == null) {
+            return;
+        }
+        completionArea = a;
+        completionPopup().show(a.getScene().getWindow(), caretScreen, items);
+    }
+
+    /** Replaces the typed prefix with the accepted completion (a snippet starts a tab-stop session). */
+    private void acceptCompletion(CodeArea a, Completion c) {
+        int caret = a.getCaretPosition();
+        String text = a.getText();
+        int start = caret;
+        while (start > 0 && isPrefixChar(text.charAt(start - 1))) {
+            start--;
+        }
+        hideCompletion();
+        suppressCompletion = true;
+        try {
+            if (c.snippet() != null) {
+                startSnippet(a, c.snippet(), start, caret);
+            } else {
+                a.replaceText(start, caret, c.insert());
+            }
+        } finally {
+            Platform.runLater(() -> suppressCompletion = false);
+        }
+        a.requestFocus();
+    }
+
+    private void hideCompletion() {
+        if (completionPopup != null) {
+            completionPopup.hide();
+        }
     }
 
     private static void toggleStyleClass(Node node, String styleClass, boolean on) {

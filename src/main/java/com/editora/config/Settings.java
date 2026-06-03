@@ -21,6 +21,8 @@ public class Settings {
     private boolean editorThemeUserSet;
     private int tabSize = 4;
     private String keymap = "emacs";
+    /** UI language code (e.g. {@code "es"}); empty = auto (system language if bundled, else English). */
+    private String uiLanguage = "";
     private boolean showColumnRuler = true;
     private boolean highlightCurrentLine = true;
     private boolean showLineNumbers = true;
@@ -29,6 +31,8 @@ public class Settings {
     private boolean spellCheck = true;
     /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
     private String spellLanguage = "en_US";
+    /** Autocomplete (snippet + dictionary-word completion popup); on by default. */
+    private boolean autocomplete = true;
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
@@ -109,6 +113,14 @@ public class Settings {
         this.keymap = keymap;
     }
 
+    public String getUiLanguage() {
+        return uiLanguage == null ? "" : uiLanguage;
+    }
+
+    public void setUiLanguage(String uiLanguage) {
+        this.uiLanguage = uiLanguage == null ? "" : uiLanguage;
+    }
+
     public boolean isShowColumnRuler() {
         return showColumnRuler;
     }
@@ -155,6 +167,14 @@ public class Settings {
 
     public void setSpellCheck(boolean spellCheck) {
         this.spellCheck = spellCheck;
+    }
+
+    public boolean isAutocomplete() {
+        return autocomplete;
+    }
+
+    public void setAutocomplete(boolean autocomplete) {
+        this.autocomplete = autocomplete;
     }
 
     public String getSpellLanguage() {

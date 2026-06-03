@@ -4,6 +4,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.function.Supplier;
 
+import static com.editora.i18n.Messages.tr;
+
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
@@ -32,17 +34,17 @@ public final class StatusBar extends HBox {
     private final CommandRegistry registry;
     private final Supplier<Settings> settings;
 
-    private final Label echo = new Label("Ready");
+    private final Label echo = new Label(tr("statusbar.ready"));
     /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
-    private final Label git = segment("git.switchBranch", "Git branch — click to switch (M-x git.switchBranch)");
-    private final Label position = segment("nav.goToLine", "Go to line");
-    private final Label language = segment("buffer.setLanguage", "Set language");
-    private final Label indent = segment("buffer.setTabSize", "Set tab size");
-    private final Label endings = segment("buffer.convertLineEndings", "Convert line endings");
+    private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
+    private final Label position = segment("nav.goToLine", tr("statusbar.tip.goToLine"));
+    private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
+    private final Label indent = segment("buffer.setTabSize", tr("statusbar.tip.setTabSize"));
+    private final Label endings = segment("buffer.convertLineEndings", tr("statusbar.tip.convertEndings"));
     private final Label size = new Label();
     private final Label encoding = new Label("UTF-8");
     /** Read-only ("View mode") indicator; shown only when the active buffer is non-editable. */
-    private final Label readOnly = segment("view.toggleReadOnly", "Read-only — click to allow edits (C-x C-q)");
+    private final Label readOnly = segment("view.toggleReadOnly", tr("statusbar.tip.readOnly"));
     /** Text-zoom percentage (clickable to reset to 100%). */
     private final Label zoomPercent = new Label("100%");
 
@@ -59,14 +61,14 @@ public final class StatusBar extends HBox {
         getStyleClass().add("status-bar");
         echo.getStyleClass().add("status-message");
         size.getStyleClass().add("status-segment");
-        size.setTooltip(new Tooltip("File size"));
+        size.setTooltip(new Tooltip(tr("statusbar.tip.fileSize")));
         encoding.getStyleClass().add("status-segment");
 
-        readOnly.setText("Read-Only");
+        readOnly.setText(tr("statusbar.readOnly"));
         readOnly.getStyleClass().add("status-readonly");
 
         git.getStyleClass().add("status-git");
-        git.setText("No VCS"); // always shown; updated by setGitBranch
+        git.setText(tr("statusbar.noVcs")); // always shown; updated by setGitBranch
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -77,10 +79,10 @@ public final class StatusBar extends HBox {
 
     /** The text-zoom control: {@code [ −  100%  + ]}, dispatching the zoom commands. */
     private HBox zoomGroup() {
-        Button out = zoomButton("−", "view.textZoomOut", "Zoom out text");
-        Button in = zoomButton("+", "view.textZoomIn", "Zoom in text");
+        Button out = zoomButton("−", "view.textZoomOut", tr("statusbar.tip.zoomOut"));
+        Button in = zoomButton("+", "view.textZoomIn", tr("statusbar.tip.zoomIn"));
         zoomPercent.getStyleClass().addAll("status-segment", "status-segment-clickable", "text-zoom-percent");
-        zoomPercent.setTooltip(new Tooltip("Text zoom — click to reset to 100%"));
+        zoomPercent.setTooltip(new Tooltip(tr("statusbar.tip.zoomReset")));
         zoomPercent.setOnMouseClicked(e -> registry.run("view.textZoomReset"));
         HBox group = new HBox(out, zoomPercent, in);
         group.getStyleClass().add("text-zoom");
@@ -122,8 +124,8 @@ public final class StatusBar extends HBox {
     public void setGitEnabled(boolean enabled) {
         git.setDisable(!enabled);
         if (!enabled) {
-            git.setText("Git off");
-            git.getTooltip().setText("Git is disabled — enable it in Settings");
+            git.setText(tr("statusbar.gitOff"));
+            git.getTooltip().setText(tr("statusbar.tip.gitDisabled"));
         }
     }
 
@@ -135,8 +137,8 @@ public final class StatusBar extends HBox {
      */
     public void setGitBranch(String branch, int ahead, int behind) {
         if (branch == null || branch.isBlank()) {
-            git.setText("No VCS");
-            git.getTooltip().setText("Not under version control — click to clone a repository");
+            git.setText(tr("statusbar.noVcs"));
+            git.getTooltip().setText(tr("statusbar.tip.noVcs"));
             return;
         }
         StringBuilder sb = new StringBuilder("⎇ ").append(branch); // ⎇
@@ -147,7 +149,7 @@ public final class StatusBar extends HBox {
             sb.append("  ↓").append(behind); // ↓
         }
         git.setText(sb.toString());
-        git.getTooltip().setText("Git branch — click to switch / branch actions");
+        git.getTooltip().setText(tr("statusbar.tip.gitBranch"));
     }
 
     /** Re-binds live listeners to {@code buffer} (or none) and refreshes the segments. */
@@ -180,7 +182,7 @@ public final class StatusBar extends HBox {
         readOnly.setManaged(hasBuffer);
         if (hasBuffer) {
             boolean ro = !buffer.isEditable();
-            readOnly.setText(ro ? "Read-Only" : "Editable");
+            readOnly.setText(ro ? tr("statusbar.readOnly") : tr("statusbar.editable"));
             if (ro) {
                 if (!readOnly.getStyleClass().contains("active")) {
                     readOnly.getStyleClass().add("active");
@@ -189,11 +191,11 @@ public final class StatusBar extends HBox {
                 readOnly.getStyleClass().remove("active");
             }
             readOnly.getTooltip().setText(ro
-                    ? "Read-only — click to allow edits (C-x C-q)"
-                    : "Editable — click to make read-only (C-x C-q)");
+                    ? tr("statusbar.tip.readOnly")
+                    : tr("statusbar.tip.editable"));
         }
 
-        indent.setText("Tab Size: " + settings.get().getTabSize());
+        indent.setText(tr("statusbar.tabSize", settings.get().getTabSize()));
         zoomPercent.setText(Math.round(settings.get().getFontZoom() * 100) + "%");
         if (!hasBuffer) {
             return;
@@ -209,7 +211,7 @@ public final class StatusBar extends HBox {
                     : " (" + selected + " selected)";
         }
         position.setText(text);
-        position.getTooltip().setText("Offset " + area.getCaretPosition() + " · click to go to line");
+        position.getTooltip().setText(tr("statusbar.tip.offset", area.getCaretPosition()));
 
         language.setText(displayLanguage(buffer.getLanguage()));
         endings.setText(buffer.getLineEnding());
@@ -230,7 +232,7 @@ public final class StatusBar extends HBox {
     /** Capitalizes a language name for display (e.g. {@code "java"} -> {@code "Java"}). */
     private static String displayLanguage(String name) {
         if (name == null || name.isEmpty()) {
-            return "Plain Text";
+            return tr("statusbar.plainText");
         }
         return name.substring(0, 1).toUpperCase(Locale.ROOT) + name.substring(1);
     }

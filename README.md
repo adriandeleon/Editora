@@ -66,6 +66,10 @@ Emacs-style keymap or a fuzzy command palette.
   `${1:default}`, mirrors, choices, variables, escapes). Snippets ship for all 21 highlighted languages
   (most from the MIT [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection);
   add your own in `~/.editora/snippets/<language>.json` (user snippets override bundled).
+- **Autocomplete** — a completion popup that appears as you type (and on demand via `C-M-i` / `M-/`).
+  Completes **snippet** prefixes (accepting expands the snippet with its tab stops) and, in prose files,
+  **dictionary words** from the spell dictionary + your personal dictionary. Enter/Tab accept, arrows
+  navigate, Esc dismisses. Toggle under Settings → Editor.
 - **Recent files** — persistent most-recently-used list.
 - **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
   Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`
@@ -83,6 +87,9 @@ Emacs-style keymap or a fuzzy command palette.
 - **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Bookmarks, Structure, File Information).
 - **Settings** — a category sidebar (Appearance, Editor, Tool Windows, Spell Check, Application, …) with a
   search box, a live font/theme preview, and Reset to Defaults. Changes apply instantly.
+- **Multi-language interface** — run Editora in **English, Italian, Spanish, French, Portuguese, or
+  German**. Pick a language under Settings → Appearance → Language (default *Automatic* follows your
+  system language, falling back to English); the change applies on the next restart.
 
 ## Requirements
 

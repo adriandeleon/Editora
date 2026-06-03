@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -101,7 +103,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         });
 
-        Label placeholder = new Label("No project open");
+        Label placeholder = new Label(tr("project.placeholder"));
         placeholder.getStyleClass().add("tool-window-placeholder");
         placeholderPane = new StackPane(placeholder);
         placeholderPane.setAlignment(Pos.CENTER);
@@ -120,12 +122,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         closeButton.setGraphic(Icons.closeSmall());
         closeButton.getStyleClass().addAll("button-icon", "flat");
-        closeButton.setTooltip(new Tooltip("Close project (keeps it in your list)"));
+        closeButton.setTooltip(new Tooltip(tr("project.closeTip")));
         closeButton.setOnAction(e -> onCloseProject.run());
 
         deleteButton.setGraphic(Icons.trash());
         deleteButton.getStyleClass().addAll("button-icon", "flat");
-        deleteButton.setTooltip(new Tooltip("Delete project (remove from list; files on disk are kept)"));
+        deleteButton.setTooltip(new Tooltip(tr("project.deleteTip")));
         deleteButton.setOnAction(e -> onDeleteProject.run());
 
         HBox header = new HBox(4, projectCombo, deleteButton, closeButton);
@@ -135,7 +137,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     private void buildFilter() {
-        filterField.setPromptText("Search files…");
+        filterField.setPromptText(tr("project.filterPrompt"));
         filterField.getStyleClass().add("project-filter");
         filterField.textProperty().addListener((o, w, n) -> {
             if (!loading) {
@@ -334,9 +336,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         Path path = item.getValue();
         TextInputDialog dialog = new TextInputDialog(path.getFileName().toString());
         dialog.initOwner(getScene() == null ? null : getScene().getWindow());
-        dialog.setTitle("Rename");
+        dialog.setTitle(tr("project.renameTitle"));
         dialog.setHeaderText(null);
-        dialog.setContentText("New name:");
+        dialog.setContentText(tr("project.renameContent"));
         dialog.showAndWait().ifPresent(input -> {
             String name = input.trim();
             if (name.isEmpty()) {
@@ -359,10 +361,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private void deleteItem(TreeItem<Path> item) {
         Path path = item.getValue();
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                "Delete \"" + path.getFileName() + "\"? This cannot be undone.",
+                tr("project.deleteFileBody", path.getFileName()),
                 ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(getScene() == null ? null : getScene().getWindow());
-        confirm.setTitle("Delete File");
+        confirm.setTitle(tr("project.deleteFileTitle"));
         confirm.setHeaderText(null);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
@@ -485,11 +487,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
 
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir) {
-            MenuItem rename = new MenuItem("Rename…");
+            MenuItem rename = new MenuItem(tr("project.menu.rename"));
             rename.setOnAction(e -> renameItem(treeItem));
             ContextMenu menu = new ContextMenu(rename);
             if (!isDir) {
-                MenuItem delete = new MenuItem("Delete…");
+                MenuItem delete = new MenuItem(tr("project.menu.delete"));
                 delete.setOnAction(e -> deleteItem(treeItem));
                 menu.getItems().add(delete);
             }

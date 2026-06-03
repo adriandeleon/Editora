@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
 
@@ -17,9 +19,9 @@ import javafx.scene.layout.HBox;
 public class MarkdownViewToggle extends HBox {
 
     private final EditorBuffer buffer;
-    private final ToggleButton editor = segment(Icons.previewEditor(), "Editor");
-    private final ToggleButton split = segment(Icons.previewSplit(), "Editor and Preview");
-    private final ToggleButton preview = segment(Icons.previewOnly(), "Preview");
+    private final ToggleButton editor = segment(Icons.previewEditor(), tr("markdown.editor"));
+    private final ToggleButton split = segment(Icons.previewSplit(), tr("markdown.split"));
+    private final ToggleButton preview = segment(Icons.previewOnly(), tr("markdown.preview"));
     private boolean syncing;
 
     public MarkdownViewToggle(EditorBuffer buffer) {

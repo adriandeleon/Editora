@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
@@ -38,13 +40,13 @@ public class FindReplaceBar extends HBox {
     }
 
     private void build() {
-        findField.setPromptText("Find");
-        replaceField.setPromptText("Replace");
+        findField.setPromptText(tr("find.prompt"));
+        replaceField.setPromptText(tr("find.replacePrompt"));
 
-        Button next = new Button("Next");
-        Button prev = new Button("Prev");
-        Button replace = new Button("Replace");
-        Button replaceAll = new Button("All");
+        Button next = new Button(tr("find.next"));
+        Button prev = new Button(tr("find.prev"));
+        Button replace = new Button(tr("find.replace"));
+        Button replaceAll = new Button(tr("find.all"));
         Button close = new Button("✕");
 
         next.setOnAction(e -> findNext());
@@ -60,8 +62,8 @@ public class FindReplaceBar extends HBox {
             }
         });
 
-        getChildren().addAll(new Label("Find:"), findField, prev, next,
-                new Label("Replace:"), replaceField, replace, replaceAll,
+        getChildren().addAll(new Label(tr("find.label")), findField, prev, next,
+                new Label(tr("find.replaceLabel")), replaceField, replace, replaceAll,
                 caseSensitive, regex, close);
     }
 
@@ -71,7 +73,7 @@ public class FindReplaceBar extends HBox {
         findField.requestFocus();
         findField.selectAll();
         if (backward) {
-            status.accept("Reverse search");
+            status.accept(tr("find.reverseSearch"));
         }
     }
 
@@ -113,12 +115,12 @@ public class FindReplaceBar extends HBox {
                     : searchBackward(text, query, text.length());
         }
         if (match == null) {
-            status.accept("Not found: " + query);
+            status.accept(tr("find.notFound", query));
             return;
         }
         area.selectRange(match[0], match[1]);
         area.requestFollowCaret();
-        status.accept("Match at " + match[0]);
+        status.accept(tr("find.matchAt", match[0]));
     }
 
     private int[] searchForward(String text, String query, int from) {
@@ -163,7 +165,7 @@ public class FindReplaceBar extends HBox {
             int flags = caseSensitive.isSelected() ? 0 : Pattern.CASE_INSENSITIVE;
             return Pattern.compile(query, flags).matcher(text);
         } catch (PatternSyntaxException e) {
-            status.accept("Bad regex: " + e.getDescription());
+            status.accept(tr("find.badRegex", e.getDescription()));
             return null;
         }
     }
@@ -209,7 +211,7 @@ public class FindReplaceBar extends HBox {
         if (count > 0) {
             area.replaceText(result);
         }
-        status.accept("Replaced " + count + " occurrence(s)");
+        status.accept(tr("find.replaced", count));
     }
 
     private String replacePlain(String text, String query, String replacement, int[] counter) {

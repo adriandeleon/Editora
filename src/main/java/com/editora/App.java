@@ -46,6 +46,17 @@ public class App extends Application {
                 : new ConfigManager(devFlag(rawArgs));
         Settings settings = config.load();
 
+        // Localize the UI: pick the language (explicit setting, else system, else English) and load the
+        // message catalog before any UI text is created. A change takes effect on the next launch.
+        com.editora.i18n.Messages.init(com.editora.i18n.Messages.resolve(
+                settings.getUiLanguage(),
+                com.editora.i18n.Messages.available().keySet(),
+                java.util.Locale.getDefault().getLanguage()));
+        // Align the JVM default locale with the chosen UI language so JavaFX localizes its own
+        // built-in dialog buttons (OK/Cancel/Yes/No) to match. Resolved above first, so this doesn't
+        // affect the system-language fallback.
+        java.util.Locale.setDefault(java.util.Locale.forLanguageTag(com.editora.i18n.Messages.current()));
+
         Application.setUserAgentStylesheet(Themes.stylesheetFor(settings.getTheme()));
 
         CommandRegistry registry = new CommandRegistry();

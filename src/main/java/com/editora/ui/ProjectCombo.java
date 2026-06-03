@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -29,7 +31,7 @@ import javafx.util.StringConverter;
 public class ProjectCombo extends ComboBox<Project> {
 
     /** Sentinel for the "No Project" entry (id "" matches the no-active-project convention). */
-    public static final Project NO_PROJECT = new Project("", "No Project", "");
+    public static final Project NO_PROJECT = new Project("", tr("projectcombo.noProject"), "");
 
     private boolean loading;
     private Consumer<Project> onDelete;
@@ -101,7 +103,7 @@ public class ProjectCombo extends ComboBox<Project> {
             delete.setGraphic(Icons.trash());
             delete.getStyleClass().addAll("button-icon", "flat", "recent-remove");
             delete.setFocusTraversable(false);
-            delete.setTooltip(new Tooltip("Delete project"));
+            delete.setTooltip(new Tooltip(tr("projectcombo.deleteTip")));
             // Delete on press without selecting the row / closing the popup unexpectedly.
             delete.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
                 onDelete.accept(p);

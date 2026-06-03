@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -62,7 +64,7 @@ public class CommandPalette {
     }
 
     private void build() {
-        input.setPromptText("Run command…");
+        input.setPromptText(tr("palette.prompt"));
         list.setItems(items);
         list.setPrefHeight(280);
         list.setCellFactory(v -> new CommandCell());
@@ -83,7 +85,7 @@ public class CommandPalette {
             });
         }
 
-        Label header = new Label("Command Palette");
+        Label header = new Label(tr("palette.header"));
         header.getStyleClass().add("palette-title");
         Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ run  ·  esc cancel");
         hint.getStyleClass().add("palette-hint");

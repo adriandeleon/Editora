@@ -36,6 +36,8 @@
   "C-S-/": "edit.redo",
   "C-g": "edit.cancel",
   "M-;": "edit.toggleComment",
+  "C-M-i": "edit.completion",
+  "M-/": "edit.completion",
   "C-t": "edit.transposeChars",
   "M-t": "edit.transposeWords",
   "C-x C-t": "edit.transposeLines",

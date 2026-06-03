@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -63,9 +65,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private record MarkRow(Path file, Bookmark bm) implements Row { }
 
     private static final String SCOPE_HINT =
-            "Bookmarks are scoped to the active project (and to the global session when no project is "
-            + "open). Switching projects shows that project's bookmarks. All are stored in bookmarks.json "
-            + "in your config directory.";
+            tr("bookmarks.scopeTip");
 
     private final Supplier<Map<String, List<Bookmark>>> source;
     private final Actions actions;
@@ -87,7 +87,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
 
-        filterField.setPromptText("Filter bookmarks…");
+        filterField.setPromptText(tr("bookmarks.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
         filterField.textProperty().addListener((o, w, n) -> refresh());
         HBox.setHgrow(filterField, Priority.ALWAYS);
@@ -112,7 +112,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             }
         });
 
-        Label placeholder = new Label("No bookmarks in this project");
+        Label placeholder = new Label(tr("bookmarks.placeholder"));
         placeholder.getStyleClass().add("tool-window-placeholder");
         placeholder.setWrapText(true);
         placeholderPane = new StackPane(placeholder);
@@ -362,9 +362,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private void editNote(MarkRow m) {
         TextInputDialog dialog = new TextInputDialog(m.bm().note());
         dialog.initOwner(getScene() == null ? null : getScene().getWindow());
-        dialog.setTitle("Bookmark Note");
+        dialog.setTitle(tr("dialog.bookmarkNote.title"));
         dialog.setHeaderText(null);
-        dialog.setContentText("Note:");
+        dialog.setContentText(tr("dialog.bookmarkNote.content"));
         Optional<String> result = dialog.showAndWait();
         result.ifPresent(note -> actions.setNote(m.file(), m.bm().line(), note.strip()));
     }
@@ -375,10 +375,10 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     private void deleteFile(FileRow f) {
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                "Remove all bookmarks in \"" + fileName(f.file()) + "\"?",
+                tr("bookmarks.deleteFileBody", fileName(f.file())),
                 ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(getScene() == null ? null : getScene().getWindow());
-        confirm.setTitle("Delete Bookmarks");
+        confirm.setTitle(tr("bookmarks.deleteFileTitle"));
         confirm.setHeaderText(null);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
             actions.deleteAll(f.file());
@@ -451,9 +451,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
         /** "Move Up"/"Move Down" items that act on this row (disabled while a filter is active). */
         private void addMoveItems(ContextMenu menu) {
-            MenuItem up = new MenuItem("Move Up");
+            MenuItem up = new MenuItem(tr("bookmarks.moveUp"));
             up.setOnAction(e -> { tree.getSelectionModel().select(getTreeItem()); moveSelected(-1); });
-            MenuItem down = new MenuItem("Move Down");
+            MenuItem down = new MenuItem(tr("bookmarks.moveDown"));
             down.setOnAction(e -> { tree.getSelectionModel().select(getTreeItem()); moveSelected(1); });
             up.setDisable(!reorderEnabled());
             down.setDisable(!reorderEnabled());
@@ -480,7 +480,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 getStyleClass().add("bookmark-file-row");
                 setGraphic(Icons.fileSheet());
                 setTooltip(new Tooltip(f.file().toString()));
-                MenuItem deleteAll = new MenuItem("Delete all in file");
+                MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
                 deleteAll.setOnAction(e -> deleteFile(f));
                 ContextMenu menu = new ContextMenu(deleteAll);
                 addMoveItems(menu);
@@ -489,9 +489,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 setText(markLabel(m.bm()) + "    line " + (m.bm().line() + 1));
                 setGraphic(Icons.bookmark());
                 setTooltip(new Tooltip(m.file() + ":" + (m.bm().line() + 1)));
-                MenuItem edit = new MenuItem("Edit note…");
+                MenuItem edit = new MenuItem(tr("bookmarks.editNoteItem"));
                 edit.setOnAction(e -> editNote(m));
-                MenuItem delete = new MenuItem("Delete");
+                MenuItem delete = new MenuItem(tr("bookmarks.deleteItem"));
                 delete.setOnAction(e -> deleteMark(m));
                 ContextMenu menu = new ContextMenu(edit, delete);
                 addMoveItems(menu);

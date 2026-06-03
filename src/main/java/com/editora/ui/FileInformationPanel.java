@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -104,10 +106,10 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
 
     private Region buildFileView() {
         VBox box = new VBox(10,
-                section("File", buildFileGrid()),
-                section("Text Settings", buildTextSettingsGrid()),
-                section("Count", buildCountBox()),
-                section("Character", buildCharacterGrid()));
+                section(tr("fileinfo.section.file"), buildFileGrid()),
+                section(tr("fileinfo.section.textSettings"), buildTextSettingsGrid()),
+                section(tr("fileinfo.section.count"), buildCountBox()),
+                section(tr("fileinfo.section.character"), buildCharacterGrid()));
         box.setPadding(new Insets(8));
         ScrollPane scroll = new ScrollPane(box);
         scroll.setFitToWidth(true);
@@ -125,44 +127,44 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     private GridPane buildFileGrid() {
         GridPane g = grid();
         int r = 0;
-        addRow(g, r++, "Created", createdValue);
-        addRow(g, r++, "Modified", modifiedValue);
-        addRow(g, r++, "Size", sizeValue);
-        addRow(g, r++, "Tags", tagsValue);
-        addRow(g, r++, "Permissions", permissionsValue);
-        addRow(g, r++, "Owner", ownerValue);
-        addRow(g, r, "Full Path", fullPathValue);
+        addRow(g, r++, tr("fileinfo.row.created"), createdValue);
+        addRow(g, r++, tr("fileinfo.row.modified"), modifiedValue);
+        addRow(g, r++, tr("fileinfo.row.size"), sizeValue);
+        addRow(g, r++, tr("fileinfo.row.tags"), tagsValue);
+        addRow(g, r++, tr("fileinfo.row.permissions"), permissionsValue);
+        addRow(g, r++, tr("fileinfo.row.owner"), ownerValue);
+        addRow(g, r, tr("fileinfo.row.fullPath"), fullPathValue);
         return g;
     }
 
     private GridPane buildTextSettingsGrid() {
         GridPane g = grid();
-        addRow(g, 0, "Encoding", encodingValue);
-        addRow(g, 1, "Line Endings", lineEndingsValue);
-        addRow(g, 2, "Mode", modeValue);
+        addRow(g, 0, tr("fileinfo.row.encoding"), encodingValue);
+        addRow(g, 1, tr("fileinfo.row.lineEndings"), lineEndingsValue);
+        addRow(g, 2, tr("fileinfo.row.mode"), modeValue);
         return g;
     }
 
     private VBox buildCountBox() {
         GridPane totals = grid();
-        addRow(totals, 0, "Lines", linesValue);
-        addRow(totals, 1, "Characters", charsValue);
-        addRow(totals, 2, "Words", wordsValue);
+        addRow(totals, 0, tr("fileinfo.row.lines"), linesValue);
+        addRow(totals, 1, tr("fileinfo.row.characters"), charsValue);
+        addRow(totals, 2, tr("fileinfo.row.words"), wordsValue);
 
         GridPane caret = grid();
-        addRow(caret, 0, "Location", locationValue);
-        addRow(caret, 1, "Line", lineValue);
-        addRow(caret, 2, "Column", columnValue);
+        addRow(caret, 0, tr("fileinfo.row.location"), locationValue);
+        addRow(caret, 1, tr("fileinfo.row.line"), lineValue);
+        addRow(caret, 2, tr("fileinfo.row.column"), columnValue);
 
         return new VBox(10, totals, caret);
     }
 
     private GridPane buildCharacterGrid() {
         GridPane g = grid();
-        addRow(g, 0, "Code Point", codePointValue);
-        addRow(g, 1, "Name", charNameValue);
-        addRow(g, 2, "Block", charBlockValue);
-        addRow(g, 3, "Category", charCategoryValue);
+        addRow(g, 0, tr("fileinfo.row.codePoint"), codePointValue);
+        addRow(g, 1, tr("fileinfo.row.name"), charNameValue);
+        addRow(g, 2, tr("fileinfo.row.block"), charBlockValue);
+        addRow(g, 3, tr("fileinfo.row.category"), charCategoryValue);
         return g;
     }
 
@@ -259,7 +261,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     }
 
     private void refreshTextSettings(EditorBuffer buffer) {
-        encodingValue.setText("Unicode (UTF-8)");
+        encodingValue.setText(tr("fileinfo.encoding.utf8"));
         lineEndingsValue.setText(EditorBuffer.detectLineEnding(buffer.getArea().getText()));
         modeValue.setText(modeLabel(buffer));
     }
@@ -267,7 +269,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     private static String modeLabel(EditorBuffer buffer) {
         String lang = buffer.getLanguage();
         if (lang == null || lang.isEmpty() || lang.equals(LanguageRegistry.plaintext())) {
-            return "General";
+            return tr("fileinfo.mode.general");
         }
         return lang.substring(0, 1).toUpperCase(Locale.ROOT) + lang.substring(1);
     }
@@ -393,37 +395,37 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
 
     private static String categoryName(int type) {
         return switch (type) {
-            case Character.UPPERCASE_LETTER -> "Uppercase Letter (Lu)";
-            case Character.LOWERCASE_LETTER -> "Lowercase Letter (Ll)";
-            case Character.TITLECASE_LETTER -> "Titlecase Letter (Lt)";
-            case Character.MODIFIER_LETTER -> "Modifier Letter (Lm)";
-            case Character.OTHER_LETTER -> "Other Letter (Lo)";
-            case Character.NON_SPACING_MARK -> "Nonspacing Mark (Mn)";
-            case Character.COMBINING_SPACING_MARK -> "Spacing Mark (Mc)";
-            case Character.ENCLOSING_MARK -> "Enclosing Mark (Me)";
-            case Character.DECIMAL_DIGIT_NUMBER -> "Decimal Digit Number (Nd)";
-            case Character.LETTER_NUMBER -> "Letter Number (Nl)";
-            case Character.OTHER_NUMBER -> "Other Number (No)";
-            case Character.SPACE_SEPARATOR -> "Space Separator (Zs)";
-            case Character.LINE_SEPARATOR -> "Line Separator (Zl)";
-            case Character.PARAGRAPH_SEPARATOR -> "Paragraph Separator (Zp)";
-            case Character.CONTROL -> "Control (Cc)";
-            case Character.FORMAT -> "Format (Cf)";
-            case Character.SURROGATE -> "Surrogate (Cs)";
-            case Character.PRIVATE_USE -> "Private Use (Co)";
-            case Character.UNASSIGNED -> "Unassigned (Cn)";
-            case Character.DASH_PUNCTUATION -> "Dash Punctuation (Pd)";
-            case Character.START_PUNCTUATION -> "Open Punctuation (Ps)";
-            case Character.END_PUNCTUATION -> "Close Punctuation (Pe)";
-            case Character.CONNECTOR_PUNCTUATION -> "Connector Punctuation (Pc)";
-            case Character.OTHER_PUNCTUATION -> "Other Punctuation (Po)";
-            case Character.INITIAL_QUOTE_PUNCTUATION -> "Initial Quote (Pi)";
-            case Character.FINAL_QUOTE_PUNCTUATION -> "Final Quote (Pf)";
-            case Character.MATH_SYMBOL -> "Math Symbol (Sm)";
-            case Character.CURRENCY_SYMBOL -> "Currency Symbol (Sc)";
-            case Character.MODIFIER_SYMBOL -> "Modifier Symbol (Sk)";
-            case Character.OTHER_SYMBOL -> "Other Symbol (So)";
-            default -> "Unknown";
+            case Character.UPPERCASE_LETTER -> tr("char.cat.Lu");
+            case Character.LOWERCASE_LETTER -> tr("char.cat.Ll");
+            case Character.TITLECASE_LETTER -> tr("char.cat.Lt");
+            case Character.MODIFIER_LETTER -> tr("char.cat.Lm");
+            case Character.OTHER_LETTER -> tr("char.cat.Lo");
+            case Character.NON_SPACING_MARK -> tr("char.cat.Mn");
+            case Character.COMBINING_SPACING_MARK -> tr("char.cat.Mc");
+            case Character.ENCLOSING_MARK -> tr("char.cat.Me");
+            case Character.DECIMAL_DIGIT_NUMBER -> tr("char.cat.Nd");
+            case Character.LETTER_NUMBER -> tr("char.cat.Nl");
+            case Character.OTHER_NUMBER -> tr("char.cat.No");
+            case Character.SPACE_SEPARATOR -> tr("char.cat.Zs");
+            case Character.LINE_SEPARATOR -> tr("char.cat.Zl");
+            case Character.PARAGRAPH_SEPARATOR -> tr("char.cat.Zp");
+            case Character.CONTROL -> tr("char.cat.Cc");
+            case Character.FORMAT -> tr("char.cat.Cf");
+            case Character.SURROGATE -> tr("char.cat.Cs");
+            case Character.PRIVATE_USE -> tr("char.cat.Co");
+            case Character.UNASSIGNED -> tr("char.cat.Cn");
+            case Character.DASH_PUNCTUATION -> tr("char.cat.Pd");
+            case Character.START_PUNCTUATION -> tr("char.cat.Ps");
+            case Character.END_PUNCTUATION -> tr("char.cat.Pe");
+            case Character.CONNECTOR_PUNCTUATION -> tr("char.cat.Pc");
+            case Character.OTHER_PUNCTUATION -> tr("char.cat.Po");
+            case Character.INITIAL_QUOTE_PUNCTUATION -> tr("char.cat.Pi");
+            case Character.FINAL_QUOTE_PUNCTUATION -> tr("char.cat.Pf");
+            case Character.MATH_SYMBOL -> tr("char.cat.Sm");
+            case Character.CURRENCY_SYMBOL -> tr("char.cat.Sc");
+            case Character.MODIFIER_SYMBOL -> tr("char.cat.Sk");
+            case Character.OTHER_SYMBOL -> tr("char.cat.So");
+            default -> tr("char.cat.unknown");
         };
     }
 }

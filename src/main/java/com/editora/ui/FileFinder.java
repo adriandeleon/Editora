@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -57,7 +59,7 @@ public class FileFinder {
     private boolean swallowNextTyped;
 
     public FileFinder(Supplier<Path> startDir, Consumer<Path> onChoose) {
-        this(startDir, onChoose, false, "Find File");
+        this(startDir, onChoose, false, tr("filefinder.title"));
     }
 
     public FileFinder(Supplier<Path> startDir, Consumer<Path> onChoose, boolean pickDirectory,
@@ -70,7 +72,7 @@ public class FileFinder {
     }
 
     private void build() {
-        input.setPromptText("Type a path…");
+        input.setPromptText(tr("filefinder.prompt"));
         list.setItems(items);
         list.setPrefHeight(280);
         list.setCellFactory(v -> new EntryCell());

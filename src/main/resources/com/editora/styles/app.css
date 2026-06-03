@@ -996,3 +996,40 @@
     -fx-max-height: 0;
     visibility: hidden;
 }
+
+/* ---- Autocomplete popup (caret-anchored; focus stays in the editor). Theme-aware via AtlantaFX
+   semantic colors, so no per-editor-theme overrides are needed. ---- */
+.completion-popup {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 10, 0.1, 0, 2);
+}
+.completion-list {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 2;
+}
+.completion-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 2 8 2 8;
+}
+.completion-list .list-cell:filled:selected {
+    -fx-background-color: -color-accent-emphasis;
+}
+.completion-list .list-cell:filled:selected .completion-label,
+.completion-list .list-cell:filled:selected .completion-detail {
+    -fx-text-fill: -color-fg-emphasis;
+}
+.completion-label {
+    -fx-text-fill: -color-fg-default;
+}
+.completion-detail {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+/* Snippet rows get an accent label so they read as "expandable" vs plain words. */
+.completion-kind-snippet .completion-label {
+    -fx-text-fill: -color-accent-fg;
+}

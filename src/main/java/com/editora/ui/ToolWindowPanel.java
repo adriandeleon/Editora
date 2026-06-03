@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import static com.editora.i18n.Messages.tr;
+
 import javafx.css.PseudoClass;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -29,7 +31,7 @@ final class ToolWindowPanel extends BorderPane {
         Button close = new Button();
         close.setGraphic(Icons.closeSmall());
         close.getStyleClass().addAll("button-icon", "flat", "tool-window-close");
-        close.setTooltip(new Tooltip("Hide"));
+        close.setTooltip(new Tooltip(tr("toolwindow.hide")));
         close.setOnAction(e -> onClose.run());
 
         HBox header = new HBox(8, title, spacer, close);
