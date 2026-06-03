@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Save / Save As… in the tab right-click menu** — save the right-clicked tab directly (Save is greyed
+  out for an unchanged, already-saved file).
+
 - **Git support (native CLI)** — Editora now talks to your installed `git`. The status bar shows the
   current branch with ahead/behind counts (`⎇ main ↑2 ↓1`, click for the branch dropdown — an
   IntelliJ-style searchable list of actions + Local/Remote branches, each local branch showing its

@@ -2464,6 +2464,10 @@ public class MainController {
 
     /** Builds and attaches the right-click context menu for a tab. */
     private void installTabMenu(Tab tab, EditorBuffer buffer) {
+        MenuItem save = new MenuItem("Save");
+        save.setOnAction(e -> save(buffer));
+        MenuItem saveAs = new MenuItem("Save As…");
+        saveAs.setOnAction(e -> saveAs(buffer));
         MenuItem close = new MenuItem("Close");
         close.setOnAction(e -> closeTab(tab));
         MenuItem closeOthers = new MenuItem("Close Other Tabs");
@@ -2484,6 +2488,8 @@ public class MainController {
         rename.setOnAction(e -> renameFile(buffer, tab));
 
         ContextMenu menu = new ContextMenu(
+                save, saveAs,
+                new SeparatorMenuItem(),
                 close, closeOthers, closeAll, closeUnmodified,
                 new SeparatorMenuItem(),
                 closeLeft, closeRight,
@@ -2495,6 +2501,8 @@ public class MainController {
             boolean hasPath = buffer.getPath() != null;
             copyPath.setDisable(!hasPath);
             rename.setDisable(!hasPath);
+            // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
+            save.setDisable(hasPath && !buffer.isDirty());
             pin.setText(pinned.contains(tab) ? "Unpin Tab" : "Pin Tab");
         });
         tab.setContextMenu(menu);
