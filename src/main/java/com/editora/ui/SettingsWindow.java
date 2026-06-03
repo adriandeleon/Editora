@@ -120,6 +120,12 @@ public class SettingsWindow {
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
     private ToolWindow projectToolWindowRef;
+    // The Commit tool-window-placement row, disabled until Git is enabled.
+    private CheckBox commitShowCheck;
+    private ComboBox<ToolWindow.Side> commitSideCombo;
+    private Button commitMoveUp;
+    private Button commitMoveDown;
+    private ToolWindow commitToolWindowRef;
     private ComboBox<String> autoSaveCombo;
     private Spinner<Integer> autoSaveDelaySpinner;
 
@@ -350,6 +356,7 @@ public class SettingsWindow {
         gitCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setGitSupport(now);
             apply();
+            updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
         });
 
         zenCheck = new CheckBox("Zen mode (distraction-free)");
@@ -585,6 +592,12 @@ public class SettingsWindow {
                 projectShowCheck = showCheck;
                 projectSideCombo = sideCombo;
                 projectToolWindowRef = tw;
+            } else if ("commit".equals(tw.getId())) {
+                commitShowCheck = showCheck;
+                commitSideCombo = sideCombo;
+                commitMoveUp = moveUp;
+                commitMoveDown = moveDown;
+                commitToolWindowRef = tw;
             }
 
             Label title = new Label(tw.getTitle());
@@ -597,6 +610,7 @@ public class SettingsWindow {
         }
         refreshMoves.run();
         updateProjectRowEnabled();
+        updateGitRowEnabled();
         return p;
     }
 
@@ -886,6 +900,7 @@ public class SettingsWindow {
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
+            updateGitRowEnabled();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());
             autoSaveCombo.setValue(mode);
@@ -909,6 +924,29 @@ public class SettingsWindow {
         projectShowCheck.setSelected(visible);
         projectShowCheck.setDisable(!on);
         projectSideCombo.setDisable(!visible);
+    }
+
+    /**
+     * Disables the Commit tool-window-placement row when Git is off (the window can't be shown until
+     * Git is enabled). Unlike the Project row, the Show checkbox value is left untouched — Git's
+     * availability is transient, not the user's persisted visibility preference.
+     */
+    private void updateGitRowEnabled() {
+        if (commitShowCheck == null) {
+            return;
+        }
+        boolean on = config.getSettings().isGitSupport();
+        commitShowCheck.setDisable(!on);
+        if (!on) {
+            commitSideCombo.setDisable(true);
+            commitMoveUp.setDisable(true);
+            commitMoveDown.setDisable(true);
+        } else {
+            boolean shown = commitShowCheck.isSelected();
+            commitSideCombo.setDisable(!shown);
+            commitMoveUp.setDisable(!shown || !toolWindows.canMove(commitToolWindowRef, -1));
+            commitMoveDown.setDisable(!shown || !toolWindows.canMove(commitToolWindowRef, 1));
+        }
     }
 
     public void syncProjectsCheck() {
