@@ -3889,6 +3889,26 @@ public class MainController {
         area.requestFocus();
     }
 
+    /** Applies an Emacs transpose (chars/words/lines) to the active editable buffer at the caret. */
+    private void transpose(java.util.function.BiFunction<String, Integer,
+            com.editora.editor.Transposer.Edit> op) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        com.editora.editor.Transposer.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        if (edit == null) {
+            return;
+        }
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        area.requestFocus();
+    }
+
     /** Emacs-style vertical caret move (C-n/C-p) preserving the goal column; see {@link EditorBuffer#moveLine}. */
     private void moveLine(int delta) {
         EditorBuffer buffer = activeBuffer();
@@ -4184,6 +4204,12 @@ public class MainController {
         registry.register(Command.of("edit.redo", "Edit: Redo", this::onRedo));
         registry.register(Command.of("edit.cancel", "Cancel", this::cancel));
         registry.register(Command.of("edit.toggleComment", "Edit: Toggle Comment", this::toggleComment));
+        registry.register(Command.of("edit.transposeChars", "Edit: Transpose Characters",
+                () -> transpose(com.editora.editor.Transposer::transposeChars)));
+        registry.register(Command.of("edit.transposeWords", "Edit: Transpose Words",
+                () -> transpose(com.editora.editor.Transposer::transposeWords)));
+        registry.register(Command.of("edit.transposeLines", "Edit: Transpose Lines",
+                () -> transpose(com.editora.editor.Transposer::transposeLines)));
         registry.register(Command.of("nav.lineStart", "Go: Line Start",
                 () -> moveAndFollow(a -> a.lineStart(selPolicy()))));
         registry.register(Command.of("nav.lineEnd", "Go: Line End",

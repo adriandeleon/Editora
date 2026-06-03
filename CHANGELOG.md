@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Emacs transpose commands** — transpose characters (`C-t`), words (`M-t`), and lines (`C-x C-t`),
+  also in the command palette ("Edit: Transpose …"). At end of line, `C-t` swaps the two preceding
+  characters (typo fix); `C-x C-t` swaps the current line with the one above.
+
 - **"Enable Git" setting (Settings → Git), off by default** — Git integration is now opt-in. When off,
   the status-bar VCS segment is disabled, the Commit tool window is hidden, gutter change markers are
   cleared, and all Git commands/keybindings are inactive (and hidden from the palette). Turn it on in
