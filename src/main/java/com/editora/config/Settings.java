@@ -38,6 +38,9 @@ public class Settings {
     private int autoSaveDelayMillis = 1000;
     /** Projects feature: off by default — hides all project UI/commands until enabled. */
     private boolean projectSupport = false;
+    /** Git integration: off by default — hides the status-bar VCS segment, Commit tool window, gutter
+     *  change bars, and Git commands/keybindings until enabled. */
+    private boolean gitSupport = false;
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -216,6 +219,14 @@ public class Settings {
 
     public void setProjectSupport(boolean projectSupport) {
         this.projectSupport = projectSupport;
+    }
+
+    public boolean isGitSupport() {
+        return gitSupport;
+    }
+
+    public void setGitSupport(boolean gitSupport) {
+        this.gitSupport = gitSupport;
     }
 
     public Map<String, String> getKeybindings() {

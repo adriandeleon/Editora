@@ -953,6 +953,16 @@
     -fx-font-style: italic;
     -fx-padding: 8 0 0 0;
 }
+/* Git availability label on the Git settings page. */
+.settings-git-status {
+    -fx-font-size: 12px;
+}
+.settings-git-found {
+    -fx-text-fill: -color-success-fg;
+}
+.settings-git-missing {
+    -fx-text-fill: -color-danger-fg;
+}
 
 /* Title header at the top of the palette / Jump-to popups, naming the action. */
 .command-palette .palette-title {

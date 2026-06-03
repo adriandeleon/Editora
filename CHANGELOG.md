@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **"Enable Git" setting (Settings → Git), off by default** — Git integration is now opt-in. When off,
+  the status-bar VCS segment is disabled, the Commit tool window is hidden, gutter change markers are
+  cleared, and all Git commands/keybindings are inactive (and hidden from the palette). Turn it on in
+  Settings → Git to use branch/status, change bars, commit, and sync. The Git page detects the `git`
+  command: it shows the installed version when found, or "git command not found" and disables the
+  checkbox when git isn't on `PATH`.
+
 - **Save / Save As… in the tab right-click menu** — save the right-clicked tab directly (Save is greyed
   out for an unchanged, already-saved file).
 

@@ -70,9 +70,9 @@ public class SettingsWindow {
         TOOL_WINDOWS("Tool Windows", false),
         SPELL_CHECK("Spell Check", false),
         APPLICATION("Application", false),
+        GIT("Git", false),
         KEYMAPS("Keymaps", true),
         PLUGINS("Plugins", true),
-        GIT("Git", true),
         AI("AI", true),
         ADVANCED("Advanced", false);
 
@@ -93,6 +93,7 @@ public class SettingsWindow {
     private final Consumer<Boolean> onToggleZen;
     private final Consumer<Path> onOpenFile;
     private final ToolWindowManager toolWindows;
+    private final com.editora.git.GitService gitService;
     private final Stage stage = new Stage();
 
     // --- controls (same set as before, regrouped into pages) ---
@@ -113,6 +114,8 @@ public class SettingsWindow {
     private CheckBox tabBarCheck;
     private CheckBox breadcrumbCheck;
     private CheckBox projectsCheck;
+    private CheckBox gitCheck;
+    private Label gitStatusLabel;
     private CheckBox zenCheck;
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
@@ -145,10 +148,12 @@ public class SettingsWindow {
     private boolean loading;
 
     public SettingsWindow(ConfigManager config, ToolWindowManager toolWindows,
+                          com.editora.git.GitService gitService,
                           Consumer<Settings> onApply, Consumer<Boolean> onToggleZen,
                           Consumer<Path> onOpenFile) {
         this.config = config;
         this.toolWindows = toolWindows;
+        this.gitService = gitService;
         this.onApply = onApply;
         this.onToggleZen = onToggleZen;
         this.onOpenFile = onOpenFile;
@@ -341,6 +346,12 @@ public class SettingsWindow {
             updateProjectRowEnabled();
         });
 
+        gitCheck = new CheckBox("Enable Git");
+        gitCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setGitSupport(now);
+            apply();
+        });
+
         zenCheck = new CheckBox("Zen mode (distraction-free)");
         zenCheck.selectedProperty().addListener((obs, was, now) -> {
             if (loading) {
@@ -401,6 +412,7 @@ public class SettingsWindow {
         pages.put(Category.TOOL_WINDOWS, toolWindowsPage());
         pages.put(Category.SPELL_CHECK, spellPage());
         pages.put(Category.APPLICATION, applicationPage());
+        pages.put(Category.GIT, gitPage());
         pages.put(Category.ADVANCED, advancedPage());
         for (Category c : Category.values()) {
             if (c.placeholder) {
@@ -473,6 +485,43 @@ public class SettingsWindow {
         row(p, Category.APPLICATION, features, projectsRow, "projects workspace folder");
         row(p, Category.APPLICATION, features, zenCheck, "zen distraction free focus");
         return p;
+    }
+
+    private VBox gitPage() {
+        VBox p = page("Git");
+        gitStatusLabel = new Label("Checking for git…");
+        gitStatusLabel.getStyleClass().add("settings-git-status");
+        gitStatusLabel.setWrapText(true);
+        gitStatusLabel.setMaxWidth(440);
+        row(p, Category.GIT, null, gitStatusLabel, "git command found version installed not found");
+        row(p, Category.GIT, null, gitCheck, "git version control vcs enable");
+        Label hint = note("Uses your installed git. When off, the status-bar branch, the Commit tool "
+                + "window, gutter change markers, and Git commands are all hidden.");
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.GIT, null, hint, "git version control vcs enable");
+        return p;
+    }
+
+    /**
+     * Probes for the {@code git} command off-thread and updates the Git page: shows the version when
+     * found (and enables the checkbox), or "not found" + disables the checkbox when git isn't on PATH.
+     */
+    private void probeGit() {
+        if (gitStatusLabel == null || gitService == null) {
+            return;
+        }
+        gitStatusLabel.getStyleClass().setAll("settings-git-status");
+        gitStatusLabel.setText("Checking for git…");
+        gitService.version(version -> {
+            boolean found = version != null && !version.isBlank();
+            gitStatusLabel.getStyleClass().setAll("settings-git-status",
+                    found ? "settings-git-found" : "settings-git-missing");
+            gitStatusLabel.setText(found
+                    ? "✓ git command found — " + version
+                    : "✗ git command not found — install git to enable Git integration");
+            gitCheck.setDisable(!found);
+        });
     }
 
     /** The tool-window placement page: one row per registered tool window (Show / Side / ▲▼ reorder). */
@@ -788,6 +837,7 @@ public class SettingsWindow {
         s.setShowTabBar(d.isShowTabBar());
         s.setShowBreadcrumb(d.isShowBreadcrumb());
         s.setProjectSupport(d.isProjectSupport());
+        s.setGitSupport(d.isGitSupport());
     }
 
     /** Persists + applies a reset, re-themes the app, and reloads the controls + preview. */
@@ -835,6 +885,7 @@ public class SettingsWindow {
             breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
+            gitCheck.setSelected(settings.isGitSupport());
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());
             autoSaveCombo.setValue(mode);
@@ -846,6 +897,7 @@ public class SettingsWindow {
         }
         applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
         updatePreviewFont();
+        probeGit(); // re-check git availability each time Settings opens
     }
 
     private void updateProjectRowEnabled() {

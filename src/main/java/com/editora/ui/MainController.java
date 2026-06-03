@@ -165,6 +165,8 @@ public class MainController {
     private Region projectToolbarGap;
     /** Tracks the last-applied project-support state to detect off→on transitions (reveal the panel). */
     private boolean projectSupportApplied;
+    /** Tracks the last-applied Git-support state to detect off→on transitions (repopulate the Git UI). */
+    private boolean gitSupportApplied;
 
     // Auto save. Mode keys: "off" | "afterDelay" | "onFocusChange".
     static final String AUTOSAVE_OFF = "off";
@@ -235,9 +237,12 @@ public class MainController {
         this.snippets = new com.editora.snippet.SnippetManager(config);
         // Project commands (incl. the Project tool window) are hidden from the palette unless project
         // support is enabled.
+        // Project + Git commands are hidden from the palette unless their feature is enabled.
         this.palette = new CommandPalette(registry, keymap,
-                c -> config.getSettings().isProjectSupport()
-                        || (!c.id().startsWith("project.") && !c.id().equals("tool.project")));
+                c -> (config.getSettings().isProjectSupport()
+                        || (!c.id().startsWith("project.") && !c.id().equals("tool.project")))
+                        && (config.getSettings().isGitSupport()
+                        || (!c.id().startsWith("git.") && !c.id().equals("tool.commit"))));
         this.findBar = new FindReplaceBar(this::activeArea, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -246,7 +251,7 @@ public class MainController {
         // Breadcrumb sits just above the status bar at the bottom (IntelliJ-style).
         bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
-        this.settingsWindow = new SettingsWindow(config, toolWindows,
+        this.settingsWindow = new SettingsWindow(config, toolWindows, gitService,
                 this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath);
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
@@ -266,6 +271,7 @@ public class MainController {
         toolWindows.setZenStripesHidden(config.getWorkspaceState().isZenMode());
         applyChromeVisibility();
         applyProjectSupport(); // hide project UI when disabled (default)
+        applyGitSupport(); // hide Git UI when disabled (default)
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
         autoSaveIdleTimer.setOnFinished(e -> autoSaveAllDirty());
@@ -367,6 +373,7 @@ public class MainController {
                 });
         toolWindowPalette = new QuickOpen<>("Jump to Tool Window", "Type to filter tool windows…",
                 () -> toolWindows.getRegisteredToolWindows().stream()
+                        .filter(tw -> gitEnabled() || !"tool.commit".equals(tw.getCommandId()))
                         .filter(tw -> projectsEnabled() || !"tool.project".equals(tw.getCommandId()))
                         .collect(java.util.stream.Collectors.toCollection(ArrayList::new)),
                 ToolWindow::getTitle,
@@ -950,8 +957,50 @@ public class MainController {
      * off the FX thread via {@link com.editora.git.GitService}. Cheap to over-call: stale results are
      * dropped by the service's generation guard, and nothing runs when Git is absent / not a repo.
      */
+    /** Whether the Git integration is enabled in Settings (default off). */
+    private boolean gitEnabled() {
+        return config.getSettings().isGitSupport();
+    }
+
+    /**
+     * Reconciles all Git UI with the "Enable Git" setting. When off: the status-bar VCS segment is
+     * disabled, the Commit tool window is hidden, every open buffer's gutter change bars are cleared,
+     * and commands/keybindings no-op. When on, repopulates on the off→on transition (other triggers
+     * keep it fresh thereafter). Runs at startup and on every settings apply (mirrors
+     * {@link #applyProjectSupport}).
+     */
+    private void applyGitSupport() {
+        boolean on = gitEnabled();
+        statusBar.setGitEnabled(on);
+        if (!on) {
+            toolWindows.setAvailable(commitToolWindow, false);
+            currentRepoRoot = null;
+            currentBranchName = "";
+            currentUpstream = "";
+            gitPanel.setStatus(null);
+            for (Tab tab : tabPane.getTabs()) {
+                EditorBuffer b = (EditorBuffer) tab.getUserData();
+                if (b != null) {
+                    b.setChangeBars(null);
+                }
+            }
+        } else if (!gitSupportApplied) {
+            refreshGit(); // off→on: populate status bar + Commit window + active gutter
+        }
+        gitSupportApplied = on;
+    }
+
+    /** Runs {@code action} only when Git is enabled; otherwise reports it (disables the keybinding/command). */
+    private void ifGit(Runnable action) {
+        if (gitEnabled()) {
+            action.run();
+        } else {
+            setStatus("Git is disabled — enable it in Settings");
+        }
+    }
+
     private void refreshGit() {
-        if (gitService == null) {
+        if (gitService == null || !gitEnabled()) {
             return;
         }
         EditorBuffer b = activeBuffer();
@@ -3700,6 +3749,7 @@ public class MainController {
         applyEditorTheme(settings.getEditorTheme());
         applyChromeVisibility();
         applyProjectSupport();
+        applyGitSupport();
         applyAutoSave();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
@@ -4102,20 +4152,24 @@ public class MainController {
         registry.register(Command.of("tool.fileInformation", "Tool Window: File Information",
                 () -> toolWindows.toggle(fileInfoToolWindow)));
         registry.register(Command.of("tool.commit", "Tool Window: Commit",
-                () -> toolWindows.toggle(commitToolWindow)));
-        // Git (native CLI). All no-op with a clear status message when Git is absent / not in a repo.
-        registry.register(Command.of("git.clone", "Git: Clone Repository…", this::gitClone));
-        registry.register(Command.of("git.commit", "Git: Commit…", this::gitCommitFocus));
-        registry.register(Command.of("git.stageFile", "Git: Stage Current File", this::gitStageActiveFile));
-        registry.register(Command.of("git.switchBranch", "Git: Switch Branch…", this::chooseBranch));
-        registry.register(Command.of("git.newBranch", "Git: New Branch…", this::newBranch));
-        registry.register(Command.of("git.fetch", "Git: Fetch", () -> gitSync("Fetch", "fetch", "--all")));
-        registry.register(Command.of("git.pull", "Git: Pull", () -> gitSync("Pull", "pull", "--ff-only")));
-        registry.register(Command.of("git.push", "Git: Push", this::gitPush));
-        registry.register(Command.of("git.refresh", "Git: Refresh Status", () -> {
+                () -> ifGit(() -> toolWindows.toggle(commitToolWindow))));
+        // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
+        // absent / not in a repo. The ifGit wrapper disables the commands + keybindings when Git is off.
+        registry.register(Command.of("git.clone", "Git: Clone Repository…", () -> ifGit(this::gitClone)));
+        registry.register(Command.of("git.commit", "Git: Commit…", () -> ifGit(this::gitCommitFocus)));
+        registry.register(Command.of("git.stageFile", "Git: Stage Current File",
+                () -> ifGit(this::gitStageActiveFile)));
+        registry.register(Command.of("git.switchBranch", "Git: Switch Branch…", () -> ifGit(this::chooseBranch)));
+        registry.register(Command.of("git.newBranch", "Git: New Branch…", () -> ifGit(this::newBranch)));
+        registry.register(Command.of("git.fetch", "Git: Fetch",
+                () -> ifGit(() -> gitSync("Fetch", "fetch", "--all"))));
+        registry.register(Command.of("git.pull", "Git: Pull",
+                () -> ifGit(() -> gitSync("Pull", "pull", "--ff-only"))));
+        registry.register(Command.of("git.push", "Git: Push", () -> ifGit(this::gitPush)));
+        registry.register(Command.of("git.refresh", "Git: Refresh Status", () -> ifGit(() -> {
             gitService.invalidateCaches();
             afterGitMutation();
-        }));
+        })));
         registry.register(Command.of("switcher.show", "Switcher",
                 () -> switcher.show(stage, false)));
         registry.register(Command.of("switcher.showReverse", "Switcher (Reverse)",

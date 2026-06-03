@@ -72,6 +72,28 @@ public final class GitService {
         return ok;
     }
 
+    /**
+     * Probes {@code git --version} off the FX thread and posts the version string (e.g.
+     * {@code "git version 2.54.0"}) on the FX thread, or {@code ""} when git isn't on PATH. Also
+     * primes the {@link #gitAvailable()} cache.
+     */
+    public void version(Consumer<String> onResult) {
+        exec.submit(() -> {
+            String v = "";
+            try {
+                ProcessRunner.Result r = ProcessRunner.run(null, QUICK, List.of("git", "--version"));
+                gitAvailable = r.ok();
+                if (r.ok()) {
+                    v = r.out().strip();
+                }
+            } catch (RuntimeException e) {
+                gitAvailable = false;
+            }
+            String posted = v;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
     // --- the main refresh ------------------------------------------------------------------------
 
     /**

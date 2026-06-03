@@ -116,6 +116,18 @@ public final class StatusBar extends HBox {
     }
 
     /**
+     * Enables/disables the Git VCS segment. When Git support is off the segment is shown disabled
+     * ("Git off", greyed, non-clickable); when on, {@link #setGitBranch} repopulates it.
+     */
+    public void setGitEnabled(boolean enabled) {
+        git.setDisable(!enabled);
+        if (!enabled) {
+            git.setText("Git off");
+            git.getTooltip().setText("Git is disabled — enable it in Settings");
+        }
+    }
+
+    /**
      * Updates the Git branch segment. The segment is <em>always</em> visible: with a {@code null}/blank
      * {@code branch} (not under version control) it shows "No VCS" — clicking still opens the dropdown,
      * which then offers "Clone Git repository…". Otherwise it shows {@code ⎇ branch} with optional
