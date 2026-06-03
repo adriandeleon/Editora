@@ -126,12 +126,14 @@ public class SettingsWindow {
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
     private ToolWindow projectToolWindowRef;
+    private Label projectDisabledNote;
     // The Commit tool-window-placement row, disabled until Git is enabled.
     private CheckBox commitShowCheck;
     private ComboBox<ToolWindow.Side> commitSideCombo;
     private Button commitMoveUp;
     private Button commitMoveDown;
     private ToolWindow commitToolWindowRef;
+    private Label commitDisabledNote;
     private ComboBox<String> autoSaveCombo;
     private Spinner<Integer> autoSaveDelaySpinner;
 
@@ -658,6 +660,16 @@ public class SettingsWindow {
             HBox reorder = new HBox(2, moveUp, moveDown);
             HBox rowBox = new HBox(10, title, showCheck, sideCombo, reorder);
             rowBox.setAlignment(Pos.CENTER_LEFT);
+            // For the context-gated windows, a muted note explaining why the row may be disabled.
+            if ("project".equals(tw.getId())) {
+                projectDisabledNote = note(tr("settings.toolWindows.projectDisabled"));
+                projectDisabledNote.setWrapText(true);
+                rowBox.getChildren().add(projectDisabledNote);
+            } else if ("commit".equals(tw.getId())) {
+                commitDisabledNote = note(tr("settings.toolWindows.commitDisabled"));
+                commitDisabledNote.setWrapText(true);
+                rowBox.getChildren().add(commitDisabledNote);
+            }
             row(p, Category.TOOL_WINDOWS, null, rowBox, "tool window " + tw.getTitle() + " placement side show");
         }
         refreshMoves.run();
@@ -982,6 +994,10 @@ public class SettingsWindow {
         projectShowCheck.setSelected(visible);
         projectShowCheck.setDisable(!on);
         projectSideCombo.setDisable(!visible);
+        if (projectDisabledNote != null) {
+            projectDisabledNote.setVisible(!on);
+            projectDisabledNote.setManaged(!on);
+        }
     }
 
     /**
@@ -995,6 +1011,10 @@ public class SettingsWindow {
         }
         boolean on = config.getSettings().isGitSupport();
         commitShowCheck.setDisable(!on);
+        if (commitDisabledNote != null) {
+            commitDisabledNote.setVisible(!on);
+            commitDisabledNote.setManaged(!on);
+        }
         if (!on) {
             commitSideCombo.setDisable(true);
             commitMoveUp.setDisable(true);
