@@ -46,6 +46,7 @@ import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.ContextMenu;
@@ -58,13 +59,17 @@ import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.ToolBar;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.BorderPane;
@@ -179,6 +184,18 @@ public class MainController {
     private FileInformationPanel fileInfoPanel;
     private StructurePanel structurePanel;
     private BookmarksPanel bookmarksPanel;
+    // --- Git (native-CLI integration; off-thread via GitService) ---
+    private final com.editora.git.GitService gitService = new com.editora.git.GitService();
+    private GitPanel gitPanel;
+    private ToolWindow commitToolWindow;
+    /** IntelliJ-style branch dropdown (actions + Local/Remote branches), anchored to the status bar. */
+    private final BranchPopup branchPopup = new BranchPopup();
+    /** Repo root for the active file, set when {@link #applyGitState} runs (FX thread); null = no repo. */
+    private Path currentRepoRoot;
+    /** Current branch name for the active repo (FX thread), used to mark it in the branch popup. */
+    private String currentBranchName = "";
+    /** Current branch's upstream (e.g. {@code origin/main}), or empty when none — drives push. */
+    private String currentUpstream = "";
     private Switcher switcher;
     /** Most-recently-used tab order, head = most recent. */
     private final LinkedList<Tab> mru = new LinkedList<>();
@@ -209,6 +226,7 @@ public class MainController {
         stage.focusedProperty().addListener((obs, was, now) -> {
             if (Boolean.TRUE.equals(now)) {
                 checkExternalChanges();
+                refreshGit(); // another tool may have changed the repo while we were away
             }
         });
         this.config = config;
@@ -660,6 +678,8 @@ public class MainController {
         if (bookmarksPanel != null) {
             bookmarksPanel.refresh(); // the swapped session has its own bookmarks
         }
+        gitService.invalidateCaches(); // a different project may be a different repo
+        refreshGit();
         if (keepProjectPanelOpen && projectsEnabled() && !toolWindows.isOpen(projectToolWindow)) {
             toolWindows.open(projectToolWindow, false); // keep-open across a session swap; don't grab focus
         }
@@ -791,6 +811,7 @@ public class MainController {
             refreshSplitButtons();
             updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
             checkExternalChanges(); // prompt if the file we just switched to changed on disk
+            refreshGit(); // update branch/status + this file's gutter change bars
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
@@ -863,9 +884,42 @@ public class MainController {
         fileInfoPanel = new FileInformationPanel();
         fileInfoToolWindow = new ToolWindow("file-information", "File Information", ToolWindow.Side.RIGHT,
                 Icons::about, fileInfoPanel, "tool.fileInformation");
+        gitPanel = new GitPanel(new GitPanel.Actions() {
+            @Override public void open(String path) {
+                if (currentRepoRoot != null) {
+                    openPath(currentRepoRoot.resolve(path));
+                }
+            }
+            @Override public void stage(String path) {
+                gitOp("Staged " + path, "add", "--", path);
+            }
+            @Override public void unstage(String path) {
+                gitOp("Unstaged " + path, "reset", "-q", "HEAD", "--", path);
+            }
+            @Override public void discard(String path, boolean untracked) {
+                discardChanges(path, untracked);
+            }
+            @Override public void stageAll() {
+                gitOp("Staged all changes", "add", "-A");
+            }
+            @Override public void commit(String message) {
+                gitCommit(message);
+            }
+            @Override public void push() {
+                gitPush();
+            }
+            @Override public void refresh() {
+                gitService.invalidateCaches();
+                afterGitMutation();
+            }
+        });
+        gitPanel.setOnClone(this::gitClone);
+        commitToolWindow = new ToolWindow("commit", "Commit", ToolWindow.Side.RIGHT,
+                Icons::git, gitPanel, "tool.commit");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
+        toolWindows.register(commitToolWindow);
         toolWindows.register(fileInfoToolWindow);
     }
 
@@ -876,6 +930,442 @@ public class MainController {
         StackPane wrapper = new StackPane(label);
         wrapper.setAlignment(javafx.geometry.Pos.CENTER);
         return wrapper;
+    }
+
+    // --- Git integration -------------------------------------------------------------------------
+
+    /** The file/dir used to locate the repo: the active file, else the open project's root, else null. */
+    private Path gitContextPath() {
+        EditorBuffer b = activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file != null) {
+            return file;
+        }
+        Project active = projects == null ? null : projects.active();
+        return active == null ? null : Path.of(active.root());
+    }
+
+    /**
+     * Recomputes Git status (status bar + tool window) and the active file's gutter change bars, all
+     * off the FX thread via {@link com.editora.git.GitService}. Cheap to over-call: stale results are
+     * dropped by the service's generation guard, and nothing runs when Git is absent / not a repo.
+     */
+    private void refreshGit() {
+        if (gitService == null) {
+            return;
+        }
+        EditorBuffer b = activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        Path context = gitContextPath();
+        // Only diff a real, non-huge file (huge files disable the gutter anyway).
+        Path diffFile = (file != null && b != null && !b.isLargeFile()) ? file : null;
+        gitService.refresh(context, diffFile, this::applyGitState);
+    }
+
+    /** Applies a completed Git refresh to the status bar, tool window, and active buffer's gutter. */
+    private void applyGitState(com.editora.git.GitService.RepoState state) {
+        currentRepoRoot = state.root();
+        EditorBuffer b = activeBuffer();
+        // The Commit tool window is only available inside a Git repo (transient, doesn't touch the
+        // user's show/hide preference).
+        toolWindows.setAvailable(commitToolWindow, state.isRepo());
+        if (!state.isRepo()) {
+            currentBranchName = "";
+            currentUpstream = "";
+            statusBar.setGitBranch(null, 0, 0);
+            gitPanel.setStatus(null);
+            if (b != null) {
+                b.setChangeBars(null);
+            }
+            return;
+        }
+        var status = state.status();
+        currentBranchName = status.branch();
+        currentUpstream = status.upstream();
+        statusBar.setGitBranch(status.branch(), status.ahead(), status.behind());
+        gitPanel.setStatus(status);
+        if (b != null && b.getPath() != null) {
+            java.util.Map<Integer, String> classes = new java.util.HashMap<>();
+            state.changes().forEach((line, type) -> classes.put(line, type.cssClass()));
+            b.setChangeBars(classes); // an empty map still marks the buffer as tracked (reserves the slot)
+        }
+    }
+
+    /**
+     * Refreshes the whole Git UI after a mutation (commit/stage/discard/checkout/pull/push): the status
+     * bar, the Commit tool window, and the active gutter (via {@link #refreshGit()}), plus the gutter of
+     * <em>every other open buffer in the same repo</em> (so committing clears bars on background tabs
+     * too, not just the visible one). Off the UI thread; bounded by the number of open tabs and only
+     * runs on user-initiated git actions, so it's off the hot paths.
+     */
+    private void afterGitMutation() {
+        refreshGit(); // status bar + tool window + active buffer's gutter
+        Path root = currentRepoRoot;
+        if (root == null) {
+            return;
+        }
+        Path absRoot = root.toAbsolutePath();
+        EditorBuffer active = activeBuffer();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer buf = (EditorBuffer) tab.getUserData();
+            if (buf == null || buf == active || buf.getPath() == null || buf.isLargeFile()) {
+                continue; // active buffer is handled by refreshGit(); skip non-file/huge buffers
+            }
+            Path p = buf.getPath().toAbsolutePath();
+            if (!p.startsWith(absRoot)) {
+                continue; // only files inside the affected repo
+            }
+            gitService.diff(root, p, changes -> {
+                java.util.Map<Integer, String> classes = new java.util.HashMap<>();
+                changes.forEach((line, type) -> classes.put(line, type.cssClass()));
+                buf.setChangeBars(classes);
+            });
+        }
+    }
+
+    /** Runs a Git mutation in the active repo, reports the outcome, and refreshes. */
+    private void gitOp(String successMessage, String... args) {
+        if (currentRepoRoot == null) {
+            setStatus(gitService.gitAvailable() ? "Not a Git repository" : "Git is not installed");
+            return;
+        }
+        gitService.run(currentRepoRoot, r -> {
+            if (r.ok()) {
+                setStatus(successMessage);
+            } else {
+                gitError("Git command failed", r.message());
+            }
+            afterGitMutation();
+        }, args);
+    }
+
+    /** Confirms then discards a file's changes (or deletes an untracked file) — destructive. */
+    private void discardChanges(String path, boolean untracked) {
+        if (currentRepoRoot == null) {
+            return;
+        }
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                untracked ? "Delete untracked file \"" + path + "\"? This cannot be undone."
+                        : "Discard all changes to \"" + path + "\"? This cannot be undone.",
+                ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle("Discard Changes");
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+            return;
+        }
+        if (untracked) {
+            gitOp("Deleted " + path, "clean", "-f", "--", path);
+        } else {
+            gitOp("Discarded changes to " + path, "checkout", "--", path);
+        }
+        // The on-disk file changed under any open buffer for it — re-check so it reloads if needed.
+        Platform.runLater(this::checkExternalChanges);
+    }
+
+    private void gitCommit(String message) {
+        if (currentRepoRoot == null) {
+            return;
+        }
+        gitService.run(currentRepoRoot, r -> {
+            if (r.ok()) {
+                gitPanel.clearMessage();
+                setStatus("Committed");
+            } else {
+                gitError("Commit failed", r.message());
+            }
+            afterGitMutation();
+        }, "commit", "-m", message);
+    }
+
+    private void checkoutBranch(String name) {
+        if (currentRepoRoot == null || name == null || name.isBlank()) {
+            return;
+        }
+        gitService.run(currentRepoRoot, r -> {
+            if (r.ok()) {
+                setStatus("Switched to branch " + name);
+            } else {
+                gitError("Couldn't switch to " + name, r.message());
+            }
+            afterGitMutation();
+            reloadAllFromDiskSilently();
+        }, "checkout", name);
+    }
+
+    /** Checks out a remote branch (e.g. {@code origin/foo}), creating a local tracking branch. */
+    private void checkoutRemoteBranch(String remote) {
+        if (currentRepoRoot == null || remote == null || remote.isBlank()) {
+            return;
+        }
+        gitService.run(currentRepoRoot, r -> {
+            if (r.ok()) {
+                setStatus("Checked out " + remote);
+            } else {
+                gitError("Couldn't check out " + remote, r.message());
+            }
+            afterGitMutation();
+            reloadAllFromDiskSilently();
+        }, "checkout", "--track", remote);
+    }
+
+    /** Opens the IntelliJ-style branch dropdown, fetching local + remote branches off-thread first. */
+    private void chooseBranch() {
+        if (currentRepoRoot == null) {
+            // Not under version control: the dropdown offers only "Clone Git repository…".
+            branchPopup.showNoVcs(stage, statusBar.gitSegmentNode(), this::gitClone);
+            return;
+        }
+        gitService.branches(currentRepoRoot, branches -> {
+            List<BranchPopup.MenuAction> actions = List.of(
+                    new BranchPopup.MenuAction("＋  New Branch…", "", this::newBranch),
+                    new BranchPopup.MenuAction("Update Project (Pull)", "", () -> gitSync("Pull", "pull", "--ff-only")),
+                    new BranchPopup.MenuAction("Fetch", "", () -> gitSync("Fetch", "fetch", "--all")),
+                    new BranchPopup.MenuAction("Push", "", this::gitPush),
+                    new BranchPopup.MenuAction("Commit…", "C-x g", this::gitCommitFocus));
+            branchPopup.show(stage, statusBar.gitSegmentNode(), currentBranchName,
+                    branches.local(), branches.remote(), branches.remoteUrl(), actions,
+                    this::checkoutBranch, this::checkoutRemoteBranch);
+        });
+    }
+
+    private void newBranch() {
+        if (currentRepoRoot == null) {
+            setStatus(gitService.gitAvailable() ? "Not a Git repository" : "Git is not installed");
+            return;
+        }
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.initOwner(stage);
+        dialog.setTitle("New Branch");
+        dialog.setHeaderText(null);
+        dialog.setContentText("Branch name:");
+        dialog.showAndWait().map(String::strip).filter(s -> !s.isEmpty()).ifPresent(name ->
+                gitService.run(currentRepoRoot, r -> {
+                    if (r.ok()) {
+                        setStatus("Created and switched to " + name);
+                    } else {
+                        gitError("Couldn't create branch " + name, r.message());
+                    }
+                    afterGitMutation();
+                }, "checkout", "-b", name));
+    }
+
+    private void gitSync(String label, String... args) {
+        if (currentRepoRoot == null) {
+            setStatus(gitService.gitAvailable() ? "Not a Git repository" : "Git is not installed");
+            return;
+        }
+        setStatus(label + "…");
+        gitService.runNetwork(currentRepoRoot, r -> {
+            if (r.ok()) {
+                setStatus(label + " done");
+                reloadAllFromDiskSilently();
+            } else {
+                gitError(label + " failed", r.message());
+            }
+            afterGitMutation();
+        }, args);
+    }
+
+    /**
+     * Pushes the current branch. A brand-new branch has no upstream, so {@code git push} alone fails;
+     * in that case we push with {@code --set-upstream origin <branch>} so the first push "just works"
+     * (matching {@code push.autoSetupRemote}). Subsequent pushes use the tracked upstream.
+     */
+    private void gitPush() {
+        if (currentRepoRoot == null) {
+            setStatus(gitService.gitAvailable() ? "Not a Git repository" : "Git is not installed");
+            return;
+        }
+        if (currentUpstream.isBlank() && !currentBranchName.isBlank()) {
+            gitSync("Push", "push", "--set-upstream", "origin", currentBranchName);
+        } else {
+            gitSync("Push", "push");
+        }
+    }
+
+    /**
+     * Shows a Git command's (often multi-line) error output in a readable, scrollable dialog rather than
+     * cramming it into the one-line status bar. The status bar gets a short summary.
+     */
+    private void gitError(String summary, String detail) {
+        setStatus(summary);
+        String body = detail == null || detail.isBlank() ? summary : detail.strip();
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.initOwner(stage);
+        alert.setTitle("Git");
+        alert.setHeaderText(summary);
+        TextArea area = new TextArea(body);
+        area.setEditable(false);
+        area.setWrapText(true);
+        area.setPrefColumnCount(52);
+        area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
+        area.getStyleClass().add("git-error-text");
+        alert.getDialogPane().setContent(area);
+        alert.showAndWait();
+    }
+
+    /**
+     * Clones a remote repository via one dialog asking for both the <em>URL</em> and the
+     * <em>destination directory</em> (with a Browse button); the directory auto-fills to
+     * {@code <home>/<repo-name>} as you type the URL, until you edit it yourself. Clones into that
+     * folder, then opens a file from it (its README, if any) so Git lights up. Clone and
+     * {@link com.editora.config.ProjectManager Projects} are independent — cloning never creates or
+     * requires a project.
+     */
+    private void gitClone() {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.initOwner(stage);
+        dialog.setTitle("Clone Repository");
+        dialog.setHeaderText(null);
+        ButtonType cloneType = new ButtonType("Clone", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(cloneType, ButtonType.CANCEL);
+
+        TextField urlField = new TextField();
+        urlField.setPromptText("https://github.com/user/repo.git");
+        urlField.setPrefColumnCount(34);
+        TextField dirField = new TextField();
+        dirField.setPromptText("Destination folder");
+        dirField.setPrefColumnCount(28);
+        Button browse = new Button("Browse…");
+
+        String defaultParent = System.getProperty("user.home", "");
+        boolean[] dirEdited = {false};
+        boolean[] autoFilling = {false};
+        urlField.textProperty().addListener((o, a, b) -> {
+            if (!dirEdited[0]) {
+                String name = repoNameFromUrl(b);
+                autoFilling[0] = true;
+                dirField.setText(name.isEmpty() ? "" : Path.of(defaultParent).resolve(name).toString());
+                autoFilling[0] = false;
+            }
+        });
+        dirField.textProperty().addListener((o, a, b) -> {
+            if (!autoFilling[0]) {
+                dirEdited[0] = true; // user took control of the directory; stop auto-filling
+            }
+        });
+        browse.setOnAction(e -> {
+            DirectoryChooser chooser = new DirectoryChooser();
+            chooser.setTitle("Choose the parent folder for the clone");
+            java.io.File parent = chooser.showDialog(dialog.getDialogPane().getScene().getWindow());
+            if (parent != null) {
+                String name = repoNameFromUrl(urlField.getText());
+                dirField.setText(parent.toPath().resolve(name.isEmpty() ? "repository" : name).toString());
+            }
+        });
+
+        GridPane grid = new GridPane();
+        grid.setHgap(8);
+        grid.setVgap(8);
+        grid.setPadding(new Insets(4, 0, 0, 0));
+        grid.add(new Label("Repository URL:"), 0, 0);
+        grid.add(urlField, 1, 0, 2, 1);
+        grid.add(new Label("Directory:"), 0, 1);
+        grid.add(dirField, 1, 1);
+        grid.add(browse, 2, 1);
+        GridPane.setHgrow(urlField, Priority.ALWAYS);
+        GridPane.setHgrow(dirField, Priority.ALWAYS);
+        dialog.getDialogPane().setContent(grid);
+        dialog.setResultConverter(bt -> bt);
+
+        javafx.scene.Node cloneButton = dialog.getDialogPane().lookupButton(cloneType);
+        cloneButton.setDisable(true);
+        Runnable validate = () -> cloneButton.setDisable(
+                urlField.getText().isBlank() || dirField.getText().isBlank());
+        urlField.textProperty().addListener((o, a, b) -> validate.run());
+        dirField.textProperty().addListener((o, a, b) -> validate.run());
+        Platform.runLater(urlField::requestFocus);
+
+        if (dialog.showAndWait().orElse(ButtonType.CANCEL) != cloneType) {
+            return;
+        }
+        String url = urlField.getText().strip();
+        Path destination = Path.of(dirField.getText().strip());
+        if (Files.exists(destination)) {
+            setStatus("Destination already exists: " + destination);
+            return;
+        }
+        setStatus("Cloning " + url + " …");
+        gitService.clone(url, destination, r -> {
+            if (r.ok()) {
+                setStatus("Cloned into " + destination);
+                openClonedEntry(destination);
+            } else {
+                gitError("Clone failed", r.message());
+            }
+        });
+    }
+
+    /**
+     * Opens a representative file from a freshly cloned repo (its README if present) so Git activates
+     * for it — no project involved. If there's no obvious entry file, the clone is just reported and the
+     * user can open files from it (File: Open / Find File).
+     */
+    private void openClonedEntry(Path dir) {
+        for (String candidate : new String[]{"README.md", "README.markdown", "README.rst",
+                "README.txt", "README"}) {
+            Path file = dir.resolve(candidate);
+            if (Files.isRegularFile(file)) {
+                openPath(file);
+                return;
+            }
+        }
+        setStatus("Cloned into " + dir + " — open a file from it to use Git");
+    }
+
+    /**
+     * Derives the working-folder name for a clone URL: the last path segment with any {@code .git}
+     * suffix and trailing slashes removed. Handles {@code https://…/repo.git}, {@code git@host:org/repo.git},
+     * and local paths. Pure/unit-tested. Returns {@code ""} when no name can be found.
+     */
+    static String repoNameFromUrl(String url) {
+        if (url == null) {
+            return "";
+        }
+        String s = url.strip();
+        while (s.endsWith("/")) {
+            s = s.substring(0, s.length() - 1);
+        }
+        if (s.endsWith(".git")) {
+            s = s.substring(0, s.length() - 4);
+        }
+        // The last segment after a '/' or (for scp-style "git@host:org/repo") a ':'.
+        int cut = Math.max(s.lastIndexOf('/'), s.lastIndexOf(':'));
+        String name = cut >= 0 ? s.substring(cut + 1) : s;
+        return name.strip();
+    }
+
+    /** Stages the active file (used by the {@code git.stageFile} command). */
+    private void gitStageActiveFile() {
+        EditorBuffer b = activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file == null || currentRepoRoot == null) {
+            setStatus("No file in a Git repository");
+            return;
+        }
+        gitOp("Staged " + file.getFileName(), "add", "--",
+                currentRepoRoot.relativize(file.toAbsolutePath()).toString());
+    }
+
+    /** Opens the Git tool window and focuses the commit message box. */
+    private void gitCommitFocus() {
+        toolWindows.open(commitToolWindow);
+        Platform.runLater(gitPanel::focusCommitMessage);
+    }
+
+    /** After a branch switch/pull, silently reload any open buffer whose file changed on disk. */
+    private void reloadAllFromDiskSilently() {
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            if (buffer == null || buffer.getPath() == null || buffer.isDirty()) {
+                continue; // never clobber unsaved edits
+            }
+            Path file = buffer.getPath();
+            if (Files.exists(file) && buffer.diskChangedFrom(lastModifiedMillis(file), fileSize(file))) {
+                reloadFromDisk(tab, buffer);
+            }
+        }
     }
 
     private void setupToolbar() {
@@ -1683,6 +2173,7 @@ public class MainController {
             buffer.markClean();
             buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
             setStatus("Saved " + file);
+            refreshGit(); // a save changes the working tree → update gutter + status
             return true;
         } catch (IOException e) {
             setStatus("Failed to save: " + e.getMessage());
@@ -1735,6 +2226,7 @@ public class MainController {
                     }
                     buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our write, not external
                     setStatus("Auto-saved " + file.getFileName());
+                    refreshGit();
                 });
             } catch (IOException e) {
                 Platform.runLater(() -> setStatus("Auto-save failed: " + e.getMessage()));
@@ -3601,6 +4093,21 @@ public class MainController {
                 () -> toolWindows.toggle(bookmarksToolWindow)));
         registry.register(Command.of("tool.fileInformation", "Tool Window: File Information",
                 () -> toolWindows.toggle(fileInfoToolWindow)));
+        registry.register(Command.of("tool.commit", "Tool Window: Commit",
+                () -> toolWindows.toggle(commitToolWindow)));
+        // Git (native CLI). All no-op with a clear status message when Git is absent / not in a repo.
+        registry.register(Command.of("git.clone", "Git: Clone Repository…", this::gitClone));
+        registry.register(Command.of("git.commit", "Git: Commit…", this::gitCommitFocus));
+        registry.register(Command.of("git.stageFile", "Git: Stage Current File", this::gitStageActiveFile));
+        registry.register(Command.of("git.switchBranch", "Git: Switch Branch…", this::chooseBranch));
+        registry.register(Command.of("git.newBranch", "Git: New Branch…", this::newBranch));
+        registry.register(Command.of("git.fetch", "Git: Fetch", () -> gitSync("Fetch", "fetch", "--all")));
+        registry.register(Command.of("git.pull", "Git: Pull", () -> gitSync("Pull", "pull", "--ff-only")));
+        registry.register(Command.of("git.push", "Git: Push", this::gitPush));
+        registry.register(Command.of("git.refresh", "Git: Refresh Status", () -> {
+            gitService.invalidateCaches();
+            afterGitMutation();
+        }));
         registry.register(Command.of("switcher.show", "Switcher",
                 () -> switcher.show(stage, false)));
         registry.register(Command.of("switcher.showReverse", "Switcher (Reverse)",

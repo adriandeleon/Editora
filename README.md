@@ -73,7 +73,14 @@ Emacs-style keymap or a fuzzy command palette.
   the right-click menu, or drag-and-drop — the jump picker follows the same order. Saved in
   `bookmarks.json`, scoped per project (switching projects shows that project's bookmarks; deleting a
   project deletes its bookmarks).
-- **Tool windows** — IntelliJ-style dockable panels (Project, Bookmarks, File Information).
+- **Git** — uses your installed `git` (no bundled library). The status bar shows the current branch with
+  ahead/behind counts (click to switch branches); the gutter draws change bars vs `HEAD` (added /
+  modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
+  stage, unstage, discard, **Stage All**, and a commit box. Palette/keys cover commit (`C-x g`), stage
+  current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
+  repo and opens a file from it — independent of projects). All off the UI thread; hidden when not in a
+  repo or when `git` isn't on `PATH`.
+- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Bookmarks, Structure, File Information).
 
 ## Requirements
 

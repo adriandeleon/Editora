@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
@@ -55,6 +56,9 @@ public final class FoldManager {
     /** Fixed width of the gutter's bookmark-marker column, reserved on every row so the gutter (and
      *  thus each line's text indentation) keeps a constant width whether or not the line is bookmarked. */
     private static final double BOOKMARK_SLOT_WIDTH = 12;
+    /** Width of the Git change-bar column, reserved on every row while change tracking is on so toggling
+     *  a bar never shifts the text indentation (mirrors the bookmark slot). */
+    private static final double CHANGE_SLOT_WIDTH = 3;
 
     /** Notified after a user-driven fold/unfold so callers can persist the new state. */
     private Runnable onFoldStateChanged = () -> {
@@ -69,6 +73,11 @@ public final class FoldManager {
     private IntPredicate isBookmarked = i -> false;
     /** Invoked when the user clicks a line's gutter bookmark marker. */
     private IntConsumer onBookmarkToggle = i -> { };
+
+    /** Whether Git change tracking is active for this buffer (reserve the change-bar slot). */
+    private BooleanSupplier changeBarsEnabled = () -> false;
+    /** CSS style class for a line's Git change bar (e.g. {@code git-added}), or {@code null} for none. */
+    private IntFunction<String> changeClass = i -> null;
 
     /** Shared hover preview of a collapsed line's hidden content; reused across all lines. */
     private final Tooltip linePreview = new Tooltip();
@@ -198,6 +207,16 @@ public final class FoldManager {
     public void setBookmarkHooks(IntPredicate isBookmarked, IntConsumer onToggle) {
         this.isBookmarked = isBookmarked == null ? i -> false : isBookmarked;
         this.onBookmarkToggle = onToggle == null ? i -> { } : onToggle;
+    }
+
+    /**
+     * Wires the Git change-bar gutter column: {@code enabled} decides whether the (fixed-width) slot is
+     * reserved on every row, and {@code classFor} returns the CSS style class for a line's bar
+     * (e.g. {@code git-modified}) or {@code null} when the line is unchanged.
+     */
+    public void setChangeHook(BooleanSupplier enabled, IntFunction<String> classFor) {
+        this.changeBarsEnabled = enabled == null ? () -> false : enabled;
+        this.changeClass = classFor == null ? i -> null : classFor;
     }
 
     public Optional<Region> regionStartingAt(int line) {
@@ -497,6 +516,23 @@ public final class FoldManager {
             });
         }
         box.getChildren().add(chevron);
+
+        // Git change bar: a thin full-height stripe at the gutter's inner edge (next to the text),
+        // IntelliJ-style. The slot is reserved on every row while tracking is on, so a bar
+        // appearing/disappearing never shifts the line's text indentation.
+        if (changeBarsEnabled.getAsBoolean()) {
+            javafx.scene.layout.Region bar = new javafx.scene.layout.Region();
+            bar.getStyleClass().add("git-change-bar");
+            bar.setMinWidth(CHANGE_SLOT_WIDTH);
+            bar.setPrefWidth(CHANGE_SLOT_WIDTH);
+            bar.setMaxWidth(CHANGE_SLOT_WIDTH);
+            bar.setMaxHeight(Double.MAX_VALUE);
+            String cls = changeClass.apply(idx);
+            if (cls != null) {
+                bar.getStyleClass().add(cls);
+            }
+            box.getChildren().add(bar);
+        }
         return box;
     }
 

@@ -55,6 +55,10 @@ public class ToolWindowManager {
     private final Map<ToolWindow.Side, ToolWindow> openBySide = new HashMap<>();
     private final Map<ToolWindow, Button> stripeButtons = new HashMap<>();
     private final Map<ToolWindow, Region> panels = new HashMap<>();
+    /** Tool windows hidden by context rather than user preference (e.g. the Commit window outside a Git
+     *  repo). Transient — never persisted, so it doesn't clobber the user's show/hide setting. */
+    private final java.util.Set<ToolWindow> unavailable =
+            Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     /** When true (Zen mode), all side stripes are force-hidden regardless of their buttons. */
     private boolean zenHidesStripes;
@@ -122,7 +126,7 @@ public class ToolWindowManager {
         button.setOnAction(e -> toggle(tw));
         enableReorderDrag(tw, button);
         stripeButtons.put(tw, button);
-        if (isVisible(tw)) {
+        if (shouldShowButton(tw)) {
             addButtonOrdered(tw, button);
         }
         updateStripeVisibility();
@@ -219,7 +223,7 @@ public class ToolWindowManager {
             if (button != null) {
                 stripe.remove(button); // no-op if absent
             }
-        } else if (button != null && !stripe.contains(button)) {
+        } else if (button != null && !unavailable.contains(tw) && !stripe.contains(button)) {
             addButtonOrdered(tw, button); // contains-guard above: adding a duplicate child throws
         }
         Boolean prev = config.getWorkspaceState().getToolWindowVisible().get(tw.getId());
@@ -228,6 +232,42 @@ public class ToolWindowManager {
         if (prev == null || prev != visible) {
             config.save(); // persist only on an actual change
         }
+    }
+
+    /** Whether the stripe button should be present: the user keeps it visible AND it isn't context-hidden. */
+    private boolean shouldShowButton(ToolWindow tw) {
+        return isVisible(tw) && !unavailable.contains(tw);
+    }
+
+    /**
+     * Context-driven availability (NOT persisted, unlike {@link #setVisible}): hides the tool window's
+     * stripe button + closes it when {@code available} is false, restoring it (subject to the user's
+     * {@link #isVisible} preference) when true. Used to hide the Commit window outside a Git repo without
+     * disturbing the user's show/hide setting.
+     */
+    public void setAvailable(ToolWindow tw, boolean available) {
+        boolean wasAvailable = !unavailable.contains(tw);
+        if (available == wasAvailable) {
+            return;
+        }
+        if (available) {
+            unavailable.remove(tw);
+        } else {
+            unavailable.add(tw);
+        }
+        Button button = stripeButtons.get(tw);
+        var stripe = stripeFor(currentSide(tw)).getChildren();
+        if (!available) {
+            if (openBySide.get(currentSide(tw)) == tw) {
+                close(tw);
+            }
+            if (button != null) {
+                stripe.remove(button); // no-op if absent
+            }
+        } else if (button != null && isVisible(tw) && !stripe.contains(button)) {
+            addButtonOrdered(tw, button);
+        }
+        updateStripeVisibility();
     }
 
     public Collection<ToolWindow> getRegisteredToolWindows() {
@@ -289,7 +329,7 @@ public class ToolWindowManager {
         }
         Button button = stripeButtons.get(tw);
         config.getWorkspaceState().getToolWindowSides().put(tw.getId(), newSide.name());
-        if (button != null && isVisible(tw)) {
+        if (button != null && shouldShowButton(tw)) {
             stripeFor(oldSide).getChildren().remove(button);
             addButtonOrdered(tw, button);
         }
@@ -434,7 +474,7 @@ public class ToolWindowManager {
             return;
         }
         ToolWindow tw = byId.get(id);
-        if (tw != null && isVisible(tw)) {
+        if (tw != null && shouldShowButton(tw)) {
             open(tw, false); // restore (incl. session + Zen exit) must not steal focus from the editor
         }
     }

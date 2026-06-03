@@ -75,6 +75,22 @@
     -fx-fill: #e08a33;
 }
 
+/* Git change bar: a thin full-height stripe at the gutter's inner edge (next to the text). The slot is
+   transparent by default; the per-line type class colors it. Uses AtlantaFX semantic colors so it
+   tracks the app/editor theme without per-theme overrides. */
+.editor-area .fold-gutter .git-change-bar {
+    -fx-background-color: transparent;
+}
+.editor-area .fold-gutter .git-change-bar.git-added {
+    -fx-background-color: -color-success-emphasis;
+}
+.editor-area .fold-gutter .git-change-bar.git-modified {
+    -fx-background-color: -color-accent-emphasis;
+}
+.editor-area .fold-gutter .git-change-bar.git-deleted {
+    -fx-background-color: -color-danger-emphasis;
+}
+
 /* Hover preview of a collapsed region's hidden content. The colors are set inline per editor theme
    (FoldManager.setPreviewColors); these defaults match the default (Primer Light) editor theme. */
 .fold-preview-tooltip {
@@ -126,6 +142,91 @@
 }
 .bookmarks-tree .bookmark-file-row {
     -fx-text-fill: -color-fg-muted;
+}
+
+/* ---- Git (Commit) tool window ---- */
+.git-panel {
+    -fx-background-color: -color-bg-default;
+}
+.git-panel .git-branch-label {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+.git-tree {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-font-size: 12px;
+}
+.git-tree .tree-cell {
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 1 4 1 4;
+}
+.git-tree .git-group-row {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-weight: bold;
+}
+.git-commit-message {
+    -fx-font-size: 12px;
+}
+/* Commit tool window toolbar: compact icon buttons (legible, no truncated text labels). */
+.git-toolbar-button {
+    -fx-padding: 3 5 3 5;
+    -fx-background-radius: 4;
+    -fx-background-color: transparent;
+}
+.git-toolbar-button:hover {
+    -fx-background-color: -color-bg-subtle;
+}
+.git-toolbar-button .toolbar-icon {
+    -fx-fill: -color-fg-default;
+}
+/* Push indicator in the Commit header: accent when there are commits to push, muted when up to date. */
+.git-ahead {
+    -fx-font-size: 11px;
+    -fx-padding: 0 4 0 0;
+}
+.git-ahead-active {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
+.git-ahead-clean {
+    -fx-text-fill: -color-fg-muted;
+}
+/* Emphasize the Push button when the branch is ahead / unpublished. */
+.git-toolbar-button.git-needs-push .toolbar-icon {
+    -fx-fill: -color-accent-fg;
+}
+/* Git error dialog body: monospace so command output (paths, hints) lines up. */
+.git-error-text {
+    -fx-font-family: "JetBrains Mono", "monospace";
+    -fx-font-size: 12px;
+}
+/* Branch dropdown (BranchPopup): section headers + current-branch marker. */
+.branch-popup-header {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-opacity: 1;
+    -fx-padding: 4 0 1 0;
+}
+.branch-current {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
+/* Per-branch incoming/outgoing badge (↓N ↑M) and the upstream detail on the right. */
+.branch-track {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-size: 11px;
+}
+.branch-upstream {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+/* Remote URL shown in the branch popup header. */
+.branch-remote-url {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
 }
 
 /* ---- Markdown preview (in-editor, native render). Primer Light defaults; editor themes override the
@@ -714,6 +815,11 @@
 .status-bar .status-segment-clickable:hover {
     -fx-background-color: -color-bg-inset;
     -fx-cursor: hand;
+}
+
+/* Git branch segment: accent-tinted so it reads as the VCS indicator (IntelliJ-style). */
+.status-bar .status-git {
+    -fx-text-fill: -color-accent-fg;
 }
 
 /* Read-only (View mode) toggle: muted "Editable" by default, amber/bold "Read-Only" when active. */

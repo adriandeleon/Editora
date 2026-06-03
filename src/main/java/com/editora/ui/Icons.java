@@ -33,6 +33,32 @@ final class Icons {
         return of("M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z");
     }
 
+    /** Source-control branch glyph (Material "account_tree"/fork) for the Git tool window stripe. */
+    static Node git() {
+        return of("M17 6c0-1.66-1.34-3-3-3s-3 1.34-3 3c0 1.3.84 2.4 2 2.82V11c0 1.1-.9 2-2 2H8.82C8.4 "
+                + "11.84 7.3 11 6 11c-1.66 0-3 1.34-3 3s1.34 3 3 3c1.3 0 2.4-.84 2.82-2H11c2.21 0 4-1.79 "
+                + "4-4V8.82C16.16 8.4 17 7.3 17 6zM6 15c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 "
+                + "1zm8-8c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z");
+    }
+
+    /** Circular-arrow "refresh" (Material). */
+    static Node refresh() {
+        return of("M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 "
+                + "6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 "
+                + "3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z");
+    }
+
+    /** Up-arrow "push" (Material arrow_upward). */
+    static Node gitPush() {
+        return of("M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z");
+    }
+
+    /** Stacked sheets with a plus — "stage all" (Material library_add). */
+    static Node stageAll() {
+        return of("M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 "
+                + "2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z");
+    }
+
     static Node open() {
         return of("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
     }

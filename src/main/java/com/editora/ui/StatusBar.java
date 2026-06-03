@@ -33,6 +33,8 @@ public final class StatusBar extends HBox {
     private final Supplier<Settings> settings;
 
     private final Label echo = new Label("Ready");
+    /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
+    private final Label git = segment("git.switchBranch", "Git branch — click to switch (M-x git.switchBranch)");
     private final Label position = segment("nav.goToLine", "Go to line");
     private final Label language = segment("buffer.setLanguage", "Set language");
     private final Label indent = segment("buffer.setTabSize", "Set tab size");
@@ -63,9 +65,12 @@ public final class StatusBar extends HBox {
         readOnly.setText("Read-Only");
         readOnly.getStyleClass().add("status-readonly");
 
+        git.getStyleClass().add("status-git");
+        git.setText("No VCS"); // always shown; updated by setGitBranch
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        getChildren().addAll(echo, spacer, readOnly, zoomGroup(), position, language, indent, endings,
+        getChildren().addAll(echo, spacer, git, readOnly, zoomGroup(), position, language, indent, endings,
                 size, encoding);
         refresh();
     }
@@ -103,6 +108,34 @@ public final class StatusBar extends HBox {
     /** Sets the transient echo-area message (called by MainController.setStatus). */
     public void setMessage(String message) {
         echo.setText(message == null ? "" : message);
+    }
+
+    /** The Git branch segment node, so the branch dropdown can anchor itself to it. */
+    public javafx.scene.Node gitSegmentNode() {
+        return git;
+    }
+
+    /**
+     * Updates the Git branch segment. The segment is <em>always</em> visible: with a {@code null}/blank
+     * {@code branch} (not under version control) it shows "No VCS" — clicking still opens the dropdown,
+     * which then offers "Clone Git repository…". Otherwise it shows {@code ⎇ branch} with optional
+     * {@code ↑ahead ↓behind}.
+     */
+    public void setGitBranch(String branch, int ahead, int behind) {
+        if (branch == null || branch.isBlank()) {
+            git.setText("No VCS");
+            git.getTooltip().setText("Not under version control — click to clone a repository");
+            return;
+        }
+        StringBuilder sb = new StringBuilder("⎇ ").append(branch); // ⎇
+        if (ahead > 0) {
+            sb.append("  ↑").append(ahead); // ↑
+        }
+        if (behind > 0) {
+            sb.append("  ↓").append(behind); // ↓
+        }
+        git.setText(sb.toString());
+        git.getTooltip().setText("Git branch — click to switch / branch actions");
     }
 
     /** Re-binds live listeners to {@code buffer} (or none) and refreshes the segments. */

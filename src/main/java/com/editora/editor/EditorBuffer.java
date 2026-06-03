@@ -153,6 +153,9 @@ public class EditorBuffer {
     /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBookmarkClick =
             (buffer, line) -> buffer.toggleBookmark(line);
+    /** Git gutter change bars: 0-based line → CSS class ({@code git-added}/{@code git-modified}/
+     *  {@code git-deleted}); {@code null} when this buffer isn't under Git change tracking. */
+    private java.util.Map<Integer, String> changeBars;
 
     private Path path;
     /** Last-known on-disk modified time (epoch millis) and size, to detect external changes; -1 = unknown. */
@@ -210,6 +213,9 @@ public class EditorBuffer {
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
+        // Git change bars: the slot is reserved only while tracking is on (changeBars != null).
+        folds.setChangeHook(() -> changeBars != null,
+                line -> changeBars == null ? null : changeBars.get(line));
         addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
         addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
@@ -802,6 +808,38 @@ public class EditorBuffer {
 
     public FoldManager getFoldManager() {
         return folds;
+    }
+
+    /**
+     * Sets the Git gutter change bars (0-based line → CSS class), or {@code null} to disable tracking
+     * (no reserved slot). Toggling tracking rebuilds the whole gutter factory (the reserved width
+     * changes); otherwise only the lines whose bar changed are repainted — cheap and viewport-safe.
+     * Off in large-file mode (the gutter is minimal there).
+     */
+    public void setChangeBars(java.util.Map<Integer, String> lineClasses) {
+        if (largeFile && lineClasses != null) {
+            lineClasses = null; // never track in large/huge-file mode
+        }
+        boolean wasTracked = changeBars != null;
+        boolean nowTracked = lineClasses != null;
+        java.util.Set<Integer> repaint = new java.util.HashSet<>();
+        if (wasTracked) {
+            repaint.addAll(changeBars.keySet());
+        }
+        if (nowTracked) {
+            repaint.addAll(lineClasses.keySet());
+        }
+        changeBars = lineClasses;
+        if (wasTracked != nowTracked) {
+            refreshGutter(); // the reserved slot appeared/disappeared — rebuild the factory
+        } else {
+            repaint.forEach(this::refreshGutterLine);
+        }
+    }
+
+    /** Whether this buffer currently has Git change tracking on (a reserved change-bar slot). */
+    public boolean hasChangeBars() {
+        return changeBars != null;
     }
 
     public BookmarkManager getBookmarkManager() {

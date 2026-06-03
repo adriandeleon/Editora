@@ -3,6 +3,8 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Git support — native CLI: status-bar branch + ahead/behind, gutter change bars vs HEAD, Git tool
+      window (stage/unstage/discard/commit), and fetch/pull/push + branch switch/create commands
 - [x] Bookmarks — per-project, gutter markers + notes, tool window (filter, reorder via Alt+Up/Down /
       menu / drag-and-drop), `M-g b` cross-file jump picker, stored in `bookmarks.json`
 - [x] Markdown preview — IntelliJ-style Editor / Split / Preview, live + off-thread, Ctrl+wheel zoom
@@ -49,7 +51,8 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] GUI for Snippet management
 
 ## Files & version control
-- [ ] Git support
+- [x] Git support — native CLI (branch/status, gutter change bars, commit workflow, fetch/pull/push)
+- [ ] Git: history / log view, file blame, side-by-side diff viewer, merge-conflict UI (later phase)
 - [ ] Local History support
 - [ ] Detect external file changes
 - [ ] Auto-reload modified files

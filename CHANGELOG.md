@@ -17,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Git support (native CLI)** — Editora now talks to your installed `git`. The status bar shows the
+  current branch with ahead/behind counts (`⎇ main ↑2 ↓1`, click for the branch dropdown — an
+  IntelliJ-style searchable list of actions + Local/Remote branches, each local branch showing its
+  upstream and incoming/outgoing (`↓`/`↑`) commit counts); the editor gutter
+  draws change bars relative to `HEAD` (green added / blue modified / red deleted); and a **Commit** tool
+  window (`M-4`) groups Staged / Changes / Untracked files with stage, unstage, discard, **Stage All**,
+  a **Push** button, and a commit message box (Ctrl/Cmd+Enter to commit). **Clone** a remote repo with "Git: Clone
+  Repository…" (or the button in the empty Commit tool window) — one dialog asks for the repo URL and
+  the destination directory (with a Browse button; the directory auto-fills to `<home>/<repo>` from the
+  URL), clones, and opens a file from it (its README, if any) so Git lights up; cloning is independent
+  of projects (you don't need project support to clone or use Git). Palette commands: "Git: Clone Repository…", "Git: Commit…" (`C-x g`),
+  "Git: Stage Current File", "Git: Switch Branch…", "Git: New Branch…", "Git: Fetch", "Git: Pull",
+  "Git: Push", and "Git: Refresh Status". Pushing a brand-new branch automatically sets its upstream
+  (`--set-upstream origin <branch>`), and Git command failures are shown in a readable dialog rather
+  than the one-line status bar. The **Commit** tool window is shown only when the active file is under
+  Git; otherwise it's hidden. The status-bar VCS segment is always present: outside a repo it reads
+  **No VCS**, and clicking it offers **Clone Git repository…**. All Git calls run off the UI thread;
+  everything degrades silently when a file isn't in a repository or `git` isn't installed. (No new dependencies — Editora
+  shells out to your real git, so credential helpers, SSH, and signing all work.)
+
 - **Theme commands in the palette** — "Theme: Set App Theme…" and "Theme: Set Editor Theme…" open a
   fuzzy picker. The app-theme picker switches the chrome theme *and* the editor theme to match; the
   editor-theme picker changes only the editor colors (and pins it so it won't follow the app theme).
