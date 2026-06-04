@@ -106,8 +106,8 @@ public class EditorBuffer implements TabContent {
     private HBox zoomControl;
     /** Preview text zoom factor (1.0 = 100%); scales the rendered preview's base font size. */
     private double previewFontScale = 1.0;
-    /** Base preview font size in px (matches {@code .markdown-preview} in app.css); headings use em. */
-    private static final double BASE_PREVIEW_FONT = 14;
+    /** Base preview font size in px (matches {@code .markdown-preview-wrap} in app.css); headings use em. */
+    private static final double BASE_PREVIEW_FONT = 15;
     /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
     private Node viewModeControl;
     /** Active debounced subscription driving live preview re-render (null when not previewing). */

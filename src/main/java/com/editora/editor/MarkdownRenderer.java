@@ -44,6 +44,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
@@ -58,6 +59,8 @@ import javafx.scene.text.TextFlow;
 public final class MarkdownRenderer {
 
     private static final double MAX_IMAGE_WIDTH = 700;
+    /** Readable column width (GitHub-style): the content is capped to this and centered in the pane. */
+    private static final double MAX_CONTENT_WIDTH = 860;
 
     private static final Parser PARSER = Parser.builder()
             .extensions(List.of(
@@ -77,12 +80,19 @@ public final class MarkdownRenderer {
 
     /** Builds a JavaFX node tree from a parsed AST. MUST run on the FX thread (creates Text/ImageView). */
     public static Node renderDocument(org.commonmark.node.Node ast, Path baseDir) {
-        VBox root = new VBox();
-        root.getStyleClass().add("markdown-preview");
+        VBox content = new VBox();
+        content.getStyleClass().add("markdown-preview");
+        // Cap the readable column width so long lines don't stretch across a wide window (GitHub-style).
+        content.setMaxWidth(MAX_CONTENT_WIDTH);
         if (ast != null) {
-            appendBlocks(ast, root, baseDir);
+            appendBlocks(ast, content, baseDir);
         }
-        return root;
+        // Center the capped-width column within the (fit-to-width) preview pane. A StackPane clamps the
+        // content to the available width when the viewport is narrower than the cap, so it never overflows.
+        StackPane wrap = new StackPane(content);
+        wrap.getStyleClass().add("markdown-preview-wrap");
+        StackPane.setAlignment(content, Pos.TOP_CENTER);
+        return wrap;
     }
 
     // --- block level ---------------------------------------------------------------------------
