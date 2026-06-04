@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Personal Notes** — private annotations attached to a file *without modifying the file*, for
+  read-only / generated / shared code where you want knowledge stored separately. Three **scopes**
+  (word / line / range), an optional **body**, **tags**, and a **status** (active / resolved /
+  orphaned). Notes follow their content as you edit (live offset tracking) and re-anchor on reopen by
+  the captured selection + surrounding context; a note whose anchor can no longer be found is marked
+  **orphaned** (kept and recoverable, never silently lost). File identity is **content-hash + path**, so
+  a note re-attaches even when the file is renamed/moved outside the app. Indicators: a gutter glyph, a
+  soft in-editor highlight behind the anchored span, and a hover tooltip (the body is **rendered as
+  Markdown** in the editor's font) — the gutter/highlight is toggleable via *Settings → Editor → Show
+  note indicators*. A **Personal Notes** tool window
+  (`M-5`) groups notes per file with a filter, edit/resolve/delete, and "delete all in file"; commands
+  cover add (`C-c n`), next/previous, cross-file **Jump to Note** (`M-g n`), **Search Notes** (a picker
+  that matches the full note body, tags, and file path),
+  **delete** (the note on the caret line — also available from the panel and as a Delete button in the
+  note editor), and **export** to JSON (resolve/reopen lives in the tool window's context menu). Note bodies are edited in a **multi-line** text box
+  (Enter inserts a newline; Ctrl/Cmd+Enter saves). Stored per project in a single versioned `notes.json` (reuses the bookmark
+  per-project bucket model + the config migration framework). Bookmarks are unaffected (separate gutter
+  slot, no layout shift). The whole feature is **off by default** — enable it via *Settings → Application
+  → Enable Personal Notes* (when off, the tool window, commands, and editor menu items are hidden).
+
 - **Config schema versioning + migrations** — every structured config file (`settings.toml`,
   `workspace-state.json`, `projects/<id>.json`, `projects.json`, `bookmarks.json`, `recent-files.json`)
   now carries a per-file integer `schemaVersion` (baseline 1), and reads go through a small migration
@@ -58,6 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   get an underline rule, and links are no longer permanently underlined. Standalone images now render as
   block images (with the alt text / title as a tooltip), in addition to inline images; relative image
   paths resolve against the file's folder, and `http(s)`/`file`/`data:` URLs are supported.
+
+### Fixed
+
+- **In-app file rename now carries bookmarks and personal notes to the new path** — renaming an open
+  file from the tab/right-click menu already moved its folds and recent-files entry; it now also re-keys
+  that file's bookmarks and notes, so they no longer get stranded under the old path.
 
 ### Added
 

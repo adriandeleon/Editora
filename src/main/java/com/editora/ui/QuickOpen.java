@@ -42,6 +42,8 @@ public class QuickOpen<T> {
     private final Supplier<List<T>> itemsSupplier;
     private final Function<T, String> label;
     private final Function<T, String> detail;
+    /** Text the typed query is matched against; defaults to {@link #label} (the displayed text). */
+    private final Function<T, String> searchKey;
     private final Consumer<T> onChoose;
 
     private final Popup popup = new Popup();
@@ -54,9 +56,20 @@ public class QuickOpen<T> {
 
     public QuickOpen(String title, String prompt, Supplier<List<T>> itemsSupplier,
                      Function<T, String> label, Function<T, String> detail, Consumer<T> onChoose) {
+        this(title, prompt, itemsSupplier, label, detail, label, onChoose);
+    }
+
+    /**
+     * As above but with an explicit {@code searchKey} the typed query matches against (instead of the
+     * displayed {@code label}) — e.g. to search a note's full body/tags/file while showing a short label.
+     */
+    public QuickOpen(String title, String prompt, Supplier<List<T>> itemsSupplier,
+                     Function<T, String> label, Function<T, String> detail,
+                     Function<T, String> searchKey, Consumer<T> onChoose) {
         this.itemsSupplier = itemsSupplier;
         this.label = label;
         this.detail = detail;
+        this.searchKey = searchKey == null ? label : searchKey;
         this.onChoose = onChoose;
         build(title, prompt);
     }
@@ -160,7 +173,7 @@ public class QuickOpen<T> {
         String q = query.toLowerCase(Locale.ROOT).trim();
         List<T> matches = new ArrayList<>();
         for (T item : all) {
-            if (q.isEmpty() || CommandPalette.isSubsequence(q, label.apply(item).toLowerCase(Locale.ROOT))) {
+            if (q.isEmpty() || CommandPalette.isSubsequence(q, searchKey.apply(item).toLowerCase(Locale.ROOT))) {
                 matches.add(item);
             }
         }

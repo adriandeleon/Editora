@@ -100,6 +100,17 @@ Emacs-style keymap or a fuzzy command palette.
   the right-click menu, or drag-and-drop — the jump picker follows the same order. Saved in
   `bookmarks.json`, scoped per project (switching projects shows that project's bookmarks; deleting a
   project deletes its bookmarks).
+- **Personal Notes** — private annotations attached to a file *without modifying the file* (ideal for
+  read-only, generated, or shared code). Add a note on a word, line, or selection range
+  (`C-c n`, the editor right-click menu, or the gutter glyph); give it a body, tags, and a status
+  (active / resolved / orphaned). Notes follow their content as you edit and re-anchor on reopen by the
+  captured text + context — and by **content hash**, so they survive a file being renamed or moved
+  outside the app (a note that can't be relocated is kept as *orphaned*, never lost). A gutter glyph, a
+  soft in-editor highlight, and a hover tooltip mark each note (toggle via *Settings → Editor → Show note
+  indicators*). The **Personal Notes** tool window (`M-5`) groups them per file with a filter and
+  edit/resolve/delete; `M-g n` jumps across files and notes export to JSON. Stored per project in
+  `notes.json`. Separate from bookmarks — both coexist in the gutter. **Off by default** — turn it on
+  under *Settings → Application → Enable Personal Notes*.
 - **Git** — uses your installed `git` (no bundled library). The status bar shows the current branch with
   ahead/behind counts (click to switch branches); the gutter draws change bars vs `HEAD` (added /
   modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
@@ -107,7 +118,7 @@ Emacs-style keymap or a fuzzy command palette.
   current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
   repo and opens a file from it — independent of projects). All off the UI thread; hidden when not in a
   repo or when `git` isn't on `PATH`.
-- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Bookmarks, Structure, File Information).
+- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Bookmarks, Personal Notes, Structure, File Information).
 - **Settings** — a category sidebar (Appearance, Editor, Tool Windows, Spell Check, Application, …) with a
   search box, a live font/theme preview, and Reset to Defaults. Changes apply instantly.
 - **Multi-language interface** — run Editora in **English, Italian, Spanish, French, Portuguese, or
@@ -197,8 +208,8 @@ print and exit without opening a window. Works on macOS, Linux, and Windows.
 User preferences live in `~/.editora/settings.toml` (font, theme, keymap, tab size,
 view options, auto-save mode, and keybinding overrides). Session state — collapsed fold
 regions and tool-window layout — is stored as JSON in `workspace-state.json`, recent
-files in `recent-files.json`, and bookmarks (scoped per project) in `bookmarks.json`, all
-alongside it.
+files in `recent-files.json`, bookmarks (scoped per project) in `bookmarks.json`, and
+personal notes (also scoped per project) in `notes.json`, all alongside it.
 
 To use a different config folder, pass `--config-dir <path>` (or `--config-dir=<path>`) on the command
 line, or set the `EDITORA_CONFIG_DIR` environment variable. Precedence is **`--config-dir` >

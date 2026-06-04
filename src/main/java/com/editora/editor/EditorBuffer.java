@@ -177,6 +177,22 @@ public class EditorBuffer {
     /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBookmarkClick =
             (buffer, line) -> buffer.toggleBookmark(line);
+    /** Personal Notes for this buffer (gutter marker + highlight + hover). */
+    private final NoteManager notes = new NoteManager(area);
+    private final NoteHighlightOverlay noteOverlay = new NoteHighlightOverlay(area);
+    /** When false, the Personal Notes feature is disabled for this buffer (no "Add Note" menu items). */
+    private boolean notesEnabled = false;
+    /** When false, note gutter markers + highlight are hidden (the {@code showNoteIndicators} setting). */
+    private boolean noteIndicators = true;
+    /** Reused hover tooltip + the id of the note it's currently showing (so we only update on change). */
+    private final javafx.scene.control.Tooltip noteTip = new javafx.scene.control.Tooltip();
+    private java.util.UUID hoverNoteId;
+    /** Handles a gutter note-marker click (the controller opens/edits that line's note). Default: no-op. */
+    private java.util.function.BiConsumer<EditorBuffer, Integer> gutterNoteClick = (buffer, line) -> { };
+    /** Invoked by the "Add Personal Note" context-menu item (the controller prompts + creates). */
+    private java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> { };
+    /** Chars of context captured before/after a note's selection (for re-anchoring). */
+    private static final int CONTEXT_CHARS = 40;
     /** Git gutter change bars: 0-based line → CSS class ({@code git-added}/{@code git-modified}/
      *  {@code git-deleted}); {@code null} when this buffer isn't under Git change tracking. */
     private java.util.Map<Integer, String> changeBars;
@@ -237,6 +253,9 @@ public class EditorBuffer {
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
+        folds.setNoteHooks(line -> noteIndicators && notes.isNoted(line),
+                line -> gutterNoteClick.accept(this, line));
+        notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         // Git change bars: the slot is reserved only while tracking is on (changeBars != null).
         folds.setChangeHook(() -> changeBars != null,
                 line -> changeBars == null ? null : changeBars.get(line));
@@ -297,7 +316,7 @@ public class EditorBuffer {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, whitespace, spellOverlay, minimap, columnRuler);
+        root.getChildren().addAll(scrollPane, noteOverlay, whitespace, spellOverlay, minimap, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -316,6 +335,13 @@ public class EditorBuffer {
         spellChecker = new SpellChecker(spellLanguage, spellUserWords);
         spellOverlay.setChecker(spellChecker);
         spellOverlay.setProseMode(isProse());
+        AnchorPane.setTopAnchor(noteOverlay, 0d);
+        AnchorPane.setBottomAnchor(noteOverlay, 0d);
+        AnchorPane.setLeftAnchor(noteOverlay, 0d);
+        AnchorPane.setRightAnchor(noteOverlay, Minimap.WIDTH);
+        noteOverlay.setSpans(notes::activeSpans);
+        noteOverlay.setActive(true);
+        installNoteHover();
         AnchorPane.setTopAnchor(minimap, 0d);
         AnchorPane.setBottomAnchor(minimap, 0d);
         AnchorPane.setRightAnchor(minimap, 0d);
@@ -337,6 +363,13 @@ public class EditorBuffer {
                 items.add(new SeparatorMenuItem());
             }
             items.addAll(standardMenuItems());
+            if (path != null && notesEnabled) {
+                items.add(new SeparatorMenuItem());
+                boolean hasSelection = area.getSelection().getLength() > 0;
+                MenuItem addNote = new MenuItem(tr(hasSelection ? "editmenu.addNoteSelection" : "editmenu.addNote"));
+                addNote.setOnAction(ev -> addNoteHandler.accept(this));
+                items.add(addNote);
+            }
             contextMenu.getItems().setAll(items);
             contextMenu.show(area, e.getScreenX(), e.getScreenY());
             e.consume();
@@ -829,8 +862,9 @@ public class EditorBuffer {
         refreshGutter();
     }
 
-    /** Rebuilds the gutter graphic factory (line numbers + fold chevrons) from current state. */
-    private void refreshGutter() {
+    /** Rebuilds the gutter graphic factory (line numbers + fold chevrons + markers) from current state. */
+    public void refreshGutter() {
+        noteOverlay.refresh();
         area.setParagraphGraphicFactory(folds.gutterFactory(lineNumbersVisible));
     }
 
@@ -915,6 +949,177 @@ public class EditorBuffer {
         boolean reanchored = bookmarks.restore(saved);
         refreshGutter();
         return reanchored;
+    }
+
+    // ---- Personal Notes ----
+
+    public NoteManager getNoteManager() {
+        return notes;
+    }
+
+    /** Sets the gutter note-marker click handler ({@code (buffer, line)}) — the controller opens the note. */
+    public void setGutterNoteClick(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
+        if (handler != null) {
+            this.gutterNoteClick = handler;
+        }
+    }
+
+    /** Sets the "Add Personal Note" context-menu handler (the controller prompts for the body + creates). */
+    public void setAddNoteHandler(java.util.function.Consumer<EditorBuffer> handler) {
+        if (handler != null) {
+            this.addNoteHandler = handler;
+        }
+    }
+
+    /** Callback fired after any note change (for persistence + the Notes panel). */
+    public void setOnNotesChanged(Runnable callback) {
+        notes.setOnChanged(callback);
+    }
+
+    /** Replaces this buffer's notes from persisted state and repaints the gutter. Returns true if any note
+     *  was re-anchored or (un)orphaned, so the caller can persist the self-healed state. */
+    public boolean applyNotes(List<com.editora.config.PersonalNote> saved) {
+        boolean moved = notes.restore(saved);
+        refreshGutter();
+        return moved;
+    }
+
+    /**
+     * Captures a note draft (scope + anchor) from the current selection/caret: a multi-line selection is a
+     * {@link com.editora.config.NoteScope#RANGE}, a single-line selection a {@code WORD}, and no selection a
+     * {@code LINE} anchored to the caret's line. Used by the controller's "Add Personal Note" flow.
+     */
+    public NoteDraft captureNoteDraft() {
+        org.fxmisc.richtext.model.TwoDimensional.Bias fwd = org.fxmisc.richtext.model.TwoDimensional.Bias.Forward;
+        String doc = area.getText();
+        var sel = area.getSelection();
+        if (sel.getLength() > 0) {
+            int start = sel.getStart();
+            int end = sel.getEnd();
+            var sp = area.offsetToPosition(start, fwd);
+            var ep = area.offsetToPosition(end, fwd);
+            com.editora.config.NoteScope scope = sp.getMajor() == ep.getMajor()
+                    ? com.editora.config.NoteScope.WORD : com.editora.config.NoteScope.RANGE;
+            String prefix = doc.substring(Math.max(0, start - CONTEXT_CHARS), start);
+            String suffix = doc.substring(end, Math.min(doc.length(), end + CONTEXT_CHARS));
+            var anchor = new com.editora.config.TextAnchor(sp.getMajor(), sp.getMinor(),
+                    ep.getMajor(), ep.getMinor(), area.getSelectedText(), prefix, suffix);
+            return new NoteDraft(scope, anchor);
+        }
+        int line = area.getCurrentParagraph();
+        String lineText = area.getParagraph(line).getText();
+        int lineLen = lineText.length();
+        var anchor = new com.editora.config.TextAnchor(line, 0, line, lineLen, lineText, "", "");
+        return new NoteDraft(com.editora.config.NoteScope.LINE, anchor);
+    }
+
+    /** Content-hash file identity of this buffer's file (for notes); {@code null} when the buffer is unsaved. */
+    public com.editora.config.FileIdentity fileIdentity() {
+        return path == null ? null : com.editora.config.FileIdentity.of(path);
+    }
+
+    /** Enables/disables the Personal Notes feature for this buffer (gates the "Add Note" menu items). */
+    public void setNotesEnabled(boolean on) {
+        this.notesEnabled = on;
+    }
+
+    /** Shows/hides the note gutter markers + highlight (the {@code showNoteIndicators} setting). */
+    public void setNoteIndicatorsVisible(boolean on) {
+        if (noteIndicators == on) {
+            return;
+        }
+        noteIndicators = on;
+        noteOverlay.setActive(on);
+        if (!on) {
+            hideNoteTip();
+        }
+        refreshGutter();
+    }
+
+    /** Hover popup over a note's span shows its body (updated only when the hovered note changes). */
+    private void installNoteHover() {
+        area.addEventFilter(MouseEvent.MOUSE_MOVED, e -> {
+            if (!noteIndicators) {
+                hideNoteTip();
+                return;
+            }
+            com.editora.config.PersonalNote n;
+            try {
+                n = notes.noteAt(area.hit(e.getX(), e.getY()).getInsertionIndex());
+            } catch (RuntimeException ex) {
+                n = null;
+            }
+            if (n == null || n.body().isBlank()) {
+                hideNoteTip();
+            } else if (!n.id().equals(hoverNoteId)) {
+                hoverNoteId = n.id();
+                noteTip.setText(null);
+                noteTip.setGraphic(renderNoteTooltip(n.body()));
+                if (noteTip.isShowing()) {
+                    noteTip.hide();
+                }
+                noteTip.show(area, e.getScreenX() + 12, e.getScreenY() + 16);
+            }
+        });
+        area.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hideNoteTip());
+    }
+
+    /**
+     * Renders a note body as the hover tooltip's graphic: the body is parsed as Markdown
+     * ({@link MarkdownRenderer}) so formatting shows in the popup, the editor's own font family/size is
+     * applied as the base font, and the app + syntax stylesheets are attached to the node (the tooltip
+     * lives in its own popup scene) so the {@code .markdown-preview} rules resolve. Falls back to a plain
+     * wrapped label if rendering fails.
+     */
+    private javafx.scene.Node renderNoteTooltip(String body) {
+        javafx.scene.Node node;
+        try {
+            node = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(body),
+                    path != null ? path.getParent() : null);
+        } catch (RuntimeException ex) {
+            javafx.scene.control.Label fallback = new javafx.scene.control.Label(body);
+            fallback.setWrapText(true);
+            node = fallback;
+        }
+        node.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
+        if (node instanceof javafx.scene.Parent parent) {
+            addStylesheet(parent, "/com/editora/styles/app.css");
+            addStylesheet(parent, "/com/editora/styles/syntax.css");
+        }
+        if (node instanceof javafx.scene.layout.Region region) {
+            // Pin the node to a definite size so the tooltip hugs the rendered content. A TextFlow inside a
+            // tooltip otherwise computes its height at a near-zero width (one char per line → a tall, empty
+            // popup). Measure in a throwaway Scene so the inline font + stylesheets actually apply (a
+            // detached node measures at the default font and mis-sizes): prefWidth(-1) is the natural
+            // one-line width (capped so long notes wrap), then the height at that width — so the box matches
+            // the rendered text (measuring the raw Markdown source would over-size it by the markup chars).
+            javafx.scene.Scene measureScene = new javafx.scene.Scene(region);
+            region.applyCss();
+            region.layout();
+            double width = Math.min(480, Math.ceil(region.prefWidth(-1)));
+            region.setPrefWidth(width);
+            region.setMaxWidth(width);
+            double height = Math.ceil(region.prefHeight(width)) + 1;
+            measureScene.setRoot(new javafx.scene.Group()); // release the node to reuse as the tooltip graphic
+            region.setMinHeight(height);
+            region.setPrefHeight(height);
+            region.setMaxHeight(height);
+        }
+        return node;
+    }
+
+    private void addStylesheet(javafx.scene.Parent parent, String resource) {
+        java.net.URL url = getClass().getResource(resource);
+        if (url != null) {
+            parent.getStylesheets().add(url.toExternalForm());
+        }
+    }
+
+    private void hideNoteTip() {
+        hoverNoteId = null;
+        if (noteTip.isShowing()) {
+            noteTip.hide();
+        }
     }
 
     /** Removes all bookmarks in this buffer and repaints the gutter. */

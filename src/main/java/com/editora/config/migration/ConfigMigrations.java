@@ -117,6 +117,14 @@ public final class ConfigMigrations {
         }
     }
 
+    /**
+     * A no-op step for a purely <b>additive</b> schema bump (new field with a default): the read path
+     * merges onto defaults, so old files need no transform — they just get re-stamped to the new version.
+     */
+    static JsonNode identity(JsonNode input) {
+        return input;
+    }
+
     /** v0 → v1 for {@code recent-files.json}: wrap the legacy bare array into {@code { "files": [ … ] }}. */
     static JsonNode wrapRecentFilesArray(JsonNode input) {
         ObjectNode o = JsonNodeFactory.instance.objectNode();

@@ -75,6 +75,14 @@
     -fx-fill: #e08a33;
 }
 
+/* Personal Note glyph in the gutter — a deep orange comment bubble, deliberately distinct from the
+   softer amber bookmark marker above. A brighter shade is used on dark editor themes. Only created
+   for noted lines. */
+.editor-area .fold-gutter .note-marker {
+    -fx-fill: #e65100;
+    -fx-cursor: hand;
+}
+
 /* Git change bar: a thin full-height stripe at the gutter's inner edge (next to the text). The slot is
    transparent by default; the per-line type class colors it. Uses AtlantaFX semantic colors so it
    tracks the app/editor theme without per-theme overrides. */
@@ -142,6 +150,29 @@
 }
 .bookmarks-tree .bookmark-file-row {
     -fx-text-fill: -color-fg-muted;
+}
+
+/* Personal Notes tool window: same look as the Bookmarks/Structure panels. */
+.notes-panel {
+    -fx-background-color: -color-bg-default;
+}
+.notes-panel .notes-filter {
+    -fx-font-size: 12px;
+}
+.notes-tree {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-font-size: 12px;
+}
+.notes-tree .tree-cell {
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 1 4 1 4;
+}
+.notes-tree .tree-cell.note-resolved {
+    -fx-text-fill: -color-fg-muted;
+}
+.notes-tree .tree-cell.note-orphaned {
+    -fx-text-fill: -color-danger-fg;
 }
 
 /* ---- Git (Commit) tool window ---- */
