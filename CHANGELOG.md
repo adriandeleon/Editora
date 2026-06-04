@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Markdown preview readability** — the rendered preview now lays its content out as a centered,
+  width-capped column (GitHub-style) with more generous margins and vertical spacing (line height,
+  space between blocks and list items, heading separation), instead of stretching edge-to-edge across
+  a wide window.
+
 ### Added
 
 - **Status-bar message log** — click the status message on the left of the status bar to see every
