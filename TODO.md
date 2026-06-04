@@ -9,6 +9,9 @@ A backlog of planned features and improvements. Unordered within each section.
       Windows + About moved out
 - [x] Git support — native CLI: status-bar branch + ahead/behind, gutter change bars vs HEAD, Git tool
       window (stage/unstage/discard/commit), and fetch/pull/push + branch switch/create commands
+- [x] Personal Notes — file-attached annotations (word/line/range/file scope, body/tags/status),
+      content-hash + path identity (survive rename/move), gutter + highlight + hover indicators,
+      tool window (`M-5`), `M-g n` jump, JSON export, per-project `notes.json`
 - [x] Bookmarks — per-project, gutter markers + notes, tool window (filter, reorder via Alt+Up/Down /
       menu / drag-and-drop), `M-g b` cross-file jump picker, stored in `bookmarks.json`
 - [x] Markdown preview — IntelliJ-style Editor / Split / Preview, live + off-thread, Ctrl+wheel zoom
@@ -35,7 +38,7 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] Multiple cursors support
 - [ ] Advanced Undo/Redo support
 - [x] Spell check support — Lucene Hunspell, red squiggles, suggestions, user dictionary, en_US/en_GB
-- [ ] Private comments/notes
+- [x] Private comments/notes — see **Personal Notes** under "Recently shipped"
 
 ## Search
 - [ ] Incremental Search

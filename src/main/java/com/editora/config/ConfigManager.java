@@ -34,6 +34,7 @@ public class ConfigManager {
     static final String SETTINGS_FILE_NAME = "settings.toml";
     static final String WORKSPACE_FILE_NAME = "workspace-state.json";
     static final String BOOKMARKS_FILE_NAME = "bookmarks.json";
+    static final String NOTES_FILE_NAME = "notes.json";
     static final String DICTIONARY_FILE_NAME = "dictionary.txt";
     static final String PROJECTS_DIR_NAME = "projects";
 
@@ -49,6 +50,8 @@ public class ConfigManager {
     private WorkspaceState workspaceState = new WorkspaceState();
     /** Global bookmarks (all files/projects), stored in {@code bookmarks.json} — see {@link BookmarkStore}. */
     private BookmarkStore bookmarkStore = new BookmarkStore();
+    /** Personal Notes (all files/projects), stored in {@code notes.json} — see {@link NoteStore}. */
+    private NoteStore noteStore = new NoteStore();
     /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
     private final java.util.Set<String> userDictionary = new java.util.LinkedHashSet<>();
     /** The session-state file currently in use — the default, or a project's state file. */
@@ -117,6 +120,25 @@ public class ConfigManager {
         return configDir.resolve(BOOKMARKS_FILE_NAME);
     }
 
+    public Path getNotesFile() {
+        return configDir.resolve(NOTES_FILE_NAME);
+    }
+
+    /**
+     * Personal Notes (canonical file path -> notes) for the <em>active</em> project — bucket chosen by the
+     * current session file, exactly like {@link #getBookmarks()}. Persist changes with {@link #saveNotes()}.
+     */
+    public Map<String, List<PersonalNote>> getNotes() {
+        return noteStore.bucket(currentBookmarkKey());
+    }
+
+    /** Removes a project's entire notes bucket (called when the project is deleted) and persists. */
+    public void deleteNotesForProject(String projectKey) {
+        if (noteStore.getByProject().remove(projectKey == null ? "" : projectKey) != null) {
+            saveNotes();
+        }
+    }
+
     /**
      * The bookmark map (absolute file path -> bookmarks) for the <em>active</em> project — the bucket is
      * chosen by the current session file, so switching projects (via {@link #setWorkspaceStateFile} /
@@ -157,6 +179,7 @@ public class ConfigManager {
         workspaceState = ConfigMigrations.readVersioned(
                 getWorkspaceStateFile(), json, new WorkspaceState(), ConfigSchema.WORKSPACE);
         loadBookmarks();
+        loadNotes();
         loadUserDictionary();
         return settings;
     }
@@ -285,6 +308,21 @@ public class ConfigManager {
             json.writeValue(getBookmarksFile().toFile(), bookmarkStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write bookmarks to " + getBookmarksFile(), e);
+        }
+    }
+
+    /** Loads {@code notes.json} (versioned, per-project buckets). Missing/malformed ⇒ an empty store. */
+    private void loadNotes() {
+        noteStore = ConfigMigrations.readVersioned(getNotesFile(), json, new NoteStore(), ConfigSchema.NOTES);
+    }
+
+    /** Writes the global Personal Notes to {@code notes.json}, independently of {@link #save()}. */
+    public void saveNotes() {
+        try {
+            Files.createDirectories(configDir);
+            json.writeValue(getNotesFile().toFile(), noteStore);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write notes to " + getNotesFile(), e);
         }
     }
 

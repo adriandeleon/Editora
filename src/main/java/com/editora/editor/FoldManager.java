@@ -59,6 +59,8 @@ public final class FoldManager {
     /** Width of the Git change-bar column, reserved on every row while change tracking is on so toggling
      *  a bar never shifts the text indentation (mirrors the bookmark slot). */
     private static final double CHANGE_SLOT_WIDTH = 3;
+    /** Fixed width of the Personal-Notes marker column, reserved on every row (mirrors the bookmark slot). */
+    private static final double NOTE_SLOT_WIDTH = 12;
 
     /** Notified after a user-driven fold/unfold so callers can persist the new state. */
     private Runnable onFoldStateChanged = () -> {
@@ -73,6 +75,11 @@ public final class FoldManager {
     private IntPredicate isBookmarked = i -> false;
     /** Invoked when the user clicks a line's gutter bookmark marker. */
     private IntConsumer onBookmarkToggle = i -> { };
+
+    /** Whether a line carries a Personal Note (drawn as a gutter marker); default none. */
+    private IntPredicate isNoted = i -> false;
+    /** Invoked when the user clicks a line's gutter note marker. */
+    private IntConsumer onNoteClick = i -> { };
 
     /** Whether Git change tracking is active for this buffer (reserve the change-bar slot). */
     private BooleanSupplier changeBarsEnabled = () -> false;
@@ -207,6 +214,13 @@ public final class FoldManager {
     public void setBookmarkHooks(IntPredicate isBookmarked, IntConsumer onToggle) {
         this.isBookmarked = isBookmarked == null ? i -> false : isBookmarked;
         this.onBookmarkToggle = onToggle == null ? i -> { } : onToggle;
+    }
+
+    /** Wires the Personal-Notes gutter marker: a predicate for which lines carry a note + a click handler
+     *  (clicking the marker opens/edits the note on that line). */
+    public void setNoteHooks(IntPredicate isNoted, IntConsumer onClick) {
+        this.isNoted = isNoted == null ? i -> false : isNoted;
+        this.onNoteClick = onClick == null ? i -> { } : onClick;
     }
 
     /**
@@ -490,6 +504,26 @@ public final class FoldManager {
         }
         box.getChildren().add(bookmarkSlot);
 
+        // Personal-Notes marker slot (reserved on every row, mirroring the bookmark slot). The glyph
+        // appears only on noted lines; clicking it opens that line's note (and consumes, so the gutter's
+        // bookmark-toggle click doesn't also fire).
+        StackPane noteSlot = new StackPane();
+        noteSlot.getStyleClass().add("note-slot");
+        noteSlot.setMinWidth(NOTE_SLOT_WIDTH);
+        noteSlot.setPrefWidth(NOTE_SLOT_WIDTH);
+        noteSlot.setMaxWidth(NOTE_SLOT_WIDTH);
+        if (isNoted.test(idx)) {
+            Node marker = noteMarker();
+            marker.setOnMouseClicked(e -> {
+                if (e.getButton() == MouseButton.PRIMARY) {
+                    onNoteClick.accept(idx);
+                    e.consume();
+                }
+            });
+            noteSlot.getChildren().add(marker);
+        }
+        box.getChildren().add(noteSlot);
+
         if (showLineNumbers) {
             Label lineNo = new Label();
             lineNo.getStyleClass().add("lineno");
@@ -546,6 +580,16 @@ public final class FoldManager {
         svg.setScaleY(0.55);
         // No own click handler: the gutter box handles clicks (so clicking the marker isn't a double toggle).
         return new Group(svg); // Group bounds reflect the scaled glyph, so the gutter stays narrow
+    }
+
+    /** A small comment/note glyph for the gutter (Material "comment"); colored via {@code .note-marker}. */
+    private Node noteMarker() {
+        SVGPath svg = new SVGPath();
+        svg.setContent("M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z");
+        svg.getStyleClass().add("note-marker");
+        svg.setScaleX(0.5);
+        svg.setScaleY(0.5);
+        return new Group(svg);
     }
 
     /** The collapsed region's text (header through end line), capped at {@link #PREVIEW_LINES}. */

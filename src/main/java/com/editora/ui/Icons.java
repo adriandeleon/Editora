@@ -163,6 +163,11 @@ final class Icons {
         return of("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
     }
 
+    static Node notes() {
+        // Material "comment" — a speech bubble, used for the Personal Notes tool window.
+        return of("M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z");
+    }
+
     static Node structure() {
         // Material "device_hub" — a node/tree graph, used for the Structure tool window.
         return of("M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 "

@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -32,6 +32,12 @@ public class Settings {
     private boolean showLineNumbers = true;
     private boolean showMinimap = true;
     private boolean showWhitespace = false;
+    /** Personal Notes feature: off by default — hides the tool window, commands, gutter/highlight, and
+     *  the editor "Add Personal Note" menu items until enabled. */
+    private boolean notesSupport = false;
+    /** Personal Notes gutter markers + in-editor highlight; on by default (only effective when
+     *  {@link #notesSupport} is on). */
+    private boolean showNoteIndicators = true;
     private boolean spellCheck = true;
     /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
     private String spellLanguage = "en_US";
@@ -174,6 +180,22 @@ public class Settings {
 
     public void setShowWhitespace(boolean showWhitespace) {
         this.showWhitespace = showWhitespace;
+    }
+
+    public boolean isNotesSupport() {
+        return notesSupport;
+    }
+
+    public void setNotesSupport(boolean notesSupport) {
+        this.notesSupport = notesSupport;
+    }
+
+    public boolean isShowNoteIndicators() {
+        return showNoteIndicators;
+    }
+
+    public void setShowNoteIndicators(boolean showNoteIndicators) {
+        this.showNoteIndicators = showNoteIndicators;
     }
 
     public boolean isSpellCheck() {

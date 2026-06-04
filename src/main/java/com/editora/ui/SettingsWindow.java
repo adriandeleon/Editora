@@ -62,8 +62,8 @@ import javafx.util.StringConverter;
  */
 public class SettingsWindow {
 
-    private static final double WIDTH = 860;
-    private static final double HEIGHT = 620;
+    private static final double WIDTH = 989;
+    private static final double HEIGHT = 784;
 
     /** Settings categories shown in the sidebar. Placeholder pages are roadmap features (no settings yet). */
     private enum Category {
@@ -110,6 +110,8 @@ public class SettingsWindow {
     private CheckBox lineNumbersCheck;
     private CheckBox minimapCheck;
     private CheckBox whitespaceCheck;
+    private CheckBox notesCheck;
+    private CheckBox noteIndicatorsCheck;
     private CheckBox autocompleteCheck;
     private CheckBox autocompleteProseCheck;
     private CheckBox autocompleteSnippetsCheck;
@@ -134,6 +136,13 @@ public class SettingsWindow {
     private Button commitMoveDown;
     private ToolWindow commitToolWindowRef;
     private Label commitDisabledNote;
+    // The Personal Notes tool-window-placement row, disabled until Personal Notes is enabled.
+    private CheckBox notesShowCheck;
+    private ComboBox<ToolWindow.Side> notesSideCombo;
+    private Button notesMoveUp;
+    private Button notesMoveDown;
+    private ToolWindow notesToolWindowRef;
+    private Label notesDisabledNote;
     private ComboBox<String> autoSaveCombo;
     private Spinner<Integer> autoSaveDelaySpinner;
 
@@ -346,6 +355,13 @@ public class SettingsWindow {
         lineNumbersCheck = viewCheck(tr("settings.showLineNumbers"), Settings::setShowLineNumbers);
         minimapCheck = viewCheck(tr("settings.showMinimap"), Settings::setShowMinimap);
         whitespaceCheck = viewCheck(tr("settings.showWhitespace"), Settings::setShowWhitespace);
+        notesCheck = viewCheck(tr("settings.enableNotes"), Settings::setNotesSupport);
+        noteIndicatorsCheck = viewCheck(tr("settings.showNoteIndicators"), Settings::setShowNoteIndicators);
+        // The note-indicator toggle is only meaningful while Personal Notes is enabled.
+        notesCheck.selectedProperty().addListener((obs, was, now) -> {
+            noteIndicatorsCheck.setDisable(!now);
+            updateNotesRowEnabled(); // reflect on the Tool Windows page's Personal Notes row
+        });
         autocompleteCheck = viewCheck(tr("settings.enableAutocomplete"), Settings::setAutocomplete);
         autocompleteProseCheck = viewCheck(tr("settings.autocomplete.prose"), Settings::setAutocompleteProse);
         autocompleteSnippetsCheck = viewCheck(tr("settings.autocomplete.snippets"), Settings::setAutocompleteSnippets);
@@ -498,6 +514,7 @@ public class SettingsWindow {
         row(p, Category.EDITOR, display, lineNumbersCheck, "line numbers gutter");
         row(p, Category.EDITOR, display, minimapCheck, "minimap overview");
         row(p, Category.EDITOR, display, whitespaceCheck, "hidden characters whitespace spaces tabs eol");
+        row(p, Category.EDITOR, display, noteIndicatorsCheck, "personal notes gutter marker highlight indicators");
         Label indent = section(p, tr("settings.section.indentation"));
         row(p, Category.EDITOR, indent, labeled(tr("settings.tabSize"), tabSizeSpinner), "tab size indent width spaces");
         Label completion = section(p, tr("settings.section.completion"));
@@ -545,6 +562,7 @@ public class SettingsWindow {
         HBox projectsRow = new HBox(6, projectsCheck, projectsInfo);
         projectsRow.setAlignment(Pos.CENTER_LEFT);
         row(p, Category.APPLICATION, features, projectsRow, "projects workspace folder");
+        row(p, Category.APPLICATION, features, notesCheck, "personal notes annotations enable feature");
         row(p, Category.APPLICATION, features, zenCheck, "zen distraction free focus");
         return p;
     }
@@ -652,6 +670,12 @@ public class SettingsWindow {
                 commitMoveUp = moveUp;
                 commitMoveDown = moveDown;
                 commitToolWindowRef = tw;
+            } else if ("notes".equals(tw.getId())) {
+                notesShowCheck = showCheck;
+                notesSideCombo = sideCombo;
+                notesMoveUp = moveUp;
+                notesMoveDown = moveDown;
+                notesToolWindowRef = tw;
             }
 
             Label title = new Label(tw.getTitle());
@@ -669,12 +693,17 @@ public class SettingsWindow {
                 commitDisabledNote = note(tr("settings.toolWindows.commitDisabled"));
                 commitDisabledNote.setWrapText(true);
                 rowBox.getChildren().add(commitDisabledNote);
+            } else if ("notes".equals(tw.getId())) {
+                notesDisabledNote = note(tr("settings.toolWindows.notesDisabled"));
+                notesDisabledNote.setWrapText(true);
+                rowBox.getChildren().add(notesDisabledNote);
             }
             row(p, Category.TOOL_WINDOWS, null, rowBox, "tool window " + tw.getTitle() + " placement side show");
         }
         refreshMoves.run();
         updateProjectRowEnabled();
         updateGitRowEnabled();
+        updateNotesRowEnabled();
         return p;
     }
 
@@ -899,6 +928,7 @@ public class SettingsWindow {
         s.setShowLineNumbers(d.isShowLineNumbers());
         s.setShowMinimap(d.isShowMinimap());
         s.setShowWhitespace(d.isShowWhitespace());
+        s.setShowNoteIndicators(d.isShowNoteIndicators());
         s.setTabSize(d.getTabSize());
         s.setAutoSave(d.getAutoSave());
         s.setAutoSaveDelayMillis(d.getAutoSaveDelayMillis());
@@ -916,6 +946,7 @@ public class SettingsWindow {
         s.setShowBreadcrumb(d.isShowBreadcrumb());
         s.setProjectSupport(d.isProjectSupport());
         s.setGitSupport(d.isGitSupport());
+        s.setNotesSupport(d.isNotesSupport());
     }
 
     /** Persists + applies a reset, re-themes the app, and reloads the controls + preview. */
@@ -955,6 +986,9 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
             minimapCheck.setSelected(settings.isShowMinimap());
             whitespaceCheck.setSelected(settings.isShowWhitespace());
+            notesCheck.setSelected(settings.isNotesSupport());
+            noteIndicatorsCheck.setSelected(settings.isShowNoteIndicators());
+            noteIndicatorsCheck.setDisable(!settings.isNotesSupport());
             autocompleteCheck.setSelected(settings.isAutocomplete());
             autocompleteProseCheck.setSelected(settings.isAutocompleteProse());
             autocompleteSnippetsCheck.setSelected(settings.isAutocompleteSnippets());
@@ -971,6 +1005,7 @@ public class SettingsWindow {
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
             updateGitRowEnabled();
+            updateNotesRowEnabled();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());
             autoSaveCombo.setValue(mode);
@@ -1024,6 +1059,33 @@ public class SettingsWindow {
             commitSideCombo.setDisable(!shown);
             commitMoveUp.setDisable(!shown || !toolWindows.canMove(commitToolWindowRef, -1));
             commitMoveDown.setDisable(!shown || !toolWindows.canMove(commitToolWindowRef, 1));
+        }
+    }
+
+    /**
+     * Disables the Personal Notes tool-window-placement row when the feature is off (the window can't be
+     * shown until it's enabled). Like the Commit row, the Show checkbox value is left untouched — notes
+     * availability is transient, not the user's persisted visibility preference.
+     */
+    private void updateNotesRowEnabled() {
+        if (notesShowCheck == null) {
+            return;
+        }
+        boolean on = config.getSettings().isNotesSupport();
+        notesShowCheck.setDisable(!on);
+        if (notesDisabledNote != null) {
+            notesDisabledNote.setVisible(!on);
+            notesDisabledNote.setManaged(!on);
+        }
+        if (!on) {
+            notesSideCombo.setDisable(true);
+            notesMoveUp.setDisable(true);
+            notesMoveDown.setDisable(true);
+        } else {
+            boolean shown = notesShowCheck.isSelected();
+            notesSideCombo.setDisable(!shown);
+            notesMoveUp.setDisable(!shown || !toolWindows.canMove(notesToolWindowRef, -1));
+            notesMoveDown.setDisable(!shown || !toolWindows.canMove(notesToolWindowRef, 1));
         }
     }
 
@@ -1085,6 +1147,9 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(s.isShowLineNumbers());
             minimapCheck.setSelected(s.isShowMinimap());
             whitespaceCheck.setSelected(s.isShowWhitespace());
+            notesCheck.setSelected(s.isNotesSupport());
+            noteIndicatorsCheck.setSelected(s.isShowNoteIndicators());
+            noteIndicatorsCheck.setDisable(!s.isNotesSupport());
             spellCheckBox.setSelected(s.isSpellCheck());
             spellLanguageCombo.setValue(s.getSpellLanguage());
             spellLanguageCombo.setDisable(!s.isSpellCheck());

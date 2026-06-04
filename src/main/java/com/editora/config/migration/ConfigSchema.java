@@ -3,6 +3,7 @@ package com.editora.config.migration;
 import java.util.Map;
 
 import com.editora.config.BookmarkStore;
+import com.editora.config.NoteStore;
 import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
@@ -20,12 +21,14 @@ import com.editora.config.WorkspaceState;
  * backup) is automatic.
  */
 public enum ConfigSchema {
-    SETTINGS(Settings.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2 added the Personal Notes flags (notesSupport, showNoteIndicators) — additive, so identity.
+    SETTINGS(Settings.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of()),
     /** Legacy {@code recent-files.json} was a bare JSON array (v0); v1 wraps it in an object. */
-    RECENT(RecentFiles.SCHEMA_VERSION, 1, Map.of(0, ConfigMigrations::wrapRecentFilesArray));
+    RECENT(RecentFiles.SCHEMA_VERSION, 1, Map.of(0, ConfigMigrations::wrapRecentFilesArray)),
+    NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;
     private final int assumedLegacyVersion;

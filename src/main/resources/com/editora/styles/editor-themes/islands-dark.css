@@ -46,3 +46,4 @@
 
 /* Bookmark gutter marker (theme accent). */
 .editor-area .fold-gutter .bookmark-marker { -fx-fill: #f2a65c; }
+.editor-area .fold-gutter .note-marker { -fx-fill: #ff7043; }
