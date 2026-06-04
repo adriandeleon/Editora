@@ -170,6 +170,14 @@ public class App extends Application {
     }
 
     public static void main(String[] args) {
+        // Run AWT/Java2D headless. The Markdown preview rasterizes SVG badges via JSVG, which uses
+        // java.awt (BufferedImage/Graphics2D). On macOS, AWT's native toolkit (the AppKit/Metal Java2D
+        // pipeline) contends with JavaFX's Glass/Prism for the single AppKit run loop — an intermittent
+        // deadlock/hang that grows more likely the more SVGs get rasterized (i.e. the more Markdown
+        // previews are open). Headless Java2D rasterizes to a BufferedImage purely in software with no
+        // AppKit, so SVG rendering still works while the AWT↔JavaFX conflict disappears. Must be set
+        // before any AWT class loads; main() is the first app code, so this is safe for every entry point.
+        System.setProperty("java.awt.headless", "true");
         // --version / --help print and exit BEFORE the GUI launches (works for every entry point,
         // since the fat-jar Launcher and the jpackage module both run this main).
         for (String a : args) {
