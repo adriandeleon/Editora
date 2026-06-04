@@ -1933,6 +1933,12 @@ public class MainController {
         return bufferOf(tabPane.getSelectionModel().getSelectedItem());
     }
 
+    /** Pages the active buffer's Markdown preview if it's the active scroll target (C-v / M-v). */
+    private boolean pageActivePreview(boolean down) {
+        EditorBuffer b = activeBuffer();
+        return b != null && b.pagePreview(down);
+    }
+
     private CodeArea activeArea() {
         EditorBuffer buffer = activeBuffer();
         return buffer == null ? null : buffer.getFocusedArea();
@@ -4882,9 +4888,9 @@ public class MainController {
         registry.register(Command.of("nav.wordBackward",
                 () -> moveAndFollow(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of("nav.pageDown",
-                () -> moveAndFollow(a -> a.nextPage(selPolicy()))));
+                () -> { if (!pageActivePreview(true)) { moveAndFollow(a -> a.nextPage(selPolicy())); } }));
         registry.register(Command.of("nav.pageUp",
-                () -> moveAndFollow(a -> a.prevPage(selPolicy()))));
+                () -> { if (!pageActivePreview(false)) { moveAndFollow(a -> a.prevPage(selPolicy())); } }));
         registry.register(Command.of("nav.backToIndentation",
                 () -> moveAndFollow(a -> a.moveTo(backToIndentation(a), selPolicy()))));
         registry.register(Command.of("nav.paragraphForward",

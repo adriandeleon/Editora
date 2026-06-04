@@ -121,6 +121,11 @@ JavaFX
     License: GPL-2.0-with-classpath-exception
     https://openjfx.io
 
+JSVG — com.github.weisj:jsvg
+    SVG rendering, used to rasterize SVG images (e.g. badges) in the Markdown preview.
+    License: MIT
+    https://github.com/weisJ/jsvg
+
 ================================================================================
 Spell checking
 ================================================================================

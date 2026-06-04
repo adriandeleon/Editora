@@ -577,6 +577,10 @@ public class EditorBuffer implements TabContent {
             scheduleRenderPreview();
         }
         rebuildViewHost();
+        if (target == MarkdownViewMode.PREVIEW) {
+            // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
+            Platform.runLater(previewPane()::requestFocus);
+        }
         if (changed) {
             onViewModeChanged.run();
         }
@@ -587,8 +591,56 @@ public class EditorBuffer implements TabContent {
             previewPane = new ScrollPane();
             previewPane.setFitToWidth(true);
             previewPane.getStyleClass().add("markdown-preview-pane");
+            // Keyboard scrolling in the preview: Space / PageDown page down, Backspace / PageUp page up
+            // (C-v / M-v go through nav.pageDown/Up → pagePreview). Focus it on click so the keys land.
+            previewPane.setFocusTraversable(true);
+            previewPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> previewPane.requestFocus());
+            previewPane.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                if (e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShortcutDown()) {
+                    return; // leave modifier combos to the global keymap (e.g. C-v / M-v / zoom)
+                }
+                if (e.getCode() == KeyCode.SPACE || e.getCode() == KeyCode.PAGE_DOWN) {
+                    scrollPreviewPage(true);
+                    e.consume();
+                } else if (e.getCode() == KeyCode.BACK_SPACE || e.getCode() == KeyCode.PAGE_UP) {
+                    scrollPreviewPage(false);
+                    e.consume();
+                }
+            });
         }
         return previewPane;
+    }
+
+    /** Scrolls the preview by ~one viewport page (down or up); no-op if there's nothing to scroll. */
+    private void scrollPreviewPage(boolean down) {
+        if (previewPane == null || previewPane.getContent() == null) {
+            return;
+        }
+        double viewport = previewPane.getViewportBounds().getHeight();
+        double contentH = previewPane.getContent().getLayoutBounds().getHeight();
+        double scrollable = contentH - viewport;
+        if (scrollable <= 0) {
+            return; // content fits — nothing to page
+        }
+        double pageFraction = (viewport * 0.9) / scrollable; // ~90% of a page, leaving a little overlap
+        double range = previewPane.getVmax() - previewPane.getVmin();
+        double next = previewPane.getVvalue() + (down ? pageFraction : -pageFraction) * range;
+        previewPane.setVvalue(Math.max(previewPane.getVmin(), Math.min(previewPane.getVmax(), next)));
+    }
+
+    /**
+     * Pages the Markdown preview when it's the active scroll target (full PREVIEW mode, or a SPLIT whose
+     * preview has focus). Lets {@code nav.pageDown}/{@code nav.pageUp} (C-v / M-v) scroll the preview
+     * instead of the hidden/unfocused editor. Returns whether it handled the request.
+     */
+    public boolean pagePreview(boolean down) {
+        boolean previewActive = markdownViewMode == MarkdownViewMode.PREVIEW
+                || (previewPane != null && previewPane.isFocusWithin());
+        if (!previewActive || previewPane == null) {
+            return false;
+        }
+        scrollPreviewPage(down);
+        return true;
     }
 
     private void ensurePreviewSubscription() {
