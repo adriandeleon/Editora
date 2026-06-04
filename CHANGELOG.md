@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Project and Clone Git Repository (each shown only when that feature is enabled), and the Command Palette
   last — each with its configured keybinding shown alongside, plus a **Recent** files list and a footer
   with the app version, a link to the project home page, and the license. A **Welcome Page** command
-  (`view.welcome`) reopens it on demand even with files open. The **About** dialog now also shows the
+  (`view.welcome`) reopens it on demand even with files open — pressing Escape, switching to a tab, or
+  opening/creating a file returns to the editor. The **About** dialog now also shows the
   home-page link, copyright, and license. New CLI flag
   **`--new-file[=name]`** bypasses it by opening a fresh buffer instead: `--new-file=notes.md` opens an
   unsaved buffer titled `notes.md` (highlighted by its extension; first save prompts for a location), and

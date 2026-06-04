@@ -379,6 +379,19 @@ public class MainController {
                 this::openExternalUrl, this::projectsEnabled, this::gitEnabled);
         javafx.scene.layout.StackPane editorArea = new javafx.scene.layout.StackPane(tabPane, welcomePane);
         workspace.setCenter(editorArea);
+        // Escape closes a manually-shown Welcome (with files open) and returns to the editor.
+        welcomePane.setFocusTraversable(true);
+        welcomePane.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE && welcomeForced) {
+                welcomeForced = false;
+                updateWelcomeVisibility();
+                EditorBuffer b = activeBuffer();
+                if (b != null) {
+                    b.getArea().requestFocus();
+                }
+                e.consume();
+            }
+        });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
                 if (c.wasAdded()) {
@@ -410,6 +423,9 @@ public class MainController {
         boolean show = welcomeForced || tabPane.getTabs().isEmpty();
         if (show) {
             welcomePane.refresh(); // pick up current recents + Projects/Git toggles
+            if (welcomeForced) {
+                Platform.runLater(welcomePane::requestFocus); // so Escape returns to the editor
+            }
         }
         welcomePane.setVisible(show);
         welcomePane.setManaged(show);
@@ -897,6 +913,12 @@ public class MainController {
         // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
         tabPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> deactivateMark());
         tabPane.getSelectionModel().selectedItemProperty().addListener((obs, was, now) -> {
+            if (now != null && welcomeForced) {
+                // Switching to an open tab (Switcher, next/prev-tab, etc.) leaves the manually-shown
+                // Welcome page — otherwise it would stay on top with no way back to the editor.
+                welcomeForced = false;
+                updateWelcomeVisibility();
+            }
             if (now != null) {
                 mru.remove(now);
                 mru.addFirst(now);
