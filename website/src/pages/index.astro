@@ -1,71 +1,113 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import { version, repo, latestRelease } from "../lib/editora";
+import { version, repo } from "../lib/editora";
+import { whatsNew } from "../lib/whatsnew";
 
 const base = import.meta.env.BASE_URL;
 const url = (p: string) => `${base}/${p}`.replace(/\/{2,}/g, "/");
 const logo = url("editora-icon.svg");
+const changelogUrl = `${repo}/blob/master/CHANGELOG.md`;
 
-const features = [
+const featureGroups = [
   {
-    title: "Command-driven core",
-    body: "Every action is a registered <code>Command</code> — bind it to a chord or run it from the M-x command palette. Nothing is buried in a menu.",
+    title: "Keyboard & commands",
+    cards: [
+      {
+        title: "Command-driven core",
+        body: "Hunting through menus? Every action is a registered <code>Command</code> — bound to a chord or one <kbd>M-x</kbd> search away. Nothing is buried.",
+      },
+      {
+        title: "Emacs-style keymap",
+        body: "Multi-key chord sequences like <kbd>C-x C-s</kbd>, with user overrides. Keyboard-first, mouse-optional.",
+      },
+      {
+        title: "Jump-to popups",
+        body: "Lost in a big project? Fuzzy-jump to recent files, symbols, open tabs, and tool windows — plus an Emacs <code>find-file</code>-style path finder.",
+      },
+    ],
   },
   {
-    title: "Emacs-style keymap",
-    body: "Multi-key chord sequences like <kbd>C-x C-s</kbd>, with user overrides. Keyboard-first, mouse-optional.",
+    title: "Editing",
+    cards: [
+      {
+        title: "Snippets",
+        body: "Retyping the same boilerplate? Expand VS Code / TextMate templates with tab stops, mirrors, choices, and variables — a prefix + <kbd>Tab</kbd>. Ships for all 21 languages.",
+      },
+      {
+        title: "Smart indentation",
+        body: "Per-language auto-indent on <kbd>Enter</kbd> (block openers, matching-pair stanzas, closer re-alignment), plus smart backspace that clears a whole indent level in one press.",
+      },
+      {
+        title: "Auto-close & bracket matching",
+        body: "Typing <code>([{</code> or quotes inserts the closer, type-over to skip, wrap a selection, and Backspace clears an empty pair — and the bracket beside the caret is highlighted with its match.",
+      },
+      {
+        title: "Comment toggling",
+        body: "<kbd>M-;</kbd> comments or uncomments the line or selection using the language's syntax (<code>//</code>, <code>#</code>, <code>&lt;!-- --&gt;</code>, <code>/* */</code>, <code>--</code>, …).",
+      },
+      {
+        title: "Spell checking",
+        body: "Red wavy underlines with right-click suggestions, Add-to-Dictionary, and Ignore — full text for prose, comments & strings for code. Pure-Java Hunspell; English, Spanish, French.",
+      },
+    ],
   },
   {
-    title: "Jump-to popups",
-    body: "Fuzzy pickers for recent files, file structure/symbols, open tabs, and tool windows — plus an Emacs <code>find-file</code>-style path finder.",
+    title: "Languages",
+    cards: [
+      {
+        title: "Syntax highlighting",
+        body: "TextMate grammars (via tm4e) for 21 languages: Java, Python, Rust, Go, Kotlin, C/C++, C#, Ruby, SQL, Markdown, and more.",
+      },
+      {
+        title: "Markdown preview",
+        body: "IntelliJ-style 3-mode view (Editor / Split / Preview), rendered natively with CommonMark + GFM. GitHub-style output: task-list checkboxes, code pills, and local/remote images. Live and theme-matched.",
+      },
+    ],
   },
   {
-    title: "Syntax highlighting",
-    body: "TextMate grammars (via tm4e) for 21 languages: Java, Python, Rust, Go, Kotlin, C/C++, C#, Ruby, SQL, Markdown, and more.",
+    title: "Workspace & files",
+    cards: [
+      {
+        title: "Projects",
+        body: "VS Code single-folder workspaces: a root folder plus its own saved session (open files, layout, folds), shown as a filterable file tree.",
+      },
+      {
+        title: "Bookmarks",
+        body: "Bouncing between spots across files? Drop line bookmarks with notes — cross-file jump picker, a tool window across every file, reorderable by drag-and-drop, scoped per project.",
+      },
+      {
+        title: "Read-only / View mode",
+        body: "Toggle a buffer read-only to browse without editing; pager-style <kbd>Space</kbd>/<kbd>Backspace</kbd> paging and a Word-style View Mode banner.",
+      },
+    ],
   },
   {
-    title: "Snippets",
-    body: "VS Code / TextMate-style templates with interactive tab stops, mirrors, choices, and variables. Type a prefix + <kbd>Tab</kbd> to expand; ships for all 21 languages.",
+    title: "Appearance",
+    cards: [
+      {
+        title: "Themes & fonts",
+        body: "Switchable themes (Primer, Nord, Cupertino, Dracula) with matching editor color themes, and five bundled monospace fonts — no install needed.",
+      },
+    ],
+  },
+];
+
+const perfStats = [
+  {
+    stat: "Off the UI thread",
+    body: "Tokenizing, parsing, and search run in the background — the editor never blocks while you type.",
   },
   {
-    title: "Smart indentation",
-    body: "Per-language auto-indent on <kbd>Enter</kbd> (block openers, matching-pair stanzas, closer re-alignment), plus smart backspace that deletes a whole indent level in one press.",
+    stat: "Large files stay smooth",
+    body: "5 MB+ skips highlighting and the minimap; 50 MB+ opens read-only with a capped load so a multi-GB log can't exhaust memory.",
   },
   {
-    title: "Auto-close & bracket matching",
-    body: "Typing <code>([{</code> or quotes inserts the closer, type-over to skip, wrap a selection, and Backspace clears an empty pair — and the bracket beside the caret is highlighted with its match.",
+    stat: "Incremental everything",
+    body: "Edits re-tokenize only from the changed line; overlays and the gutter redraw just the visible lines, coalesced to one pass per frame.",
   },
   {
-    title: "Comment toggling",
-    body: "<kbd>M-;</kbd> comments or uncomments the line or selection using the language's syntax (<code>//</code>, <code>#</code>, <code>&lt;!-- --&gt;</code>, <code>/* */</code>, <code>--</code>, …).",
-  },
-  {
-    title: "Spell checking",
-    body: "Red wavy underlines with right-click suggestions, Add-to-Dictionary, and Ignore — full text for prose, comments & strings for code. Pure-Java Hunspell; English, Spanish, French.",
-  },
-  {
-    title: "Markdown preview",
-    body: "IntelliJ-style 3-mode view (Editor / Split / Preview), rendered natively with CommonMark + GFM. GitHub-style output: task-list checkboxes, code pills, and local/remote images. Live and theme-matched.",
-  },
-  {
-    title: "Projects",
-    body: "VSCode single-folder workspaces: a root folder plus its own saved session (open files, layout, folds), shown as a filterable file tree.",
-  },
-  {
-    title: "Bookmarks",
-    body: "Line bookmarks with gutter markers and notes, a cross-file jump picker, and a tool window listing them across every file — reorderable by drag-and-drop and scoped per project.",
-  },
-  {
-    title: "Themes & fonts",
-    body: "Switchable themes (Primer, Nord, Cupertino, Dracula) with matching editor color themes, and five bundled monospace fonts — no install needed.",
-  },
-  {
-    title: "Read-only / View mode",
-    body: "Toggle a buffer read-only to browse without editing; pager-style <kbd>Space</kbd>/<kbd>Backspace</kbd> paging and a Word-style View Mode banner.",
-  },
-  {
-    title: "Built for speed",
-    body: "Off-thread tokenizing, debounced highlighting, and incremental, visible-only overlays keep the UI responsive even on large files.",
+    stat: "Bounded memory",
+    body: "Capped undo history and capped loads keep memory predictable, even on huge files.",
   },
 ];
 
@@ -82,13 +124,30 @@ const platforms = [
       <img class="hero-logo" src={logo} alt="Editora logo" width="96" height="96" />
       <h1>A keyboard-driven programmer's text editor</h1>
       <p class="tagline">
-        Fast, cross-platform, and command-first. Built with JDK&nbsp;25 and
-        JavaFX&nbsp;25. Every action is a command — reachable by an Emacs-style
-        keymap or a fuzzy palette.
+        Fast, cross-platform, and command-first. Every action is a command —
+        reachable by an Emacs-style keymap or a fuzzy palette.
       </p>
       <div class="cta">
         <a class="btn btn-primary" href="#download">Download</a>
         <a class="btn btn-ghost" href={url("keybindings")}>Keybindings</a>
+      </div>
+
+      <p class="hero-kbd">
+        Keyboard-first — every action is a keystroke or a <kbd>M-x</kbd> search
+        away.
+      </p>
+
+      <div class="badges">
+        <a id="badge-stars" class="badge" href={`${repo}/stargazers`} hidden>
+          <span class="badge-icon">★</span>
+          <span id="badge-stars-count">—</span>
+        </a>
+        <a class="badge" href={`${repo}/blob/master/LICENSE`}>MIT License</a>
+        <a id="badge-ci" class="badge" href={`${repo}/actions/workflows/ci.yml`} hidden>
+          <span id="badge-ci-dot" class="badge-dot"></span>
+          <span id="badge-ci-text">build</span>
+        </a>
+        <a class="badge" href={repo}>Open source on GitHub</a>
       </div>
     </div>
 
@@ -104,19 +163,78 @@ const platforms = [
   </section>
 
   <main>
+    <section id="why" class="section why">
+      <h2>Why Editora</h2>
+      <p>
+        Editora is a keyboard-first editor for people who'd rather keep their
+        hands on the keys. Every action is a command you can bind or
+        fuzzy-search, it stays responsive on huge files, and it runs the same on
+        macOS, Windows, and Linux. It's free, open source, and quiet — no
+        accounts, no telemetry, no subscriptions.
+      </p>
+    </section>
+
     <section id="features" class="section">
       <h2>Features</h2>
-      <div class="grid">
+      {
+        featureGroups.map((g) => (
+          <div class="feature-group">
+            <h3 class="feature-group-title">{g.title}</h3>
+            <div class="grid">
+              {g.cards.map((f) => (
+                <article class="card">
+                  <h4>{f.title}</h4>
+                  <p set:html={f.body} />
+                </article>
+              ))}
+            </div>
+          </div>
+        ))
+      }
+    </section>
+
+    <section id="performance" class="section">
+      <h2>Built for speed</h2>
+      <p class="section-lead">
+        Performance is a first-class goal — the UI thread stays free and work
+        happens incrementally, off-thread, and only on what's visible.
+      </p>
+      <div class="perf">
         {
-          features.map((f) => (
-            <article class="card">
-              <h3>{f.title}</h3>
-              <p set:html={f.body} />
-            </article>
+          perfStats.map((s) => (
+            <div class="perf-item">
+              <strong>{s.stat}</strong>
+              <span>{s.body}</span>
+            </div>
           ))
         }
       </div>
     </section>
+
+    {
+      whatsNew.length > 0 && (
+        <section id="whats-new" class="section">
+          <h2>What's new</h2>
+          <p class="section-lead">
+            Recently shipped — see the{" "}
+            <a href={changelogUrl}>full changelog</a> for everything.
+          </p>
+          <ul class="news">
+            {whatsNew.map((n) => (
+              <li>
+                <span class="news-title" set:html={n.title} />
+                {n.detail && (
+                  <span class="news-detail">
+                    {" — "}
+                    <span set:html={n.detail} />
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
 
     <section id="download" class="section">
       <h2>Download</h2>
@@ -135,9 +253,20 @@ const platforms = [
         }
       </div>
       <div class="cta">
-        <a class="btn btn-primary" href={latestRelease}>Latest release (v{version})</a>
+        <a
+          id="dl-primary"
+          class="btn btn-primary"
+          href={`${repo}/releases/latest`}
+          data-repo={repo}
+        >
+          Download
+        </a>
         <a class="btn btn-ghost" href={`${repo}/releases`}>All releases</a>
       </div>
+      <p id="dl-sub" class="note">
+        Native installer (bundles a Java runtime — nothing else to install), or a
+        self-contained <code>java -jar</code> on JDK&nbsp;25.
+      </p>
       <p class="note">
         Installers are currently unsigned. On macOS, right-click the app and
         choose <em>Open</em> the first time.
@@ -172,6 +301,87 @@ const platforms = [
       </div>
     </section>
   </main>
+
+  <script is:inline define:vars={{ repo }}>
+    (function () {
+      var api = repo.replace("https://github.com/", "https://api.github.com/repos/");
+
+      // --- OS-detected download ---
+      (function () {
+        var btn = document.getElementById("dl-primary");
+        if (!btn) return;
+        var ua = navigator.userAgent;
+        var os = "Linux",
+          exts = [".deb", ".appimage", ".rpm", ".tar.gz"];
+        if (/Mac/i.test(ua)) {
+          os = "macOS";
+          exts = [".dmg", ".pkg"];
+        } else if (/Win/i.test(ua)) {
+          os = "Windows";
+          exts = [".msi", ".exe"];
+        }
+        btn.textContent = "Download for " + os;
+        // Try to deep-link the matching asset from the latest release.
+        fetch(api + "/releases/latest")
+          .then(function (r) {
+            return r.ok ? r.json() : null;
+          })
+          .then(function (rel) {
+            if (!rel || !rel.assets) return;
+            var pick = null;
+            for (var e = 0; e < exts.length && !pick; e++) {
+              for (var i = 0; i < rel.assets.length; i++) {
+                if (rel.assets[i].name.toLowerCase().endsWith(exts[e])) {
+                  pick = rel.assets[i];
+                  break;
+                }
+              }
+            }
+            if (pick) {
+              btn.href = pick.browser_download_url;
+              var sub = document.getElementById("dl-sub");
+              if (sub && rel.tag_name)
+                btn.textContent = "Download for " + os + " (" + rel.tag_name + ")";
+            }
+          })
+          .catch(function () {});
+      })();
+
+      // --- GitHub stars ---
+      fetch(api)
+        .then(function (r) {
+          return r.ok ? r.json() : null;
+        })
+        .then(function (d) {
+          if (!d || typeof d.stargazers_count !== "number") return;
+          var el = document.getElementById("badge-stars");
+          document.getElementById("badge-stars-count").textContent =
+            d.stargazers_count.toLocaleString();
+          el.hidden = false;
+        })
+        .catch(function () {});
+
+      // --- CI status (latest run on default branch) ---
+      fetch(api + "/actions/workflows/ci.yml/runs?per_page=1")
+        .then(function (r) {
+          return r.ok ? r.json() : null;
+        })
+        .then(function (d) {
+          if (!d || !d.workflow_runs || !d.workflow_runs.length) return;
+          var run = d.workflow_runs[0];
+          var ok = run.conclusion === "success";
+          var el = document.getElementById("badge-ci");
+          document.getElementById("badge-ci-text").textContent = ok
+            ? "build passing"
+            : "build " + (run.conclusion || run.status || "unknown");
+          document.getElementById("badge-ci-dot").style.background = ok
+            ? "#3fb950"
+            : "#d29922";
+          el.hidden = false;
+        })
+        .catch(function () {});
+    })();
+  </script>
 </Layout>
 
 <style>
@@ -208,6 +418,73 @@ const platforms = [
     box-shadow:
       0 20px 50px -20px rgba(0, 0, 0, 0.6),
       0 0 0 1px var(--border-soft);
+  }
+
+  .hero-kbd {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin: 1.25rem 0 0;
+  }
+
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 1.25rem;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+  }
+
+  .badge:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    text-decoration: none;
+  }
+
+  .badge-icon {
+    color: var(--bookmark);
+  }
+
+  .badge-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--faint);
+  }
+
+  /* What's new */
+  .news {
+    list-style: none;
+    margin: 2rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 0.75rem 2rem;
+  }
+
+  .news li {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: 0.95rem;
+  }
+
+  .news-title {
+    font-weight: 600;
+  }
+
+  .news-detail {
+    color: var(--muted);
   }
 
   .hero-logo {
@@ -287,11 +564,32 @@ const platforms = [
     max-width: 42rem;
   }
 
+  .why p {
+    max-width: 46rem;
+    color: var(--muted);
+    font-size: 1.05rem;
+    margin: 0.5rem 0 0;
+  }
+
+  .feature-group {
+    margin-top: 2.25rem;
+  }
+
+  .feature-group-title {
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+    margin: 0 0 0.25rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 1rem;
-    margin-top: 2rem;
+    margin-top: 1rem;
   }
 
   .card {
@@ -301,9 +599,32 @@ const platforms = [
     padding: 1.25rem;
   }
 
-  .card h3 {
+  .card h4 {
     margin: 0 0 0.5rem;
     font-size: 1.05rem;
+  }
+
+  .perf {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1.25rem 1.5rem;
+    margin-top: 2rem;
+  }
+
+  .perf-item {
+    border-left: 2px solid var(--accent);
+    padding: 0.1rem 0 0.1rem 1rem;
+  }
+
+  .perf-item strong {
+    display: block;
+    font-size: 1rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .perf-item span {
+    color: var(--muted);
+    font-size: 0.92rem;
   }
 
   .card p {
