@@ -64,7 +64,7 @@ jobs:
           mkdir -p staging
           for f in target/dist/*; do
             [ -f "$f" ] || continue
-            cp "$f" "staging/editora-${VERSION}-${{ matrix.target }}.${f##*.}"
+            cp "$f" "staging/Editora-${VERSION}-${{ matrix.target }}.${f##*.}"
           done
           jar="$(ls target/Editora-*.jar | head -1)"
           cp "$jar" "staging/$(basename "$jar" .jar)-${{ matrix.target }}.jar"
@@ -72,7 +72,7 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v7
         with:
-          name: editora-${{ matrix.target }}
+          name: Editora-${{ matrix.target }}
           path: staging/*
           if-no-files-found: error
 

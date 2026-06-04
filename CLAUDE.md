@@ -59,7 +59,8 @@ each on its own GitHub-hosted runner) builds the native
 installer via the existing `-Pdist` profile — there is **no cross-building** (jpackage + JavaFX are
 host-specific), so each runner builds for itself. Each runner also builds a per-platform runnable
 fat jar via `-Pfatjar` (`Editora-<version>-<target>.jar`). Installers are renamed to
-`editora-<version>-<target>.<ext>` per target (jpackage's DMG/MSI names omit the version + arch; the
+`Editora-<version>-<target>.<ext>` per target — one consistent `Editora-<version>-<target>` prefix
+across all artifacts (jpackage's DMG/MSI names omit the version + arch; the
 version comes from a `Resolve version` step — the tag minus `v`, else the pom version) and uploaded as
 artifacts alongside the fat jar; a final job
 hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) which creates the
