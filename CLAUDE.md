@@ -49,7 +49,12 @@ land on the wrong branch when a parallel session ran `git checkout` in the share
 ## Release pipeline
 
 `.github/workflows/release.yml` runs on a `v*` tag (or manual dispatch for a dry run): a 5-way
-matrix (linux x64/arm64, macOS x64/arm64, windows x64 — Windows arm64 is omitted, no hosted runner;
+matrix (linux x64/arm64, macOS x64/arm64, windows x64 — **Windows arm64 is omitted: a hosted
+runner now exists (`windows-11-arm`, GA Jan 2026), but OpenJFX 25 publishes no `win-aarch64` native
+jar on Maven Central (see [JDK-8314064]), so a native ARM64 build can't link — Windows-on-ARM users
+run the x64 installer under x64 emulation. Revisit when JavaFX ships win-aarch64 natives.** macOS x64
+uses the `macos-15-intel` runner — the last Intel x86_64 image (good through ~Aug 2027) — since the
+old `macos-13` Intel runner was retired Dec 2025;
 each on its own GitHub-hosted runner) builds the native
 installer via the existing `-Pdist` profile — there is **no cross-building** (jpackage + JavaFX are
 host-specific), so each runner builds for itself. Each runner also builds a per-platform runnable
