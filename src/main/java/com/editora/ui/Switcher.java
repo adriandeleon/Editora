@@ -66,7 +66,8 @@ public class Switcher {
                     setText(null);
                     return;
                 }
-                EditorBuffer buffer = (EditorBuffer) item.getUserData();
+                // userData may be a non-buffer TabContent (the Welcome tab) — instanceof, not a raw cast.
+                EditorBuffer buffer = item.getUserData() instanceof EditorBuffer b ? b : null;
                 label.setText(buffer != null ? buffer.getTitle() : item.getText());
                 setGraphic(label);
                 setText(null);
@@ -126,7 +127,7 @@ public class Switcher {
     private double widthFor(List<Tab> tabs, Window owner) {
         double max = 0;
         for (Tab tab : tabs) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = tab.getUserData() instanceof EditorBuffer b ? b : null;
             if (buffer == null) {
                 continue;
             }
@@ -202,9 +203,9 @@ public class Switcher {
             pathLabel.setText(" ");
             return;
         }
-        EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+        EditorBuffer buffer = tab.getUserData() instanceof EditorBuffer b ? b : null;
         Path path = buffer == null ? null : buffer.getPath();
-        pathLabel.setText(path != null ? path.toString() : buffer != null ? buffer.getTitle() : " ");
+        pathLabel.setText(path != null ? path.toString() : buffer != null ? buffer.getTitle() : tab.getText());
     }
 
     private void commit() {

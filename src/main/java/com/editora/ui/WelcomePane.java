@@ -19,17 +19,19 @@ import com.editora.AppInfo;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.RecentFiles;
+import com.editora.editor.TabContent;
 
 /**
  * The VSCode-style empty state shown in the editor area when no file tabs are open (startup with no
  * session to restore, or after the last tab is closed) — replacing the old empty "Untitled" buffer.
  *
- * <p>Not a tab: it's a plain {@link Region} the controller swaps in via a {@code StackPane} when
- * {@code tabPane} is empty, so none of the buffer-centric tab logic is affected. Offers Start actions
- * (reused commands) and a Recent-files list. Built fresh on each {@link #refresh()} so Open-Folder /
- * Clone honor the current Projects/Git toggles.
+ * <p>A real {@link TabContent}: the controller shows it in a dedicated, closeable "Welcome" tab (at
+ * startup with no session, via {@code view.welcome}, or by reopening), so the tab strip handles
+ * activation/switching/closing for free. Offers Start actions (reused commands) and a Recent-files
+ * list. Built fresh on each {@link #refresh()} so Open-Folder / Clone honor the current Projects/Git
+ * toggles.
  */
-public final class WelcomePane extends Region {
+public final class WelcomePane extends Region implements TabContent {
 
     /** Width of the Start-actions column, so keybinding labels right-align in a tidy column. */
     private static final double ACTIONS_WIDTH = 380;
@@ -61,6 +63,33 @@ public final class WelcomePane extends Region {
         content.setFillWidth(false);
         getChildren().add(content);
         refresh();
+    }
+
+    // --- TabContent ---
+
+    @Override
+    public Node node() {
+        return this;
+    }
+
+    @Override
+    public String title() {
+        return tr("welcome.tab");
+    }
+
+    /** A small app logo for the Welcome tab header (null if the icon resource is missing). */
+    @Override
+    public Node icon() {
+        var in = getClass().getResourceAsStream("/com/editora/icons/icon-16.png");
+        if (in == null) {
+            return null;
+        }
+        javafx.scene.image.ImageView view = new javafx.scene.image.ImageView(new javafx.scene.image.Image(in));
+        view.setFitWidth(14);
+        view.setFitHeight(14);
+        view.setPreserveRatio(true);
+        view.setSmooth(true);
+        return view;
     }
 
     /** Rebuilds the Start actions + Recent list (call before showing, so toggles/recents are current). */
