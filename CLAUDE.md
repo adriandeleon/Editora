@@ -58,8 +58,10 @@ old `macos-13` Intel runner was retired Dec 2025;
 each on its own GitHub-hosted runner) builds the native
 installer via the existing `-Pdist` profile — there is **no cross-building** (jpackage + JavaFX are
 host-specific), so each runner builds for itself. Each runner also builds a per-platform runnable
-fat jar via `-Pfatjar` (`Editora-<version>-<target>.jar`). Installers are renamed per target
-(jpackage's DMG/MSI names omit the arch) and uploaded as artifacts alongside the fat jar; a final job
+fat jar via `-Pfatjar` (`Editora-<version>-<target>.jar`). Installers are renamed to
+`editora-<version>-<target>.<ext>` per target (jpackage's DMG/MSI names omit the version + arch; the
+version comes from a `Resolve version` step — the tag minus `v`, else the pom version) and uploaded as
+artifacts alongside the fat jar; a final job
 hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) which creates the
 GitHub release with all installers + fat jars + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
 build (the `dist` profile is reused as-is) and there is **no `pom.xml`/Maven change**, so the normal

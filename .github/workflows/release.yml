@@ -42,14 +42,29 @@ jobs:
         shell: bash
         run: ./mvnw -B --no-transfer-progress -Pfatjar -DskipTests package
 
-      # jpackage names DMG/MSI without an arch, so disambiguate per target before releasing.
+      # Tag pushes use the tag (minus the leading v); manual runs fall back to the pom version.
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="$(grep -m1 '<version>' pom.xml | sed -E 's/.*<version>(.+)<\/version>.*/\1/')"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      # jpackage names DMG/MSI without a version/arch, so disambiguate per target before releasing.
+      # (The fat jar already carries the version, e.g. Editora-<version>-<target>.jar.)
       - name: Stage artifacts
         shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           mkdir -p staging
           for f in target/dist/*; do
             [ -f "$f" ] || continue
-            cp "$f" "staging/editora-${{ matrix.target }}.${f##*.}"
+            cp "$f" "staging/editora-${VERSION}-${{ matrix.target }}.${f##*.}"
           done
           jar="$(ls target/Editora-*.jar | head -1)"
           cp "$jar" "staging/$(basename "$jar" .jar)-${{ matrix.target }}.jar"
