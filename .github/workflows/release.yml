@@ -55,7 +55,7 @@ jobs:
           cp "$jar" "staging/$(basename "$jar" .jar)-${{ matrix.target }}.jar"
 
       - name: Upload installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: editora-${{ matrix.target }}
           path: staging/*
@@ -74,7 +74,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download all installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload JReleaser logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jreleaser-output
           path: |
