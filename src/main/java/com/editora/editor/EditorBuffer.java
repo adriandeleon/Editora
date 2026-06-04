@@ -64,7 +64,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
 
 /** A single open document: a RichTextFX {@link CodeArea} plus its backing file, language, and dirty state. */
-public class EditorBuffer {
+public class EditorBuffer implements TabContent {
 
     private final CodeArea area = new CodeArea();
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
@@ -508,6 +508,18 @@ public class EditorBuffer {
     /** The node to place in the scene: the read-only banner (when shown) above the editor view. */
     public Region getNode() {
         return outer;
+    }
+
+    /** {@link TabContent}: the editor node shown in the tab (delegates to {@link #getNode()}). */
+    @Override
+    public Region node() {
+        return outer;
+    }
+
+    /** {@link TabContent}: the tab label (delegates to {@link #getTitle()}). */
+    @Override
+    public String title() {
+        return getTitle();
     }
 
     public Split getSplit() {

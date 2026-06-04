@@ -16,6 +16,7 @@ import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.TabContent;
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LanguageRegistry;
 import com.editora.editor.SpellDictionaries;
@@ -225,10 +226,10 @@ public class MainController {
     /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
     private boolean checkingExternalChanges;
     private RecentFiles recentFiles;
-    /** Editor-area empty state shown when no file tabs are open (replaces the old empty Untitled buffer). */
+    /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
     private WelcomePane welcomePane;
-    /** True when the user explicitly showed the Welcome page (`view.welcome`) while file tabs are open. */
-    private boolean welcomeForced;
+    /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
+    private Tab welcomeTab;
     /** Opens external URLs (the Welcome page's home-page link) in the system browser; set from {@code App}. */
     private javafx.application.HostServices hostServices;
 
@@ -369,38 +370,36 @@ public class MainController {
     }
 
     /**
-     * Installs the Welcome empty-state. The {@code tabPane} is wrapped in a {@code StackPane} with the
-     * {@link WelcomePane}; exactly one is visible at a time — the welcome when there are no tabs, the
-     * tabPane otherwise — so closing the last tab (or starting with no session) shows the welcome
-     * instead of an empty Untitled buffer.
+     * Builds the {@link WelcomePane} and wires its callbacks. The pane is shown in its own real tab
+     * (see {@link #addWelcomeTab()}); the tab strip handles activation/switching/closing for free, so
+     * there is no overlay or visibility juggling.
      */
     private void setupWelcome() {
         welcomePane = new WelcomePane(registry, keymap, recentFiles, this::openRecent,
                 this::openExternalUrl, this::projectsEnabled, this::gitEnabled);
-        javafx.scene.layout.StackPane editorArea = new javafx.scene.layout.StackPane(tabPane, welcomePane);
-        workspace.setCenter(editorArea);
-        // Escape closes a manually-shown Welcome (with files open) and returns to the editor.
-        welcomePane.setFocusTraversable(true);
-        welcomePane.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE && welcomeForced) {
-                welcomeForced = false;
-                updateWelcomeVisibility();
-                EditorBuffer b = activeBuffer();
-                if (b != null) {
-                    b.getArea().requestFocus();
-                }
-                e.consume();
+    }
+
+    /**
+     * Opens (or re-selects) the single Welcome tab, refreshing it first so its recents + Open-Folder /
+     * Clone actions track the current state. Used at startup with no session and by {@code view.welcome}.
+     */
+    private void addWelcomeTab() {
+        welcomePane.refresh();
+        if (welcomeTab != null && tabPane.getTabs().contains(welcomeTab)) {
+            tabPane.getSelectionModel().select(welcomeTab);
+            return;
+        }
+        Tab tab = addContentTab(welcomePane, true);
+        welcomeTab = tab;
+        // Welcome is not a document: only a Close action (no Save/Rename/Pin).
+        MenuItem close = new MenuItem(tr("menu.close"));
+        close.setOnAction(e -> closeTab(tab));
+        tab.setContextMenu(new ContextMenu(close));
+        tab.setOnClosed(e -> {
+            if (welcomeTab == tab) {
+                welcomeTab = null;
             }
         });
-        tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
-            while (c.next()) {
-                if (c.wasAdded()) {
-                    welcomeForced = false; // opening/creating a file dismisses a manually-shown welcome
-                }
-            }
-            updateWelcomeVisibility();
-        });
-        updateWelcomeVisibility();
     }
 
     /** Sets the {@link javafx.application.HostServices} used to open external links (from {@code App}). */
@@ -415,33 +414,16 @@ public class MainController {
         }
     }
 
-    /** Shows the Welcome pane when no file tabs are open (or it was shown manually); otherwise the tabs. */
-    private void updateWelcomeVisibility() {
-        if (welcomePane == null) {
-            return;
-        }
-        boolean show = welcomeForced || tabPane.getTabs().isEmpty();
-        if (show) {
-            welcomePane.refresh(); // pick up current recents + Projects/Git toggles
-            if (welcomeForced) {
-                Platform.runLater(welcomePane::requestFocus); // so Escape returns to the editor
-            }
-        }
-        welcomePane.setVisible(show);
-        welcomePane.setManaged(show);
-        tabPane.setVisible(!show);
-        tabPane.setManaged(!show);
+    /** `view.welcome`: opens the Welcome tab (or selects it if already open). */
+    private void showWelcome() {
+        addWelcomeTab();
     }
 
-    /**
-     * `view.welcome`: shows the Welcome page on demand. With files open it toggles a forced overlay (run
-     * again — or open/create a file — to return to editing); with no files it's already showing.
-     */
-    private void showWelcome() {
-        if (!tabPane.getTabs().isEmpty()) {
-            welcomeForced = !welcomeForced;
+    /** Opens the Welcome tab when the strip is empty (startup with no session, or after a project swap). */
+    private void showWelcomeIfNoTabs() {
+        if (tabPane.getTabs().isEmpty()) {
+            addWelcomeTab();
         }
-        updateWelcomeVisibility();
     }
 
     /** Builds the keyboard "Jump to…" pickers (recent files, structure) — command-palette-style popups. */
@@ -462,7 +444,7 @@ public class MainController {
                 tab -> bufferParentDir(tab),
                 tab -> {
                     tabPane.getSelectionModel().select(tab);
-                    EditorBuffer b = (EditorBuffer) tab.getUserData();
+                    EditorBuffer b = bufferOf(tab);
                     if (b != null) {
                         b.getArea().requestFocus();
                     }
@@ -532,7 +514,10 @@ public class MainController {
         Tab existing = tabForPath(target);
         if (existing != null) {
             tabPane.getSelectionModel().select(existing);
-            ((EditorBuffer) existing.getUserData()).getArea().requestFocus();
+            EditorBuffer existingBuffer = bufferOf(existing);
+            if (existingBuffer != null) {
+                existingBuffer.getArea().requestFocus();
+            }
             return;
         }
         EditorBuffer buffer = new EditorBuffer();
@@ -542,12 +527,13 @@ public class MainController {
     }
 
     private static String bufferTitle(Tab tab) {
-        EditorBuffer b = (EditorBuffer) tab.getUserData();
-        return b == null ? "" : b.getTitle();
+        EditorBuffer b = bufferOf(tab);
+        // Non-buffer tabs (the Welcome tab) carry their label in tab.getText() (buffer tabs use a graphic).
+        return b != null ? b.getTitle() : (tab == null ? "" : tab.getText());
     }
 
     private static String bufferParentDir(Tab tab) {
-        EditorBuffer b = (EditorBuffer) tab.getUserData();
+        EditorBuffer b = bufferOf(tab);
         Path p = b == null ? null : b.getPath();
         return p == null || p.getParent() == null ? "" : p.getParent().toString();
     }
@@ -812,7 +798,7 @@ public class MainController {
     private void onProjectFileRenamed(Path old, Path target) {
         Tab tab = tabForPath(old);
         if (tab != null) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = bufferOf(tab);
             buffer.setPath(target);
             updateTabMeta(tab, buffer);
             if (buffer == activeBuffer()) {
@@ -913,17 +899,11 @@ public class MainController {
         // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
         tabPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> deactivateMark());
         tabPane.getSelectionModel().selectedItemProperty().addListener((obs, was, now) -> {
-            if (now != null && welcomeForced) {
-                // Switching to an open tab (Switcher, next/prev-tab, etc.) leaves the manually-shown
-                // Welcome page — otherwise it would stay on top with no way back to the editor.
-                welcomeForced = false;
-                updateWelcomeVisibility();
-            }
             if (now != null) {
                 mru.remove(now);
                 mru.addFirst(now);
             }
-            EditorBuffer buffer = now == null ? null : (EditorBuffer) now.getUserData();
+            EditorBuffer buffer = bufferOf(now);
             fileInfoPanel.attach(buffer);
             structurePanel.attach(buffer);
             statusBar.attach(buffer);
@@ -1116,7 +1096,7 @@ public class MainController {
             currentUpstream = "";
             gitPanel.setStatus(null);
             for (Tab tab : tabPane.getTabs()) {
-                EditorBuffer b = (EditorBuffer) tab.getUserData();
+                EditorBuffer b = bufferOf(tab);
                 if (b != null) {
                     b.setChangeBars(null);
                 }
@@ -1161,7 +1141,7 @@ public class MainController {
         boolean on = notesEnabled();
         toolWindows.setAvailable(notesToolWindow, on);
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = (EditorBuffer) tab.getUserData();
+            EditorBuffer b = bufferOf(tab);
             if (b != null) {
                 b.setNotesEnabled(on);
             }
@@ -1169,7 +1149,7 @@ public class MainController {
         if (on && !notesSupportApplied) {
             // off→on: populate open buffers' notes (restoreNotes early-returns while disabled).
             for (Tab tab : tabPane.getTabs()) {
-                EditorBuffer b = (EditorBuffer) tab.getUserData();
+                EditorBuffer b = bufferOf(tab);
                 if (b != null) {
                     restoreNotes(b);
                 }
@@ -1238,7 +1218,7 @@ public class MainController {
         Path absRoot = root.toAbsolutePath();
         EditorBuffer active = activeBuffer();
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer buf = (EditorBuffer) tab.getUserData();
+            EditorBuffer buf = bufferOf(tab);
             if (buf == null || buf == active || buf.getPath() == null || buf.isLargeFile()) {
                 continue; // active buffer is handled by refreshGit(); skip non-file/huge buffers
             }
@@ -1588,7 +1568,7 @@ public class MainController {
     /** After a branch switch/pull, silently reload any open buffer whose file changed on disk. */
     private void reloadAllFromDiskSilently() {
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = bufferOf(tab);
             if (buffer == null || buffer.getPath() == null || buffer.isDirty()) {
                 continue; // never clobber unsaved edits
             }
@@ -1760,9 +1740,10 @@ public class MainController {
             }
         }
         if (files.isEmpty()) {
-            // No session to restore: leave the tab area empty so the Welcome pane shows (unless a CLI
-            // action like --new-file or a FILE target opens something in runPendingAfterRestore).
+            // No session to restore: apply any CLI action (--new-file / FILE target) first, then show
+            // the Welcome tab only if nothing got opened. Both run deferred, in this order.
             runPendingAfterRestore();
+            Platform.runLater(this::showWelcomeIfNoTabs);
             return;
         }
         String activePath = state.getActiveFile();
@@ -1889,7 +1870,7 @@ public class MainController {
             return;
         }
         tabPane.getSelectionModel().select(tab);
-        EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+        EditorBuffer buffer = bufferOf(tab);
         CodeArea area = buffer.getArea();
         int total = area.getParagraphs().size();
         int line = Math.max(1, Math.min(total, line1)) - 1;
@@ -1949,8 +1930,7 @@ public class MainController {
     }
 
     private EditorBuffer activeBuffer() {
-        Tab tab = tabPane.getSelectionModel().getSelectedItem();
-        return tab == null ? null : (EditorBuffer) tab.getUserData();
+        return bufferOf(tabPane.getSelectionModel().getSelectedItem());
     }
 
     private CodeArea activeArea() {
@@ -1989,15 +1969,8 @@ public class MainController {
             });
             buffer.setViewModeControl(toggle); // floating Editor/Split/Preview control, top-right
         }
-        Tab tab = new Tab();
-        tab.setContent(buffer.getNode());
-        tab.setUserData(buffer);
-        tab.setOnCloseRequest(e -> {
-            if (!confirmClose(tab)) {
-                e.consume();
-            }
-        });
-        updateTabMeta(tab, buffer);
+        Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
+        updateTabMeta(tab, buffer); // replaces the default text/icon with the buffer header (drag handle, pin, dirty)
         buffer.dirtyProperty().addListener((obs, was, now) -> {
             updateTabMeta(tab, buffer);
             if (projectPanel != null) {
@@ -2011,10 +1984,37 @@ public class MainController {
             }
         });
         installTabMenu(tab, buffer);
-        tabPane.getTabs().add(tab);
         if (select) {
             tabPane.getSelectionModel().select(tab);
             buffer.getArea().requestFocus();
+        }
+        return tab;
+    }
+
+    /**
+     * Creates a tab for any {@link TabContent} (a buffer or the Welcome page), appends it to the strip,
+     * and stores the content in {@code userData}. The generic title/icon/close affordance come from the
+     * content; buffers then override the header via {@link #updateTabMeta}. Selects + focuses the content
+     * node when {@code select}.
+     */
+    private Tab addContentTab(TabContent content, boolean select) {
+        Tab tab = new Tab();
+        tab.setContent(content.node());
+        tab.setUserData(content);
+        tab.setText(content.title());
+        if (content.icon() != null) {
+            tab.setGraphic(content.icon());
+        }
+        tab.setClosable(content.closeable());
+        tab.setOnCloseRequest(e -> {
+            if (!confirmClose(tab)) {
+                e.consume();
+            }
+        });
+        tabPane.getTabs().add(tab);
+        if (select) {
+            tabPane.getSelectionModel().select(tab);
+            Platform.runLater(content.node()::requestFocus);
         }
         return tab;
     }
@@ -2186,7 +2186,10 @@ public class MainController {
         if (existing != null) {
             // Already open — switch to its tab instead of opening a duplicate.
             tabPane.getSelectionModel().select(existing);
-            ((EditorBuffer) existing.getUserData()).getArea().requestFocus();
+            EditorBuffer existingBuffer = bufferOf(existing);
+            if (existingBuffer != null) {
+                existingBuffer.getArea().requestFocus();
+            }
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
@@ -2297,7 +2300,7 @@ public class MainController {
         checkingExternalChanges = true;
         try {
             Tab tab = tabPane.getSelectionModel().getSelectedItem();
-            EditorBuffer buffer = tab != null && tab.getUserData() instanceof EditorBuffer b ? b : null;
+            EditorBuffer buffer = bufferOf(tab);
             if (buffer == null || buffer.getPath() == null) {
                 return;
             }
@@ -2452,7 +2455,7 @@ public class MainController {
     /** Auto-saves every dirty, file-backed, writable buffer (untitled/read-only buffers are skipped). */
     private void autoSaveAllDirty() {
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = bufferOf(tab);
             if (buffer != null && buffer.isDirty() && buffer.getPath() != null && buffer.isEditable()) {
                 autoSaveBuffer(buffer);
             }
@@ -2514,8 +2517,13 @@ public class MainController {
         return tabPane.getSelectionModel().getSelectedItem();
     }
 
+    /**
+     * The {@link EditorBuffer} backing {@code tab}, or {@code null} for a non-buffer tab (e.g. the
+     * Welcome tab) — every {@code tab.userData} read must go through here, since {@code userData} is
+     * {@code Object} and a raw cast would throw {@link ClassCastException} on a non-buffer tab.
+     */
     private static EditorBuffer bufferOf(Tab tab) {
-        return tab == null ? null : (EditorBuffer) tab.getUserData();
+        return tab != null && tab.getUserData() instanceof EditorBuffer b ? b : null;
     }
 
     /** Closes a single tab, confirming first if it is pinned and/or has unsaved changes. */
@@ -2838,14 +2846,14 @@ public class MainController {
         if (tab == null) {
             return false;
         }
-        EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+        EditorBuffer buffer = bufferOf(tab);
         return buffer != null && buffer.isDirty();
     }
 
     private Tab tabForPath(Path file) {
         Path target = file.toAbsolutePath().normalize();
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = bufferOf(tab);
             Path p = buffer == null ? null : buffer.getPath();
             if (p != null && p.toAbsolutePath().normalize().equals(target)) {
                 return tab;
@@ -2878,7 +2886,7 @@ public class MainController {
     /** Walks every tab and prompts to save/discard each dirty buffer. False = user cancelled. */
     private boolean confirmCloseAllBuffers() {
         for (Tab tab : new ArrayList<>(tabPane.getTabs())) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = bufferOf(tab);
             if (buffer == null || !buffer.isDirty()) {
                 continue;
             }
@@ -2895,7 +2903,7 @@ public class MainController {
     private void persistSession() {
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = bufferOf(tab);
             if (buffer != null && buffer.getPath() != null) {
                 files.add(new WorkspaceState.OpenFile(
                         buffer.getPath().toAbsolutePath().toString(),
@@ -3901,8 +3909,9 @@ public class MainController {
     /** Sets a bookmark's note — via the open buffer if loaded, else directly in the persisted map. */
     private void bookmarkSetNote(Path file, int line, String note) {
         Tab tab = tabForPath(file);
-        if (tab != null) {
-            ((EditorBuffer) tab.getUserData()).getBookmarkManager().setNote(line, note);
+        EditorBuffer open = bufferOf(tab);
+        if (open != null) {
+            open.getBookmarkManager().setNote(line, note);
         } else {
             updateClosedFileBookmarks(file, marks -> marks.replaceAll(
                     bm -> bm.line() == line ? bm.withNote(note) : bm));
@@ -3912,8 +3921,9 @@ public class MainController {
     /** Deletes one bookmark — via the open buffer if loaded, else directly in the persisted map. */
     private void bookmarkDelete(Path file, int line) {
         Tab tab = tabForPath(file);
-        if (tab != null) {
-            ((EditorBuffer) tab.getUserData()).removeBookmark(line);
+        EditorBuffer open = bufferOf(tab);
+        if (open != null) {
+            open.removeBookmark(line);
         } else {
             updateClosedFileBookmarks(file, marks -> marks.removeIf(bm -> bm.line() == line));
         }
@@ -3922,8 +3932,9 @@ public class MainController {
     /** Deletes all bookmarks in a file — via the open buffer if loaded, else the persisted map. */
     private void bookmarkDeleteAll(Path file) {
         Tab tab = tabForPath(file);
-        if (tab != null) {
-            ((EditorBuffer) tab.getUserData()).clearBookmarks();
+        EditorBuffer open = bufferOf(tab);
+        if (open != null) {
+            open.clearBookmarks();
         } else {
             config.getBookmarks().remove(file.toString());
             config.saveBookmarks();
@@ -3969,7 +3980,7 @@ public class MainController {
 
     private Tab tabForKey(String fileKey) {
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = (EditorBuffer) tab.getUserData();
+            EditorBuffer b = bufferOf(tab);
             if (b != null && b.getPath() != null && noteKey(b).equals(fileKey)) {
                 return tab;
             }
@@ -4225,9 +4236,9 @@ public class MainController {
     }
 
     private void noteEditBody(String fileKey, com.editora.config.PersonalNote note) {
-        Tab tab = tabForKey(fileKey);
-        if (tab != null) {
-            editOpenBufferNote((EditorBuffer) tab.getUserData(), note);
+        EditorBuffer open = bufferOf(tabForKey(fileKey));
+        if (open != null) {
+            editOpenBufferNote(open, note);
         } else {
             showNoteDialog(note.body(),
                     body -> updateClosedFileNotes(fileKey,
@@ -4238,9 +4249,9 @@ public class MainController {
 
     private void noteSetStatus(String fileKey, com.editora.config.PersonalNote note,
             com.editora.config.NoteStatus status) {
-        Tab tab = tabForKey(fileKey);
-        if (tab != null) {
-            ((EditorBuffer) tab.getUserData()).getNoteManager().setStatus(note.id(), status);
+        EditorBuffer open = bufferOf(tabForKey(fileKey));
+        if (open != null) {
+            open.getNoteManager().setStatus(note.id(), status);
         } else {
             updateClosedFileNotes(fileKey,
                     list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withStatus(status) : n));
@@ -4250,7 +4261,7 @@ public class MainController {
     private void noteDelete(String fileKey, com.editora.config.PersonalNote note) {
         Tab tab = tabForKey(fileKey);
         if (tab != null) {
-            EditorBuffer b = (EditorBuffer) tab.getUserData();
+            EditorBuffer b = bufferOf(tab);
             b.getNoteManager().remove(note.id());
             b.refreshGutter();
         } else {
@@ -4261,7 +4272,7 @@ public class MainController {
     private void noteDeleteAll(String fileKey) {
         Tab tab = tabForKey(fileKey);
         if (tab != null) {
-            EditorBuffer b = (EditorBuffer) tab.getUserData();
+            EditorBuffer b = bufferOf(tab);
             b.getNoteManager().clear();
             b.refreshGutter();
         } else {
@@ -4349,14 +4360,14 @@ public class MainController {
         applyAutoSave();
         applyAutocomplete();
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 applyViewSettings(buffer);
             }
         }
-        // If the Welcome pane is showing, rebuild it so its Open Folder / Clone actions track the
+        // If the Welcome tab is open, rebuild it so its Open Folder / Clone actions track the
         // Projects/Git toggles that may have just changed.
-        if (welcomePane != null && welcomePane.isVisible()) {
+        if (welcomeTab != null) {
             welcomePane.refresh();
         }
     }
@@ -4365,7 +4376,7 @@ public class MainController {
     private void applyAutocomplete() {
         Settings s = config.getSettings();
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 buffer.setAutocomplete(s.isAutocomplete(), s.isAutocompleteProse(), s.isAutocompleteSnippets());
             }
@@ -4394,7 +4405,7 @@ public class MainController {
         Color editorBg = EditorThemes.editorBackgroundFor(themeName);
         Color editorFg = EditorThemes.editorForegroundFor(themeName);
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer buffer = (EditorBuffer) tab.getUserData();
+            EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 buffer.setLineHighlightColor(highlight);
                 buffer.setMinimapColors(mmText, mmViewport);
