@@ -119,11 +119,11 @@ public final class StatusBar extends HBox {
         messageLog.add(message); // no-ops for null/blank (a blank clears the echo)
     }
 
-    /** Opens the session message-log popup, anchored just above the echo area. */
+    /** Toggles the session message-log popup (anchored just above the echo area). */
     public void showMessageLog() {
         Window owner = getScene() == null ? null : getScene().getWindow();
         if (owner != null) {
-            messageLogPopup.show(owner, echo, messageLog);
+            messageLogPopup.toggle(owner, echo, messageLog);
         }
     }
 

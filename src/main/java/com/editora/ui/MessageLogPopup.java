@@ -44,6 +44,8 @@ public final class MessageLogPopup {
     private static final double APPROX_HEIGHT = 360;
 
     private final Popup popup = new Popup();
+    /** When the popup last hid — used so a click on the echo that auto-hid it doesn't immediately reopen. */
+    private long lastHiddenAt;
     private final ListView<MessageLog.Entry> list = new ListView<>();
     private final VBox root;
     private MessageLog log;
@@ -137,6 +139,23 @@ public final class MessageLogPopup {
         });
         popup.getContent().add(root);
         popup.setAutoHide(true);
+        popup.setOnHidden(e -> lastHiddenAt = System.currentTimeMillis());
+    }
+
+    /**
+     * Toggles the popup: shows it if hidden, hides it if shown. A click on the status echo while the
+     * popup is open first triggers autoHide (which hides it), then the click handler — so we also treat a
+     * very recent auto-hide as "was open" and don't reopen, giving a clean toggle.
+     */
+    public void toggle(Window owner, Node anchor, MessageLog log) {
+        if (popup.isShowing()) {
+            popup.hide();
+            return;
+        }
+        if (System.currentTimeMillis() - lastHiddenAt < 250) {
+            return; // autoHide just closed it via this same click — leave it closed
+        }
+        show(owner, anchor, log);
     }
 
     /** Copies the selected messages (one per line) to the system clipboard. */

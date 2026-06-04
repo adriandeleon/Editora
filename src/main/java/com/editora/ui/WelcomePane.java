@@ -6,13 +6,16 @@ import java.nio.file.Path;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.AppInfo;
@@ -46,7 +49,14 @@ public final class WelcomePane extends Region implements TabContent {
     /** Short build commit shown in the footer for dev builds; "" hides it (production). */
     private final String devCommit;
 
+    /** Outer margin around the centered content (also the scroll threshold for the horizontal bar). */
+    private static final double MARGIN = 48;
+
     private final VBox content = new VBox();
+    /** Centers {@code content} and provides the padding; this is what the ScrollPane scrolls. */
+    private final StackPane centerHost = new StackPane(content);
+    /** Adds vertical/horizontal scrollbars when the content doesn't fit the viewport. */
+    private final ScrollPane scroll = new ScrollPane(centerHost);
 
     public WelcomePane(CommandRegistry registry, KeymapManager keymap, RecentFiles recentFiles,
                        Consumer<Path> onOpenRecent, Consumer<String> openUrl,
@@ -64,7 +74,18 @@ public final class WelcomePane extends Region implements TabContent {
         content.getStyleClass().add("welcome-content");
         content.setAlignment(Pos.TOP_LEFT);
         content.setFillWidth(false);
-        getChildren().add(content);
+        content.setMaxWidth(Region.USE_PREF_SIZE); // keep its natural width so it can be centered, not stretched
+
+        centerHost.getStyleClass().add("welcome-scroll-content");
+        centerHost.setAlignment(Pos.TOP_CENTER);
+        centerHost.setPadding(new Insets(MARGIN));
+        // Below this width the content can't fit, so fit-to-width stops shrinking and a horizontal bar shows.
+        centerHost.setMinWidth(ACTIONS_WIDTH + 2 * MARGIN);
+
+        scroll.getStyleClass().add("welcome-scroll");
+        scroll.setFitToWidth(true);   // fill the viewport so the content stays centered; clamps to minWidth
+        scroll.setFitToHeight(false); // let it grow taller than the viewport → vertical scrollbar
+        getChildren().add(scroll);
         refresh();
     }
 
@@ -282,11 +303,7 @@ public final class WelcomePane extends Region implements TabContent {
 
     @Override
     protected void layoutChildren() {
-        // Center the content block horizontally; keep it near the top (VSCode-like).
-        double cw = content.prefWidth(-1);
-        double ch = content.prefHeight(cw);
-        double x = Math.max(48, (getWidth() - cw) / 2);
-        double y = Math.max(48, getHeight() * 0.12);
-        content.resizeRelocate(x, y, cw, ch);
+        // The ScrollPane fills the pane; it centers + scrolls the content (see centerHost).
+        scroll.resizeRelocate(0, 0, getWidth(), getHeight());
     }
 }
