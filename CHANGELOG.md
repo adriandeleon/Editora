@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **App freeze with several Markdown previews open (macOS)** — rendering SVG badges in the Markdown
+  preview pulled in AWT/Java2D, whose native macOS pipeline contended with JavaFX for the AppKit run
+  loop, an intermittent deadlock that grew more likely the more previews were open. AWT/Java2D now runs
+  headless (software rasterization only), eliminating the conflict; SVG badges still render.
+- The **Markdown preview table** columns no longer collapse to one character wide (short headers like
+  "Phase"/"Depends on" stacking letter-by-letter); columns now size proportionally to their content.
+- **Thread leak on tab close** — each open file's two background worker threads (Markdown preview +
+  syntax highlighter) are now shut down when its tab closes, instead of lingering for the rest of the
+  session.
 - The **message log** opened from the status bar now toggles: clicking the status message again closes
   the popup.
 - The **Welcome page** now shows a scrollbar (vertical or horizontal) when its content doesn't fit the

@@ -673,6 +673,20 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * Releases this buffer's OS-level resources. Must be called by the controller when the tab is
+     * <em>actually closed</em> (not on a plain tab switch): each buffer owns two daemon executor threads
+     * ({@code markdown-preview} + {@code editor-highlighter}) that the JVM keeps alive until shut down,
+     * so without this they accumulate one pair per opened file. The reactfx subscriptions are on the
+     * buffer's own {@code area}/{@code area2} and die with it on GC, but we drop the preview one eagerly
+     * too. Idempotent. Once disposed the buffer must not be reused.
+     */
+    public void dispose() {
+        unsubscribePreview();
+        previewExecutor.shutdownNow();
+        highlightExecutor.shutdownNow();
+    }
+
     private void scheduleRenderPreview() {
         if (markdownViewMode == MarkdownViewMode.EDITOR) {
             return;

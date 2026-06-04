@@ -940,6 +940,14 @@ public class MainController {
                 if (c.wasRemoved() && !reordering) {
                     mru.removeAll(c.getRemoved());
                     pinned.removeAll(c.getRemoved());
+                    // Release each closed buffer's daemon executor threads (markdown-preview +
+                    // editor-highlighter); otherwise they accumulate one pair per opened file.
+                    for (Tab removed : c.getRemoved()) {
+                        EditorBuffer closed = bufferOf(removed);
+                        if (closed != null) {
+                            closed.dispose();
+                        }
+                    }
                 }
             }
         });
