@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Welcome page** — instead of opening an empty "Untitled" buffer, Editora now shows a VSCode-style
+  Welcome panel in the editor area whenever no files are open (startup with no session to restore, and
+  after you close the last tab). It offers **Start** actions — New File, Open File, then Open Folder as a
+  Project and Clone Git Repository (each shown only when that feature is enabled), and the Command Palette
+  last — each with its configured keybinding shown alongside, plus a **Recent** files list and a footer
+  with the app version, a link to the project home page, and the license. A **Welcome Page** command
+  (`view.welcome`) reopens it on demand even with files open. The **About** dialog now also shows the
+  home-page link, copyright, and license. New CLI flag
+  **`--new-file[=name]`** bypasses it by opening a fresh buffer instead: `--new-file=notes.md` opens an
+  unsaved buffer titled `notes.md` (highlighted by its extension; first save prompts for a location), and
+  bare `--new-file` opens a blank untitled buffer.
+
 - **Personal Notes** — private annotations attached to a file *without modifying the file*, for
   read-only / generated / shared code where you want knowledge stored separately. Three **scopes**
   (word / line / range), an optional **body**, **tags**, and a **status** (active / resolved /

@@ -225,6 +225,12 @@ public class MainController {
     /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
     private boolean checkingExternalChanges;
     private RecentFiles recentFiles;
+    /** Editor-area empty state shown when no file tabs are open (replaces the old empty Untitled buffer). */
+    private WelcomePane welcomePane;
+    /** True when the user explicitly showed the Welcome page (`view.welcome`) while file tabs are open. */
+    private boolean welcomeForced;
+    /** Opens external URLs (the Welcome page's home-page link) in the system browser; set from {@code App}. */
+    private javafx.application.HostServices hostServices;
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
         this.stage = stage;
@@ -285,6 +291,7 @@ public class MainController {
         applyProjectSupport(); // hide project UI when disabled (default)
         applyGitSupport(); // hide Git UI when disabled (default)
         applyNotesSupport(); // hide Personal Notes UI when disabled (default)
+        setupWelcome(); // Welcome empty-state shown when no file tabs are open
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
         autoSaveIdleTimer.setOnFinished(e -> autoSaveAllDirty());
@@ -359,6 +366,66 @@ public class MainController {
         rebuildRecentMenu();
 
         setupButton(clearRecentButton, Icons.trash(), tr("tooltip.clearRecent"));
+    }
+
+    /**
+     * Installs the Welcome empty-state. The {@code tabPane} is wrapped in a {@code StackPane} with the
+     * {@link WelcomePane}; exactly one is visible at a time — the welcome when there are no tabs, the
+     * tabPane otherwise — so closing the last tab (or starting with no session) shows the welcome
+     * instead of an empty Untitled buffer.
+     */
+    private void setupWelcome() {
+        welcomePane = new WelcomePane(registry, keymap, recentFiles, this::openRecent,
+                this::openExternalUrl, this::projectsEnabled, this::gitEnabled);
+        javafx.scene.layout.StackPane editorArea = new javafx.scene.layout.StackPane(tabPane, welcomePane);
+        workspace.setCenter(editorArea);
+        tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
+            while (c.next()) {
+                if (c.wasAdded()) {
+                    welcomeForced = false; // opening/creating a file dismisses a manually-shown welcome
+                }
+            }
+            updateWelcomeVisibility();
+        });
+        updateWelcomeVisibility();
+    }
+
+    /** Sets the {@link javafx.application.HostServices} used to open external links (from {@code App}). */
+    public void setHostServices(javafx.application.HostServices hostServices) {
+        this.hostServices = hostServices;
+    }
+
+    /** Opens a URL in the system browser (no-op if HostServices isn't available). */
+    private void openExternalUrl(String url) {
+        if (hostServices != null && url != null) {
+            hostServices.showDocument(url);
+        }
+    }
+
+    /** Shows the Welcome pane when no file tabs are open (or it was shown manually); otherwise the tabs. */
+    private void updateWelcomeVisibility() {
+        if (welcomePane == null) {
+            return;
+        }
+        boolean show = welcomeForced || tabPane.getTabs().isEmpty();
+        if (show) {
+            welcomePane.refresh(); // pick up current recents + Projects/Git toggles
+        }
+        welcomePane.setVisible(show);
+        welcomePane.setManaged(show);
+        tabPane.setVisible(!show);
+        tabPane.setManaged(!show);
+    }
+
+    /**
+     * `view.welcome`: shows the Welcome page on demand. With files open it toggles a forced overlay (run
+     * again — or open/create a file — to return to editing); with no files it's already showing.
+     */
+    private void showWelcome() {
+        if (!tabPane.getTabs().isEmpty()) {
+            welcomeForced = !welcomeForced;
+        }
+        updateWelcomeVisibility();
     }
 
     /** Builds the keyboard "Jump to…" pickers (recent files, structure) — command-palette-style popups. */
@@ -1671,7 +1738,8 @@ public class MainController {
             }
         }
         if (files.isEmpty()) {
-            addBuffer(new EditorBuffer());
+            // No session to restore: leave the tab area empty so the Welcome pane shows (unless a CLI
+            // action like --new-file or a FILE target opens something in runPendingAfterRestore).
             runPendingAfterRestore();
             return;
         }
@@ -1730,17 +1798,26 @@ public class MainController {
      * (jumping to line:column) and enters Zen, all additive on top of the restored session. With no
      * arguments it's exactly the old {@code openInitialBuffer()}.
      */
-    public void startup(Path projectDir, List<OpenTarget> targets, boolean zen) {
+    public void startup(Path projectDir, List<OpenTarget> targets, boolean zen, String newFile) {
         if (projectDir != null && projectsEnabled()) {
             activateStartupProject(projectDir); // swap to the project's session before it's restored
         }
         // Run CLI actions AFTER the (deferred, pulse-paced) session restore, so a restored caret can't
         // override a requested line:column.
-        pendingAfterRestore = () -> applyStartupTargets(targets, zen);
+        pendingAfterRestore = () -> applyStartupTargets(targets, zen, newFile);
         openInitialBuffer();
     }
 
-    private void applyStartupTargets(List<OpenTarget> targets, boolean zen) {
+    private void applyStartupTargets(List<OpenTarget> targets, boolean zen, String newFile) {
+        if (newFile != null) {
+            // --new-file[=NAME]: open a fresh buffer instead of the Welcome page. "" = blank untitled.
+            EditorBuffer buffer = new EditorBuffer();
+            if (!newFile.isBlank()) {
+                buffer.setDisplayName(newFile);
+            }
+            addBuffer(buffer, true);
+            setStatus(newFile.isBlank() ? tr("status.newBuffer") : tr("status.newFile", newFile));
+        }
         if (targets != null) {
             for (OpenTarget t : targets) {
                 openPath(t.file().toAbsolutePath().normalize());
@@ -2299,6 +2376,9 @@ public class MainController {
     private boolean saveAs(EditorBuffer buffer) {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("dialog.saveAs.title"));
+        if (buffer.getDisplayName() != null) {
+            chooser.setInitialFileName(buffer.getDisplayName()); // suggested name from --new-file=NAME
+        }
         Path file = pathOf(chooser.showSaveDialog(stage));
         if (file == null) {
             return false;
@@ -2912,7 +2992,7 @@ public class MainController {
 
     @FXML
     private void onAbout() {
-        SettingsWindow.showAbout(stage, config.getSettingsFile(), this::openPath);
+        SettingsWindow.showAbout(stage, config.getSettingsFile(), this::openPath, this::openExternalUrl);
     }
 
     private void toggleColumnRuler() {
@@ -4252,6 +4332,11 @@ public class MainController {
                 applyViewSettings(buffer);
             }
         }
+        // If the Welcome pane is showing, rebuild it so its Open Folder / Clone actions track the
+        // Projects/Git toggles that may have just changed.
+        if (welcomePane != null && welcomePane.isVisible()) {
+            welcomePane.refresh();
+        }
     }
 
     /** Pushes the autocomplete settings (master + per-source) to every open buffer. */
@@ -4693,6 +4778,7 @@ public class MainController {
                 () -> stage.setFullScreen(!stage.isFullScreen())));
         registry.register(Command.of("file.clearRecent", this::onClearRecent));
         registry.register(Command.of("help.about", this::onAbout));
+        registry.register(Command.of("view.welcome", this::showWelcome));
         registry.register(Command.of("tool.project",
                 () -> { if (projectsEnabled()) { toolWindows.toggle(projectToolWindow); } }));
         registry.register(Command.of("tool.structure",

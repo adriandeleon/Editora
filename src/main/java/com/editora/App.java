@@ -68,6 +68,7 @@ public class App extends Application {
         BorderPane root = loader.load();
         MainController controller = loader.getController();
         controller.init(stage, config, registry, keymap);
+        controller.setHostServices(getHostServices()); // for the Welcome page's home-page link
 
         // Wrap the UI in a StackPane so a floating overlay (the Zen-mode exit button) can sit on top.
         javafx.scene.layout.StackPane sceneRoot = new javafx.scene.layout.StackPane(root);
@@ -105,7 +106,7 @@ public class App extends Application {
         var raw = getParameters().getRaw();
         String project = projectArg(raw);
         controller.startup(project == null ? null : java.nio.file.Path.of(project),
-                fileTargets(raw), zenFlag(raw));
+                fileTargets(raw), zenFlag(raw), newFileArg(raw));
     }
 
     /**
@@ -194,6 +195,7 @@ public class App extends Application {
                   --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)
                   --dev                 Dev mode: use ~/.editora-dev (separate from production config)
                   --project[=]<dir>     Open <dir> as a project (only when Projects are enabled)
+                  --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named)
                   --zen                 Start in Zen (distraction-free) mode
                   --version, -V         Print the version and exit
                   --help, -h            Print this help and exit
@@ -217,6 +219,31 @@ public class App extends Application {
     /** True if {@code --zen} is present. */
     static boolean zenFlag(java.util.List<String> args) {
         return args != null && args.contains("--zen");
+    }
+
+    /**
+     * The {@code --new-file[=NAME]} request, or {@code null} when not given. Opens a fresh buffer at
+     * startup instead of the Welcome page: {@code ""} (bare {@code --new-file}) ⇒ a blank untitled buffer;
+     * {@code NAME} ({@code --new-file=foo.txt}) ⇒ an unsaved buffer titled NAME (highlighted by its
+     * extension). Pure + unit-testable.
+     */
+    static String newFileArg(java.util.List<String> args) {
+        if (args == null) {
+            return null;
+        }
+        String prefix = "--new-file=";
+        for (String a : args) {
+            if (a == null) {
+                continue;
+            }
+            if (a.startsWith(prefix)) {
+                return a.substring(prefix.length()).trim();
+            }
+            if (a.equals("--new-file")) {
+                return "";
+            }
+        }
+        return null;
     }
 
     private static String optionValue(java.util.List<String> args, String name) {
