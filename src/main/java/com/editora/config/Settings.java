@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -38,6 +38,9 @@ public class Settings {
     /** Personal Notes gutter markers + in-editor highlight; on by default (only effective when
      *  {@link #notesSupport} is on). */
     private boolean showNoteIndicators = true;
+    /** Markdown preview color theme, independent of the app/editor theme: "" = follow app (until first
+     *  toggled), then "light" or "dark". Toggled via the preview's floating sun/moon control. */
+    private String markdownPreviewTheme = "";
     private boolean spellCheck = true;
     /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
     private String spellLanguage = "en_US";
@@ -236,6 +239,15 @@ public class Settings {
 
     public void setSpellLanguage(String spellLanguage) {
         this.spellLanguage = spellLanguage == null || spellLanguage.isBlank() ? "en_US" : spellLanguage;
+    }
+
+    /** "" (follow app theme), "light", or "dark" — the Markdown preview's independent color theme. */
+    public String getMarkdownPreviewTheme() {
+        return markdownPreviewTheme == null ? "" : markdownPreviewTheme;
+    }
+
+    public void setMarkdownPreviewTheme(String markdownPreviewTheme) {
+        this.markdownPreviewTheme = markdownPreviewTheme == null ? "" : markdownPreviewTheme;
     }
 
     public boolean isShowToolbar() {

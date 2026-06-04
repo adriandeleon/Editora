@@ -21,8 +21,10 @@ import com.editora.config.WorkspaceState;
  * backup) is automatic.
  */
 public enum ConfigSchema {
-    // v1 → v2 added the Personal Notes flags (notesSupport, showNoteIndicators) — additive, so identity.
-    SETTINGS(Settings.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
+    // v1 → v2 added the Personal Notes flags; v2 → v3 added markdownPreviewTheme — all additive, so identity.
+    SETTINGS(Settings.SCHEMA_VERSION, 1, Map.of(
+            1, ConfigMigrations::identity,
+            2, ConfigMigrations::identity)),
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of()),

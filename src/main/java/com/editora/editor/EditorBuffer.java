@@ -102,8 +102,16 @@ public class EditorBuffer implements TabContent {
     private ScrollPane previewPane;
     /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
     private StackPane previewHost;
-    /** The preview's −/+ zoom control (overlaid top-left of the preview when previewing). */
+    /** The preview's −/+ zoom + light/dark control (overlaid top-left of the preview when previewing). */
     private HBox zoomControl;
+    /** The preview light/dark toggle button (a sun/moon glyph); reflects the current effective theme. */
+    private Button previewThemeButton;
+    /** Markdown preview color theme: "" (follow app), "light", or "dark" — set by the controller. */
+    private String previewThemeMode = "";
+    /** Whether the app/editor theme is dark (used to resolve "follow app" + the toggle glyph). */
+    private boolean previewAppDark;
+    /** Runs the controller's global preview-theme toggle (injected, like the snippet/completion providers). */
+    private Runnable previewThemeToggle = () -> { };
     /** Preview text zoom factor (1.0 = 100%); scales the rendered preview's base font size. */
     private double previewFontScale = 1.0;
     /** Base preview font size in px (matches {@code .markdown-preview-wrap} in app.css); headings use em. */
@@ -591,6 +599,12 @@ public class EditorBuffer implements TabContent {
             previewPane = new ScrollPane();
             previewPane.setFitToWidth(true);
             previewPane.getStyleClass().add("markdown-preview-pane");
+            // Apply the independent preview theme picked before the pane existed.
+            if ("light".equals(previewThemeMode)) {
+                previewPane.getStyleClass().add("md-light");
+            } else if ("dark".equals(previewThemeMode)) {
+                previewPane.getStyleClass().add("md-dark");
+            }
             // Keyboard scrolling in the preview: Space / PageDown page down, Backspace / PageUp page up
             // (C-v / M-v go through nav.pageDown/Up → pagePreview). Focus it on click so the keys land.
             previewPane.setFocusTraversable(true);
@@ -732,12 +746,58 @@ public class EditorBuffer implements TabContent {
         if (zoomControl == null) {
             Button out = zoomButton("−", this::zoomPreviewOut); // − (minus sign)
             Button in = zoomButton("+", this::zoomPreviewIn);
-            zoomControl = new HBox(out, in);
+            // Light/dark preview-theme toggle (independent of the app theme). Glyph shows what a click
+            // switches TO: a moon while the preview is light, a sun while it's dark.
+            previewThemeButton = zoomButton("", () -> previewThemeToggle.run());
+            updateThemeButtonGlyph();
+            zoomControl = new HBox(out, in, previewThemeButton);
             zoomControl.getStyleClass().add("md-zoom");
             zoomControl.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
             zoomControl.setPickOnBounds(false);
         }
         return zoomControl;
+    }
+
+    /** Injects the controller's global preview light/dark toggle (run by the floating sun/moon button). */
+    public void setPreviewThemeToggle(Runnable toggle) {
+        if (toggle != null) {
+            this.previewThemeToggle = toggle;
+        }
+    }
+
+    /**
+     * Applies the Markdown preview color theme, independent of the app theme. {@code mode} is "" (follow
+     * the app theme), "light", or "dark"; {@code appDark} is the app theme's brightness (for "follow" +
+     * the toggle glyph). Adds {@code md-light}/{@code md-dark} to the preview pane (which redefine the
+     * looked-up colors for the preview subtree) and refreshes the toggle glyph.
+     */
+    public void applyPreviewTheme(String mode, boolean appDark) {
+        this.previewThemeMode = mode == null ? "" : mode;
+        this.previewAppDark = appDark;
+        if (previewPane != null) {
+            previewPane.getStyleClass().removeAll("md-light", "md-dark");
+            if ("light".equals(previewThemeMode)) {
+                previewPane.getStyleClass().add("md-light");
+            } else if ("dark".equals(previewThemeMode)) {
+                previewPane.getStyleClass().add("md-dark");
+            }
+        }
+        updateThemeButtonGlyph();
+    }
+
+    /** Whether the preview currently renders dark: explicit "dark", or "follow app" with a dark app theme. */
+    private boolean previewEffectiveDark() {
+        return "dark".equals(previewThemeMode) || (previewThemeMode.isEmpty() && previewAppDark);
+    }
+
+    private void updateThemeButtonGlyph() {
+        if (previewThemeButton == null) {
+            return;
+        }
+        boolean dark = previewEffectiveDark();
+        previewThemeButton.setText(dark ? "☀" : "☾"); // ☀ (→ light) when dark; ☾ (→ dark) when light
+        previewThemeButton.setTooltip(new javafx.scene.control.Tooltip(
+                tr(dark ? "markdown.previewTheme.toLight" : "markdown.previewTheme.toDark")));
     }
 
     private Button zoomButton(String text, Runnable action) {

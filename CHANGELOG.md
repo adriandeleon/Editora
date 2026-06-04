@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Independent Markdown preview theme** — the rendered preview can now be light or dark independently
+  of the app/editor theme, so you can read docs in light while coding in a dark theme (or vice versa).
+  Toggle it with the floating sun/moon button next to the preview's −/+ zoom controls, or the
+  **Markdown: Toggle Preview Light/Dark** command. The choice is remembered; until you first toggle it,
+  the preview follows the app theme as before.
+
 ### Changed
 
 - **Unsaved-file marker everywhere** — the dot + amber-italic style the tabs use for a file with

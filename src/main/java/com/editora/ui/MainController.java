@@ -1985,6 +1985,8 @@ public class MainController {
                 toggle.sync();
             });
             buffer.setViewModeControl(toggle); // floating Editor/Split/Preview control, top-right
+            buffer.setPreviewThemeToggle(this::toggleMarkdownPreviewTheme); // floating sun/moon control
+            buffer.applyPreviewTheme(config.getSettings().getMarkdownPreviewTheme(), appThemeDark());
         }
         Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
         updateTabMeta(tab, buffer); // replaces the default text/icon with the buffer header (drag handle, pin, dirty)
@@ -3676,6 +3678,38 @@ public class MainController {
         }
     }
 
+    /** Whether the app (AtlantaFX) theme is dark — seeds/decides the "follow app" preview theme + glyph. */
+    private boolean appThemeDark() {
+        return Themes.backgroundFor(config.getSettings().getTheme()).getBrightness() < 0.5;
+    }
+
+    /** Pushes the (global) Markdown preview theme to every open buffer's preview + its toggle glyph. */
+    private void applyMarkdownPreviewTheme() {
+        String mode = config.getSettings().getMarkdownPreviewTheme();
+        boolean appDark = appThemeDark();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null && b.isMarkdown()) {
+                b.applyPreviewTheme(mode, appDark);
+            }
+        }
+    }
+
+    /**
+     * Toggles the Markdown preview between light and dark, independent of the app theme. Flips the current
+     * effective theme (seeded from the app theme the first time), persists it, and re-applies to all
+     * previews. Run by the floating sun/moon control and the {@code view.toggleMarkdownPreviewTheme} command.
+     */
+    private void toggleMarkdownPreviewTheme() {
+        String mode = config.getSettings().getMarkdownPreviewTheme();
+        boolean currentlyDark = "dark".equals(mode) || (mode.isEmpty() && appThemeDark());
+        String next = currentlyDark ? "light" : "dark";
+        config.getSettings().setMarkdownPreviewTheme(next);
+        config.save();
+        applyMarkdownPreviewTheme();
+        setStatus(tr("status.markdownPreviewTheme", tr("markdown.previewTheme." + next)));
+    }
+
     /** Zooms the active Markdown buffer's preview text: {@code >0} in, {@code <0} out, {@code 0} reset. */
     private void markdownZoom(int direction) {
         EditorBuffer b = activeBuffer();
@@ -4376,6 +4410,7 @@ public class MainController {
         applyNotesSupport();
         applyAutoSave();
         applyAutocomplete();
+        applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
@@ -4806,6 +4841,8 @@ public class MainController {
                 () -> markdownZoom(-1)));
         registry.register(Command.of("view.markdownZoomReset",
                 () -> markdownZoom(0)));
+        registry.register(Command.of("view.toggleMarkdownPreviewTheme",
+                this::toggleMarkdownPreviewTheme));
         registry.register(Command.of("view.textZoomIn", () -> textZoom(1)));
         registry.register(Command.of("view.textZoomOut", () -> textZoom(-1)));
         registry.register(Command.of("view.textZoomReset", () -> textZoom(0)));
