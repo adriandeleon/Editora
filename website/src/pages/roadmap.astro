@@ -1,0 +1,128 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { roadmap } from "../lib/roadmap";
+import { repo } from "../lib/editora";
+
+const changelogUrl = `${repo}/blob/master/CHANGELOG.md`;
+const todoUrl = `${repo}/blob/master/TODO.md`;
+const total = roadmap.reduce((n, s) => n + s.items.length, 0);
+const done = roadmap.reduce(
+  (n, s) => n + s.items.filter((i) => i.done).length,
+  0,
+);
+---
+
+<Layout
+  title="Roadmap — Editora"
+  description="What's shipped and what's planned for Editora, grouped by area — generated from the project's TODO."
+>
+  <main class="page">
+    <h1>Roadmap</h1>
+    <p class="lead">
+      What's shipped and what's planned, by area — pulled straight from the
+      project's <a href={todoUrl}>TODO</a>. For everything that just landed, see
+      the <a href={changelogUrl}>changelog</a>.
+    </p>
+
+    <p class="progress-note">
+      <strong>{done}</strong> of <strong>{total}</strong> tracked items shipped.
+    </p>
+
+    <div class="columns">
+      {
+        roadmap.map((s) => (
+          <section class="rm-group">
+            <h2>{s.title}</h2>
+            <ul class="rm-list">
+              {s.items.map((i) => (
+                <li class={i.done ? "done" : "planned"}>
+                  <span class="rm-mark">{i.done ? "✓" : "○"}</span>
+                  <span set:html={i.text} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      }
+    </div>
+  </main>
+</Layout>
+
+<style>
+  .page {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 3rem 1.25rem 2rem;
+  }
+
+  h1 {
+    font-size: 2.4rem;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .lead {
+    color: var(--muted);
+    max-width: 46rem;
+    margin: 0 0 1rem;
+  }
+
+  .progress-note {
+    color: var(--muted);
+    margin: 0 0 2.5rem;
+  }
+
+  .columns {
+    columns: 2;
+    column-gap: 2.5rem;
+  }
+
+  .rm-group {
+    break-inside: avoid;
+    margin-bottom: 2rem;
+  }
+
+  .rm-group h2 {
+    font-size: 1.15rem;
+    margin: 0 0 0.6rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .rm-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .rm-list li {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.3rem 0;
+    font-size: 0.92rem;
+    color: var(--muted);
+  }
+
+  .rm-mark {
+    flex-shrink: 0;
+    font-weight: 700;
+  }
+
+  .rm-list li.done .rm-mark {
+    color: #3fb950;
+  }
+
+  .rm-list li.planned .rm-mark {
+    color: var(--faint);
+  }
+
+  .rm-list li.done {
+    color: var(--text);
+  }
+
+  @media (max-width: 720px) {
+    .columns {
+      columns: 1;
+    }
+  }
+</style>

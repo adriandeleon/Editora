@@ -8,19 +8,67 @@ interface Props {
 
 const {
   title = "Editora — a keyboard-driven programmer's text editor",
-  description = "Editora is a fast, keyboard-driven, cross-platform programmer's text editor built with JDK 25 and JavaFX. Every action is a command, reachable by an Emacs-style keymap or a fuzzy palette.",
+  description = "Editora is a fast, keyboard-driven, cross-platform, open-source programmer's text editor. Every action is a command, reachable by an Emacs-style keymap or a fuzzy palette.",
 } = Astro.props;
 
 const base = import.meta.env.BASE_URL;
 const url = (p: string) => `${base}/${p}`.replace(/\/{2,}/g, "/");
+
+// Absolute URLs for SEO/social tags (Astro.site is set in astro.config).
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const ogImage = new URL("/og-image.png", Astro.site).href;
 
 const nav = [
   { href: url(""), label: "Home" },
   { href: url("commands"), label: "Commands" },
   { href: url("keybindings"), label: "Keybindings" },
   { href: url("screenshots"), label: "Screenshots" },
+  { href: url("roadmap"), label: "Roadmap" },
   { href: repo, label: "GitHub" },
 ];
+
+const footerCols = [
+  {
+    title: "Documentation",
+    links: [
+      { href: url("getting-started"), label: "Getting Started" },
+      { href: url("configuration"), label: "Configuration" },
+      { href: url("commands"), label: "Commands" },
+      { href: url("keybindings"), label: "Keybindings" },
+      { href: url("faq"), label: "FAQ" },
+    ],
+  },
+  {
+    title: "Project",
+    links: [
+      { href: url("roadmap"), label: "Roadmap" },
+      { href: url("screenshots"), label: "Screenshots" },
+      { href: `${repo}/blob/master/CHANGELOG.md`, label: "Changelog" },
+      { href: `${repo}/releases`, label: "Releases" },
+      { href: `${repo}/issues`, label: "Report an issue" },
+    ],
+  },
+  {
+    title: "Open source",
+    links: [
+      { href: repo, label: "GitHub" },
+      { href: `${repo}/blob/master/LICENSE`, label: "MIT License" },
+      { href: `${repo}/blob/master/NOTICE`, label: "Third-party notices" },
+    ],
+  },
+];
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Editora",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "macOS, Windows, Linux",
+  description,
+  url: "https://editora-project.dev",
+  license: `${repo}/blob/master/LICENSE`,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+};
 
 // Highlight the active top-level page.
 const path = Astro.url.pathname.replace(/\/$/, "");
@@ -39,15 +87,35 @@ const isActive = (href: string) => {
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:site_name" content="Editora" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
     <link rel="icon" type="image/png" href={url("favicon.png")} />
+    <link rel="apple-touch-icon" href={url("apple-touch-icon.png")} />
+    <script
+      type="application/ld+json"
+      set:html={JSON.stringify(jsonLd)}
+    />
     <script is:inline>
-      // Apply the saved theme before paint to avoid a flash of the default.
+      // Apply the chosen theme before paint to avoid a flash of the default.
+      // Precedence: saved choice → OS light/dark → Primer Dark default.
       (function () {
         try {
           var t = localStorage.getItem("editora-theme");
+          if (!t) {
+            var light =
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: light)").matches;
+            t = light ? "primer-light" : "primer-dark";
+          }
           if (t && t !== "primer-dark")
             document.documentElement.dataset.theme = t;
         } catch (e) {}
@@ -106,10 +174,29 @@ const isActive = (href: string) => {
     <slot />
 
     <footer class="footer">
-      <p>
-        Editora v{version} — open source.
-        <a href={repo}>Source on GitHub</a> ·
-        <a href={`${repo}/issues`}>Report an issue</a>
+      <div class="footer-cols">
+        <div class="footer-brand">
+          <a class="brand" href={url("")}>
+            <img src={url("editora-icon.svg")} alt="" width="24" height="24" />
+            <span>Editora</span>
+          </a>
+          <p class="footer-tag">
+            A keyboard-driven, cross-platform programmer's text editor.
+          </p>
+        </div>
+        {
+          footerCols.map((col) => (
+            <nav class="footer-col">
+              <h3>{col.title}</h3>
+              {col.links.map((l) => (
+                <a href={l.href}>{l.label}</a>
+              ))}
+            </nav>
+          ))
+        }
+      </div>
+      <p class="footer-base">
+        Editora v{version} — free &amp; open source under the MIT License.
       </p>
     </footer>
   </body>
@@ -422,13 +509,139 @@ const isActive = (href: string) => {
   }
 
   .footer {
+    border-top: 1px solid var(--border);
+    margin-top: 2rem;
+  }
+
+  .footer-cols {
     max-width: var(--maxw);
     margin: 0 auto;
-    padding: 2.5rem 1.25rem 4rem;
-    text-align: center;
+    padding: 3rem 1.25rem 2rem;
+    display: grid;
+    grid-template-columns: 1.6fr 1fr 1fr 1fr;
+    gap: 2rem;
+  }
+
+  .footer-tag {
     color: var(--muted);
     font-size: 0.9rem;
-    border-top: 1px solid var(--border);
+    margin: 0.75rem 0 0;
+    max-width: 18rem;
+  }
+
+  .footer-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .footer-col h3 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+    margin: 0 0 0.25rem;
+  }
+
+  .footer-col a {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .footer-col a:hover {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .footer-base {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 1.25rem;
+    border-top: 1px solid var(--border-soft);
+    color: var(--faint);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  /* Shared docs/prose pages */
+  .doc {
+    max-width: 50rem;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 2rem;
+  }
+  .doc h1 {
+    font-size: 2.4rem;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+  .doc .lead {
+    color: var(--muted);
+    font-size: 1.05rem;
+    margin: 0 0 2.5rem;
+  }
+  .doc h2 {
+    font-size: 1.4rem;
+    margin: 2.5rem 0 0.75rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .doc h3 {
+    font-size: 1.1rem;
+    margin: 1.75rem 0 0.5rem;
+  }
+  .doc p,
+  .doc li {
+    color: var(--muted);
+  }
+  .doc p {
+    margin: 0.75rem 0;
+  }
+  .doc ul {
+    padding-left: 1.25rem;
+  }
+  .doc li {
+    margin: 0.4rem 0;
+  }
+  .doc strong {
+    color: var(--text);
+  }
+  .doc pre {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    overflow-x: auto;
+    line-height: 1.6;
+  }
+  .doc pre code {
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+  .doc table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  .doc th,
+  .doc td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+  }
+  .doc th {
+    color: var(--text);
+    border-bottom-color: var(--border);
+  }
+  .doc td {
+    color: var(--muted);
+  }
+
+  @media (max-width: 700px) {
+    .footer-cols {
+      grid-template-columns: 1fr 1fr;
+    }
   }
 
   @media (max-width: 600px) {

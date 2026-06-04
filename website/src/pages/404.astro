@@ -1,0 +1,80 @@
+---
+import Layout from "../layouts/Layout.astro";
+const base = import.meta.env.BASE_URL;
+const url = (p: string) => `${base}/${p}`.replace(/\/{2,}/g, "/");
+---
+
+<Layout title="Page not found — Editora" description="That page doesn't exist.">
+  <main class="page">
+    <p class="code">404</p>
+    <h1>Page not found</h1>
+    <p class="lead">
+      That buffer doesn't exist — maybe it was never saved. Try one of these:
+    </p>
+    <div class="links">
+      <a class="btn btn-primary" href={url("")}>Home</a>
+      <a class="btn btn-ghost" href={url("commands")}>Commands</a>
+      <a class="btn btn-ghost" href={url("keybindings")}>Keybindings</a>
+      <a class="btn btn-ghost" href={url("roadmap")}>Roadmap</a>
+    </div>
+  </main>
+</Layout>
+
+<style>
+  .page {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 6rem 1.25rem;
+    text-align: center;
+  }
+
+  .code {
+    font-family: var(--mono);
+    font-size: 4rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin: 0;
+    line-height: 1;
+  }
+
+  h1 {
+    font-size: 2rem;
+    margin: 0.5rem 0 0.75rem;
+    letter-spacing: -0.01em;
+  }
+
+  .lead {
+    color: var(--muted);
+    margin: 0 0 2rem;
+  }
+
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 0.6rem 1.3rem;
+    border-radius: 999px;
+    font-weight: 600;
+    border: 1px solid transparent;
+  }
+
+  .btn:hover {
+    text-decoration: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .btn-ghost {
+    border-color: var(--border);
+    color: var(--text);
+    background: var(--bg-soft);
+  }
+</style>

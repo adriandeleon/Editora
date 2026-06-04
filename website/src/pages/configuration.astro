@@ -1,0 +1,94 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { repo } from "../lib/editora";
+const base = import.meta.env.BASE_URL;
+const url = (p: string) => `${base}/${p}`.replace(/\/{2,}/g, "/");
+---
+
+<Layout
+  title="Configuration — Editora"
+  description="Where Editora stores config, the settings.toml preferences file, keybinding overrides, snippets, and dictionaries."
+>
+  <main class="doc">
+    <h1>Configuration</h1>
+    <p class="lead">
+      Editora keeps preferences and session state in a config folder. Most
+      settings have a UI in the Settings window; everything is plain text you can
+      edit by hand.
+    </p>
+
+    <h2>Config directory</h2>
+    <p>The config folder is chosen by this precedence:</p>
+    <table>
+      <thead>
+        <tr><th>Source</th><th>Location</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>--config-dir &lt;path&gt;</code> (CLI)</td><td>that path</td></tr>
+        <tr><td><code>EDITORA_CONFIG_DIR</code> (env var)</td><td>that path</td></tr>
+        <tr><td><code>--dev</code> flag</td><td><code>~/.editora-dev/</code></td></tr>
+        <tr><td>default</td><td><code>~/.editora/</code></td></tr>
+      </tbody>
+    </table>
+    <p>
+      Use <code>--dev</code> to run a development instance that never touches your
+      everyday settings or session.
+    </p>
+
+    <h2>Files</h2>
+    <table>
+      <thead>
+        <tr><th>File</th><th>Holds</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>settings.toml</code></td><td>Preferences: font, theme, keymap, tab size, view options, auto-save, keybinding overrides</td></tr>
+        <tr><td><code>workspace-state.json</code></td><td>Session: open files, collapsed folds, tool-window layout, window geometry</td></tr>
+        <tr><td><code>recent-files.json</code></td><td>Recent files list</td></tr>
+        <tr><td><code>bookmarks.json</code></td><td>Bookmarks (scoped per project)</td></tr>
+        <tr><td><code>projects/&lt;id&gt;.json</code></td><td>Each project's saved session</td></tr>
+        <tr><td><code>dictionary.txt</code></td><td>Your added spell-check words</td></tr>
+        <tr><td><code>snippets/&lt;lang&gt;.json</code></td><td>Your user snippets (override the bundled ones)</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Preferences (settings.toml)</h2>
+    <p>
+      Edit in the Settings window, or directly. Common keys (font, theme, keymap,
+      tab size, view toggles, auto-save mode) are written as TOML, for example:
+    </p>
+    <pre><code>fontFamily = "JetBrains Mono"
+fontSize = 14
+theme = "Primer Dark"
+tabSize = 4
+autoSave = "afterDelay"</code></pre>
+    <p>
+      The live path to your settings file is shown in <strong>About Editora</strong>
+      (it reflects <code>--dev</code> / <code>--config-dir</code>).
+    </p>
+
+    <h2>Keybindings</h2>
+    <p>
+      Editora ships an Emacs-style keymap (see <a href={url("keybindings")}>the
+      reference</a>). User overrides go in <code>settings.toml</code> and layer on
+      top of the defaults, so you only specify what you change.
+    </p>
+
+    <h2>Snippets &amp; dictionaries</h2>
+    <ul>
+      <li>
+        Add snippets in <code>snippets/&lt;language&gt;.json</code> (or
+        <code>global.json</code>) — VS Code / TextMate syntax. "Snippet: Edit User
+        Snippets…" opens the file; "Snippet: Reload Snippets" picks up changes.
+      </li>
+      <li>
+        Spell-check: choose a dictionary per file with "Spell Check: Set Language…"
+        (English, Spanish, French ship in); "Add to Dictionary" appends to
+        <code>dictionary.txt</code>.
+      </li>
+    </ul>
+
+    <p>
+      Full details live in the <a href={`${repo}/blob/master/README.md`}>README</a>.
+    </p>
+  </main>
+</Layout>
