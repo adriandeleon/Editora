@@ -121,6 +121,7 @@ public class SettingsWindow {
     private CheckBox statusBarCheck;
     private CheckBox tabBarCheck;
     private CheckBox breadcrumbCheck;
+    private CheckBox toolStripeCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
     private Label gitStatusLabel;
@@ -402,6 +403,7 @@ public class SettingsWindow {
         statusBarCheck = viewCheck(tr("settings.showStatusBar"), Settings::setShowStatusBar);
         tabBarCheck = viewCheck(tr("settings.showTabBar"), Settings::setShowTabBar);
         breadcrumbCheck = viewCheck(tr("settings.showBreadcrumb"), Settings::setShowBreadcrumb);
+        toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
 
         projectsCheck = new CheckBox(tr("settings.enableProjects"));
         projectsCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -608,6 +610,10 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.toolWindows"));
         Label hint = note(tr("settings.toolWindows.hint"));
         p.getChildren().add(hint);
+
+        // Show/hide the tool stripes (UI only). Takes precedence over the per-window toggles below.
+        p.getChildren().add(toolStripeCheck);
+        p.getChildren().add(note(tr("settings.toolWindows.stripeNote")));
 
         List<Runnable> moveRefreshers = new ArrayList<>();
         Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
@@ -1001,6 +1007,7 @@ public class SettingsWindow {
             statusBarCheck.setSelected(settings.isShowStatusBar());
             tabBarCheck.setSelected(settings.isShowTabBar());
             breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
+            toolStripeCheck.setSelected(settings.isShowToolStripe());
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
@@ -1103,6 +1110,20 @@ public class SettingsWindow {
         }
     }
 
+    /** Re-reads the "show tool stripe" checkbox from settings (used after the palette toggle command). */
+    public void syncToolStripeCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            toolStripeCheck.setSelected(config.getSettings().isShowToolStripe());
+        } finally {
+            loading = prev;
+        }
+    }
+
     /** Re-syncs the autocomplete checkboxes to the current settings (used after a palette toggle). */
     public void syncAutocompleteChecks() {
         if (!built) {
@@ -1157,6 +1178,7 @@ public class SettingsWindow {
             statusBarCheck.setSelected(s.isShowStatusBar());
             tabBarCheck.setSelected(s.isShowTabBar());
             breadcrumbCheck.setSelected(s.isShowBreadcrumb());
+            toolStripeCheck.setSelected(s.isShowToolStripe());
             projectsCheck.setSelected(s.isProjectSupport());
         } finally {
             loading = prev;

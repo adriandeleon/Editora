@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Show/hide the tool stripe** — a new "Show tool stripe" setting (Settings → Tool Windows) and the
+  `View: Toggle Tool Stripe` command (command palette) hide the side icon bars. This is UI only — tool
+  windows still open via their keyboard shortcuts (e.g. `M-1`) and the command palette. Hiding the
+  stripe takes precedence over each tool window's individual visibility toggle.
+
 - **Build commit in dev mode** — when running with `--dev`, the About dialog and the Welcome page now
   show the short git commit the app is running from, so it's easy to tell which build you're testing.
   Not shown in normal (non-dev) runs.
