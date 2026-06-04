@@ -204,7 +204,7 @@ or cycle the mode with `C-c a`. It only saves files that already have a path.
 
 ## License
 
-[MIT](LICENSE) © 2026 Adrian De Leon
+[MIT](LICENSE) © 2026 Adrián Arturo De León Saldivar
 
 Editora bundles third-party libraries and TextMate grammars under their own
 licenses. See [NOTICE](NOTICE) for attributions.
