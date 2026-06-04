@@ -17,6 +17,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.stage.Window;
 
 /**
  * The bottom status bar: a transient "echo area" message on the left (driven by
@@ -35,6 +36,9 @@ public final class StatusBar extends HBox {
     private final Supplier<Settings> settings;
 
     private final Label echo = new Label(tr("statusbar.ready"));
+    /** In-memory, session-only history of echo messages, shown by clicking the echo area. */
+    private final MessageLog messageLog = new MessageLog();
+    private final MessageLogPopup messageLogPopup = new MessageLogPopup();
     /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
     private final Label position = segment("nav.goToLine", tr("statusbar.tip.goToLine"));
@@ -59,7 +63,9 @@ public final class StatusBar extends HBox {
         this.settings = settings;
 
         getStyleClass().add("status-bar");
-        echo.getStyleClass().add("status-message");
+        echo.getStyleClass().addAll("status-message", "status-segment-clickable");
+        echo.setTooltip(new Tooltip(tr("statusbar.tip.messageLog")));
+        echo.setOnMouseClicked(e -> registry.run("view.messageLog"));
         size.getStyleClass().add("status-segment");
         size.setTooltip(new Tooltip(tr("statusbar.tip.fileSize")));
         encoding.getStyleClass().add("status-segment");
@@ -107,9 +113,18 @@ public final class StatusBar extends HBox {
         return label;
     }
 
-    /** Sets the transient echo-area message (called by MainController.setStatus). */
+    /** Sets the transient echo-area message (called by MainController.setStatus) and logs it for the session. */
     public void setMessage(String message) {
         echo.setText(message == null ? "" : message);
+        messageLog.add(message); // no-ops for null/blank (a blank clears the echo)
+    }
+
+    /** Opens the session message-log popup, anchored just above the echo area. */
+    public void showMessageLog() {
+        Window owner = getScene() == null ? null : getScene().getWindow();
+        if (owner != null) {
+            messageLogPopup.show(owner, echo, messageLog);
+        }
     }
 
     /** The Git branch segment node, so the branch dropdown can anchor itself to it. */

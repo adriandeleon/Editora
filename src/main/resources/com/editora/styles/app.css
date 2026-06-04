@@ -660,6 +660,58 @@
     -fx-border-width: 1 0 0 0;
 }
 
+/* Session message-log popup (MessageLogPopup): the status-bar echo history, newest first. */
+.message-log {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-padding: 8;
+    -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
+}
+.message-log-header {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 2 4 2 4;
+}
+.message-log-list {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+}
+.message-log-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-padding: 2 4 2 4;
+}
+/* Selected (and copyable) rows get the accent highlight. */
+.message-log-list .list-cell:filled:selected {
+    -fx-background-color: -color-accent-emphasis;
+}
+.message-log-list .list-cell:filled:selected .message-log-time,
+.message-log-list .list-cell:filled:selected .message-log-text {
+    -fx-text-fill: -color-fg-emphasis;
+}
+/* Small, muted, monospace time indicator so timestamps line up in a column. */
+.message-log-time {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-family: "JetBrains Mono", "monospace";
+    -fx-font-size: 11px;
+}
+.message-log-text {
+    -fx-text-fill: -color-fg-default;
+}
+.message-log-empty {
+    -fx-text-fill: -color-fg-muted;
+}
+.message-log-footer {
+    -fx-padding: 6 4 2 4;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+.message-log-hint {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+
 /* Editor right-click menu: use the UI font, not the editor's monospace inline style. */
 .editor-context-menu,
 .editor-context-menu .menu-item,
