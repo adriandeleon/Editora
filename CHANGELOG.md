@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Unsaved-file marker everywhere** — the dot + amber-italic style the tabs use for a file with
+  unsaved changes now also appears in the **Switcher**, the **Open Files** picker, and the **Project**
+  tool window tree, so every list of open files reads consistently. The Project tool window also
+  refreshes when files/folders change outside Editora (on window focus), keeping its expanded folders
+  and selection.
+
 - **Markdown preview readability** — the rendered preview now lays its content out as a centered,
   width-capped column (GitHub-style) with more generous margins and vertical spacing (line height,
   space between blocks and list items, heading separation), instead of stretching edge-to-edge across

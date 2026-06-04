@@ -408,6 +408,9 @@
 /* Open file with unsaved changes — mirrors the dirty-tab treatment (amber italic + "• " prefix). */
 .project-tree .modified-file { -fx-text-fill: #bf8700; -fx-font-style: italic; }
 .project-tree .modified-file .toolbar-icon { -fx-fill: #bf8700; }
+/* Unsaved/dirty buffer name in the pickers (Open Files palette + Switcher) — mirrors the dirty-tab
+   treatment (amber italic) so every surface that lists open files reads consistently. */
+.dirty-name { -fx-text-fill: #bf8700; -fx-font-style: italic; }
 
 /* IntelliJ-style tool window stripes + panels. */
 .tool-stripe {

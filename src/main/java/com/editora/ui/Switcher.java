@@ -68,7 +68,13 @@ public class Switcher {
                 }
                 // userData may be a non-buffer TabContent (the Welcome tab) — instanceof, not a raw cast.
                 EditorBuffer buffer = item.getUserData() instanceof EditorBuffer b ? b : null;
-                label.setText(buffer != null ? buffer.getTitle() : item.getText());
+                boolean dirty = buffer != null && buffer.isDirty();
+                String name = buffer != null ? buffer.getTitle() : item.getText();
+                label.setText((dirty ? "• " : "") + name); // unsaved marker, like the tab strip
+                label.getStyleClass().remove("dirty-name");
+                if (dirty) {
+                    label.getStyleClass().add("dirty-name"); // amber/italic, like a dirty tab
+                }
                 setGraphic(label);
                 setText(null);
             }

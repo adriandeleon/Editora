@@ -45,6 +45,8 @@ public class QuickOpen<T> {
     /** Text the typed query is matched against; defaults to {@link #label} (the displayed text). */
     private final Function<T, String> searchKey;
     private final Consumer<T> onChoose;
+    /** Optional per-item CSS class applied to the row's title label (e.g. "dirty-name"); null = none. */
+    private Function<T, String> itemStyleClass;
 
     private final Popup popup = new Popup();
     private final TextField input = new TextField();
@@ -72,6 +74,11 @@ public class QuickOpen<T> {
         this.searchKey = searchKey == null ? label : searchKey;
         this.onChoose = onChoose;
         build(title, prompt);
+    }
+
+    /** Sets a per-item CSS class applied to the row's title label (e.g. "dirty-name" for unsaved files). */
+    public void setItemStyleClass(Function<T, String> itemStyleClass) {
+        this.itemStyleClass = itemStyleClass;
     }
 
     private void build(String title, String prompt) {
@@ -211,6 +218,7 @@ public class QuickOpen<T> {
         private final Label title = new Label();
         private final Label sub = new Label();
         private final HBox box = new HBox(10, title, spacer(), sub);
+        private String appliedClass;
 
         ItemCell() {
             box.setAlignment(Pos.CENTER_LEFT);
@@ -237,6 +245,13 @@ public class QuickOpen<T> {
                 return;
             }
             title.setText(label.apply(item));
+            if (appliedClass != null) {
+                title.getStyleClass().remove(appliedClass);
+            }
+            appliedClass = itemStyleClass == null ? null : itemStyleClass.apply(item);
+            if (appliedClass != null && !title.getStyleClass().contains(appliedClass)) {
+                title.getStyleClass().add(appliedClass);
+            }
             String d = detail == null ? null : detail.apply(item);
             sub.setText(d == null ? "" : d);
             setGraphic(box);
