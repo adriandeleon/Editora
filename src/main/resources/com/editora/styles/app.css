@@ -339,6 +339,30 @@
 .markdown-preview .md-table-header { -fx-background-color: -color-bg-subtle; }
 .markdown-preview .md-table-header .md-text { -fx-font-weight: bold; }
 
+/* Independent preview color theme (toggled by the floating sun/moon control, persisted, separate from
+   the app/editor theme). When "md-light"/"md-dark" is set on the preview pane, it redefines the
+   looked-up colors for the whole preview subtree — so all the .markdown-preview/.md-* rules above
+   re-resolve to a fixed GitHub-style light or dark palette regardless of the app theme. No class =
+   follow the app theme (the inherited AtlantaFX colors), the default until the user first toggles. */
+.markdown-preview-pane.md-light {
+    -color-bg-default: #ffffff;
+    -color-fg-default: #1f2328;
+    -color-fg-muted: #656d76;
+    -color-bg-subtle: #f6f8fa;
+    -color-border-muted: #d0d7de;
+    -color-accent-fg: #0969da;
+    -fx-background: #ffffff;
+}
+.markdown-preview-pane.md-dark {
+    -color-bg-default: #0d1117;
+    -color-fg-default: #e6edf3;
+    -color-fg-muted: #8b949e;
+    -color-bg-subtle: #161b22;
+    -color-border-muted: #30363d;
+    -color-accent-fg: #2f81f7;
+    -fx-background: #0d1117;
+}
+
 /* The floating Editor/Split/Preview control, top-right of a Markdown editor. */
 .md-viewmode-toggle {
     -fx-background-color: -color-bg-subtle;
