@@ -39,6 +39,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
@@ -190,9 +191,19 @@ public final class MarkdownRenderer {
         return box;
     }
 
+    /** A table column never narrower/wider than this many "characters" of weight (keeps short columns
+     *  readable and stops one long cell from starving the rest). */
+    private static final int MIN_COL_WEIGHT = 6;
+    private static final int MAX_COL_WEIGHT = 40;
+
     private static Node renderTable(TableBlock tb, Path baseDir) {
         GridPane grid = new GridPane();
         grid.getStyleClass().add("md-table");
+        // Fill the preview column so the percent-based ColumnConstraints below have a definite width to
+        // distribute; without constraints a long cell forces the others to collapse to ~1 char wide.
+        grid.setMaxWidth(Double.MAX_VALUE);
+
+        List<Integer> colWeights = new ArrayList<>();
         int row = 0;
         for (org.commonmark.node.Node section = tb.getFirstChild(); section != null; section = section.getNext()) {
             boolean header = section instanceof org.commonmark.ext.gfm.tables.TableHead;
@@ -207,18 +218,54 @@ public final class MarkdownRenderer {
                     }
                     TextFlow tf = inlineFlow(cell, baseDir);
                     tf.getStyleClass().add(header ? "md-table-header" : "md-table-cell");
+                    tf.setMaxWidth(Double.MAX_VALUE);
                     if (cell.getAlignment() == TableCell.Alignment.CENTER) {
                         tf.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
                     } else if (cell.getAlignment() == TableCell.Alignment.RIGHT) {
                         tf.setTextAlignment(javafx.scene.text.TextAlignment.RIGHT);
                     }
                     grid.add(tf, col, row);
+                    int len = cellTextLength(cell);
+                    if (col < colWeights.size()) {
+                        colWeights.set(col, Math.max(colWeights.get(col), len));
+                    } else {
+                        colWeights.add(len);
+                    }
                     col++;
                 }
                 row++;
             }
         }
+
+        int cols = colWeights.size();
+        double total = 0;
+        double[] clamped = new double[cols];
+        for (int i = 0; i < cols; i++) {
+            clamped[i] = Math.min(Math.max(colWeights.get(i), MIN_COL_WEIGHT), MAX_COL_WEIGHT);
+            total += clamped[i];
+        }
+        for (int i = 0; i < cols; i++) {
+            ColumnConstraints cc = new ColumnConstraints();
+            cc.setPercentWidth(total > 0 ? clamped[i] / total * 100.0 : 100.0 / Math.max(1, cols));
+            cc.setHgrow(Priority.ALWAYS);
+            grid.getColumnConstraints().add(cc);
+        }
         return grid;
+    }
+
+    /** Total length of the cell's plain text (across inline markup), used to weight column widths. */
+    private static int cellTextLength(org.commonmark.node.Node node) {
+        int len = 0;
+        for (org.commonmark.node.Node n = node.getFirstChild(); n != null; n = n.getNext()) {
+            if (n instanceof org.commonmark.node.Text t) {
+                len += t.getLiteral().length();
+            } else if (n instanceof Code c) {
+                len += c.getLiteral().length();
+            } else {
+                len += cellTextLength(n);
+            }
+        }
+        return len;
     }
 
     private static Node codeBlock(String literal) {
