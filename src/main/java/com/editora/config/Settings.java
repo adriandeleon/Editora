@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -53,6 +53,9 @@ public class Settings {
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
     private boolean showBreadcrumb = false;
+    /** Show the tool stripes (the side icon bars). UI only — tool windows still open via keys/palette.
+     *  Hiding the stripe takes precedence over each tool window's individual visibility. */
+    private boolean showToolStripe = true;
     /** Auto-save mode: "off" | "afterDelay" | "onFocusChange" (parsed leniently; unknown ⇒ off). */
     private String autoSave = "off";
     private int autoSaveDelayMillis = 1000;
@@ -280,6 +283,14 @@ public class Settings {
 
     public void setShowBreadcrumb(boolean showBreadcrumb) {
         this.showBreadcrumb = showBreadcrumb;
+    }
+
+    public boolean isShowToolStripe() {
+        return showToolStripe;
+    }
+
+    public void setShowToolStripe(boolean showToolStripe) {
+        this.showToolStripe = showToolStripe;
     }
 
     public String getAutoSave() {

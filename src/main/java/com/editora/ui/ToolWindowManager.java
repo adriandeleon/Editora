@@ -62,6 +62,8 @@ public class ToolWindowManager {
 
     /** When true (Zen mode), all side stripes are force-hidden regardless of their buttons. */
     private boolean zenHidesStripes;
+    /** User setting: when false the tool stripes are hidden (UI only — windows still open via keys/palette). */
+    private boolean stripesEnabled = true;
 
     public ToolWindowManager(BorderPane workspace, Node editorArea, ConfigManager config, KeymapManager keymap) {
         this.config = config;
@@ -344,7 +346,7 @@ public class ToolWindowManager {
     }
 
     private void setStripeShown(Pane stripe) {
-        boolean shown = !zenHidesStripes && !stripe.getChildren().isEmpty();
+        boolean shown = stripesEnabled && !zenHidesStripes && !stripe.getChildren().isEmpty();
         stripe.setVisible(shown);
         stripe.setManaged(shown);
     }
@@ -352,6 +354,16 @@ public class ToolWindowManager {
     /** Zen mode: hide all three side stripes (without touching per-window visibility) or restore them. */
     public void setZenStripesHidden(boolean hidden) {
         zenHidesStripes = hidden;
+        updateStripeVisibility();
+    }
+
+    /**
+     * User setting (Settings → Tool Windows): show or hide the tool stripes. This is UI-only and takes
+     * precedence over each tool window's individual visibility — tool windows still open via their
+     * keybinding (e.g. {@code M-1}) or the command palette while the stripes are hidden.
+     */
+    public void setStripesEnabled(boolean enabled) {
+        stripesEnabled = enabled;
         updateStripeVisibility();
     }
 

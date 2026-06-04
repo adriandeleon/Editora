@@ -322,6 +322,8 @@ public class MainController {
             tabPane.getStyleClass().add("no-tab-header");
         }
         breadcrumb.setEnabled(s.isShowBreadcrumb());
+        // Tool stripes (UI only): hidden stripes still let tool windows open via keybinding/palette.
+        toolWindows.setStripesEnabled(s.isShowToolStripe());
         updateZenButton();
     }
 
@@ -3068,6 +3070,16 @@ public class MainController {
         setStatus(tr("status.toggle.ruler", tr(s.isShowColumnRuler() ? "common.on" : "common.off")));
     }
 
+    /** Shows/hides the tool stripes (UI only; tool windows still open via keybinding/palette). */
+    private void toggleToolStripe() {
+        Settings s = config.getSettings();
+        s.setShowToolStripe(!s.isShowToolStripe());
+        config.save();
+        applyViewSettingsToAllBuffers(s); // → applyChromeVisibility → toolWindows.setStripesEnabled
+        settingsWindow.syncToolStripeCheck();
+        setStatus(tr("status.toggle.toolStripe", tr(s.isShowToolStripe() ? "common.on" : "common.off")));
+    }
+
     private void toggleLineHighlight() {
         Settings s = config.getSettings();
         s.setHighlightCurrentLine(!s.isHighlightCurrentLine());
@@ -4781,6 +4793,8 @@ public class MainController {
                 this::chooseEditorTheme));
         registry.register(Command.of("view.toggleColumnRuler",
                 this::toggleColumnRuler));
+        registry.register(Command.of("view.toggleToolStripe",
+                this::toggleToolStripe));
         registry.register(Command.of("view.toggleLineHighlight",
                 this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers",
