@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Build commit in dev mode** — when running with `--dev`, the About dialog and the Welcome page now
+  show the short git commit the app is running from, so it's easy to tell which build you're testing.
+  Not shown in normal (non-dev) runs.
+
 - **Independent Markdown preview theme** — the rendered preview can now be light or dark independently
   of the app/editor theme, so you can read docs in light while coding in a dark theme (or vice versa).
   Toggle it with the floating sun/moon button next to the preview's −/+ zoom controls, or the

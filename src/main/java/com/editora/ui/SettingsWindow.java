@@ -1223,7 +1223,7 @@ public class SettingsWindow {
      * The settings-file path is a link that opens that file in the editor via {@code openFile}.
      */
     public static void showAbout(Window owner, Path settingsFile, Consumer<Path> openFile,
-                                 Consumer<String> openUrl) {
+                                 Consumer<String> openUrl, String commit) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
         alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));
@@ -1236,10 +1236,13 @@ public class SettingsWindow {
             alert.setGraphic(logo);
         }
 
+        // Build commit shown only when provided (dev builds); empty/null in production.
+        String commitLine = commit == null || commit.isBlank() ? "" : tr("about.commit", commit) + "\n";
         Label info = new Label(tr("about.tagline") + "\n\n"
                 + "Java " + System.getProperty("java.version", "?") + "\n"
                 + "JavaFX " + System.getProperty("javafx.runtime.version", "?") + "\n"
-                + tr("about.built", com.editora.AppInfo.buildTime()) + "\n\n"
+                + tr("about.built", com.editora.AppInfo.buildTime()) + "\n"
+                + commitLine + "\n"
                 + com.editora.AppInfo.COPYRIGHT + "\n"
                 + com.editora.AppInfo.LICENSE);
 
