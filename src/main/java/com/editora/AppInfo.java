@@ -42,4 +42,37 @@ public final class AppInfo {
     public static String versionLine() {
         return NAME + " " + VERSION + " (built " + buildTime() + ")";
     }
+
+    /** {@code null} until first computed (then cached, possibly to {@code ""} when unavailable). */
+    private static String gitCommit;
+
+    /**
+     * The short git commit of the working tree, or {@code ""} when it can't be determined (no {@code git}
+     * on PATH, not a checkout, etc.). Read once at runtime via {@code git rev-parse}, then cached. Only
+     * meant for dev builds (which run from the repo): it's surfaced in About/Welcome under {@code --dev}
+     * only. Never throws.
+     */
+    public static String gitCommit() {
+        if (gitCommit == null) {
+            gitCommit = computeGitCommit();
+        }
+        return gitCommit;
+    }
+
+    private static String computeGitCommit() {
+        try {
+            Process p = new ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+                    .redirectErrorStream(true)
+                    .start();
+            String out = new String(p.getInputStream().readAllBytes()).trim();
+            if (!p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return "";
+            }
+            // A valid short hash is hex; anything else (e.g. "fatal: not a git repository") → none.
+            return p.exitValue() == 0 && out.matches("[0-9a-f]{4,40}") ? out : "";
+        } catch (Exception e) {
+            return "";
+        }
+    }
 }

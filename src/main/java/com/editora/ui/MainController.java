@@ -379,7 +379,8 @@ public class MainController {
      */
     private void setupWelcome() {
         welcomePane = new WelcomePane(registry, keymap, recentFiles, this::openRecent,
-                this::openExternalUrl, this::projectsEnabled, this::gitEnabled);
+                this::openExternalUrl, this::projectsEnabled, this::gitEnabled,
+                config.isDev() ? com.editora.AppInfo.gitCommit() : ""); // build commit shown only in --dev
     }
 
     /**
@@ -3041,7 +3042,8 @@ public class MainController {
 
     @FXML
     private void onAbout() {
-        SettingsWindow.showAbout(stage, config.getSettingsFile(), this::openPath, this::openExternalUrl);
+        SettingsWindow.showAbout(stage, config.getSettingsFile(), this::openPath, this::openExternalUrl,
+                config.isDev() ? com.editora.AppInfo.gitCommit() : ""); // build commit shown only in --dev
     }
 
     private void toggleColumnRuler() {

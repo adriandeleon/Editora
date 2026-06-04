@@ -43,12 +43,14 @@ public final class WelcomePane extends Region implements TabContent {
     private final Consumer<String> openUrl;
     private final BooleanSupplier projectsEnabled;
     private final BooleanSupplier gitEnabled;
+    /** Short build commit shown in the footer for dev builds; "" hides it (production). */
+    private final String devCommit;
 
     private final VBox content = new VBox();
 
     public WelcomePane(CommandRegistry registry, KeymapManager keymap, RecentFiles recentFiles,
                        Consumer<Path> onOpenRecent, Consumer<String> openUrl,
-                       BooleanSupplier projectsEnabled, BooleanSupplier gitEnabled) {
+                       BooleanSupplier projectsEnabled, BooleanSupplier gitEnabled, String devCommit) {
         this.registry = registry;
         this.keymap = keymap;
         this.recentFiles = recentFiles;
@@ -56,6 +58,7 @@ public final class WelcomePane extends Region implements TabContent {
         this.openUrl = openUrl;
         this.projectsEnabled = projectsEnabled;
         this.gitEnabled = gitEnabled;
+        this.devCommit = devCommit == null ? "" : devCommit;
 
         getStyleClass().add("welcome-pane");
         content.getStyleClass().add("welcome-content");
@@ -116,7 +119,14 @@ public final class WelcomePane extends Region implements TabContent {
         Label legal = new Label(AppInfo.LICENSE); // license only here; the author/copyright lives in About
         legal.getStyleClass().add("welcome-footer");
 
-        VBox box = new VBox(4, line1, legal);
+        VBox box = new VBox(4, line1);
+        // Build commit on its own line below the version/URL line — dev builds only ("" otherwise).
+        if (!devCommit.isBlank()) {
+            Label commit = new Label(tr("about.commit", devCommit));
+            commit.getStyleClass().add("welcome-footer");
+            box.getChildren().add(commit);
+        }
+        box.getChildren().add(legal);
         box.getStyleClass().add("welcome-footer-row");
         return box;
     }
