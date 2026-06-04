@@ -69,7 +69,7 @@ public class Switcher {
                 // userData may be a non-buffer TabContent (the Welcome tab) — instanceof, not a raw cast.
                 EditorBuffer buffer = item.getUserData() instanceof EditorBuffer b ? b : null;
                 boolean dirty = buffer != null && buffer.isDirty();
-                String name = buffer != null ? buffer.getTitle() : item.getText();
+                String name = buffer != null ? buffer.getTitle() : tabContentTitle(item);
                 label.setText((dirty ? "• " : "") + name); // unsaved marker, like the tab strip
                 label.getStyleClass().remove("dirty-name");
                 if (dirty) {
@@ -211,7 +211,12 @@ public class Switcher {
         }
         EditorBuffer buffer = tab.getUserData() instanceof EditorBuffer b ? b : null;
         Path path = buffer == null ? null : buffer.getPath();
-        pathLabel.setText(path != null ? path.toString() : buffer != null ? buffer.getTitle() : tab.getText());
+        pathLabel.setText(path != null ? path.toString() : buffer != null ? buffer.getTitle() : tabContentTitle(tab));
+    }
+
+    /** Title for a non-buffer tab (e.g. Welcome) — read from its TabContent (the tab text is empty). */
+    private static String tabContentTitle(Tab tab) {
+        return tab.getUserData() instanceof com.editora.editor.TabContent tc ? tc.title() : "";
     }
 
     private void commit() {

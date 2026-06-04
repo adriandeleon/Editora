@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The **message log** opened from the status bar now toggles: clicking the status message again closes
+  the popup.
+- The **Welcome page** now shows a scrollbar (vertical or horizontal) when its content doesn't fit the
+  window, and its tab can be dragged to reorder like any other tab.
+
 ### Added
 
 - **Build commit in dev mode** — when running with `--dev`, the About dialog and the Welcome page now

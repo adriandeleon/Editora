@@ -534,8 +534,12 @@ public class MainController {
 
     private static String bufferTitle(Tab tab) {
         EditorBuffer b = bufferOf(tab);
-        // Non-buffer tabs (the Welcome tab) carry their label in tab.getText() (buffer tabs use a graphic).
-        return b != null ? b.getTitle() : (tab == null ? "" : tab.getText());
+        if (b != null) {
+            return b.getTitle();
+        }
+        // Non-buffer tabs (the Welcome tab) carry their title in the TabContent (the tab text is empty
+        // because the title lives in a draggable graphic header).
+        return tab != null && tab.getUserData() instanceof com.editora.editor.TabContent tc ? tc.title() : "";
     }
 
     private static String bufferParentDir(Tab tab) {
@@ -2021,10 +2025,20 @@ public class MainController {
         Tab tab = new Tab();
         tab.setContent(content.node());
         tab.setUserData(content);
-        tab.setText(content.title());
-        if (content.icon() != null) {
-            tab.setGraphic(content.icon());
+        // Title lives in a graphic header (not tab.setText) so it's a drag handle for mouse reorder, like
+        // buffer tabs. Buffer tabs replace this header via updateTabMeta; non-buffer tabs (Welcome) keep it.
+        Label title = new Label(content.title());
+        title.getStyleClass().add("tab-title");
+        HBox header = new HBox(6);
+        header.getStyleClass().add("tab-header");
+        header.setAlignment(Pos.CENTER_LEFT);
+        Node icon = content.icon();
+        if (icon != null) {
+            header.getChildren().add(icon);
         }
+        header.getChildren().add(title);
+        enableTabDrag(header, tab);
+        tab.setGraphic(header);
         tab.setClosable(content.closeable());
         tab.setOnCloseRequest(e -> {
             if (!confirmClose(tab)) {

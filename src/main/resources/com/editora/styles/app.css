@@ -1175,6 +1175,16 @@
 .welcome-pane {
     -fx-background-color: -color-bg-default;
 }
+/* The scrollable container: transparent so the welcome-pane background shows through, no border. */
+.welcome-scroll,
+.welcome-scroll > .viewport,
+.welcome-scroll-content {
+    -fx-background-color: transparent;
+}
+.welcome-scroll {
+    -fx-padding: 0;
+    -fx-background-insets: 0;
+}
 .welcome-content {
     -fx-spacing: 6;
 }
