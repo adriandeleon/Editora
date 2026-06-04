@@ -160,6 +160,69 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         tree.refresh();
     }
 
+    /**
+     * Re-scans the tree against the current filesystem so files/folders added or removed outside Editora
+     * show up. Preserves the expanded folders and the selection. No-op while filtering or with no project.
+     * Cheap: only re-lists directories that are currently expanded. Called on window focus-regain.
+     */
+    public void refreshTree() {
+        if (root == null || filtering || !(tree.getRoot() instanceof PathItem rootItem)) {
+            return;
+        }
+        java.util.Set<Path> expanded = new java.util.HashSet<>();
+        collectExpanded(rootItem, expanded);
+        TreeItem<Path> selected = tree.getSelectionModel().getSelectedItem();
+        Path selectedPath = selected == null ? null : selected.getValue();
+
+        reExpand(rootItem, expanded);
+
+        if (selectedPath != null) {
+            TreeItem<Path> found = findVisible(rootItem, selectedPath);
+            if (found != null) {
+                tree.getSelectionModel().select(found);
+            }
+        }
+    }
+
+    /** Collects the paths of every currently-expanded directory (children are already loaded). */
+    private static void collectExpanded(TreeItem<Path> item, java.util.Set<Path> out) {
+        if (!item.isExpanded()) {
+            return;
+        }
+        out.add(item.getValue());
+        for (TreeItem<Path> child : item.getChildren()) {
+            collectExpanded(child, out);
+        }
+    }
+
+    /** Re-lists {@code item} from disk and re-expands the descendants that were previously expanded. */
+    private static void reExpand(PathItem item, java.util.Set<Path> expanded) {
+        item.reload(); // re-read this directory's children from disk
+        item.setExpanded(true); // only ever called for items that were expanded
+        for (TreeItem<Path> child : item.getChildren()) {
+            if (child instanceof PathItem dir && expanded.contains(dir.getValue())) {
+                reExpand(dir, expanded);
+            }
+        }
+    }
+
+    /** Finds a (visible) tree item for {@code target} among the expanded items, or null if gone. */
+    private static TreeItem<Path> findVisible(TreeItem<Path> item, Path target) {
+        if (target.equals(item.getValue())) {
+            return item;
+        }
+        if (!item.isExpanded()) {
+            return null;
+        }
+        for (TreeItem<Path> child : item.getChildren()) {
+            TreeItem<Path> found = findVisible(child, target);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
     /** Points the tree at {@code root} (a project folder), or shows the placeholder when {@code null}. */
     public void setRoot(Path root) {
         this.root = root;

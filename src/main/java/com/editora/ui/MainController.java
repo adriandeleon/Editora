@@ -245,6 +245,9 @@ public class MainController {
             if (Boolean.TRUE.equals(now)) {
                 checkExternalChanges();
                 refreshGit(); // another tool may have changed the repo while we were away
+                if (projectPanel != null) {
+                    projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
+                }
             }
         });
         this.config = config;
@@ -440,8 +443,9 @@ public class MainController {
                 entry -> navigateToLine(entry.line()));
         openFilesPalette = new QuickOpen<>("Jump to Open File", "Type to filter open files…",
                 this::openTabsForSwitcher,
-                tab -> bufferTitle(tab),
+                tab -> (isTabDirty(tab) ? "• " : "") + bufferTitle(tab), // dirty marker, like the tab
                 tab -> bufferParentDir(tab),
+                tab -> bufferTitle(tab), // search by the plain name (no "• " prefix)
                 tab -> {
                     tabPane.getSelectionModel().select(tab);
                     EditorBuffer b = bufferOf(tab);
@@ -449,6 +453,7 @@ public class MainController {
                         b.getArea().requestFocus();
                     }
                 });
+        openFilesPalette.setItemStyleClass(tab -> isTabDirty(tab) ? "dirty-name" : null); // amber/italic, like a dirty tab
         toolWindowPalette = new QuickOpen<>("Jump to Tool Window", "Type to filter tool windows…",
                 () -> toolWindows.getRegisteredToolWindows().stream()
                         .filter(tw -> gitEnabled() || !"tool.commit".equals(tw.getCommandId()))
@@ -536,6 +541,12 @@ public class MainController {
         EditorBuffer b = bufferOf(tab);
         Path p = b == null ? null : b.getPath();
         return p == null || p.getParent() == null ? "" : p.getParent().toString();
+    }
+
+    /** Whether {@code tab}'s buffer has unsaved changes (used to mark dirty files in the pickers). */
+    private static boolean isTabDirty(Tab tab) {
+        EditorBuffer b = bufferOf(tab);
+        return b != null && b.isDirty();
     }
 
     // --- Projects (single-folder, VSCode-style) ---
