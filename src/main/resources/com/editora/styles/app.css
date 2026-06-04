@@ -1080,3 +1080,61 @@
     -fx-padding: 0;
     -fx-opacity: 0.65;
 }
+
+/* ---- Welcome page (editor-area empty state when no file tabs are open) ---- */
+.welcome-pane {
+    -fx-background-color: -color-bg-default;
+}
+.welcome-content {
+    -fx-spacing: 6;
+}
+.welcome-header {
+    -fx-padding: 0 0 12 0;
+}
+.welcome-title {
+    -fx-font-size: 2.4em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
+.welcome-caption {
+    -fx-text-fill: -color-fg-muted;
+}
+.welcome-section {
+    -fx-font-size: 1.15em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 28 0 8 0;
+}
+.welcome-actions, .welcome-recent {
+    -fx-spacing: 8;
+}
+/* Start actions + recent files are Hyperlinks in the accent color, no focus box. */
+.welcome-action, .welcome-link {
+    -fx-text-fill: -color-accent-fg;
+    -fx-border-color: transparent;
+    -fx-padding: 4 0 4 0;
+}
+.welcome-action {
+    -fx-graphic-text-gap: 12;
+}
+.welcome-recent-dir {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.9em;
+}
+/* Keybinding chord shown right-aligned next to a Start action. */
+.welcome-key {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.9em;
+    -fx-padding: 0 0 0 16;
+}
+.welcome-action-row:hover .welcome-key {
+    -fx-text-fill: -color-fg-default;
+}
+/* Footer: app version + home-page link. */
+.welcome-footer-row {
+    -fx-padding: 28 0 0 0;
+}
+.welcome-footer {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.9em;
+}

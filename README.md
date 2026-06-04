@@ -93,6 +93,9 @@ Emacs-style keymap or a fuzzy command palette.
   navigate). In **prose** (plain text / Markdown), inline **"ghost text"** — a single greyed
   continuation after the caret from the spell dictionary + your personal dictionary; **Tab** accepts.
   Settings → Editor has a master toggle plus per-source checkboxes (words/prose, snippets).
+- **Welcome page** — a VSCode-style start panel (New File / Open File / recent files) shown in the editor
+  area when no files are open, instead of a blank Untitled buffer; `--new-file[=name]` opens a fresh buffer
+  instead.
 - **Recent files** — persistent most-recently-used list.
 - **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
   Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`
@@ -192,6 +195,7 @@ editora [options] [FILE[:LINE[:COLUMN]] ...]
   --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)
   --dev                 Dev mode: use ~/.editora-dev (separate from production config)
   --project[=]<dir>     Open <dir> as a project (only when Projects are enabled; ignored otherwise)
+  --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named, e.g. notes.md)
   --zen                 Start in Zen (distraction-free) mode
   --version, -V         Print the version and exit
   --help, -h            Print help and exit

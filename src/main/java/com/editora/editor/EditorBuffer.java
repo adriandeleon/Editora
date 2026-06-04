@@ -198,6 +198,9 @@ public class EditorBuffer {
     private java.util.Map<Integer, String> changeBars;
 
     private Path path;
+    /** Suggested name for a still-unsaved buffer (e.g. from {@code --new-file=foo.txt}); drives the tab
+     *  title and extension-based highlighting while {@link #path} stays null (so Save prompts Save-As). */
+    private String displayName;
     /** Last-known on-disk modified time (epoch millis) and size, to detect external changes; -1 = unknown. */
     private long diskModifiedMillis = -1;
     private long diskSize = -1;
@@ -1265,6 +1268,24 @@ public class EditorBuffer {
         applyLanguage(name, g);
     }
 
+    /**
+     * Gives a still-unsaved buffer a suggested file name: it becomes the tab title and selects the
+     * grammar/fold language by extension, while {@link #path} stays null so the first Save prompts for a
+     * location (Save-As). No-op once the buffer has a real path.
+     */
+    public void setDisplayName(String name) {
+        this.displayName = name == null || name.isBlank() ? null : name;
+        if (path == null && displayName != null) {
+            IGrammar g = GrammarRegistry.shared().forFileName(displayName);
+            applyLanguage(LanguageRegistry.forFileName(displayName), g);
+        }
+    }
+
+    /** The suggested name for an unsaved buffer, or null (used as the Save-As default). */
+    public String getDisplayName() {
+        return displayName;
+    }
+
     /** The current language name (see {@link LanguageRegistry}); drives fold strategy and the status bar. */
     public String getLanguage() {
         return language;
@@ -2252,7 +2273,10 @@ public class EditorBuffer {
     }
 
     public String getTitle() {
-        return path == null ? "untitled" : path.getFileName().toString();
+        if (path != null) {
+            return path.getFileName().toString();
+        }
+        return displayName != null ? displayName : "untitled";
     }
 
     /** Named definitions (functions, types, sections, tags…) from the last tokenization. */

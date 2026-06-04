@@ -1222,7 +1222,8 @@ public class SettingsWindow {
      * Shows the About dialog. Shared by the {@code help.about} command and the toolbar About button.
      * The settings-file path is a link that opens that file in the editor via {@code openFile}.
      */
-    public static void showAbout(Window owner, Path settingsFile, Consumer<Path> openFile) {
+    public static void showAbout(Window owner, Path settingsFile, Consumer<Path> openFile,
+                                 Consumer<String> openUrl) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
         alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));
@@ -1238,7 +1239,19 @@ public class SettingsWindow {
         Label info = new Label(tr("about.tagline") + "\n\n"
                 + "Java " + System.getProperty("java.version", "?") + "\n"
                 + "JavaFX " + System.getProperty("javafx.runtime.version", "?") + "\n"
-                + tr("about.built", com.editora.AppInfo.buildTime()));
+                + tr("about.built", com.editora.AppInfo.buildTime()) + "\n\n"
+                + com.editora.AppInfo.COPYRIGHT + "\n"
+                + com.editora.AppInfo.LICENSE);
+
+        Hyperlink homeLink = new Hyperlink(com.editora.AppInfo.HOMEPAGE.replaceFirst("^https?://", ""));
+        homeLink.setPadding(Insets.EMPTY);
+        homeLink.setOnAction(e -> {
+            if (openUrl != null) {
+                openUrl.accept(com.editora.AppInfo.HOMEPAGE);
+            }
+        });
+        HBox homeRow = new HBox(4, new Label(tr("about.homepage")), homeLink);
+        homeRow.setAlignment(Pos.CENTER_LEFT);
 
         Hyperlink settingsLink = new Hyperlink(displaySettingsPath(settingsFile));
         settingsLink.setPadding(Insets.EMPTY);
@@ -1252,7 +1265,7 @@ public class SettingsWindow {
         HBox settingsRow = new HBox(4, new Label(tr("settings.aboutSettingsLabel")), settingsLink);
         settingsRow.setAlignment(Pos.CENTER_LEFT);
 
-        alert.getDialogPane().setContent(new VBox(10, info, settingsRow));
+        alert.getDialogPane().setContent(new VBox(10, info, homeRow, settingsRow));
         alert.showAndWait();
     }
 

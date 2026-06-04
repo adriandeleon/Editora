@@ -91,4 +91,28 @@ class AppArgsTest {
         List<OpenTarget> targets = App.fileTargets(List.of("--config-dir=/cfg", "--project=/repo", "x.md"));
         assertEquals(List.of(new OpenTarget(Path.of("x.md"), 0, 0)), targets);
     }
+
+    @Test
+    void newFileArgAbsentIsNull() {
+        assertNull(App.newFileArg(List.of("README.md")));
+        assertNull(App.newFileArg(List.of()));
+    }
+
+    @Test
+    void newFileArgBareIsEmptyString() {
+        assertEquals("", App.newFileArg(List.of("--new-file")));
+        assertEquals("", App.newFileArg(List.of("--dev", "--new-file")));
+    }
+
+    @Test
+    void newFileArgNamedReturnsName() {
+        assertEquals("foo.txt", App.newFileArg(List.of("--new-file=foo.txt")));
+        assertEquals("a b.md", App.newFileArg(List.of("--zen", "--new-file=a b.md")));
+    }
+
+    @Test
+    void newFileArgIsNotAFileTarget() {
+        assertEquals(List.of(), App.fileTargets(List.of("--new-file=foo.txt")));
+        assertEquals(List.of(), App.fileTargets(List.of("--new-file")));
+    }
 }

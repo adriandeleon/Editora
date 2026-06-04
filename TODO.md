@@ -3,6 +3,8 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Welcome page — VSCode-style editor-area empty state (New File / Open File / recent) shown when no
+      files are open, replacing the empty Untitled buffer; `--new-file[=name]` bypass
 - [x] UI localization (i18n) — interface translated to English, Italian, Spanish, French, Portuguese,
       German; language picker in Settings → Appearance (applies on restart); key-parity test
 - [x] Settings window redesign — sidebar categories, search, live preview, Reset to Defaults; Tool
