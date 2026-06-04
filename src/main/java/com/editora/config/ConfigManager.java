@@ -85,6 +85,20 @@ public class ConfigManager {
         return configDir;
     }
 
+    /**
+     * Zips the active config directory into a timestamped {@code .zip} in the user's home directory
+     * and returns the created file (e.g. {@code ~/editora-config-2026-06-04_153012.zip}). Backs up
+     * whichever config dir is in use ({@code ~/.editora}, {@code ~/.editora-dev}, or a
+     * {@code --config-dir} override).
+     *
+     * @throws IOException if the home directory can't be written or a config file can't be read
+     */
+    public Path exportConfig() throws IOException {
+        Path home = Path.of(System.getProperty("user.home"));
+        return ConfigExporter.export(configDir, home, com.editora.AppInfo.VERSION,
+                System.getProperty("user.name"), java.time.LocalDateTime.now());
+    }
+
     public Path getSettingsFile() {
         return configDir.resolve(SETTINGS_FILE_NAME);
     }

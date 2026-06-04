@@ -274,7 +274,8 @@ public class MainController {
         bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows, gitService,
-                this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath);
+                this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath,
+                this::exportConfig);
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
                 () -> tabPane.getSelectionModel().getSelectedItem(),
@@ -4407,6 +4408,33 @@ public class MainController {
         }
     }
 
+    /**
+     * Zips the active config directory into a timestamped {@code .zip} in the user's home directory
+     * (Settings → Advanced "Export configuration", and the {@code config.export} command). Shows the
+     * resulting path in a confirmation dialog since the trigger lives in the Settings window.
+     */
+    private void exportConfig() {
+        try {
+            java.nio.file.Path zip = config.exportConfig();
+            setStatus(tr("status.config.exported", zip.toString()));
+            Alert ok = new Alert(Alert.AlertType.INFORMATION);
+            ok.initOwner(stage);
+            ok.setTitle(tr("dialog.exportConfig.title"));
+            ok.setHeaderText(tr("dialog.exportConfig.done"));
+            ok.setContentText(zip.toString());
+            ok.showAndWait();
+        } catch (Exception e) {
+            String msg = String.valueOf(e.getMessage());
+            setStatus(tr("status.config.exportFailed", msg));
+            Alert err = new Alert(Alert.AlertType.ERROR);
+            err.initOwner(stage);
+            err.setTitle(tr("dialog.exportConfig.title"));
+            err.setHeaderText(tr("dialog.exportConfig.failed"));
+            err.setContentText(msg);
+            err.showAndWait();
+        }
+    }
+
     private void applyViewSettings(EditorBuffer buffer) {
         Settings s = config.getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
@@ -4803,6 +4831,7 @@ public class MainController {
                 this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe",
                 this::toggleToolStripe));
+        registry.register(Command.of("config.export", this::exportConfig));
         registry.register(Command.of("view.toggleLineHighlight",
                 this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers",

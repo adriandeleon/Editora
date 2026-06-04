@@ -94,6 +94,7 @@ public class SettingsWindow {
     private final Consumer<Settings> onApply;
     private final Consumer<Boolean> onToggleZen;
     private final Consumer<Path> onOpenFile;
+    private final Runnable onExportConfig;
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
     private final Stage stage = new Stage();
@@ -174,13 +175,14 @@ public class SettingsWindow {
     public SettingsWindow(ConfigManager config, ToolWindowManager toolWindows,
                           com.editora.git.GitService gitService,
                           Consumer<Settings> onApply, Consumer<Boolean> onToggleZen,
-                          Consumer<Path> onOpenFile) {
+                          Consumer<Path> onOpenFile, Runnable onExportConfig) {
         this.config = config;
         this.toolWindows = toolWindows;
         this.gitService = gitService;
         this.onApply = onApply;
         this.onToggleZen = onToggleZen;
         this.onOpenFile = onOpenFile;
+        this.onExportConfig = onExportConfig;
     }
 
     public void show(Window owner) {
@@ -733,9 +735,15 @@ public class SettingsWindow {
         row(p, Category.ADVANCED, resetSection, reset, "reset defaults restore factory clear");
 
         Label ioSection = section(p, tr("settings.section.io"));
-        Label io = new Label(tr("settings.comingSoon"));
-        io.getStyleClass().add("settings-coming-soon");
-        row(p, Category.ADVANCED, ioSection, io, "import export backup settings");
+        Button exportConfig = new Button(tr("settings.exportConfig"));
+        exportConfig.setOnAction(e -> {
+            if (onExportConfig != null) {
+                onExportConfig.run();
+            }
+        });
+        Label exportHint = note(tr("settings.exportConfig.hint"));
+        VBox exportBox = new VBox(4, exportConfig, exportHint);
+        row(p, Category.ADVANCED, ioSection, exportBox, "import export backup settings config zip archive");
         return p;
     }
 

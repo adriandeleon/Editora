@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Export configuration** — a new "Export Configuration…" button (Settings → Advanced) and the
+  `Configuration: Export to Zip` command zip your active config folder (`~/.editora`, `~/.editora-dev`,
+  or a `--config-dir` override) into a timestamped `.zip` in your home directory, for quick backups.
+
 - **Show/hide the tool stripe** — a new "Show tool stripe" setting (Settings → Tool Windows) and the
   `View: Toggle Tool Stripe` command (command palette) hide the side icon bars. This is UI only — tool
   windows still open via their keyboard shortcuts (e.g. `M-1`) and the command palette. Hiding the
