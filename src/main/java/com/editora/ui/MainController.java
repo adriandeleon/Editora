@@ -4812,6 +4812,7 @@ public class MainController {
         registry.register(Command.of("file.clearRecent", this::onClearRecent));
         registry.register(Command.of("help.about", this::onAbout));
         registry.register(Command.of("view.welcome", this::showWelcome));
+        registry.register(Command.of("view.messageLog", statusBar::showMessageLog));
         registry.register(Command.of("tool.project",
                 () -> { if (projectsEnabled()) { toolWindows.toggle(projectToolWindow); } }));
         registry.register(Command.of("tool.structure",

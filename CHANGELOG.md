@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Status-bar message log** — click the status message on the left of the status bar to see every
+  message from the current session in a scrollable popup, newest first, each with an `HH:mm:ss` time
+  indicator. Messages are selectable (multi-select) and can be copied to the clipboard (Cmd/Ctrl+C or a
+  right-click **Copy**). The log is in-memory only (not persisted), capped at the most recent 200
+  messages, with a **Clear** action. Also available as the **Message Log** command (`view.messageLog`).
+
 - **Welcome page** — instead of opening an empty "Untitled" buffer, Editora now opens a VSCode-style
   Welcome page in its own **tab** at startup when there's no session to restore. It offers **Start**
   actions — New File, Open File, then Open Folder as a Project and Clone Git Repository (each shown only
