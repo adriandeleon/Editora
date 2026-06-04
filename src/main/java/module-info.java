@@ -15,6 +15,9 @@ module com.editora {
     // Lets Lucene read JVM internals for its optimizations (silences a startup warning); jlink bundles it.
     requires jdk.management;
     requires org.commonmark;
+    // SVG rasterizer for the Markdown preview's badge images (renders via AWT → java.desktop).
+    requires com.github.weisj.jsvg;
+    requires java.desktop;
     requires org.commonmark.ext.gfm.tables;
     requires org.commonmark.ext.gfm.strikethrough;
     requires org.commonmark.ext.task.list.items;

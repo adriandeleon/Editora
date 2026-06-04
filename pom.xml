@@ -31,6 +31,9 @@
         <gson.version>2.11.0</gson.version>
         <commonmark.version>0.28.0</commonmark.version>
         <autolink.version>0.12.0</autolink.version>
+        <!-- 1.7.2, not 2.0.0: 2.0.0's module-info exports an empty package (com.github.weisj.jsvg.provider)
+             which jlink rejects in the native `dist` build ("exported package not present"). -->
+        <jsvg.version>1.7.2</jsvg.version>
         <lucene.version>10.2.2</lucene.version>
         <moditect.version>1.2.2.Final</moditect.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
@@ -95,6 +98,14 @@
             <groupId>org.nibor.autolink</groupId>
             <artifactId>autolink</artifactId>
             <version>${autolink.version}</version>
+        </dependency>
+        <!-- SVG rasterizer for the Markdown preview (e.g. shields.io / GitHub badge images, which are
+             served as SVG and which JavaFX's image decoder can't read). Lightweight, pure-Java, and a
+             proper JPMS module (open, requires transitive java.desktop) — no moditect patching needed. -->
+        <dependency>
+            <groupId>com.github.weisj</groupId>
+            <artifactId>jsvg</artifactId>
+            <version>${jsvg.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

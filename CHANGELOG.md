@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SVG images in the Markdown preview** — the preview now renders SVG images, which JavaFX can't
+  decode on its own. This makes **shields.io / GitHub status badges** (served as SVG) show up in the
+  preview as they do on GitHub. Images load off the UI thread and are cached. (Uses the lightweight
+  JSVG library.)
+
+- **Keyboard scrolling in the Markdown preview** — Space / PageDown (page down), Backspace / PageUp
+  (page up), and the Emacs `C-v` / `M-v` now scroll the rendered preview.
+
 - **Status-bar message log** — click the status message on the left of the status bar to see every
   message from the current session in a scrollable popup, newest first, each with an `HH:mm:ss` time
   indicator. Messages are selectable (multi-select) and can be copied to the clipboard (Cmd/Ctrl+C or a

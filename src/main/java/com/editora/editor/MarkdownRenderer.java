@@ -38,7 +38,6 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Tooltip;
-import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -310,16 +309,9 @@ public final class MarkdownRenderer {
         ImageView view = new ImageView();
         view.getStyleClass().add("md-image");
         view.setPreserveRatio(true);
-        Image image = new Image(url, true); // background load (off the FX thread)
-        view.setImage(image);
-        // Cap very wide images to the pane width; re-check once the size is known.
-        Runnable cap = () -> {
-            if (image.getWidth() > MAX_IMAGE_WIDTH) {
-                view.setFitWidth(MAX_IMAGE_WIDTH);
-            }
-        };
-        image.widthProperty().addListener((o, was, w) -> cap.run());
-        cap.run();
+        // Loads off the FX thread and rasterizes SVG (e.g. badges) that JavaFX's own decoder can't read;
+        // sizes the view to the image's logical width, capped to the pane.
+        PreviewImageLoader.loadInto(view, url, MAX_IMAGE_WIDTH);
         String tip = img.getTitle() != null && !img.getTitle().isBlank() ? img.getTitle() : alt;
         if (tip != null && !tip.isBlank()) {
             Tooltip.install(view, new Tooltip(tip));
