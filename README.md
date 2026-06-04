@@ -1,6 +1,18 @@
 # Editora
 
 [![CI](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml/badge.svg)](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/adriandeleon/Editora)](LICENSE)
+![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk&logoColor=white)
+![JavaFX](https://img.shields.io/badge/JavaFX-25-1e90ff)
+![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+[![Stars](https://img.shields.io/github/stars/adriandeleon/Editora?style=flat)](https://github.com/adriandeleon/Editora/stargazers)
+
+<!-- Uncomment after the first vX.Y.Z release tag:
+[![Release](https://img.shields.io/github/v/release/adriandeleon/Editora)](https://github.com/adriandeleon/Editora/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/adriandeleon/Editora/total)](https://github.com/adriandeleon/Editora/releases)
+[![Release workflow](https://github.com/adriandeleon/Editora/actions/workflows/release.yml/badge.svg)](https://github.com/adriandeleon/Editora/actions/workflows/release.yml)
+-->
+
 
 A keyboard-driven, cross-platform programmer's text editor built with **JDK 25**,
 **JavaFX 25**, [**RichTextFX**](https://github.com/FXMisc/RichTextFX) and **Maven**. Every action is a registered command, reachable by an
