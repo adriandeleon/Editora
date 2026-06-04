@@ -1,3 +1,5 @@
+![Editora logo](src/main/resources/com/editora/icons/icon-128.png)
+
 # Editora
 
 [![CI](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml/badge.svg)](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml)
