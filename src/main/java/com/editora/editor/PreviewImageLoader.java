@@ -62,7 +62,7 @@ final class PreviewImageLoader {
     });
 
     /** A decoded image plus its logical (CSS-pixel) width, used to size the {@link ImageView}. */
-    private record Loaded(Image image, double logicalWidth) { }
+    public record Loaded(Image image, double logicalWidth) { }
 
     private PreviewImageLoader() {
     }

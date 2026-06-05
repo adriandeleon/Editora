@@ -1,0 +1,44 @@
+{
+  "name": "Mermaid",
+  "scopeName": "source.mermaid",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#diagram" },
+    { "include": "#keyword" },
+    { "include": "#direction" },
+    { "include": "#arrow" },
+    { "include": "#number" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "%%.*$",
+      "name": "comment.line.percentage.mermaid"
+    },
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.mermaid"
+    },
+    "diagram": {
+      "match": "(?i)\\b(graph|flowchart|sequenceDiagram|classDiagram(?:-v2)?|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|c4Context|c4Container|c4Component|c4Dynamic|sankey-beta|xychart-beta|block-beta)\\b",
+      "name": "keyword.control.diagram.mermaid"
+    },
+    "keyword": {
+      "match": "\\b(subgraph|end|participant|actor|loop|alt|else|opt|par|and|rect|note|over|activate|deactivate|class|state|click|call|link|style|classDef|linkStyle|direction|section|title|accTitle|accDescr|autonumber)\\b",
+      "name": "keyword.other.mermaid"
+    },
+    "direction": {
+      "match": "\\b(TB|TD|BT|RL|LR)\\b",
+      "name": "constant.language.direction.mermaid"
+    },
+    "arrow": {
+      "match": "(--+>|--+|-\\.-+>|-\\.-+|==+>|==+|--x|--o|<--+>|\\.->|:::|::)",
+      "name": "keyword.operator.arrow.mermaid"
+    },
+    "number": {
+      "match": "\\b\\d+(?:\\.\\d+)?\\b",
+      "name": "constant.numeric.mermaid"
+    }
+  }
+}

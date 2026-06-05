@@ -39,12 +39,15 @@ public final class CompletionEngine {
             return List.of();
         }
         List<Completion> snip = snippetCompletions(snippets.forLanguage(snippetLang), prefix);
-        List<Completion> words = List.of();
+        List<Completion> words = new ArrayList<>();
         if (prose) {
-            List<String> w = DictionaryWords.startingWith(dictLang, prefix, userWords.get(), MAX);
-            words = new ArrayList<>(w.size());
-            for (String s : w) {
+            for (String s : DictionaryWords.startingWith(dictLang, prefix, userWords.get(), MAX)) {
                 words.add(Completion.word(s, null));
+            }
+        } else if ("mermaid".equalsIgnoreCase(snippetLang)) {
+            // Mermaid diagram buffers: offer keyword/diagram-type completions alongside the snippets.
+            for (String k : MermaidKeywords.startingWith(prefix, MAX)) {
+                words.add(Completion.word(k, null));
             }
         }
         return merge(snip, words, prefix, MAX);

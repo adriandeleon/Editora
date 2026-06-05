@@ -1,4 +1,4 @@
-package com.editora.git;
+package com.editora.process;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -7,15 +7,19 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Runs an external command (here, {@code git}) via {@link ProcessBuilder}, capturing stdout, stderr,
- * and the exit code with a hard timeout. Both streams are drained concurrently so a chatty command
- * can't deadlock on a full pipe buffer.
+ * Runs an external command via {@link ProcessBuilder}, capturing stdout, stderr, and the exit code
+ * with a hard timeout. Both streams are drained concurrently so a chatty command can't deadlock on a
+ * full pipe buffer.
  *
- * <p>This is the only place Editora shells out. Callers run it off the JavaFX thread (see
- * {@link GitService}); it does no threading itself beyond the stderr drainer.
+ * <p>This is the single place Editora shells out (used by {@code git} integration and the Mermaid
+ * CLI). It does no threading itself beyond the stderr drainer, so callers must run it off the JavaFX
+ * thread (see {@code GitService} / {@code MermaidService}). {@code LC_ALL=C} is always set so output
+ * parses the same regardless of the user's locale; feature-specific env vars go through the
+ * {@link #run(Path, Duration, List, Map)} overload.
  */
 public final class ProcessRunner {
 
@@ -40,13 +44,22 @@ public final class ProcessRunner {
      * most {@code timeout}. On timeout the process is destroyed and a non-zero {@link Result} returned.
      */
     public static Result run(Path workingDir, Duration timeout, List<String> command) {
+        return run(workingDir, timeout, command, Map.of());
+    }
+
+    /**
+     * As {@link #run(Path, Duration, List)} but with {@code extraEnv} merged into the child process's
+     * environment (on top of the inherited environment + {@code LC_ALL=C}).
+     */
+    public static Result run(Path workingDir, Duration timeout, List<String> command,
+            Map<String, String> extraEnv) {
         ProcessBuilder pb = new ProcessBuilder(command);
         if (workingDir != null) {
             pb.directory(workingDir.toFile());
         }
-        // Keep the locale stable so we parse git's English output regardless of the user's environment.
+        // Keep the locale stable so we parse English output regardless of the user's environment.
         pb.environment().put("LC_ALL", "C");
-        pb.environment().put("GIT_OPTIONAL_LOCKS", "0"); // status must never block on the index lock
+        pb.environment().putAll(extraEnv);
         Process process;
         try {
             process = pb.start();
@@ -55,7 +68,7 @@ public final class ProcessRunner {
         }
         // Drain stderr on a side thread while we read stdout, so neither pipe can fill and stall.
         ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
-        Thread errReader = new Thread(() -> drain(process.getErrorStream(), errBuf), "git-stderr");
+        Thread errReader = new Thread(() -> drain(process.getErrorStream(), errBuf), "proc-stderr");
         errReader.setDaemon(true);
         errReader.start();
 

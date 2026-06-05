@@ -154,6 +154,7 @@ public class EditorBuffer implements TabContent {
     /** Per-source autocomplete toggles (gated by {@link #autocompleteEnabled}). */
     private boolean autocompleteProse = true;
     private boolean autocompleteSnippets = true;
+    private boolean autocompleteMermaid = true;
     /** The caret-anchored completion dropdown (lazily created). */
     private CompletionPopup completionPopup;
     /** The view the completion popup is currently driven by (for click-accept routing). */
@@ -180,6 +181,12 @@ public class EditorBuffer implements TabContent {
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
+    private final MermaidLintOverlay lintOverlay = new MermaidLintOverlay(area);
+    /** Async maid validator (text, callback) injected by the controller; null = no linting. */
+    private java.util.function.BiConsumer<String,
+            java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>> mermaidValidator;
+    private boolean mermaidLintEnabled;
+    private javafx.scene.control.Tooltip lintTooltip;
     private final FoldManager folds = new FoldManager(area);
     private final BookmarkManager bookmarks = new BookmarkManager(area);
     /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
@@ -295,6 +302,10 @@ public class EditorBuffer implements TabContent {
         area.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> applyHighlighting());
+        // Live Mermaid linting: debounced maid run for .mmd buffers (only while enabled + maid detected).
+        area.multiPlainChanges()
+                .successionEnds(Duration.ofMillis(450))
+                .subscribe(ignore -> scheduleMermaidLint());
         // Dirty only when the content differs from the last saved/loaded text, so reverting an edit
         // (undo or manual) clears the marker. The length check short-circuits the O(n) compare —
         // it runs only when the length matches the saved length (i.e. near the original state).
@@ -327,7 +338,7 @@ public class EditorBuffer implements TabContent {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, noteOverlay, whitespace, spellOverlay, minimap, columnRuler);
+        root.getChildren().addAll(scrollPane, noteOverlay, whitespace, spellOverlay, lintOverlay, minimap, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -346,6 +357,11 @@ public class EditorBuffer implements TabContent {
         spellChecker = new SpellChecker(spellLanguage, spellUserWords);
         spellOverlay.setChecker(spellChecker);
         spellOverlay.setProseMode(isProse());
+        AnchorPane.setTopAnchor(lintOverlay, 0d);
+        AnchorPane.setBottomAnchor(lintOverlay, 0d);
+        AnchorPane.setLeftAnchor(lintOverlay, 0d);
+        AnchorPane.setRightAnchor(lintOverlay, Minimap.WIDTH);
+        installLintHover(area);
         AnchorPane.setTopAnchor(noteOverlay, 0d);
         AnchorPane.setBottomAnchor(noteOverlay, 0d);
         AnchorPane.setLeftAnchor(noteOverlay, 0d);
@@ -558,6 +574,87 @@ public class EditorBuffer implements TabContent {
         return "markdown".equals(language);
     }
 
+    /** A standalone Mermaid diagram file (.mmd) — the whole buffer is one diagram. */
+    public boolean isDiagram() {
+        return "mermaid".equals(language);
+    }
+
+    /** Whether this buffer supports the 3-mode preview: Markdown always, Mermaid only while the feature
+     *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off). */
+    public boolean hasPreview() {
+        return isMarkdown() || (isDiagram() && MermaidImages.isEnabled());
+    }
+
+    // --- Live Mermaid linting (maid) ----------------------------------------------------------------
+
+    /** Injects the async maid validator: {@code accept(text, diagnostics->…)}; null disables linting. */
+    public void setMermaidValidator(java.util.function.BiConsumer<String,
+            java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>> validator) {
+        this.mermaidValidator = validator;
+    }
+
+    /** Turns live linting on/off for this buffer (controller gates on mermaid enabled + maid detected). */
+    public void setMermaidLintEnabled(boolean on) {
+        this.mermaidLintEnabled = on && isDiagram();
+        lintOverlay.setActive(this.mermaidLintEnabled);
+        if (this.mermaidLintEnabled) {
+            scheduleMermaidLint();
+        }
+    }
+
+    private void scheduleMermaidLint() {
+        if (!mermaidLintEnabled || !isDiagram() || hugeFile || mermaidValidator == null) {
+            return;
+        }
+        mermaidValidator.accept(area.getText(), lintOverlay::setDiagnostics);
+    }
+
+    /** Shows the maid message(s) in a tooltip when hovering a squiggled span (overlay is mouse-transparent). */
+    private void installLintHover(CodeArea a) {
+        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
+            if (!mermaidLintEnabled || lintOverlay.diagnostics().isEmpty()) {
+                if (lintTooltip != null) {
+                    lintTooltip.hide();
+                }
+                return;
+            }
+            try {
+                var hit = a.hit(e.getX(), e.getY());
+                var pos = a.offsetToPosition(hit.getInsertionIndex(),
+                        org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+                var hits = lintOverlay.at(pos.getMajor(), pos.getMinor());
+                if (hits.isEmpty()) {
+                    if (lintTooltip != null) {
+                        lintTooltip.hide();
+                    }
+                    return;
+                }
+                StringBuilder sb = new StringBuilder();
+                for (var d : hits) {
+                    if (sb.length() > 0) {
+                        sb.append('\n');
+                    }
+                    sb.append(d.message());
+                }
+                if (lintTooltip == null) {
+                    lintTooltip = new javafx.scene.control.Tooltip();
+                    lintTooltip.getStyleClass().add("mermaid-lint-tooltip");
+                    lintTooltip.setWrapText(true);
+                    lintTooltip.setMaxWidth(420);
+                }
+                lintTooltip.setText(sb.toString());
+                lintTooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
+            } catch (RuntimeException ignored) {
+                // viewport mid-layout / hit miss — ignore
+            }
+        });
+        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
+            if (lintTooltip != null) {
+                lintTooltip.hide();
+            }
+        });
+    }
+
     public MarkdownViewMode getMarkdownViewMode() {
         return markdownViewMode;
     }
@@ -566,10 +663,15 @@ public class EditorBuffer implements TabContent {
         this.onViewModeChanged = callback == null ? () -> { } : callback;
     }
 
-    /** Overlays the Editor/Split/Preview control top-right of this buffer's view (Markdown buffers only). */
+    /** Overlays the Editor/Split/Preview control top-right of this buffer's view; {@code null} removes it. */
     public void setViewModeControl(Node control) {
         this.viewModeControl = control;
         rebuildViewHost();
+    }
+
+    /** Whether the floating Editor/Split/Preview control is currently attached. */
+    public boolean hasViewModeControl() {
+        return viewModeControl != null;
     }
 
     /** Switches the Markdown view mode, (un)subscribing the live preview and rebuilding the view host. */
@@ -687,8 +789,32 @@ public class EditorBuffer implements TabContent {
         highlightExecutor.shutdownNow();
     }
 
+    /**
+     * Forces a preview re-render (e.g. after the Mermaid feature/theme toggles so {@code ```mermaid}
+     * blocks switch between diagram and code). No-op in Editor mode.
+     */
+    public void refreshPreview() {
+        scheduleRenderPreview();
+    }
+
     private void scheduleRenderPreview() {
         if (markdownViewMode == MarkdownViewMode.EDITOR) {
+            return;
+        }
+        if (isDiagram()) {
+            // Whole file is one diagram: build the (async-filling) node on the FX thread directly. The
+            // preview zoom scales the fit width (not font size, which doesn't affect an ImageView); the
+            // content-hash cache makes a zoom re-render a cheap re-fit of the same image. Don't call
+            // applyPreviewScale() here — it re-enters this branch for diagrams (would recurse).
+            double v = previewPane().getVvalue();
+            double scale = previewFontScale;
+            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
+                    MermaidImages.node(area.getText(), lw -> lw * scale));
+            box.getStyleClass().add("markdown-preview");
+            StackPane wrap = new StackPane(box);
+            wrap.getStyleClass().add("markdown-preview-wrap");
+            previewPane().setContent(wrap);
+            Platform.runLater(() -> previewPane().setVvalue(v));
             return;
         }
         String md = area.getText();
@@ -840,11 +966,17 @@ public class EditorBuffer implements TabContent {
         applyPreviewScale();
     }
 
-    /** Applies the current zoom by overriding the rendered preview root's base font size (headings use em). */
+    /** Applies the current zoom: re-fits a diagram to the scaled width, else overrides the preview's base
+     *  font size (headings use em). */
     private void applyPreviewScale() {
-        if (previewPane != null && previewPane.getContent() != null) {
-            previewPane.getContent().setStyle("-fx-font-size: " + (BASE_PREVIEW_FONT * previewFontScale) + "px;");
+        if (previewPane == null || previewPane.getContent() == null) {
+            return;
         }
+        if (isDiagram()) {
+            scheduleRenderPreview(); // re-fit the diagram image to the new zoom (cache hit — cheap)
+            return;
+        }
+        previewPane.getContent().setStyle("-fx-font-size: " + (BASE_PREVIEW_FONT * previewFontScale) + "px;");
     }
 
     /** Removes the floating control from whichever pane currently hosts it. */
@@ -1985,11 +2117,13 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Applies the autocomplete settings: the master toggle plus per-source toggles (prose / snippets). */
-    public void setAutocomplete(boolean enabled, boolean prose, boolean snippets) {
+    /** Applies the autocomplete settings: the master toggle plus per-source toggles (prose / snippets /
+     *  mermaid). The {@code mermaid} flag is the effective value (already gated on the feature + tools). */
+    public void setAutocomplete(boolean enabled, boolean prose, boolean snippets, boolean mermaid) {
         this.autocompleteEnabled = enabled;
         this.autocompleteProse = prose;
         this.autocompleteSnippets = snippets;
+        this.autocompleteMermaid = mermaid;
         if (!enabled) {
             hideCompletion();
         }
@@ -2134,8 +2268,9 @@ public class EditorBuffer implements TabContent {
             hideCompletion();
             return;
         }
-        // Per-source toggle: prose buffers use the word/dictionary source, code buffers the snippet source.
-        if (isProse() ? !autocompleteProse : !autocompleteSnippets) {
+        // Per-source toggle: prose → word/dictionary, mermaid → keywords+snippets, other code → snippets.
+        boolean sourceOn = isProse() ? autocompleteProse : (isDiagram() ? autocompleteMermaid : autocompleteSnippets);
+        if (!sourceOn) {
             hideCompletion();
             return;
         }

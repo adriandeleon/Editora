@@ -22,6 +22,7 @@ public final class LanguageRegistry {
             Map.entry("html", "html"), Map.entry("htm", "html"), Map.entry("xhtml", "html"),
             Map.entry("md", "markdown"), Map.entry("markdown", "markdown"),
             Map.entry("mdown", "markdown"), Map.entry("mkd", "markdown"),
+            Map.entry("mmd", "mermaid"), Map.entry("mermaid", "mermaid"),
             // Brace-delimited languages (fold by matched {} / []).
             Map.entry("java", "java"),
             Map.entry("json", "json"), Map.entry("jsonc", "json"), Map.entry("json5", "json"),

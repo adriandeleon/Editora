@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 4;
+    public static final int SCHEMA_VERSION = 5;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -49,6 +49,9 @@ public class Settings {
     /** Per-source autocomplete toggles (gated by {@link #autocomplete}); on by default. */
     private boolean autocompleteProse = true;
     private boolean autocompleteSnippets = true;
+    /** Mermaid keyword + snippet autocomplete in .mmd buffers; on by default but only effective when
+     *  Mermaid support is enabled and the tools are detected. */
+    private boolean autocompleteMermaid = true;
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
@@ -64,6 +67,13 @@ public class Settings {
     /** Git integration: off by default — hides the status-bar VCS segment, Commit tool window, gutter
      *  change bars, and Git commands/keybindings until enabled. */
     private boolean gitSupport = false;
+    /** Mermaid diagram support: off by default — needs the external mmdc (render/export) and maid
+     *  (validation) CLIs. Renders .mmd files and ```mermaid Markdown blocks in the preview. */
+    private boolean mermaidSupport = false;
+    /** Path to the mmdc (mermaid-cli) executable; blank = resolve "mmdc" on PATH. */
+    private String mmdcPath = "";
+    /** Path to the maid (probelabs/maid linter) executable; blank = resolve "maid" on PATH. */
+    private String maidPath = "";
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -236,6 +246,14 @@ public class Settings {
         this.autocompleteSnippets = autocompleteSnippets;
     }
 
+    public boolean isAutocompleteMermaid() {
+        return autocompleteMermaid;
+    }
+
+    public void setAutocompleteMermaid(boolean autocompleteMermaid) {
+        this.autocompleteMermaid = autocompleteMermaid;
+    }
+
     public String getSpellLanguage() {
         return spellLanguage == null || spellLanguage.isBlank() ? "en_US" : spellLanguage;
     }
@@ -323,6 +341,30 @@ public class Settings {
 
     public void setGitSupport(boolean gitSupport) {
         this.gitSupport = gitSupport;
+    }
+
+    public boolean isMermaidSupport() {
+        return mermaidSupport;
+    }
+
+    public void setMermaidSupport(boolean mermaidSupport) {
+        this.mermaidSupport = mermaidSupport;
+    }
+
+    public String getMmdcPath() {
+        return mmdcPath == null ? "" : mmdcPath;
+    }
+
+    public void setMmdcPath(String mmdcPath) {
+        this.mmdcPath = mmdcPath == null ? "" : mmdcPath;
+    }
+
+    public String getMaidPath() {
+        return maidPath == null ? "" : maidPath;
+    }
+
+    public void setMaidPath(String maidPath) {
+        this.maidPath = maidPath == null ? "" : maidPath;
     }
 
     public Map<String, String> getKeybindings() {

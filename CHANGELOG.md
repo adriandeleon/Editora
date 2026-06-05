@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Mermaid diagram support** (Settings → Mermaid, off by default) — renders Mermaid diagrams in the
+  preview: standalone `.mmd` files (syntax-highlighted, with the Editor/Split/Preview toggle) and
+  ` ```mermaid ` fenced blocks inside Markdown. Uses the external **mmdc** (mermaid-cli) to render and
+  to **export** a diagram to SVG/PNG/PDF (`Mermaid: Export Diagram` command), and **maid**
+  (probelabs/maid) to validate — a failed diagram shows the error with its line/column in the preview.
+  Configure the `mmdc`/`maid` commands in Settings (blank = `mmdc` on `PATH` and `npx -y @probelabs/maid`).
+  Rendered diagrams are cached by content so editing stays responsive. `.mmd` files also get **live maid
+  linting** (red squiggly underlines + hover tooltip, debounced while typing) and **autocomplete** of
+  Mermaid keywords + diagram snippets — both with their own toggles, automatically disabled when Mermaid
+  is off or the tools aren't detected.
+
 - **Export configuration** — a new "Export Configuration…" button (Settings → Advanced) and the
   `Configuration: Export to Zip` command zip your active config folder (`~/.editora`, `~/.editora-dev`,
   or a `--config-dir` override) into a timestamped `.zip` in your home directory, for quick backups.

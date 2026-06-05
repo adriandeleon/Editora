@@ -73,6 +73,7 @@ public class SettingsWindow {
         SPELL_CHECK(tr("settings.cat.spellCheck"), false),
         APPLICATION(tr("settings.cat.application"), false),
         GIT(tr("settings.cat.git"), false),
+        MERMAID(tr("settings.cat.mermaid"), false),
         KEYMAPS(tr("settings.cat.keymaps"), true),
         PLUGINS(tr("settings.cat.plugins"), true),
         AI(tr("settings.cat.ai"), true),
@@ -97,6 +98,7 @@ public class SettingsWindow {
     private final Runnable onExportConfig;
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
+    private final com.editora.mermaid.MermaidService mermaidService;
     private final Stage stage = new Stage();
 
     // --- controls (same set as before, regrouped into pages) ---
@@ -116,6 +118,7 @@ public class SettingsWindow {
     private CheckBox autocompleteCheck;
     private CheckBox autocompleteProseCheck;
     private CheckBox autocompleteSnippetsCheck;
+    private CheckBox autocompleteMermaidCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
     private CheckBox toolbarCheck;
@@ -126,6 +129,10 @@ public class SettingsWindow {
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
     private Label gitStatusLabel;
+    private CheckBox mermaidCheck;
+    private TextField mmdcPathField;
+    private TextField maidPathField;
+    private Label mermaidStatusLabel;
     private CheckBox zenCheck;
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
@@ -174,11 +181,13 @@ public class SettingsWindow {
 
     public SettingsWindow(ConfigManager config, ToolWindowManager toolWindows,
                           com.editora.git.GitService gitService,
+                          com.editora.mermaid.MermaidService mermaidService,
                           Consumer<Settings> onApply, Consumer<Boolean> onToggleZen,
                           Consumer<Path> onOpenFile, Runnable onExportConfig) {
         this.config = config;
         this.toolWindows = toolWindows;
         this.gitService = gitService;
+        this.mermaidService = mermaidService;
         this.onApply = onApply;
         this.onToggleZen = onToggleZen;
         this.onOpenFile = onOpenFile;
@@ -368,10 +377,12 @@ public class SettingsWindow {
         autocompleteCheck = viewCheck(tr("settings.enableAutocomplete"), Settings::setAutocomplete);
         autocompleteProseCheck = viewCheck(tr("settings.autocomplete.prose"), Settings::setAutocompleteProse);
         autocompleteSnippetsCheck = viewCheck(tr("settings.autocomplete.snippets"), Settings::setAutocompleteSnippets);
+        autocompleteMermaidCheck = viewCheck(tr("settings.autocomplete.mermaid"), Settings::setAutocompleteMermaid);
         // The per-source toggles are only meaningful while the master switch is on.
         autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
             autocompleteProseCheck.setDisable(!now);
             autocompleteSnippetsCheck.setDisable(!now);
+            autocompleteMermaidCheck.setDisable(!now);
         });
 
         spellCheckBox = new CheckBox(tr("settings.enableSpell"));
@@ -419,6 +430,27 @@ public class SettingsWindow {
             config.getSettings().setGitSupport(now);
             apply();
             updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
+        });
+
+        mermaidCheck = new CheckBox(tr("settings.enableMermaid"));
+        mermaidCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setMermaidSupport(now);
+            apply();
+            refreshMermaidStatus();
+        });
+        mmdcPathField = new TextField();
+        mmdcPathField.setPromptText("mmdc");
+        mmdcPathField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setMmdcPath(now);
+            apply();
+            refreshMermaidStatus();
+        });
+        maidPathField = new TextField();
+        maidPathField.setPromptText(com.editora.mermaid.MermaidService.DEFAULT_MAID);
+        maidPathField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setMaidPath(now);
+            apply();
+            refreshMermaidStatus();
         });
 
         zenCheck = new CheckBox(tr("settings.zen"));
@@ -482,6 +514,7 @@ public class SettingsWindow {
         pages.put(Category.SPELL_CHECK, spellPage());
         pages.put(Category.APPLICATION, applicationPage());
         pages.put(Category.GIT, gitPage());
+        pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.ADVANCED, advancedPage());
         for (Category c : Category.values()) {
             if (c.placeholder) {
@@ -532,6 +565,10 @@ public class SettingsWindow {
         snippetsRow.setPadding(new Insets(0, 0, 0, 20));
         row(p, Category.EDITOR, completion, snippetsRow,
                 "autocomplete snippets popup templates");
+        HBox mermaidRow = new HBox(autocompleteMermaidCheck);
+        mermaidRow.setPadding(new Insets(0, 0, 0, 20));
+        row(p, Category.EDITOR, completion, mermaidRow,
+                "autocomplete mermaid diagram keywords snippets mmd");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -584,6 +621,55 @@ public class SettingsWindow {
         hint.setMaxWidth(440);
         row(p, Category.GIT, null, hint, "git version control vcs enable");
         return p;
+    }
+
+    private VBox mermaidPage() {
+        VBox p = page(tr("settings.cat.mermaid"));
+        mermaidStatusLabel = new Label(tr("settings.mermaid.checking"));
+        mermaidStatusLabel.getStyleClass().add("settings-git-status");
+        mermaidStatusLabel.setWrapText(true);
+        mermaidStatusLabel.setMaxWidth(440);
+        row(p, Category.MERMAID, null, mermaidStatusLabel, "mermaid mmdc maid found installed not found");
+        row(p, Category.MERMAID, null, mermaidCheck, "mermaid diagram enable mmdc render mmd");
+        row(p, Category.MERMAID, null, exePathRow(tr("settings.mermaid.mmdcPath"), mmdcPathField),
+                "mermaid mmdc path executable render");
+        row(p, Category.MERMAID, null, exePathRow(tr("settings.mermaid.maidPath"), maidPathField),
+                "mermaid maid path executable lint validate");
+        Label hint = note(tr("settings.mermaid.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.MERMAID, null, hint, "mermaid install npm mmdc maid cli");
+        return p;
+    }
+
+    /** A "[label] [path field] [Browse…]" row for picking a CLI executable. */
+    private HBox exePathRow(String label, TextField field) {
+        Button browse = new Button(tr("settings.mermaid.browse"));
+        browse.setOnAction(e -> {
+            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+            fc.setTitle(label);
+            java.io.File f = fc.showOpenDialog(stage);
+            if (f != null) {
+                field.setText(f.getAbsolutePath());
+            }
+        });
+        HBox.setHgrow(field, Priority.ALWAYS);
+        HBox box = new HBox(6, new Label(label), field, browse);
+        box.setAlignment(Pos.CENTER_LEFT);
+        return box;
+    }
+
+    /** Re-probes mmdc/maid presence and updates the status label (async; FX-thread callback). */
+    private void refreshMermaidStatus() {
+        if (mermaidStatusLabel == null || mermaidService == null) {
+            return;
+        }
+        mermaidStatusLabel.setText(tr("settings.mermaid.checking"));
+        mermaidService.detect(a -> {
+            String mmdcState = a.mmdc() ? tr("settings.mermaid.found") : tr("settings.mermaid.notFound");
+            String maidState = a.maid() ? tr("settings.mermaid.found") : tr("settings.mermaid.notFound");
+            mermaidStatusLabel.setText(tr("settings.mermaid.status", mmdcState, maidState));
+        });
     }
 
     /**
@@ -1006,8 +1092,10 @@ public class SettingsWindow {
             autocompleteCheck.setSelected(settings.isAutocomplete());
             autocompleteProseCheck.setSelected(settings.isAutocompleteProse());
             autocompleteSnippetsCheck.setSelected(settings.isAutocompleteSnippets());
+            autocompleteMermaidCheck.setSelected(settings.isAutocompleteMermaid());
             autocompleteProseCheck.setDisable(!settings.isAutocomplete());
             autocompleteSnippetsCheck.setDisable(!settings.isAutocomplete());
+            autocompleteMermaidCheck.setDisable(!settings.isAutocomplete());
             spellCheckBox.setSelected(settings.isSpellCheck());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
             spellLanguageCombo.setDisable(!settings.isSpellCheck());
@@ -1021,6 +1109,10 @@ public class SettingsWindow {
             gitCheck.setSelected(settings.isGitSupport());
             updateGitRowEnabled();
             updateNotesRowEnabled();
+            mermaidCheck.setSelected(settings.isMermaidSupport());
+            mmdcPathField.setText(settings.getMmdcPath());
+            maidPathField.setText(settings.getMaidPath());
+            refreshMermaidStatus();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());
             autoSaveCombo.setValue(mode);
@@ -1144,8 +1236,10 @@ public class SettingsWindow {
             autocompleteCheck.setSelected(s.isAutocomplete());
             autocompleteProseCheck.setSelected(s.isAutocompleteProse());
             autocompleteSnippetsCheck.setSelected(s.isAutocompleteSnippets());
+            autocompleteMermaidCheck.setSelected(s.isAutocompleteMermaid());
             autocompleteProseCheck.setDisable(!s.isAutocomplete());
             autocompleteSnippetsCheck.setDisable(!s.isAutocomplete());
+            autocompleteMermaidCheck.setDisable(!s.isAutocomplete());
         } finally {
             loading = prev;
         }
