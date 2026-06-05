@@ -1119,6 +1119,19 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * Marks whether this buffer is the active (visible) tab. A background tab releases per-buffer
+     * GPU-backed caches — currently the minimap snapshot — so retained VRAM doesn't scale with the
+     * number of open files; they regenerate when the tab is shown again. Called by the controller on
+     * tab selection and when a tab is added in the background.
+     */
+    public void setRenderingActive(boolean active) {
+        minimap.setRenderingActive(active);
+        if (minimap2 != null) {
+            minimap2.setRenderingActive(active);
+        }
+    }
+
     /** Sets the minimap's block and viewport-overlay colors (the minimap is canvas-drawn, not CSS). */
     public void setMinimapColors(Color text, Color viewport) {
         this.minimapText = text;

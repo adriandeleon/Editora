@@ -5,7 +5,6 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -33,7 +32,16 @@ public final class MermaidImages {
     /** A finished render: a {@code loaded} image (success) or an {@code error} message (failure). */
     private record Cached(PreviewImageLoader.Loaded loaded, String error) { }
 
-    private static final Map<String, Cached> CACHE = new ConcurrentHashMap<>();
+    /** Cap on cached rendered diagrams. Each successful entry holds a GPU texture, so the cache is
+     *  bounded (LRU) rather than growing unbounded as more diagrams are rendered. */
+    private static final int MAX_CACHED = 48;
+    private static final Map<String, Cached> CACHE = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<String, Cached>(32, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, Cached> eldest) {
+                    return size() > MAX_CACHED;
+                }
+            });
     private static final ExecutorService EXEC = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "mermaid-render");
         t.setDaemon(true);

@@ -931,7 +931,16 @@ public class MainController {
                 mru.remove(now);
                 mru.addFirst(now);
             }
+            // Release the outgoing buffer's per-tab GPU caches (minimap snapshot) and restore the
+            // incoming one's, so retained VRAM doesn't grow with the number of open files.
+            EditorBuffer outgoing = bufferOf(was);
+            if (outgoing != null) {
+                outgoing.setRenderingActive(false);
+            }
             EditorBuffer buffer = bufferOf(now);
+            if (buffer != null) {
+                buffer.setRenderingActive(true);
+            }
             fileInfoPanel.attach(buffer);
             structurePanel.attach(buffer);
             statusBar.attach(buffer);
@@ -946,6 +955,17 @@ public class MainController {
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
+                // A tab added in the background (e.g. session restore opening many at once) starts
+                // rendering-inactive so it holds no minimap snapshot until it's first shown.
+                if (c.wasAdded()) {
+                    Tab selected = tabPane.getSelectionModel().getSelectedItem();
+                    for (Tab added : c.getAddedSubList()) {
+                        EditorBuffer b = bufferOf(added);
+                        if (b != null && added != selected) {
+                            b.setRenderingActive(false);
+                        }
+                    }
+                }
                 // A pin reorder removes+re-adds the same tab; skip cleanup so it isn't forgotten.
                 if (c.wasRemoved() && !reordering) {
                     mru.removeAll(c.getRemoved());

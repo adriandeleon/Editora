@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Intermittent black screen / render glitches in the packaged macOS app after opening many files** —
+  JavaFX's GPU texture pool defaults to a 512 MB ceiling; with enough open files (each holding editor +
+  overlay + minimap textures, plus cached preview/diagram images) it filled up and the render thread
+  threw `NullPointerException`s (null `RTTexture` / mask texture), showing as a black window. Reduced
+  retained GPU memory so it no longer scales with the number of open files — background tabs now drop
+  their minimap snapshot (regenerated when shown), and the Markdown image + Mermaid diagram caches are
+  LRU-bounded — and raised the Prism texture caps (`prism.maxvram`, `prism.maxTextureSize`) in the
+  packaged app and dev run as a safety net. (Only reproduced in the jlink/jpackage build, not under
+  `mvn javafx:run`.)
 - **Editor froze (render thread crashed) when opening a Markdown file straight into Preview/Split
   mode** — the editor's `Canvas` overlays (minimap, whitespace, spell-check, note-highlight, Mermaid
   lint) were sized directly from the editor pane, which is momentarily zero-width while a Markdown

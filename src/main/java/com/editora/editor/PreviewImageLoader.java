@@ -53,7 +53,16 @@ final class PreviewImageLoader {
         java.util.logging.Logger.getLogger("com.github.weisj.jsvg").setLevel(java.util.logging.Level.SEVERE);
     }
 
-    private static final Map<String, Loaded> CACHE = new ConcurrentHashMap<>();
+    /** Cap on cached decoded images. Each holds a GPU texture, so the cache is bounded (LRU) instead
+     *  of growing unbounded as more Markdown files with images/badges are previewed. */
+    private static final int MAX_CACHED_IMAGES = 64;
+    private static final Map<String, Loaded> CACHE = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<String, Loaded>(32, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, Loaded> eldest) {
+                    return size() > MAX_CACHED_IMAGES;
+                }
+            });
     private static final Map<String, Long> FAILED = new ConcurrentHashMap<>();
     private static final ExecutorService EXEC = Executors.newFixedThreadPool(3, r -> {
         Thread t = new Thread(r, "md-image-loader");

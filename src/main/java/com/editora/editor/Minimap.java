@@ -38,6 +38,10 @@ final class Minimap extends Region {
     private final CodeArea area;
     private final Canvas canvas = new Canvas(WIDTH, 1);
     private WritableImage contentImage;
+    /** False while this minimap's buffer is a background (non-selected) tab: rendering is skipped and
+     *  the cached snapshot is dropped so its GPU texture can be reclaimed — keeps retained VRAM from
+     *  scaling with the number of open files. */
+    private boolean renderingActive = true;
     /** Visual width of a tab character, in columns. */
     private int tabSize = 4;
 
@@ -79,6 +83,24 @@ final class Minimap extends Region {
         renderContent();
     }
 
+    /**
+     * Marks whether this minimap's buffer is the active (visible) tab. A background tab drops the
+     * cached snapshot (a pinned GPU texture) and stops rendering; the minimap regenerates when the tab
+     * is shown again. This is what keeps retained VRAM from growing with the number of open files.
+     */
+    void setRenderingActive(boolean active) {
+        if (this.renderingActive == active) {
+            return;
+        }
+        this.renderingActive = active;
+        if (active) {
+            renderContent();
+        } else {
+            contentImage = null;
+            canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+        }
+    }
+
     @Override
     protected void layoutChildren() {
         double w = CanvasGuards.clampDim(getWidth());
@@ -107,7 +129,7 @@ final class Minimap extends Region {
         GraphicsContext g = canvas.getGraphicsContext2D();
         g.clearRect(0, 0, w, h);
         contentImage = null;
-        if (!isVisible() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        if (!renderingActive || !isVisible() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         int total = area.getParagraphs().size();
@@ -143,7 +165,7 @@ final class Minimap extends Region {
         double h = canvas.getHeight();
         GraphicsContext g = canvas.getGraphicsContext2D();
         g.clearRect(0, 0, w, h);
-        if (!isVisible() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        if (!renderingActive || !isVisible() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         int total = area.getParagraphs().size();

@@ -205,6 +205,9 @@
                     <mainClass>com.editora/com.editora.App</mainClass>
                     <options>
                         <option>--enable-native-access=javafx.graphics</option>
+                        <!-- Match the packaged app's Prism texture caps (see the dist profile). -->
+                        <option>-Dprism.maxvram=2G</option>
+                        <option>-Dprism.maxTextureSize=16384</option>
                     </options>
                     <launcher>editora</launcher>
                     <jlinkImageName>editora</jlinkImageName>
@@ -504,6 +507,12 @@
                                     </modulePaths>
                                     <javaOptions>
                                         <javaOption>--enable-native-access=javafx.graphics</javaOption>
+                                        <!-- Raise the Prism texture caps: the default 512 MB VRAM pool
+                                             could be exhausted by many open files' GPU textures, after
+                                             which JavaFX NPEs in the render thread (black screen). These
+                                             are harmless ceilings, not reservations. -->
+                                        <javaOption>-Dprism.maxvram=2G</javaOption>
+                                        <javaOption>-Dprism.maxTextureSize=16384</javaOption>
                                     </javaOptions>
                                     <destination>${project.build.directory}/dist</destination>
                                 </configuration>
