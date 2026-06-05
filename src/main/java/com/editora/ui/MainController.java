@@ -198,6 +198,10 @@ public class MainController {
     private QuickOpen<NoteEntry> notesSearchPalette;
     // --- Git (native-CLI integration; off-thread via GitService) ---
     private final com.editora.git.GitService gitService = new com.editora.git.GitService();
+    private final com.editora.mermaid.MermaidService mermaidService = new com.editora.mermaid.MermaidService();
+    private boolean mermaidSupportApplied;
+    private com.editora.mermaid.MermaidService.Availability mermaidAvail =
+            new com.editora.mermaid.MermaidService.Availability(false, false);
     private GitPanel gitPanel;
     private ToolWindow commitToolWindow;
     /** IntelliJ-style branch dropdown (actions + Local/Remote branches), anchored to the status bar. */
@@ -264,7 +268,9 @@ public class MainController {
                         && (config.getSettings().isGitSupport()
                         || (!c.id().startsWith("git.") && !c.id().equals("tool.commit")))
                         && (config.getSettings().isNotesSupport()
-                        || (!c.id().startsWith("notes.") && !c.id().equals("tool.notes"))));
+                        || (!c.id().startsWith("notes.") && !c.id().equals("tool.notes")))
+                        && (config.getSettings().isMermaidSupport()
+                        || !c.id().startsWith("mermaid.")));
         this.findBar = new FindReplaceBar(this::activeArea, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -273,7 +279,7 @@ public class MainController {
         // Breadcrumb sits just above the status bar at the bottom (IntelliJ-style).
         bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
-        this.settingsWindow = new SettingsWindow(config, toolWindows, gitService,
+        this.settingsWindow = new SettingsWindow(config, toolWindows, gitService, mermaidService,
                 this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath,
                 this::exportConfig);
         this.switcher = new Switcher(
@@ -296,6 +302,7 @@ public class MainController {
         applyProjectSupport(); // hide project UI when disabled (default)
         applyGitSupport(); // hide Git UI when disabled (default)
         applyNotesSupport(); // hide Personal Notes UI when disabled (default)
+        applyMermaidSupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
@@ -357,7 +364,7 @@ public class MainController {
         zenExitButton.setVisible(zen);
         zenExitButton.setManaged(zen);
         EditorBuffer active = activeBuffer();
-        boolean belowMarkdownControls = zen && active != null && active.isMarkdown();
+        boolean belowMarkdownControls = zen && active != null && active.hasPreview();
         double top = belowMarkdownControls ? 44 : 8; // clear the Markdown preview toggle when present
         StackPane.setMargin(zenExitButton, new javafx.geometry.Insets(top, 12, 0, 0));
     }
@@ -1140,6 +1147,72 @@ public class MainController {
             action.run();
         } else {
             setStatus(tr("statusbar.tip.gitDisabled"));
+        }
+    }
+
+    /** Whether the Mermaid feature is enabled in Settings (default off). */
+    private boolean mermaidEnabled() {
+        return config.getSettings().isMermaidSupport();
+    }
+
+    /**
+     * Reconciles the Mermaid feature with its setting. Pushes the configured mmdc/maid paths + the
+     * current preview theme + the enabled flag into the service and the editor preview façade, and on
+     * any change re-renders open Markdown/diagram previews so {@code ```mermaid} blocks (re)appear or
+     * fall back to plain code. Runs at startup and on every settings apply (mirrors
+     * {@link #applyGitSupport}).
+     */
+    private void applyMermaidSupport() {
+        Settings s = config.getSettings();
+        boolean on = s.isMermaidSupport();
+        mermaidService.setPaths(s.getMmdcPath(), s.getMaidPath());
+        com.editora.editor.MermaidImages.configure(on, mermaidService.mmdcCommand(),
+                mermaidService.maidCommand(), appThemeDark());
+        // (Un)wire the preview toggle on open .mmd buffers as the feature flips, restore their saved mode
+        // when enabling, and re-render every preview so ```mermaid blocks switch between diagram and code
+        // (and re-theme on an app-theme change, which also routes through here).
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b == null) {
+                continue;
+            }
+            ensurePreviewControls(b);
+            if (on && b.isDiagram()) {
+                restoreMarkdownMode(b);
+            }
+            b.refreshPreview();
+        }
+        mermaidSupportApplied = on;
+        // Detect the tools (cached), then gate live linting (needs maid) + autocomplete (needs mmdc).
+        if (on) {
+            mermaidService.detect(avail -> {
+                mermaidAvail = avail;
+                applyMermaidGating();
+            });
+        } else {
+            mermaidAvail = new com.editora.mermaid.MermaidService.Availability(false, false);
+            applyMermaidGating();
+        }
+    }
+
+    /** Re-applies the tool-detection-dependent gates: per-buffer maid linting + mermaid autocomplete. */
+    private void applyMermaidGating() {
+        boolean on = mermaidEnabled();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null) {
+                b.setMermaidLintEnabled(on && mermaidAvail.maid());
+            }
+        }
+        applyAutocomplete();
+    }
+
+    /** Runs {@code action} only when Mermaid is enabled; otherwise reports it (no-op command/key). */
+    private void ifMermaid(Runnable action) {
+        if (mermaidEnabled()) {
+            action.run();
+        } else {
+            setStatus(tr("statusbar.tip.mermaidDisabled"));
         }
     }
 
@@ -1993,17 +2066,11 @@ public class MainController {
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         buffer.setCompletionProvider(completion::complete);
         Settings acs = config.getSettings();
-        buffer.setAutocomplete(acs.isAutocomplete(), acs.isAutocompleteProse(), acs.isAutocompleteSnippets());
-        if (buffer.isMarkdown()) {
-            MarkdownViewToggle toggle = new MarkdownViewToggle(buffer);
-            buffer.setOnViewModeChanged(() -> {
-                persistMarkdownMode(buffer);
-                toggle.sync();
-            });
-            buffer.setViewModeControl(toggle); // floating Editor/Split/Preview control, top-right
-            buffer.setPreviewThemeToggle(this::toggleMarkdownPreviewTheme); // floating sun/moon control
-            buffer.applyPreviewTheme(config.getSettings().getMarkdownPreviewTheme(), appThemeDark());
-        }
+        buffer.setAutocomplete(acs.isAutocomplete(), acs.isAutocompleteProse(),
+                acs.isAutocompleteSnippets(), effectiveMermaidAutocomplete());
+        buffer.setMermaidValidator((text, cb) -> mermaidService.validate(text, cb));
+        buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
+        ensurePreviewControls(buffer);
         Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
         updateTabMeta(tab, buffer); // replaces the default text/icon with the buffer header (drag handle, pin, dirty)
         buffer.dirtyProperty().addListener((obs, was, now) -> {
@@ -2454,6 +2521,7 @@ public class MainController {
             return false;
         }
         buffer.setPath(file);
+        ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
         boolean ok = writeBuffer(buffer, file);
         Tab tab = tabFor(buffer);
         if (tab != null) {
@@ -2749,6 +2817,7 @@ public class MainController {
                 return;
             }
             buffer.setPath(target); // re-detects language/grammar
+            ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
             // Migrate state keyed by the absolute path string.
             var folded = config.getWorkspaceState().getFoldedRegions();
             List<Integer> folds = folded.remove(old.toString());
@@ -3154,6 +3223,15 @@ public class MainController {
         applyAutocomplete();
         settingsWindow.syncAutocompleteChecks();
         setStatus(tr("status.toggle.autocompleteSnippets", tr(s.isAutocompleteSnippets() ? "common.on" : "common.off")));
+    }
+
+    private void toggleAutocompleteMermaid() {
+        Settings s = config.getSettings();
+        s.setAutocompleteMermaid(!s.isAutocompleteMermaid());
+        config.save();
+        applyAutocomplete();
+        settingsWindow.syncAutocompleteChecks();
+        setStatus(tr("status.toggle.autocompleteMermaid", tr(s.isAutocompleteMermaid() ? "common.on" : "common.off")));
     }
 
     /** Opens a picker to set the spell-check dictionary language for the active file (persisted per file). */
@@ -3688,10 +3766,38 @@ public class MainController {
         config.save();
     }
 
+    /**
+     * Attaches or removes the floating Editor/Split/Preview control to match {@link EditorBuffer#hasPreview()}.
+     * Re-evaluated whenever a buffer's language can change its previewability — at open, after Save As
+     * (a new untitled buffer becomes a `.md`/`.mmd`), and when the Mermaid feature toggles. The light/dark
+     * sun/moon control is Markdown-only (it themes the Markdown CSS; diagrams follow the app theme).
+     */
+    private void ensurePreviewControls(EditorBuffer buffer) {
+        boolean want = buffer.hasPreview();
+        boolean has = buffer.hasViewModeControl();
+        if (want && !has) {
+            MarkdownViewToggle toggle = new MarkdownViewToggle(buffer);
+            buffer.setOnViewModeChanged(() -> {
+                persistMarkdownMode(buffer);
+                toggle.sync();
+            });
+            buffer.setViewModeControl(toggle);
+            if (buffer.isMarkdown()) {
+                buffer.setPreviewThemeToggle(this::toggleMarkdownPreviewTheme);
+                buffer.applyPreviewTheme(config.getSettings().getMarkdownPreviewTheme(), appThemeDark());
+            }
+        } else if (!want && has) {
+            buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.EDITOR);
+            buffer.setViewModeControl(null);
+        }
+        // Keep live linting in step when a Save As / rename flips the buffer to/from .mmd.
+        buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
+    }
+
     /** Restores a Markdown file's saved view mode after it is opened (and its toggle is wired). */
     private void restoreMarkdownMode(EditorBuffer buffer) {
         Path file = buffer.getPath();
-        if (file == null || !buffer.isMarkdown()) {
+        if (file == null || !buffer.hasPreview()) {
             return;
         }
         String saved = config.getWorkspaceState().getMarkdownViewModes().get(file.toString());
@@ -3705,10 +3811,10 @@ public class MainController {
         }
     }
 
-    /** Sets the active Markdown buffer's view mode (no-op for non-Markdown files). */
+    /** Sets the active previewable buffer's view mode (Markdown or Mermaid; no-op otherwise). */
     private void setActiveMarkdownMode(EditorBuffer.MarkdownViewMode mode) {
         EditorBuffer b = activeBuffer();
-        if (b != null && b.isMarkdown()) {
+        if (b != null && b.hasPreview()) {
             b.setMarkdownViewMode(mode);
         } else {
             setStatus(tr("status.notMarkdown"));
@@ -4435,6 +4541,47 @@ public class MainController {
         }
     }
 
+    /**
+     * Exports the active Mermaid diagram (.mmd file) to SVG/PNG/PDF via mmdc. Asks for a destination
+     * (format inferred from the chosen extension), renders off-thread, and reports the result.
+     */
+    private void exportMermaid() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isDiagram()) {
+            setStatus(tr("status.mermaid.notDiagram"));
+            return;
+        }
+        String source = b.getContent();
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle(tr("dialog.mermaidExport.title"));
+        String base = b.getDisplayName();
+        int dot = base.lastIndexOf('.');
+        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : base) + ".svg");
+        chooser.getExtensionFilters().addAll(
+                new javafx.stage.FileChooser.ExtensionFilter("SVG", "*.svg"),
+                new javafx.stage.FileChooser.ExtensionFilter("PNG", "*.png"),
+                new javafx.stage.FileChooser.ExtensionFilter("PDF", "*.pdf"));
+        java.io.File f = chooser.showSaveDialog(stage);
+        if (f == null) {
+            return;
+        }
+        setStatus(tr("status.mermaid.exporting"));
+        mermaidService.export(source, f.toPath(), appThemeDark(), r -> {
+            if (r.ok()) {
+                setStatus(tr("status.mermaid.exported", f.toString()));
+            } else {
+                String msg = r.message();
+                setStatus(tr("status.mermaid.exportFailed", msg));
+                Alert err = new Alert(Alert.AlertType.ERROR);
+                err.initOwner(stage);
+                err.setTitle(tr("dialog.mermaidExport.title"));
+                err.setHeaderText(tr("status.mermaid.exportFailed", ""));
+                err.setContentText(msg);
+                err.showAndWait();
+            }
+        });
+    }
+
     private void applyViewSettings(EditorBuffer buffer) {
         Settings s = config.getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
@@ -4472,6 +4619,7 @@ public class MainController {
         applyProjectSupport();
         applyGitSupport();
         applyNotesSupport();
+        applyMermaidSupport();
         applyAutoSave();
         applyAutocomplete();
         applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
@@ -4491,12 +4639,21 @@ public class MainController {
     /** Pushes the autocomplete settings (master + per-source) to every open buffer. */
     private void applyAutocomplete() {
         Settings s = config.getSettings();
+        boolean mermaidAc = effectiveMermaidAutocomplete();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
-                buffer.setAutocomplete(s.isAutocomplete(), s.isAutocompleteProse(), s.isAutocompleteSnippets());
+                buffer.setAutocomplete(s.isAutocomplete(), s.isAutocompleteProse(),
+                        s.isAutocompleteSnippets(), mermaidAc);
             }
         }
+    }
+
+    /** Mermaid autocomplete is effective only with the master toggle, its own toggle, the feature on,
+     *  and the mmdc CLI detected. */
+    private boolean effectiveMermaidAutocomplete() {
+        Settings s = config.getSettings();
+        return s.isAutocomplete() && s.isAutocompleteMermaid() && s.isMermaidSupport() && mermaidAvail.mmdc();
     }
 
     /**
@@ -4832,6 +4989,7 @@ public class MainController {
         registry.register(Command.of("view.toggleToolStripe",
                 this::toggleToolStripe));
         registry.register(Command.of("config.export", this::exportConfig));
+        registry.register(Command.of("mermaid.export", () -> ifMermaid(this::exportMermaid)));
         registry.register(Command.of("view.toggleLineHighlight",
                 this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers",
@@ -4845,6 +5003,7 @@ public class MainController {
         registry.register(Command.of("view.toggleAutocomplete", this::toggleAutocomplete));
         registry.register(Command.of("view.toggleAutocompleteProse", this::toggleAutocompleteProse));
         registry.register(Command.of("view.toggleAutocompleteSnippets", this::toggleAutocompleteSnippets));
+        registry.register(Command.of("view.toggleAutocompleteMermaid", this::toggleAutocompleteMermaid));
         registry.register(Command.of("spell.setLanguage",
                 this::chooseSpellLanguage));
         registry.register(Command.of("view.toggleToolbar", this::toggleToolbar));

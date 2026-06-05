@@ -31,6 +31,11 @@ buildNumber.properties
 # Claude Code local dev helper (settings.local.json is covered by global ignore)
 .claude/launch.json
 
+# Node (stray installs from npx-based tools like the Mermaid CLI / maid)
+/node_modules/
+/package-lock.json
+/package.json
+
 # OS
 .DS_Store
 Thumbs.db

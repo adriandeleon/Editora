@@ -16,6 +16,8 @@ import java.util.regex.Pattern;
 
 import javafx.application.Platform;
 
+import com.editora.process.ProcessRunner;
+
 /**
  * The native-{@code git} facade. Every Git command shells out via {@link ProcessRunner} on a single
  * daemon executor thread (the {@code highlightExecutor} idiom) and posts results back on the JavaFX
@@ -333,7 +335,8 @@ public final class GitService {
         for (String a : args) {
             cmd.add(a);
         }
-        return ProcessRunner.run(dir, timeout, cmd);
+        // GIT_OPTIONAL_LOCKS=0 so status never blocks on the index lock (git-specific).
+        return ProcessRunner.run(dir, timeout, cmd, Map.of("GIT_OPTIONAL_LOCKS", "0"));
     }
 
     /** Clears the cached repo roots (e.g. after switching projects or an external repo change). */

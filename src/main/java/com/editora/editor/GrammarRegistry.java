@@ -142,6 +142,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.yaml", "yaml");
         scopeToResource.put("source.ini", "ini");
         scopeToResource.put("source.sql", "sql");
+        scopeToResource.put("source.mermaid", "mermaid");
 
         // file extension -> scope name
         mapExtensions("source.java", "java");
@@ -165,6 +166,7 @@ public final class GrammarRegistry {
         mapExtensions("source.yaml", "yaml", "yml");
         mapExtensions("source.ini", "ini", "cfg", "conf", "properties", "toml");
         mapExtensions("source.sql", "sql", "ddl", "dml");
+        mapExtensions("source.mermaid", "mmd", "mermaid");
     }
 
     private void mapExtensions(String scope, String... extensions) {

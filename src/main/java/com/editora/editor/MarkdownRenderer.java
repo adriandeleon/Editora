@@ -135,6 +135,11 @@ public final class MarkdownRenderer {
             return renderList(ol, baseDir, true, start == null ? 1 : start);
         }
         if (node instanceof FencedCodeBlock f) {
+            if (isMermaidInfo(f.getInfo()) && MermaidImages.isEnabled()) {
+                // Show at natural size, but never wider than the reading column.
+                return MermaidImages.node(stripTrailingNewline(f.getLiteral()),
+                        lw -> Math.min(lw, MAX_CONTENT_WIDTH));
+            }
             return codeBlock(f.getLiteral());
         }
         if (node instanceof IndentedCodeBlock i) {
@@ -274,6 +279,15 @@ public final class MarkdownRenderer {
         label.setWrapText(true);
         label.setMaxWidth(Double.MAX_VALUE);
         return label;
+    }
+
+    /** Whether a fenced block's info string marks it as Mermaid (first token, case-insensitive). */
+    private static boolean isMermaidInfo(String info) {
+        if (info == null) {
+            return false;
+        }
+        String first = info.strip().split("\\s+", 2)[0];
+        return first.equalsIgnoreCase("mermaid");
     }
 
     // --- inline level --------------------------------------------------------------------------

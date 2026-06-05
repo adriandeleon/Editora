@@ -1,0 +1,95 @@
+{
+  "Flowchart": {
+    "prefix": "flowchart",
+    "body": [
+      "flowchart ${1|TD,LR,TB,RL,BT|}",
+      "    ${2:A}[${3:Start}] --> ${4:B}[${5:End}]$0"
+    ],
+    "description": "Flowchart with a direction and one edge"
+  },
+  "Graph": {
+    "prefix": "graph",
+    "body": [
+      "graph ${1|TD,LR,TB,RL,BT|}",
+      "    ${2:A} --> ${3:B}$0"
+    ],
+    "description": "Graph (flowchart alias)"
+  },
+  "Subgraph": {
+    "prefix": "subgraph",
+    "body": [
+      "subgraph ${1:title}",
+      "    ${2:A} --> ${3:B}",
+      "end$0"
+    ],
+    "description": "Flowchart subgraph block"
+  },
+  "Sequence diagram": {
+    "prefix": "sequenceDiagram",
+    "body": [
+      "sequenceDiagram",
+      "    participant ${1:Alice}",
+      "    participant ${2:Bob}",
+      "    ${1:Alice}->>${2:Bob}: ${3:Hello}$0"
+    ],
+    "description": "Sequence diagram with two participants"
+  },
+  "Class diagram": {
+    "prefix": "classDiagram",
+    "body": [
+      "classDiagram",
+      "    class ${1:Animal} {",
+      "        +${2:String name}",
+      "        +${3:move()}",
+      "    }$0"
+    ],
+    "description": "Class diagram with one class"
+  },
+  "State diagram": {
+    "prefix": "stateDiagram",
+    "body": [
+      "stateDiagram-v2",
+      "    [*] --> ${1:State1}",
+      "    ${1:State1} --> [*]$0"
+    ],
+    "description": "State diagram (v2)"
+  },
+  "Entity relationship diagram": {
+    "prefix": "erDiagram",
+    "body": [
+      "erDiagram",
+      "    ${1:CUSTOMER} ||--o{ ${2:ORDER} : ${3:places}$0"
+    ],
+    "description": "Entity-relationship diagram"
+  },
+  "Gantt chart": {
+    "prefix": "gantt",
+    "body": [
+      "gantt",
+      "    title ${1:Project}",
+      "    dateFormat YYYY-MM-DD",
+      "    section ${2:Phase}",
+      "    ${3:Task} :${4:a1}, ${5:2026-01-01}, ${6:7d}$0"
+    ],
+    "description": "Gantt chart"
+  },
+  "Pie chart": {
+    "prefix": "pie",
+    "body": [
+      "pie title ${1:Title}",
+      "    \"${2:A}\" : ${3:40}",
+      "    \"${4:B}\" : ${5:60}$0"
+    ],
+    "description": "Pie chart"
+  },
+  "User journey": {
+    "prefix": "journey",
+    "body": [
+      "journey",
+      "    title ${1:My day}",
+      "    section ${2:Morning}",
+      "      ${3:Task}: ${4:5}: ${5:Me}$0"
+    ],
+    "description": "User journey diagram"
+  }
+}
