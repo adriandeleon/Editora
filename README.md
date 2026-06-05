@@ -84,6 +84,16 @@ Emacs-style keymap or a fuzzy command palette.
   underlined h1/h2, and **images** (local and remote). Live-updating and theme-matched; the mode is
   remembered per file. Zoom the preview text with its `−`/`+` control or, in Preview mode,
   **Ctrl + mouse wheel**.
+- **Mermaid diagrams** — render Mermaid in the preview (standalone `.mmd` files and ` ```mermaid `
+  fenced blocks inside Markdown), export a diagram to **SVG / PNG / PDF**, get live `maid` linting with
+  inline error squiggles, and keyword + snippet autocomplete in `.mmd` files. Uses the external
+  **mmdc** (mermaid-cli) to render/export and **maid** to lint (configure their commands in Settings).
+  **Off by default** — enable under *Settings → Mermaid*.
+- **Export to PDF** — export the active file as a real, *searchable* PDF: source code with syntax
+  highlighting and optional line numbers (always a light theme), the **Markdown** preview as native
+  vector text (headings, lists, tables, images, embedded diagrams), or a standalone Mermaid `.mmd`
+  diagram. Run "File: Export to PDF" / "File: Export Preview to PDF" from the palette; choose line
+  numbers, syntax highlighting, and page size (Letter / A4) under *Settings → Editor → PDF Export*.
 - **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a prefix + Tab to
   expand (or pick via `C-c i` / "Snippet: Insert…"); Tab/Shift-Tab cycle fields, placeholders are
   pre-selected, mirrors update live, `$0` is the final caret. Standard body syntax (`$1`,

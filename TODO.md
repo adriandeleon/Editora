@@ -3,6 +3,11 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Export to PDF — code (searchable, embedded font, syntax highlighting + optional line numbers,
+      always light theme), Markdown (native vector text), and standalone Mermaid `.mmd` (via mmdc);
+      `editor.exportPdf` / `preview.exportPdf`; Settings → Editor (line numbers / highlighting / page size)
+- [x] Mermaid diagrams — `.mmd` files + ` ```mermaid ` blocks in the preview (mmdc), export to SVG/PNG/PDF,
+      live `maid` linting (squiggles), keyword + snippet autocomplete (Settings → Mermaid, off by default)
 - [x] Welcome page — VSCode-style editor-area empty state (New File / Open File / recent) shown when no
       files are open, replacing the empty Untitled buffer; `--new-file[=name]` bypass
 - [x] UI localization (i18n) — interface translated to English, Italian, Spanish, French, Portuguese,
@@ -36,7 +41,7 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Highlight matching braces
 - [x] Comment/uncomment code region
 - [ ] Format document
-- [ ] Column select support
+- [x] Column select support — column/block selection (overlay + column-aware edits)
 - [ ] Multiple cursors support
 - [ ] Advanced Undo/Redo support
 - [x] Spell check support — Lucene Hunspell, red squiggles, suggestions, user dictionary, en_US/en_GB
@@ -64,7 +69,7 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Git support — native CLI (branch/status, gutter change bars, commit workflow, fetch/pull/push)
 - [ ] Git: history / log view, file blame, side-by-side diff viewer, merge-conflict UI (later phase)
 - [ ] Local History support
-- [ ] Detect external file changes
+- [x] Detect external file changes — prompt to reload when a file changes on disk (focus-regain / tab switch)
 - [ ] Auto-reload modified files
 - [ ] Remote file editing support
 - [ ] Log mode support
