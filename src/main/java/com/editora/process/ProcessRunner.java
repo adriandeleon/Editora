@@ -1,11 +1,14 @@
 package com.editora.process;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -53,12 +56,19 @@ public final class ProcessRunner {
      */
     public static Result run(Path workingDir, Duration timeout, List<String> command,
             Map<String, String> extraEnv) {
-        ProcessBuilder pb = new ProcessBuilder(command);
+        // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
+        // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
+        // child env we set below — so without this, mmdc/npx still wouldn't be found.
+        ProcessBuilder pb = new ProcessBuilder(resolveExecutable(command));
         if (workingDir != null) {
             pb.directory(workingDir.toFile());
         }
         // Keep the locale stable so we parse English output regardless of the user's environment.
         pb.environment().put("LC_ALL", "C");
+        // A macOS .app (or Linux .desktop) launched from the GUI inherits a stripped PATH that omits
+        // Homebrew / npm / Node locations, so tools like mmdc, npx and a Homebrew git can't be found.
+        // Augment PATH with the usual install dirs so bare command names resolve regardless of launcher.
+        pb.environment().put(pathKey(pb), augmentedPath());
         pb.environment().putAll(extraEnv);
         Process process;
         try {
@@ -89,6 +99,91 @@ public final class ProcessRunner {
         return new Result(process.exitValue(),
                 outBuf.toString(StandardCharsets.UTF_8),
                 errBuf.toString(StandardCharsets.UTF_8));
+    }
+
+    /** Common bin dirs a GUI-launched app's PATH usually lacks (Homebrew, Node installers, user-local). */
+    private static final List<String> EXTRA_PATH_DIRS = List.of(
+            "/opt/homebrew/bin", "/opt/homebrew/sbin",   // Apple Silicon Homebrew
+            "/usr/local/bin", "/usr/local/sbin",          // Intel Homebrew / general
+            "/opt/local/bin",                             // MacPorts
+            System.getProperty("user.home") + "/.local/bin",
+            System.getProperty("user.home") + "/bin",
+            System.getProperty("user.home") + "/.volta/bin",
+            System.getProperty("user.home") + "/.npm-global/bin");
+
+    private static volatile String cachedPath;
+
+    /** The inherited PATH plus any {@link #EXTRA_PATH_DIRS} that exist and aren't already present. */
+    private static String augmentedPath() {
+        String cached = cachedPath;
+        if (cached != null) {
+            return cached;
+        }
+        List<String> dirs = new ArrayList<>();
+        String existing = System.getenv("PATH");
+        if (existing != null && !existing.isBlank()) {
+            for (String d : existing.split(File.pathSeparator)) {
+                if (!d.isBlank()) {
+                    dirs.add(d);
+                }
+            }
+        }
+        for (String d : EXTRA_PATH_DIRS) {
+            if (!dirs.contains(d) && Files.isDirectory(Path.of(d))) {
+                dirs.add(d);
+            }
+        }
+        String built = String.join(File.pathSeparator, dirs);
+        cachedPath = built;
+        return built;
+    }
+
+    /** Rewrites a bare command name (e.g. {@code mmdc}) to its absolute path on the augmented PATH, so it
+     *  resolves even when the JVM's own PATH (a GUI-launched .app) lacks Homebrew/Node dirs. Leaves the
+     *  command unchanged if it's already a path or can't be found (ProcessBuilder may still resolve it). */
+    private static List<String> resolveExecutable(List<String> command) {
+        if (command.isEmpty()) {
+            return command;
+        }
+        String exe = command.get(0);
+        if (exe.isEmpty() || exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0) {
+            return command; // already an absolute/relative path
+        }
+        boolean windows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+        for (String dir : augmentedPath().split(File.pathSeparator)) {
+            if (dir.isBlank()) {
+                continue;
+            }
+            Path candidate = Path.of(dir, exe);
+            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                return rewriteFirst(command, candidate.toString());
+            }
+            if (windows) {
+                for (String ext : List.of(".exe", ".cmd", ".bat")) {
+                    Path w = Path.of(dir, exe + ext);
+                    if (Files.isRegularFile(w)) {
+                        return rewriteFirst(command, w.toString());
+                    }
+                }
+            }
+        }
+        return command;
+    }
+
+    private static List<String> rewriteFirst(List<String> command, String resolved) {
+        List<String> out = new ArrayList<>(command);
+        out.set(0, resolved);
+        return out;
+    }
+
+    /** The PATH env key — case-insensitive on Windows, so reuse the existing key if the JVM has one. */
+    private static String pathKey(ProcessBuilder pb) {
+        for (String key : pb.environment().keySet()) {
+            if (key.equalsIgnoreCase("PATH")) {
+                return key;
+            }
+        }
+        return "PATH";
     }
 
     private static void drain(InputStream in, ByteArrayOutputStream out) {

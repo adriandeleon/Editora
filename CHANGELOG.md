@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **External tools not found in the installed app** — a GUI-launched app (a macOS `.app` from Finder,
+  a Linux `.desktop`) inherits a stripped `PATH` that omits Homebrew / npm / Node locations, so `mmdc`,
+  `npx`/`maid` (and a Homebrew-installed `git`) showed up as "not found" even when installed. Editora now
+  augments the subprocess `PATH` with the usual install dirs (e.g. `/opt/homebrew/bin`, `/usr/local/bin`)
+  and resolves a bare command name to its absolute path before launching. Setting an absolute path in
+  Settings still works as an override.
 - **App freeze with several Markdown previews open (macOS)** — rendering SVG badges in the Markdown
   preview pulled in AWT/Java2D, whose native macOS pipeline contended with JavaFX for the AppKit run
   loop, an intermittent deadlock that grew more likely the more previews were open. AWT/Java2D now runs
