@@ -200,6 +200,7 @@ public class MainController {
     private final com.editora.git.GitService gitService = new com.editora.git.GitService();
     private final com.editora.mermaid.MermaidService mermaidService = new com.editora.mermaid.MermaidService();
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
+    private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
     private boolean mermaidSupportApplied;
     private com.editora.mermaid.MermaidService.Availability mermaidAvail =
             new com.editora.mermaid.MermaidService.Availability(false, false);
@@ -4670,6 +4671,80 @@ public class MainController {
         }
     }
 
+    /**
+     * Prints the active buffer's source code via the native print dialog. Honors the (shared with PDF)
+     * "include line numbers" + "syntax highlighting" settings; always light. Off the FX thread.
+     */
+    private void printCode() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            setStatus(tr("status.noFileOpen"));
+            return;
+        }
+        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        if (job == null) {
+            setStatus(tr("status.print.noPrinter"));
+            return;
+        }
+        Settings s = config.getSettings();
+        setStatus(tr("status.print.preparing"));
+        printService.prepareCode(b.getContent(), bufferBaseName(b), s.isPdfSyntaxHighlighting(),
+                s.isPdfLineNumbers(), s.getTabSize(), prepared -> openPrintPreview(job, prepared));
+    }
+
+    /**
+     * Prints the active buffer's rendered preview: a Mermaid {@code .mmd} diagram (via mmdc) or a
+     * Markdown document (native nodes, block-aware pagination). No-op for non-previewable buffers.
+     */
+    private void printPreview() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.hasPreview()) {
+            setStatus(tr("status.print.noPreview"));
+            return;
+        }
+        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        if (job == null) {
+            setStatus(tr("status.print.noPrinter"));
+            return;
+        }
+        setStatus(tr("status.print.preparing"));
+        if (b.isDiagram()) {
+            java.util.List<String> mmdc = mermaidEnabled() ? mermaidService.mmdcCommand() : null;
+            printService.prepareMermaid(b.getContent(), mmdc, appThemeDark(),
+                    prepared -> openPrintPreview(job, prepared));
+        } else {
+            java.nio.file.Path baseDir = b.getPath() == null ? null : b.getPath().getParent();
+            printService.prepareMarkdown(b.getContent(), baseDir, prepared -> openPrintPreview(job, prepared));
+        }
+    }
+
+    /** Opens the Print Preview window for a prepared document, or reports a preparation failure. */
+    private void openPrintPreview(javafx.print.PrinterJob job, com.editora.print.PrintService.Prepared prepared) {
+        if (!prepared.ok()) {
+            reportPrint(new com.editora.print.PrintService.Result(false, prepared.error()));
+            return;
+        }
+        new PrintPreview(stage, job, prepared.paginator(), this::reportPrint,
+                () -> setStatus(tr("status.print.printing")),
+                () -> setStatus(tr("status.print.cancelled"))).show();
+    }
+
+    /** Reports a print result: status + (on failure) an error dialog. */
+    private void reportPrint(com.editora.print.PrintService.Result r) {
+        if (r.ok()) {
+            setStatus(tr("status.print.done"));
+        } else {
+            String msg = String.valueOf(r.message());
+            setStatus(tr("status.print.failed", msg));
+            Alert err = new Alert(Alert.AlertType.ERROR);
+            err.initOwner(stage);
+            err.setTitle(tr("command.editor.print"));
+            err.setHeaderText(tr("status.print.failed", ""));
+            err.setContentText(msg);
+            err.showAndWait();
+        }
+    }
+
     private void applyViewSettings(EditorBuffer buffer) {
         Settings s = config.getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
@@ -5079,6 +5154,8 @@ public class MainController {
         registry.register(Command.of("config.export", this::exportConfig));
         registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
         registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));
+        registry.register(Command.of("editor.print", this::printCode));
+        registry.register(Command.of("preview.print", this::printPreview));
         registry.register(Command.of("mermaid.export", () -> ifMermaid(this::exportMermaid)));
         registry.register(Command.of("view.toggleLineHighlight",
                 this::toggleLineHighlight));

@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Printing** — two new commands show a **print preview** first, then send to the printer.
+  **`File: Print…`** (`editor.print`) previews/prints the active buffer's source code — syntax-highlighted
+  with an optional line-number gutter, paginated by whole lines, in a clean light theme. **`File: Print
+  Preview…`** (`preview.print`) handles the rendered **Markdown** preview (block-aware pagination — a
+  paragraph, table, or image is never split across a page boundary) or a standalone **Mermaid** `.mmd`
+  diagram scaled to the page. A modal preview window lets you page through the exact output (scaled to
+  fit, with page navigation); **Print…** then opens the native dialog (printer, copies, paper) to send,
+  **Close** cancels. Reuses the *Include line numbers* / *Syntax highlighting* settings (the Settings →
+  Editor section is now **Export & Print**); preparation runs off the UI thread.
+
 - **Export to PDF** — two new commands. **`File: Export to PDF`** (`editor.exportPdf`) writes the active
   buffer's source as a real, **searchable** PDF: embedded JetBrains Mono, syntax highlighting, and a
   right-aligned line-number gutter (both toggleable), in a clean light theme regardless of the app/editor
