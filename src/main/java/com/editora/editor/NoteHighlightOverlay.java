@@ -26,7 +26,7 @@ final class NoteHighlightOverlay extends Region {
     private static final Color FILL = Color.web("#fbc02d", 0.22);
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas();
+    private final Canvas canvas = new Canvas(1, 1);
     private Supplier<List<int[]>> spans = List::of;
     private boolean active;
     private boolean redrawPending;
@@ -66,8 +66,8 @@ final class NoteHighlightOverlay extends Region {
 
     @Override
     protected void layoutChildren() {
-        double w = getWidth();
-        double h = getHeight();
+        double w = CanvasGuards.clampDim(getWidth());
+        double h = CanvasGuards.clampDim(getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
             canvas.setWidth(w);
             canvas.setHeight(h);
@@ -96,7 +96,7 @@ final class NoteHighlightOverlay extends Region {
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         g.clearRect(0, 0, w, h);
-        if (!active || w <= 0 || h <= 0) {
+        if (!active || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         g.setLineWidth(1);

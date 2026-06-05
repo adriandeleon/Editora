@@ -28,7 +28,7 @@ final class MermaidLintOverlay extends Region {
     private static final double STEP = 2.0;
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas();
+    private final Canvas canvas = new Canvas(1, 1);
     private List<MaidOutput.Diagnostic> diagnostics = List.of();
     private boolean active;
     private boolean redrawPending;
@@ -69,8 +69,8 @@ final class MermaidLintOverlay extends Region {
 
     @Override
     protected void layoutChildren() {
-        double w = getWidth();
-        double h = getHeight();
+        double w = CanvasGuards.clampDim(getWidth());
+        double h = CanvasGuards.clampDim(getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
             canvas.setWidth(w);
             canvas.setHeight(h);
@@ -99,7 +99,7 @@ final class MermaidLintOverlay extends Region {
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         g.clearRect(0, 0, w, h);
-        if (!active || diagnostics.isEmpty() || w <= 0 || h <= 0) {
+        if (!active || diagnostics.isEmpty() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         try {

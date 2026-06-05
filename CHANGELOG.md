@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Editor froze (render thread crashed) when opening a Markdown file straight into Preview/Split
+  mode** — the editor's `Canvas` overlays (minimap, whitespace, spell-check, note-highlight, Mermaid
+  lint) were sized directly from the editor pane, which is momentarily zero-width while a Markdown
+  buffer opens into Preview/Split. A buffered draw on a zero/NaN-sized canvas made JavaFX allocate a
+  null GPU texture and the render thread NPE'd in `NGCanvas` — stalling the whole pipeline so the UI
+  looked hung. Canvas dimensions are now clamped to a finite, in-range size (new unit-tested
+  `CanvasGuards`) and overlays skip painting into a collapsed surface.
 - **External tools not found in the installed app** — a GUI-launched app (a macOS `.app` from Finder,
   a Linux `.desktop`) inherits a stripped `PATH` that omits Homebrew / npm / Node locations, so `mmdc`,
   `npx`/`maid` (and a Homebrew-installed `git`) showed up as "not found" even when installed. Editora now
