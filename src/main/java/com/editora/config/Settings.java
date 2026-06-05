@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 6;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -74,6 +74,12 @@ public class Settings {
     private String mmdcPath = "";
     /** Path to the maid (probelabs/maid linter) executable; blank = resolve "maid" on PATH. */
     private String maidPath = "";
+    /** PDF export: include the line-number gutter (code PDFs). */
+    private boolean pdfLineNumbers = true;
+    /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
+    private boolean pdfSyntaxHighlighting = true;
+    /** PDF export page size: "letter" (default) or "a4". */
+    private String pdfPageSize = "letter";
 
     /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
     private Map<String, String> keybindings = new LinkedHashMap<>();
@@ -365,6 +371,31 @@ public class Settings {
 
     public void setMaidPath(String maidPath) {
         this.maidPath = maidPath == null ? "" : maidPath;
+    }
+
+    public boolean isPdfLineNumbers() {
+        return pdfLineNumbers;
+    }
+
+    public void setPdfLineNumbers(boolean pdfLineNumbers) {
+        this.pdfLineNumbers = pdfLineNumbers;
+    }
+
+    public boolean isPdfSyntaxHighlighting() {
+        return pdfSyntaxHighlighting;
+    }
+
+    public void setPdfSyntaxHighlighting(boolean pdfSyntaxHighlighting) {
+        this.pdfSyntaxHighlighting = pdfSyntaxHighlighting;
+    }
+
+    /** "letter" (default) or "a4"; unknown values normalize to "letter". */
+    public String getPdfPageSize() {
+        return "a4".equalsIgnoreCase(pdfPageSize) ? "a4" : "letter";
+    }
+
+    public void setPdfPageSize(String pdfPageSize) {
+        this.pdfPageSize = "a4".equalsIgnoreCase(pdfPageSize) ? "a4" : "letter";
     }
 
     public Map<String, String> getKeybindings() {

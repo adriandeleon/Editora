@@ -199,6 +199,7 @@ public class MainController {
     // --- Git (native-CLI integration; off-thread via GitService) ---
     private final com.editora.git.GitService gitService = new com.editora.git.GitService();
     private final com.editora.mermaid.MermaidService mermaidService = new com.editora.mermaid.MermaidService();
+    private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
     private boolean mermaidSupportApplied;
     private com.editora.mermaid.MermaidService.Availability mermaidAvail =
             new com.editora.mermaid.MermaidService.Availability(false, false);
@@ -4554,7 +4555,7 @@ public class MainController {
         String source = b.getContent();
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
         chooser.setTitle(tr("dialog.mermaidExport.title"));
-        String base = b.getDisplayName();
+        String base = bufferBaseName(b);
         int dot = base.lastIndexOf('.');
         chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : base) + ".svg");
         chooser.getExtensionFilters().addAll(
@@ -4580,6 +4581,93 @@ public class MainController {
                 err.showAndWait();
             }
         });
+    }
+
+    /**
+     * Exports the active buffer's source text to a syntax-highlighted, light-themed PDF (any text file).
+     * Honors the Settings toggles (line numbers, syntax highlighting) + page size. Runs off the FX thread.
+     */
+    private void exportCodePdf() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            setStatus(tr("status.noFileOpen"));
+            return;
+        }
+        String base = bufferBaseName(b);
+        java.io.File f = choosePdfDestination(base);
+        if (f == null) {
+            return;
+        }
+        Settings s = config.getSettings();
+        setStatus(tr("status.pdf.exporting"));
+        pdfService.exportCode(b.getContent(), base, s.isPdfSyntaxHighlighting(), s.isPdfLineNumbers(),
+                s.getTabSize(), s.getPdfPageSize(), f.toPath(), r -> reportPdf(r, f));
+    }
+
+    /**
+     * Exports the active buffer's rendered preview to PDF: a Mermaid {@code .mmd} diagram via mmdc's
+     * native vector PDF, or a Markdown document via the native PDF writer. No-op for non-previewable buffers.
+     */
+    private void exportPreviewPdf() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.hasPreview()) {
+            setStatus(tr("status.pdf.noPreview"));
+            return;
+        }
+        String base = bufferBaseName(b);
+        java.io.File f = choosePdfDestination(base);
+        if (f == null) {
+            return;
+        }
+        setStatus(tr("status.pdf.exporting"));
+        if (b.isDiagram()) {
+            mermaidService.export(b.getContent(), f.toPath(), appThemeDark(),
+                    r -> reportPdf(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message()), f));
+        } else {
+            java.nio.file.Path baseDir = b.getPath() == null ? null : b.getPath().getParent();
+            java.util.List<String> mmdc = mermaidEnabled() ? mermaidService.mmdcCommand() : null;
+            pdfService.exportMarkdown(b.getContent(), baseDir, config.getSettings().getPdfPageSize(),
+                    mmdc, f.toPath(), r -> reportPdf(r, f));
+        }
+    }
+
+    /**
+     * The buffer's file name — from its on-disk path when saved, else its suggested display name, else a
+     * default. Drives the syntax-highlighting grammar lookup and the default export file name (PDF, Mermaid).
+     * ({@code EditorBuffer.getDisplayName()} is null for a saved file, so the path must be consulted.)
+     */
+    private String bufferBaseName(EditorBuffer b) {
+        if (b.getPath() != null) {
+            return b.getPath().getFileName().toString();
+        }
+        String dn = b.getDisplayName();
+        return dn == null || dn.isBlank() ? "document" : dn;
+    }
+
+    /** A Save dialog defaulting to {@code <base-without-ext>.pdf}. */
+    private java.io.File choosePdfDestination(String base) {
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle(tr("dialog.pdfExport.title"));
+        int dot = base == null ? -1 : base.lastIndexOf('.');
+        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + ".pdf");
+        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("PDF", "*.pdf"));
+        return chooser.showSaveDialog(stage);
+    }
+
+    /** Reports a PDF export result: status + (on failure) an error dialog. */
+    private void reportPdf(com.editora.pdf.PdfExportService.Result r, java.io.File f) {
+        if (r.ok()) {
+            setStatus(tr("status.pdf.exported", f.toString()));
+        } else {
+            String msg = String.valueOf(r.message());
+            setStatus(tr("status.pdf.exportFailed", msg));
+            Alert err = new Alert(Alert.AlertType.ERROR);
+            err.initOwner(stage);
+            err.setTitle(tr("dialog.pdfExport.title"));
+            err.setHeaderText(tr("status.pdf.exportFailed", ""));
+            err.setContentText(msg);
+            err.showAndWait();
+        }
     }
 
     private void applyViewSettings(EditorBuffer buffer) {
@@ -4989,6 +5077,8 @@ public class MainController {
         registry.register(Command.of("view.toggleToolStripe",
                 this::toggleToolStripe));
         registry.register(Command.of("config.export", this::exportConfig));
+        registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
+        registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));
         registry.register(Command.of("mermaid.export", () -> ifMermaid(this::exportMermaid)));
         registry.register(Command.of("view.toggleLineHighlight",
                 this::toggleLineHighlight));

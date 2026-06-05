@@ -126,6 +126,16 @@ JSVG — com.github.weisj:jsvg
     License: MIT
     https://github.com/weisJ/jsvg
 
+Apache PDFBox (pdfbox, pdfbox-io, fontbox) — org.apache.pdfbox
+    PDF generation for the "Export to PDF" feature (code + Markdown).
+    License: Apache License 2.0
+    https://pdfbox.apache.org
+
+Apache Commons Logging — commons-logging:commons-logging
+    Logging facade required transitively by Apache PDFBox.
+    License: Apache License 2.0
+    https://commons.apache.org/proper/commons-logging/
+
 ================================================================================
 Spell checking
 ================================================================================

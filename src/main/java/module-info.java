@@ -18,6 +18,9 @@ module com.editora {
     // SVG rasterizer for the Markdown preview's badge images (renders via AWT → java.desktop).
     requires com.github.weisj.jsvg;
     requires java.desktop;
+    // Apache PDFBox: PDF export. An automatic module (Automatic-Module-Name only) — moditect injects a
+    // real descriptor for the jlink dist build (pdfbox + pdfbox-io + fontbox + commons-logging).
+    requires org.apache.pdfbox;
     requires org.commonmark.ext.gfm.tables;
     requires org.commonmark.ext.gfm.strikethrough;
     requires org.commonmark.ext.task.list.items;

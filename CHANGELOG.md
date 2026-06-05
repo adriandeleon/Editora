@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Export to PDF** — two new commands. **`File: Export to PDF`** (`editor.exportPdf`) writes the active
+  buffer's source as a real, **searchable** PDF: embedded JetBrains Mono, syntax highlighting, and a
+  right-aligned line-number gutter (both toggleable), in a clean light theme regardless of the app/editor
+  theme. **`File: Export Preview to PDF`** (`preview.exportPdf`) exports a previewable buffer: a Markdown
+  document becomes **native vector text** (headings, lists, tables, block quotes, code blocks, links and
+  images — including embedded Mermaid diagrams and SVG badges as images), and a standalone Mermaid `.mmd`
+  file exports via mmdc's native vector PDF. New **Settings → Editor → PDF Export**: *Include line
+  numbers*, *Syntax highlighting*, and a *Page size* selector (Letter / A4). PDF generation runs entirely
+  off the UI thread. Powered by Apache PDFBox.
+
 - **Mermaid diagram support** (Settings → Mermaid, off by default) — renders Mermaid diagrams in the
   preview: standalone `.mmd` files (syntax-highlighted, with the Editor/Split/Preview toggle) and
   ` ```mermaid ` fenced blocks inside Markdown. Uses the external **mmdc** (mermaid-cli) to render and

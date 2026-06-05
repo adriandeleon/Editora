@@ -153,6 +153,9 @@ public class SettingsWindow {
     private ToolWindow notesToolWindowRef;
     private Label notesDisabledNote;
     private ComboBox<String> autoSaveCombo;
+    private CheckBox pdfLineNumbersCheck;
+    private CheckBox pdfHighlightCheck;
+    private ComboBox<String> pdfPageSizeCombo;
     private Spinner<Integer> autoSaveDelaySpinner;
 
     // --- shell ---
@@ -385,6 +388,27 @@ public class SettingsWindow {
             autocompleteMermaidCheck.setDisable(!now);
         });
 
+        pdfLineNumbersCheck = viewCheck(tr("settings.pdf.lineNumbers"), Settings::setPdfLineNumbers);
+        pdfHighlightCheck = viewCheck(tr("settings.pdf.highlight"), Settings::setPdfSyntaxHighlighting);
+        pdfPageSizeCombo = new ComboBox<>();
+        pdfPageSizeCombo.getItems().setAll("letter", "a4");
+        pdfPageSizeCombo.setConverter(new StringConverter<>() {
+            @Override public String toString(String key) {
+                return "a4".equals(key) ? tr("settings.pdf.pageSize.a4") : tr("settings.pdf.pageSize.letter");
+            }
+            @Override public String fromString(String label) {
+                return label;
+            }
+        });
+        pdfPageSizeCombo.setPrefWidth(170);
+        pdfPageSizeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setPdfPageSize(now);
+            apply();
+        });
+
         spellCheckBox = new CheckBox(tr("settings.enableSpell"));
         spellCheckBox.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setSpellCheck(now);
@@ -575,6 +599,11 @@ public class SettingsWindow {
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
         row(p, Category.EDITOR, saving, labeled(tr("settings.autoSave"), autoSaveBox),
                 "auto save autosave delay inactivity focus");
+        Label pdf = section(p, tr("settings.section.pdf"));
+        row(p, Category.EDITOR, pdf, pdfLineNumbersCheck, "pdf export line numbers gutter");
+        row(p, Category.EDITOR, pdf, pdfHighlightCheck, "pdf export syntax highlighting colors");
+        row(p, Category.EDITOR, pdf, labeled(tr("settings.pdf.pageSize"), pdfPageSizeCombo),
+                "pdf export page size letter a4 paper");
         return p;
     }
 
@@ -1096,6 +1125,9 @@ public class SettingsWindow {
             autocompleteProseCheck.setDisable(!settings.isAutocomplete());
             autocompleteSnippetsCheck.setDisable(!settings.isAutocomplete());
             autocompleteMermaidCheck.setDisable(!settings.isAutocomplete());
+            pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
+            pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
+            pdfPageSizeCombo.setValue(settings.getPdfPageSize());
             spellCheckBox.setSelected(settings.isSpellCheck());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
             spellLanguageCombo.setDisable(!settings.isSpellCheck());
