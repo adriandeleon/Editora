@@ -182,6 +182,8 @@ public class EditorBuffer implements TabContent {
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
     private final MermaidLintOverlay lintOverlay = new MermaidLintOverlay(area);
+    private final SearchHighlightOverlay searchOverlay = new SearchHighlightOverlay(area);
+    private final AceJumpOverlay aceJump = new AceJumpOverlay(area);
     /** Async maid validator (text, callback) injected by the controller; null = no linting. */
     private java.util.function.BiConsumer<String,
             java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>> mermaidValidator;
@@ -338,7 +340,7 @@ public class EditorBuffer implements TabContent {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, noteOverlay, whitespace, spellOverlay, lintOverlay, minimap, columnRuler);
+        root.getChildren().addAll(scrollPane, noteOverlay, searchOverlay, whitespace, spellOverlay, lintOverlay, aceJump, minimap, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -362,6 +364,14 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setLeftAnchor(lintOverlay, 0d);
         AnchorPane.setRightAnchor(lintOverlay, Minimap.WIDTH);
         installLintHover(area);
+        AnchorPane.setTopAnchor(searchOverlay, 0d);
+        AnchorPane.setBottomAnchor(searchOverlay, 0d);
+        AnchorPane.setLeftAnchor(searchOverlay, 0d);
+        AnchorPane.setRightAnchor(searchOverlay, Minimap.WIDTH);
+        AnchorPane.setTopAnchor(aceJump, 0d);
+        AnchorPane.setBottomAnchor(aceJump, 0d);
+        AnchorPane.setLeftAnchor(aceJump, 0d);
+        AnchorPane.setRightAnchor(aceJump, Minimap.WIDTH);
         AnchorPane.setTopAnchor(noteOverlay, 0d);
         AnchorPane.setBottomAnchor(noteOverlay, 0d);
         AnchorPane.setLeftAnchor(noteOverlay, 0d);
@@ -527,6 +537,28 @@ public class EditorBuffer implements TabContent {
     /** The view that currently has focus (primary or the split's secondary); for caret/edit commands. */
     public CodeArea getFocusedArea() {
         return focusedArea;
+    }
+
+    /**
+     * Highlights all find matches ({@code [start,end)} offset pairs) behind the text, emphasizing the
+     * match at {@code activeIndex}. No-op in large-file mode (the find bar still selects the current
+     * match). Pass an empty list (or call {@link #clearSearchMatches}) to remove the highlight.
+     */
+    public void setSearchMatches(java.util.List<int[]> matches, int activeIndex) {
+        if (largeFile) {
+            return;
+        }
+        searchOverlay.setMatches(matches, activeIndex);
+    }
+
+    /** Clears the find-match highlight overlay. */
+    public void clearSearchMatches() {
+        searchOverlay.setMatches(java.util.List.of(), -1);
+    }
+
+    /** Starts AceJump: the next typed character labels its visible occurrences to jump the caret. */
+    public void startAceJump() {
+        aceJump.start();
     }
 
     /** The node to place in the scene: the read-only banner (when shown) above the editor view. */

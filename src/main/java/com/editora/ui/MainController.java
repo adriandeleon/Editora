@@ -194,6 +194,9 @@ public class MainController {
     private StructurePanel structurePanel;
     private BookmarksPanel bookmarksPanel;
     private NotesPanel notesPanel;
+    private SearchPanel searchPanel;
+    private ToolWindow searchToolWindow;
+    private final com.editora.search.SearchService searchService = new com.editora.search.SearchService();
     private QuickOpen<NoteEntry> notesPalette;
     private QuickOpen<NoteEntry> notesSearchPalette;
     // --- Git (native-CLI integration; off-thread via GitService) ---
@@ -273,7 +276,7 @@ public class MainController {
                         || (!c.id().startsWith("notes.") && !c.id().equals("tool.notes")))
                         && (config.getSettings().isMermaidSupport()
                         || !c.id().startsWith("mermaid.")));
-        this.findBar = new FindReplaceBar(this::activeArea, this::setStatus);
+        this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
@@ -421,6 +424,28 @@ public class MainController {
     /** Sets the {@link javafx.application.HostServices} used to open external links (from {@code App}). */
     public void setHostServices(javafx.application.HostServices hostServices) {
         this.hostServices = hostServices;
+    }
+
+    /**
+     * Wires the key dispatcher's first-look hook so that <b>M-g</b>, while a tool window is focused,
+     * closes that window and returns focus to the editor (instead of starting the go-to prefix).
+     */
+    public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
+        dispatcher.setPreDispatch((token, target) -> {
+            if (!"M-g".equals(token)) {
+                return false;
+            }
+            ToolWindow tw = toolWindows.toolWindowOf(target);
+            if (tw == null) {
+                return false;
+            }
+            toolWindows.close(tw);
+            EditorBuffer b = activeBuffer();
+            if (b != null) {
+                b.getFocusedArea().requestFocus();
+            }
+            return true;
+        });
     }
 
     /** Opens a URL in the system browser (no-op if HostServices isn't available). */
@@ -1095,12 +1120,115 @@ public class MainController {
         gitPanel.setOnClone(this::gitClone);
         commitToolWindow = new ToolWindow("commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT,
                 Icons::git, gitPanel, "tool.commit");
+        searchPanel = new SearchPanel(new SearchPanel.Actions() {
+            @Override public void search(com.editora.search.SearchQuery query) {
+                runFileSearch(query);
+            }
+            @Override public void openMatch(java.nio.file.Path file, int line, int col) {
+                openPath(file);
+                Platform.runLater(() -> gotoInFile(file, line, col));
+            }
+            @Override public void replaceAll(com.editora.search.SearchQuery query, String replacement,
+                    java.util.List<java.nio.file.Path> files) {
+                replaceInFiles(query, replacement, files);
+            }
+        });
+        searchToolWindow = new ToolWindow("search", tr("toolwindow.search"), ToolWindow.Side.BOTTOM,
+                Icons::find, searchPanel, "tool.search");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
         toolWindows.register(notesToolWindow);
         toolWindows.register(commitToolWindow);
         toolWindows.register(fileInfoToolWindow);
+        toolWindows.register(searchToolWindow);
+    }
+
+    /** Runs a multi-file search: open buffers (in-memory) + the active project root, results to the panel. */
+    private void runFileSearch(com.editora.search.SearchQuery query) {
+        java.util.Map<java.nio.file.Path, String> open = new java.util.HashMap<>();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null && b.getPath() != null) {
+                open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
+            }
+        }
+        java.nio.file.Path root = null;
+        Project p = projects == null ? null : projects.active();
+        if (p != null) {
+            root = java.nio.file.Path.of(p.root());
+        }
+        setStatus(tr("search.searching"));
+        searchService.search(query, root, open, outcome -> {
+            searchPanel.setResults(outcome);
+            setStatus(outcome.totalMatches() == 0
+                    ? tr("search.none")
+                    : tr("search.summary", outcome.totalMatches(), outcome.fileCount()));
+        });
+    }
+
+    /** Opens (or focuses) the Find-in-Files tool window and focuses its query field. */
+    private void openSearchInFiles() {
+        toolWindows.open(searchToolWindow, true);
+    }
+
+    /** Starts AceJump on the active buffer: type a character, then a label, to jump the caret. */
+    private void startAceJump() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            return;
+        }
+        setStatus(tr("acejump.prompt"));
+        b.startAceJump();
+    }
+
+    /**
+     * Replaces every match of {@code query} with {@code replacement} across {@code files}. Open buffers
+     * are edited in-memory (undoable); closed files are rewritten on disk (UTF-8, line endings kept as
+     * they live in the text). Asks for confirmation, then re-runs the search to refresh the panel.
+     */
+    private void replaceInFiles(com.editora.search.SearchQuery query, String replacement,
+            java.util.List<java.nio.file.Path> files) {
+        if (query == null || query.text() == null || query.text().isEmpty() || files.isEmpty()) {
+            return;
+        }
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                tr("search.replaceConfirm", files.size()),
+                javafx.scene.control.ButtonType.OK, javafx.scene.control.ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
+                != javafx.scene.control.ButtonType.OK) {
+            return;
+        }
+        int total = 0;
+        int changedFiles = 0;
+        for (java.nio.file.Path file : files) {
+            try {
+                Tab tab = tabForPath(file);
+                EditorBuffer buffer = bufferOf(tab);
+                if (buffer != null) {
+                    var r = com.editora.search.MultiFileSearch.replaceAll(buffer.getContent(), query, replacement);
+                    if (r.count() > 0) {
+                        buffer.setContent(r.text());
+                        total += r.count();
+                        changedFiles++;
+                    }
+                } else {
+                    String text = java.nio.file.Files.readString(file);
+                    var r = com.editora.search.MultiFileSearch.replaceAll(text, query, replacement);
+                    if (r.count() > 0) {
+                        java.nio.file.Files.writeString(file, r.text());
+                        total += r.count();
+                        changedFiles++;
+                    }
+                }
+            } catch (java.io.IOException | RuntimeException e) {
+                setStatus(tr("search.replaceFailed", String.valueOf(file.getFileName())));
+            }
+        }
+        setStatus(tr("search.replaced", total, changedFiles));
+        runFileSearch(query); // refresh the results panel
     }
 
     private Region placeholder(String text) {
@@ -3134,16 +3262,38 @@ public class MainController {
 
     @FXML
     private void onFind() {
-        toggleFind(false);
-    }
-
-    /** Shows the find/replace bar, or hides it if it's already open. */
-    private void toggleFind(boolean backward) {
         if (findBar.isShown()) {
             findBar.hideBar();
         } else {
-            findBar.show(backward);
+            findBar.show(false);
         }
+    }
+
+    /** Shows the find/replace bar, or hides it if it's already open. */
+    /** C-s: show the find bar, or — if already showing — cycle to the next match. */
+    private void findShowOrNext() {
+        if (findBar.isShown()) {
+            findBar.findNext();
+        } else {
+            findBar.show(false);
+        }
+    }
+
+    /** C-r: show the find bar (reverse), or — if already showing — cycle to the previous match. */
+    private void findShowOrPrevious() {
+        if (findBar.isShown()) {
+            findBar.findPrevious();
+        } else {
+            findBar.show(true);
+        }
+    }
+
+    /** Replace: ensure the find/replace bar is showing and focus the replace field. (C-g closes it.) */
+    private void showReplace() {
+        if (!findBar.isShown()) {
+            findBar.show(false);
+        }
+        findBar.focusReplace();
     }
 
     @FXML
@@ -5290,6 +5440,9 @@ public class MainController {
                 () -> ifNotes(() -> toolWindows.toggle(notesToolWindow))));
         registry.register(Command.of("tool.fileInformation",
                 () -> toolWindows.toggle(fileInfoToolWindow)));
+        registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
+        registry.register(Command.of("search.inFiles", this::openSearchInFiles));
+        registry.register(Command.of("nav.aceJump", this::startAceJump));
         registry.register(Command.of("tool.commit",
                 () -> ifGit(() -> toolWindows.toggle(commitToolWindow))));
         // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
@@ -5313,9 +5466,9 @@ public class MainController {
                 () -> switcher.show(stage, false)));
         registry.register(Command.of("switcher.showReverse",
                 () -> switcher.show(stage, true)));
-        registry.register(Command.of("find.show", () -> toggleFind(false)));
-        registry.register(Command.of("find.showBackward", () -> toggleFind(true)));
-        registry.register(Command.of("find.replace", () -> toggleFind(false)));
+        registry.register(Command.of("find.show", this::findShowOrNext));
+        registry.register(Command.of("find.showBackward", this::findShowOrPrevious));
+        registry.register(Command.of("find.replace", this::showReplace));
         registry.register(Command.of("edit.cut", this::onCut));
         registry.register(Command.of("edit.copy", this::onCopy));
         registry.register(Command.of("edit.paste", this::onPaste));

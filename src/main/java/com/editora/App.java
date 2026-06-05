@@ -83,7 +83,9 @@ public class App extends Application {
                 App.class.getResource("styles/app.css").toExternalForm(),
                 App.class.getResource("styles/syntax.css").toExternalForm());
 
-        new KeyDispatcher(registry, keymap, controller::setStatus).install(scene);
+        KeyDispatcher keyDispatcher = new KeyDispatcher(registry, keymap, controller::setStatus);
+        keyDispatcher.install(scene);
+        controller.setKeyDispatcher(keyDispatcher);
 
         // Ctrl + mouse wheel zooms (and is consumed so the editor/preview doesn't also scroll): the
         // Markdown preview when the pointer is over it, otherwise the editor text.

@@ -25,12 +25,21 @@ public class KeyDispatcher {
     private String pending = "";
     /** True when the last KEY_PRESSED was consumed, so its paired KEY_TYPED is swallowed too. */
     private boolean consumedPress;
+    /** Optional first-look hook: given the chord token + event target, returns true if it handled the
+     *  key (then the event is consumed and dispatch stops). Used e.g. to let {@code M-g} close a
+     *  focused tool window. Only consulted when no multi-key prefix is pending. */
+    private java.util.function.BiPredicate<String, EventTarget> preDispatch;
 
     public KeyDispatcher(CommandRegistry registry, KeymapManager keymap, Consumer<String> statusListener) {
         this.registry = registry;
         this.keymap = keymap;
         this.statusListener = statusListener != null ? statusListener : s -> {
         };
+    }
+
+    /** Installs a first-look hook (see {@link #preDispatch}); may be null to clear. */
+    public void setPreDispatch(java.util.function.BiPredicate<String, EventTarget> hook) {
+        this.preDispatch = hook;
     }
 
     public void install(Scene scene) {
@@ -57,6 +66,11 @@ public class KeyDispatcher {
         String token = chord(event);
         if (token == null) {
             return; // a modifier key on its own
+        }
+        if (pending.isEmpty() && preDispatch != null && preDispatch.test(token, event.getTarget())) {
+            event.consume();
+            consumedPress = true; // swallow the paired KEY_TYPED
+            return;
         }
         String sequence = pending.isEmpty() ? token : pending + " " + token;
 

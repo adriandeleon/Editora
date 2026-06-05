@@ -47,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Search** — a big upgrade across three areas. **In the editor**, the find bar (`C-s`) now searches
+  **incrementally** as you type, **highlights every match** (the current one accented), shows a
+  "{n} of {total}" count, and adds a **whole-word** toggle (regex + case already existed). **Find in
+  Files** (`C-S-f`, or the Search Results tool window on `M-6`) searches the project and open files
+  off-thread and lists matches grouped by file — Enter/double-click jumps to one — with **replace
+  across files** (open buffers edited undoably, closed files rewritten on disk, after a confirmation).
+  **AceJump** (`M-g j`, avy-style): type a character, then a 1–2 char label drawn over any on-screen
+  occurrence, to jump the caret there.
+
 - **Printing** — two new commands show a **print preview** first, then send to the printer.
   **`File: Print…`** (`editor.print`) previews/prints the active buffer's source code — syntax-highlighted
   with an optional line-number gutter, paginated by whole lines, in a clean light theme. **`File: Print

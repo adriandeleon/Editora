@@ -293,6 +293,20 @@ public class ToolWindowManager {
         return open;
     }
 
+    /** The registered tool window whose content node contains {@code target} (focus), or null. */
+    public ToolWindow toolWindowOf(javafx.event.EventTarget target) {
+        Node n = target instanceof Node node ? node : null;
+        while (n != null) {
+            for (ToolWindow tw : byId.values()) {
+                if (tw.getContent() == n) {
+                    return tw;
+                }
+            }
+            n = n.getParent();
+        }
+        return null;
+    }
+
     /** Tooltip text: title plus the chord for the tool window's command, if one is bound. */
     private String tooltipFor(ToolWindow tw) {
         String cmd = tw.getCommandId();
