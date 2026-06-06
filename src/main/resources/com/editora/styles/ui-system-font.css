@@ -1,0 +1,13 @@
+/* macOS-only UI font override (experiment). Attached to every scene (main window, dialogs, the
+   Settings window, and popups like the command palette / context menus / tooltips) by App.start on
+   macOS, so the whole interface uses the native system font — San Francisco — instead of AtlantaFX's
+   Inter, with Inter / sans-serif as fallbacks.
+
+   San Francisco is reachable from JavaFX only through the logical "System" family (the named
+   .AppleSystemUIFont / SF Pro families aren't in Font.getFamilies()). This is an author-level scene
+   stylesheet, so it overrides the AtlantaFX user-agent stylesheet and is re-applied cleanly when the
+   theme is switched at runtime (setUserAgentStylesheet). The editor surface keeps JetBrains Mono
+   because .editor-area sets -fx-font-family explicitly (an element's own value beats an inherited one). */
+.root {
+    -fx-font-family: "System", "Inter", "sans-serif";
+}

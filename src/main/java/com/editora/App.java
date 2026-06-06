@@ -73,10 +73,10 @@ public class App extends Application {
         // Wrap the UI in a StackPane so a floating overlay (the Zen-mode exit button) can sit on top.
         javafx.scene.layout.StackPane sceneRoot = new javafx.scene.layout.StackPane(root);
         // Experiment: on macOS, render the UI chrome in the native system font (San Francisco) instead of
-        // AtlantaFX's Inter. The scene root carries the "root" style class, so adding "mac-system-font"
-        // lets the app.css ".root.mac-system-font" rule override the font family (see app.css).
+        // AtlantaFX's Inter — across every window (main, dialogs, the Settings window, and popups like the
+        // command palette / context menus / tooltips). See installMacSystemFont.
         if (isMac()) {
-            sceneRoot.getStyleClass().add("mac-system-font");
+            installMacSystemFont();
         }
         controller.installZenOverlay(sceneRoot);
         Scene scene = new Scene(sceneRoot, 1000, 700);
@@ -120,6 +120,56 @@ public class App extends Application {
     /** True when running on macOS (used to opt the UI chrome into the native system font). */
     private static boolean isMac() {
         return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
+    }
+
+    /**
+     * The macOS UI-font override stylesheet (the {@code .root} system-font rule). It maps San Francisco
+     * via the logical {@code "System"} family — the named {@code .AppleSystemUIFont} / {@code SF Pro}
+     * families aren't in {@link javafx.scene.text.Font#getFamilies()}.
+     */
+    private static final String UI_FONT_CSS =
+            App.class.getResource("styles/ui-system-font.css").toExternalForm();
+
+    /**
+     * macOS only: render every window's UI chrome in the native system font instead of AtlantaFX's Inter.
+     * Dialogs and popups (alerts, the Settings window, the command palette, context menus, tooltips) each
+     * live in their own scene that doesn't share {@code app.css}, so the override is added as a small
+     * author-level <em>scene</em> stylesheet on each window's scene. A scene stylesheet overrides the
+     * AtlantaFX user-agent stylesheet and — unlike an inline style on the root — is re-applied cleanly
+     * when the theme is switched at runtime ({@code setUserAgentStylesheet}), which is exactly how
+     * {@code app.css} already behaves. The editor surface keeps its own monospace font because
+     * {@code .editor-area} sets {@code -fx-font-family} explicitly. A listener on the live window list
+     * covers windows opened later.
+     */
+    private static void installMacSystemFont() {
+        javafx.stage.Window.getWindows().addListener(
+                (javafx.collections.ListChangeListener<javafx.stage.Window>) change -> {
+                    while (change.next()) {
+                        for (javafx.stage.Window w : change.getAddedSubList()) {
+                            hookWindowFont(w);
+                        }
+                    }
+                });
+        for (javafx.stage.Window w : javafx.stage.Window.getWindows()) {
+            hookWindowFont(w);
+        }
+    }
+
+    /** Attaches the UI-font stylesheet to a window's scene now and whenever its scene changes. */
+    private static void hookWindowFont(javafx.stage.Window window) {
+        if (window == null) {
+            return;
+        }
+        addFontStylesheet(window.getScene());
+        window.sceneProperty().addListener((obs, old, scene) -> addFontStylesheet(scene));
+    }
+
+    /** Adds the UI-font stylesheet to a scene (idempotent). */
+    private static void addFontStylesheet(javafx.scene.Scene scene) {
+        if (scene == null || scene.getStylesheets().contains(UI_FONT_CSS)) {
+            return;
+        }
+        scene.getStylesheets().add(UI_FONT_CSS);
     }
 
     /**
