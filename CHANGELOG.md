@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Toolbar refinements** — the top icon bar's edit buttons are now **state-aware**: Save is disabled
+  unless the file has unsaved changes; Undo/Redo only when there's something to undo/redo; Cut/Copy only
+  with a selection (Cut also needs an editable buffer); Paste only when the buffer is editable and the
+  clipboard holds text (all disabled on the Welcome tab). A new **Find in Files** icon sits beside the
+  in-file Find icon. The toolbar can be **hidden** (Settings → Application "Show toolbar", or the
+  `view.toggleToolbar` palette command); when hidden, a small floating **Tool** button (top-right, like
+  the Zen "Z") brings it back. The decorative Switcher keybinding hint was removed from the bar.
+
 - **Search** — a big upgrade across three areas. **In the editor**, the find bar (`C-s`) now searches
   **incrementally** as you type, **highlights every match** (the current one accented), shows a
   "{n} of {total}" count, and adds a **whole-word** toggle (regex + case already existed). **Find in

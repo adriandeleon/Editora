@@ -1256,6 +1256,20 @@ public class SettingsWindow {
         }
     }
 
+    /** Re-reads the "show toolbar" checkbox from settings (used after the palette/floating toggle). */
+    public void syncToolbarCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            toolbarCheck.setSelected(config.getSettings().isShowToolbar());
+        } finally {
+            loading = prev;
+        }
+    }
+
     /** Re-syncs the autocomplete checkboxes to the current settings (used after a palette toggle). */
     public void syncAutocompleteChecks() {
         if (!built) {

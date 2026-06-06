@@ -124,6 +124,8 @@ public class MainController {
     @FXML
     private Button findButton;
     @FXML
+    private Button findInFilesButton;
+    @FXML
     private Button splitVerticalButton;
     @FXML
     private Button splitHorizontalButton;
@@ -230,6 +232,8 @@ public class MainController {
     private String currentEditorThemeCss;
     /** Floating "exit Zen" button overlaid top-right of the window; shown only while in Zen mode. */
     private Button zenExitButton;
+    /** Floating "show toolbar" button overlaid top-left; shown only when the toolbar is hidden (not in Zen). */
+    private Button toolbarRestoreButton;
     /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
     private boolean markActive;
     /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
@@ -254,6 +258,7 @@ public class MainController {
             if (Boolean.TRUE.equals(now)) {
                 checkExternalChanges();
                 refreshGit(); // another tool may have changed the repo while we were away
+                refreshPasteState(); // clipboard may have changed in another app while we were away
                 if (projectPanel != null) {
                     projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
                 }
@@ -338,6 +343,7 @@ public class MainController {
         // Tool stripes (UI only): hidden stripes still let tool windows open via keybinding/palette.
         toolWindows.setStripesEnabled(s.isShowToolStripe());
         updateZenButton();
+        updateToolbarRestoreButton();
     }
 
     /**
@@ -353,7 +359,35 @@ public class MainController {
         zenExitButton.setOnAction(e -> setZenMode(false));
         StackPane.setAlignment(zenExitButton, Pos.TOP_RIGHT);
         sceneRoot.getChildren().add(zenExitButton);
+
+        // Floating "show toolbar" button (top-right): restores a hidden toolbar. Never coexists with the
+        // Zen "Z" (that's shown only in Zen mode, this only when the toolbar is hidden outside Zen).
+        toolbarRestoreButton = new Button();
+        toolbarRestoreButton.setGraphic(Icons.tools());
+        toolbarRestoreButton.getStyleClass().addAll("toolbar-restore", "flat");
+        toolbarRestoreButton.setTooltip(new Tooltip(tr("tooltip.showToolbar")));
+        toolbarRestoreButton.setFocusTraversable(false);
+        toolbarRestoreButton.setOnAction(e -> toggleToolbar());
+        StackPane.setAlignment(toolbarRestoreButton, Pos.TOP_RIGHT);
+        StackPane.setMargin(toolbarRestoreButton, new javafx.geometry.Insets(8, 12, 0, 0));
+        sceneRoot.getChildren().add(toolbarRestoreButton);
+
         updateZenButton();
+        updateToolbarRestoreButton();
+    }
+
+    /**
+     * Shows the floating "show toolbar" button only when the toolbar is hidden and we're not in Zen mode
+     * (Zen hides the whole chrome and the "Z" already restores it). Cheap visibility toggle.
+     */
+    private void updateToolbarRestoreButton() {
+        if (toolbarRestoreButton == null) {
+            return;
+        }
+        boolean show = !config.getSettings().isShowToolbar()
+                && !config.getWorkspaceState().isZenMode();
+        toolbarRestoreButton.setVisible(show);
+        toolbarRestoreButton.setManaged(show);
     }
 
     /**
@@ -974,6 +1008,8 @@ public class MainController {
                 autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
             }
             refreshSplitButtons();
+            refreshEditState();   // save/undo/redo/cut/copy enablement for the new tab
+            refreshPasteState();  // clipboard read off the keystroke path
             updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
             checkExternalChanges(); // prompt if the file we just switched to changed on disk
             refreshGit(); // update branch/status + this file's gutter change bars
@@ -1841,6 +1877,7 @@ public class MainController {
         setupButton(copyButton, Icons.copy(), tr("tooltip.copy"));
         setupButton(pasteButton, Icons.paste(), tr("tooltip.paste"));
         setupButton(findButton, Icons.find(), tr("tooltip.find"));
+        setupButton(findInFilesButton, Icons.findInFiles(), tr("tooltip.findInFiles"));
         setupButton(splitVerticalButton, Icons.splitVertical(), tr("tooltip.splitVertical"));
         setupButton(splitHorizontalButton, Icons.splitHorizontal(), tr("tooltip.splitHorizontal"));
         setupButton(paletteButton, Icons.palette(), tr("tooltip.palette"));
@@ -1868,6 +1905,8 @@ public class MainController {
         projectToolbarGap.setPrefWidth(78);
         arrangeToolbarTail();
         refreshSplitButtons();
+        refreshEditState();  // start disabled (no buffer yet)
+        refreshPasteState();
     }
 
     /**
@@ -1894,14 +1933,6 @@ public class MainController {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         items.add(spacer);
-
-        String chord = invertBindings().get("switcher.show");
-        if (chord != null && !chord.isBlank()) {
-            Label hint = new Label(tr("hint.switcher", chord));
-            hint.getStyleClass().add("toolbar-hint");
-            hint.setTooltip(new Tooltip(tr("hint.switcher.tip", chord)));
-            items.add(hint);
-        }
 
         // Dev-mode badge (just left of the About icon) when running with --dev, so a development
         // instance is visually distinct from the production one.
@@ -1971,6 +2002,44 @@ public class MainController {
         button.setGraphic(icon);
         button.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
         button.setTooltip(new Tooltip(tooltip));
+    }
+
+    /**
+     * Enables/disables the state-dependent toolbar edit icons (save/undo/redo/cut/copy) for the active
+     * buffer. A non-buffer tab (Welcome) or no buffer ⇒ all disabled. Runs on tab switch and on the
+     * buffer's own edit/selection/dirty pulses — no polling. Disabling is cosmetic only; the keybinding
+     * commands still work. Clipboard-dependent Paste is handled separately by {@link #refreshPasteState}
+     * to keep the system-clipboard read off the per-keystroke path.
+     */
+    private void refreshEditState() {
+        if (saveButton == null) {
+            return; // toolbar not built yet
+        }
+        EditorBuffer buffer = activeBuffer();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
+        boolean hasBuffer = buffer != null;
+        boolean editable = hasBuffer && buffer.isEditable();
+        boolean hasSelection = area != null && area.getSelection().getLength() > 0;
+        saveButton.setDisable(!hasBuffer || !buffer.isDirty());
+        undoButton.setDisable(area == null || !area.isUndoAvailable());
+        redoButton.setDisable(area == null || !area.isRedoAvailable());
+        cutButton.setDisable(!hasSelection || !editable);
+        copyButton.setDisable(!hasSelection);
+    }
+
+    /**
+     * Enables/disables Paste from the system clipboard. Kept separate from {@link #refreshEditState} so
+     * the clipboard read happens only on tab switch / window focus-regain / after copy — never per
+     * keystroke.
+     */
+    private void refreshPasteState() {
+        if (pasteButton == null) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        boolean editable = buffer != null && buffer.isEditable();
+        boolean hasClip = Clipboard.getSystemClipboard().hasString();
+        pasteButton.setDisable(!editable || !hasClip);
     }
 
     /**
@@ -2225,6 +2294,9 @@ public class MainController {
         updateTabMeta(tab, buffer); // replaces the default text/icon with the buffer header (drag handle, pin, dirty)
         buffer.dirtyProperty().addListener((obs, was, now) -> {
             updateTabMeta(tab, buffer);
+            if (buffer == activeBuffer()) {
+                refreshEditState(); // save enablement (e.g. after markClean())
+            }
             if (projectPanel != null) {
                 projectPanel.refreshModified(); // reflect the dirty marker in the Project file tree
             }
@@ -2233,6 +2305,15 @@ public class MainController {
         buffer.getArea().multiPlainChanges().subscribe(c -> {
             if (AUTOSAVE_DELAY.equals(autoSaveMode())) {
                 autoSaveIdleTimer.playFromStart();
+            }
+            if (buffer == activeBuffer()) {
+                refreshEditState(); // edits change undo/redo (and dirty) availability
+            }
+        });
+        // Selection changes toggle cut/copy enablement (no clipboard read here — that's refreshPasteState).
+        buffer.getArea().selectionProperty().addListener((obs, was, now) -> {
+            if (buffer == activeBuffer()) {
+                refreshEditState();
             }
         });
         installTabMenu(tab, buffer);
@@ -3231,6 +3312,7 @@ public class MainController {
         boolean had = area.getSelection().getLength() > 0;
         area.cut();
         deactivateMark();
+        refreshPasteState(); // clipboard now has content
         setStatus(tr(had ? "status.cut" : "status.nothingToCut"));
     }
 
@@ -3243,6 +3325,7 @@ public class MainController {
         boolean had = area.getSelection().getLength() > 0;
         area.copy();
         deactivateMark();
+        refreshPasteState(); // clipboard now has content
         setStatus(tr(had ? "status.copied" : "status.nothingToCopy"));
     }
 
@@ -3294,6 +3377,11 @@ public class MainController {
             findBar.show(false);
         }
         findBar.focusReplace();
+    }
+
+    @FXML
+    private void onFindInFiles() {
+        openSearchInFiles();
     }
 
     @FXML
@@ -3567,6 +3655,7 @@ public class MainController {
         s.setShowToolbar(!s.isShowToolbar());
         config.save();
         applyChromeVisibility();
+        settingsWindow.syncToolbarCheck();
         setStatus(tr("status.toggle.toolbar", tr(s.isShowToolbar() ? "common.on" : "common.off")));
     }
 
@@ -3871,6 +3960,10 @@ public class MainController {
             updateTabMeta(tab, buffer);
         }
         statusBar.refresh();
+        if (buffer == activeBuffer()) {
+            refreshEditState(); // editability change affects cut enablement
+            refreshPasteState(); // ...and paste enablement
+        }
     }
 
     /** The tab hosting {@code buffer}, or null if not open. */

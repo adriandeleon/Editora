@@ -429,6 +429,19 @@
 .zen-exit:hover { -fx-background-color: -color-bg-default; -fx-opacity: 1.0; }
 .zen-exit:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
 
+/* Floating "show toolbar" button (top-right), shown only when the toolbar is hidden (not in Zen). */
+.toolbar-restore {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 3 6 3 6;
+    -fx-opacity: 0.92;
+}
+.toolbar-restore .toolbar-icon { -fx-fill: -color-fg-muted; }
+.toolbar-restore:hover { -fx-background-color: -color-bg-default; -fx-opacity: 1.0; }
+.toolbar-restore:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
+
 /* Project file tree: themed folder/file icon colors. The two looked-up colors default to the GUI
    theme's accent/muted (AtlantaFX), and each editor theme overrides them with palette-matched values
    (see styles/editor-themes/*.css) so the tree tracks the active code theme. */

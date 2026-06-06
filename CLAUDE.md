@@ -80,7 +80,19 @@ wraps the FXML root in a `StackPane` so a floating overlay can sit on top — us
 `WorkspaceState.isZenMode()` — toggled in `applyChromeVisibility` via `updateZenButton` — and
 clicking it runs `setZenMode(false)`). `updateZenButton` also drops the Z below the Markdown preview
 controls (a larger top margin) when the active buffer is Markdown, since those also float top-right; it
-re-runs on tab switches so the offset tracks the active file.
+re-runs on tab switches so the offset tracks the active file. `installZenOverlay` also creates a second
+floating button, the **toolbar-restore "Tool" button** (`Icons.tools()`, styled `.toolbar-restore` like
+the Zen "Z", also `Pos.TOP_RIGHT` — it never coexists with the "Z", which only shows in Zen mode), shown by `updateToolbarRestoreButton` (called from
+`applyChromeVisibility`) only when the toolbar is hidden and not in Zen (`!isShowToolbar() && !isZenMode()`);
+clicking it runs `toggleToolbar()` (which also `settingsWindow.syncToolbarCheck()`s), so a user who hides
+the toolbar (Settings checkbox or the `view.toggleToolbar` palette command) can always bring it back. The
+**toolbar's state-aware edit icons** (Save/Undo/Redo/Cut/Copy/Paste) are kept enabled/disabled by
+`refreshEditState()` (save←dirty, undo/redo←`area.isUndoAvailable/isRedoAvailable`, cut←selection+editable,
+copy←selection — all disabled on a non-buffer/Welcome tab) and `refreshPasteState()` (paste←editable +
+`Clipboard.hasString()`, kept off the per-keystroke path: run on tab switch, window focus-regain, and after
+cut/copy). `refreshEditState` runs on tab switch and the active buffer's edit/selection/dirty pulses;
+disabling is cosmetic only — the `C-s`/`C-z`/… keymap commands still work. The toolbar's **Find in Files**
+icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside the in-file Find icon.
 
 - `command/` — the keyboard-driven core.
   - `Command` / `CommandRegistry`: every action is a registered `Command` (id + title + runnable). The registry feeds both keybindings and the palette.

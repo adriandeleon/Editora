@@ -33,6 +33,7 @@
                         <Button fx:id="pasteButton" onAction="#onPaste"/>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="findButton" onAction="#onFind"/>
+                        <Button fx:id="findInFilesButton" onAction="#onFindInFiles"/>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="splitVerticalButton" onAction="#onSplitVertical"/>
                         <Button fx:id="splitHorizontalButton" onAction="#onSplitHorizontal"/>
