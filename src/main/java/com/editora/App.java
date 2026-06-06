@@ -72,6 +72,12 @@ public class App extends Application {
 
         // Wrap the UI in a StackPane so a floating overlay (the Zen-mode exit button) can sit on top.
         javafx.scene.layout.StackPane sceneRoot = new javafx.scene.layout.StackPane(root);
+        // Experiment: on macOS, render the UI chrome in the native system font (San Francisco) instead of
+        // AtlantaFX's Inter. The scene root carries the "root" style class, so adding "mac-system-font"
+        // lets the app.css ".root.mac-system-font" rule override the font family (see app.css).
+        if (isMac()) {
+            sceneRoot.getStyleClass().add("mac-system-font");
+        }
         controller.installZenOverlay(sceneRoot);
         Scene scene = new Scene(sceneRoot, 1000, 700);
         // Pre-fill with the theme background so the first frame isn't JavaFX's default light gray
@@ -109,6 +115,11 @@ public class App extends Application {
         String project = projectArg(raw);
         controller.startup(project == null ? null : java.nio.file.Path.of(project),
                 fileTargets(raw), zenFlag(raw), newFileArg(raw));
+    }
+
+    /** True when running on macOS (used to opt the UI chrome into the native system font). */
+    private static boolean isMac() {
+        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
     }
 
     /**

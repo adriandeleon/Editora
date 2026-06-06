@@ -2,6 +2,15 @@
    Standard controls (toolbar, buttons, text fields, list view) are themed by AtlantaFX;
    the rules below cover the RichTextFX editor, which AtlantaFX does not style. */
 
+/* Experiment (macOS only): use the native system font — San Francisco — for the UI chrome, falling
+   back to Inter (AtlantaFX's bundled default) then sans-serif. On macOS the logical "System" family
+   maps to San Francisco; on other platforms it would map to *their* system font, so this is gated to
+   macOS via the "mac-system-font" style class added to the scene root in App.start. Higher specificity
+   (.root + class) than AtlantaFX's ".root" rule, so it wins. The editor surface keeps JetBrains Mono. */
+.root.mac-system-font {
+    -fx-font-family: "System", "Inter", "sans-serif";
+}
+
 .editor-area {
     -fx-background-color: #ffffff;
     -fx-font-family: "JetBrains Mono", "monospace";
