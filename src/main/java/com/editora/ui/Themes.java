@@ -47,7 +47,27 @@ public final class Themes {
     }
 
     public static String stylesheetFor(String name) {
-        return themeFor(name).getUserAgentStylesheet();
+        Theme theme = themeFor(name);
+        String sheet = theme.getUserAgentStylesheet();
+        if (sheet == null) {
+            return null;
+        }
+        // AtlantaFX returns a classpath resource *path* (e.g. "/atlantafx/base/theme/primer-light.css"),
+        // not a URL. Application.setUserAgentStylesheet can load that during startup, but when called at
+        // runtime (switching the theme from a UI event) the context ClassLoader JavaFX would use to
+        // resolve a bare path is null → NullPointerException, which aborts the switch and leaves the UI
+        // half-restyled. Resolve it to a full URL ourselves so runtime theme switching works. (If a
+        // future AtlantaFX returns a real URL already, pass it through unchanged.)
+        if (hasUrlScheme(sheet)) {
+            return sheet;
+        }
+        java.net.URL url = theme.getClass().getResource(sheet);
+        return url != null ? url.toExternalForm() : sheet;
+    }
+
+    private static boolean hasUrlScheme(String s) {
+        return s.startsWith("jar:") || s.startsWith("file:") || s.startsWith("http:")
+                || s.startsWith("https:") || s.startsWith("data:") || s.startsWith("jrt:");
     }
 
     /**
