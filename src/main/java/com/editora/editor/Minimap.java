@@ -44,6 +44,15 @@ final class Minimap extends Region {
     private boolean renderingActive = true;
     /** Visual width of a tab character, in columns. */
     private int tabSize = 4;
+    /** LSP diagnostics drawn as colored stripes on the right edge (IntelliJ-style); never cached. */
+    private java.util.List<LspDiagnostic> diagnostics = java.util.List.of();
+    /** Gate for the diagnostic stripes: only drawn when LSP is active for this buffer. */
+    private boolean diagnosticsEnabled;
+
+    private static final Color ERROR_STRIPE = Color.web("#e5484d");
+    private static final Color WARNING_STRIPE = Color.web("#e2a03f");
+    private static final Color INFO_STRIPE = Color.web("#4c8eda");
+    private static final double STRIPE_WIDTH = 5;
 
     Minimap(CodeArea area) {
         this.area = area;
@@ -81,6 +90,34 @@ final class Minimap extends Region {
      *  run before the canvas was sized). */
     void refresh() {
         renderContent();
+    }
+
+    /** Sets the LSP diagnostics drawn as right-edge severity stripes; a cheap stripe-only repaint. */
+    void setDiagnostics(java.util.List<LspDiagnostic> diagnostics) {
+        this.diagnostics = diagnostics == null ? java.util.List.of() : diagnostics;
+        repaintStripes();
+    }
+
+    /** Enables/disables the diagnostic stripes (driven by LSP-active for this buffer); a cheap repaint. */
+    void setDiagnosticsEnabled(boolean enabled) {
+        if (this.diagnosticsEnabled == enabled) {
+            return;
+        }
+        this.diagnosticsEnabled = enabled;
+        repaintStripes();
+    }
+
+    /**
+     * Repaints just the stripes over the already-cached content image. Crucially, this never forces a
+     * {@link #renderContent()} (which calls {@code snapshot()} — a synchronous full-scene layout): when
+     * there is no cached image yet (early startup, before the editor's first paint), it does nothing and
+     * lets the minimap's normal layout-driven first render draw the stripes. Forcing a snapshot at that
+     * point blanks the editor surface until the next relayout.
+     */
+    private void repaintStripes() {
+        if (contentImage != null) {
+            redraw();
+        }
     }
 
     /**
@@ -157,6 +194,7 @@ final class Minimap extends Region {
             contentImage = null;
         }
         drawViewport(g, w, h, total, rowHeight);
+        drawDiagnosticStripes(g, w, h, total, rowHeight);
     }
 
     /** Cheap redraw on scroll: re-blit the cached content image and draw the viewport rectangle. */
@@ -180,7 +218,9 @@ final class Minimap extends Region {
             return;
         }
         g.drawImage(contentImage, 0, 0);
-        drawViewport(g, w, h, total, rowHeight(h, total));
+        double rowHeight = rowHeight(h, total);
+        drawViewport(g, w, h, total, rowHeight);
+        drawDiagnosticStripes(g, w, h, total, rowHeight);
     }
 
     /** Vertical pixels per line: a fixed size, but compressed to fit when the document is long. */
@@ -199,6 +239,38 @@ final class Minimap extends Region {
         } catch (RuntimeException ignored) {
             // Viewport not laid out yet (e.g. before first render) — skip the indicator.
         }
+    }
+
+    /**
+     * Draws IntelliJ-style severity stripes on the right edge — one per diagnostic line, at the same
+     * vertical position the line maps to. Info/warning first, errors last so errors sit on top.
+     */
+    private void drawDiagnosticStripes(GraphicsContext g, double w, double h, int total, double rowHeight) {
+        if (!diagnosticsEnabled || diagnostics.isEmpty() || total == 0) {
+            return;
+        }
+        double x = w - STRIPE_WIDTH;
+        double markH = Math.max(2.0, rowHeight);
+        for (LspDiagnostic.Severity sev : new LspDiagnostic.Severity[]{
+                LspDiagnostic.Severity.HINT, LspDiagnostic.Severity.INFO,
+                LspDiagnostic.Severity.WARNING, LspDiagnostic.Severity.ERROR}) {
+            g.setFill(stripeColor(sev));
+            for (LspDiagnostic d : diagnostics) {
+                if (d.severity() != sev) {
+                    continue;
+                }
+                double y = clamp(d.startLine(), total) * rowHeight;
+                g.fillRect(x, Math.min(y, h - markH), STRIPE_WIDTH, markH);
+            }
+        }
+    }
+
+    private static Color stripeColor(LspDiagnostic.Severity sev) {
+        return switch (sev) {
+            case ERROR -> ERROR_STRIPE;
+            case WARNING -> WARNING_STRIPE;
+            default -> INFO_STRIPE;
+        };
     }
 
     /** Draws a block for each contiguous run of non-whitespace characters in {@code text}. */

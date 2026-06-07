@@ -22,14 +22,15 @@ import com.editora.config.WorkspaceState;
  */
 public enum ConfigSchema {
     // v1 → v2 added the Personal Notes flags; v2 → v3 added markdownPreviewTheme; v3 → v4 added
-    // showToolStripe; v4 → v5 added the Mermaid flags; v5 → v6 added the PDF-export options — all
-    // additive, so identity.
+    // showToolStripe; v4 → v5 added the Mermaid flags; v5 → v6 added the PDF-export options; v6 → v7
+    // added the LSP flags (lspSupport/javaLspCommand) — all additive, so identity.
     SETTINGS(Settings.SCHEMA_VERSION, 1, Map.of(
             1, ConfigMigrations::identity,
             2, ConfigMigrations::identity,
             3, ConfigMigrations::identity,
             4, ConfigMigrations::identity,
-            5, ConfigMigrations::identity)),
+            5, ConfigMigrations::identity,
+            6, ConfigMigrations::identity)),
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of()),

@@ -13,6 +13,7 @@ import com.editora.editor.EditorBuffer;
 import javafx.beans.InvalidationListener;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -41,6 +42,14 @@ public final class StatusBar extends HBox {
     private final MessageLogPopup messageLogPopup = new MessageLogPopup();
     /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
+    /** Active language server for the current file (e.g. "LSP: jdtls"); clickable → Problems. Hidden when
+     *  the active buffer isn't served by LSP. */
+    private final Label lsp = segment("tool.problems", tr("statusbar.tip.lsp"));
+    /** Indeterminate progress shown while a language server is starting/loading; hidden once ready. */
+    // Starts determinate (0) — an *indeterminate* ProgressBar runs an animation timeline that pulses the
+    // whole scene continuously (even while hidden), starving nearby repaints. setLspLoading() flips it to
+    // indeterminate only while a server is actually loading.
+    private final ProgressBar lspProgress = new ProgressBar(0);
     private final Label position = segment("nav.goToLine", tr("statusbar.tip.goToLine"));
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
     private final Label indent = segment("buffer.setTabSize", tr("statusbar.tip.setTabSize"));
@@ -76,10 +85,21 @@ public final class StatusBar extends HBox {
         git.getStyleClass().add("status-git");
         git.setText(tr("statusbar.noVcs")); // always shown; updated by setGitBranch
 
+        lsp.getStyleClass().add("status-lsp");
+        lsp.setVisible(false); // shown only when the active file is served by a language server
+        lsp.setManaged(false);
+
+        lspProgress.getStyleClass().add("status-lsp-progress");
+        lspProgress.setPrefWidth(90);
+        lspProgress.setMaxHeight(10);
+        lspProgress.setVisible(false); // shown only while a language server is loading
+        lspProgress.setManaged(false);
+        lspProgress.setTooltip(new Tooltip(tr("statusbar.tip.lspLoading")));
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        getChildren().addAll(echo, spacer, git, readOnly, zoomGroup(), position, language, indent, endings,
-                size, encoding);
+        getChildren().addAll(echo, spacer, lspProgress, git, lsp, readOnly, zoomGroup(), position, language,
+                indent, endings, size, encoding);
         refresh();
     }
 
@@ -165,6 +185,26 @@ public final class StatusBar extends HBox {
         }
         git.setText(sb.toString());
         git.getTooltip().setText(tr("statusbar.tip.gitBranch"));
+    }
+
+    /**
+     * Shows/updates the LSP segment for the active file. {@code serverName} non-blank → "LSP: name"
+     * (segment shown); null/blank → the segment is hidden (no language server for this file).
+     */
+    public void setLsp(String serverName) {
+        boolean show = serverName != null && !serverName.isBlank();
+        lsp.setText(show ? tr("statusbar.lsp", serverName) : "");
+        lsp.setVisible(show);
+        lsp.setManaged(show);
+    }
+
+    /** Shows/hides the indeterminate progress bar while a language server is starting/loading. */
+    public void setLspLoading(boolean loading) {
+        // Flip indeterminate only while loading; a fixed value when idle stops the animation timeline
+        // (which otherwise keeps pulsing the scene and starves nearby repaints — see the field comment).
+        lspProgress.setProgress(loading ? ProgressBar.INDETERMINATE_PROGRESS : 0);
+        lspProgress.setVisible(loading);
+        lspProgress.setManaged(loading);
     }
 
     /** Re-binds live listeners to {@code buffer} (or none) and refreshes the segments. */

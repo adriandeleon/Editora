@@ -22,4 +22,9 @@ public record Completion(String label, String insert, Kind kind, String detail, 
         String detail = s.description() == null || s.description().isBlank() ? s.name() : s.description();
         return new Completion(s.prefix(), s.prefix(), Kind.SNIPPET, detail, s);
     }
+
+    /** A completion from a language server: insert literal text (no snippet session). */
+    public static Completion lsp(String label, String insert, String detail) {
+        return new Completion(label, insert, Kind.WORD, detail, null);
+    }
 }

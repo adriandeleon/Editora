@@ -209,6 +209,20 @@ public class MainController {
     private boolean mermaidSupportApplied;
     private com.editora.mermaid.MermaidService.Availability mermaidAvail =
             new com.editora.mermaid.MermaidService.Availability(false, false);
+    /** LSP: manager (one server per workspace root), the Problems window, and the latest diagnostics. */
+    private final com.editora.lsp.LspManager lspManager =
+            new com.editora.lsp.LspManager(this::onLspDiagnostics, this::onLspServerStatus);
+    private boolean lspAvailable;
+    private ProblemsPanel problemsPanel;
+    private ToolWindow problemsToolWindow;
+    /** Run: streams a Java 25 compact source file's output into the Run tool window. */
+    private final com.editora.run.RunService runService = new com.editora.run.RunService();
+    private RunPanel runPanel;
+    private ToolWindow runToolWindow;
+    private final java.util.Map<Path, java.util.List<com.editora.editor.LspDiagnostic>> lspProblems =
+            new java.util.LinkedHashMap<>();
+    /** The currently-showing LSP hover popup (dismissable), or null. */
+    private javafx.stage.Popup lspHoverPopup;
     private GitPanel gitPanel;
     private ToolWindow commitToolWindow;
     /** IntelliJ-style branch dropdown (actions + Local/Remote branches), anchored to the status bar. */
@@ -280,7 +294,9 @@ public class MainController {
                         && (config.getSettings().isNotesSupport()
                         || (!c.id().startsWith("notes.") && !c.id().equals("tool.notes")))
                         && (config.getSettings().isMermaidSupport()
-                        || !c.id().startsWith("mermaid.")));
+                        || !c.id().startsWith("mermaid."))
+                        && (config.getSettings().isLspSupport()
+                        || (!c.id().startsWith("lsp.") && !c.id().equals("tool.problems"))));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -290,7 +306,7 @@ public class MainController {
         bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows, gitService, mermaidService,
-                this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath,
+                lspManager, this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath,
                 this::exportConfig);
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
@@ -313,6 +329,7 @@ public class MainController {
         applyGitSupport(); // hide Git UI when disabled (default)
         applyNotesSupport(); // hide Personal Notes UI when disabled (default)
         applyMermaidSupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
+        applyLspSupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
@@ -1013,6 +1030,8 @@ public class MainController {
             updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
             checkExternalChanges(); // prompt if the file we just switched to changed on disk
             refreshGit(); // update branch/status + this file's gutter change bars
+            updateLspStatusBar(); // show/hide the "LSP: <server>" segment for the new active file
+            updateRunButton(); // show the Run button only for a compact source file
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
@@ -1036,6 +1055,11 @@ public class MainController {
                     for (Tab removed : c.getRemoved()) {
                         EditorBuffer closed = bufferOf(removed);
                         if (closed != null) {
+                            if (closed.getPath() != null && lspManager.isManaged(closed.getPath())) {
+                                lspManager.closeDocument(closed.getPath());
+                                lspProblems.remove(closed.getPath());
+                                refreshProblems();
+                            }
                             closed.dispose();
                         }
                     }
@@ -1171,6 +1195,12 @@ public class MainController {
         });
         searchToolWindow = new ToolWindow("search", tr("toolwindow.search"), ToolWindow.Side.BOTTOM,
                 Icons::find, searchPanel, "tool.search");
+        problemsPanel = new ProblemsPanel(this::openAndGoto);
+        problemsToolWindow = new ToolWindow("problems", tr("toolwindow.problems"), ToolWindow.Side.BOTTOM,
+                Icons::problems, problemsPanel, "tool.problems");
+        runPanel = new RunPanel(this::stopRun);
+        runToolWindow = new ToolWindow("run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM,
+                Icons::run, runPanel, "tool.run");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
@@ -1178,6 +1208,9 @@ public class MainController {
         toolWindows.register(commitToolWindow);
         toolWindows.register(fileInfoToolWindow);
         toolWindows.register(searchToolWindow);
+        toolWindows.register(problemsToolWindow);
+        toolWindows.register(runToolWindow);
+        toolWindows.setAvailable(runToolWindow, false); // shown only when the active file is a compact source
     }
 
     /** Runs a multi-file search: open buffers (in-memory) + the active project root, results to the panel. */
@@ -1399,6 +1432,330 @@ public class MainController {
             action.run();
         } else {
             setStatus(tr("statusbar.tip.mermaidDisabled"));
+        }
+    }
+
+    // --- LSP (Language Server Protocol) integration --------------------------------------------
+
+    private boolean lspEnabled() {
+        return config.getSettings().isLspSupport();
+    }
+
+    /**
+     * Reconciles the LSP feature with its setting (mirrors {@link #applyMermaidSupport}). Configures the
+     * manager + Problems window, then (when enabled) detects the server and gates per-buffer LSP. Runs at
+     * init and on every settings apply.
+     */
+    private void applyLspSupport() {
+        Settings s = config.getSettings();
+        boolean on = s.isLspSupport();
+        lspManager.configure(on, s.getJavaLspCommand());
+        if (problemsToolWindow != null) {
+            toolWindows.setAvailable(problemsToolWindow, on);
+        }
+        // The Run affordance (compact source files) is gated by the LSP feature: toggle every buffer's
+        // Run detection, then refresh the active buffer's Run tool-window availability.
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null) {
+                b.setRunEnabled(on);
+            }
+        }
+        updateRunButton();
+        if (!on) {
+            lspAvailable = false;
+            lspProblems.clear();
+            refreshProblems();
+            for (Tab tab : tabPane.getTabs()) {
+                EditorBuffer b = bufferOf(tab);
+                if (b != null) {
+                    b.setLspActive(false);
+                }
+            }
+            statusBar.setLspLoading(false);
+            updateLspStatusBar();
+            return;
+        }
+        lspManager.detect(available -> {
+            lspAvailable = available;
+            applyLspGating();
+        });
+    }
+
+    /** Applies the detection-dependent gate to every open buffer. */
+    private void applyLspGating() {
+        boolean ready = lspEnabled() && lspAvailable;
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null) {
+                syncBufferLsp(b, ready);
+            }
+        }
+        updateLspStatusBar();
+    }
+
+    /** Opens+activates an eligible Java buffer on the server, or deactivates+closes it otherwise. */
+    private void syncBufferLsp(EditorBuffer buffer, boolean ready) {
+        Path path = buffer.getPath();
+        boolean eligible = ready && path != null && buffer.isLspLanguage();
+        if (eligible) {
+            if (!lspManager.isManaged(path)) {
+                setStatus(tr("status.lsp.starting", lspServerLabel()));
+                statusBar.setLspLoading(true); // show the loading bar until the server reports ready
+                lspManager.openDocument(path, lspRootFor(buffer), "java", buffer.text());
+            }
+            buffer.setLspActive(true);
+        } else {
+            buffer.setLspActive(false);
+            if (path != null && lspManager.isManaged(path)) {
+                lspManager.closeDocument(path);
+                lspProblems.remove(path);
+                refreshProblems();
+            }
+        }
+    }
+
+    /** Workspace root for a buffer: active project (if Projects on), else nearest build file, else dir. */
+    private Path lspRootFor(EditorBuffer buffer) {
+        Project active = (projects != null && config.getSettings().isProjectSupport())
+                ? projects.active() : null;
+        Path projectRoot = active == null ? null : Path.of(active.root());
+        return com.editora.lsp.RootResolver.resolve(projectRoot, buffer.getPath(),
+                com.editora.lsp.LspServerRegistry.JAVA_ROOT_MARKERS);
+    }
+
+    /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
+    private void onLspDiagnostics(Path file, java.util.List<com.editora.editor.LspDiagnostic> diagnostics) {
+        if (!lspEnabled()) {
+            return;
+        }
+        statusBar.setLspLoading(false); // diagnostics flowing ⇒ the server is up; stop the loading bar
+        if (diagnostics.isEmpty()) {
+            lspProblems.remove(file);
+        } else {
+            lspProblems.put(file, diagnostics);
+        }
+        Tab tab = tabForPath(file);
+        EditorBuffer buffer = tab == null ? null : bufferOf(tab);
+        if (buffer != null) {
+            buffer.setLspDiagnostics(diagnostics);
+        }
+        refreshProblems();
+    }
+
+    private void refreshProblems() {
+        if (problemsPanel != null) {
+            problemsPanel.setProblems(lspProblems);
+        }
+    }
+
+    /** Updates the status-bar LSP segment: "LSP: &lt;server&gt;" when the active file is managed, else hidden. */
+    private void updateLspStatusBar() {
+        EditorBuffer b = activeBuffer();
+        boolean managed = b != null && b.getPath() != null && lspManager.isManaged(b.getPath());
+        statusBar.setLsp(managed ? lspServerLabel() : null);
+    }
+
+    /** The short server name shown in the status bar (the configured Java command's basename, e.g. jdtls). */
+    private String lspServerLabel() {
+        java.util.List<String> cmd =
+                com.editora.lsp.LspServerRegistry.tokenize(config.getSettings().getJavaLspCommand());
+        String exe = cmd.isEmpty() ? com.editora.lsp.LspServerRegistry.DEFAULT_JAVA_COMMAND : cmd.get(0);
+        try {
+            return Path.of(exe).getFileName().toString();
+        } catch (RuntimeException e) {
+            return exe;
+        }
+    }
+
+    /**
+     * Shows a language server's status/log message in the echo area and drives the status-bar loading
+     * bar: a "ServiceReady"/"Ready" (or "Error") status stops it. {@code type} is the JDT LS
+     * {@code language/status} type (or "Message"/"Error").
+     */
+    private void onLspServerStatus(String type, String message) {
+        if (!lspEnabled()) {
+            return;
+        }
+        if (message != null && !message.isBlank()) {
+            setStatus(tr("status.lsp.server", message));
+        }
+        if (type != null) {
+            String t = type.toLowerCase(java.util.Locale.ROOT);
+            if (t.contains("ready") || t.contains("error")) {
+                statusBar.setLspLoading(false); // server finished starting (or failed)
+            }
+        }
+    }
+
+    /** Runs {@code action} only when LSP is enabled; otherwise reports it (no-op command/key). */
+    private void ifLsp(Runnable action) {
+        if (lspEnabled()) {
+            action.run();
+        } else {
+            setStatus(tr("statusbar.tip.lspDisabled"));
+        }
+    }
+
+    private void toggleLsp() {
+        Settings s = config.getSettings();
+        s.setLspSupport(!s.isLspSupport());
+        config.save();
+        applyLspSupport();
+        if (settingsWindow != null) {
+            settingsWindow.syncLspCheck();
+        }
+        setStatus(tr("status.toggle.lsp", tr(s.isLspSupport() ? "common.on" : "common.off")));
+    }
+
+    private void restartLspServers() {
+        lspManager.shutdownAll();
+        lspProblems.clear();
+        refreshProblems();
+        applyLspGating();
+        setStatus(tr("status.lsp.restarted"));
+    }
+
+    /** Notifies the server of a save (didSave) for a managed file. */
+    private void notifyLspSaved(EditorBuffer buffer) {
+        if (buffer != null && buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+            lspManager.saveDocument(buffer.getPath());
+        }
+    }
+
+    /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
+    private void openAndGoto(Path file, int line0, int col0) {
+        openPath(file);
+        Platform.runLater(() -> gotoInFile(file, line0 + 1, col0 + 1));
+    }
+
+    /** The active buffer if it is LSP-managed, reporting + returning null otherwise. */
+    private EditorBuffer activeLspBuffer() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null || !lspManager.isManaged(b.getPath())) {
+            setStatus(tr("status.lsp.unavailable"));
+            return null;
+        }
+        return b;
+    }
+
+    private void lspGotoDefinition() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
+        lspManager.definition(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (targets.isEmpty()) {
+                setStatus(tr("status.lsp.noDefinition"));
+            } else {
+                com.editora.lsp.LspManager.Target t = targets.get(0);
+                openAndGoto(t.file(), t.line(), t.character());
+            }
+        });
+    }
+
+    private void lspFindReferences() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
+        lspManager.references(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (targets.isEmpty()) {
+                setStatus(tr("status.lsp.noReferences"));
+                return;
+            }
+            QuickOpen<com.editora.lsp.LspManager.Target> picker = new QuickOpen<>(
+                    tr("lsp.references.title"), tr("lsp.references.prompt"),
+                    () -> targets,
+                    t -> t.file().getFileName() + ":" + (t.line() + 1),
+                    t -> t.file().toString(),
+                    t -> openAndGoto(t.file(), t.line(), t.character()));
+            picker.show(stage);
+        });
+    }
+
+    private void lspShowHover() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
+        lspManager.hover(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), text -> {
+            if (text == null || text.isBlank()) {
+                setStatus(tr("status.lsp.noHover"));
+            } else {
+                showHoverPopup(area, text);
+            }
+        });
+    }
+
+    /**
+     * Shows LSP hover markdown in a dismissable popup at the caret (rendered via the Markdown renderer).
+     * Closes on Escape, a click elsewhere (auto-hide), caret movement, scrolling, or another hover.
+     */
+    private void showHoverPopup(CodeArea area, String markdown) {
+        hideHoverPopup();
+        javafx.scene.Node content;
+        try {
+            javafx.scene.Node rendered = com.editora.editor.MarkdownRenderer.renderDocument(
+                    com.editora.editor.MarkdownRenderer.parseToDocument(markdown), null);
+            content = rendered;
+        } catch (RuntimeException e) {
+            javafx.scene.control.Label label = new javafx.scene.control.Label(markdown);
+            label.setWrapText(true);
+            content = label;
+        }
+        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(content);
+        box.getStyleClass().add("lsp-hover-popup");
+        box.setMaxWidth(560);
+        box.getStylesheets().addAll(
+                getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
+                getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
+
+        javafx.stage.Popup popup = new javafx.stage.Popup();
+        popup.setAutoHide(true); // click outside / focus loss dismisses it
+        popup.setConsumeAutoHidingEvents(false);
+        popup.getContent().add(box);
+        lspHoverPopup = popup;
+
+        // Dismiss on Escape, caret movement, or scroll — all detached again when the popup hides.
+        javafx.event.EventHandler<javafx.scene.input.KeyEvent> esc = ev -> {
+            if (ev.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
+                hideHoverPopup();
+                ev.consume();
+            }
+        };
+        javafx.beans.value.ChangeListener<Object> dismiss = (o, a, b) -> hideHoverPopup();
+        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, esc);
+        area.caretPositionProperty().addListener(dismiss);
+        area.estimatedScrollYProperty().addListener(dismiss);
+        popup.setOnHidden(ev -> {
+            area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, esc);
+            area.caretPositionProperty().removeListener(dismiss);
+            area.estimatedScrollYProperty().removeListener(dismiss);
+            if (lspHoverPopup == popup) {
+                lspHoverPopup = null;
+            }
+        });
+
+        var bounds = area.getCaretBounds().orElse(null);
+        if (bounds != null) {
+            popup.show(area, bounds.getMinX(), bounds.getMaxY());
+        } else {
+            popup.show(area, 0, 0);
+        }
+    }
+
+    /** Hides the LSP hover popup if one is showing. */
+    private void hideHoverPopup() {
+        if (lspHoverPopup != null) {
+            lspHoverPopup.hide();
+            lspHoverPopup = null;
         }
     }
 
@@ -2279,6 +2636,14 @@ public class MainController {
         buffer.setGutterBookmarkClick(this::onGutterBookmarkClick);
         buffer.setOnNotesChanged(() -> persistNotes(buffer));
         buffer.setGutterNoteClick(this::onGutterNoteClick);
+        // Refresh the Run button when this buffer's compact-source status flips (only acts if it's active).
+        buffer.setOnCompactSourceChanged(() -> {
+            if (activeBuffer() == buffer) {
+                updateRunButton();
+            }
+        });
+        buffer.setRunHandler(this::runActiveFile); // "Run File" editor right-click item (compact source only)
+        buffer.setRunEnabled(lspEnabled()); // the Run affordance is gated by the LSP feature
         buffer.setAddNoteHandler(this::addNoteFromContext);
         buffer.setNotesEnabled(notesEnabled());
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
@@ -2289,6 +2654,22 @@ public class MainController {
                 acs.isAutocompleteSnippets(), effectiveMermaidAutocomplete());
         buffer.setMermaidValidator((text, cb) -> mermaidService.validate(text, cb));
         buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
+        // LSP: debounced didChange sink, async completion source, then open+activate if eligible.
+        buffer.setLspChangeListener(text -> {
+            if (buffer.getPath() != null) {
+                lspManager.changeDocument(buffer.getPath(), text);
+            }
+        });
+        buffer.setLspCompletionProvider((pos, cb) -> {
+            if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+                lspManager.completion(buffer.getPath(), pos[0], pos[1],
+                        items -> cb.accept(com.editora.lsp.CompletionMapper.map(items)));
+            } else {
+                cb.accept(java.util.List.of());
+            }
+        });
+        buffer.setLspNavActions(this::lspGotoDefinition, this::lspFindReferences, this::lspShowHover);
+        syncBufferLsp(buffer, lspEnabled() && lspAvailable);
         ensurePreviewControls(buffer);
         Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
         updateTabMeta(tab, buffer); // replaces the default text/icon with the buffer header (drag handle, pin, dirty)
@@ -2771,6 +3152,9 @@ public class MainController {
             buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
             setStatus(tr("status.saved", file));
             refreshGit(); // a save changes the working tree → update gutter + status
+            // LSP: a save-as of a new Java file opens it on the server; then notify didSave.
+            syncBufferLsp(buffer, lspEnabled() && lspAvailable);
+            notifyLspSaved(buffer);
             return true;
         } catch (IOException e) {
             setStatus(tr("status.failedSave", e.getMessage()));
@@ -3382,6 +3766,74 @@ public class MainController {
     @FXML
     private void onFindInFiles() {
         openSearchInFiles();
+    }
+
+    /** Shows the Run tool window's stripe button only for a compact source file (the in-editor affordance
+     *  is the green gutter Run glyph on the {@code main} line + the right-click menu). */
+    private void updateRunButton() {
+        EditorBuffer buffer = activeBuffer();
+        boolean compact = buffer != null && buffer.isCompactSource();
+        if (runToolWindow != null) {
+            toolWindows.setAvailable(runToolWindow, compact);
+        }
+    }
+
+    /**
+     * Runs the active compact source file via the JDK source launcher, streaming output into the Run tool
+     * window. Saves first (a dirty file would run stale; an untitled one prompts Save-As), and refuses to
+     * start while a previous run is still alive.
+     */
+    private void runActiveFile() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null || !buffer.isCompactSource()) {
+            setStatus(tr("status.run.notCompact"));
+            return;
+        }
+        if ((buffer.isDirty() || buffer.getPath() == null) && !save(buffer)) {
+            return; // user cancelled Save-As, or the save failed — don't run stale/missing content
+        }
+        Path path = buffer.getPath();
+        if (path == null) {
+            return;
+        }
+        if (runService.isRunning()) {
+            setStatus(tr("status.run.busy"));
+            return;
+        }
+        toolWindows.open(runToolWindow);
+        runPanel.started(path.getFileName().toString());
+        setStatus(tr("status.run.started", path.getFileName().toString()));
+        runService.run(path, new com.editora.run.RunService.Listener() {
+            @Override
+            public void onStart(String commandLine) {
+                runPanel.started(commandLine);
+            }
+
+            @Override
+            public void onOutput(String line, boolean stderr) {
+                runPanel.appendOutput(line, stderr);
+            }
+
+            @Override
+            public void onExit(int code) {
+                runPanel.finished(code);
+                setStatus(code == 0 ? tr("status.run.ok") : tr("status.run.exit", code));
+            }
+
+            @Override
+            public void onError(String message) {
+                runPanel.failed(message);
+                setStatus(tr("status.run.failed", message));
+            }
+        });
+    }
+
+    /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */
+    private void stopRun() {
+        if (runService.isRunning()) {
+            runService.stop();
+            setStatus(tr("status.run.stopped"));
+        }
     }
 
     @FXML
@@ -5048,6 +5500,7 @@ public class MainController {
         applyMermaidSupport();
         applyAutoSave();
         applyAutocomplete();
+        applyLspSupport(); // (re)configure LSP: command/enabled change re-detects + re-gates buffers
         applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
@@ -5536,6 +5989,18 @@ public class MainController {
         registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
         registry.register(Command.of("search.inFiles", this::openSearchInFiles));
         registry.register(Command.of("nav.aceJump", this::startAceJump));
+        // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
+        registry.register(Command.of("file.run", this::runActiveFile));
+        registry.register(Command.of("run.stop", this::stopRun));
+        registry.register(Command.of("tool.run", () -> toolWindows.toggle(runToolWindow)));
+        // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
+        registry.register(Command.of("tool.problems",
+                () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
+        registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(this::lspGotoDefinition)));
+        registry.register(Command.of("lsp.findReferences", () -> ifLsp(this::lspFindReferences)));
+        registry.register(Command.of("lsp.hover", () -> ifLsp(this::lspShowHover)));
+        registry.register(Command.of("lsp.restartServers", () -> ifLsp(this::restartLspServers)));
+        registry.register(Command.of("view.toggleLsp", this::toggleLsp));
         registry.register(Command.of("tool.commit",
                 () -> ifGit(() -> toolWindows.toggle(commitToolWindow))));
         // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is

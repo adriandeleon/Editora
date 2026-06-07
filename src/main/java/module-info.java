@@ -26,6 +26,10 @@ module com.editora {
     requires org.commonmark.ext.task.list.items;
     requires org.commonmark.ext.autolink;
     requires java.logging;
+    // Language Server Protocol client (LSP4J) + its JSON-RPC transport. Automatic modules
+    // (filename-derived names) — moditect injects real descriptors for the jlink dist build.
+    requires org.eclipse.lsp4j;
+    requires org.eclipse.lsp4j.jsonrpc;
 
     opens com.editora to javafx.fxml;
     opens com.editora.ui to javafx.fxml;
@@ -37,6 +41,12 @@ module com.editora {
     // without opening the package, JPMS encapsulates the .tmLanguage.json files and grammar
     // loading silently fails, falling back to the legacy regex highlighter.
     opens com.editora.grammars to org.eclipse.tm4e.core;
+    // LSP4J dispatches notifications/requests to our LanguageClient via reflection, and Gson (used by
+    // jsonrpc) reflectively reads our custom @JsonNotification param DTO (language/status →
+    // LanguageStatus). Gson runs in the unnamed module on the classpath under `mvn javafx:run` (and as
+    // com.google.gson under jlink), so this must be an UNQUALIFIED opens — a qualified opens to
+    // org.eclipse.lsp4j.jsonrpc alone leaves Gson unable to set the DTO fields accessible.
+    opens com.editora.lsp;
 
     exports com.editora;
     exports com.editora.command;

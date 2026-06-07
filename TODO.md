@@ -58,7 +58,10 @@ A backlog of planned features and improvements. Unordered within each section.
 ## Code intelligence
 - [x] Autocomplete support — code: snippet popup (Enter/Tab); prose: inline ghost text (Tab); auto +
       `C-M-i`/`M-/` trigger; Settings toggle. (Next: document-words, LSP, fuzzy matching.)
-- [ ] LSP support
+- [x] LSP support — Phase 1: **Java** (Eclipse JDT LS): live diagnostics (squiggles + Problems window
+      `M-8` + hover), go-to-definition (`M-.`), find references (`M-?`), hover docs (`C-c h`), and
+      LSP-backed completion. Auto-detected (`jdtls` on PATH) + Settings command override; off by default.
+      (Next: more languages — Pyright/gopls/rust-analyzer/clangd; formatting; rename/code actions.)
 - [ ] Fix structure for the 21 languages we support
 - [ ] Multi language support
 

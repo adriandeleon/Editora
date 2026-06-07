@@ -39,6 +39,9 @@ final class SearchHighlightOverlay extends Region {
         this.area = area;
         getStyleClass().add("search-overlay");
         setMouseTransparent(true);
+        // Inactive until a search has matches: stay hidden so the renderer composites nothing and the
+        // 1x1 canvas holds no full-viewport GPU texture (no matches highlighted most of the time).
+        setVisible(false);
         getChildren().add(canvas);
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
@@ -56,21 +59,27 @@ final class SearchHighlightOverlay extends Region {
             setVisible(show);
         }
         if (show) {
+            requestLayout(); // size the canvas up to the viewport, then draw
             scheduleRedraw();
         } else {
             clear();
+            canvas.setWidth(1); // release the full-viewport texture while hidden
+            canvas.setHeight(1);
         }
     }
 
     @Override
     protected void layoutChildren() {
+        canvas.relocate(0, 0);
+        if (!active) {
+            return; // stay 1x1 / no texture while inactive (the common case)
+        }
         double w = CanvasGuards.clampDim(getWidth());
         double h = CanvasGuards.clampDim(getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
             canvas.setWidth(w);
             canvas.setHeight(h);
         }
-        canvas.relocate(0, 0);
         scheduleRedraw();
     }
 

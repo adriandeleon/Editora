@@ -63,12 +63,7 @@ public final class ProcessRunner {
         if (workingDir != null) {
             pb.directory(workingDir.toFile());
         }
-        // Keep the locale stable so we parse English output regardless of the user's environment.
-        pb.environment().put("LC_ALL", "C");
-        // A macOS .app (or Linux .desktop) launched from the GUI inherits a stripped PATH that omits
-        // Homebrew / npm / Node locations, so tools like mmdc, npx and a Homebrew git can't be found.
-        // Augment PATH with the usual install dirs so bare command names resolve regardless of launcher.
-        pb.environment().put(pathKey(pb), augmentedPath());
+        applyStandardEnv(pb);
         pb.environment().putAll(extraEnv);
         Process process;
         try {
@@ -101,6 +96,17 @@ public final class ProcessRunner {
                 errBuf.toString(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Applies Editora's standard child-process environment to {@code pb}: {@code LC_ALL=C} for stable
+     * parsing plus the {@link #augmentedPath() augmented PATH} so GUI-launched apps (whose inherited PATH
+     * omits Homebrew/Node/user-local dirs) can still find tools. Exposed so long-lived processes that
+     * can't use {@link #run} — e.g. a stdio language server driven by LSP4J — share the same env logic.
+     */
+    public static void applyStandardEnv(ProcessBuilder pb) {
+        pb.environment().put("LC_ALL", "C");
+        pb.environment().put(pathKey(pb), augmentedPath());
+    }
+
     /** Common bin dirs a GUI-launched app's PATH usually lacks (Homebrew, Node installers, user-local). */
     private static final List<String> EXTRA_PATH_DIRS = List.of(
             "/opt/homebrew/bin", "/opt/homebrew/sbin",   // Apple Silicon Homebrew
@@ -114,7 +120,7 @@ public final class ProcessRunner {
     private static volatile String cachedPath;
 
     /** The inherited PATH plus any {@link #EXTRA_PATH_DIRS} that exist and aren't already present. */
-    private static String augmentedPath() {
+    public static String augmentedPath() {
         String cached = cachedPath;
         if (cached != null) {
             return cached;
@@ -141,7 +147,7 @@ public final class ProcessRunner {
     /** Rewrites a bare command name (e.g. {@code mmdc}) to its absolute path on the augmented PATH, so it
      *  resolves even when the JVM's own PATH (a GUI-launched .app) lacks Homebrew/Node dirs. Leaves the
      *  command unchanged if it's already a path or can't be found (ProcessBuilder may still resolve it). */
-    private static List<String> resolveExecutable(List<String> command) {
+    public static List<String> resolveExecutable(List<String> command) {
         if (command.isEmpty()) {
             return command;
         }

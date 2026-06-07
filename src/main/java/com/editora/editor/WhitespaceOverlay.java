@@ -39,6 +39,9 @@ final class WhitespaceOverlay extends Region {
         this.area = area;
         getStyleClass().add("whitespace-overlay");
         setMouseTransparent(true);
+        // Inactive until "show whitespace" is on: stay hidden so the renderer composites nothing and the
+        // 1x1 canvas holds no full-viewport GPU texture (whitespace markers are off by default).
+        setVisible(false);
         getChildren().add(canvas);
         // Anything that changes what's on screen (scroll, resize, layout, fold) or the text itself.
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
@@ -55,9 +58,12 @@ final class WhitespaceOverlay extends Region {
         this.active = active;
         setVisible(active);
         if (active) {
+            requestLayout(); // size the canvas up to the viewport, then draw
             scheduleRedraw();
         } else {
             clear();
+            canvas.setWidth(1); // release the full-viewport texture while hidden
+            canvas.setHeight(1);
         }
     }
 
@@ -69,13 +75,16 @@ final class WhitespaceOverlay extends Region {
 
     @Override
     protected void layoutChildren() {
+        canvas.relocate(0, 0);
+        if (!active) {
+            return; // stay 1x1 / no texture while inactive (off by default)
+        }
         double w = CanvasGuards.clampDim(getWidth());
         double h = CanvasGuards.clampDim(getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
             canvas.setWidth(w);
             canvas.setHeight(h);
         }
-        canvas.relocate(0, 0);
         scheduleRedraw();
     }
 

@@ -121,6 +121,16 @@ final class Icons {
                 + "10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z");
     }
 
+    /** Problems / diagnostics: a warning triangle with an exclamation mark. */
+    static Node problems() {
+        return of("M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z");
+    }
+
+    /** Run: a play triangle (Material "play_arrow") for running a compact source file. */
+    static Node run() {
+        return of("M8 5v14l11-7z");
+    }
+
     static Node palette() {
         return of("M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 "
                 + "7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.96 17.55 11 21 11 21z");

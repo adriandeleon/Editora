@@ -74,6 +74,7 @@ public class SettingsWindow {
         APPLICATION(tr("settings.cat.application"), false),
         GIT(tr("settings.cat.git"), false),
         MERMAID(tr("settings.cat.mermaid"), false),
+        LSP(tr("settings.cat.lsp"), false),
         KEYMAPS(tr("settings.cat.keymaps"), true),
         PLUGINS(tr("settings.cat.plugins"), true),
         AI(tr("settings.cat.ai"), true),
@@ -99,6 +100,7 @@ public class SettingsWindow {
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
     private final com.editora.mermaid.MermaidService mermaidService;
+    private final com.editora.lsp.LspManager lspManager;
     private final Stage stage = new Stage();
 
     // --- controls (same set as before, regrouped into pages) ---
@@ -133,6 +135,9 @@ public class SettingsWindow {
     private TextField mmdcPathField;
     private TextField maidPathField;
     private Label mermaidStatusLabel;
+    private CheckBox lspCheck;
+    private TextField javaLspField;
+    private Label lspStatusLabel;
     private CheckBox zenCheck;
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
@@ -185,12 +190,14 @@ public class SettingsWindow {
     public SettingsWindow(ConfigManager config, ToolWindowManager toolWindows,
                           com.editora.git.GitService gitService,
                           com.editora.mermaid.MermaidService mermaidService,
+                          com.editora.lsp.LspManager lspManager,
                           Consumer<Settings> onApply, Consumer<Boolean> onToggleZen,
                           Consumer<Path> onOpenFile, Runnable onExportConfig) {
         this.config = config;
         this.toolWindows = toolWindows;
         this.gitService = gitService;
         this.mermaidService = mermaidService;
+        this.lspManager = lspManager;
         this.onApply = onApply;
         this.onToggleZen = onToggleZen;
         this.onOpenFile = onOpenFile;
@@ -477,6 +484,20 @@ public class SettingsWindow {
             refreshMermaidStatus();
         });
 
+        lspCheck = new CheckBox(tr("settings.enableLsp"));
+        lspCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setLspSupport(now);
+            apply();
+            refreshLspStatus();
+        });
+        javaLspField = new TextField();
+        javaLspField.setPromptText(com.editora.lsp.LspServerRegistry.DEFAULT_JAVA_COMMAND);
+        javaLspField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setJavaLspCommand(now);
+            apply();
+            refreshLspStatus();
+        });
+
         zenCheck = new CheckBox(tr("settings.zen"));
         zenCheck.selectedProperty().addListener((obs, was, now) -> {
             if (loading) {
@@ -539,6 +560,7 @@ public class SettingsWindow {
         pages.put(Category.APPLICATION, applicationPage());
         pages.put(Category.GIT, gitPage());
         pages.put(Category.MERMAID, mermaidPage());
+        pages.put(Category.LSP, lspPage());
         pages.put(Category.ADVANCED, advancedPage());
         for (Category c : Category.values()) {
             if (c.placeholder) {
@@ -671,6 +693,23 @@ public class SettingsWindow {
         return p;
     }
 
+    private VBox lspPage() {
+        VBox p = page(tr("settings.cat.lsp"));
+        lspStatusLabel = new Label(tr("settings.lsp.checking"));
+        lspStatusLabel.getStyleClass().add("settings-git-status");
+        lspStatusLabel.setWrapText(true);
+        lspStatusLabel.setMaxWidth(440);
+        row(p, Category.LSP, null, lspStatusLabel, "lsp language server jdtls found installed not found");
+        row(p, Category.LSP, null, lspCheck, "lsp language server protocol enable java diagnostics");
+        row(p, Category.LSP, null, exePathRow(tr("settings.lsp.javaCommand"), javaLspField),
+                "lsp java jdtls server command path executable");
+        Label hint = note(tr("settings.lsp.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.LSP, null, hint, "lsp install jdtls java language server");
+        return p;
+    }
+
     /** A "[label] [path field] [Browse…]" row for picking a CLI executable. */
     private HBox exePathRow(String label, TextField field) {
         Button browse = new Button(tr("settings.mermaid.browse"));
@@ -699,6 +738,17 @@ public class SettingsWindow {
             String maidState = a.maid() ? tr("settings.mermaid.found") : tr("settings.mermaid.notFound");
             mermaidStatusLabel.setText(tr("settings.mermaid.status", mmdcState, maidState));
         });
+    }
+
+    private void refreshLspStatus() {
+        if (lspStatusLabel == null || lspManager == null) {
+            return;
+        }
+        // The manager caches its probe per command; configure it with the current command first.
+        lspManager.configure(config.getSettings().isLspSupport(), config.getSettings().getJavaLspCommand());
+        lspStatusLabel.setText(tr("settings.lsp.checking"));
+        lspManager.detect(found -> lspStatusLabel.setText(
+                tr("settings.lsp.status", found ? tr("settings.lsp.found") : tr("settings.lsp.notFound"))));
     }
 
     /**
@@ -1145,6 +1195,9 @@ public class SettingsWindow {
             mmdcPathField.setText(settings.getMmdcPath());
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
+            lspCheck.setSelected(settings.isLspSupport());
+            javaLspField.setText(settings.getJavaLspCommand());
+            refreshLspStatus();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());
             autoSaveCombo.setValue(mode);
@@ -1268,6 +1321,21 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
+    }
+
+    /** Re-reads the "Enable LSP" checkbox from settings (used after the {@code view.toggleLsp} command). */
+    public void syncLspCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            lspCheck.setSelected(config.getSettings().isLspSupport());
+        } finally {
+            loading = prev;
+        }
+        refreshLspStatus();
     }
 
     /** Re-syncs the autocomplete checkboxes to the current settings (used after a palette toggle). */

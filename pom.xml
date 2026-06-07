@@ -29,6 +29,7 @@
         <joni.version>2.2.6</joni.version>
         <jcodings.version>1.0.58</jcodings.version>
         <gson.version>2.11.0</gson.version>
+        <lsp4j.version>0.23.1</lsp4j.version>
         <commonmark.version>0.28.0</commonmark.version>
         <autolink.version>0.12.0</autolink.version>
         <!-- 1.7.2, not 2.0.0: 2.0.0's module-info exports an empty package (com.github.weisj.jsvg.provider)
@@ -157,6 +158,20 @@
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>${gson.version}</version>
+        </dependency>
+
+        <!-- Language Server Protocol client (Eclipse LSP4J) + its JSON-RPC transport. Both are automatic
+             modules (filename-derived: org.eclipse.lsp4j / org.eclipse.lsp4j.jsonrpc) patched by moditect
+             for the jlink/jpackage dist build; jsonrpc uses gson (already a dependency above). -->
+        <dependency>
+            <groupId>org.eclipse.lsp4j</groupId>
+            <artifactId>org.eclipse.lsp4j</artifactId>
+            <version>${lsp4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.lsp4j</groupId>
+            <artifactId>org.eclipse.lsp4j.jsonrpc</artifactId>
+            <version>${lsp4j.version}</version>
         </dependency>
 
         <dependency>
@@ -384,6 +399,29 @@
                                     </artifact>
                                     <moduleInfo>
                                         <name>org.apache.pdfbox</name>
+                                    </moduleInfo>
+                                </module>
+                                <!-- LSP4J (+ its JSON-RPC transport) ship only Bundle-SymbolicName, so
+                                     jlink needs real descriptors. jsonrpc requires gson (already modular);
+                                     lsp4j requires jsonrpc. Listed in dependency order. -->
+                                <module>
+                                    <artifact>
+                                        <groupId>org.eclipse.lsp4j</groupId>
+                                        <artifactId>org.eclipse.lsp4j.jsonrpc</artifactId>
+                                        <version>${lsp4j.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>org.eclipse.lsp4j.jsonrpc</name>
+                                    </moduleInfo>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.eclipse.lsp4j</groupId>
+                                        <artifactId>org.eclipse.lsp4j</artifactId>
+                                        <version>${lsp4j.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>org.eclipse.lsp4j</name>
                                     </moduleInfo>
                                 </module>
                             </modules>

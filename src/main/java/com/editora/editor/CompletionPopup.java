@@ -34,6 +34,8 @@ public final class CompletionPopup {
     private final Popup popup = new Popup();
     private final ListView<Completion> list = new ListView<>();
     private Consumer<Completion> onAccept = c -> { };
+    /** Index of the top visible row; we manage scrolling so the list only scrolls at the window edges. */
+    private int firstVisible;
 
     public CompletionPopup() {
         list.getStyleClass().add("completion-list");
@@ -86,11 +88,28 @@ public final class CompletionPopup {
         int i = list.getSelectionModel().getSelectedIndex();
         int next = Math.floorMod((i < 0 ? 0 : i) + delta, n);
         list.getSelectionModel().select(next);
-        // Only scroll when the list actually overflows; otherwise scrollTo() would force the selected
-        // row to the top and push a visible row out of view (all rows already fit when n <= VISIBLE_ROWS).
-        if (n > VISIBLE_ROWS) {
-            list.scrollTo(next);
+        scrollIntoView(next, n);
+    }
+
+    /**
+     * Scrolls only when {@code index} falls outside the currently visible window — so arrowing within the
+     * visible rows never scrolls; it scrolls one row at a time at the top/bottom edge (and jumps on a
+     * wrap-around). When everything fits ({@code n <= VISIBLE_ROWS}) it never scrolls.
+     */
+    private void scrollIntoView(int index, int n) {
+        if (n <= VISIBLE_ROWS) {
+            firstVisible = 0;
+            return;
         }
+        if (index < firstVisible) {
+            firstVisible = index;                       // moved above the window → it becomes the top row
+        } else if (index > firstVisible + VISIBLE_ROWS - 1) {
+            firstVisible = index - VISIBLE_ROWS + 1;     // moved below → it becomes the bottom row
+        } else {
+            return;                                      // already visible → no scroll
+        }
+        firstVisible = Math.max(0, Math.min(firstVisible, n - VISIBLE_ROWS));
+        list.scrollTo(firstVisible);
     }
 
     /**
@@ -104,6 +123,7 @@ public final class CompletionPopup {
         }
         list.getItems().setAll(items);
         list.getSelectionModel().select(0);
+        firstVisible = 0; // reset the scroll window to the top for the new list
         if (items.size() > VISIBLE_ROWS) {
             list.scrollTo(0);
         }

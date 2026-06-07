@@ -29,8 +29,15 @@ public class App extends Application {
     // surfaces real errors.
     private static final Logger TM4E_LOG = Logger.getLogger("org.eclipse.tm4e");
 
+    // Quiet LSP4J's "Unsupported notification method" WARNINGs — language servers (e.g. JDT LS) send
+    // vendor extension notifications (language/status, language/eventNotification, …) that the standard
+    // LanguageClient doesn't define; LSP4J logs+ignores them, which would spam during project indexing.
+    // Held in a static field so the JUL logger isn't garbage-collected; SEVERE still surfaces real errors.
+    private static final Logger LSP4J_LOG = Logger.getLogger("org.eclipse.lsp4j");
+
     static {
         TM4E_LOG.setLevel(Level.SEVERE);
+        LSP4J_LOG.setLevel(Level.SEVERE);
     }
 
     @Override

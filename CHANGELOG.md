@@ -47,6 +47,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LSP support (Phase 1: Java)** — language intelligence via the Language Server Protocol, backed by
+  **Eclipse JDT LS**. Live **diagnostics** (severity-colored squiggles + hover tooltips + a **Problems**
+  tool window, `M-8`), **go-to-definition** (`M-.`), **find references** (`M-?`, results in a picker),
+  **hover documentation** (`C-c h`, rendered Markdown), and **LSP-backed completion** merged into the
+  existing completion popup. The server is **auto-detected** (`jdtls` on your PATH; a Settings command
+  override is available) and **never bundled** — install it (e.g. `brew install jdtls`). Off by default:
+  enable it in **Settings → LSP** (or the `view.toggleLsp` command). The workspace root is the active
+  Editora project, else the nearest build file (`pom.xml`/`build.gradle`/…), else the file's folder.
+  All server I/O runs off the UI thread; document sync is debounced. (Built on LSP4J; more languages,
+  formatting, and refactoring are planned.)
+
 - **Toolbar refinements** — the top icon bar's edit buttons are now **state-aware**: Save is disabled
   unless the file has unsaved changes; Undo/Redo only when there's something to undo/redo; Cut/Copy only
   with a selection (Cut also needs an editable buffer); Paste only when the buffer is editable and the

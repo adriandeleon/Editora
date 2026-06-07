@@ -61,6 +61,11 @@ public final class FoldManager {
     private static final double CHANGE_SLOT_WIDTH = 3;
     /** Fixed width of the Personal-Notes marker column, reserved on every row (mirrors the bookmark slot). */
     private static final double NOTE_SLOT_WIDTH = 12;
+    /** Width of the Run column, reserved on every row only while this is a compact source file. Snug
+     *  around the (narrow) play glyph so it doesn't leave dead space next to the line number. */
+    private static final double RUN_SLOT_WIDTH = 13;
+    /** Material "play_arrow" triangle, shared by the gutter Run glyph and the right-click Run menu item. */
+    static final String RUN_GLYPH_PATH = "M8 5v14l11-7z";
 
     /** Notified after a user-driven fold/unfold so callers can persist the new state. */
     private Runnable onFoldStateChanged = () -> {
@@ -80,6 +85,13 @@ public final class FoldManager {
     private IntPredicate isNoted = i -> false;
     /** Invoked when the user clicks a line's gutter note marker. */
     private IntConsumer onNoteClick = i -> { };
+
+    /** Whether this is a compact source file (reserve the Run slot on every row while true). */
+    private BooleanSupplier runEnabled = () -> false;
+    /** Whether a line is the top-level {@code main} (draws the clickable green Run glyph there). */
+    private IntPredicate isRunLine = i -> false;
+    /** Invoked when the user clicks the gutter Run glyph (runs the compact source file). */
+    private Runnable onRun = () -> { };
 
     /** Whether Git change tracking is active for this buffer (reserve the change-bar slot). */
     private BooleanSupplier changeBarsEnabled = () -> false;
@@ -221,6 +233,17 @@ public final class FoldManager {
     public void setNoteHooks(IntPredicate isNoted, IntConsumer onClick) {
         this.isNoted = isNoted == null ? i -> false : isNoted;
         this.onNoteClick = onClick == null ? i -> { } : onClick;
+    }
+
+    /**
+     * Wires the gutter Run column (Java 25 compact source files): {@code enabled} reserves the fixed-width
+     * slot on every row while this is a compact source file (so the glyph appearing never shifts text),
+     * {@code isRunLine} marks the top-level {@code main} line, and {@code onRun} runs the file on a click.
+     */
+    public void setRunHooks(BooleanSupplier enabled, IntPredicate isRunLine, Runnable onRun) {
+        this.runEnabled = enabled == null ? () -> false : enabled;
+        this.isRunLine = isRunLine == null ? i -> false : isRunLine;
+        this.onRun = onRun == null ? () -> { } : onRun;
     }
 
     /**
@@ -524,6 +547,31 @@ public final class FoldManager {
         }
         box.getChildren().add(noteSlot);
 
+        // Run slot (compact source files only): sits just to the LEFT of the line number, with a clickable
+        // green play glyph on the top-level main line — IntelliJ-style. Reserved per-row (like the bookmark
+        // slot) so the glyph never shifts that line's text; only present for compact files, so other files'
+        // gutters are unaffected.
+        if (runEnabled.getAsBoolean()) {
+            StackPane runSlot = new StackPane();
+            runSlot.getStyleClass().add("run-slot");
+            runSlot.setAlignment(Pos.CENTER_RIGHT); // hug the line number rather than centering with dead space
+            runSlot.setMinWidth(RUN_SLOT_WIDTH);
+            runSlot.setPrefWidth(RUN_SLOT_WIDTH);
+            runSlot.setMaxWidth(RUN_SLOT_WIDTH);
+            if (isRunLine.test(idx)) {
+                Node marker = runGlyph();
+                marker.setCursor(Cursor.HAND);
+                marker.setOnMouseClicked(e -> {
+                    if (e.getButton() == MouseButton.PRIMARY) {
+                        onRun.run();
+                        e.consume(); // don't also toggle a bookmark via the gutter click
+                    }
+                });
+                runSlot.getChildren().add(marker);
+            }
+            box.getChildren().add(runSlot);
+        }
+
         if (showLineNumbers) {
             Label lineNo = new Label();
             lineNo.getStyleClass().add("lineno");
@@ -580,6 +628,18 @@ public final class FoldManager {
         svg.setScaleY(0.55);
         // No own click handler: the gutter box handles clicks (so clicking the marker isn't a double toggle).
         return new Group(svg); // Group bounds reflect the scaled glyph, so the gutter stays narrow
+    }
+
+    /** A small green play glyph (Material "play_arrow") for the gutter Run marker + the Run menu item;
+     *  colored via the {@code .run-marker} CSS class. Returned in a {@link Group} so its bounds reflect
+     *  the scaled size and the gutter stays narrow. */
+    static Node runGlyph() {
+        SVGPath svg = new SVGPath();
+        svg.setContent(RUN_GLYPH_PATH);
+        svg.getStyleClass().add("run-marker");
+        svg.setScaleX(0.78); // 30% larger than the other gutter glyphs so the Run target is easy to hit
+        svg.setScaleY(0.78);
+        return new Group(svg);
     }
 
     /** A small comment/note glyph for the gutter (Material "comment"); colored via {@code .note-marker}. */

@@ -54,7 +54,7 @@
 
 .editor-area .fold-gutter .lineno {
     -fx-background-color: transparent;
-    -fx-padding: 0 4 0 8;
+    -fx-padding: 0 4 0 4;
 }
 
 .editor-area .fold-chevron {
@@ -1264,3 +1264,36 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.9em;
 }
+
+/* LSP: Problems tool window severity colors + the diagnostic hover tooltip. */
+.problems-panel .problem-error { -fx-text-fill: #e5484d; }
+.problems-panel .problem-warning { -fx-text-fill: #e2a03f; }
+.problems-panel .problem-info { -fx-text-fill: #4c8eda; }
+.lsp-diagnostic-tooltip {
+    -fx-font-size: 12px;
+    -fx-background-color: -color-bg-overlay;
+    -fx-text-fill: -color-fg-default;
+}
+
+/* LSP status-bar segment ("LSP: <server>"), shown only when the active file has a language server. */
+.status-bar .status-lsp { -fx-text-fill: -color-accent-fg; }
+
+/* LSP hover documentation popup (C-c h / right-click → Show Documentation). Dismissable card. */
+.lsp-hover-popup {
+    -fx-background-color: -color-bg-overlay;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 8 12 8 12;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 10, 0.0, 0, 2);
+}
+
+/* Run tool window (Java 25 compact source files). */
+.run-panel .run-status { -fx-text-fill: -color-fg-muted; }
+.run-panel .run-output {
+    -fx-font-family: "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
+/* Green play glyph for the gutter Run marker (compact source main line) + the right-click Run item. */
+.run-marker { -fx-fill: #3fb950; }
+.fold-gutter .run-slot:hover .run-marker { -fx-fill: #56d364; }

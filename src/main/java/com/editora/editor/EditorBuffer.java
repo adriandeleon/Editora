@@ -157,6 +157,10 @@ public class EditorBuffer implements TabContent {
     private boolean autocompleteMermaid = true;
     /** The caret-anchored completion dropdown (lazily created). */
     private CompletionPopup completionPopup;
+    /** Injected async LSP completion source (code buffers); generation guard for stale async results. */
+    private java.util.function.BiConsumer<int[],
+            java.util.function.Consumer<java.util.List<Completion>>> lspCompletionProvider;
+    private long completionGen;
     /** The view the completion popup is currently driven by (for click-accept routing). */
     private CodeArea completionArea;
     /** Suppresses one auto-trigger pass right after we programmatically accept a completion. */
@@ -182,6 +186,19 @@ public class EditorBuffer implements TabContent {
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
     private final MermaidLintOverlay lintOverlay = new MermaidLintOverlay(area);
+    private final LspDiagnosticOverlay lspOverlay = new LspDiagnosticOverlay(area);
+    /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable. */
+    private final DiagnosticStripe diagnosticStripe = new DiagnosticStripe(area);
+    /** Files above this size are never scanned for compact-source detection (keeps it off the hot path). */
+    private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
+    /** Whether the Run affordance is enabled at all (gated by the LSP feature setting). */
+    private boolean runFeatureEnabled = true;
+    /** Whether this is a Java 25 compact source file (drives the gutter Run glyph + Run tool window). */
+    private boolean compactSource;
+    /** 0-based line of the top-level {@code main} in a compact source file (gutter Run glyph), else -1. */
+    private int compactMainLine = -1;
+    /** Fired (FX thread) when the compact-source status flips, so the controller refreshes the Run button. */
+    private Runnable onCompactSourceChanged = () -> { };
     private final SearchHighlightOverlay searchOverlay = new SearchHighlightOverlay(area);
     private final AceJumpOverlay aceJump = new AceJumpOverlay(area);
     /** Async maid validator (text, callback) injected by the controller; null = no linting. */
@@ -189,6 +206,10 @@ public class EditorBuffer implements TabContent {
             java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>> mermaidValidator;
     private boolean mermaidLintEnabled;
     private javafx.scene.control.Tooltip lintTooltip;
+    /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
+    private boolean lspActive;
+    private java.util.function.Consumer<String> lspChangeListener;
+    private javafx.scene.control.Tooltip lspTooltip;
     private final FoldManager folds = new FoldManager(area);
     private final BookmarkManager bookmarks = new BookmarkManager(area);
     /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
@@ -208,6 +229,12 @@ public class EditorBuffer implements TabContent {
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterNoteClick = (buffer, line) -> { };
     /** Invoked by the "Add Personal Note" context-menu item (the controller prompts + creates). */
     private java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> { };
+    /** "Run File" context-menu handler (compact source files); null hides the item. */
+    private Runnable runHandler;
+    /** LSP navigation actions (controller-supplied); shown in the context menu only while LSP is active. */
+    private Runnable lspGotoDefinitionAction = () -> { };
+    private Runnable lspFindReferencesAction = () -> { };
+    private Runnable lspHoverAction = () -> { };
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
     private static final int CONTEXT_CHARS = 40;
     /** Git gutter change bars: 0-based line → CSS class ({@code git-added}/{@code git-modified}/
@@ -279,6 +306,13 @@ public class EditorBuffer implements TabContent {
         // Git change bars: the slot is reserved only while tracking is on (changeBars != null).
         folds.setChangeHook(() -> changeBars != null,
                 line -> changeBars == null ? null : changeBars.get(line));
+        // Gutter Run glyph: reserved only for a compact source file, on its top-level main line.
+        folds.setRunHooks(() -> compactSource, line -> compactSource && line == compactMainLine,
+                () -> {
+                    if (runHandler != null) {
+                        runHandler.run();
+                    }
+                });
         addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
         addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
@@ -303,11 +337,22 @@ public class EditorBuffer implements TabContent {
         });
         area.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(150))
-                .subscribe(ignore -> applyHighlighting());
+                .subscribe(ignore -> {
+                    applyHighlighting();
+                    recomputeCompactSource(); // re-evaluate the Run button when a top-level main appears/leaves
+                });
         // Live Mermaid linting: debounced maid run for .mmd buffers (only while enabled + maid detected).
         area.multiPlainChanges()
                 .successionEnds(Duration.ofMillis(450))
                 .subscribe(ignore -> scheduleMermaidLint());
+        // LSP document sync: debounced didChange notification (only while the buffer is LSP-managed).
+        area.multiPlainChanges()
+                .successionEnds(Duration.ofMillis(300))
+                .subscribe(ignore -> {
+                    if (lspActive && lspChangeListener != null) {
+                        lspChangeListener.accept(area.getText());
+                    }
+                });
         // Dirty only when the content differs from the last saved/loaded text, so reverting an edit
         // (undo or manual) clears the marker. The length check short-circuits the O(n) compare —
         // it runs only when the length matches the saved length (i.e. near the original state).
@@ -340,7 +385,7 @@ public class EditorBuffer implements TabContent {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, noteOverlay, searchOverlay, whitespace, spellOverlay, lintOverlay, aceJump, minimap, columnRuler);
+        root.getChildren().addAll(scrollPane, noteOverlay, searchOverlay, whitespace, spellOverlay, lintOverlay, lspOverlay, aceJump, minimap, diagnosticStripe, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -364,6 +409,11 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setLeftAnchor(lintOverlay, 0d);
         AnchorPane.setRightAnchor(lintOverlay, Minimap.WIDTH);
         installLintHover(area);
+        AnchorPane.setTopAnchor(lspOverlay, 0d);
+        AnchorPane.setBottomAnchor(lspOverlay, 0d);
+        AnchorPane.setLeftAnchor(lspOverlay, 0d);
+        AnchorPane.setRightAnchor(lspOverlay, Minimap.WIDTH);
+        installLspHover(area);
         AnchorPane.setTopAnchor(searchOverlay, 0d);
         AnchorPane.setBottomAnchor(searchOverlay, 0d);
         AnchorPane.setLeftAnchor(searchOverlay, 0d);
@@ -382,6 +432,22 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setTopAnchor(minimap, 0d);
         AnchorPane.setBottomAnchor(minimap, 0d);
         AnchorPane.setRightAnchor(minimap, 0d);
+        AnchorPane.setTopAnchor(diagnosticStripe, 0d);
+        AnchorPane.setBottomAnchor(diagnosticStripe, 0d);
+        AnchorPane.setRightAnchor(diagnosticStripe, 0d);
+        diagnosticStripe.setOnActivate(this::jumpToLine);
+    }
+
+    /** Moves the caret to the start of {@code line} (0-based), scrolls it into view, and focuses the editor. */
+    public void jumpToLine(int line) {
+        int total = area.getParagraphs().size();
+        if (total == 0) {
+            return;
+        }
+        int p = Math.max(0, Math.min(line, total - 1));
+        area.moveTo(p, 0);
+        area.requestFollowCaret();
+        area.requestFocus();
     }
 
     /** A misspelled word under the cursor: its text and absolute [start, end) offsets. */
@@ -394,6 +460,21 @@ public class EditorBuffer implements TabContent {
         contextMenu.getStyleClass().add("editor-context-menu");
         area.setOnContextMenuRequested(e -> {
             List<MenuItem> items = new java.util.ArrayList<>();
+            // Run a Java 25 compact source file (only when this buffer is one).
+            if (compactSource && runHandler != null) {
+                MenuItem run = new MenuItem(tr("command.file.run"));
+                run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
+                run.setOnAction(ev -> runHandler.run());
+                items.add(run);
+                items.add(new SeparatorMenuItem());
+            }
+            // LSP navigation (only when this buffer is served by a language server). Move the caret to the
+            // right-clicked position first so go-to-definition/references/hover target that symbol.
+            if (lspActive) {
+                int clickOffset = clickOffsetAt(e.getX(), e.getY());
+                items.addAll(lspMenuItems(clickOffset));
+                items.add(new SeparatorMenuItem());
+            }
             SpellHit hit = spellHitAt(e.getX(), e.getY());
             if (hit != null) {
                 items.addAll(spellMenuItems(hit));
@@ -420,6 +501,27 @@ public class EditorBuffer implements TabContent {
                 contextMenu.hide();
             }
         });
+    }
+
+    /** The document offset under a context-menu click (for caret-positioning LSP nav); caret if it misses. */
+    private int clickOffsetAt(double x, double y) {
+        try {
+            return area.hit(x, y).getInsertionIndex();
+        } catch (RuntimeException ex) {
+            return area.getCaretPosition();
+        }
+    }
+
+    /** Go to Definition / Find References / Show Documentation — each moves the caret to {@code offset}
+     *  first so it targets the right-clicked symbol, then runs the controller-supplied action. */
+    private List<MenuItem> lspMenuItems(int offset) {
+        MenuItem def = new MenuItem(tr("command.lsp.gotoDefinition"));
+        def.setOnAction(e -> { area.moveTo(offset); lspGotoDefinitionAction.run(); });
+        MenuItem refs = new MenuItem(tr("command.lsp.findReferences"));
+        refs.setOnAction(e -> { area.moveTo(offset); lspFindReferencesAction.run(); });
+        MenuItem hover = new MenuItem(tr("command.lsp.hover"));
+        hover.setOnAction(e -> { area.moveTo(offset); lspHoverAction.run(); });
+        return List.of(def, refs, hover);
     }
 
     /** The Cut/Copy/Paste/Undo/Redo/Select All items, with state for the current selection/clipboard. */
@@ -683,6 +785,160 @@ public class EditorBuffer implements TabContent {
         a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
             if (lintTooltip != null) {
                 lintTooltip.hide();
+            }
+        });
+    }
+
+    // --- LSP (Language Server Protocol) integration ---------------------------------------------
+
+    /** Whether this buffer has a language server (Phase 1: Java only). Kept here so {@code editor} need
+     *  not depend on the {@code lsp} package. */
+    public boolean isLspLanguage() {
+        return "java".equals(language);
+    }
+
+    /** Injects the debounced didChange sink (text → controller → server); null disables change notices. */
+    public void setLspChangeListener(java.util.function.Consumer<String> listener) {
+        this.lspChangeListener = listener;
+    }
+
+    /** True if this is a Java 25 compact source file (no top-level type, a top-level {@code main}). */
+    public boolean isCompactSource() {
+        return compactSource;
+    }
+
+    /** Sets the callback fired when {@link #isCompactSource()} flips (so the toolbar Run button updates). */
+    public void setOnCompactSourceChanged(Runnable callback) {
+        this.onCompactSourceChanged = callback == null ? () -> { } : callback;
+    }
+
+    /** Enables/disables the Run affordance (gated by the LSP feature). When off, the gutter Run glyph,
+     *  the right-click Run item, and the Run tool window all disappear (compact-source detection is off). */
+    public void setRunEnabled(boolean enabled) {
+        if (enabled != runFeatureEnabled) {
+            runFeatureEnabled = enabled;
+            recomputeCompactSource();
+        }
+    }
+
+    /** Recomputes compact-source status + the {@code main} line; refreshes the gutter and fires the callback. */
+    private void recomputeCompactSource() {
+        String name = path != null ? path.getFileName().toString() : displayName;
+        String text = area.getText();
+        boolean nowCompact = runFeatureEnabled && !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT
+                && CompactSource.isLaunchable(name, text);
+        int nowMain = nowCompact ? CompactSource.mainLine(text) : -1;
+        boolean compactChanged = nowCompact != compactSource;
+        int oldMain = compactMainLine;
+        compactSource = nowCompact;
+        compactMainLine = nowMain;
+        if (compactChanged) {
+            onCompactSourceChanged.run();
+            refreshGutter(); // the Run slot appeared/disappeared on every row — rebuild the factory
+        } else if (nowMain != oldMain) {
+            // The main line moved (edits above it) — repaint just the old and new gutter rows.
+            if (oldMain >= 0) {
+                refreshGutterLine(oldMain);
+            }
+            if (nowMain >= 0) {
+                refreshGutterLine(nowMain);
+            }
+        }
+    }
+
+    /** Turns LSP rendering (diagnostics overlay + hover) on/off for this buffer. The controller drives
+     *  document open/close + requests; this only gates the editor surface. */
+    public void setLspActive(boolean on) {
+        this.lspActive = on && isLspLanguage() && !hugeFile;
+        lspOverlay.setActive(this.lspActive);
+        // The minimap stripes only draw while LSP is active for this file, regardless of any stale list.
+        minimap.setDiagnosticsEnabled(this.lspActive);
+        if (!this.lspActive) {
+            lspOverlay.setDiagnostics(java.util.List.of());
+            minimap.setDiagnostics(java.util.List.of());
+            diagnosticStripe.setDiagnostics(java.util.List.of());
+        }
+        updateDiagnosticStripe();
+    }
+
+    public boolean isLspActive() {
+        return lspActive;
+    }
+
+    /** Pushes the latest diagnostics for this buffer into the overlay + minimap/scrollbar stripes. */
+    public void setLspDiagnostics(java.util.List<LspDiagnostic> diagnostics) {
+        lspOverlay.setDiagnostics(diagnostics);
+        minimap.setDiagnostics(diagnostics);
+        diagnosticStripe.setDiagnostics(diagnostics);
+    }
+
+    /** The scrollbar stripe is shown whenever LSP is active for this buffer (minimap on or off). It sits
+     *  over the editor's vertical scrollbar: at the far-right edge when the minimap is hidden, else just
+     *  inside the minimap (over the editor scrollbar, which ends at the minimap's left edge). */
+    private void updateDiagnosticStripe() {
+        boolean minimapShown = minimapVisible && !largeFile;
+        AnchorPane.setRightAnchor(diagnosticStripe, minimapShown ? Minimap.WIDTH : 0d);
+        diagnosticStripe.setActive(lspActive);
+    }
+
+    /** Injects the LSP navigation actions surfaced in the right-click menu while {@link #isLspActive()}. */
+    public void setLspNavActions(Runnable gotoDefinition, Runnable findReferences, Runnable hover) {
+        this.lspGotoDefinitionAction = gotoDefinition == null ? () -> { } : gotoDefinition;
+        this.lspFindReferencesAction = findReferences == null ? () -> { } : findReferences;
+        this.lspHoverAction = hover == null ? () -> { } : hover;
+    }
+
+    /** Current document text (for an initial didOpen). */
+    public String text() {
+        return area.getText();
+    }
+
+    /** Shows the LSP diagnostic message(s) in a tooltip when hovering a squiggled span. */
+    private void installLspHover(CodeArea a) {
+        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
+            if (!lspActive || lspOverlay.diagnostics().isEmpty()) {
+                if (lspTooltip != null) {
+                    lspTooltip.hide();
+                }
+                return;
+            }
+            try {
+                var hit = a.hit(e.getX(), e.getY());
+                var pos = a.offsetToPosition(hit.getInsertionIndex(),
+                        org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+                var hits = lspOverlay.at(pos.getMajor(), pos.getMinor());
+                if (hits.isEmpty()) {
+                    if (lspTooltip != null) {
+                        lspTooltip.hide();
+                    }
+                    return;
+                }
+                StringBuilder sb = new StringBuilder();
+                for (var d : hits) {
+                    if (sb.length() > 0) {
+                        sb.append('\n');
+                    }
+                    String origin = d.origin();
+                    sb.append(d.message());
+                    if (!origin.isEmpty()) {
+                        sb.append("  (").append(origin).append(')');
+                    }
+                }
+                if (lspTooltip == null) {
+                    lspTooltip = new javafx.scene.control.Tooltip();
+                    lspTooltip.getStyleClass().add("lsp-diagnostic-tooltip");
+                    lspTooltip.setWrapText(true);
+                    lspTooltip.setMaxWidth(480);
+                }
+                lspTooltip.setText(sb.toString());
+                lspTooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
+            } catch (RuntimeException ignored) {
+                // viewport mid-layout / hit miss — ignore
+            }
+        });
+        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
+            if (lspTooltip != null) {
+                lspTooltip.hide();
             }
         });
     }
@@ -1289,6 +1545,11 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Sets the "Run File" context-menu handler (controller runs the compact source file); null disables it. */
+    public void setRunHandler(Runnable handler) {
+        this.runHandler = handler;
+    }
+
     /** Callback fired after any note change (for persistence + the Notes panel). */
     public void setOnNotesChanged(Runnable callback) {
         notes.setOnChanged(callback);
@@ -1466,6 +1727,7 @@ public class EditorBuffer implements TabContent {
         if (minimap2 != null) {
             applyMinimap(scrollPane2, minimap2, effective);
         }
+        updateDiagnosticStripe(); // show the scrollbar stripe when the minimap no longer carries marks
         positionViewModeControl(); // keep the floating Markdown control clear of the minimap
     }
 
@@ -1581,6 +1843,7 @@ public class EditorBuffer implements TabContent {
         String name = fileName == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(fileName);
         IGrammar g = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
         applyLanguage(name, g);
+        recomputeCompactSource(); // a Save-As to a .java path can make this a runnable compact source file
     }
 
     /**
@@ -2309,7 +2572,11 @@ public class EditorBuffer implements TabContent {
         }
         String prefix = text.substring(start, caret);
         int min = manual ? 1 : CompletionEngine.MIN_PREFIX;
-        if (prefix.length() < min) {
+        // LSP "trigger character" (e.g. Java's '.'): fire member completion with no prefix, and keep an
+        // open LSP popup updating as the member name is typed (IntelliJ-style) — bypassing the min-prefix.
+        boolean lspTrigger = lspActive && !isProse()
+                && (endsWithLspTrigger(text, caret) || completionPopupShowing());
+        if (prefix.length() < min && !lspTrigger) {
             hideCompletion();
             return;
         }
@@ -2352,6 +2619,11 @@ public class EditorBuffer implements TabContent {
             return;
         }
         hideGhost();
+        // Code buffer with a language server: fetch LSP completions async and merge with local snippets.
+        if (lspActive && lspCompletionProvider != null) {
+            requestLspCompletion(a, caret, prefix, items);
+            return;
+        }
         if (items.isEmpty()) {
             hidePopup();
             return;
@@ -2459,12 +2731,96 @@ public class EditorBuffer implements TabContent {
     }
 
     private void hidePopup() {
+        completionGen++; // invalidate any in-flight async (LSP) completion so a late result won't re-show
         if (completionArea != null) {
             completionArea.getProperties().remove("editora.ownsKeys"); // release the C-n/C-p ownership
         }
         if (completionPopup != null) {
             completionPopup.hide();
         }
+    }
+
+    /** Injected async LSP completion source: {@code accept({line,char}, items->…)}; null = none. */
+    public void setLspCompletionProvider(java.util.function.BiConsumer<int[],
+            java.util.function.Consumer<java.util.List<Completion>>> provider) {
+        this.lspCompletionProvider = provider;
+    }
+
+    /** Requests LSP completions async, filters them by the typed {@code prefix} (the server returns the
+     *  whole scope and leaves filtering to the client), then shows them merged with the local snippets. */
+    private void requestLspCompletion(CodeArea a, int caret, String prefix,
+            java.util.List<Completion> localItems) {
+        long gen = ++completionGen;
+        // Flush the current text to the server FIRST: the completion auto-trigger (≈120ms) fires before
+        // the debounced didChange (≈300ms), so without this the server still has stale text and member
+        // completion after '.' resolves against the old document. JSON-RPC preserves order, so this
+        // didChange is applied before the completion request below.
+        if (lspChangeListener != null) {
+            lspChangeListener.accept(a.getText());
+        }
+        lspCompletionProvider.accept(new int[]{a.getCurrentParagraph(), a.getCaretColumn()}, lspItems -> {
+            if (gen != completionGen || a.getScene() == null || a.getCaretPosition() != caret
+                    || hasActiveSnippet()) {
+                return;
+            }
+            java.util.List<Completion> merged = mergeCompletions(filterByPrefix(lspItems, prefix), localItems);
+            if (merged.isEmpty()) {
+                hidePopup();
+                return;
+            }
+            Bounds cs = a.getCharacterBoundsOnScreen(caret, caret).orElse(null);
+            if (cs == null) {
+                return;
+            }
+            completionArea = a;
+            a.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+            completionPopup().show(a.getScene().getWindow(), cs, merged);
+        });
+    }
+
+    /** Whether the completion popup is currently open (an in-progress LSP/local completion session). */
+    private boolean completionPopupShowing() {
+        return completionPopup != null && completionPopup.isShowing();
+    }
+
+    /** True if the char just before {@code caret} is an LSP completion trigger character (Java's '.'). */
+    private static boolean endsWithLspTrigger(String text, int caret) {
+        return caret > 0 && caret <= text.length() && text.charAt(caret - 1) == '.';
+    }
+
+    /** Keeps LSP items whose label or insert text starts with {@code prefix} (case-insensitive). The
+     *  server returns the full scope; this is the client-side prefix filtering LSP expects. Blank prefix
+     *  ⇒ unfiltered. */
+    private static java.util.List<Completion> filterByPrefix(java.util.List<Completion> items, String prefix) {
+        if (items == null || items.isEmpty() || prefix == null || prefix.isBlank()) {
+            return items == null ? java.util.List.of() : items;
+        }
+        String p = prefix.toLowerCase(java.util.Locale.ROOT);
+        java.util.List<Completion> out = new java.util.ArrayList<>();
+        for (Completion c : items) {
+            String label = c.label() == null ? "" : c.label().toLowerCase(java.util.Locale.ROOT);
+            String insert = c.insert() == null ? "" : c.insert().toLowerCase(java.util.Locale.ROOT);
+            if (label.startsWith(p) || insert.startsWith(p)) {
+                out.add(c);
+            }
+        }
+        return out;
+    }
+
+    /** Merges LSP completions (first) with local snippet items, de-duped by insert text, capped. */
+    private static java.util.List<Completion> mergeCompletions(java.util.List<Completion> lsp,
+            java.util.List<Completion> local) {
+        java.util.LinkedHashMap<String, Completion> byInsert = new java.util.LinkedHashMap<>();
+        if (lsp != null) {
+            for (Completion c : lsp) {
+                byInsert.putIfAbsent(c.insert(), c);
+            }
+        }
+        for (Completion c : local) {
+            byInsert.putIfAbsent(c.insert(), c);
+        }
+        java.util.List<Completion> out = new java.util.ArrayList<>(byInsert.values());
+        return out.size() > 50 ? out.subList(0, 50) : out;
     }
 
     /** Replaces the typed prefix with the accepted completion (a snippet starts a tab-stop session). */
@@ -2524,6 +2880,7 @@ public class EditorBuffer implements TabContent {
     public void setContent(String content) {
         area.replaceText(content == null ? "" : content);
         markClean();
+        recomputeCompactSource(); // detect a compact source file on load (drives the Run button)
     }
 
     /**
