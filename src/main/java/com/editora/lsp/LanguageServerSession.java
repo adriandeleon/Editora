@@ -108,6 +108,10 @@ final class LanguageServerSession implements LanguageClient {
         try {
             ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
             pb.directory(root.toFile());
+            // Discard the server's stderr. Nothing drains it, so an undrained PIPE (the default) fills
+            // its ~64 KB OS buffer on a chatty server (jdtls logs heavily) and the server blocks writing
+            // to it — deadlocking mid-startup with no diagnostics ever published. LSP traffic is on stdout.
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
             ProcessRunner.applyStandardEnv(pb);
             process = pb.start();
             Launcher<LanguageServer> launcher = LSPLauncher.createClientLauncher(
@@ -345,7 +349,14 @@ final class LanguageServerSession implements LanguageClient {
             // best effort
         }
         if (process != null) {
+            // The launcher is often a wrapper (Homebrew jdtls → python → java); destroying only the
+            // wrapper orphans the real server JVM, which keeps running and holds its workspace `.lock`
+            // so the next session for the same root can't start (it hangs / never initializes — no
+            // diagnostics, no completion). Kill the whole descendant tree (snapshot first, before the
+            // root dies and the children reparent).
+            java.util.List<ProcessHandle> tree = process.descendants().toList();
             process.destroy();
+            tree.forEach(ProcessHandle::destroy);
         }
         executor.shutdownNow();
     }

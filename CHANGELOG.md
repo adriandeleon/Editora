@@ -101,6 +101,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **LSP error squiggles / Problems never appeared when the file path involved a symlink** — a language
+  server reports diagnostics under the file's *real* (canonical) path (e.g. `/private/tmp/…` for a
+  `/tmp/…` symlink on macOS, or any symlinked project directory), but the open tab was matched by a
+  non-symlink-resolved path, so **every diagnostic was silently dropped**. The match now uses the
+  canonical (symlink-resolved) path on both sides.
+- **jdtls (and other wrapper-script servers) leaked orphaned processes and could hang on restart** — the
+  Homebrew `jdtls` launcher is a wrapper (`jdtls` → python → java); Editora only killed the wrapper on
+  shutdown, orphaning the real server JVM, which kept running and held its Eclipse workspace lock so the
+  next session for that folder couldn't start (stuck on "Starting…", no completion/diagnostics). Editora
+  now tears down the **whole process tree**. *(Orphans left by an earlier version may need a one-time
+  manual kill, e.g. `pkill -f org.eclipse.jdt.ls`.)*
+- **A chatty language server could deadlock during startup** — its stderr stream was never drained, so
+  once the ~64 KB OS pipe buffer filled the server blocked. The server's stderr is now discarded.
+
 - **Language servers installed via a Node version manager (nvm/fnm/asdf) showed "not found" in the
   packaged app** — a Finder-launched `.app` inherits a stripped `PATH` that omits the version manager's
   bin dir (e.g. nvm's `~/.nvm/versions/node/<ver>/bin`), so npm-global servers like

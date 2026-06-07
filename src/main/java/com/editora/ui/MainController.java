@@ -3747,15 +3747,27 @@ public class MainController {
     }
 
     private Tab tabForPath(Path file) {
-        Path target = file.toAbsolutePath().normalize();
+        Path target = canonicalPath(file);
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             Path p = buffer == null ? null : buffer.getPath();
-            if (p != null && p.toAbsolutePath().normalize().equals(target)) {
+            if (p != null && canonicalPath(p).equals(target)) {
                 return tab;
             }
         }
         return null;
+    }
+
+    /** A path for cross-source identity comparison: the real (symlink-resolved) path when it exists,
+     *  else the absolute-normalized form. A language server reports diagnostics under the file's
+     *  <em>canonical</em> URI (e.g. {@code /private/tmp/…} for a {@code /tmp/…} symlink on macOS); a buffer
+     *  keeps the path as opened, so matching by {@code normalize()} alone misses it and drops diagnostics. */
+    static Path canonicalPath(Path p) {
+        try {
+            return p.toRealPath();
+        } catch (java.io.IOException | RuntimeException e) {
+            return p.toAbsolutePath().normalize();
+        }
     }
 
     @FXML
