@@ -136,15 +136,10 @@ public class SettingsWindow {
     private TextField maidPathField;
     private Label mermaidStatusLabel;
     private CheckBox lspCheck;
-    private CheckBox javaLspEnabledCheck;
-    private CheckBox typescriptLspEnabledCheck;
-    private CheckBox pythonLspEnabledCheck;
-    private TextField javaLspField;
-    private TextField typescriptLspField;
-    private TextField pythonLspField;
-    private Label lspStatusLabel;
-    private Label lspTsStatusLabel;
-    private Label lspPyStatusLabel;
+    /** Per-server LSP controls, keyed by server id (data-driven so adding a server is one descriptor). */
+    private final java.util.Map<String, CheckBox> lspEnableChecks = new java.util.LinkedHashMap<>();
+    private final java.util.Map<String, TextField> lspCommandFields = new java.util.LinkedHashMap<>();
+    private final java.util.Map<String, Label> lspStatusLabels = new java.util.LinkedHashMap<>();
     private CheckBox zenCheck;
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
@@ -498,42 +493,22 @@ public class SettingsWindow {
             updateLspRowsEnabled();
             refreshLspStatus();
         });
-        javaLspField = new TextField();
-        javaLspField.setPromptText(com.editora.lsp.LspServerRegistry.DEFAULT_JAVA_COMMAND);
-        javaLspField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setJavaLspCommand(now);
-            apply();
-            refreshLspStatus();
-        });
-        typescriptLspField = new TextField();
-        typescriptLspField.setPromptText(com.editora.lsp.LspServerRegistry.DEFAULT_TYPESCRIPT_COMMAND);
-        typescriptLspField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setTypescriptLspCommand(now);
-            apply();
-            refreshLspStatus();
-        });
-        javaLspEnabledCheck = new CheckBox(tr("settings.lsp.enableJava"));
-        javaLspEnabledCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setJavaLspEnabled(now);
-            apply();
-        });
-        typescriptLspEnabledCheck = new CheckBox(tr("settings.lsp.enableTypescript"));
-        typescriptLspEnabledCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setTypescriptLspEnabled(now);
-            apply();
-        });
-        pythonLspField = new TextField();
-        pythonLspField.setPromptText(com.editora.lsp.LspServerRegistry.DEFAULT_PYTHON_COMMAND);
-        pythonLspField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setPythonLspCommand(now);
-            apply();
-            refreshLspStatus();
-        });
-        pythonLspEnabledCheck = new CheckBox(tr("settings.lsp.enablePython"));
-        pythonLspEnabledCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setPythonLspEnabled(now);
-            apply();
-        });
+        for (LspServerUi srv : lspServerUis()) {
+            CheckBox enable = new CheckBox(tr(srv.enableLabelKey()));
+            enable.selectedProperty().addListener((obs, was, now) -> {
+                srv.setEnabled().accept(now);
+                apply();
+            });
+            TextField field = new TextField();
+            field.setPromptText(srv.defaultCommand());
+            field.textProperty().addListener((obs, was, now) -> {
+                srv.setCommand().accept(now);
+                apply();
+                refreshLspStatus();
+            });
+            lspEnableChecks.put(srv.id(), enable);
+            lspCommandFields.put(srv.id(), field);
+        }
 
         zenCheck = new CheckBox(tr("settings.zen"));
         zenCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -732,41 +707,81 @@ public class SettingsWindow {
 
     private VBox lspPage() {
         VBox p = page(tr("settings.cat.lsp"));
-        row(p, Category.LSP, null, lspCheck, "lsp language server protocol enable java typescript diagnostics");
-        // --- Java ---
-        row(p, Category.LSP, null, javaLspEnabledCheck, "lsp java jdtls enable server");
-        lspStatusLabel = new Label(tr("settings.lsp.checking"));
-        lspStatusLabel.getStyleClass().add("settings-git-status");
-        lspStatusLabel.setWrapText(true);
-        lspStatusLabel.setMaxWidth(440);
-        row(p, Category.LSP, null, lspStatusLabel, "lsp java jdtls found installed not found");
-        row(p, Category.LSP, null, exePathRow(tr("settings.lsp.javaCommand"), javaLspField),
-                "lsp java jdtls server command path executable");
-        // --- TypeScript / JavaScript ---
-        row(p, Category.LSP, null, typescriptLspEnabledCheck, "lsp typescript javascript enable server");
-        lspTsStatusLabel = new Label(tr("settings.lsp.checking"));
-        lspTsStatusLabel.getStyleClass().add("settings-git-status");
-        lspTsStatusLabel.setWrapText(true);
-        lspTsStatusLabel.setMaxWidth(440);
-        row(p, Category.LSP, null, lspTsStatusLabel,
-                "lsp typescript javascript language server found installed not found");
-        row(p, Category.LSP, null, exePathRow(tr("settings.lsp.typescriptCommand"), typescriptLspField),
-                "lsp typescript javascript server command path executable");
-        // --- Python ---
-        row(p, Category.LSP, null, pythonLspEnabledCheck, "lsp python pyright enable server");
-        lspPyStatusLabel = new Label(tr("settings.lsp.checking"));
-        lspPyStatusLabel.getStyleClass().add("settings-git-status");
-        lspPyStatusLabel.setWrapText(true);
-        lspPyStatusLabel.setMaxWidth(440);
-        row(p, Category.LSP, null, lspPyStatusLabel,
-                "lsp python pyright language server found installed not found");
-        row(p, Category.LSP, null, exePathRow(tr("settings.lsp.pythonCommand"), pythonLspField),
-                "lsp python pyright server command path executable");
+        row(p, Category.LSP, null, lspCheck,
+                "lsp language server protocol enable java typescript python xml json bash diagnostics");
+        for (LspServerUi srv : lspServerUis()) {
+            row(p, Category.LSP, null, lspEnableChecks.get(srv.id()), srv.keywords());
+            Label status = new Label(tr("settings.lsp.checking"));
+            status.getStyleClass().add("settings-git-status");
+            status.setWrapText(true);
+            status.setMaxWidth(440);
+            lspStatusLabels.put(srv.id(), status);
+            row(p, Category.LSP, null, status, srv.keywords());
+            row(p, Category.LSP, null,
+                    exePathRow(tr(srv.commandLabelKey()), lspCommandFields.get(srv.id())), srv.keywords());
+        }
         Label hint = note(tr("settings.lsp.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
-        row(p, Category.LSP, null, hint, "lsp install jdtls java typescript language server");
+        row(p, Category.LSP, null, hint, "lsp install language server jdtls pyright lemminx bash");
         return p;
+    }
+
+    /** A configurable LSP server's Settings row (data-driven so adding a server is one descriptor). */
+    private record LspServerUi(String id, String defaultCommand, String enableLabelKey,
+            String commandLabelKey, String statusKey, String keywords,
+            java.util.function.Consumer<Boolean> setEnabled,
+            java.util.function.BooleanSupplier getEnabled,
+            java.util.function.Consumer<String> setCommand,
+            java.util.function.Supplier<String> getCommand) {
+    }
+
+    /** The six configurable LSP servers, in display order. Lambdas read/write the live {@code Settings}. */
+    private java.util.List<LspServerUi> lspServerUis() {
+        return java.util.List.of(
+                new LspServerUi("java", com.editora.lsp.LspServerRegistry.DEFAULT_JAVA_COMMAND,
+                        "settings.lsp.enableJava", "settings.lsp.javaCommand", "settings.lsp.status",
+                        "lsp java jdtls language server found installed not found command path executable",
+                        v -> config.getSettings().setJavaLspEnabled(v),
+                        () -> config.getSettings().isJavaLspEnabled(),
+                        v -> config.getSettings().setJavaLspCommand(v),
+                        () -> config.getSettings().getJavaLspCommand()),
+                new LspServerUi("typescript", com.editora.lsp.LspServerRegistry.DEFAULT_TYPESCRIPT_COMMAND,
+                        "settings.lsp.enableTypescript", "settings.lsp.typescriptCommand",
+                        "settings.lsp.tsStatus",
+                        "lsp typescript javascript language server found installed not found command path",
+                        v -> config.getSettings().setTypescriptLspEnabled(v),
+                        () -> config.getSettings().isTypescriptLspEnabled(),
+                        v -> config.getSettings().setTypescriptLspCommand(v),
+                        () -> config.getSettings().getTypescriptLspCommand()),
+                new LspServerUi("python", com.editora.lsp.LspServerRegistry.DEFAULT_PYTHON_COMMAND,
+                        "settings.lsp.enablePython", "settings.lsp.pythonCommand", "settings.lsp.pyStatus",
+                        "lsp python pyright language server found installed not found command path executable",
+                        v -> config.getSettings().setPythonLspEnabled(v),
+                        () -> config.getSettings().isPythonLspEnabled(),
+                        v -> config.getSettings().setPythonLspCommand(v),
+                        () -> config.getSettings().getPythonLspCommand()),
+                new LspServerUi("xml", com.editora.lsp.LspServerRegistry.DEFAULT_XML_COMMAND,
+                        "settings.lsp.enableXml", "settings.lsp.xmlCommand", "settings.lsp.xmlStatus",
+                        "lsp xml lemminx language server found installed not found command path executable",
+                        v -> config.getSettings().setXmlLspEnabled(v),
+                        () -> config.getSettings().isXmlLspEnabled(),
+                        v -> config.getSettings().setXmlLspCommand(v),
+                        () -> config.getSettings().getXmlLspCommand()),
+                new LspServerUi("json", com.editora.lsp.LspServerRegistry.DEFAULT_JSON_COMMAND,
+                        "settings.lsp.enableJson", "settings.lsp.jsonCommand", "settings.lsp.jsonStatus",
+                        "lsp json language server found installed not found command path executable",
+                        v -> config.getSettings().setJsonLspEnabled(v),
+                        () -> config.getSettings().isJsonLspEnabled(),
+                        v -> config.getSettings().setJsonLspCommand(v),
+                        () -> config.getSettings().getJsonLspCommand()),
+                new LspServerUi("bash", com.editora.lsp.LspServerRegistry.DEFAULT_BASH_COMMAND,
+                        "settings.lsp.enableBash", "settings.lsp.bashCommand", "settings.lsp.bashStatus",
+                        "lsp bash shell shellcheck language server found installed not found command path",
+                        v -> config.getSettings().setBashLspEnabled(v),
+                        () -> config.getSettings().isBashLspEnabled(),
+                        v -> config.getSettings().setBashLspCommand(v),
+                        () -> config.getSettings().getBashLspCommand()));
     }
 
     /** A "[label] [path field] [Browse…]" row for picking a CLI executable. */
@@ -802,19 +817,13 @@ public class SettingsWindow {
     /** The per-server enable checkboxes are only meaningful while the global LSP toggle is on. */
     private void updateLspRowsEnabled() {
         boolean on = lspCheck != null && lspCheck.isSelected();
-        if (javaLspEnabledCheck != null) {
-            javaLspEnabledCheck.setDisable(!on);
-        }
-        if (typescriptLspEnabledCheck != null) {
-            typescriptLspEnabledCheck.setDisable(!on);
-        }
-        if (pythonLspEnabledCheck != null) {
-            pythonLspEnabledCheck.setDisable(!on);
+        for (CheckBox c : lspEnableChecks.values()) {
+            c.setDisable(!on);
         }
     }
 
     private void refreshLspStatus() {
-        if (lspStatusLabel == null || lspManager == null) {
+        if (lspManager == null || lspStatusLabels.isEmpty()) {
             return;
         }
         // The manager caches its probe per command; configure it with the current commands first.
@@ -822,33 +831,22 @@ public class SettingsWindow {
         lspManager.configure(cs.isLspSupport(), java.util.Map.of(
                 "java", cs.getJavaLspCommand(),
                 "typescript", cs.getTypescriptLspCommand(),
-                "python", cs.getPythonLspCommand()));
-        lspStatusLabel.getStyleClass().setAll("settings-git-status");
-        lspStatusLabel.setText(tr("settings.lsp.checking"));
-        lspManager.detect("java", found -> {
-            lspStatusLabel.getStyleClass().setAll("settings-git-status",
-                    found ? "settings-git-found" : "settings-git-missing");
-            lspStatusLabel.setText(tr("settings.lsp.status",
-                    found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
-        });
-        if (lspTsStatusLabel != null) {
-            lspTsStatusLabel.getStyleClass().setAll("settings-git-status");
-            lspTsStatusLabel.setText(tr("settings.lsp.checking"));
-            lspManager.detect("typescript", found -> {
-                lspTsStatusLabel.getStyleClass().setAll("settings-git-status",
+                "python", cs.getPythonLspCommand(),
+                "xml", cs.getXmlLspCommand(),
+                "json", cs.getJsonLspCommand(),
+                "bash", cs.getBashLspCommand()));
+        for (LspServerUi srv : lspServerUis()) {
+            Label status = lspStatusLabels.get(srv.id());
+            if (status == null) {
+                continue;
+            }
+            String statusKey = srv.statusKey();
+            status.getStyleClass().setAll("settings-git-status");
+            status.setText(tr("settings.lsp.checking"));
+            lspManager.detect(srv.id(), found -> {
+                status.getStyleClass().setAll("settings-git-status",
                         found ? "settings-git-found" : "settings-git-missing");
-                lspTsStatusLabel.setText(tr("settings.lsp.tsStatus",
-                        found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
-            });
-        }
-        if (lspPyStatusLabel != null) {
-            lspPyStatusLabel.getStyleClass().setAll("settings-git-status");
-            lspPyStatusLabel.setText(tr("settings.lsp.checking"));
-            lspManager.detect("python", found -> {
-                lspPyStatusLabel.getStyleClass().setAll("settings-git-status",
-                        found ? "settings-git-found" : "settings-git-missing");
-                lspPyStatusLabel.setText(tr("settings.lsp.pyStatus",
-                        found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
+                status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
             });
         }
     }
@@ -1298,12 +1296,16 @@ public class SettingsWindow {
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
             lspCheck.setSelected(settings.isLspSupport());
-            javaLspEnabledCheck.setSelected(settings.isJavaLspEnabled());
-            typescriptLspEnabledCheck.setSelected(settings.isTypescriptLspEnabled());
-            pythonLspEnabledCheck.setSelected(settings.isPythonLspEnabled());
-            javaLspField.setText(settings.getJavaLspCommand());
-            typescriptLspField.setText(settings.getTypescriptLspCommand());
-            pythonLspField.setText(settings.getPythonLspCommand());
+            for (LspServerUi srv : lspServerUis()) {
+                CheckBox enable = lspEnableChecks.get(srv.id());
+                if (enable != null) {
+                    enable.setSelected(srv.getEnabled().getAsBoolean());
+                }
+                TextField field = lspCommandFields.get(srv.id());
+                if (field != null) {
+                    field.setText(srv.getCommand().get());
+                }
+            }
             updateLspRowsEnabled();
             refreshLspStatus();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());

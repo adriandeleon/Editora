@@ -215,7 +215,8 @@ public class MainController {
     /** serverId → whether that server's command was found on this machine (per-server availability). */
     private final java.util.Map<String, Boolean> lspServerAvailable = new java.util.HashMap<>();
     /** Known LSP server ids (probe/shutdown loops iterate these). */
-    private static final String[] LSP_SERVER_IDS = {"java", "typescript", "python"};
+    private static final String[] LSP_SERVER_IDS =
+            {"java", "typescript", "python", "xml", "json", "bash"};
     private ProblemsPanel problemsPanel;
     private ToolWindow problemsToolWindow;
     /** Run: streams a Java 25 compact source file's output into the Run tool window. */
@@ -1479,16 +1480,21 @@ public class MainController {
         lspManager.configure(on, java.util.Map.of(
                 "java", s.getJavaLspCommand(),
                 "typescript", s.getTypescriptLspCommand(),
-                "python", s.getPythonLspCommand()));
+                "python", s.getPythonLspCommand(),
+                "xml", s.getXmlLspCommand(),
+                "json", s.getJsonLspCommand(),
+                "bash", s.getBashLspCommand()));
         if (problemsToolWindow != null) {
             toolWindows.setAvailable(problemsToolWindow, on);
         }
         // The Run affordance (compact source files) is gated by the LSP feature: toggle every buffer's
         // Run detection, then refresh the active buffer's Run tool-window availability.
+        boolean shellRun = on && s.isBashLspEnabled();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
                 b.setRunEnabled(on);
+                b.setShellRunEnabled(shellRun); // shell Run glyph gated by the Bash LSP toggle
             }
         }
         updateRunButton();
@@ -1525,6 +1531,9 @@ public class MainController {
         return switch (serverId) {
             case "typescript" -> s.isTypescriptLspEnabled();
             case "python" -> s.isPythonLspEnabled();
+            case "xml" -> s.isXmlLspEnabled();
+            case "json" -> s.isJsonLspEnabled();
+            case "bash" -> s.isBashLspEnabled();
             default -> s.isJavaLspEnabled();
         };
     }
@@ -1535,6 +1544,9 @@ public class MainController {
         return switch (serverId) {
             case "typescript" -> s.getTypescriptLspCommand();
             case "python" -> s.getPythonLspCommand();
+            case "xml" -> s.getXmlLspCommand();
+            case "json" -> s.getJsonLspCommand();
+            case "bash" -> s.getBashLspCommand();
             default -> s.getJavaLspCommand();
         };
     }
@@ -2723,6 +2735,7 @@ public class MainController {
         });
         buffer.setRunHandler(this::runActiveFile); // "Run File" editor right-click item (runnable files)
         buffer.setRunEnabled(lspEnabled()); // the Run affordance is gated by the LSP feature
+        buffer.setShellRunEnabled(lspEnabled() && config.getSettings().isBashLspEnabled());
         buffer.setAddNoteHandler(this::addNoteFromContext);
         buffer.setNotesEnabled(notesEnabled());
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
@@ -3860,7 +3873,8 @@ public class MainController {
 
     /**
      * Runs the active runnable file — a compact Java source via the JDK source launcher ({@code java
-     * <file>}) or a Python script ({@code python3 <file>}) — streaming output into the Run tool window.
+     * <file>}), a Python script ({@code python3 <file>}), or a shell script ({@code bash <file>}) —
+     * streaming output into the Run tool window.
      * Saves first (a dirty file would run stale; an untitled one prompts Save-As), and refuses to start
      * while a previous run is still alive.
      */
@@ -3881,9 +3895,14 @@ public class MainController {
             setStatus(tr("status.run.busy"));
             return;
         }
-        java.util.List<String> command = buffer.isPython()
-                ? java.util.List.of("python3", path.toString())
-                : java.util.List.of("java", path.toString());
+        java.util.List<String> command;
+        if (buffer.isPython()) {
+            command = java.util.List.of("python3", path.toString());
+        } else if (buffer.isShell()) {
+            command = java.util.List.of("bash", path.toString());
+        } else {
+            command = java.util.List.of("java", path.toString());
+        }
         toolWindows.open(runToolWindow);
         runPanel.started(path.getFileName().toString());
         setStatus(tr("status.run.started", path.getFileName().toString()));

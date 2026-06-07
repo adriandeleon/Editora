@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 9;
+    public static final int SCHEMA_VERSION = 10;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -81,9 +81,15 @@ public class Settings {
     private String javaLspCommand = "";
     private String typescriptLspCommand = "";
     private String pythonLspCommand = "";
+    private String xmlLspCommand = "";
+    private String jsonLspCommand = "";
+    private String bashLspCommand = "";
     private boolean javaLspEnabled = true;
     private boolean typescriptLspEnabled = true;
     private boolean pythonLspEnabled = true;
+    private boolean xmlLspEnabled = true;
+    private boolean jsonLspEnabled = true;
+    private boolean bashLspEnabled = true;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -437,6 +443,54 @@ public class Settings {
 
     public void setPythonLspEnabled(boolean pythonLspEnabled) {
         this.pythonLspEnabled = pythonLspEnabled;
+    }
+
+    public String getXmlLspCommand() {
+        return xmlLspCommand == null ? "" : xmlLspCommand;
+    }
+
+    public void setXmlLspCommand(String xmlLspCommand) {
+        this.xmlLspCommand = xmlLspCommand == null ? "" : xmlLspCommand;
+    }
+
+    public boolean isXmlLspEnabled() {
+        return xmlLspEnabled;
+    }
+
+    public void setXmlLspEnabled(boolean xmlLspEnabled) {
+        this.xmlLspEnabled = xmlLspEnabled;
+    }
+
+    public String getJsonLspCommand() {
+        return jsonLspCommand == null ? "" : jsonLspCommand;
+    }
+
+    public void setJsonLspCommand(String jsonLspCommand) {
+        this.jsonLspCommand = jsonLspCommand == null ? "" : jsonLspCommand;
+    }
+
+    public boolean isJsonLspEnabled() {
+        return jsonLspEnabled;
+    }
+
+    public void setJsonLspEnabled(boolean jsonLspEnabled) {
+        this.jsonLspEnabled = jsonLspEnabled;
+    }
+
+    public String getBashLspCommand() {
+        return bashLspCommand == null ? "" : bashLspCommand;
+    }
+
+    public void setBashLspCommand(String bashLspCommand) {
+        this.bashLspCommand = bashLspCommand == null ? "" : bashLspCommand;
+    }
+
+    public boolean isBashLspEnabled() {
+        return bashLspEnabled;
+    }
+
+    public void setBashLspEnabled(boolean bashLspEnabled) {
+        this.bashLspEnabled = bashLspEnabled;
     }
 
     public boolean isPdfLineNumbers() {

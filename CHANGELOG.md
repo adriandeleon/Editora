@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LSP support for XML, JSON, and Bash/Shell** — three more language servers alongside Java/TypeScript/
+  Python: **XML** via [lemminx](https://github.com/eclipse/lemminx) (`lemminx`; schema-aware completion +
+  validation for `.xml`/`.xsd`/`.xsl`/`.svg`/`.fxml`/…), **JSON** via `vscode-json-language-server`
+  (schema completion + validation), and **Bash/Shell** via
+  [bash-language-server](https://github.com/bash-lsp/bash-language-server) (`bash-language-server start`;
+  diagnostics come from `shellcheck` when it's on your PATH). Each has its own enable toggle + command
+  field in Settings → LSP (auto-detected on PATH; never bundled). Off by default with the rest of LSP.
+  These ride the existing server-centric foundation — XML/JSON/shell already had syntax highlighting +
+  folding, so no new grammars. The Settings → LSP page is now data-driven over a server-descriptor list.
+- **Gutter Run ▶ for shell scripts** — a green play glyph in the gutter of `.sh`/`.bash`/`.zsh` files
+  runs the script with `bash` and streams output into the Run tool window (reusing the Java/Python Run
+  plumbing). Shown only when the **Bash LSP server is enabled** (Settings → LSP), gating it separately
+  from the Java/Python Run glyphs.
 - **LSP support for Python** (Pyright) — diagnostics, completion, go-to-definition/references, and hover
   for `.py`/`.pyw`/`.pyi`. Configure the server command in Settings → LSP with its own enable toggle
   (auto-detected on PATH; `npm i -g pyright`). Off by default with the rest of LSP. (Python already had

@@ -63,6 +63,27 @@ class LspServerRegistryTest {
     }
 
     @Test
+    void xmlJsonBashServersDefaultsAndMarkers() {
+        assertTrue(LspServerRegistry.isSupported("xml"));
+        assertTrue(LspServerRegistry.isSupported("json"));
+        assertTrue(LspServerRegistry.isSupported("shell"));
+        assertEquals("xml", LspServerRegistry.serverIdFor("xml"));
+        assertEquals("json", LspServerRegistry.serverIdFor("json"));
+        // The Bash server's id is "bash" but it serves the "shell" language id.
+        assertEquals("bash", LspServerRegistry.serverIdFor("shell"));
+
+        assertEquals(List.of("lemminx"), LspServerRegistry.specFor("xml", Map.of()).command());
+        assertEquals(List.of("vscode-json-language-server", "--stdio"),
+                LspServerRegistry.specFor("json", Map.of()).command());
+        assertEquals(List.of("bash-language-server", "start"),
+                LspServerRegistry.specFor("shell", Map.of()).command());
+
+        assertTrue(LspServerRegistry.specFor("xml", Map.of()).rootMarkers().contains("pom.xml"));
+        assertTrue(LspServerRegistry.specFor("json", Map.of()).rootMarkers().contains("package.json"));
+        assertTrue(LspServerRegistry.specFor("shell", Map.of()).rootMarkers().contains(".git"));
+    }
+
+    @Test
     void configuredCommandIsTokenizedPerServer() {
         var java = LspServerRegistry.specFor("java",
                 Map.of("java", "java -jar /opt/jdtls/launcher.jar -data ws"));

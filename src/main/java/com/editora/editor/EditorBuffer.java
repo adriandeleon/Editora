@@ -193,8 +193,11 @@ public class EditorBuffer implements TabContent {
     private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
     /** Whether the Run affordance is enabled at all (gated by the LSP feature setting). */
     private boolean runFeatureEnabled = true;
-    /** Whether this file is runnable (a Java 25 compact source file, or any Python script) — drives the
-     *  gutter Run glyph + the Run tool window. */
+    /** Whether shell scripts may show the Run glyph (gated by the Bash LSP server toggle, under the LSP
+     *  feature) — separate from Java/Python, which only need {@link #runFeatureEnabled}. */
+    private boolean shellRunEnabled;
+    /** Whether this file is runnable (a Java 25 compact source file, a Python script, or — when the Bash
+     *  LSP is enabled — a shell script) — drives the gutter Run glyph + the Run tool window. */
     private boolean runnable;
     /** 0-based line the gutter Run glyph sits on (a compact file's {@code main}, a Python {@code __main__}
      *  guard, else the first line), or -1 when not runnable. */
@@ -793,11 +796,12 @@ public class EditorBuffer implements TabContent {
 
     // --- LSP (Language Server Protocol) integration ---------------------------------------------
 
-    /** Language ids that have a bundled language server (Java + the TypeScript server's JS/TS/JSX/TSX).
-     *  Hardcoded here so {@code editor} need not depend on the {@code lsp} package (kept in sync with
-     *  {@code LspServerRegistry}). */
+    /** Language ids that have a language server (Java, the TypeScript server's JS/TS/JSX/TSX, Python,
+     *  XML, JSON, and shell). Hardcoded here so {@code editor} need not depend on the {@code lsp} package
+     *  (kept in sync with {@code LspServerRegistry}). */
     private static final java.util.Set<String> LSP_LANGUAGES = java.util.Set.of(
-            "java", "javascript", "javascriptreact", "typescript", "typescriptreact", "python");
+            "java", "javascript", "javascriptreact", "typescript", "typescriptreact", "python",
+            "xml", "json", "shell");
 
     /** Whether this buffer's language has a language server. */
     public boolean isLspLanguage() {
@@ -809,7 +813,8 @@ public class EditorBuffer implements TabContent {
         this.lspChangeListener = listener;
     }
 
-    /** True if this file can be run (a Java 25 compact source file, or any Python script). */
+    /** True if this file can be run (a Java 25 compact source file, a Python script, or a shell script
+     *  when the Bash LSP is enabled). */
     public boolean isRunnable() {
         return runnable;
     }
@@ -817,6 +822,11 @@ public class EditorBuffer implements TabContent {
     /** True specifically for Python (the controller picks {@code python}, vs {@code java}, as the runner). */
     public boolean isPython() {
         return "python".equals(language);
+    }
+
+    /** True specifically for a shell script (the controller picks {@code bash} as the runner). */
+    public boolean isShell() {
+        return "shell".equals(language);
     }
 
     /** Sets the callback fired when {@link #isRunnable()} flips (so the controller refreshes the Run button). */
@@ -833,6 +843,15 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Enables/disables the Run glyph for shell scripts (gated by the Bash LSP server toggle). Java/Python
+     *  runnability is unaffected — this only governs whether a {@code .sh}/bash file shows the glyph. */
+    public void setShellRunEnabled(boolean enabled) {
+        if (enabled != shellRunEnabled) {
+            shellRunEnabled = enabled;
+            recomputeRun();
+        }
+    }
+
     /** Recomputes runnable status + the gutter entry line; refreshes the gutter and fires the callback. */
     private void recomputeRun() {
         String name = path != null ? path.getFileName().toString() : displayName;
@@ -843,6 +862,9 @@ public class EditorBuffer implements TabContent {
         if (eligible && "python".equals(language)) {
             nowRunnable = true;
             nowLine = pythonRunLine(text); // the __main__ guard, else the first line
+        } else if (eligible && shellRunEnabled && "shell".equals(language)) {
+            nowRunnable = true;
+            nowLine = 0; // run the whole script from the top (the shebang line, if any)
         } else if (eligible && CompactSource.isLaunchable(name, text)) {
             nowRunnable = true;
             nowLine = CompactSource.mainLine(text);
