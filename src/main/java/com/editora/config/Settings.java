@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 13;
+    public static final int SCHEMA_VERSION = 14;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -41,6 +41,8 @@ public class Settings {
     /** Markdown preview color theme, independent of the app/editor theme: "" = follow app (until first
      *  toggled), then "light" or "dark". Toggled via the preview's floating sun/moon control. */
     private String markdownPreviewTheme = "";
+    /** Show the floating format bar on a text selection in Markdown buffers. */
+    private boolean markdownFormatBar = true;
     private boolean spellCheck = true;
     /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
     private String spellLanguage = "en_US";
@@ -321,6 +323,14 @@ public class Settings {
 
     public void setMarkdownPreviewTheme(String markdownPreviewTheme) {
         this.markdownPreviewTheme = markdownPreviewTheme == null ? "" : markdownPreviewTheme;
+    }
+
+    public boolean isMarkdownFormatBar() {
+        return markdownFormatBar;
+    }
+
+    public void setMarkdownFormatBar(boolean markdownFormatBar) {
+        this.markdownFormatBar = markdownFormatBar;
     }
 
     public boolean isShowToolbar() {

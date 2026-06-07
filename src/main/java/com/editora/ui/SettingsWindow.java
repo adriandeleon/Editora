@@ -128,6 +128,7 @@ public class SettingsWindow {
     private CheckBox tabBarCheck;
     private CheckBox breadcrumbCheck;
     private CheckBox toolStripeCheck;
+    private CheckBox markdownFormatBarCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
     private Label gitStatusLabel;
@@ -450,6 +451,7 @@ public class SettingsWindow {
         tabBarCheck = viewCheck(tr("settings.showTabBar"), Settings::setShowTabBar);
         breadcrumbCheck = viewCheck(tr("settings.showBreadcrumb"), Settings::setShowBreadcrumb);
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
+        markdownFormatBarCheck = viewCheck(tr("settings.markdownFormatBar"), Settings::setMarkdownFormatBar);
 
         projectsCheck = new CheckBox(tr("settings.enableProjects"));
         projectsCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -627,6 +629,9 @@ public class SettingsWindow {
         mermaidRow.setPadding(new Insets(0, 0, 0, 20));
         row(p, Category.EDITOR, completion, mermaidRow,
                 "autocomplete mermaid diagram keywords snippets mmd");
+        Label markdown = section(p, tr("settings.section.markdown"));
+        row(p, Category.EDITOR, markdown, markdownFormatBarCheck,
+                "markdown format bar selection bold italic toolbar floating");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -1408,6 +1413,7 @@ public class SettingsWindow {
             tabBarCheck.setSelected(settings.isShowTabBar());
             breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
+            markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
@@ -1541,6 +1547,20 @@ public class SettingsWindow {
         }
     }
 
+    /** Re-reads the Markdown "format bar" checkbox from settings (used after the palette toggle command). */
+    public void syncMarkdownFormatBarCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            markdownFormatBarCheck.setSelected(config.getSettings().isMarkdownFormatBar());
+        } finally {
+            loading = prev;
+        }
+    }
+
     /** Re-reads the "show toolbar" checkbox from settings (used after the palette/floating toggle). */
     public void syncToolbarCheck() {
         if (!built) {
@@ -1627,6 +1647,7 @@ public class SettingsWindow {
             tabBarCheck.setSelected(s.isShowTabBar());
             breadcrumbCheck.setSelected(s.isShowBreadcrumb());
             toolStripeCheck.setSelected(s.isShowToolStripe());
+            markdownFormatBarCheck.setSelected(s.isMarkdownFormatBar());
             projectsCheck.setSelected(s.isProjectSupport());
         } finally {
             loading = prev;

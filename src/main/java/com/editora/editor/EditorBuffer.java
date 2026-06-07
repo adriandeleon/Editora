@@ -143,6 +143,12 @@ public class EditorBuffer implements TabContent {
     private boolean viewMode;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     private CodeArea focusedArea = area;
+    /** Floating Markdown format bar (lazily created), shown on a non-empty selection in a Markdown buffer. */
+    private MarkdownFormatBar formatBar;
+    private boolean formatBarEnabled = true;
+    private boolean formatBarUpdatePending;
+    /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
+    private java.util.function.Consumer<String> openUrlHandler = u -> { };
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private SnippetSession snippetSession;
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
@@ -371,7 +377,222 @@ public class EditorBuffer implements TabContent {
             }
         });
         installContextMenu();
+        installFormatBarListeners(area);
         installOverlays();
+    }
+
+    /** Show/reposition the Markdown format bar as the selection or scroll changes (coalesced per pulse). */
+    private void installFormatBarListeners(CodeArea a) {
+        a.selectionProperty().addListener((obs, old, now) -> scheduleFormatBar());
+        a.estimatedScrollYProperty().addListener((obs, old, now) -> scheduleFormatBar());
+        a.estimatedScrollXProperty().addListener((obs, old, now) -> scheduleFormatBar());
+        a.focusedProperty().addListener((obs, was, now) -> {
+            if (!now) {
+                hideFormatBar();
+            }
+        });
+        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == KeyCode.ESCAPE) {
+                hideFormatBar(); // don't consume — let other Escape behavior run
+            }
+        });
+        // Ctrl/Cmd-click opens a Markdown link under the pointer in the external browser.
+        a.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
+            if (isMarkdown() && e.isShortcutDown() && e.getButton() == MouseButton.PRIMARY) {
+                try {
+                    int off = a.hit(e.getX(), e.getY()).getInsertionIndex();
+                    String url = MarkdownInline.linkAround(a.getText(), off);
+                    if (url != null) {
+                        openUrlHandler.accept(url);
+                        e.consume();
+                    }
+                } catch (RuntimeException ignored) {
+                    // hit-test off the text — ignore
+                }
+            }
+        });
+    }
+
+    /** Injects the external-URL opener (controller's HostServices) used by Ctrl/Cmd-click + open-link. */
+    public void setOpenUrlHandler(java.util.function.Consumer<String> handler) {
+        this.openUrlHandler = handler == null ? u -> { } : handler;
+    }
+
+    /** Opens the link under the caret externally; returns false when the caret is not on a link. */
+    public boolean openLinkUnderCaret() {
+        String url = linkUnderCaret();
+        if (url == null) {
+            return false;
+        }
+        openUrlHandler.accept(url);
+        return true;
+    }
+
+    /** Enables/disables the floating Markdown format bar (driven from Settings). */
+    public void setFormatBarEnabled(boolean enabled) {
+        this.formatBarEnabled = enabled;
+        if (!enabled) {
+            hideFormatBar();
+        } else {
+            scheduleFormatBar();
+        }
+    }
+
+    private void scheduleFormatBar() {
+        if (formatBarUpdatePending) {
+            return;
+        }
+        formatBarUpdatePending = true;
+        Platform.runLater(this::updateFormatBar);
+    }
+
+    private void hideFormatBar() {
+        if (formatBar != null) {
+            formatBar.node().setVisible(false);
+        }
+    }
+
+    private void updateFormatBar() {
+        formatBarUpdatePending = false;
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        boolean show = formatBarEnabled && isMarkdown() && isEditable() && !hugeFile
+                && markdownViewMode != MarkdownViewMode.PREVIEW
+                && a.getSelection().getLength() > 0;
+        if (!show) {
+            hideFormatBar();
+            return;
+        }
+        int selStart = a.getSelection().getStart();
+        Bounds screen = a.getCharacterBoundsOnScreen(selStart, Math.min(a.getLength(), selStart + 1))
+                .orElse(null);
+        if (screen == null) {
+            hideFormatBar();
+            return;
+        }
+        javafx.scene.layout.AnchorPane targetPane = (a == area2 && root2 != null) ? root2 : root;
+        Bounds local = targetPane.screenToLocal(screen);
+        if (local == null) {
+            hideFormatBar();
+            return;
+        }
+        if (formatBar == null) {
+            formatBar = new MarkdownFormatBar(this);
+        }
+        javafx.scene.Node bar = formatBar.node();
+        if (bar.getParent() != targetPane) {
+            if (bar.getParent() instanceof javafx.scene.layout.AnchorPane ap) {
+                ap.getChildren().remove(bar);
+            }
+            targetPane.getChildren().add(bar);
+        }
+        bar.setVisible(true);
+        bar.applyCss();
+        double w = bar.prefWidth(-1);
+        double h = bar.prefHeight(-1);
+        double x = Math.max(0, Math.min(local.getMinX(), Math.max(0, targetPane.getWidth() - w)));
+        double y = local.getMinY() - h - 4;
+        if (y < 0) {
+            y = local.getMaxY() + 4; // no room above the selection — place below it
+        }
+        bar.resizeRelocate(x, y, w, h);
+        bar.toFront();
+    }
+
+    /** True when this buffer can show Markdown formatting actions (markdown + editable). */
+    public boolean canFormatMarkdown() {
+        return isMarkdown() && isEditable();
+    }
+
+    private void applyMarkdownEdit(MarkdownEdit edit) {
+        if (edit == null) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        a.replaceText(edit.from(), edit.to(), edit.replacement());
+        a.selectRange(edit.selStart(), edit.selEnd());
+        a.requestFocus();
+    }
+
+    /** Toggles an inline marker ({@code **}/{@code *}/{@code ~~}/{@code `}) around the selection. */
+    public void formatInline(String marker) {
+        if (!canFormatMarkdown()) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        var sel = a.getSelection();
+        applyMarkdownEdit(MarkdownInline.toggle(a.getText(), sel.getStart(), sel.getEnd(), marker));
+    }
+
+    /** Wraps the selection as a link with {@code url} (blank ⇒ caret left in the empty {@code ()}). */
+    public void formatLink(String url) {
+        if (!canFormatMarkdown()) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        var sel = a.getSelection();
+        applyMarkdownEdit(MarkdownInline.link(a.getText(), sel.getStart(), sel.getEnd(), url));
+    }
+
+    /** Link button / make-link command: use a clipboard URL when present, else an empty link. */
+    public void formatLinkFromClipboard() {
+        String clip = javafx.scene.input.Clipboard.getSystemClipboard().getString();
+        String url = clip != null && clip.strip().matches("(?i)(https?|ftp|mailto):\\S+") ? clip.strip() : "";
+        formatLink(url);
+    }
+
+    /** Promote ({@code delta<0}) / demote ({@code delta>0}) the heading level of the selected line(s). */
+    public void formatHeading(int delta) {
+        if (!canFormatMarkdown()) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        var sel = a.getSelection();
+        applyMarkdownEdit(MarkdownHeading.apply(a.getText(), sel.getStart(), sel.getEnd(), delta));
+    }
+
+    /** Sets the selected line(s) to an absolute heading level (0 = Normal). */
+    public void setHeadingLevel(int level) {
+        if (!canFormatMarkdown()) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        var sel = a.getSelection();
+        applyMarkdownEdit(MarkdownHeading.setLevel(a.getText(), sel.getStart(), sel.getEnd(), level));
+    }
+
+    /** Toggles a {@code "- "} bullet on the selected line(s). */
+    public void formatBulletList() {
+        if (!canFormatMarkdown()) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        var sel = a.getSelection();
+        applyMarkdownEdit(MarkdownLines.toggleBullet(a.getText(), sel.getStart(), sel.getEnd()));
+    }
+
+    /** Reflows the GFM table around the caret; returns false when the caret is not on a table. */
+    public boolean reflowTable() {
+        if (!canFormatMarkdown()) {
+            return false;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
+        if (b == null) {
+            return false;
+        }
+        String block = a.getText().substring(b[0], b[1]);
+        String reflowed = MarkdownTable.reflow(block);
+        if (!reflowed.equals(block)) {
+            a.replaceText(b[0], b[1], reflowed);
+        }
+        a.requestFocus();
+        return true;
+    }
+
+    /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
+    public String linkUnderCaret() {
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        return MarkdownInline.linkAround(a.getText(), a.getCaretPosition());
     }
 
     private void installOverlays() {
@@ -485,6 +706,10 @@ public class EditorBuffer implements TabContent {
                 items.addAll(spellMenuItems(hit));
                 items.add(new SeparatorMenuItem());
             }
+            if (canFormatMarkdown()) {
+                items.addAll(markdownMenuItems());
+                items.add(new SeparatorMenuItem());
+            }
             items.addAll(standardMenuItems());
             if (path != null && notesEnabled) {
                 items.add(new SeparatorMenuItem());
@@ -527,6 +752,21 @@ public class EditorBuffer implements TabContent {
         MenuItem hover = new MenuItem(tr("command.lsp.hover"));
         hover.setOnAction(e -> { area.moveTo(offset); lspHoverAction.run(); });
         return List.of(def, refs, hover);
+    }
+
+    /** Markdown inline-format actions for the right-click menu (markdown buffers only). */
+    private List<MenuItem> markdownMenuItems() {
+        MenuItem bold = new MenuItem(tr("command.markdown.bold"));
+        bold.setOnAction(e -> formatInline("**"));
+        MenuItem italic = new MenuItem(tr("command.markdown.italic"));
+        italic.setOnAction(e -> formatInline("*"));
+        MenuItem strike = new MenuItem(tr("command.markdown.strikethrough"));
+        strike.setOnAction(e -> formatInline("~~"));
+        MenuItem code = new MenuItem(tr("command.markdown.code"));
+        code.setOnAction(e -> formatInline("`"));
+        MenuItem link = new MenuItem(tr("command.markdown.link"));
+        link.setOnAction(e -> formatLinkFromClipboard());
+        return List.of(bold, italic, strike, code, link);
     }
 
     /** The Cut/Copy/Paste/Undo/Redo/Select All items, with state for the current selection/clipboard. */
@@ -1028,6 +1268,7 @@ public class EditorBuffer implements TabContent {
         MarkdownViewMode target = mode == null ? MarkdownViewMode.EDITOR : mode;
         boolean changed = this.markdownViewMode != target;
         this.markdownViewMode = target;
+        scheduleFormatBar(); // hide the format bar when entering pure PREVIEW, re-evaluate otherwise
         if (target == MarkdownViewMode.EDITOR) {
             unsubscribePreview();
         } else {
@@ -1388,6 +1629,7 @@ public class EditorBuffer implements TabContent {
                 focusedArea = area2;
             }
         });
+        installFormatBarListeners(area2);
         scrollPane2 = new VirtualizedScrollPane<>(area2);
         // Give the secondary view its own minimap (tracks this pane's viewport), docked like the primary.
         minimap2 = new Minimap(area2);
@@ -2231,6 +2473,30 @@ public class EditorBuffer implements TabContent {
                 a.replaceSelection("");
             }
             int caret = a.getCaretPosition();
+            // Markdown list/blockquote continuation: continue the marker on the next line, or end the
+            // list when Enter is pressed on an empty item.
+            if (isMarkdown()) {
+                int par = a.getCurrentParagraph();
+                int lineStart = a.getAbsolutePosition(par, 0);
+                String line = a.getParagraph(par).getText();
+                int markerLen = MarkdownLines.markerLength(line);
+                if (markerLen > 0 && caret - lineStart >= markerLen) {
+                    if (MarkdownLines.isEmptyItem(line)) {
+                        a.replaceText(lineStart, lineStart + line.length(), ""); // exit list (clear marker)
+                        a.requestFollowCaret();
+                        e.consume();
+                        return;
+                    }
+                    String cont = MarkdownLines.continuation(line);
+                    if (cont != null) {
+                        a.replaceText(caret, caret, "\n" + cont);
+                        a.moveTo(caret + 1 + cont.length());
+                        a.requestFollowCaret();
+                        e.consume();
+                        return;
+                    }
+                }
+            }
             Indenter.EnterEdit edit = Indenter.enterEdit(a.getText(), caret, language, tabSize);
             a.replaceText(caret, caret, edit.insert());
             a.moveTo(caret + edit.caretOffset());

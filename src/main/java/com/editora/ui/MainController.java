@@ -2786,6 +2786,8 @@ public class MainController {
         buffer.setShellRunEnabled(lspEnabled() && config.getSettings().isBashLspEnabled());
         buffer.setAddNoteHandler(this::addNoteFromContext);
         buffer.setNotesEnabled(notesEnabled());
+        buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
+        buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         buffer.setCompletionProvider(completion::complete);
@@ -4689,6 +4691,56 @@ public class MainController {
         }
     }
 
+    /** Runs a Markdown format action on the active buffer; reports when it isn't an editable Markdown file. */
+    private void withMarkdown(java.util.function.Consumer<EditorBuffer> action) {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.canFormatMarkdown()) {
+            setStatus(tr("status.notMarkdown"));
+            return;
+        }
+        action.accept(b);
+    }
+
+    private void markdownInline(String marker) {
+        withMarkdown(b -> b.formatInline(marker));
+    }
+
+    /** {@code markdown.openLink}: open the link under the caret externally. */
+    private void markdownOpenLink() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isMarkdown()) {
+            setStatus(tr("status.notMarkdown"));
+        } else if (!b.openLinkUnderCaret()) {
+            setStatus(tr("status.markdown.noLink"));
+        }
+    }
+
+    /** {@code markdown.reflowTable}: normalize/align the GFM table around the caret. */
+    private void markdownReflowTable() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.canFormatMarkdown()) {
+            setStatus(tr("status.notMarkdown"));
+        } else if (!b.reflowTable()) {
+            setStatus(tr("status.markdown.notTable"));
+        }
+    }
+
+    /** {@code markdown.toggleFormatBar}: flip the selection format-bar setting + re-sync every buffer. */
+    private void toggleMarkdownFormatBar() {
+        Settings s = config.getSettings();
+        boolean now = !s.isMarkdownFormatBar();
+        s.setMarkdownFormatBar(now);
+        config.save();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null) {
+                b.setFormatBarEnabled(now);
+            }
+        }
+        settingsWindow.syncMarkdownFormatBarCheck();
+        setStatus(tr(now ? "status.markdown.formatBar.on" : "status.markdown.formatBar.off"));
+    }
+
     /** Whether the app (AtlantaFX) theme is dark — seeds/decides the "follow app" preview theme + glyph. */
     private boolean appThemeDark() {
         return Themes.backgroundFor(config.getSettings().getTheme()).getBrightness() < 0.5;
@@ -5629,6 +5681,7 @@ public class MainController {
                 EditorThemes.editorForegroundFor(s.getEditorTheme()));
         buffer.setSpellLanguage(spellLanguageFor(buffer)); // per-file override, else the global default
         buffer.setSpellCheckEnabled(s.isSpellCheck());
+        buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
     }
 
     /** The spell-check language for a buffer: its per-file override (if any/valid), else the global default. */
@@ -6124,6 +6177,18 @@ public class MainController {
                 () -> markdownZoom(0)));
         registry.register(Command.of("view.toggleMarkdownPreviewTheme",
                 this::toggleMarkdownPreviewTheme));
+        // Markdown editing (markdown buffers only; no-op with a status elsewhere).
+        registry.register(Command.of("markdown.bold", () -> markdownInline("**")));
+        registry.register(Command.of("markdown.italic", () -> markdownInline("*")));
+        registry.register(Command.of("markdown.strikethrough", () -> markdownInline("~~")));
+        registry.register(Command.of("markdown.code", () -> markdownInline("`")));
+        registry.register(Command.of("markdown.link", () -> withMarkdown(EditorBuffer::formatLinkFromClipboard)));
+        registry.register(Command.of("markdown.bulletList", () -> withMarkdown(EditorBuffer::formatBulletList)));
+        registry.register(Command.of("markdown.headingPromote", () -> withMarkdown(b -> b.formatHeading(-1))));
+        registry.register(Command.of("markdown.headingDemote", () -> withMarkdown(b -> b.formatHeading(1))));
+        registry.register(Command.of("markdown.openLink", this::markdownOpenLink));
+        registry.register(Command.of("markdown.reflowTable", this::markdownReflowTable));
+        registry.register(Command.of("markdown.toggleFormatBar", this::toggleMarkdownFormatBar));
         registry.register(Command.of("view.textZoomIn", () -> textZoom(1)));
         registry.register(Command.of("view.textZoomOut", () -> textZoom(-1)));
         registry.register(Command.of("view.textZoomReset", () -> textZoom(0)));

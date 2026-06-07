@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Markdown selection format bar** — selecting text in a Markdown buffer shows a floating, IntelliJ-style
+  bar above the selection with **Bold / Italic / Strikethrough / Inline code / Link / Bulleted list**
+  buttons and a **Normal / H1–H6** paragraph-style dropdown. Each action toggles the wrapping (a second
+  press removes it). It never steals typing focus, repositions on scroll, and hides on Escape / empty
+  selection. Toggle it in Settings → Editor → Markdown ("Show format bar on text selection", default on)
+  or the `markdown.toggleFormatBar` command.
+- **Markdown smart editing** — the same actions are available as commands, `C-c`-prefixed keybindings
+  (`C-c C-s b/i/s/c` bold/italic/strike/code, `C-c C-a l` link, `C-c C-h p`/`C-c C-h d` heading
+  promote/demote, `C-c C-o` open link, `C-c C-s t` reformat table), and a right-click **Format** group.
+  Plus: **list/blockquote continuation** on Enter (`- `, `* `, `1. ` (auto-incrementing), `- [ ] `,
+  `> ` — Enter on an empty item ends the list), **link helpers** (wrap a selection as a link using a
+  clipboard URL when present; Ctrl/Cmd-click or `markdown.openLink` opens the link under the caret),
+  and **GFM table reflow** (`markdown.reflowTable` pads/aligns a table's pipes honoring `:--`/`:-:`/`--:`).
+
 ### Changed
 
 - **`C-a` (beginning of line) is now "smart home"** — the first press moves to the beginning of the

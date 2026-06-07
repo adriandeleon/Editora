@@ -1206,6 +1206,29 @@
     -fx-opacity: 0.65;
 }
 
+/* ---- Markdown selection format bar (floating, anchored above the selection) ---- */
+.markdown-format-bar {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 10, 0.1, 0, 2);
+}
+.markdown-format-bar .md-fmt-btn {
+    -fx-padding: 2 7 2 7;
+    -fx-background-radius: 4;
+}
+.markdown-format-bar .md-fmt-bold {
+    -fx-font-weight: bold;
+}
+.markdown-format-bar .md-fmt-italic {
+    -fx-font-style: italic;
+}
+.markdown-format-bar .md-fmt-heading {
+    -fx-min-width: 96;
+}
+
 /* ---- Welcome page (editor-area empty state when no file tabs are open) ---- */
 .welcome-pane {
     -fx-background-color: -color-bg-default;
