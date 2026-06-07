@@ -45,6 +45,7 @@ import org.eclipse.lsp4j.SynchronizationCapabilities;
 import org.eclipse.lsp4j.TextDocumentClientCapabilities;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceFolder;
@@ -229,10 +230,34 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     void didChange(String uri, String text) {
+        if (changeSyncDisabled()) {
+            return; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
+        }
         int version = versions.merge(uri, 1, Integer::sum);
         whenReady(() -> server.getTextDocumentService().didChange(new DidChangeTextDocumentParams(
                 new VersionedTextDocumentIdentifier(uri, version),
                 List.of(new TextDocumentContentChangeEvent(text)))));
+    }
+
+    /**
+     * Whether the server explicitly declared {@link TextDocumentSyncKind#None} for change sync — in which
+     * case we skip the (debounced, per-edit) {@code didChange} entirely instead of pushing the full text
+     * it will ignore. Conservative: an <em>unspecified</em> sync capability keeps the current full-text
+     * behavior (we still send), since omitting it is rare and a missed update is worse than a wasted one.
+     */
+    private boolean changeSyncDisabled() {
+        if (capabilities == null) {
+            return false;
+        }
+        var sync = capabilities.getTextDocumentSync();
+        if (sync == null) {
+            return false; // unspecified → keep sending full text (existing behavior)
+        }
+        if (sync.isLeft()) {
+            return sync.getLeft() == TextDocumentSyncKind.None;
+        }
+        // Detailed options form: an explicit change == None means no change notifications are wanted.
+        return sync.getRight() != null && sync.getRight().getChange() == TextDocumentSyncKind.None;
     }
 
     void didSave(String uri) {
