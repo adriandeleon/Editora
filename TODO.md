@@ -78,7 +78,8 @@ A backlog of planned features and improvements. Unordered within each section.
       LSP-backed completion, and TS/PHP auto-imports. Server-centric registry, per-server Settings, off by
       default. (Next: formatting / format-on-save; rename, code actions, quick fixes; document symbols.)
 - [ ] Fix structure for the 21 languages we support
-- [ ] Multi language support
+- [x] Multi language support — UI string translation (en/it/es/fr/pt/de); see "UI localization (i18n)"
+      under "Recently shipped"
 
 ## Snippets
 - [ ] GUI for Snippet management
