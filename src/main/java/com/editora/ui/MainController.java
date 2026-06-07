@@ -832,6 +832,7 @@ public class MainController {
             projects.delete(p.id()); // also clears the active id
             projects.save();
             config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
+            config.deleteNotesForProject(p.id()); // ...and its personal notes
             config.useDefaultWorkspaceStateFile();
             activateSession(null); // restores the global session + refreshes the combos/panel
         } else {
@@ -839,6 +840,7 @@ public class MainController {
             projects.delete(p.id());
             projects.save();
             config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
+            config.deleteNotesForProject(p.id()); // ...and its personal notes
             refreshProjectPanelList();
         }
         setStatus(tr("status.deletedProject", p.name()));
@@ -911,17 +913,34 @@ public class MainController {
                 statusBar.refresh();
             }
         }
-        // Migrate persisted state keyed by the absolute path string.
-        var folded = config.getWorkspaceState().getFoldedRegions();
-        List<Integer> folds = folded.remove(old.toString());
-        if (folds != null) {
-            folded.put(target.toString(), folds);
+        migrateFileState(old, target);
+        config.save();
+        setStatus(tr("status.renamedTo", target.getFileName()));
+    }
+
+    /** Re-keys every path-keyed session map (folds, markdown mode, spell language, read-only) on rename. */
+    private void migrateFileState(Path old, Path target) {
+        WorkspaceState ws = config.getWorkspaceState();
+        String oldKey = old.toString();
+        String newKey = target.toString();
+        rekey(ws.getFoldedRegions(), oldKey, newKey);
+        rekey(ws.getMarkdownViewModes(), oldKey, newKey);
+        rekey(ws.getSpellLanguages(), oldKey, newKey);
+        if (ws.getReadOnlyFiles().remove(oldKey)) {
+            ws.getReadOnlyFiles().add(newKey);
         }
         if (recentFiles != null) {
             recentFiles.remove(old);
         }
-        config.save();
-        setStatus(tr("status.renamedTo", target.getFileName()));
+        // Bookmarks (re-anchored by lineText) and notes (re-keyed by content hash) self-heal on reopen.
+    }
+
+    /** Moves a value from {@code oldKey} to {@code newKey} if present, preserving it across a rename. */
+    private static <V> void rekey(Map<String, V> map, String oldKey, String newKey) {
+        V value = map.remove(oldKey);
+        if (value != null) {
+            map.put(newKey, value);
+        }
     }
 
     /** Syncs editor/session state after the Project tree deletes a file on disk. */
@@ -930,7 +949,12 @@ public class MainController {
         if (tab != null) {
             tabPane.getTabs().remove(tab); // file is gone; close without a save prompt
         }
-        config.getWorkspaceState().getFoldedRegions().remove(path.toString());
+        WorkspaceState ws = config.getWorkspaceState();
+        String key = path.toString();
+        ws.getFoldedRegions().remove(key);
+        ws.getMarkdownViewModes().remove(key);
+        ws.getSpellLanguages().remove(key);
+        ws.getReadOnlyFiles().remove(key);
         if (recentFiles != null) {
             recentFiles.remove(path);
         }

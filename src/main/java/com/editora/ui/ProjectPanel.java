@@ -12,12 +12,16 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import com.editora.config.Project;
 
+import javafx.application.Platform;
 import javafx.animation.PauseTransition;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
@@ -70,6 +74,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final TreeView<Path> tree = new TreeView<>();
     private final StackPane placeholderPane;
     private final PauseTransition filterDebounce = new PauseTransition(Duration.millis(150));
+
+    // Filter searches walk the filesystem off the FX thread; a generation guard drops stale results.
+    private final ExecutorService searchExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "project-filter-search");
+        t.setDaemon(true);
+        return t;
+    });
+    private final AtomicLong searchGen = new AtomicLong();
 
     private Path root;
     private boolean filtering;
@@ -234,6 +246,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Rebuilds the body: placeholder (no project), filtered flat results, or the lazy tree. */
     private void rebuildBody() {
+        long gen = searchGen.incrementAndGet(); // invalidate any in-flight search
         if (root == null || !Files.isDirectory(root)) {
             getChildren().setAll(header(), placeholderPane);
             return;
@@ -246,12 +259,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             tree.setRoot(rootItem);
         } else {
             filtering = true;
-            TreeItem<Path> rootItem = new TreeItem<>(root);
-            rootItem.setExpanded(true);
-            for (Path match : search(root, q)) {
-                rootItem.getChildren().add(new TreeItem<>(match));
-            }
-            tree.setRoot(rootItem);
+            // Walk off the FX thread (up to MAX_VISIT entries); apply results back under the gen guard.
+            Path searchRoot = root;
+            TreeItem<Path> pending = new TreeItem<>(root);
+            pending.setExpanded(true);
+            tree.setRoot(pending);
+            searchExecutor.submit(() -> {
+                List<Path> matches = search(searchRoot, q);
+                Platform.runLater(() -> {
+                    if (gen != searchGen.get()) {
+                        return; // a newer query (or a tree switch) superseded this one
+                    }
+                    TreeItem<Path> rootItem = new TreeItem<>(searchRoot);
+                    rootItem.setExpanded(true);
+                    for (Path match : matches) {
+                        rootItem.getChildren().add(new TreeItem<>(match));
+                    }
+                    tree.setRoot(rootItem);
+                });
+            });
         }
         getChildren().setAll(header(), filterField, tree);
     }
@@ -414,6 +440,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             try {
                 Files.move(path, target);
             } catch (IOException ex) {
+                showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
                 return;
             }
             refreshAfterChange(item);
@@ -435,10 +462,20 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         try {
             Files.delete(path);
         } catch (IOException ex) {
+            showError(tr("project.deleteError", path.getFileName(), ex.getMessage()));
             return;
         }
         refreshAfterChange(item);
         onFileDeleted.accept(path);
+    }
+
+    /** Shows a modal error dialog when a filesystem operation (rename/delete) fails. */
+    private void showError(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
+        alert.initOwner(getScene() == null ? null : getScene().getWindow());
+        alert.setTitle(tr("project.fileErrorTitle"));
+        alert.setHeaderText(null);
+        alert.showAndWait();
     }
 
     /** Refreshes the view after a rename/delete: re-run the filter, or re-list the lazy parent. */
@@ -526,7 +563,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 getStyleClass().removeAll("folder-cell", "file-cell", "modified-file");
                 return;
             }
-            boolean isDir = Files.isDirectory(item);
+            // Reuse the lazy tree node's cached leaf flag (avoids a Files.isDirectory stat per cell
+            // render); filtered flat rows are plain TreeItems, so fall back to a stat for those.
+            boolean isDir = getTreeItem() instanceof PathItem pi ? !pi.isLeaf() : Files.isDirectory(item);
             // An open file with unsaved changes: mark it like a dirty tab ("• " + amber italic).
             boolean dirty = !isDir && isModified != null && isModified.test(item);
             // Mark the cell so the stylesheet can theme the folder vs. file icon color.
