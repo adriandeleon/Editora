@@ -44,6 +44,15 @@ public final class Fonts {
         "source-code-pro/SourceCodePro-Bold.ttf",
         "source-code-pro/SourceCodePro-Italic.ttf",
         "source-code-pro/SourceCodePro-BoldItalic.ttf",
+        // Inter (sans-serif) — not an editor font, so it's intentionally absent from BUNDLED above.
+        // It's the Markdown preview's prose font, bundled so it's always available by family name:
+        // JavaFX cannot render the macOS system font's bold cleanly (it faux-bolds .AppleSystemUIFont,
+        // mangling glyphs) and won't fall through a CSS font-family list to a fallback, so the preview
+        // needs a guaranteed-present font with a real bold face. See styles/ui-system-font.css.
+        "inter/Inter-Regular.ttf",
+        "inter/Inter-Bold.ttf",
+        "inter/Inter-Italic.ttf",
+        "inter/Inter-BoldItalic.ttf",
     };
 
     private Fonts() {

@@ -281,6 +281,15 @@
     -fx-spacing: 14;
 }
 .markdown-preview .md-text { -fx-fill: -color-fg-default; }
+/* Prose font for the preview, on every platform: the bundled Inter (registered at startup by
+   Fonts.load()). Pinned explicitly rather than inherited for two reasons: (1) raw javafx.scene.text.Text
+   nodes don't reliably inherit the scene's font family, and (2) on macOS the chrome runs on the logical
+   "System" family whose BOLD weight JavaFX cannot rasterize cleanly (it faux-bolds .AppleSystemUIFont,
+   mangling glyphs) — Inter ships a real bold face. A single bundled family also dodges JavaFX's CSS
+   quirk of dropping to the default font when the first family in a list is missing. Code keeps its own
+   monospace family (the .md-inline-code / .md-code-block rules below win by specificity). */
+.markdown-preview .md-text,
+.markdown-preview .md-list-marker { -fx-font-family: "Inter", "sans-serif"; }
 .markdown-preview .md-paragraph { -fx-line-spacing: 5; }
 /* Heading sizes are em-relative to the preview's base font, so the −/+ zoom (which overrides the base
    font size inline) scales everything proportionally. */

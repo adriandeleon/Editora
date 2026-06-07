@@ -11,3 +11,7 @@
 .root {
     -fx-font-family: "System", "Inter", "sans-serif";
 }
+
+/* NB: the Markdown preview is pinned to Inter on ALL platforms in app.css (.markdown-preview .md-text),
+   not here — it must not follow the macOS "System" family above, because JavaFX can't rasterize that
+   font's bold weight cleanly (it faux-bolds .AppleSystemUIFont, mangling glyphs). See app.css. */

@@ -18,8 +18,6 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.commonmark.node.BlockQuote;
 import org.commonmark.node.BulletList;
@@ -51,8 +49,9 @@ import com.editora.mermaid.Mermaid;
  * Renders Markdown to a <b>native vector</b> (searchable) PDF, mirroring the editor's preview coverage:
  * headings, inline bold/italic/code/links, lists (incl. task items), block quotes, code blocks, rules,
  * tables, images, and embedded Mermaid diagrams. Reuses {@link MarkdownRenderer#parseToDocument} for the
- * CommonMark AST. Body text uses the built-in Helvetica family; code uses the bundled JetBrains Mono;
- * Mermaid blocks and images embed as raster pictures. Blocking — call off the FX thread.
+ * CommonMark AST. Body text uses the bundled Inter family (embedded + subset, matching the on-screen
+ * preview on every platform); code uses the bundled JetBrains Mono; Mermaid blocks and images embed as
+ * raster pictures. Blocking — call off the FX thread.
  */
 public final class MarkdownPdfWriter {
 
@@ -104,14 +103,14 @@ public final class MarkdownPdfWriter {
             this.size = size;
             this.baseDir = baseDir;
             this.mmdc = mmdc;
-            this.body = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-            this.bodyBold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-            this.bodyItalic = new PDType1Font(Standard14Fonts.FontName.HELVETICA_OBLIQUE);
-            this.bodyBoldItalic = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD_OBLIQUE);
-            try (InputStream in = MarkdownPdfWriter.class.getResourceAsStream(
-                    "/com/editora/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf")) {
-                this.mono = PDType0Font.load(doc, in);
-            }
+            // Prose uses the bundled Inter (embedded + subset), matching the on-screen Markdown preview
+            // on every platform, instead of the built-in Standard-14 Helvetica. Embedding also gives
+            // full Unicode coverage (em dashes, curly quotes, etc.) that WinAnsi Helvetica lacked.
+            this.body = embed(doc, "inter/Inter-Regular");
+            this.bodyBold = embed(doc, "inter/Inter-Bold");
+            this.bodyItalic = embed(doc, "inter/Inter-Italic");
+            this.bodyBoldItalic = embed(doc, "inter/Inter-BoldItalic");
+            this.mono = embed(doc, "jetbrains-mono/JetBrainsMono-Regular");
             newPage();
         }
 
@@ -128,6 +127,17 @@ public final class MarkdownPdfWriter {
         void close() throws IOException {
             if (cs != null) {
                 cs.close();
+            }
+        }
+
+        /** Loads a bundled TTF as an embedded, subset {@link PDType0Font} (full Unicode, small output). */
+        private static PDType0Font embed(PDDocument doc, String relPath) throws IOException {
+            try (InputStream in = MarkdownPdfWriter.class.getResourceAsStream(
+                    "/com/editora/fonts/" + relPath + ".ttf")) {
+                if (in == null) {
+                    throw new IOException("Missing bundled font: " + relPath);
+                }
+                return PDType0Font.load(doc, in);
             }
         }
 
