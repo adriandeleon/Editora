@@ -113,8 +113,17 @@ final class SearchHighlightOverlay extends Region {
             }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
+            // Reject off-screen matches with a cheap offset comparison before the (relatively costly)
+            // offsetToPosition conversions in paintMatch — a "find all" can have hundreds of matches but
+            // only a handful are visible, and this runs on every scroll/edit pulse.
+            int firstOffset = area.getAbsolutePosition(first, 0);
+            int lastOffset = area.getAbsolutePosition(last, area.getParagraph(last).getText().length());
             for (int i = 0; i < matches.size(); i++) {
-                paintMatch(g, matches.get(i), i == activeIndex, first, last, w, h);
+                int[] m = matches.get(i);
+                if (m[1] < firstOffset || m[0] > lastOffset) {
+                    continue;
+                }
+                paintMatch(g, m, i == activeIndex, first, last, w, h);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event will redraw.

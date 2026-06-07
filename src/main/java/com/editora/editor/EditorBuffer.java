@@ -369,8 +369,10 @@ public class EditorBuffer implements TabContent {
         // it runs only when the length matches the saved length (i.e. near the original state).
         area.textProperty().addListener((obs, old, now) ->
                 dirty.set(now.length() != cleanText.length() || !now.equals(cleanText)));
-        area.caretPositionProperty().addListener((obs, old, now) -> resetGoalColumn());
-        area.caretPositionProperty().addListener((obs, old, now) -> scheduleBraceMatch());
+        area.caretPositionProperty().addListener((obs, old, now) -> {
+            resetGoalColumn();
+            scheduleBraceMatch();
+        });
         area.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area;
@@ -1622,8 +1624,10 @@ public class EditorBuffer implements TabContent {
         area2.setLineHighlighterFill(lineHighlightColor);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
-        area2.caretPositionProperty().addListener((obs, old, now) -> resetGoalColumn());
-        area2.caretPositionProperty().addListener((obs, old, now) -> scheduleBraceMatch());
+        area2.caretPositionProperty().addListener((obs, old, now) -> {
+            resetGoalColumn();
+            scheduleBraceMatch();
+        });
         area2.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area2;
@@ -2632,11 +2636,18 @@ public class EditorBuffer implements TabContent {
             return; // brace matching off in large-file mode (highlighting is disabled there too)
         }
         CodeArea a = focusedArea;
-        int[] m = BraceMatcher.match(a.getText(), a.getCaretPosition(), BraceMatcher.DEFAULT_MAX_SCAN);
+        int caret = a.getCaretPosition();
+        // BraceMatcher never scans beyond DEFAULT_MAX_SCAN chars from the caret, so feed it only that
+        // window instead of materializing the whole document on every caret move (the hot path); a big
+        // file under the 5 MB brace cap would otherwise allocate the entire text per cursor move.
+        int max = BraceMatcher.DEFAULT_MAX_SCAN;
+        int winStart = Math.max(0, caret - max - 1);
+        int winEnd = Math.min(a.getLength(), caret + max + 1);
+        int[] m = BraceMatcher.match(a.getText(winStart, winEnd), caret - winStart, max);
         if (m != null) {
-            addBraceClass(m[0]);
-            addBraceClass(m[1]);
-            braceMatch = m;
+            addBraceClass(m[0] + winStart);
+            addBraceClass(m[1] + winStart);
+            braceMatch = new int[]{m[0] + winStart, m[1] + winStart};
         }
     }
 

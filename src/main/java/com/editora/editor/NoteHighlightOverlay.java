@@ -103,7 +103,16 @@ final class NoteHighlightOverlay extends Region {
         try {
             int firstVisible = area.firstVisibleParToAllParIndex();
             int lastVisible = area.lastVisibleParToAllParIndex();
+            int total = area.getParagraphs().size();
+            // Reject off-screen spans by a cheap offset comparison before the offsetToPosition
+            // conversions in paintSpan (which would otherwise run for every note on each redraw).
+            int firstOffset = area.getAbsolutePosition(Math.max(0, firstVisible), 0);
+            int lastVis = Math.min(total - 1, lastVisible);
+            int lastOffset = area.getAbsolutePosition(lastVis, area.getParagraph(lastVis).getText().length());
             for (int[] span : spans.get()) {
+                if (span[1] < firstOffset || span[0] > lastOffset) {
+                    continue;
+                }
                 paintSpan(g, span[0], span[1], firstVisible, lastVisible, w, h);
             }
         } catch (RuntimeException ignored) {

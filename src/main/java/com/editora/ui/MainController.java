@@ -720,7 +720,7 @@ public class MainController {
         if (!on && projectSupportApplied && projects != null && projects.active() != null) {
             if (!switchToProject(ProjectCombo.NO_PROJECT)) {
                 config.getSettings().setProjectSupport(true);
-                config.save();
+                requestSave();
                 if (settingsWindow != null) {
                     settingsWindow.syncProjectsCheck();
                 }
@@ -920,7 +920,7 @@ public class MainController {
             }
         }
         migrateFileState(old, target);
-        config.save();
+        requestSave();
         setStatus(tr("status.renamedTo", target.getFileName()));
     }
 
@@ -964,7 +964,7 @@ public class MainController {
         if (recentFiles != null) {
             recentFiles.remove(path);
         }
-        config.save();
+        requestSave();
         setStatus(tr("status.deleted", path.getFileName()));
     }
 
@@ -1739,7 +1739,7 @@ public class MainController {
     private void toggleLsp() {
         Settings s = config.getSettings();
         s.setLspSupport(!s.isLspSupport());
-        config.save();
+        requestSave();
         applyLspSupport();
         if (settingsWindow != null) {
             settingsWindow.syncLspCheck();
@@ -3100,8 +3100,18 @@ public class MainController {
      * </ul>
      */
     private String loadInto(EditorBuffer buffer, Path file) throws IOException {
-        long size = fileSize(file);
-        buffer.setDiskSnapshot(lastModifiedMillis(file), size); // baseline for external-change detection
+        // One stat call for both size + mtime instead of two separate syscalls per file load.
+        long size;
+        long mtime;
+        try {
+            var attrs = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
+            size = attrs.size();
+            mtime = attrs.lastModifiedTime().toMillis();
+        } catch (IOException e) {
+            size = fileSize(file);
+            mtime = lastModifiedMillis(file);
+        }
+        buffer.setDiskSnapshot(mtime, size); // baseline for external-change detection
         if (size >= EditorBuffer.HUGE_FILE_BYTES) {
             String content = readCapped(file, (int) EditorBuffer.HUGE_FILE_BYTES);
             buffer.setContent(content);
@@ -3365,7 +3375,7 @@ public class MainController {
             default -> AUTOSAVE_OFF;
         };
         config.getSettings().setAutoSave(next);
-        config.save();
+        requestSave();
         applyAutoSave();
         setStatus(tr("status.autoSave", autoSaveLabel(next)));
     }
@@ -3586,7 +3596,7 @@ public class MainController {
                 recentFiles.remove(old);
                 recentFiles.add(target);
             }
-            config.save();
+            requestSave();
             // Carry bookmarks + personal notes over to the new path so an in-app rename never strands them.
             migrateBookmarksKey(oldBookmarkKey, target.toString());
             migrateNotesKey(oldNoteKey, noteKey(buffer));
@@ -3772,6 +3782,26 @@ public class MainController {
     }
 
     /** Records the open files (in tab order) and their carets so the next launch can restore them. */
+    private boolean configSavePending;
+
+    /**
+     * Coalesces config writes to one per FX pulse. Many actions (especially a single Settings apply,
+     * which runs ~10 field setters back-to-back) call {@code config.save()} several times in the same
+     * pulse, each re-serializing the whole settings + workspace-state to disk. This collapses such a
+     * burst into a single write at the end of the pulse — negligible delay, no data-loss risk (the
+     * durable flush on quit goes through {@link #persistSession()}'s direct {@code config.save()}).
+     */
+    private void requestSave() {
+        if (configSavePending) {
+            return;
+        }
+        configSavePending = true;
+        Platform.runLater(() -> {
+            configSavePending = false;
+            config.save();
+        });
+    }
+
     private void persistSession() {
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
         for (Tab tab : tabPane.getTabs()) {
@@ -3789,7 +3819,7 @@ public class MainController {
         state.setActiveFile(active != null && active.getPath() != null
                 ? active.getPath().toAbsolutePath().toString() : "");
         persistWindowBounds(state);
-        config.save();
+        config.save(); // durable flush on quit — not coalesced
     }
 
     /** Records the main window's geometry. When maximized, keep the last normal bounds so
@@ -4008,7 +4038,7 @@ public class MainController {
     private void toggleColumnRuler() {
         Settings s = config.getSettings();
         s.setShowColumnRuler(!s.isShowColumnRuler());
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s);
         setStatus(tr("status.toggle.ruler", tr(s.isShowColumnRuler() ? "common.on" : "common.off")));
     }
@@ -4017,7 +4047,7 @@ public class MainController {
     private void toggleToolStripe() {
         Settings s = config.getSettings();
         s.setShowToolStripe(!s.isShowToolStripe());
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s); // → applyChromeVisibility → toolWindows.setStripesEnabled
         settingsWindow.syncToolStripeCheck();
         setStatus(tr("status.toggle.toolStripe", tr(s.isShowToolStripe() ? "common.on" : "common.off")));
@@ -4026,7 +4056,7 @@ public class MainController {
     private void toggleLineHighlight() {
         Settings s = config.getSettings();
         s.setHighlightCurrentLine(!s.isHighlightCurrentLine());
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s);
         setStatus(tr("status.toggle.lineHighlight", tr(s.isHighlightCurrentLine() ? "common.on" : "common.off")));
     }
@@ -4034,7 +4064,7 @@ public class MainController {
     private void toggleLineNumbers() {
         Settings s = config.getSettings();
         s.setShowLineNumbers(!s.isShowLineNumbers());
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s);
         setStatus(tr("status.toggle.lineNumbers", tr(s.isShowLineNumbers() ? "common.on" : "common.off")));
     }
@@ -4042,7 +4072,7 @@ public class MainController {
     private void toggleMinimap() {
         Settings s = config.getSettings();
         s.setShowMinimap(!s.isShowMinimap());
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s);
         setStatus(tr("status.toggle.minimap", tr(s.isShowMinimap() ? "common.on" : "common.off")));
     }
@@ -4050,7 +4080,7 @@ public class MainController {
     private void toggleWhitespace() {
         Settings s = config.getSettings();
         s.setShowWhitespace(!s.isShowWhitespace());
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s);
         setStatus(tr("status.toggle.whitespace", tr(s.isShowWhitespace() ? "common.on" : "common.off")));
     }
@@ -4058,7 +4088,7 @@ public class MainController {
     private void toggleSpellCheck() {
         Settings s = config.getSettings();
         s.setSpellCheck(!s.isSpellCheck());
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s);
         setStatus(tr("status.toggle.spellCheck", tr(s.isSpellCheck() ? "common.on" : "common.off")));
     }
@@ -4066,7 +4096,7 @@ public class MainController {
     private void toggleAutocomplete() {
         Settings s = config.getSettings();
         s.setAutocomplete(!s.isAutocomplete());
-        config.save();
+        requestSave();
         applyAutocomplete();
         settingsWindow.syncAutocompleteChecks(); // keep the Settings window in step if it's open
         setStatus(tr("status.toggle.autocomplete", tr(s.isAutocomplete() ? "common.on" : "common.off")));
@@ -4075,7 +4105,7 @@ public class MainController {
     private void toggleAutocompleteProse() {
         Settings s = config.getSettings();
         s.setAutocompleteProse(!s.isAutocompleteProse());
-        config.save();
+        requestSave();
         applyAutocomplete();
         settingsWindow.syncAutocompleteChecks();
         setStatus(tr("status.toggle.autocompleteProse", tr(s.isAutocompleteProse() ? "common.on" : "common.off")));
@@ -4084,7 +4114,7 @@ public class MainController {
     private void toggleAutocompleteSnippets() {
         Settings s = config.getSettings();
         s.setAutocompleteSnippets(!s.isAutocompleteSnippets());
-        config.save();
+        requestSave();
         applyAutocomplete();
         settingsWindow.syncAutocompleteChecks();
         setStatus(tr("status.toggle.autocompleteSnippets", tr(s.isAutocompleteSnippets() ? "common.on" : "common.off")));
@@ -4093,7 +4123,7 @@ public class MainController {
     private void toggleAutocompleteMermaid() {
         Settings s = config.getSettings();
         s.setAutocompleteMermaid(!s.isAutocompleteMermaid());
-        config.save();
+        requestSave();
         applyAutocomplete();
         settingsWindow.syncAutocompleteChecks();
         setStatus(tr("status.toggle.autocompleteMermaid", tr(s.isAutocompleteMermaid() ? "common.on" : "common.off")));
@@ -4120,7 +4150,7 @@ public class MainController {
         Path p = buffer.getPath();
         if (p != null) {
             config.getWorkspaceState().getSpellLanguages().put(p.toString(), langId);
-            config.save();
+            requestSave();
         }
         setStatus(tr("status.spellLanguage", langId));
     }
@@ -4154,7 +4184,7 @@ public class MainController {
         javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(name));
         s.setEditorTheme(EditorThemes.defaultFor(name)); // chrome theme drives the editor theme
         s.setEditorThemeUserSet(false);
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s); // swaps the editor-theme stylesheet + per-buffer colors
         if (settingsWindow != null) {
             settingsWindow.syncThemes();
@@ -4167,7 +4197,7 @@ public class MainController {
         Settings s = config.getSettings();
         s.setEditorTheme(name);
         s.setEditorThemeUserSet(true);
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s);
         if (settingsWindow != null) {
             settingsWindow.syncThemes();
@@ -4237,7 +4267,7 @@ public class MainController {
         }
         applyChromeVisibility();
         applyViewSettingsToAllBuffers(s);
-        config.save();
+        requestSave();
         // When entering Zen the status bar is hidden, so this is mostly seen on exit.
         setStatus(tr("status.toggle.zen", tr(on ? "common.on" : "common.off")));
     }
@@ -4258,7 +4288,7 @@ public class MainController {
     private void toggleToolbar() {
         Settings s = config.getSettings();
         s.setShowToolbar(!s.isShowToolbar());
-        config.save();
+        requestSave();
         applyChromeVisibility();
         settingsWindow.syncToolbarCheck();
         setStatus(tr("status.toggle.toolbar", tr(s.isShowToolbar() ? "common.on" : "common.off")));
@@ -4267,7 +4297,7 @@ public class MainController {
     private void toggleBreadcrumb() {
         Settings s = config.getSettings();
         s.setShowBreadcrumb(!s.isShowBreadcrumb());
-        config.save();
+        requestSave();
         applyChromeVisibility();
         setStatus(tr("status.toggle.breadcrumb", tr(s.isShowBreadcrumb() ? "common.on" : "common.off")));
     }
@@ -4275,7 +4305,7 @@ public class MainController {
     private void toggleStatusBar() {
         Settings s = config.getSettings();
         s.setShowStatusBar(!s.isShowStatusBar());
-        config.save();
+        requestSave();
         applyChromeVisibility();
         // The status bar may now be hidden, so this message just confirms the toggle while visible.
         setStatus(tr("status.toggle.statusBar", tr(s.isShowStatusBar() ? "common.on" : "common.off")));
@@ -4284,7 +4314,7 @@ public class MainController {
     private void toggleTabBar() {
         Settings s = config.getSettings();
         s.setShowTabBar(!s.isShowTabBar());
-        config.save();
+        requestSave();
         applyChromeVisibility();
         setStatus(tr("status.toggle.tabBar", tr(s.isShowTabBar() ? "common.on" : "common.off")));
     }
@@ -4438,7 +4468,7 @@ public class MainController {
         dialog.setContentText(tr("dialog.tabSize.content"));
         dialog.showAndWait().ifPresent(size -> {
             s.setTabSize(size);
-            config.save();
+            requestSave();
             applyViewSettingsToAllBuffers(s);
             statusBar.refresh();
             setStatus(tr("status.tabSize", size));
@@ -4479,7 +4509,7 @@ public class MainController {
         } else {
             map.put(file.toString(), lines);
         }
-        config.save();
+        requestSave();
     }
 
     /** Re-applies a file's saved collapsed fold regions after it is opened. */
@@ -4596,7 +4626,7 @@ public class MainController {
         } else {
             list.remove(key);
         }
-        config.save();
+        requestSave();
     }
 
     /**
@@ -4633,7 +4663,7 @@ public class MainController {
         } else {
             map.put(file.toString(), mode.name());
         }
-        config.save();
+        requestSave();
     }
 
     /**
@@ -4730,7 +4760,7 @@ public class MainController {
         Settings s = config.getSettings();
         boolean now = !s.isMarkdownFormatBar();
         s.setMarkdownFormatBar(now);
-        config.save();
+        requestSave();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
@@ -4768,7 +4798,7 @@ public class MainController {
         boolean currentlyDark = "dark".equals(mode) || (mode.isEmpty() && appThemeDark());
         String next = currentlyDark ? "light" : "dark";
         config.getSettings().setMarkdownPreviewTheme(next);
-        config.save();
+        requestSave();
         applyMarkdownPreviewTheme();
         setStatus(tr("status.markdownPreviewTheme", tr("markdown.previewTheme." + next)));
     }
@@ -4825,7 +4855,7 @@ public class MainController {
             return; // already at the clamp limit
         }
         s.setFontZoom(z);
-        config.save();
+        requestSave();
         applyViewSettingsToAllBuffers(s);
         statusBar.refresh();
         setStatus(tr("status.textZoom", Math.round(z * 100)));

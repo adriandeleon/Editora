@@ -126,6 +126,9 @@ final class LspDiagnosticOverlay extends Region {
 
     private void drawDiagnostic(GraphicsContext g, LspDiagnostic d, int first, int last, int total,
             double w, double h) {
+        if (d.endLine() < first || d.startLine() > last) {
+            return; // entirely off-screen — skip before touching the GraphicsContext state
+        }
         g.setStroke(color(d.severity()));
         int from = Math.max(d.startLine(), first);
         int to = Math.min(d.endLine(), last);
