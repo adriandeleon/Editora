@@ -40,6 +40,14 @@ from Microsoft Visual Studio Code under the MIT License:
 
     License: MIT  (© Microsoft Corporation)
 
+The PHP grammar (php.tmLanguage.json) was obtained from Microsoft Visual Studio
+Code under the MIT License (converted there from KapitanOczywisty/language-php):
+
+    https://github.com/microsoft/vscode
+    (extensions/php/syntaxes/php.tmLanguage.json)
+
+    License: MIT  (© Microsoft Corporation; © GitHub Inc. / language-php)
+
 These remain under their original upstream licenses (predominantly MIT). All
 grammars are redistributed unmodified except markdown.tmLanguage.json, which
 has three regular expressions minimally adjusted for compatibility with the

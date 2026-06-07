@@ -216,7 +216,8 @@ public class MainController {
     private final java.util.Map<String, Boolean> lspServerAvailable = new java.util.HashMap<>();
     /** Known LSP server ids (probe/shutdown loops iterate these). */
     private static final String[] LSP_SERVER_IDS =
-            {"java", "typescript", "python", "xml", "json", "bash"};
+            {"java", "typescript", "python", "xml", "json", "bash",
+             "yaml", "go", "rust", "php", "ruby"};
     private ProblemsPanel problemsPanel;
     private ToolWindow problemsToolWindow;
     /** Run: streams a Java 25 compact source file's output into the Run tool window. */
@@ -1477,13 +1478,18 @@ public class MainController {
     private void applyLspSupport() {
         Settings s = config.getSettings();
         boolean on = s.isLspSupport();
-        lspManager.configure(on, java.util.Map.of(
-                "java", s.getJavaLspCommand(),
-                "typescript", s.getTypescriptLspCommand(),
-                "python", s.getPythonLspCommand(),
-                "xml", s.getXmlLspCommand(),
-                "json", s.getJsonLspCommand(),
-                "bash", s.getBashLspCommand()));
+        lspManager.configure(on, java.util.Map.ofEntries(
+                java.util.Map.entry("java", s.getJavaLspCommand()),
+                java.util.Map.entry("typescript", s.getTypescriptLspCommand()),
+                java.util.Map.entry("python", s.getPythonLspCommand()),
+                java.util.Map.entry("xml", s.getXmlLspCommand()),
+                java.util.Map.entry("json", s.getJsonLspCommand()),
+                java.util.Map.entry("bash", s.getBashLspCommand()),
+                java.util.Map.entry("yaml", s.getYamlLspCommand()),
+                java.util.Map.entry("go", s.getGoLspCommand()),
+                java.util.Map.entry("rust", s.getRustLspCommand()),
+                java.util.Map.entry("php", s.getPhpLspCommand()),
+                java.util.Map.entry("ruby", s.getRubyLspCommand())));
         if (problemsToolWindow != null) {
             toolWindows.setAvailable(problemsToolWindow, on);
         }
@@ -1534,6 +1540,11 @@ public class MainController {
             case "xml" -> s.isXmlLspEnabled();
             case "json" -> s.isJsonLspEnabled();
             case "bash" -> s.isBashLspEnabled();
+            case "yaml" -> s.isYamlLspEnabled();
+            case "go" -> s.isGoLspEnabled();
+            case "rust" -> s.isRustLspEnabled();
+            case "php" -> s.isPhpLspEnabled();
+            case "ruby" -> s.isRubyLspEnabled();
             default -> s.isJavaLspEnabled();
         };
     }
@@ -1547,6 +1558,11 @@ public class MainController {
             case "xml" -> s.getXmlLspCommand();
             case "json" -> s.getJsonLspCommand();
             case "bash" -> s.getBashLspCommand();
+            case "yaml" -> s.getYamlLspCommand();
+            case "go" -> s.getGoLspCommand();
+            case "rust" -> s.getRustLspCommand();
+            case "php" -> s.getPhpLspCommand();
+            case "ruby" -> s.getRubyLspCommand();
             default -> s.getJavaLspCommand();
         };
     }

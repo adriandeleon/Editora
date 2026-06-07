@@ -19,7 +19,8 @@ class LspServerRegistryTest {
         assertTrue(LspServerRegistry.isSupported("typescript"));
         assertTrue(LspServerRegistry.isSupported("typescriptreact"));
         assertTrue(LspServerRegistry.isSupported("python"));
-        assertFalse(LspServerRegistry.isSupported("ruby"));
+        // kotlin has highlighting but no bundled language server.
+        assertFalse(LspServerRegistry.isSupported("kotlin"));
         assertFalse(LspServerRegistry.isSupported("plaintext"));
         assertEquals("java", LspServerRegistry.serverIdFor("java"));
         // One TypeScript server serves all four JS/TS dialects.
@@ -27,8 +28,8 @@ class LspServerRegistryTest {
         assertEquals("typescript", LspServerRegistry.serverIdFor("javascriptreact"));
         assertEquals("typescript", LspServerRegistry.serverIdFor("typescript"));
         assertEquals("typescript", LspServerRegistry.serverIdFor("typescriptreact"));
-        assertNull(LspServerRegistry.serverIdFor("ruby"));
-        assertNull(LspServerRegistry.specFor("ruby", Map.of()));
+        assertNull(LspServerRegistry.serverIdFor("kotlin"));
+        assertNull(LspServerRegistry.specFor("kotlin", Map.of()));
     }
 
     @Test
@@ -81,6 +82,27 @@ class LspServerRegistryTest {
         assertTrue(LspServerRegistry.specFor("xml", Map.of()).rootMarkers().contains("pom.xml"));
         assertTrue(LspServerRegistry.specFor("json", Map.of()).rootMarkers().contains("package.json"));
         assertTrue(LspServerRegistry.specFor("shell", Map.of()).rootMarkers().contains(".git"));
+    }
+
+    @Test
+    void yamlGoRustPhpRubyServersDefaultsAndMarkers() {
+        for (String lang : List.of("yaml", "go", "rust", "php", "ruby")) {
+            assertTrue(LspServerRegistry.isSupported(lang), lang);
+            // For these five the server id equals the language id.
+            assertEquals(lang, LspServerRegistry.serverIdFor(lang), lang);
+        }
+        assertEquals(List.of("yaml-language-server", "--stdio"),
+                LspServerRegistry.specFor("yaml", Map.of()).command());
+        assertEquals(List.of("gopls"), LspServerRegistry.specFor("go", Map.of()).command());
+        assertEquals(List.of("rust-analyzer"), LspServerRegistry.specFor("rust", Map.of()).command());
+        assertEquals(List.of("phpactor", "language-server"),
+                LspServerRegistry.specFor("php", Map.of()).command());
+        assertEquals(List.of("ruby-lsp"), LspServerRegistry.specFor("ruby", Map.of()).command());
+
+        assertTrue(LspServerRegistry.specFor("go", Map.of()).rootMarkers().contains("go.mod"));
+        assertTrue(LspServerRegistry.specFor("rust", Map.of()).rootMarkers().contains("Cargo.toml"));
+        assertTrue(LspServerRegistry.specFor("php", Map.of()).rootMarkers().contains("composer.json"));
+        assertTrue(LspServerRegistry.specFor("ruby", Map.of()).rootMarkers().contains("Gemfile"));
     }
 
     @Test

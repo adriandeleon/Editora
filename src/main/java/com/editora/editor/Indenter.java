@@ -32,7 +32,7 @@ public final class Indenter {
 
     public static Style styleFor(String language) {
         return switch (language == null ? "" : language) {
-            case "java", "c", "cpp", "csharp", "rust", "go", "kotlin", "groovy", "css", "json",
+            case "java", "c", "cpp", "csharp", "rust", "go", "kotlin", "groovy", "css", "json", "php",
                  "powershell", "sql", "batchfile",
                  "javascript", "typescript", "javascriptreact", "typescriptreact" -> Style.BRACES;
             case "xml", "html" -> Style.XML;

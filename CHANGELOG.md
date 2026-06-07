@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LSP support for YAML, Go, Rust, PHP, and Ruby** — five more language servers (eleven total):
+  **YAML** via `yaml-language-server`, **Go** via `gopls`, **Rust** via `rust-analyzer`, **PHP** via
+  [phpactor](https://github.com/phpactor/phpactor), and **Ruby** via
+  [ruby-lsp](https://github.com/Shopify/ruby-lsp). Each has its own enable toggle + command field in
+  Settings → LSP (auto-detected on PATH, never bundled, off by default with the rest of LSP). YAML/Go/
+  Rust/Ruby already had syntax highlighting + folding; **PHP** gained a bundled TextMate grammar
+  (`php.tmLanguage.json`, from VS Code, MIT) so `.php` files now get highlighting + folding +
+  comment/indent support alongside the LSP. Settings schema 10→11 (additive-identity migration).
+
 - **LSP support for XML, JSON, and Bash/Shell** — three more language servers alongside Java/TypeScript/
   Python: **XML** via [lemminx](https://github.com/eclipse/lemminx) (`lemminx`; schema-aware completion +
   validation for `.xml`/`.xsd`/`.xsl`/`.svg`/`.fxml`/…), **JSON** via `vscode-json-language-server`

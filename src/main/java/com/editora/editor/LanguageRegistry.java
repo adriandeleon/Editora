@@ -39,6 +39,9 @@ public final class LanguageRegistry {
             Map.entry("groovy", "groovy"), Map.entry("gradle", "groovy"), Map.entry("gvy", "groovy"),
             Map.entry("cs", "csharp"), Map.entry("csx", "csharp"),
             Map.entry("css", "css"),
+            // PHP — brace-delimited; the bundled grammar (source.php) embeds HTML/CSS/SQL.
+            Map.entry("php", "php"), Map.entry("phtml", "php"), Map.entry("php3", "php"),
+            Map.entry("php4", "php"), Map.entry("php5", "php"), Map.entry("phps", "php"),
             // Line/indentation-based languages (no delimiter folding).
             Map.entry("py", "python"), Map.entry("pyw", "python"), Map.entry("pyi", "python"),
             Map.entry("rb", "ruby"), Map.entry("rake", "ruby"), Map.entry("gemspec", "ruby"),

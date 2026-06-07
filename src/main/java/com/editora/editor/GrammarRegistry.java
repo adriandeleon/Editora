@@ -145,6 +145,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.mermaid", "mermaid");
         scopeToResource.put("source.ts", "typescript");
         scopeToResource.put("source.tsx", "typescriptreact");
+        scopeToResource.put("source.php", "php");
 
         // file extension -> scope name
         mapExtensions("source.java", "java");
@@ -173,6 +174,8 @@ public final class GrammarRegistry {
         // .jsx reuses the TSX (React) grammar — no separate JS grammars to bundle.
         mapExtensions("source.ts", "ts", "mts", "cts", "js", "mjs", "cjs");
         mapExtensions("source.tsx", "tsx", "jsx");
+        // PHP: source.php embeds text.html.basic/source.css/source.sql/source.json/text.xml (all bundled).
+        mapExtensions("source.php", "php", "phtml", "php3", "php4", "php5", "phps");
     }
 
     private void mapExtensions(String scope, String... extensions) {

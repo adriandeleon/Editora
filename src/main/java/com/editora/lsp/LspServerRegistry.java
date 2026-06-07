@@ -12,11 +12,13 @@ import java.util.Set;
  * {@code javascript}/{@code javascriptreact}/{@code typescript}/{@code typescriptreact}), so the
  * {@link LspManager} keys a single session per {@code (serverId, root)} and all four share one process.
  *
- * <p>Ships six servers — <b>Java</b> (Eclipse JDT LS), <b>TypeScript</b> (typescript-language-server,
+ * <p>Ships eleven servers — <b>Java</b> (Eclipse JDT LS), <b>TypeScript</b> (typescript-language-server,
  * which also covers JavaScript/JSX/TSX), <b>Python</b> (Pyright), <b>XML</b> (lemminx), <b>JSON</b>
- * (vscode-json-language-server) and <b>Bash</b> (bash-language-server, for shell scripts). Commands are
- * user-configurable (Settings) and never bundled. All methods are static + pure (no process launch, no
- * I/O) so they are unit-testable. Adding a server later = one more {@link ServerDef} entry.
+ * (vscode-json-language-server), <b>Bash</b> (bash-language-server, for shell scripts), <b>YAML</b>
+ * (yaml-language-server), <b>Go</b> (gopls), <b>Rust</b> (rust-analyzer), <b>PHP</b> (phpactor), and
+ * <b>Ruby</b> (ruby-lsp). Commands are user-configurable (Settings) and never bundled. All methods are
+ * static + pure (no process launch, no I/O) so they are unit-testable. Adding a server later = one more
+ * {@link ServerDef} entry.
  */
 public final class LspServerRegistry {
 
@@ -46,6 +48,21 @@ public final class LspServerRegistry {
     /** Markers for a shell project root (the repo; shell scripts are usually standalone). */
     public static final List<String> SHELL_ROOT_MARKERS = List.of(".git");
 
+    /** Markers for a YAML project root (the repo; YAML files are usually standalone). */
+    public static final List<String> YAML_ROOT_MARKERS = List.of(".git");
+
+    /** Markers for a Go module root (go.mod/go.work, else the repo). */
+    public static final List<String> GO_ROOT_MARKERS = List.of("go.mod", "go.work", ".git");
+
+    /** Markers for a Rust crate/workspace root (Cargo.toml, else the repo). */
+    public static final List<String> RUST_ROOT_MARKERS = List.of("Cargo.toml", ".git");
+
+    /** Markers for a PHP project root (composer.json, else the repo). */
+    public static final List<String> PHP_ROOT_MARKERS = List.of("composer.json", ".git");
+
+    /** Markers for a Ruby project root (Gemfile/.ruby-version, else the repo). */
+    public static final List<String> RUBY_ROOT_MARKERS = List.of("Gemfile", ".ruby-version", ".git");
+
     /** Default server commands when the user leaves the Settings field blank. */
     public static final String DEFAULT_JAVA_COMMAND = "jdtls";
     public static final String DEFAULT_TYPESCRIPT_COMMAND = "typescript-language-server --stdio";
@@ -53,6 +70,11 @@ public final class LspServerRegistry {
     public static final String DEFAULT_XML_COMMAND = "lemminx";
     public static final String DEFAULT_JSON_COMMAND = "vscode-json-language-server --stdio";
     public static final String DEFAULT_BASH_COMMAND = "bash-language-server start";
+    public static final String DEFAULT_YAML_COMMAND = "yaml-language-server --stdio";
+    public static final String DEFAULT_GO_COMMAND = "gopls";
+    public static final String DEFAULT_RUST_COMMAND = "rust-analyzer";
+    public static final String DEFAULT_PHP_COMMAND = "phpactor language-server";
+    public static final String DEFAULT_RUBY_COMMAND = "ruby-lsp";
 
     /** A known language server: its id, default command, root markers, and the language ids it serves. */
     private enum ServerDef {
@@ -62,7 +84,12 @@ public final class LspServerRegistry {
         PYTHON("python", DEFAULT_PYTHON_COMMAND, PYTHON_ROOT_MARKERS, Set.of("python")),
         XML("xml", DEFAULT_XML_COMMAND, XML_ROOT_MARKERS, Set.of("xml")),
         JSON("json", DEFAULT_JSON_COMMAND, JSON_ROOT_MARKERS, Set.of("json")),
-        BASH("bash", DEFAULT_BASH_COMMAND, SHELL_ROOT_MARKERS, Set.of("shell"));
+        BASH("bash", DEFAULT_BASH_COMMAND, SHELL_ROOT_MARKERS, Set.of("shell")),
+        YAML("yaml", DEFAULT_YAML_COMMAND, YAML_ROOT_MARKERS, Set.of("yaml")),
+        GO("go", DEFAULT_GO_COMMAND, GO_ROOT_MARKERS, Set.of("go")),
+        RUST("rust", DEFAULT_RUST_COMMAND, RUST_ROOT_MARKERS, Set.of("rust")),
+        PHP("php", DEFAULT_PHP_COMMAND, PHP_ROOT_MARKERS, Set.of("php")),
+        RUBY("ruby", DEFAULT_RUBY_COMMAND, RUBY_ROOT_MARKERS, Set.of("ruby"));
 
         final String id;
         final String defaultCommand;

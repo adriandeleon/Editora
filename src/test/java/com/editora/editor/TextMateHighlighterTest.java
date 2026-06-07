@@ -70,6 +70,20 @@ class TextMateHighlighterTest {
     }
 
     @Test
+    void phpGrammarLoadsAndStylesKeywords() {
+        // The PHP grammar was newly bundled for PHP LSP support; verify it loads and tokenizes
+        // (its embedded html/css/sql/json/xml scopes resolve against the other bundled grammars).
+        IGrammar php = GrammarRegistry.shared().forFileName("Index.php");
+        assertNotNull(php, "php grammar should load");
+        String text = "<?php\nfunction greet($name) {\n    return \"hi \" . $name;\n}\n";
+        StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(text, php);
+        assertNotNull(spans);
+        assertEquals(text.length(), spans.length());
+        assertTrue(hasStyle(spans, "keyword"), "expected a keyword span (function/return)");
+        assertTrue(hasStyle(spans, "string"), "expected a string span");
+    }
+
+    @Test
     void multiLineBlockCommentStaysComment() {
         IGrammar java = GrammarRegistry.shared().forFileName("A.java");
         assertNotNull(java);

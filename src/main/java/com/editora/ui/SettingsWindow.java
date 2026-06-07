@@ -781,7 +781,42 @@ public class SettingsWindow {
                         v -> config.getSettings().setBashLspEnabled(v),
                         () -> config.getSettings().isBashLspEnabled(),
                         v -> config.getSettings().setBashLspCommand(v),
-                        () -> config.getSettings().getBashLspCommand()));
+                        () -> config.getSettings().getBashLspCommand()),
+                new LspServerUi("yaml", com.editora.lsp.LspServerRegistry.DEFAULT_YAML_COMMAND,
+                        "settings.lsp.enableYaml", "settings.lsp.yamlCommand", "settings.lsp.yamlStatus",
+                        "lsp yaml yml language server found installed not found command path executable",
+                        v -> config.getSettings().setYamlLspEnabled(v),
+                        () -> config.getSettings().isYamlLspEnabled(),
+                        v -> config.getSettings().setYamlLspCommand(v),
+                        () -> config.getSettings().getYamlLspCommand()),
+                new LspServerUi("go", com.editora.lsp.LspServerRegistry.DEFAULT_GO_COMMAND,
+                        "settings.lsp.enableGo", "settings.lsp.goCommand", "settings.lsp.goStatus",
+                        "lsp go golang gopls language server found installed not found command path",
+                        v -> config.getSettings().setGoLspEnabled(v),
+                        () -> config.getSettings().isGoLspEnabled(),
+                        v -> config.getSettings().setGoLspCommand(v),
+                        () -> config.getSettings().getGoLspCommand()),
+                new LspServerUi("rust", com.editora.lsp.LspServerRegistry.DEFAULT_RUST_COMMAND,
+                        "settings.lsp.enableRust", "settings.lsp.rustCommand", "settings.lsp.rustStatus",
+                        "lsp rust rust-analyzer cargo language server found installed not found command path",
+                        v -> config.getSettings().setRustLspEnabled(v),
+                        () -> config.getSettings().isRustLspEnabled(),
+                        v -> config.getSettings().setRustLspCommand(v),
+                        () -> config.getSettings().getRustLspCommand()),
+                new LspServerUi("php", com.editora.lsp.LspServerRegistry.DEFAULT_PHP_COMMAND,
+                        "settings.lsp.enablePhp", "settings.lsp.phpCommand", "settings.lsp.phpStatus",
+                        "lsp php phpactor intelephense language server found installed not found command path",
+                        v -> config.getSettings().setPhpLspEnabled(v),
+                        () -> config.getSettings().isPhpLspEnabled(),
+                        v -> config.getSettings().setPhpLspCommand(v),
+                        () -> config.getSettings().getPhpLspCommand()),
+                new LspServerUi("ruby", com.editora.lsp.LspServerRegistry.DEFAULT_RUBY_COMMAND,
+                        "settings.lsp.enableRuby", "settings.lsp.rubyCommand", "settings.lsp.rubyStatus",
+                        "lsp ruby ruby-lsp solargraph language server found installed not found command path",
+                        v -> config.getSettings().setRubyLspEnabled(v),
+                        () -> config.getSettings().isRubyLspEnabled(),
+                        v -> config.getSettings().setRubyLspCommand(v),
+                        () -> config.getSettings().getRubyLspCommand()));
     }
 
     /** A "[label] [path field] [Browse…]" row for picking a CLI executable. */
@@ -828,13 +863,18 @@ public class SettingsWindow {
         }
         // The manager caches its probe per command; configure it with the current commands first.
         Settings cs = config.getSettings();
-        lspManager.configure(cs.isLspSupport(), java.util.Map.of(
-                "java", cs.getJavaLspCommand(),
-                "typescript", cs.getTypescriptLspCommand(),
-                "python", cs.getPythonLspCommand(),
-                "xml", cs.getXmlLspCommand(),
-                "json", cs.getJsonLspCommand(),
-                "bash", cs.getBashLspCommand()));
+        lspManager.configure(cs.isLspSupport(), java.util.Map.ofEntries(
+                java.util.Map.entry("java", cs.getJavaLspCommand()),
+                java.util.Map.entry("typescript", cs.getTypescriptLspCommand()),
+                java.util.Map.entry("python", cs.getPythonLspCommand()),
+                java.util.Map.entry("xml", cs.getXmlLspCommand()),
+                java.util.Map.entry("json", cs.getJsonLspCommand()),
+                java.util.Map.entry("bash", cs.getBashLspCommand()),
+                java.util.Map.entry("yaml", cs.getYamlLspCommand()),
+                java.util.Map.entry("go", cs.getGoLspCommand()),
+                java.util.Map.entry("rust", cs.getRustLspCommand()),
+                java.util.Map.entry("php", cs.getPhpLspCommand()),
+                java.util.Map.entry("ruby", cs.getRubyLspCommand())));
         for (LspServerUi srv : lspServerUis()) {
             Label status = lspStatusLabels.get(srv.id());
             if (status == null) {

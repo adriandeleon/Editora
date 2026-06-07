@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 10;
+    public static final int SCHEMA_VERSION = 11;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -84,12 +84,22 @@ public class Settings {
     private String xmlLspCommand = "";
     private String jsonLspCommand = "";
     private String bashLspCommand = "";
+    private String yamlLspCommand = "";
+    private String goLspCommand = "";
+    private String rustLspCommand = "";
+    private String phpLspCommand = "";
+    private String rubyLspCommand = "";
     private boolean javaLspEnabled = true;
     private boolean typescriptLspEnabled = true;
     private boolean pythonLspEnabled = true;
     private boolean xmlLspEnabled = true;
     private boolean jsonLspEnabled = true;
     private boolean bashLspEnabled = true;
+    private boolean yamlLspEnabled = true;
+    private boolean goLspEnabled = true;
+    private boolean rustLspEnabled = true;
+    private boolean phpLspEnabled = true;
+    private boolean rubyLspEnabled = true;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -491,6 +501,86 @@ public class Settings {
 
     public void setBashLspEnabled(boolean bashLspEnabled) {
         this.bashLspEnabled = bashLspEnabled;
+    }
+
+    public String getYamlLspCommand() {
+        return yamlLspCommand == null ? "" : yamlLspCommand;
+    }
+
+    public void setYamlLspCommand(String yamlLspCommand) {
+        this.yamlLspCommand = yamlLspCommand == null ? "" : yamlLspCommand;
+    }
+
+    public boolean isYamlLspEnabled() {
+        return yamlLspEnabled;
+    }
+
+    public void setYamlLspEnabled(boolean yamlLspEnabled) {
+        this.yamlLspEnabled = yamlLspEnabled;
+    }
+
+    public String getGoLspCommand() {
+        return goLspCommand == null ? "" : goLspCommand;
+    }
+
+    public void setGoLspCommand(String goLspCommand) {
+        this.goLspCommand = goLspCommand == null ? "" : goLspCommand;
+    }
+
+    public boolean isGoLspEnabled() {
+        return goLspEnabled;
+    }
+
+    public void setGoLspEnabled(boolean goLspEnabled) {
+        this.goLspEnabled = goLspEnabled;
+    }
+
+    public String getRustLspCommand() {
+        return rustLspCommand == null ? "" : rustLspCommand;
+    }
+
+    public void setRustLspCommand(String rustLspCommand) {
+        this.rustLspCommand = rustLspCommand == null ? "" : rustLspCommand;
+    }
+
+    public boolean isRustLspEnabled() {
+        return rustLspEnabled;
+    }
+
+    public void setRustLspEnabled(boolean rustLspEnabled) {
+        this.rustLspEnabled = rustLspEnabled;
+    }
+
+    public String getPhpLspCommand() {
+        return phpLspCommand == null ? "" : phpLspCommand;
+    }
+
+    public void setPhpLspCommand(String phpLspCommand) {
+        this.phpLspCommand = phpLspCommand == null ? "" : phpLspCommand;
+    }
+
+    public boolean isPhpLspEnabled() {
+        return phpLspEnabled;
+    }
+
+    public void setPhpLspEnabled(boolean phpLspEnabled) {
+        this.phpLspEnabled = phpLspEnabled;
+    }
+
+    public String getRubyLspCommand() {
+        return rubyLspCommand == null ? "" : rubyLspCommand;
+    }
+
+    public void setRubyLspCommand(String rubyLspCommand) {
+        this.rubyLspCommand = rubyLspCommand == null ? "" : rubyLspCommand;
+    }
+
+    public boolean isRubyLspEnabled() {
+        return rubyLspEnabled;
+    }
+
+    public void setRubyLspEnabled(boolean rubyLspEnabled) {
+        this.rubyLspEnabled = rubyLspEnabled;
     }
 
     public boolean isPdfLineNumbers() {
