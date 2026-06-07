@@ -122,12 +122,31 @@ public class EditorBuffer implements TabContent {
     private Subscription previewSub;
     /** Bumped per preview render request; background results discard if stale. */
     private long previewGen;
-    /** Off-thread Markdown parser so a large document never blocks the UI. */
-    private final ExecutorService previewExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "markdown-preview");
-        t.setDaemon(true);
-        return t;
-    });
+    /**
+     * Off-thread Markdown parsing + syntax tokenizing, shared across <b>all</b> open buffers so the
+     * threads don't accumulate one pair per file (each pool thread is a ~1-2 MB daemon stack — a session
+     * with dozens of tabs previously meant dozens of mostly-idle threads). Sharing is safe because every
+     * background result is re-validated against the per-buffer {@link #previewGen}/{@link #highlightGen}
+     * counters (bumped on the FX thread at submit) before it touches buffer state — overlapping work for
+     * one buffer just means only the latest generation's result is applied. Different buffers already
+     * tokenize concurrently against the shared {@link GrammarRegistry} grammar, so a shared pool adds no
+     * new grammar-concurrency. Daemon, app-lifetime (mirrors {@link PreviewImageLoader}/{@code MermaidImages}).
+     */
+    private static final ExecutorService PREVIEW_POOL =
+            Executors.newFixedThreadPool(2, daemonFactory("markdown-preview"));
+    private static final ExecutorService HIGHLIGHT_POOL = Executors.newFixedThreadPool(
+            Math.min(4, Math.max(2, Runtime.getRuntime().availableProcessors() / 2)),
+            daemonFactory("editor-highlighter"));
+
+    /** A daemon {@link java.util.concurrent.ThreadFactory} naming threads {@code <name>-N}. */
+    private static java.util.concurrent.ThreadFactory daemonFactory(String name) {
+        java.util.concurrent.atomic.AtomicInteger n = new java.util.concurrent.atomic.AtomicInteger();
+        return r -> {
+            Thread t = new Thread(r, name + "-" + n.incrementAndGet());
+            t.setDaemon(true);
+            return t;
+        };
+    }
     private Runnable onViewModeChanged = () -> { };
     /** Files at/above this size skip syntax highlighting and the minimap to stay responsive. */
     public static final long LARGE_FILE_BYTES = 5L * 1024 * 1024;
@@ -269,12 +288,6 @@ public class EditorBuffer implements TabContent {
     private String spellLanguage = "en_US";
     private java.util.Set<String> spellUserWords = new java.util.HashSet<>();
     private java.util.function.Consumer<String> onAddToDictionary = w -> { };
-    /** Off-thread tokenizer so highlighting a large document never blocks the UI (see applyHighlighting). */
-    private final ExecutorService highlightExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "editor-highlighter");
-        t.setDaemon(true);
-        return t;
-    });
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
     private long highlightGen;
     /** Per-line grammar end-states from the last tokenization (FX-thread confined), so an edit can
@@ -1368,17 +1381,18 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Releases this buffer's OS-level resources. Must be called by the controller when the tab is
-     * <em>actually closed</em> (not on a plain tab switch): each buffer owns two daemon executor threads
-     * ({@code markdown-preview} + {@code editor-highlighter}) that the JVM keeps alive until shut down,
-     * so without this they accumulate one pair per opened file. The reactfx subscriptions are on the
-     * buffer's own {@code area}/{@code area2} and die with it on GC, but we drop the preview one eagerly
-     * too. Idempotent. Once disposed the buffer must not be reused.
+     * Releases this buffer's resources. Must be called by the controller when the tab is
+     * <em>actually closed</em> (not on a plain tab switch). The preview/highlight executors are now
+     * shared, app-lifetime pools ({@link #PREVIEW_POOL}/{@link #HIGHLIGHT_POOL}), so disposal does not
+     * shut them down — it instead bumps {@link #previewGen}/{@link #highlightGen} so any in-flight task
+     * submitted by this buffer discards its result (the gen guard) instead of touching the now-dead
+     * buffer. The reactfx subscriptions are on the buffer's own {@code area}/{@code area2} and die with
+     * it on GC; we drop the preview one eagerly too. Idempotent. Once disposed the buffer must not be reused.
      */
     public void dispose() {
         unsubscribePreview();
-        previewExecutor.shutdownNow();
-        highlightExecutor.shutdownNow();
+        previewGen++;   // discard any in-flight preview result for this (now closed) buffer
+        highlightGen++; // discard any in-flight highlight result
     }
 
     /**
@@ -1412,7 +1426,7 @@ public class EditorBuffer implements TabContent {
         String md = area.getText();
         Path baseDir = path == null ? null : path.getParent();
         long gen = ++previewGen;
-        previewExecutor.submit(() -> {
+        PREVIEW_POOL.submit(() -> {
             org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
             Platform.runLater(() -> {
                 if (gen != previewGen) {
@@ -3409,7 +3423,7 @@ public class EditorBuffer implements TabContent {
         int fromLine = from;
         long gen = ++highlightGen;
         dirtyFromLine = Integer.MAX_VALUE; // captured; reset so new edits set a fresh dirty start
-        highlightExecutor.execute(() -> {
+        HIGHLIGHT_POOL.execute(() -> {
             TextMateHighlighter.IncrementalAnalysis a;
             try {
                 a = TextMateHighlighter.analyzeFrom(text, g, fromLine, startState);
