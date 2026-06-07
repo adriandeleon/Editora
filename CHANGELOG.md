@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Markdown preview right-click menu** — the preview pane now has a context menu with **Select All**,
+  **Copy** (both copy the preview's rendered plain text — markup stripped, via commonmark
+  `TextContentRenderer`), **Export to PDF**, and **Print**. Copy puts the visible text on the clipboard.
+
 - **Markdown selection format bar** — selecting text in a Markdown buffer shows a floating, IntelliJ-style
   bar above the selection with **Bold / Italic / Strikethrough / Inline code / Link / Bulleted list**
   buttons and a **Normal / H1–H6** paragraph-style dropdown. Each action toggles the wrapping (a second

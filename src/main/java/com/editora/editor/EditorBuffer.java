@@ -168,6 +168,10 @@ public class EditorBuffer implements TabContent {
     private boolean formatBarUpdatePending;
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
     private java.util.function.Consumer<String> openUrlHandler = u -> { };
+    /** Preview right-click menu actions (injected from the controller's export/print commands). */
+    private Runnable previewExportPdfHandler = () -> { };
+    private Runnable previewPrintHandler = () -> { };
+    private javafx.scene.control.ContextMenu previewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private SnippetSession snippetSession;
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
@@ -1318,6 +1322,11 @@ public class EditorBuffer implements TabContent {
             // (C-v / M-v go through nav.pageDown/Up → pagePreview). Focus it on click so the keys land.
             previewPane.setFocusTraversable(true);
             previewPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> previewPane.requestFocus());
+            // Right-click menu: Select All / Copy (rendered plain text) + Export to PDF / Print.
+            previewPane.setOnContextMenuRequested(e -> {
+                showPreviewContextMenu(e.getScreenX(), e.getScreenY());
+                e.consume();
+            });
             previewPane.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
                 if (e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShortcutDown()) {
                     return; // leave modifier combos to the global keymap (e.g. C-v / M-v / zoom)
@@ -1332,6 +1341,40 @@ public class EditorBuffer implements TabContent {
             });
         }
         return previewPane;
+    }
+
+    /** Injects the preview right-click "Export to PDF" / "Print" actions (controller commands). */
+    public void setPreviewExportPdfHandler(Runnable handler) {
+        this.previewExportPdfHandler = handler == null ? () -> { } : handler;
+    }
+
+    public void setPreviewPrintHandler(Runnable handler) {
+        this.previewPrintHandler = handler == null ? () -> { } : handler;
+    }
+
+    /** Copies the preview text to the clipboard — rendered plain text for Markdown, the source for a diagram. */
+    public void copyPreviewToClipboard() {
+        String text = isMarkdown() ? MarkdownRenderer.plainText(getContent()) : getContent();
+        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+        cc.putString(text == null ? "" : text);
+        Clipboard.getSystemClipboard().setContent(cc);
+    }
+
+    private void showPreviewContextMenu(double screenX, double screenY) {
+        if (previewContextMenu == null) {
+            MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
+            selectAll.setOnAction(ev -> copyPreviewToClipboard());
+            MenuItem copy = new MenuItem(tr("editmenu.copy"));
+            copy.setOnAction(ev -> copyPreviewToClipboard());
+            MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
+            pdf.setOnAction(ev -> previewExportPdfHandler.run());
+            MenuItem print = new MenuItem(tr("command.preview.print"));
+            print.setOnAction(ev -> previewPrintHandler.run());
+            previewContextMenu = new javafx.scene.control.ContextMenu(
+                    selectAll, copy, new SeparatorMenuItem(), pdf, print);
+            previewContextMenu.getStyleClass().add("editor-context-menu");
+        }
+        previewContextMenu.show(previewPane, screenX, screenY);
     }
 
     /** Scrolls the preview by ~one viewport page (down or up); no-op if there's nothing to scroll. */

@@ -1,5 +1,6 @@
 package com.editora.editor;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
@@ -73,5 +74,21 @@ class MarkdownRendererTest {
         assertTrue(c.checkedTask, "expected a checked TaskListItemMarker");
         assertTrue(c.strikethrough, "expected a Strikethrough");
         assertTrue(c.link, "expected an autolinked Link");
+    }
+
+    @Test
+    void plainTextStripsMarkupKeepsVisibleText() {
+        String t = MarkdownRenderer.plainText(SAMPLE);
+        // visible text is kept
+        assertTrue(t.contains("Heading"), "heading text");
+        assertTrue(t.contains("struck"), "strikethrough content");
+        assertTrue(t.contains("done") && t.contains("todo"), "task item text");
+        assertTrue(t.contains("https://example.com"), "link text");
+        // GFM table cell text survives (the tables extension renders to plain text too)
+        assertTrue(t.contains("1") && t.contains("2"), "table cell text");
+        // markup is removed
+        assertFalse(t.contains("#"), "no heading hashes");
+        assertFalse(t.contains("~~"), "no strikethrough markers");
+        assertFalse(t.contains("---"), "no table delimiter row");
     }
 }

@@ -62,13 +62,17 @@ public final class MarkdownRenderer {
     /** Readable column width (GitHub-style): the content is capped to this and centered in the pane. */
     private static final double MAX_CONTENT_WIDTH = 860;
 
-    private static final Parser PARSER = Parser.builder()
-            .extensions(List.of(
-                    TablesExtension.create(),
-                    StrikethroughExtension.create(),
-                    TaskListItemsExtension.create(),
-                    AutolinkExtension.create()))
-            .build();
+    private static final List<org.commonmark.Extension> EXTENSIONS = List.of(
+            TablesExtension.create(),
+            StrikethroughExtension.create(),
+            TaskListItemsExtension.create(),
+            AutolinkExtension.create());
+
+    private static final Parser PARSER = Parser.builder().extensions(EXTENSIONS).build();
+
+    /** Renders the same AST to plain text (markup stripped) — "what you see" in the preview, for copy. */
+    private static final org.commonmark.renderer.text.TextContentRenderer TEXT_RENDERER =
+            org.commonmark.renderer.text.TextContentRenderer.builder().extensions(EXTENSIONS).build();
 
     private MarkdownRenderer() {
     }
@@ -76,6 +80,12 @@ public final class MarkdownRenderer {
     /** Parses Markdown to a CommonMark AST. Pure CPU — safe to call off the FX thread. */
     public static org.commonmark.node.Node parseToDocument(String markdown) {
         return PARSER.parse(markdown == null ? "" : markdown);
+    }
+
+    /** The Markdown rendered to plain text (the visible text with markup removed) — for "Copy" from the
+     *  preview. Pure CPU; safe to call off the FX thread. */
+    public static String plainText(String markdown) {
+        return TEXT_RENDERER.render(parseToDocument(markdown));
     }
 
     /** Builds a JavaFX node tree from a parsed AST. MUST run on the FX thread (creates Text/ImageView). */

@@ -2788,6 +2788,8 @@ public class MainController {
         buffer.setNotesEnabled(notesEnabled());
         buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
+        buffer.setPreviewExportPdfHandler(this::exportPreviewPdf); // preview right-click menu
+        buffer.setPreviewPrintHandler(this::printPreview);
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         buffer.setCompletionProvider(completion::complete);
