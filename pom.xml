@@ -517,6 +517,21 @@
                                         </zip>
                                         <move file="${project.build.directory}/mods/tm4e-unsigned.jar"
                                               tofile="${project.build.directory}/mods/org.eclipse.tm4e.core-0.14.0-${tm4e.version}.jar"/>
+                                        <!-- The lsp4j jars are likewise code-signed (and moditect already
+                                             invalidated the signature by injecting module-info); jlink rejects
+                                             signed modular jars. Strip the signature blocks the same way. -->
+                                        <zip destfile="${project.build.directory}/mods/lsp4j-unsigned.jar">
+                                            <zipfileset src="${project.build.directory}/mods/org.eclipse.lsp4j-${lsp4j.version}.jar"
+                                                        excludes="META-INF/*.SF,META-INF/*.RSA,META-INF/*.DSA,META-INF/*.EC"/>
+                                        </zip>
+                                        <move file="${project.build.directory}/mods/lsp4j-unsigned.jar"
+                                              tofile="${project.build.directory}/mods/org.eclipse.lsp4j-${lsp4j.version}.jar"/>
+                                        <zip destfile="${project.build.directory}/mods/lsp4j-jsonrpc-unsigned.jar">
+                                            <zipfileset src="${project.build.directory}/mods/org.eclipse.lsp4j.jsonrpc-${lsp4j.version}.jar"
+                                                        excludes="META-INF/*.SF,META-INF/*.RSA,META-INF/*.DSA,META-INF/*.EC"/>
+                                        </zip>
+                                        <move file="${project.build.directory}/mods/lsp4j-jsonrpc-unsigned.jar"
+                                              tofile="${project.build.directory}/mods/org.eclipse.lsp4j.jsonrpc-${lsp4j.version}.jar"/>
                                     </target>
                                 </configuration>
                             </execution>
