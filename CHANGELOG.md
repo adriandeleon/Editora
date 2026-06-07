@@ -101,6 +101,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Diagnostic hover tooltip flickered while the mouse moved over a mark** — the tooltip was re-shown
+  (and re-positioned to the cursor) on every mouse-move event, so hovering a squiggle or a scrollbar
+  diagnostic mark looked janky. It's now shown once and left in place until you move to a different
+  mark/message. Applies to the editor squiggle hover, the Mermaid-lint hover, and the scrollbar
+  diagnostic stripe.
+
 - **LSP error squiggles / Problems never appeared when the file path involved a symlink** — a language
   server reports diagnostics under the file's *real* (canonical) path (e.g. `/private/tmp/…` for a
   `/tmp/…` symlink on macOS, or any symlinked project directory), but the open tab was matched by a

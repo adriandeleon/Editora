@@ -43,6 +43,9 @@ final class DiagnosticStripe extends Region {
     private boolean active;
     private boolean redrawPending;
     private Tooltip tooltip;
+    /** The message currently shown by {@link #tooltip}; lets a repeated hover over the same mark skip a
+     *  re-{@code show()} that would otherwise re-position the popup on every mouse-move (flicker). */
+    private String shownText;
     /** Called with a 0-based line when a mark is clicked; injected by {@link EditorBuffer}. */
     private IntConsumer onActivate = line -> { };
 
@@ -248,13 +251,20 @@ final class DiagnosticStripe extends Region {
                 sb.append("  (").append(origin).append(')');
             }
         }
+        String text = sb.toString();
+        // Already showing this exact message → leave it where it is. Re-showing on every MOUSE_MOVED
+        // re-positions the popup to the cursor each pixel, which reads as flicker/jank.
+        if (tooltip != null && tooltip.isShowing() && text.equals(shownText)) {
+            return;
+        }
         if (tooltip == null) {
             tooltip = new Tooltip();
             tooltip.getStyleClass().add("lsp-diagnostic-tooltip");
             tooltip.setWrapText(true);
             tooltip.setMaxWidth(480);
         }
-        tooltip.setText(sb.toString());
+        tooltip.setText(text);
+        shownText = text;
         tooltip.show(this, e.getScreenX() - 12 - tooltip.getWidth(), e.getScreenY() + 14);
     }
 
@@ -272,6 +282,7 @@ final class DiagnosticStripe extends Region {
         if (tooltip != null) {
             tooltip.hide();
         }
+        shownText = null;
     }
 
     private static Color color(LspDiagnostic.Severity severity) {

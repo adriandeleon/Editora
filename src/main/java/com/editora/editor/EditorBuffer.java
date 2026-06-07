@@ -240,10 +240,14 @@ public class EditorBuffer implements TabContent {
             java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>> mermaidValidator;
     private boolean mermaidLintEnabled;
     private javafx.scene.control.Tooltip lintTooltip;
+    /** Message currently shown by {@link #lintTooltip} — skips a re-{@code show()} (flicker) on each move. */
+    private String lintTooltipText;
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     private boolean lspActive;
     private java.util.function.Consumer<String> lspChangeListener;
     private javafx.scene.control.Tooltip lspTooltip;
+    /** Message currently shown by {@link #lspTooltip} — skips a re-{@code show()} (flicker) on each move. */
+    private String lspTooltipText;
     private final FoldManager folds = new FoldManager(area);
     private final BookmarkManager bookmarks = new BookmarkManager(area);
     /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
@@ -1055,13 +1059,19 @@ public class EditorBuffer implements TabContent {
                     }
                     sb.append(d.message());
                 }
+                String text = sb.toString();
+                // Already showing this exact message → don't re-show (re-positioning per pixel = flicker).
+                if (lintTooltip != null && lintTooltip.isShowing() && text.equals(lintTooltipText)) {
+                    return;
+                }
                 if (lintTooltip == null) {
                     lintTooltip = new javafx.scene.control.Tooltip();
                     lintTooltip.getStyleClass().add("mermaid-lint-tooltip");
                     lintTooltip.setWrapText(true);
                     lintTooltip.setMaxWidth(420);
                 }
-                lintTooltip.setText(sb.toString());
+                lintTooltip.setText(text);
+                lintTooltipText = text;
                 lintTooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
             } catch (RuntimeException ignored) {
                 // viewport mid-layout / hit miss — ignore
@@ -1252,6 +1262,7 @@ public class EditorBuffer implements TabContent {
                     if (lspTooltip != null) {
                         lspTooltip.hide();
                     }
+                    lspTooltipText = null;
                     return;
                 }
                 StringBuilder sb = new StringBuilder();
@@ -1265,13 +1276,20 @@ public class EditorBuffer implements TabContent {
                         sb.append("  (").append(origin).append(')');
                     }
                 }
+                String text = sb.toString();
+                // Already showing this exact message → don't re-show; re-showing on every MOUSE_MOVED
+                // re-positions the popup to the cursor each pixel, which reads as flicker.
+                if (lspTooltip != null && lspTooltip.isShowing() && text.equals(lspTooltipText)) {
+                    return;
+                }
                 if (lspTooltip == null) {
                     lspTooltip = new javafx.scene.control.Tooltip();
                     lspTooltip.getStyleClass().add("lsp-diagnostic-tooltip");
                     lspTooltip.setWrapText(true);
                     lspTooltip.setMaxWidth(480);
                 }
-                lspTooltip.setText(sb.toString());
+                lspTooltip.setText(text);
+                lspTooltipText = text;
                 lspTooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
             } catch (RuntimeException ignored) {
                 // viewport mid-layout / hit miss — ignore
