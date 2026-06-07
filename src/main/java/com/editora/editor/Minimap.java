@@ -38,6 +38,10 @@ final class Minimap extends Region {
     private final CodeArea area;
     private final Canvas canvas = new Canvas(WIDTH, 1);
     private WritableImage contentImage;
+    /** Canvas logical dims at the last successful snapshot, so the {@link #contentImage} buffer can be
+     *  reused (rather than reallocated each render) when the size is unchanged — see {@link #renderContent}. */
+    private double lastSnapW = -1;
+    private double lastSnapH = -1;
     /** False while this minimap's buffer is a background (non-selected) tab: rendering is skipped and
      *  the cached snapshot is dropped so its GPU texture can be reclaimed — keeps retained VRAM from
      *  scaling with the number of open files. */
@@ -165,6 +169,9 @@ final class Minimap extends Region {
         double h = canvas.getHeight();
         GraphicsContext g = canvas.getGraphicsContext2D();
         g.clearRect(0, 0, w, h);
+        // Hold the prior buffer so a same-size re-render can reuse it (see the snapshot call below)
+        // instead of allocating a fresh WritableImage; cleared if we bail out before snapshotting.
+        WritableImage prior = contentImage;
         contentImage = null;
         if (!renderingActive || !isVisible() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
@@ -177,15 +184,20 @@ final class Minimap extends Region {
         double blockH = Math.max(0.75, Math.min(rowHeight * 0.8, 2.0));
         g.setFill(textColor);
         for (int i = 0; i < total; i++) {
-            String text = area.getParagraph(i).getText();
-            if (!text.isEmpty()) {
-                drawRuns(g, text, i * rowHeight, blockH, w);
+            if (area.getParagraphLength(i) == 0) {
+                continue; // blank line: nothing to draw, and skip building its (empty) text string
             }
+            drawRuns(g, area.getParagraph(i).getText(), i * rowHeight, blockH, w);
         }
         SnapshotParameters sp = new SnapshotParameters();
         sp.setFill(Color.TRANSPARENT);
+        // Reuse the previous frame's image buffer when the canvas size is unchanged (the common case:
+        // a content re-render on edit), instead of allocating a fresh WritableImage every render.
+        WritableImage reuse = (prior != null && w == lastSnapW && h == lastSnapH) ? prior : null;
         try {
-            contentImage = canvas.snapshot(sp, null);
+            contentImage = canvas.snapshot(sp, reuse);
+            lastSnapW = w;
+            lastSnapH = h;
         } catch (RuntimeException ignored) {
             // snapshot() forces a synchronous full-scene layout pass; during early startup the
             // CodeArea's VirtualFlow may have no visible cell yet, and Flowless throws
