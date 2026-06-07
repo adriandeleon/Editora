@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 8;
+    public static final int SCHEMA_VERSION = 9;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -80,8 +80,10 @@ public class Settings {
     /** Command to launch the Java language server (JDT LS); blank = resolve "jdtls" on PATH. */
     private String javaLspCommand = "";
     private String typescriptLspCommand = "";
+    private String pythonLspCommand = "";
     private boolean javaLspEnabled = true;
     private boolean typescriptLspEnabled = true;
+    private boolean pythonLspEnabled = true;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -419,6 +421,22 @@ public class Settings {
 
     public void setTypescriptLspEnabled(boolean typescriptLspEnabled) {
         this.typescriptLspEnabled = typescriptLspEnabled;
+    }
+
+    public String getPythonLspCommand() {
+        return pythonLspCommand == null ? "" : pythonLspCommand;
+    }
+
+    public void setPythonLspCommand(String pythonLspCommand) {
+        this.pythonLspCommand = pythonLspCommand == null ? "" : pythonLspCommand;
+    }
+
+    public boolean isPythonLspEnabled() {
+        return pythonLspEnabled;
+    }
+
+    public void setPythonLspEnabled(boolean pythonLspEnabled) {
+        this.pythonLspEnabled = pythonLspEnabled;
     }
 
     public boolean isPdfLineNumbers() {

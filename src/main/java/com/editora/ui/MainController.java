@@ -214,6 +214,8 @@ public class MainController {
             new com.editora.lsp.LspManager(this::onLspDiagnostics, this::onLspServerStatus);
     /** serverId → whether that server's command was found on this machine (per-server availability). */
     private final java.util.Map<String, Boolean> lspServerAvailable = new java.util.HashMap<>();
+    /** Known LSP server ids (probe/shutdown loops iterate these). */
+    private static final String[] LSP_SERVER_IDS = {"java", "typescript", "python"};
     private ProblemsPanel problemsPanel;
     private ToolWindow problemsToolWindow;
     /** Run: streams a Java 25 compact source file's output into the Run tool window. */
@@ -1474,7 +1476,10 @@ public class MainController {
     private void applyLspSupport() {
         Settings s = config.getSettings();
         boolean on = s.isLspSupport();
-        lspManager.configure(on, s.getJavaLspCommand(), s.getTypescriptLspCommand());
+        lspManager.configure(on, java.util.Map.of(
+                "java", s.getJavaLspCommand(),
+                "typescript", s.getTypescriptLspCommand(),
+                "python", s.getPythonLspCommand()));
         if (problemsToolWindow != null) {
             toolWindows.setAvailable(problemsToolWindow, on);
         }
@@ -1501,27 +1506,37 @@ public class MainController {
             updateLspStatusBar();
             return;
         }
-        // Stop any server whose per-server toggle is off (frees its process); its buffers deactivate below.
-        for (String serverId : new String[]{"java", "typescript"}) {
+        for (String serverId : LSP_SERVER_IDS) {
+            // Stop any server whose per-server toggle is off (frees its process); buffers deactivate below.
             if (!serverEnabled(serverId)) {
                 lspManager.shutdownServer(serverId);
             }
+            // Probe each known server independently (one may be installed and another not).
+            lspManager.detect(serverId, ok -> {
+                lspServerAvailable.put(serverId, ok);
+                applyLspGating();
+            });
         }
-        // Probe each known server independently (one may be installed and the other not).
-        lspManager.detect("java", ok -> {
-            lspServerAvailable.put("java", ok);
-            applyLspGating();
-        });
-        lspManager.detect("typescript", ok -> {
-            lspServerAvailable.put("typescript", ok);
-            applyLspGating();
-        });
     }
 
     /** Whether a server's own enable toggle is on (under the global LSP enable). */
     private boolean serverEnabled(String serverId) {
         Settings s = config.getSettings();
-        return "typescript".equals(serverId) ? s.isTypescriptLspEnabled() : s.isJavaLspEnabled();
+        return switch (serverId) {
+            case "typescript" -> s.isTypescriptLspEnabled();
+            case "python" -> s.isPythonLspEnabled();
+            default -> s.isJavaLspEnabled();
+        };
+    }
+
+    /** The configured command for a server id (blank ⇒ the server's default). */
+    private String serverCommand(String serverId) {
+        Settings s = config.getSettings();
+        return switch (serverId) {
+            case "typescript" -> s.getTypescriptLspCommand();
+            case "python" -> s.getPythonLspCommand();
+            default -> s.getJavaLspCommand();
+        };
     }
 
     /** Applies the detection-dependent gate to every open buffer (per the file's own server). */
@@ -1620,9 +1635,7 @@ public class MainController {
     /** The short server name shown in the status bar — the configured command's basename (e.g. jdtls,
      *  typescript-language-server) for {@code serverId}. */
     private String serverLabel(String serverId) {
-        String configured = "typescript".equals(serverId)
-                ? config.getSettings().getTypescriptLspCommand()
-                : config.getSettings().getJavaLspCommand();
+        String configured = serverCommand(serverId);
         String cmd = configured == null || configured.isBlank()
                 ? com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId) : configured;
         java.util.List<String> toks = com.editora.lsp.LspServerRegistry.tokenize(cmd);
@@ -2702,13 +2715,13 @@ public class MainController {
         buffer.setGutterBookmarkClick(this::onGutterBookmarkClick);
         buffer.setOnNotesChanged(() -> persistNotes(buffer));
         buffer.setGutterNoteClick(this::onGutterNoteClick);
-        // Refresh the Run button when this buffer's compact-source status flips (only acts if it's active).
-        buffer.setOnCompactSourceChanged(() -> {
+        // Refresh the Run button when this buffer's runnable status flips (only acts if it's active).
+        buffer.setOnRunnableChanged(() -> {
             if (activeBuffer() == buffer) {
                 updateRunButton();
             }
         });
-        buffer.setRunHandler(this::runActiveFile); // "Run File" editor right-click item (compact source only)
+        buffer.setRunHandler(this::runActiveFile); // "Run File" editor right-click item (runnable files)
         buffer.setRunEnabled(lspEnabled()); // the Run affordance is gated by the LSP feature
         buffer.setAddNoteHandler(this::addNoteFromContext);
         buffer.setNotesEnabled(notesEnabled());
@@ -3835,24 +3848,25 @@ public class MainController {
         openSearchInFiles();
     }
 
-    /** Shows the Run tool window's stripe button only for a compact source file (the in-editor affordance
-     *  is the green gutter Run glyph on the {@code main} line + the right-click menu). */
+    /** Shows the Run tool window's stripe button only for a runnable file (the in-editor affordance is
+     *  the green gutter Run glyph on the entry line + the right-click menu). */
     private void updateRunButton() {
         EditorBuffer buffer = activeBuffer();
-        boolean compact = buffer != null && buffer.isCompactSource();
+        boolean runnable = buffer != null && buffer.isRunnable();
         if (runToolWindow != null) {
-            toolWindows.setAvailable(runToolWindow, compact);
+            toolWindows.setAvailable(runToolWindow, runnable);
         }
     }
 
     /**
-     * Runs the active compact source file via the JDK source launcher, streaming output into the Run tool
-     * window. Saves first (a dirty file would run stale; an untitled one prompts Save-As), and refuses to
-     * start while a previous run is still alive.
+     * Runs the active runnable file — a compact Java source via the JDK source launcher ({@code java
+     * <file>}) or a Python script ({@code python3 <file>}) — streaming output into the Run tool window.
+     * Saves first (a dirty file would run stale; an untitled one prompts Save-As), and refuses to start
+     * while a previous run is still alive.
      */
     private void runActiveFile() {
         EditorBuffer buffer = activeBuffer();
-        if (buffer == null || !buffer.isCompactSource()) {
+        if (buffer == null || !buffer.isRunnable()) {
             setStatus(tr("status.run.notCompact"));
             return;
         }
@@ -3867,10 +3881,13 @@ public class MainController {
             setStatus(tr("status.run.busy"));
             return;
         }
+        java.util.List<String> command = buffer.isPython()
+                ? java.util.List.of("python3", path.toString())
+                : java.util.List.of("java", path.toString());
         toolWindows.open(runToolWindow);
         runPanel.started(path.getFileName().toString());
         setStatus(tr("status.run.started", path.getFileName().toString()));
-        runService.run(path, new com.editora.run.RunService.Listener() {
+        runService.run(path, command, new com.editora.run.RunService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 runPanel.started(commandLine);

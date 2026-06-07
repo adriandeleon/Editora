@@ -32,15 +32,21 @@ public final class LspServerRegistry {
     public static final List<String> TS_ROOT_MARKERS = List.of(
             "tsconfig.json", "jsconfig.json", "package.json", ".git");
 
+    /** Markers for a Python project root (pyproject/setup/requirements/Pipfile, else the repo). */
+    public static final List<String> PYTHON_ROOT_MARKERS = List.of(
+            "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile", ".git");
+
     /** Default server commands when the user leaves the Settings field blank. */
     public static final String DEFAULT_JAVA_COMMAND = "jdtls";
     public static final String DEFAULT_TYPESCRIPT_COMMAND = "typescript-language-server --stdio";
+    public static final String DEFAULT_PYTHON_COMMAND = "pyright-langserver --stdio";
 
     /** A known language server: its id, default command, root markers, and the language ids it serves. */
     private enum ServerDef {
         JAVA("java", DEFAULT_JAVA_COMMAND, JAVA_ROOT_MARKERS, Set.of("java")),
         TYPESCRIPT("typescript", DEFAULT_TYPESCRIPT_COMMAND, TS_ROOT_MARKERS,
-                Set.of("javascript", "javascriptreact", "typescript", "typescriptreact"));
+                Set.of("javascript", "javascriptreact", "typescript", "typescriptreact")),
+        PYTHON("python", DEFAULT_PYTHON_COMMAND, PYTHON_ROOT_MARKERS, Set.of("python"));
 
         final String id;
         final String defaultCommand;

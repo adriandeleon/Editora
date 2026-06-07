@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LSP support for Python** (Pyright) — diagnostics, completion, go-to-definition/references, and hover
+  for `.py`/`.pyw`/`.pyi`. Configure the server command in Settings → LSP with its own enable toggle
+  (auto-detected on PATH; `npm i -g pyright`). Off by default with the rest of LSP. (Python already had
+  syntax highlighting, so this rides the existing server-centric LSP foundation.)
+- **Gutter Run ▶ for Python scripts** — a green play glyph in the gutter (on the `if __name__ ==
+  "__main__":` line, else the first line) runs the file with `python3` and streams output into the Run
+  tool window, reusing the Java compact-source Run plumbing.
+- **Python completion fixes** — the popup now appears for fuzzy-matching servers (Pyright returns
+  subsequence matches; the client falls back to those when no literal-prefix match exists). Also wired up
+  auto-import support (declare `completionItem.resolveSupport`/`workspace.configuration`, push
+  `python.analysis.autoImportCompletions=true`) so accepting a cross-module symbol inserts its `import`
+  — auto-import is wired but still being verified.
+
 - **LSP support for TypeScript & JavaScript** (`typescript-language-server`) alongside Java — diagnostics,
   go-to-definition/references, hover, and completion for `.ts`/`.tsx`/`.js`/`.jsx`/`.mjs`/`.cjs`/`.mts`/
   `.cts`. One TypeScript server serves all of them; the LSP registry is now server-centric (one session

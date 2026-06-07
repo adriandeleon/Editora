@@ -18,7 +18,8 @@ class LspServerRegistryTest {
         assertTrue(LspServerRegistry.isSupported("javascript"));
         assertTrue(LspServerRegistry.isSupported("typescript"));
         assertTrue(LspServerRegistry.isSupported("typescriptreact"));
-        assertFalse(LspServerRegistry.isSupported("python"));
+        assertTrue(LspServerRegistry.isSupported("python"));
+        assertFalse(LspServerRegistry.isSupported("ruby"));
         assertFalse(LspServerRegistry.isSupported("plaintext"));
         assertEquals("java", LspServerRegistry.serverIdFor("java"));
         // One TypeScript server serves all four JS/TS dialects.
@@ -26,8 +27,8 @@ class LspServerRegistryTest {
         assertEquals("typescript", LspServerRegistry.serverIdFor("javascriptreact"));
         assertEquals("typescript", LspServerRegistry.serverIdFor("typescript"));
         assertEquals("typescript", LspServerRegistry.serverIdFor("typescriptreact"));
-        assertNull(LspServerRegistry.serverIdFor("python"));
-        assertNull(LspServerRegistry.specFor("python", Map.of()));
+        assertNull(LspServerRegistry.serverIdFor("ruby"));
+        assertNull(LspServerRegistry.specFor("ruby", Map.of()));
     }
 
     @Test
@@ -49,6 +50,16 @@ class LspServerRegistryTest {
         assertTrue(spec.rootMarkers().contains("package.json"));
         // A .js file routes to the same TypeScript server.
         assertEquals("typescript", LspServerRegistry.specFor("javascript", Map.of()).serverId());
+    }
+
+    @Test
+    void pythonServerDefaultsAndMarkers() {
+        assertTrue(LspServerRegistry.isSupported("python"));
+        assertEquals("python", LspServerRegistry.serverIdFor("python"));
+        var spec = LspServerRegistry.specFor("python", Map.of());
+        assertEquals("python", spec.serverId());
+        assertEquals(List.of("pyright-langserver", "--stdio"), spec.command());
+        assertTrue(spec.rootMarkers().contains("pyproject.toml"));
     }
 
     @Test

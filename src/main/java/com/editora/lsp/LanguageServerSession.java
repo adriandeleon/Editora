@@ -133,6 +133,7 @@ final class LanguageServerSession implements LanguageClient {
         server.initialize(ip).thenAccept(result -> {
             capabilities = result.getCapabilities();
             server.initialized(new InitializedParams());
+            pushConfiguration(); // proactively enable Pyright auto-imports (also answered via configuration())
             List<Runnable> toRun;
             synchronized (this) {
                 initialized = true;
@@ -150,13 +151,41 @@ final class LanguageServerSession implements LanguageClient {
         TextDocumentClientCapabilities td = new TextDocumentClientCapabilities();
         td.setSynchronization(new SynchronizationCapabilities(false, false, true));
         td.setPublishDiagnostics(new PublishDiagnosticsCapabilities(true));
-        td.setCompletion(new CompletionCapabilities(new CompletionItemCapabilities(true)));
+        CompletionItemCapabilities completionItem = new CompletionItemCapabilities(true); // snippetSupport
+        // Advertise that we can resolve additionalTextEdits — Pyright (and others) only emit an
+        // auto-import's `import` edit when the client says it can resolve it. We resolve on accept
+        // (see MainController.autoImportAccept). detail/documentation stay eager so the popup hint shows.
+        completionItem.setResolveSupport(new org.eclipse.lsp4j.CompletionItemResolveSupportCapabilities(
+                java.util.List.of("additionalTextEdits")));
+        td.setCompletion(new CompletionCapabilities(completionItem));
         td.setHover(new HoverCapabilities());
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
         ClientCapabilities cc = new ClientCapabilities();
         cc.setTextDocument(td);
+        // Declare we answer workspace/configuration — otherwise Pyright never asks for
+        // python.analysis.autoImportCompletions and keeps its (off) default, so no auto-imports.
+        org.eclipse.lsp4j.WorkspaceClientCapabilities ws = new org.eclipse.lsp4j.WorkspaceClientCapabilities();
+        ws.setConfiguration(true);
+        ws.setDidChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationCapabilities());
+        cc.setWorkspace(ws);
         return cc;
+    }
+
+    /** Pushes our default settings (e.g. enable Pyright auto-imports) via workspace/didChangeConfiguration. */
+    private void pushConfiguration() {
+        try {
+            java.util.Map<String, Object> analysis = new java.util.HashMap<>();
+            analysis.put("autoImportCompletions", true);
+            java.util.Map<String, Object> python = new java.util.HashMap<>();
+            python.put("analysis", analysis);
+            java.util.Map<String, Object> settings = new java.util.HashMap<>();
+            settings.put("python", python);
+            server.getWorkspaceService().didChangeConfiguration(
+                    new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
+        } catch (RuntimeException e) {
+            LOG.log(Level.FINE, "didChangeConfiguration failed", e);
+        }
     }
 
     boolean isInitialized() {
@@ -302,6 +331,43 @@ final class LanguageServerSession implements LanguageClient {
     @Override
     public void telemetryEvent(Object object) {
         // ignored
+    }
+
+    /**
+     * Answers {@code workspace/configuration} so servers that read settings this way pick up our defaults
+     * — notably **Pyright**, which only offers auto-import completions when
+     * {@code python.analysis.autoImportCompletions} is on (its own default is off). We enable it however
+     * the server phrases the request (the whole {@code python} object, the {@code python.analysis} object,
+     * or the leaf key); unknown sections return null so the server keeps its own default.
+     */
+    @Override
+    public CompletableFuture<List<Object>> configuration(org.eclipse.lsp4j.ConfigurationParams params) {
+        List<Object> out = new java.util.ArrayList<>();
+        if (params != null && params.getItems() != null) {
+            for (org.eclipse.lsp4j.ConfigurationItem item : params.getItems()) {
+                out.add(configFor(item.getSection() == null ? "" : item.getSection()));
+            }
+        }
+        return CompletableFuture.completedFuture(out);
+    }
+
+    private static Object configFor(String section) {
+        if (section.endsWith("autoImportCompletions")) {
+            return Boolean.TRUE;
+        }
+        if (section.equals("python.analysis") || section.endsWith(".analysis")) {
+            java.util.Map<String, Object> analysis = new java.util.HashMap<>();
+            analysis.put("autoImportCompletions", true);
+            return analysis;
+        }
+        if (section.equals("python")) {
+            java.util.Map<String, Object> analysis = new java.util.HashMap<>();
+            analysis.put("autoImportCompletions", true);
+            java.util.Map<String, Object> python = new java.util.HashMap<>();
+            python.put("analysis", analysis);
+            return python;
+        }
+        return null;
     }
 
     @Override

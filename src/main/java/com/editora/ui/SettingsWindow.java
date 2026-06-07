@@ -138,10 +138,13 @@ public class SettingsWindow {
     private CheckBox lspCheck;
     private CheckBox javaLspEnabledCheck;
     private CheckBox typescriptLspEnabledCheck;
+    private CheckBox pythonLspEnabledCheck;
     private TextField javaLspField;
     private TextField typescriptLspField;
+    private TextField pythonLspField;
     private Label lspStatusLabel;
     private Label lspTsStatusLabel;
+    private Label lspPyStatusLabel;
     private CheckBox zenCheck;
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
@@ -519,6 +522,18 @@ public class SettingsWindow {
             config.getSettings().setTypescriptLspEnabled(now);
             apply();
         });
+        pythonLspField = new TextField();
+        pythonLspField.setPromptText(com.editora.lsp.LspServerRegistry.DEFAULT_PYTHON_COMMAND);
+        pythonLspField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setPythonLspCommand(now);
+            apply();
+            refreshLspStatus();
+        });
+        pythonLspEnabledCheck = new CheckBox(tr("settings.lsp.enablePython"));
+        pythonLspEnabledCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setPythonLspEnabled(now);
+            apply();
+        });
 
         zenCheck = new CheckBox(tr("settings.zen"));
         zenCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -737,6 +752,16 @@ public class SettingsWindow {
                 "lsp typescript javascript language server found installed not found");
         row(p, Category.LSP, null, exePathRow(tr("settings.lsp.typescriptCommand"), typescriptLspField),
                 "lsp typescript javascript server command path executable");
+        // --- Python ---
+        row(p, Category.LSP, null, pythonLspEnabledCheck, "lsp python pyright enable server");
+        lspPyStatusLabel = new Label(tr("settings.lsp.checking"));
+        lspPyStatusLabel.getStyleClass().add("settings-git-status");
+        lspPyStatusLabel.setWrapText(true);
+        lspPyStatusLabel.setMaxWidth(440);
+        row(p, Category.LSP, null, lspPyStatusLabel,
+                "lsp python pyright language server found installed not found");
+        row(p, Category.LSP, null, exePathRow(tr("settings.lsp.pythonCommand"), pythonLspField),
+                "lsp python pyright server command path executable");
         Label hint = note(tr("settings.lsp.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
@@ -783,6 +808,9 @@ public class SettingsWindow {
         if (typescriptLspEnabledCheck != null) {
             typescriptLspEnabledCheck.setDisable(!on);
         }
+        if (pythonLspEnabledCheck != null) {
+            pythonLspEnabledCheck.setDisable(!on);
+        }
     }
 
     private void refreshLspStatus() {
@@ -790,8 +818,11 @@ public class SettingsWindow {
             return;
         }
         // The manager caches its probe per command; configure it with the current commands first.
-        lspManager.configure(config.getSettings().isLspSupport(),
-                config.getSettings().getJavaLspCommand(), config.getSettings().getTypescriptLspCommand());
+        Settings cs = config.getSettings();
+        lspManager.configure(cs.isLspSupport(), java.util.Map.of(
+                "java", cs.getJavaLspCommand(),
+                "typescript", cs.getTypescriptLspCommand(),
+                "python", cs.getPythonLspCommand()));
         lspStatusLabel.getStyleClass().setAll("settings-git-status");
         lspStatusLabel.setText(tr("settings.lsp.checking"));
         lspManager.detect("java", found -> {
@@ -807,6 +838,16 @@ public class SettingsWindow {
                 lspTsStatusLabel.getStyleClass().setAll("settings-git-status",
                         found ? "settings-git-found" : "settings-git-missing");
                 lspTsStatusLabel.setText(tr("settings.lsp.tsStatus",
+                        found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
+            });
+        }
+        if (lspPyStatusLabel != null) {
+            lspPyStatusLabel.getStyleClass().setAll("settings-git-status");
+            lspPyStatusLabel.setText(tr("settings.lsp.checking"));
+            lspManager.detect("python", found -> {
+                lspPyStatusLabel.getStyleClass().setAll("settings-git-status",
+                        found ? "settings-git-found" : "settings-git-missing");
+                lspPyStatusLabel.setText(tr("settings.lsp.pyStatus",
                         found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
             });
         }
@@ -1259,8 +1300,10 @@ public class SettingsWindow {
             lspCheck.setSelected(settings.isLspSupport());
             javaLspEnabledCheck.setSelected(settings.isJavaLspEnabled());
             typescriptLspEnabledCheck.setSelected(settings.isTypescriptLspEnabled());
+            pythonLspEnabledCheck.setSelected(settings.isPythonLspEnabled());
             javaLspField.setText(settings.getJavaLspCommand());
             typescriptLspField.setText(settings.getTypescriptLspCommand());
+            pythonLspField.setText(settings.getPythonLspCommand());
             updateLspRowsEnabled();
             refreshLspStatus();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());

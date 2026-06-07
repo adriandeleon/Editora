@@ -52,15 +52,16 @@ public final class RunService {
     }
 
     /**
-     * Launches {@code java <file>} in the file's directory and streams output to {@code listener}. Refuses
-     * to start if a previous run is still alive (stop it first). All listener callbacks run on the FX thread.
+     * Launches {@code argv} (e.g. {@code [java, <file>]} or {@code [python3, <file>]}) in {@code file}'s
+     * directory and streams output to {@code listener}. Refuses to start if a previous run is still alive
+     * (stop it first). All listener callbacks run on the FX thread.
      */
-    public void run(Path file, Listener listener) {
-        if (file == null || listener == null || isRunning()) {
+    public void run(Path file, List<String> argv, Listener listener) {
+        if (file == null || argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }
         int gen = ++generation;
-        List<String> command = ProcessRunner.resolveExecutable(List.of("java", file.toString()));
+        List<String> command = ProcessRunner.resolveExecutable(argv);
         ProcessBuilder pb = new ProcessBuilder(command);
         Path dir = file.toAbsolutePath().getParent();
         if (dir != null) {

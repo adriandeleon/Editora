@@ -193,12 +193,14 @@ public class EditorBuffer implements TabContent {
     private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
     /** Whether the Run affordance is enabled at all (gated by the LSP feature setting). */
     private boolean runFeatureEnabled = true;
-    /** Whether this is a Java 25 compact source file (drives the gutter Run glyph + Run tool window). */
-    private boolean compactSource;
-    /** 0-based line of the top-level {@code main} in a compact source file (gutter Run glyph), else -1. */
-    private int compactMainLine = -1;
-    /** Fired (FX thread) when the compact-source status flips, so the controller refreshes the Run button. */
-    private Runnable onCompactSourceChanged = () -> { };
+    /** Whether this file is runnable (a Java 25 compact source file, or any Python script) — drives the
+     *  gutter Run glyph + the Run tool window. */
+    private boolean runnable;
+    /** 0-based line the gutter Run glyph sits on (a compact file's {@code main}, a Python {@code __main__}
+     *  guard, else the first line), or -1 when not runnable. */
+    private int runLine = -1;
+    /** Fired (FX thread) when the runnable status flips, so the controller refreshes the Run button. */
+    private Runnable onRunnableChanged = () -> { };
     private final SearchHighlightOverlay searchOverlay = new SearchHighlightOverlay(area);
     private final AceJumpOverlay aceJump = new AceJumpOverlay(area);
     /** Async maid validator (text, callback) injected by the controller; null = no linting. */
@@ -306,8 +308,8 @@ public class EditorBuffer implements TabContent {
         // Git change bars: the slot is reserved only while tracking is on (changeBars != null).
         folds.setChangeHook(() -> changeBars != null,
                 line -> changeBars == null ? null : changeBars.get(line));
-        // Gutter Run glyph: reserved only for a compact source file, on its top-level main line.
-        folds.setRunHooks(() -> compactSource, line -> compactSource && line == compactMainLine,
+        // Gutter Run glyph: reserved only for a runnable file, on its entry line.
+        folds.setRunHooks(() -> runnable, line -> runnable && line == runLine,
                 () -> {
                     if (runHandler != null) {
                         runHandler.run();
@@ -339,7 +341,7 @@ public class EditorBuffer implements TabContent {
                 .successionEnds(Duration.ofMillis(150))
                 .subscribe(ignore -> {
                     applyHighlighting();
-                    recomputeCompactSource(); // re-evaluate the Run button when a top-level main appears/leaves
+                    recomputeRun(); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
                 });
         // Live Mermaid linting: debounced maid run for .mmd buffers (only while enabled + maid detected).
         area.multiPlainChanges()
@@ -460,8 +462,8 @@ public class EditorBuffer implements TabContent {
         contextMenu.getStyleClass().add("editor-context-menu");
         area.setOnContextMenuRequested(e -> {
             List<MenuItem> items = new java.util.ArrayList<>();
-            // Run a Java 25 compact source file (only when this buffer is one).
-            if (compactSource && runHandler != null) {
+            // Run a runnable file (compact Java source / Python script).
+            if (runnable && runHandler != null) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
                 run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
                 run.setOnAction(ev -> runHandler.run());
@@ -795,7 +797,7 @@ public class EditorBuffer implements TabContent {
      *  Hardcoded here so {@code editor} need not depend on the {@code lsp} package (kept in sync with
      *  {@code LspServerRegistry}). */
     private static final java.util.Set<String> LSP_LANGUAGES = java.util.Set.of(
-            "java", "javascript", "javascriptreact", "typescript", "typescriptreact");
+            "java", "javascript", "javascriptreact", "typescript", "typescriptreact", "python");
 
     /** Whether this buffer's language has a language server. */
     public boolean isLspLanguage() {
@@ -807,48 +809,77 @@ public class EditorBuffer implements TabContent {
         this.lspChangeListener = listener;
     }
 
-    /** True if this is a Java 25 compact source file (no top-level type, a top-level {@code main}). */
-    public boolean isCompactSource() {
-        return compactSource;
+    /** True if this file can be run (a Java 25 compact source file, or any Python script). */
+    public boolean isRunnable() {
+        return runnable;
     }
 
-    /** Sets the callback fired when {@link #isCompactSource()} flips (so the toolbar Run button updates). */
-    public void setOnCompactSourceChanged(Runnable callback) {
-        this.onCompactSourceChanged = callback == null ? () -> { } : callback;
+    /** True specifically for Python (the controller picks {@code python}, vs {@code java}, as the runner). */
+    public boolean isPython() {
+        return "python".equals(language);
+    }
+
+    /** Sets the callback fired when {@link #isRunnable()} flips (so the controller refreshes the Run button). */
+    public void setOnRunnableChanged(Runnable callback) {
+        this.onRunnableChanged = callback == null ? () -> { } : callback;
     }
 
     /** Enables/disables the Run affordance (gated by the LSP feature). When off, the gutter Run glyph,
-     *  the right-click Run item, and the Run tool window all disappear (compact-source detection is off). */
+     *  the right-click Run item, and the Run tool window all disappear. */
     public void setRunEnabled(boolean enabled) {
         if (enabled != runFeatureEnabled) {
             runFeatureEnabled = enabled;
-            recomputeCompactSource();
+            recomputeRun();
         }
     }
 
-    /** Recomputes compact-source status + the {@code main} line; refreshes the gutter and fires the callback. */
-    private void recomputeCompactSource() {
+    /** Recomputes runnable status + the gutter entry line; refreshes the gutter and fires the callback. */
+    private void recomputeRun() {
         String name = path != null ? path.getFileName().toString() : displayName;
         String text = area.getText();
-        boolean nowCompact = runFeatureEnabled && !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT
-                && CompactSource.isLaunchable(name, text);
-        int nowMain = nowCompact ? CompactSource.mainLine(text) : -1;
-        boolean compactChanged = nowCompact != compactSource;
-        int oldMain = compactMainLine;
-        compactSource = nowCompact;
-        compactMainLine = nowMain;
-        if (compactChanged) {
-            onCompactSourceChanged.run();
+        boolean eligible = runFeatureEnabled && !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
+        boolean nowRunnable;
+        int nowLine;
+        if (eligible && "python".equals(language)) {
+            nowRunnable = true;
+            nowLine = pythonRunLine(text); // the __main__ guard, else the first line
+        } else if (eligible && CompactSource.isLaunchable(name, text)) {
+            nowRunnable = true;
+            nowLine = CompactSource.mainLine(text);
+        } else {
+            nowRunnable = false;
+            nowLine = -1;
+        }
+        boolean changed = nowRunnable != runnable;
+        int oldLine = runLine;
+        runnable = nowRunnable;
+        runLine = nowLine;
+        if (changed) {
+            onRunnableChanged.run();
             refreshGutter(); // the Run slot appeared/disappeared on every row — rebuild the factory
-        } else if (nowMain != oldMain) {
-            // The main line moved (edits above it) — repaint just the old and new gutter rows.
-            if (oldMain >= 0) {
-                refreshGutterLine(oldMain);
+        } else if (nowLine != oldLine) {
+            // The entry line moved (edits above it) — repaint just the old and new gutter rows.
+            if (oldLine >= 0) {
+                refreshGutterLine(oldLine);
             }
-            if (nowMain >= 0) {
-                refreshGutterLine(nowMain);
+            if (nowLine >= 0) {
+                refreshGutterLine(nowLine);
             }
         }
+    }
+
+    private static final java.util.regex.Pattern PYTHON_MAIN_GUARD = java.util.regex.Pattern.compile(
+            "^\\s*if\\s+__name__\\s*==\\s*['\"]__main__['\"]\\s*:");
+
+    /** The gutter Run line for a Python script: the {@code if __name__ == "__main__":} guard, else line 0. */
+    private static int pythonRunLine(String text) {
+        String[] lines = text.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (PYTHON_MAIN_GUARD.matcher(lines[i]).find()) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     /** Turns LSP rendering (diagnostics overlay + hover) on/off for this buffer. The controller drives
@@ -1848,7 +1879,7 @@ public class EditorBuffer implements TabContent {
         String name = fileName == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(fileName);
         IGrammar g = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
         applyLanguage(name, g);
-        recomputeCompactSource(); // a Save-As to a .java path can make this a runnable compact source file
+        recomputeRun(); // a Save-As to a runnable file type can show the gutter Run glyph
     }
 
     /**
@@ -2801,15 +2832,32 @@ public class EditorBuffer implements TabContent {
             return items == null ? java.util.List.of() : items;
         }
         String p = prefix.toLowerCase(java.util.Locale.ROOT);
-        java.util.List<Completion> out = new java.util.ArrayList<>();
+        java.util.List<Completion> strict = new java.util.ArrayList<>();
+        java.util.List<Completion> fuzzy = new java.util.ArrayList<>();
         for (Completion c : items) {
             String label = c.label() == null ? "" : c.label().toLowerCase(java.util.Locale.ROOT);
             String insert = c.insert() == null ? "" : c.insert().toLowerCase(java.util.Locale.ROOT);
             if (label.startsWith(p) || insert.startsWith(p)) {
-                out.add(c);
+                strict.add(c);
+            } else if (isSubsequence(p, label) || isSubsequence(p, insert)) {
+                fuzzy.add(c);
             }
         }
-        return out;
+        // Prefer literal-prefix matches (Java/TS return the whole scope, so this narrows it). When there
+        // are none, fall back to the server's fuzzy matches — some servers (Pyright) already narrow
+        // server-side and return subsequence matches, so strict filtering would empty the popup.
+        return strict.isEmpty() ? fuzzy : strict;
+    }
+
+    /** True if {@code p} is a subsequence of {@code s} (chars in order, not necessarily contiguous). */
+    private static boolean isSubsequence(String p, String s) {
+        int i = 0;
+        for (int j = 0; j < s.length() && i < p.length(); j++) {
+            if (s.charAt(j) == p.charAt(i)) {
+                i++;
+            }
+        }
+        return i == p.length();
     }
 
     /** Merges LSP completions (first) with local snippet items, de-duped by insert text, capped. */
@@ -2926,7 +2974,7 @@ public class EditorBuffer implements TabContent {
     public void setContent(String content) {
         area.replaceText(content == null ? "" : content);
         markClean();
-        recomputeCompactSource(); // detect a compact source file on load (drives the Run button)
+        recomputeRun(); // detect a runnable file on load (drives the Run glyph)
     }
 
     /**
