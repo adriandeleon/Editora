@@ -34,6 +34,24 @@ final class SpellCheckOverlay extends Region {
     private boolean active;
     private boolean redrawPending;
 
+    // Both wordSpans(line) and isMisspelled(word) are otherwise recomputed for every visible word on
+    // every scroll/resize pulse, even though the text hasn't changed — and isMisspelled is a Hunspell
+    // FST lookup. Memoize both (bounded LRU, FX-thread-only). wordSpans is a pure function of the line
+    // text, so its cache never needs invalidation; the misspelled cache depends on the dictionary +
+    // ignore set, so it is cleared whenever those change (setChecker / refresh). Eligibility (syntax
+    // style) is still evaluated fresh per draw, so a re-highlight is reflected immediately.
+    private final java.util.Map<String, List<int[]>> spanCache = lru(2000);
+    private final java.util.Map<String, Boolean> spellCache = lru(20_000);
+
+    private static <K, V> java.util.Map<K, V> lru(int max) {
+        return new java.util.LinkedHashMap<>(256, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(java.util.Map.Entry<K, V> eldest) {
+                return size() > max;
+            }
+        };
+    }
+
     SpellCheckOverlay(CodeArea area) {
         this.area = area;
         getStyleClass().add("spellcheck-overlay");
@@ -47,6 +65,7 @@ final class SpellCheckOverlay extends Region {
 
     void setChecker(SpellChecker checker) {
         this.checker = checker;
+        spellCache.clear(); // a different dictionary → re-evaluate misspellings
         scheduleRedraw();
     }
 
@@ -75,6 +94,7 @@ final class SpellCheckOverlay extends Region {
 
     /** Re-runs the check + redraw (e.g. after a dictionary finishes loading or the language changes). */
     void refresh() {
+        spellCache.clear(); // dictionary loaded / language / user-word / ignore-set changed
         scheduleRedraw();
     }
 
@@ -138,14 +158,16 @@ final class SpellCheckOverlay extends Region {
         if (line.isEmpty()) {
             return;
         }
-        for (int[] span : SpellChecker.wordSpans(line)) {
+        for (int[] span : spanCache.computeIfAbsent(line, SpellChecker::wordSpans)) {
             int start = span[0];
             int end = span[1];
             int abs = area.getAbsolutePosition(paragraph, start);
             if (!eligible(abs)) {
-                continue;
+                continue; // eligibility is style-dependent → always evaluated fresh (never cached)
             }
-            if (!checker.isMisspelled(line.substring(start, end))) {
+            // Cache the Hunspell verdict per word (cleared on dictionary/ignore changes). Checked only
+            // after eligibility, so ineligible code tokens still never reach the dictionary, as before.
+            if (!spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)) {
                 continue;
             }
             Bounds b = toLocal(area.getCharacterBoundsOnScreen(abs,
