@@ -3,6 +3,19 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] LSP support — **21 language servers** auto-detected on PATH (per-server Settings command + enable,
+      off by default): Java (JDT LS), TypeScript/JavaScript, Python (Pyright), XML (lemminx), JSON,
+      Bash/Shell, YAML, Go (gopls), Rust (rust-analyzer), PHP (phpactor), Ruby (ruby-lsp), C/C++ (clangd),
+      C# (csharp-ls), HTML, CSS, Kotlin, Lua, Dockerfile, SQL (sqls), Terraform (terraform-ls), TOML (taplo) —
+      diagnostics + Problems window (`M-8`) + minimap/scrollbar stripes, go-to-definition (`M-.`),
+      find references (`M-?`), hover (`C-c h`), LSP completion, and TS/PHP auto-imports
+- [x] Markdown editing — IntelliJ-style floating format bar on selection (bold/italic/strikethrough/code/
+      link/list + Normal–H1…H6), `C-c`-prefixed shortcuts + right-click Format menu; smart list/blockquote
+      continuation on Enter, heading promote/demote, link helpers (Ctrl/Cmd-click to open), GFM table reflow
+- [x] Run a file from a gutter ▶ — Java 25 compact source (`java <file>`), Python (`python3`), and shell
+      (`bash`, when the Bash LSP is enabled); streams output into a Run tool window (`M-9`); gated by LSP
+- [x] Print — native printing of code or the Markdown preview with a print-preview window (always light),
+      reusing the PDF layout core (Settings → Editor → Export & Print); `editor.print` / `preview.print`
 - [x] Export to PDF — code (searchable, embedded font, syntax highlighting + optional line numbers,
       always light theme), Markdown (native vector text), and standalone Mermaid `.mmd` (via mmdc);
       `editor.exportPdf` / `preview.exportPdf`; Settings → Editor (line numbers / highlighting / page size)
@@ -40,7 +53,9 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Autoclose `()[]{}` and quotes
 - [x] Highlight matching braces
 - [x] Comment/uncomment code region
-- [ ] Format document
+- [x] Smart line start (`C-a`) — first press to the first non-whitespace, second toggles to column 0
+- [x] Markdown formatting — format bar + smart list/heading/link/table editing (see "Recently shipped")
+- [ ] Format document — whole-document reformat (will ride LSP formatting; GFM table reflow exists)
 - [x] Column select support — column/block selection (overlay + column-aware edits)
 - [ ] Multiple cursors support
 - [ ] Advanced Undo/Redo support
@@ -58,10 +73,10 @@ A backlog of planned features and improvements. Unordered within each section.
 ## Code intelligence
 - [x] Autocomplete support — code: snippet popup (Enter/Tab); prose: inline ghost text (Tab); auto +
       `C-M-i`/`M-/` trigger; Settings toggle. (Next: document-words, LSP, fuzzy matching.)
-- [x] LSP support — Phase 1: **Java** (Eclipse JDT LS): live diagnostics (squiggles + Problems window
-      `M-8` + hover), go-to-definition (`M-.`), find references (`M-?`), hover docs (`C-c h`), and
-      LSP-backed completion. Auto-detected (`jdtls` on PATH) + Settings command override; off by default.
-      (Next: more languages — Pyright/gopls/rust-analyzer/clangd; formatting; rename/code actions.)
+- [x] LSP support — **21 servers** (see "Recently shipped"): diagnostics + Problems window (`M-8`) +
+      minimap/scrollbar stripes, go-to-definition (`M-.`), find references (`M-?`), hover (`C-c h`),
+      LSP-backed completion, and TS/PHP auto-imports. Server-centric registry, per-server Settings, off by
+      default. (Next: formatting / format-on-save; rename, code actions, quick fixes; document symbols.)
 - [ ] Fix structure for the 21 languages we support
 - [ ] Multi language support
 
