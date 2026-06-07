@@ -225,6 +225,16 @@ final class LanguageServerSession implements LanguageClient {
                 .completion(new CompletionParams(new TextDocumentIdentifier(uri), pos));
     }
 
+    /** Resolves a completion item ({@code completionItem/resolve}) to fill in its {@code additionalTextEdits}
+     *  (e.g. a TypeScript auto-import); returns the item unchanged if the server can't resolve. */
+    CompletableFuture<CompletionItem> resolveCompletion(CompletionItem item) {
+        if (!ready() || item == null) {
+            return CompletableFuture.completedFuture(item);
+        }
+        return server.getTextDocumentService().resolveCompletionItem(item)
+                .exceptionally(t -> item);
+    }
+
     CompletableFuture<Hover> hover(String uri, Position pos) {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);

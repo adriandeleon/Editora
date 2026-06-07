@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **LSP support for TypeScript & JavaScript** (`typescript-language-server`) alongside Java — diagnostics,
+  go-to-definition/references, hover, and completion for `.ts`/`.tsx`/`.js`/`.jsx`/`.mjs`/`.cjs`/`.mts`/
+  `.cts`. One TypeScript server serves all of them; the LSP registry is now server-centric (one session
+  per server + project root). Also bundles TypeScript/TSX TextMate **syntax highlighting** (so JS/TS are
+  no longer plain text) and supports **auto-imports** — accepting a completion that needs an import
+  inserts the `import` line via `completionItem/resolve`. Configure the server command in Settings → LSP
+  (auto-detected on PATH; `npm i -g typescript-language-server typescript`). Off by default with the rest
+  of LSP.
+
 ### Fixed
 
 - **Intermittent black screen / render glitches in the packaged macOS app after opening many files** —

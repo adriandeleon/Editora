@@ -136,8 +136,12 @@ public class SettingsWindow {
     private TextField maidPathField;
     private Label mermaidStatusLabel;
     private CheckBox lspCheck;
+    private CheckBox javaLspEnabledCheck;
+    private CheckBox typescriptLspEnabledCheck;
     private TextField javaLspField;
+    private TextField typescriptLspField;
     private Label lspStatusLabel;
+    private Label lspTsStatusLabel;
     private CheckBox zenCheck;
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
@@ -488,6 +492,7 @@ public class SettingsWindow {
         lspCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setLspSupport(now);
             apply();
+            updateLspRowsEnabled();
             refreshLspStatus();
         });
         javaLspField = new TextField();
@@ -496,6 +501,23 @@ public class SettingsWindow {
             config.getSettings().setJavaLspCommand(now);
             apply();
             refreshLspStatus();
+        });
+        typescriptLspField = new TextField();
+        typescriptLspField.setPromptText(com.editora.lsp.LspServerRegistry.DEFAULT_TYPESCRIPT_COMMAND);
+        typescriptLspField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setTypescriptLspCommand(now);
+            apply();
+            refreshLspStatus();
+        });
+        javaLspEnabledCheck = new CheckBox(tr("settings.lsp.enableJava"));
+        javaLspEnabledCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setJavaLspEnabled(now);
+            apply();
+        });
+        typescriptLspEnabledCheck = new CheckBox(tr("settings.lsp.enableTypescript"));
+        typescriptLspEnabledCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setTypescriptLspEnabled(now);
+            apply();
         });
 
         zenCheck = new CheckBox(tr("settings.zen"));
@@ -695,18 +717,30 @@ public class SettingsWindow {
 
     private VBox lspPage() {
         VBox p = page(tr("settings.cat.lsp"));
+        row(p, Category.LSP, null, lspCheck, "lsp language server protocol enable java typescript diagnostics");
+        // --- Java ---
+        row(p, Category.LSP, null, javaLspEnabledCheck, "lsp java jdtls enable server");
         lspStatusLabel = new Label(tr("settings.lsp.checking"));
         lspStatusLabel.getStyleClass().add("settings-git-status");
         lspStatusLabel.setWrapText(true);
         lspStatusLabel.setMaxWidth(440);
-        row(p, Category.LSP, null, lspStatusLabel, "lsp language server jdtls found installed not found");
-        row(p, Category.LSP, null, lspCheck, "lsp language server protocol enable java diagnostics");
+        row(p, Category.LSP, null, lspStatusLabel, "lsp java jdtls found installed not found");
         row(p, Category.LSP, null, exePathRow(tr("settings.lsp.javaCommand"), javaLspField),
                 "lsp java jdtls server command path executable");
+        // --- TypeScript / JavaScript ---
+        row(p, Category.LSP, null, typescriptLspEnabledCheck, "lsp typescript javascript enable server");
+        lspTsStatusLabel = new Label(tr("settings.lsp.checking"));
+        lspTsStatusLabel.getStyleClass().add("settings-git-status");
+        lspTsStatusLabel.setWrapText(true);
+        lspTsStatusLabel.setMaxWidth(440);
+        row(p, Category.LSP, null, lspTsStatusLabel,
+                "lsp typescript javascript language server found installed not found");
+        row(p, Category.LSP, null, exePathRow(tr("settings.lsp.typescriptCommand"), typescriptLspField),
+                "lsp typescript javascript server command path executable");
         Label hint = note(tr("settings.lsp.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
-        row(p, Category.LSP, null, hint, "lsp install jdtls java language server");
+        row(p, Category.LSP, null, hint, "lsp install jdtls java typescript language server");
         return p;
     }
 
@@ -740,15 +774,42 @@ public class SettingsWindow {
         });
     }
 
+    /** The per-server enable checkboxes are only meaningful while the global LSP toggle is on. */
+    private void updateLspRowsEnabled() {
+        boolean on = lspCheck != null && lspCheck.isSelected();
+        if (javaLspEnabledCheck != null) {
+            javaLspEnabledCheck.setDisable(!on);
+        }
+        if (typescriptLspEnabledCheck != null) {
+            typescriptLspEnabledCheck.setDisable(!on);
+        }
+    }
+
     private void refreshLspStatus() {
         if (lspStatusLabel == null || lspManager == null) {
             return;
         }
-        // The manager caches its probe per command; configure it with the current command first.
-        lspManager.configure(config.getSettings().isLspSupport(), config.getSettings().getJavaLspCommand());
+        // The manager caches its probe per command; configure it with the current commands first.
+        lspManager.configure(config.getSettings().isLspSupport(),
+                config.getSettings().getJavaLspCommand(), config.getSettings().getTypescriptLspCommand());
+        lspStatusLabel.getStyleClass().setAll("settings-git-status");
         lspStatusLabel.setText(tr("settings.lsp.checking"));
-        lspManager.detect(found -> lspStatusLabel.setText(
-                tr("settings.lsp.status", found ? tr("settings.lsp.found") : tr("settings.lsp.notFound"))));
+        lspManager.detect("java", found -> {
+            lspStatusLabel.getStyleClass().setAll("settings-git-status",
+                    found ? "settings-git-found" : "settings-git-missing");
+            lspStatusLabel.setText(tr("settings.lsp.status",
+                    found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
+        });
+        if (lspTsStatusLabel != null) {
+            lspTsStatusLabel.getStyleClass().setAll("settings-git-status");
+            lspTsStatusLabel.setText(tr("settings.lsp.checking"));
+            lspManager.detect("typescript", found -> {
+                lspTsStatusLabel.getStyleClass().setAll("settings-git-status",
+                        found ? "settings-git-found" : "settings-git-missing");
+                lspTsStatusLabel.setText(tr("settings.lsp.tsStatus",
+                        found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
+            });
+        }
     }
 
     /**
@@ -1196,7 +1257,11 @@ public class SettingsWindow {
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
             lspCheck.setSelected(settings.isLspSupport());
+            javaLspEnabledCheck.setSelected(settings.isJavaLspEnabled());
+            typescriptLspEnabledCheck.setSelected(settings.isTypescriptLspEnabled());
             javaLspField.setText(settings.getJavaLspCommand());
+            typescriptLspField.setText(settings.getTypescriptLspCommand());
+            updateLspRowsEnabled();
             refreshLspStatus();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());

@@ -212,7 +212,8 @@ public class MainController {
     /** LSP: manager (one server per workspace root), the Problems window, and the latest diagnostics. */
     private final com.editora.lsp.LspManager lspManager =
             new com.editora.lsp.LspManager(this::onLspDiagnostics, this::onLspServerStatus);
-    private boolean lspAvailable;
+    /** serverId → whether that server's command was found on this machine (per-server availability). */
+    private final java.util.Map<String, Boolean> lspServerAvailable = new java.util.HashMap<>();
     private ProblemsPanel problemsPanel;
     private ToolWindow problemsToolWindow;
     /** Run: streams a Java 25 compact source file's output into the Run tool window. */
@@ -1449,7 +1450,7 @@ public class MainController {
     private void applyLspSupport() {
         Settings s = config.getSettings();
         boolean on = s.isLspSupport();
-        lspManager.configure(on, s.getJavaLspCommand());
+        lspManager.configure(on, s.getJavaLspCommand(), s.getTypescriptLspCommand());
         if (problemsToolWindow != null) {
             toolWindows.setAvailable(problemsToolWindow, on);
         }
@@ -1463,7 +1464,7 @@ public class MainController {
         }
         updateRunButton();
         if (!on) {
-            lspAvailable = false;
+            lspServerAvailable.clear();
             lspProblems.clear();
             refreshProblems();
             for (Tab tab : tabPane.getTabs()) {
@@ -1476,33 +1477,52 @@ public class MainController {
             updateLspStatusBar();
             return;
         }
-        lspManager.detect(available -> {
-            lspAvailable = available;
+        // Stop any server whose per-server toggle is off (frees its process); its buffers deactivate below.
+        for (String serverId : new String[]{"java", "typescript"}) {
+            if (!serverEnabled(serverId)) {
+                lspManager.shutdownServer(serverId);
+            }
+        }
+        // Probe each known server independently (one may be installed and the other not).
+        lspManager.detect("java", ok -> {
+            lspServerAvailable.put("java", ok);
+            applyLspGating();
+        });
+        lspManager.detect("typescript", ok -> {
+            lspServerAvailable.put("typescript", ok);
             applyLspGating();
         });
     }
 
-    /** Applies the detection-dependent gate to every open buffer. */
+    /** Whether a server's own enable toggle is on (under the global LSP enable). */
+    private boolean serverEnabled(String serverId) {
+        Settings s = config.getSettings();
+        return "typescript".equals(serverId) ? s.isTypescriptLspEnabled() : s.isJavaLspEnabled();
+    }
+
+    /** Applies the detection-dependent gate to every open buffer (per the file's own server). */
     private void applyLspGating() {
-        boolean ready = lspEnabled() && lspAvailable;
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
-                syncBufferLsp(b, ready);
+                syncBufferLsp(b);
             }
         }
         updateLspStatusBar();
     }
 
-    /** Opens+activates an eligible Java buffer on the server, or deactivates+closes it otherwise. */
-    private void syncBufferLsp(EditorBuffer buffer, boolean ready) {
+    /** Opens+activates an eligible buffer on its language's server, or deactivates+closes it otherwise. */
+    private void syncBufferLsp(EditorBuffer buffer) {
         Path path = buffer.getPath();
-        boolean eligible = ready && path != null && buffer.isLspLanguage();
+        String lang = buffer.getLanguage();
+        String serverId = com.editora.lsp.LspServerRegistry.serverIdFor(lang);
+        boolean eligible = lspEnabled() && path != null && serverId != null && serverEnabled(serverId)
+                && Boolean.TRUE.equals(lspServerAvailable.get(serverId));
         if (eligible) {
             if (!lspManager.isManaged(path)) {
-                setStatus(tr("status.lsp.starting", lspServerLabel()));
+                setStatus(tr("status.lsp.starting", serverLabel(serverId)));
                 statusBar.setLspLoading(true); // show the loading bar until the server reports ready
-                lspManager.openDocument(path, lspRootFor(buffer), "java", buffer.text());
+                lspManager.openDocument(path, lspRootFor(buffer), lang, buffer.text());
             }
             buffer.setLspActive(true);
         } else {
@@ -1521,7 +1541,20 @@ public class MainController {
                 ? projects.active() : null;
         Path projectRoot = active == null ? null : Path.of(active.root());
         return com.editora.lsp.RootResolver.resolve(projectRoot, buffer.getPath(),
-                com.editora.lsp.LspServerRegistry.JAVA_ROOT_MARKERS);
+                com.editora.lsp.LspServerRegistry.rootMarkersFor(buffer.getLanguage()));
+    }
+
+    /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
+     *  auto-import's {@code import} line). Returns null when the item can't carry extra edits. */
+    private Runnable autoImportAccept(EditorBuffer buffer, org.eclipse.lsp4j.CompletionItem item) {
+        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item)) {
+            return null;
+        }
+        return () -> {
+            if (buffer.getPath() != null) {
+                lspManager.resolveCompletion(buffer.getPath(), item, buffer::applyLspEdits);
+            }
+        };
     }
 
     /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
@@ -1530,15 +1563,18 @@ public class MainController {
             return;
         }
         statusBar.setLspLoading(false); // diagnostics flowing ⇒ the server is up; stop the loading bar
-        if (diagnostics.isEmpty()) {
-            lspProblems.remove(file);
-        } else {
-            lspProblems.put(file, diagnostics);
-        }
+        // A language server publishes diagnostics project-wide (jdtls especially), but we only surface
+        // problems for files actually OPEN in Editora — otherwise the Problems window fills with whole-
+        // workspace noise from a single open file.
         Tab tab = tabForPath(file);
         EditorBuffer buffer = tab == null ? null : bufferOf(tab);
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
+        }
+        if (tab == null || diagnostics.isEmpty()) {
+            lspProblems.remove(file);
+        } else {
+            lspProblems.put(file, diagnostics);
         }
         refreshProblems();
     }
@@ -1553,14 +1589,20 @@ public class MainController {
     private void updateLspStatusBar() {
         EditorBuffer b = activeBuffer();
         boolean managed = b != null && b.getPath() != null && lspManager.isManaged(b.getPath());
-        statusBar.setLsp(managed ? lspServerLabel() : null);
+        String serverId = managed ? com.editora.lsp.LspServerRegistry.serverIdFor(b.getLanguage()) : null;
+        statusBar.setLsp(serverId != null ? serverLabel(serverId) : null);
     }
 
-    /** The short server name shown in the status bar (the configured Java command's basename, e.g. jdtls). */
-    private String lspServerLabel() {
-        java.util.List<String> cmd =
-                com.editora.lsp.LspServerRegistry.tokenize(config.getSettings().getJavaLspCommand());
-        String exe = cmd.isEmpty() ? com.editora.lsp.LspServerRegistry.DEFAULT_JAVA_COMMAND : cmd.get(0);
+    /** The short server name shown in the status bar — the configured command's basename (e.g. jdtls,
+     *  typescript-language-server) for {@code serverId}. */
+    private String serverLabel(String serverId) {
+        String configured = "typescript".equals(serverId)
+                ? config.getSettings().getTypescriptLspCommand()
+                : config.getSettings().getJavaLspCommand();
+        String cmd = configured == null || configured.isBlank()
+                ? com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId) : configured;
+        java.util.List<String> toks = com.editora.lsp.LspServerRegistry.tokenize(cmd);
+        String exe = toks.isEmpty() ? serverId : toks.get(0);
         try {
             return Path.of(exe).getFileName().toString();
         } catch (RuntimeException e) {
@@ -2663,13 +2705,14 @@ public class MainController {
         buffer.setLspCompletionProvider((pos, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
                 lspManager.completion(buffer.getPath(), pos[0], pos[1],
-                        items -> cb.accept(com.editora.lsp.CompletionMapper.map(items)));
+                        items -> cb.accept(com.editora.lsp.CompletionMapper.map(items,
+                                item -> autoImportAccept(buffer, item))));
             } else {
                 cb.accept(java.util.List.of());
             }
         });
         buffer.setLspNavActions(this::lspGotoDefinition, this::lspFindReferences, this::lspShowHover);
-        syncBufferLsp(buffer, lspEnabled() && lspAvailable);
+        syncBufferLsp(buffer);
         ensurePreviewControls(buffer);
         Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
         updateTabMeta(tab, buffer); // replaces the default text/icon with the buffer header (drag handle, pin, dirty)
@@ -3153,7 +3196,7 @@ public class MainController {
             setStatus(tr("status.saved", file));
             refreshGit(); // a save changes the working tree → update gutter + status
             // LSP: a save-as of a new Java file opens it on the server; then notify didSave.
-            syncBufferLsp(buffer, lspEnabled() && lspAvailable);
+            syncBufferLsp(buffer);
             notifyLspSaved(buffer);
             return true;
         } catch (IOException e) {

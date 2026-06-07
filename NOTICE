@@ -31,6 +31,15 @@ The following grammars were instead obtained from the Eclipse tm4e
 
     XML, shell, C, C++, Rust, Ruby, Markdown.
 
+The TypeScript and TypeScriptReact grammars (typescript.tmLanguage.json,
+typescriptreact.tmLanguage.json — also used for JavaScript/JSX) were obtained
+from Microsoft Visual Studio Code under the MIT License:
+
+    https://github.com/microsoft/vscode
+    (extensions/typescript-basics/syntaxes)
+
+    License: MIT  (© Microsoft Corporation)
+
 These remain under their original upstream licenses (predominantly MIT). All
 grammars are redistributed unmodified except markdown.tmLanguage.json, which
 has three regular expressions minimally adjusted for compatibility with the

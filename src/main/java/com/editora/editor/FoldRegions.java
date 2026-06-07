@@ -54,7 +54,8 @@ public final class FoldRegions {
             case "markdown" -> markdown(text);
             case "xml", "html" -> xml(text);
             // Brace-delimited languages fold on matched {} / [].
-            case "java", "json", "c", "cpp", "rust", "go", "kotlin", "groovy", "csharp", "css" ->
+            case "java", "json", "c", "cpp", "rust", "go", "kotlin", "groovy", "csharp", "css",
+                    "javascript", "typescript", "javascriptreact", "typescriptreact" ->
                     braces(text);
             // plaintext and line/indentation-based languages have no delimiter folding.
             default -> List.of();

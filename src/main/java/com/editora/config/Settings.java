@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 8;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -79,6 +79,9 @@ public class Settings {
     private boolean lspSupport = false;
     /** Command to launch the Java language server (JDT LS); blank = resolve "jdtls" on PATH. */
     private String javaLspCommand = "";
+    private String typescriptLspCommand = "";
+    private boolean javaLspEnabled = true;
+    private boolean typescriptLspEnabled = true;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -392,6 +395,30 @@ public class Settings {
 
     public void setJavaLspCommand(String javaLspCommand) {
         this.javaLspCommand = javaLspCommand == null ? "" : javaLspCommand;
+    }
+
+    public String getTypescriptLspCommand() {
+        return typescriptLspCommand == null ? "" : typescriptLspCommand;
+    }
+
+    public void setTypescriptLspCommand(String typescriptLspCommand) {
+        this.typescriptLspCommand = typescriptLspCommand == null ? "" : typescriptLspCommand;
+    }
+
+    public boolean isJavaLspEnabled() {
+        return javaLspEnabled;
+    }
+
+    public void setJavaLspEnabled(boolean javaLspEnabled) {
+        this.javaLspEnabled = javaLspEnabled;
+    }
+
+    public boolean isTypescriptLspEnabled() {
+        return typescriptLspEnabled;
+    }
+
+    public void setTypescriptLspEnabled(boolean typescriptLspEnabled) {
+        this.typescriptLspEnabled = typescriptLspEnabled;
     }
 
     public boolean isPdfLineNumbers() {

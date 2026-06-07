@@ -20,6 +20,15 @@ public final class CompletionMapper {
     }
 
     public static List<Completion> map(List<CompletionItem> items) {
+        return map(items, null);
+    }
+
+    /**
+     * Maps items, attaching {@code onAcceptFor.apply(item)} as each completion's accept hook (e.g. to
+     * resolve + apply a TypeScript auto-import's {@code additionalTextEdits}). A null factory ⇒ no hook.
+     */
+    public static List<Completion> map(List<CompletionItem> items,
+            java.util.function.Function<CompletionItem, Runnable> onAcceptFor) {
         List<Completion> out = new ArrayList<>();
         if (items == null) {
             return out;
@@ -31,9 +40,16 @@ public final class CompletionMapper {
             String label = item.getLabel().strip();
             String insert = insertText(item, label);
             String detail = item.getDetail();
-            out.add(Completion.lsp(label, insert, detail == null ? "" : detail));
+            Runnable onAccept = onAcceptFor == null ? null : onAcceptFor.apply(item);
+            out.add(Completion.lsp(label, insert, detail == null ? "" : detail, onAccept));
         }
         return out;
+    }
+
+    /** Whether {@code item} may carry deferred edits (auto-import) — has resolve data or additional edits. */
+    public static boolean mayHaveAdditionalEdits(CompletionItem item) {
+        return item != null && (item.getData() != null
+                || (item.getAdditionalTextEdits() != null && !item.getAdditionalTextEdits().isEmpty()));
     }
 
     /**

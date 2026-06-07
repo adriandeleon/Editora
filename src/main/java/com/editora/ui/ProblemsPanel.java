@@ -4,9 +4,14 @@ import static com.editora.i18n.Messages.tr;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 
+import com.editora.editor.LanguageRegistry;
 import com.editora.editor.LspDiagnostic;
 
 import javafx.geometry.Insets;
@@ -20,10 +25,10 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 /**
- * The "Problems" tool window: LSP diagnostics across open buffers, grouped by file (Enter / double-click
- * jumps to one). Mirrors {@link SearchPanel} ({@link ToolWindowContent}); jumps are routed back to the
- * controller via {@link Actions}. The controller pushes the current diagnostics map via
- * {@link #setProblems}.
+ * The "Problems" tool window: LSP diagnostics across open buffers, grouped <b>by programming language →
+ * file → diagnostic</b> (Enter / double-click jumps to one; a language/file header toggles). Mirrors
+ * {@link SearchPanel} ({@link ToolWindowContent}); jumps are routed back to the controller via
+ * {@link Actions}. The controller pushes the current diagnostics map via {@link #setProblems}.
  */
 public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
@@ -32,8 +37,11 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         void open(Path file, int line, int col);
     }
 
-    /** A tree row: a file header ({@code diag == null}) or a single diagnostic under it. */
-    private record Row(Path file, LspDiagnostic diag) {
+    /**
+     * A tree row, one of three kinds: a <b>language header</b> ({@code language != null}, no file/diag),
+     * a <b>file header</b> ({@code file != null}, no diag), or a <b>diagnostic</b> ({@code diag != null}).
+     */
+    private record Row(String language, Path file, LspDiagnostic diag) {
     }
 
     private final Actions actions;
@@ -104,13 +112,15 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         if (row.diag() != null) {
             actions.open(row.file(), row.diag().startLine(), row.diag().startCol());
         } else {
-            item.setExpanded(!item.isExpanded());
+            item.setExpanded(!item.isExpanded()); // language or file header
         }
     }
 
-    /** Rebuilds the tree from the current per-file diagnostics (called on the FX thread). */
+    /** Rebuilds the tree, grouping the per-file diagnostics by language → file (called on the FX thread). */
     public void setProblems(Map<Path, List<LspDiagnostic>> byFile) {
-        TreeItem<Row> root = new TreeItem<>();
+        // Bucket the non-empty files by display language name (TreeMap keeps the language headers sorted).
+        Map<String, List<Path>> byLanguage = new TreeMap<>();
+        Map<Path, List<LspDiagnostic>> kept = new HashMap<>();
         int total = 0;
         int files = 0;
         for (var entry : byFile.entrySet()) {
@@ -119,20 +129,48 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
                 continue;
             }
             files++;
-            List<LspDiagnostic> sorted = new ArrayList<>(diags);
-            sorted.sort((a, b) -> a.startLine() != b.startLine()
-                    ? Integer.compare(a.startLine(), b.startLine())
-                    : Integer.compare(a.startCol(), b.startCol()));
-            TreeItem<Row> fileItem = new TreeItem<>(new Row(entry.getKey(), null));
-            fileItem.setExpanded(true);
-            for (LspDiagnostic d : sorted) {
-                fileItem.getChildren().add(new TreeItem<>(new Row(entry.getKey(), d)));
-                total++;
+            total += diags.size();
+            kept.put(entry.getKey(), diags);
+            byLanguage.computeIfAbsent(languageOf(entry.getKey()), k -> new ArrayList<>())
+                    .add(entry.getKey());
+        }
+        TreeItem<Row> root = new TreeItem<>();
+        for (var langEntry : byLanguage.entrySet()) {
+            TreeItem<Row> langItem = new TreeItem<>(new Row(langEntry.getKey(), null, null));
+            langItem.setExpanded(true);
+            List<Path> paths = langEntry.getValue();
+            paths.sort(Comparator.comparing(p -> p.getFileName().toString().toLowerCase(Locale.ROOT)));
+            for (Path file : paths) {
+                List<LspDiagnostic> sorted = new ArrayList<>(kept.get(file));
+                sorted.sort((a, b) -> a.startLine() != b.startLine()
+                        ? Integer.compare(a.startLine(), b.startLine())
+                        : Integer.compare(a.startCol(), b.startCol()));
+                TreeItem<Row> fileItem = new TreeItem<>(new Row(null, file, null));
+                fileItem.setExpanded(true);
+                for (LspDiagnostic d : sorted) {
+                    fileItem.getChildren().add(new TreeItem<>(new Row(null, file, d)));
+                }
+                langItem.getChildren().add(fileItem);
             }
-            root.getChildren().add(fileItem);
+            root.getChildren().add(langItem);
         }
         tree.setRoot(root);
         summary.setText(total == 0 ? tr("problems.none") : tr("problems.summary", total, files));
+    }
+
+    /** Friendly display name for a file's programming language (proper nouns, deliberately untranslated). */
+    private static String languageOf(Path file) {
+        String name = LanguageRegistry.forFileName(file.getFileName().toString());
+        return switch (name) {
+            case "java" -> "Java";
+            case "javascript" -> "JavaScript";
+            case "javascriptreact" -> "JavaScript (JSX)";
+            case "typescript" -> "TypeScript";
+            case "typescriptreact" -> "TypeScript (TSX)";
+            default -> name == null || name.isEmpty()
+                    ? "Other"
+                    : Character.toUpperCase(name.charAt(0)) + name.substring(1);
+        };
     }
 
     @Override
@@ -143,22 +181,18 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Renders a file header (name + count) or a diagnostic (severity glyph + line + message). */
+    /** Renders a language header, a file header (name + count), or a diagnostic (severity glyph + line). */
     private static final class RowCell extends TreeCell<Row> {
         @Override
         protected void updateItem(Row row, boolean empty) {
             super.updateItem(row, empty);
-            getStyleClass().removeAll("search-file-row", "problem-error", "problem-warning",
-                    "problem-info");
+            getStyleClass().removeAll("search-file-row", "problem-lang-row", "problem-error",
+                    "problem-warning", "problem-info");
             if (empty || row == null) {
                 setText(null);
                 return;
             }
-            if (row.diag() == null) {
-                int count = getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
-                setText(row.file().getFileName() + "  (" + count + ")");
-                getStyleClass().add("search-file-row");
-            } else {
+            if (row.diag() != null) {
                 LspDiagnostic d = row.diag();
                 String msg = d.message().replace('\n', ' ').strip();
                 if (msg.length() > 200) {
@@ -170,7 +204,25 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
                     case WARNING -> "problem-warning";
                     default -> "problem-info";
                 });
+            } else if (row.file() != null) {
+                int count = getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
+                setText(row.file().getFileName() + "  (" + count + ")");
+                getStyleClass().add("search-file-row");
+            } else {
+                setText(row.language() + "  (" + diagnosticCount() + ")");
+                getStyleClass().add("problem-lang-row");
             }
+        }
+
+        /** Total diagnostics under a language header = sum of its file children's diagnostic counts. */
+        private int diagnosticCount() {
+            int count = 0;
+            if (getTreeItem() != null) {
+                for (TreeItem<Row> fileItem : getTreeItem().getChildren()) {
+                    count += fileItem.getChildren().size();
+                }
+            }
+            return count;
         }
 
         private static String glyph(LspDiagnostic.Severity s) {

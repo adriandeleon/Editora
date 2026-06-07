@@ -29,7 +29,8 @@ public final class Commenter {
 
     public static CommentStyle styleFor(String language) {
         return switch (language == null ? "" : language) {
-            case "java", "c", "cpp", "csharp", "rust", "go", "kotlin", "groovy", "json" ->
+            case "java", "c", "cpp", "csharp", "rust", "go", "kotlin", "groovy", "json",
+                 "javascript", "typescript", "javascriptreact", "typescriptreact" ->
                     new CommentStyle("//", "/*", "*/");
             case "css" -> new CommentStyle(null, "/*", "*/");
             case "sql" -> new CommentStyle("--", "/*", "*/");

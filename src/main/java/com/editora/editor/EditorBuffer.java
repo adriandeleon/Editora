@@ -791,10 +791,15 @@ public class EditorBuffer implements TabContent {
 
     // --- LSP (Language Server Protocol) integration ---------------------------------------------
 
-    /** Whether this buffer has a language server (Phase 1: Java only). Kept here so {@code editor} need
-     *  not depend on the {@code lsp} package. */
+    /** Language ids that have a bundled language server (Java + the TypeScript server's JS/TS/JSX/TSX).
+     *  Hardcoded here so {@code editor} need not depend on the {@code lsp} package (kept in sync with
+     *  {@code LspServerRegistry}). */
+    private static final java.util.Set<String> LSP_LANGUAGES = java.util.Set.of(
+            "java", "javascript", "javascriptreact", "typescript", "typescriptreact");
+
+    /** Whether this buffer's language has a language server. */
     public boolean isLspLanguage() {
-        return "java".equals(language);
+        return LSP_LANGUAGES.contains(language);
     }
 
     /** Injects the debounced didChange sink (text → controller → server); null disables change notices. */
@@ -2842,12 +2847,53 @@ public class EditorBuffer implements TabContent {
         } finally {
             Platform.runLater(() -> suppressCompletion = false);
         }
+        if (c.onAccept() != null) {
+            c.onAccept().run(); // e.g. resolve + apply a TypeScript auto-import's additionalTextEdits
+        }
         a.requestFocus();
     }
 
     private void hideCompletion() {
         hidePopup();
         hideGhost();
+    }
+
+    /**
+     * Applies language-server text edits (e.g. a completion's {@code additionalTextEdits} — the
+     * {@code import} line a TypeScript auto-import adds). Edits are applied bottom-to-top so earlier
+     * offsets stay valid; out-of-range positions are clamped/skipped. Inert when not editable.
+     */
+    public void applyLspEdits(java.util.List<LspTextEdit> edits) {
+        if (edits == null || edits.isEmpty() || !isEditable()) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        java.util.List<LspTextEdit> sorted = new java.util.ArrayList<>(edits);
+        sorted.sort((x, y) -> Integer.compare(lspEditOffset(a, y), lspEditOffset(a, x)));
+        for (LspTextEdit e : sorted) {
+            try {
+                int s = lspOffset(a, e.startLine(), e.startCol());
+                int en = lspOffset(a, e.endLine(), e.endCol());
+                a.replaceText(Math.min(s, en), Math.max(s, en), e.newText() == null ? "" : e.newText());
+            } catch (RuntimeException ignored) {
+                // Position no longer valid (document changed under us) — skip this edit.
+            }
+        }
+    }
+
+    private static int lspEditOffset(CodeArea a, LspTextEdit e) {
+        try {
+            return lspOffset(a, e.startLine(), e.startCol());
+        } catch (RuntimeException ex) {
+            return 0;
+        }
+    }
+
+    /** Absolute offset for a 0-based LSP line/character, clamped to the document/paragraph bounds. */
+    private static int lspOffset(CodeArea a, int line, int col) {
+        int par = Math.max(0, Math.min(line, a.getParagraphs().size() - 1));
+        int len = a.getParagraph(par).length();
+        return a.getAbsolutePosition(par, Math.max(0, Math.min(col, len)));
     }
 
     private static void toggleStyleClass(Node node, String styleClass, boolean on) {

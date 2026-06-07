@@ -1266,6 +1266,7 @@
 }
 
 /* LSP: Problems tool window severity colors + the diagnostic hover tooltip. */
+.problems-panel .problem-lang-row { -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
 .problems-panel .problem-error { -fx-text-fill: #e5484d; }
 .problems-panel .problem-warning { -fx-text-fill: #e2a03f; }
 .problems-panel .problem-info { -fx-text-fill: #4c8eda; }
