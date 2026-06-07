@@ -5879,6 +5879,27 @@ public class MainController {
         return a.getAbsolutePosition(par, col);
     }
 
+    /**
+     * Target column for a "smart" line start (C-a): the first non-whitespace column — the beginning of
+     * the line's <em>text</em> — or column 0 when the caret is already there (so a second press toggles
+     * to the true line start). Pure for unit testing.
+     */
+    static int smartLineStartColumn(String lineText, int caretCol) {
+        int indent = 0;
+        while (indent < lineText.length()
+                && (lineText.charAt(indent) == ' ' || lineText.charAt(indent) == '\t')) {
+            indent++;
+        }
+        return caretCol == indent ? 0 : indent;
+    }
+
+    /** Absolute offset for the smart line start on the caret's current line (see {@link #smartLineStartColumn}). */
+    private static int smartLineStart(CodeArea a) {
+        int par = a.getCurrentParagraph();
+        int col = smartLineStartColumn(a.getParagraph(par).getText(), a.getCaretColumn());
+        return a.getAbsolutePosition(par, col);
+    }
+
     /** Start of the blank line below the current block, or document end (Emacs M-}). */
     private static int forwardParagraph(CodeArea a) {
         int n = a.getParagraphs().size();
@@ -6192,8 +6213,10 @@ public class MainController {
                 () -> transpose(com.editora.editor.Transposer::transposeWords)));
         registry.register(Command.of("edit.transposeLines",
                 () -> transpose(com.editora.editor.Transposer::transposeLines)));
+        // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
+        // a second press toggles to the true line start (column 0).
         registry.register(Command.of("nav.lineStart",
-                () -> moveAndFollow(a -> a.lineStart(selPolicy()))));
+                () -> moveAndFollow(a -> a.moveTo(smartLineStart(a), selPolicy()))));
         registry.register(Command.of("nav.lineEnd",
                 () -> moveAndFollow(a -> a.lineEnd(selPolicy()))));
         registry.register(Command.of("nav.docStart",

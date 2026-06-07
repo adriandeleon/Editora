@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`C-a` (beginning of line) is now "smart home"** — the first press moves to the beginning of the
+  line's *text* (the first non-whitespace character); a second press toggles to the true line start
+  (column 0). Shift-extends selection as before. Applies in the editor for every file type.
+
 ### Added
 
 - **LSP support for C/C++, C#, HTML, CSS, Kotlin, Lua, Dockerfile, SQL, Terraform, and TOML** — ten more
