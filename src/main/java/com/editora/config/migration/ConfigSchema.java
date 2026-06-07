@@ -25,18 +25,21 @@ public enum ConfigSchema {
     // showToolStripe; v4 → v5 added the Mermaid flags; v5 → v6 added the PDF-export options; v6 → v7
     // added the LSP flags (lspSupport/javaLspCommand); v7 → v8 added the TypeScript server; v8 → v9 added
     // Python; v9 → v10 added the XML/JSON/Bash servers; v10 → v11 added the YAML/Go/Rust/PHP/Ruby
-    // servers — all additive, so identity.
-    SETTINGS(Settings.SCHEMA_VERSION, 1, Map.of(
-            1, ConfigMigrations::identity,
-            2, ConfigMigrations::identity,
-            3, ConfigMigrations::identity,
-            4, ConfigMigrations::identity,
-            5, ConfigMigrations::identity,
-            6, ConfigMigrations::identity,
-            7, ConfigMigrations::identity,
-            8, ConfigMigrations::identity,
-            9, ConfigMigrations::identity,
-            10, ConfigMigrations::identity)),
+    // servers; v11 → v12 added the C/C++/HTML/CSS/Kotlin/Lua/Dockerfile/SQL/Terraform/TOML servers;
+    // v12 → v13 added the C# server — all additive, so identity.
+    SETTINGS(Settings.SCHEMA_VERSION, 1, Map.<Integer, Migration>ofEntries(
+            Map.entry(1, (Migration) ConfigMigrations::identity),
+            Map.entry(2, (Migration) ConfigMigrations::identity),
+            Map.entry(3, (Migration) ConfigMigrations::identity),
+            Map.entry(4, (Migration) ConfigMigrations::identity),
+            Map.entry(5, (Migration) ConfigMigrations::identity),
+            Map.entry(6, (Migration) ConfigMigrations::identity),
+            Map.entry(7, (Migration) ConfigMigrations::identity),
+            Map.entry(8, (Migration) ConfigMigrations::identity),
+            Map.entry(9, (Migration) ConfigMigrations::identity),
+            Map.entry(10, (Migration) ConfigMigrations::identity),
+            Map.entry(11, (Migration) ConfigMigrations::identity),
+            Map.entry(12, (Migration) ConfigMigrations::identity))),
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of()),

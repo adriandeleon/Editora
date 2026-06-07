@@ -28,9 +28,35 @@ class IndenterTest {
         assertEquals(Style.PY, Indenter.styleFor("yaml"));
         assertEquals(Style.SHELL, Indenter.styleFor("shell"));
         assertEquals(Style.RUBY, Indenter.styleFor("ruby"));
+        assertEquals(Style.LUA, Indenter.styleFor("lua"));
+        assertEquals(Style.BRACES, Indenter.styleFor("terraform"));
         assertEquals(Style.XML, Indenter.styleFor("html"));
         assertEquals(Style.PLAIN, Indenter.styleFor("ini"));
         assertEquals(Style.PLAIN, Indenter.styleFor(null));
+    }
+
+    @Test
+    void luaIndentsAfterBlockOpeners() {
+        // `then`/`do`/`function(...)` open a block → next line indents one level (tab, no indent precedent).
+        assertEquals("\n\t", enterAtEnd("if x then", "lua"));
+        assertEquals("\n\t", enterAtEnd("for i = 1, 10 do", "lua"));
+        assertEquals("\n\t", enterAtEnd("local function f(a, b)", "lua"));
+        assertEquals("\n\t", enterAtEnd("while running do", "lua"));
+        assertEquals("\n\t", enterAtEnd("t = {", "lua"));
+        // A space-indented opener: unit is inferred as spaces, and the block indents one more level.
+        assertEquals("\n        ", enterAtEnd("    if y then", "lua"));
+        // A non-opening statement just inherits the indent.
+        assertEquals("\n    ", enterAtEnd("    x = x + 1", "lua"));
+        // An inline `... end` on one line is net-zero, so no extra indent.
+        assertEquals("\n", enterAtEnd("if x then return 1 end", "lua"));
+    }
+
+    @Test
+    void luaClosersDeIndentViaKeyword() {
+        assertTrue(Indenter.completesCloserKeyword(Style.LUA, "    end"));
+        assertTrue(Indenter.completesCloserKeyword(Style.LUA, "  until"));
+        assertTrue(Indenter.completesCloserKeyword(Style.LUA, "\telseif"));
+        assertFalse(Indenter.completesCloserKeyword(Style.LUA, "    x = 1"));
     }
 
     @Test

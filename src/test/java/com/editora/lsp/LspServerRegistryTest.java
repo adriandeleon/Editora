@@ -19,8 +19,8 @@ class LspServerRegistryTest {
         assertTrue(LspServerRegistry.isSupported("typescript"));
         assertTrue(LspServerRegistry.isSupported("typescriptreact"));
         assertTrue(LspServerRegistry.isSupported("python"));
-        // kotlin has highlighting but no bundled language server.
-        assertFalse(LspServerRegistry.isSupported("kotlin"));
+        // groovy has highlighting but no bundled language server.
+        assertFalse(LspServerRegistry.isSupported("groovy"));
         assertFalse(LspServerRegistry.isSupported("plaintext"));
         assertEquals("java", LspServerRegistry.serverIdFor("java"));
         // One TypeScript server serves all four JS/TS dialects.
@@ -28,8 +28,8 @@ class LspServerRegistryTest {
         assertEquals("typescript", LspServerRegistry.serverIdFor("javascriptreact"));
         assertEquals("typescript", LspServerRegistry.serverIdFor("typescript"));
         assertEquals("typescript", LspServerRegistry.serverIdFor("typescriptreact"));
-        assertNull(LspServerRegistry.serverIdFor("kotlin"));
-        assertNull(LspServerRegistry.specFor("kotlin", Map.of()));
+        assertNull(LspServerRegistry.serverIdFor("groovy"));
+        assertNull(LspServerRegistry.specFor("groovy", Map.of()));
     }
 
     @Test
@@ -103,6 +103,46 @@ class LspServerRegistryTest {
         assertTrue(LspServerRegistry.specFor("rust", Map.of()).rootMarkers().contains("Cargo.toml"));
         assertTrue(LspServerRegistry.specFor("php", Map.of()).rootMarkers().contains("composer.json"));
         assertTrue(LspServerRegistry.specFor("ruby", Map.of()).rootMarkers().contains("Gemfile"));
+    }
+
+    @Test
+    void systemsLanguageServersDefaultsAndMarkers() {
+        // clangd is one server serving BOTH c and cpp (like the TypeScript server's JS/TS family).
+        assertEquals("clangd", LspServerRegistry.serverIdFor("c"));
+        assertEquals("clangd", LspServerRegistry.serverIdFor("cpp"));
+        assertEquals(List.of("clangd"), LspServerRegistry.specFor("c", Map.of()).command());
+        assertEquals(List.of("clangd"), LspServerRegistry.specFor("cpp", Map.of()).command());
+        assertTrue(LspServerRegistry.specFor("c", Map.of()).rootMarkers().contains("compile_commands.json"));
+
+        // The remaining eight: server id == language id.
+        for (String lang : List.of("html", "css", "kotlin", "lua", "dockerfile", "sql", "terraform", "toml")) {
+            assertTrue(LspServerRegistry.isSupported(lang), lang);
+            assertEquals(lang, LspServerRegistry.serverIdFor(lang), lang);
+        }
+        assertEquals(List.of("vscode-html-language-server", "--stdio"),
+                LspServerRegistry.specFor("html", Map.of()).command());
+        assertEquals(List.of("vscode-css-language-server", "--stdio"),
+                LspServerRegistry.specFor("css", Map.of()).command());
+        assertEquals(List.of("kotlin-language-server"),
+                LspServerRegistry.specFor("kotlin", Map.of()).command());
+        assertEquals(List.of("lua-language-server"), LspServerRegistry.specFor("lua", Map.of()).command());
+        assertEquals(List.of("docker-langserver", "--stdio"),
+                LspServerRegistry.specFor("dockerfile", Map.of()).command());
+        assertEquals(List.of("sqls"), LspServerRegistry.specFor("sql", Map.of()).command());
+        assertEquals(List.of("terraform-ls", "serve"),
+                LspServerRegistry.specFor("terraform", Map.of()).command());
+        assertEquals(List.of("taplo", "lsp", "stdio"), LspServerRegistry.specFor("toml", Map.of()).command());
+
+        assertTrue(LspServerRegistry.specFor("kotlin", Map.of()).rootMarkers().contains("build.gradle.kts"));
+        assertTrue(LspServerRegistry.specFor("terraform", Map.of()).rootMarkers().contains(".terraform"));
+    }
+
+    @Test
+    void csharpServerDefaultsAndMarkers() {
+        assertTrue(LspServerRegistry.isSupported("csharp"));
+        assertEquals("csharp", LspServerRegistry.serverIdFor("csharp"));
+        assertEquals(List.of("csharp-ls"), LspServerRegistry.specFor("csharp", Map.of()).command());
+        assertTrue(LspServerRegistry.specFor("csharp", Map.of()).rootMarkers().contains(".git"));
     }
 
     @Test

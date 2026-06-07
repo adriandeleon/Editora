@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LSP support for C/C++, C#, HTML, CSS, Kotlin, Lua, Dockerfile, SQL, Terraform, and TOML** — ten more
+  language servers (twenty-one total): **clangd** (one server for both C and C++), **csharp-ls** (C#),
+  **vscode-html-language-server**, **vscode-css-language-server**, **kotlin-language-server**,
+  **lua-language-server**, **docker-langserver**, **sqls** (SQL), **terraform-ls**, and **taplo**
+  (TOML). Each has its own enable toggle + command field in Settings → LSP (auto-detected on PATH, never
+  bundled, off by default with the rest of LSP). Lua, Dockerfile, Terraform, and TOML had no syntax
+  support, so each gained a bundled TextMate grammar (from the shiki tm-grammars collection) — they now
+  highlight, fold, and comment-toggle. `Dockerfile` (and `Containerfile`) is recognized by filename, not
+  just extension. TOML moved off the borrowed INI grammar onto its own. Settings schema 11→12→13
+  (additive-identity migrations).
+- **Lua auto-indent** — Lua now has a dedicated indent style (`do`/`then`/`function(…)`/`repeat`/`{`
+  open a block; `end`/`else`/`elseif`/`until` de-indent), so pressing Enter inside Lua blocks indents
+  like the other keyword-block languages instead of just inheriting the previous line.
+
 - **LSP support for YAML, Go, Rust, PHP, and Ruby** — five more language servers (eleven total):
   **YAML** via `yaml-language-server`, **Go** via `gopls`, **Rust** via `rust-analyzer`, **PHP** via
   [phpactor](https://github.com/phpactor/phpactor), and **Ruby** via

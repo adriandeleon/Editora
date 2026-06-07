@@ -50,21 +50,40 @@ public final class LanguageRegistry {
             Map.entry("bat", "batchfile"), Map.entry("cmd", "batchfile"),
             Map.entry("yaml", "yaml"), Map.entry("yml", "yaml"),
             Map.entry("ini", "ini"), Map.entry("cfg", "ini"), Map.entry("conf", "ini"),
-            Map.entry("sql", "sql"), Map.entry("ddl", "sql"), Map.entry("dml", "sql"));
+            Map.entry("sql", "sql"), Map.entry("ddl", "sql"), Map.entry("dml", "sql"),
+            Map.entry("lua", "lua"),
+            Map.entry("dockerfile", "dockerfile"),
+            // Terraform / HCL — brace-delimited blocks.
+            Map.entry("tf", "terraform"), Map.entry("tfvars", "terraform"), Map.entry("hcl", "terraform"),
+            // TOML — its own grammar + the taplo LSP (was previously highlighted via the INI grammar).
+            Map.entry("toml", "toml"), Map.entry("tml", "toml"));
 
     private LanguageRegistry() {
     }
 
-    /** The language name for {@code fileName}'s extension, or {@code "plaintext"} if unrecognized. */
+    /** The language name for {@code fileName} (by extension, plus a few extension-less filename rules
+     *  like {@code Dockerfile}), or {@code "plaintext"} if unrecognized. */
     public static String forFileName(String fileName) {
         if (fileName == null) {
             return PLAINTEXT;
         }
-        int dot = fileName.lastIndexOf('.');
-        if (dot < 0 || dot == fileName.length() - 1) {
+        // Reduce a path to its last segment so filename rules work regardless of how the caller passes it.
+        String base = fileName;
+        int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+        if (slash >= 0) {
+            base = base.substring(slash + 1);
+        }
+        String lower = base.toLowerCase(Locale.ROOT);
+        // Dockerfile / Containerfile are extension-less (or carry a tag suffix, e.g. Dockerfile.dev).
+        if (lower.equals("dockerfile") || lower.equals("containerfile")
+                || lower.startsWith("dockerfile.") || lower.startsWith("containerfile.")) {
+            return "dockerfile";
+        }
+        int dot = base.lastIndexOf('.');
+        if (dot < 0 || dot == base.length() - 1) {
             return PLAINTEXT;
         }
-        String ext = fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
+        String ext = base.substring(dot + 1).toLowerCase(Locale.ROOT);
         return BY_EXTENSION.getOrDefault(ext, PLAINTEXT);
     }
 

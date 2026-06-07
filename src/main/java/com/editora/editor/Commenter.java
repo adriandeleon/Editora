@@ -34,7 +34,10 @@ public final class Commenter {
                     new CommentStyle("//", "/*", "*/");
             case "css" -> new CommentStyle(null, "/*", "*/");
             case "sql" -> new CommentStyle("--", "/*", "*/");
-            case "python", "shell", "yaml", "ruby" -> new CommentStyle("#", null, null);
+            case "lua" -> new CommentStyle("--", "--[[", "]]");
+            case "terraform" -> new CommentStyle("#", "/*", "*/");
+            case "python", "shell", "yaml", "ruby", "dockerfile", "toml" ->
+                    new CommentStyle("#", null, null);
             case "powershell" -> new CommentStyle("#", "<#", "#>");
             case "ini" -> new CommentStyle(";", null, null);
             case "batchfile" -> new CommentStyle("REM", null, null);

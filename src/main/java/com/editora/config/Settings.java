@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 11;
+    public static final int SCHEMA_VERSION = 13;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -89,6 +89,16 @@ public class Settings {
     private String rustLspCommand = "";
     private String phpLspCommand = "";
     private String rubyLspCommand = "";
+    private String clangdLspCommand = "";
+    private String htmlLspCommand = "";
+    private String cssLspCommand = "";
+    private String kotlinLspCommand = "";
+    private String luaLspCommand = "";
+    private String dockerfileLspCommand = "";
+    private String sqlLspCommand = "";
+    private String terraformLspCommand = "";
+    private String tomlLspCommand = "";
+    private String csharpLspCommand = "";
     private boolean javaLspEnabled = true;
     private boolean typescriptLspEnabled = true;
     private boolean pythonLspEnabled = true;
@@ -100,6 +110,16 @@ public class Settings {
     private boolean rustLspEnabled = true;
     private boolean phpLspEnabled = true;
     private boolean rubyLspEnabled = true;
+    private boolean clangdLspEnabled = true;
+    private boolean htmlLspEnabled = true;
+    private boolean cssLspEnabled = true;
+    private boolean kotlinLspEnabled = true;
+    private boolean luaLspEnabled = true;
+    private boolean dockerfileLspEnabled = true;
+    private boolean sqlLspEnabled = true;
+    private boolean terraformLspEnabled = true;
+    private boolean tomlLspEnabled = true;
+    private boolean csharpLspEnabled = true;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -581,6 +601,166 @@ public class Settings {
 
     public void setRubyLspEnabled(boolean rubyLspEnabled) {
         this.rubyLspEnabled = rubyLspEnabled;
+    }
+
+    public String getClangdLspCommand() {
+        return clangdLspCommand == null ? "" : clangdLspCommand;
+    }
+
+    public void setClangdLspCommand(String clangdLspCommand) {
+        this.clangdLspCommand = clangdLspCommand == null ? "" : clangdLspCommand;
+    }
+
+    public boolean isClangdLspEnabled() {
+        return clangdLspEnabled;
+    }
+
+    public void setClangdLspEnabled(boolean clangdLspEnabled) {
+        this.clangdLspEnabled = clangdLspEnabled;
+    }
+
+    public String getHtmlLspCommand() {
+        return htmlLspCommand == null ? "" : htmlLspCommand;
+    }
+
+    public void setHtmlLspCommand(String htmlLspCommand) {
+        this.htmlLspCommand = htmlLspCommand == null ? "" : htmlLspCommand;
+    }
+
+    public boolean isHtmlLspEnabled() {
+        return htmlLspEnabled;
+    }
+
+    public void setHtmlLspEnabled(boolean htmlLspEnabled) {
+        this.htmlLspEnabled = htmlLspEnabled;
+    }
+
+    public String getCssLspCommand() {
+        return cssLspCommand == null ? "" : cssLspCommand;
+    }
+
+    public void setCssLspCommand(String cssLspCommand) {
+        this.cssLspCommand = cssLspCommand == null ? "" : cssLspCommand;
+    }
+
+    public boolean isCssLspEnabled() {
+        return cssLspEnabled;
+    }
+
+    public void setCssLspEnabled(boolean cssLspEnabled) {
+        this.cssLspEnabled = cssLspEnabled;
+    }
+
+    public String getKotlinLspCommand() {
+        return kotlinLspCommand == null ? "" : kotlinLspCommand;
+    }
+
+    public void setKotlinLspCommand(String kotlinLspCommand) {
+        this.kotlinLspCommand = kotlinLspCommand == null ? "" : kotlinLspCommand;
+    }
+
+    public boolean isKotlinLspEnabled() {
+        return kotlinLspEnabled;
+    }
+
+    public void setKotlinLspEnabled(boolean kotlinLspEnabled) {
+        this.kotlinLspEnabled = kotlinLspEnabled;
+    }
+
+    public String getLuaLspCommand() {
+        return luaLspCommand == null ? "" : luaLspCommand;
+    }
+
+    public void setLuaLspCommand(String luaLspCommand) {
+        this.luaLspCommand = luaLspCommand == null ? "" : luaLspCommand;
+    }
+
+    public boolean isLuaLspEnabled() {
+        return luaLspEnabled;
+    }
+
+    public void setLuaLspEnabled(boolean luaLspEnabled) {
+        this.luaLspEnabled = luaLspEnabled;
+    }
+
+    public String getDockerfileLspCommand() {
+        return dockerfileLspCommand == null ? "" : dockerfileLspCommand;
+    }
+
+    public void setDockerfileLspCommand(String dockerfileLspCommand) {
+        this.dockerfileLspCommand = dockerfileLspCommand == null ? "" : dockerfileLspCommand;
+    }
+
+    public boolean isDockerfileLspEnabled() {
+        return dockerfileLspEnabled;
+    }
+
+    public void setDockerfileLspEnabled(boolean dockerfileLspEnabled) {
+        this.dockerfileLspEnabled = dockerfileLspEnabled;
+    }
+
+    public String getSqlLspCommand() {
+        return sqlLspCommand == null ? "" : sqlLspCommand;
+    }
+
+    public void setSqlLspCommand(String sqlLspCommand) {
+        this.sqlLspCommand = sqlLspCommand == null ? "" : sqlLspCommand;
+    }
+
+    public boolean isSqlLspEnabled() {
+        return sqlLspEnabled;
+    }
+
+    public void setSqlLspEnabled(boolean sqlLspEnabled) {
+        this.sqlLspEnabled = sqlLspEnabled;
+    }
+
+    public String getTerraformLspCommand() {
+        return terraformLspCommand == null ? "" : terraformLspCommand;
+    }
+
+    public void setTerraformLspCommand(String terraformLspCommand) {
+        this.terraformLspCommand = terraformLspCommand == null ? "" : terraformLspCommand;
+    }
+
+    public boolean isTerraformLspEnabled() {
+        return terraformLspEnabled;
+    }
+
+    public void setTerraformLspEnabled(boolean terraformLspEnabled) {
+        this.terraformLspEnabled = terraformLspEnabled;
+    }
+
+    public String getTomlLspCommand() {
+        return tomlLspCommand == null ? "" : tomlLspCommand;
+    }
+
+    public void setTomlLspCommand(String tomlLspCommand) {
+        this.tomlLspCommand = tomlLspCommand == null ? "" : tomlLspCommand;
+    }
+
+    public boolean isTomlLspEnabled() {
+        return tomlLspEnabled;
+    }
+
+    public void setTomlLspEnabled(boolean tomlLspEnabled) {
+        this.tomlLspEnabled = tomlLspEnabled;
+    }
+
+    public String getCsharpLspCommand() {
+        return csharpLspCommand == null ? "" : csharpLspCommand;
+    }
+
+    public void setCsharpLspCommand(String csharpLspCommand) {
+        this.csharpLspCommand = csharpLspCommand == null ? "" : csharpLspCommand;
+    }
+
+    public boolean isCsharpLspEnabled() {
+        return csharpLspEnabled;
+    }
+
+    public void setCsharpLspEnabled(boolean csharpLspEnabled) {
+        this.csharpLspEnabled = csharpLspEnabled;
     }
 
     public boolean isPdfLineNumbers() {

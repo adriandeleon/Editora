@@ -117,7 +117,8 @@ public final class ProcessRunner {
             System.getProperty("user.home") + "/.volta/bin",
             System.getProperty("user.home") + "/.npm-global/bin",
             System.getProperty("user.home") + "/go/bin",        // Go (gopls and other `go install` bins)
-            System.getProperty("user.home") + "/.cargo/bin");   // Rust (rust-analyzer, cargo-installed bins)
+            System.getProperty("user.home") + "/.cargo/bin",    // Rust (rust-analyzer, cargo-installed bins)
+            System.getProperty("user.home") + "/.dotnet/tools"); // .NET global tools (csharp-ls, etc.)
 
     private static volatile String cachedPath;
 

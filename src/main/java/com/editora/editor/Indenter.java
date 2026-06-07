@@ -20,7 +20,7 @@ public final class Indenter {
     private Indenter() {
     }
 
-    public enum Style { BRACES, XML, PY, SHELL, RUBY, PLAIN }
+    public enum Style { BRACES, XML, PY, SHELL, RUBY, LUA, PLAIN }
 
     /** The text to insert for a newline and the caret offset within it (relative to the insert start). */
     public record EnterEdit(String insert, int caretOffset) {
@@ -29,16 +29,18 @@ public final class Indenter {
     private static final Set<String> SHELL_CLOSERS = Set.of("fi", "done", "esac", "else", "elif", ";;");
     private static final Set<String> RUBY_CLOSERS =
             Set.of("end", "else", "elsif", "when", "rescue", "ensure");
+    private static final Set<String> LUA_CLOSERS = Set.of("end", "else", "elseif", "until");
 
     public static Style styleFor(String language) {
         return switch (language == null ? "" : language) {
             case "java", "c", "cpp", "csharp", "rust", "go", "kotlin", "groovy", "css", "json", "php",
-                 "powershell", "sql", "batchfile",
+                 "powershell", "sql", "batchfile", "terraform",
                  "javascript", "typescript", "javascriptreact", "typescriptreact" -> Style.BRACES;
             case "xml", "html" -> Style.XML;
             case "python", "yaml" -> Style.PY;
             case "shell" -> Style.SHELL;
             case "ruby" -> Style.RUBY;
+            case "lua" -> Style.LUA;
             default -> Style.PLAIN;
         };
     }
@@ -91,7 +93,7 @@ public final class Indenter {
 
     /** True when typing {@code c} is a closing bracket that should de-indent for the style. */
     public static boolean isCloserChar(Style style, char c) {
-        return (style == Style.BRACES || style == Style.SHELL || style == Style.RUBY)
+        return (style == Style.BRACES || style == Style.SHELL || style == Style.RUBY || style == Style.LUA)
                 && (c == '}' || c == ')' || c == ']');
     }
 
@@ -102,7 +104,8 @@ public final class Indenter {
      */
     public static boolean completesCloserKeyword(Style style, String lineUpToCaretPlusChar) {
         Set<String> closers = style == Style.SHELL ? SHELL_CLOSERS
-                : style == Style.RUBY ? RUBY_CLOSERS : Set.of();
+                : style == Style.RUBY ? RUBY_CLOSERS
+                : style == Style.LUA ? LUA_CLOSERS : Set.of();
         if (closers.isEmpty()) {
             return false;
         }
@@ -158,8 +161,27 @@ public final class Indenter {
                     || startsWithWord(code, "else", "elif");
             case RUBY -> last == '{' || endsWithDoBlock(code) || rubyOpener(code)
                     || startsWithWord(code, "else", "elsif", "when", "rescue", "ensure", "begin");
+            case LUA -> last == '{' || luaOpener(code);
             case PLAIN -> false;
         };
+    }
+
+    /**
+     * A Lua line that opens a block: ends with a block keyword ({@code do}/{@code then}/{@code repeat}),
+     * begins an {@code else}/{@code elseif} branch, or is a {@code function} definition (contains the
+     * {@code function} keyword and ends with its parameter list) — unless the block is already closed on
+     * the same line (e.g. an inline {@code ... end}).
+     */
+    private static boolean luaOpener(String code) {
+        if (code.matches(".*\\bend\\b.*")) {
+            return false; // opener and its `end` on one line — net zero indent
+        }
+        if (endsWithWord(code, "do", "then") || code.strip().equals("repeat")
+                || startsWithWord(code, "else", "elseif")) {
+            return true;
+        }
+        // function definition: `function f(...)`, `local function f(...)`, `x = function(...)`, anon `function()`
+        return code.matches(".*\\bfunction\\b\\s*[\\w.:]*\\s*\\([^)]*\\)\\s*");
     }
 
     /** Ends with {@code do}, optionally followed by a {@code |block params|}. */

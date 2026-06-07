@@ -111,11 +111,22 @@ public final class GrammarRegistry {
         if (fileName == null) {
             return null;
         }
-        int dot = fileName.lastIndexOf('.');
-        if (dot < 0 || dot == fileName.length() - 1) {
+        String base = fileName;
+        int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+        if (slash >= 0) {
+            base = base.substring(slash + 1);
+        }
+        String lower = base.toLowerCase(Locale.ROOT);
+        // Dockerfile / Containerfile are extension-less (or carry a tag suffix, e.g. Dockerfile.dev).
+        if (lower.equals("dockerfile") || lower.equals("containerfile")
+                || lower.startsWith("dockerfile.") || lower.startsWith("containerfile.")) {
+            return "source.dockerfile";
+        }
+        int dot = base.lastIndexOf('.');
+        if (dot < 0 || dot == base.length() - 1) {
             return null;
         }
-        String ext = fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
+        String ext = base.substring(dot + 1).toLowerCase(Locale.ROOT);
         return extensionToScope.get(ext);
     }
 
@@ -146,6 +157,10 @@ public final class GrammarRegistry {
         scopeToResource.put("source.ts", "typescript");
         scopeToResource.put("source.tsx", "typescriptreact");
         scopeToResource.put("source.php", "php");
+        scopeToResource.put("source.lua", "lua");
+        scopeToResource.put("source.dockerfile", "dockerfile");
+        scopeToResource.put("source.hcl.terraform", "terraform");
+        scopeToResource.put("source.toml", "toml");
 
         // file extension -> scope name
         mapExtensions("source.java", "java");
@@ -167,7 +182,7 @@ public final class GrammarRegistry {
         mapExtensions("source.css", "css");
         mapExtensions("text.html.basic", "html", "htm", "xhtml");
         mapExtensions("source.yaml", "yaml", "yml");
-        mapExtensions("source.ini", "ini", "cfg", "conf", "properties", "toml");
+        mapExtensions("source.ini", "ini", "cfg", "conf", "properties");
         mapExtensions("source.sql", "sql", "ddl", "dml");
         mapExtensions("source.mermaid", "mmd", "mermaid");
         // The TypeScript grammar tokenizes plain JS well, so .js/.mjs/.cjs reuse source.ts and
@@ -176,6 +191,10 @@ public final class GrammarRegistry {
         mapExtensions("source.tsx", "tsx", "jsx");
         // PHP: source.php embeds text.html.basic/source.css/source.sql/source.json/text.xml (all bundled).
         mapExtensions("source.php", "php", "phtml", "php3", "php4", "php5", "phps");
+        mapExtensions("source.lua", "lua");
+        mapExtensions("source.dockerfile", "dockerfile"); // bare "Dockerfile" handled in scopeForFileName
+        mapExtensions("source.hcl.terraform", "tf", "tfvars", "hcl");
+        mapExtensions("source.toml", "toml", "tml");
     }
 
     private void mapExtensions(String scope, String... extensions) {

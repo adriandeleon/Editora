@@ -21,7 +21,9 @@ Most grammars were obtained from the shiki "tm-grammars" collection:
 These are aggregated by shiki from their respective upstream projects, each
 under its original license (predominantly MIT, with some under other permissive
 licenses such as Apache-2.0 or BSD); see the upstream repository above for the
-per-grammar license and source attribution.
+per-grammar license and source attribution. This source includes the Lua,
+Dockerfile, Terraform (HCL), and TOML grammars (lua/dockerfile/terraform/toml
+.tmLanguage.json).
 
 The following grammars were instead obtained from the Eclipse tm4e
 "language_pack" (which curates grammars for the tm4e engine used here):

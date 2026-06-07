@@ -217,7 +217,9 @@ public class MainController {
     /** Known LSP server ids (probe/shutdown loops iterate these). */
     private static final String[] LSP_SERVER_IDS =
             {"java", "typescript", "python", "xml", "json", "bash",
-             "yaml", "go", "rust", "php", "ruby"};
+             "yaml", "go", "rust", "php", "ruby",
+             "clangd", "html", "css", "kotlin", "lua", "dockerfile", "sql", "terraform", "toml",
+             "csharp"};
     private ProblemsPanel problemsPanel;
     private ToolWindow problemsToolWindow;
     /** Run: streams a Java 25 compact source file's output into the Run tool window. */
@@ -1489,7 +1491,17 @@ public class MainController {
                 java.util.Map.entry("go", s.getGoLspCommand()),
                 java.util.Map.entry("rust", s.getRustLspCommand()),
                 java.util.Map.entry("php", s.getPhpLspCommand()),
-                java.util.Map.entry("ruby", s.getRubyLspCommand())));
+                java.util.Map.entry("ruby", s.getRubyLspCommand()),
+                java.util.Map.entry("clangd", s.getClangdLspCommand()),
+                java.util.Map.entry("html", s.getHtmlLspCommand()),
+                java.util.Map.entry("css", s.getCssLspCommand()),
+                java.util.Map.entry("kotlin", s.getKotlinLspCommand()),
+                java.util.Map.entry("lua", s.getLuaLspCommand()),
+                java.util.Map.entry("dockerfile", s.getDockerfileLspCommand()),
+                java.util.Map.entry("sql", s.getSqlLspCommand()),
+                java.util.Map.entry("terraform", s.getTerraformLspCommand()),
+                java.util.Map.entry("toml", s.getTomlLspCommand()),
+                java.util.Map.entry("csharp", s.getCsharpLspCommand())));
         if (problemsToolWindow != null) {
             toolWindows.setAvailable(problemsToolWindow, on);
         }
@@ -1545,6 +1557,16 @@ public class MainController {
             case "rust" -> s.isRustLspEnabled();
             case "php" -> s.isPhpLspEnabled();
             case "ruby" -> s.isRubyLspEnabled();
+            case "clangd" -> s.isClangdLspEnabled();
+            case "html" -> s.isHtmlLspEnabled();
+            case "css" -> s.isCssLspEnabled();
+            case "kotlin" -> s.isKotlinLspEnabled();
+            case "lua" -> s.isLuaLspEnabled();
+            case "dockerfile" -> s.isDockerfileLspEnabled();
+            case "sql" -> s.isSqlLspEnabled();
+            case "terraform" -> s.isTerraformLspEnabled();
+            case "toml" -> s.isTomlLspEnabled();
+            case "csharp" -> s.isCsharpLspEnabled();
             default -> s.isJavaLspEnabled();
         };
     }
@@ -1563,6 +1585,16 @@ public class MainController {
             case "rust" -> s.getRustLspCommand();
             case "php" -> s.getPhpLspCommand();
             case "ruby" -> s.getRubyLspCommand();
+            case "clangd" -> s.getClangdLspCommand();
+            case "html" -> s.getHtmlLspCommand();
+            case "css" -> s.getCssLspCommand();
+            case "kotlin" -> s.getKotlinLspCommand();
+            case "lua" -> s.getLuaLspCommand();
+            case "dockerfile" -> s.getDockerfileLspCommand();
+            case "sql" -> s.getSqlLspCommand();
+            case "terraform" -> s.getTerraformLspCommand();
+            case "toml" -> s.getTomlLspCommand();
+            case "csharp" -> s.getCsharpLspCommand();
             default -> s.getJavaLspCommand();
         };
     }

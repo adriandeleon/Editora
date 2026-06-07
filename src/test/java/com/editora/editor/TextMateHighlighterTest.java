@@ -84,6 +84,33 @@ class TextMateHighlighterTest {
     }
 
     @Test
+    void newlyBundledGrammarsLoadAndTokenize() {
+        // Lua, Dockerfile, Terraform, and TOML grammars were bundled for their LSP support — verify each
+        // loads through tm4e and produces spans (a malformed grammar would yield null from forFileName).
+        record Case(String file, String text, String expectStyle) { }
+        for (Case c : List.of(
+                new Case("init.lua", "local x = 1\nfunction f() return x end\n", "keyword"),
+                new Case("Dockerfile", "FROM alpine:3\nRUN echo hi\n", "keyword"),
+                new Case("main.tf", "resource \"aws_s3_bucket\" \"b\" {\n  bucket = \"x\"\n}\n", "string"),
+                new Case("config.toml", "[server]\nport = 8080\n", "number"))) {
+            IGrammar g = GrammarRegistry.shared().forFileName(c.file());
+            assertNotNull(g, c.file() + " grammar should load");
+            StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(c.text(), g);
+            assertNotNull(spans, c.file() + " should tokenize");
+            assertEquals(c.text().length(), spans.length());
+            assertTrue(hasStyle(spans, c.expectStyle()),
+                    c.file() + " expected a " + c.expectStyle() + " span");
+        }
+    }
+
+    @Test
+    void dockerfileResolvesByBareFilename() {
+        // "Dockerfile" has no extension — both registries must still recognize it.
+        assertNotNull(GrammarRegistry.shared().forFileName("Dockerfile"));
+        assertNotNull(GrammarRegistry.shared().forFileName("Dockerfile.dev"));
+    }
+
+    @Test
     void multiLineBlockCommentStaysComment() {
         IGrammar java = GrammarRegistry.shared().forFileName("A.java");
         assertNotNull(java);
