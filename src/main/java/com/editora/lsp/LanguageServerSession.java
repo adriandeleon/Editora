@@ -141,8 +141,14 @@ final class LanguageServerSession implements LanguageClient {
                 pending.clear();
             }
             toRun.forEach(Runnable::run);
+            // Signal the UI that the handshake completed so the status-bar loading bar stops. The
+            // jdtls-specific language/status notification (handled below) only fires for JDT LS and only
+            // once a project is ready; this universal signal covers every server — and a clean file that
+            // never publishes a diagnostic — with a null message so it doesn't write to the echo area.
+            onStatus.accept("ServiceReady", null);
         }).exceptionally(t -> {
             LOG.log(Level.WARNING, "initialize failed", t);
+            onStatus.accept("Error", null); // also stop the loading bar on a failed handshake
             return null;
         });
     }

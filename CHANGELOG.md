@@ -101,6 +101,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Language servers installed via a Node version manager (nvm/fnm/asdf) showed "not found" in the
+  packaged app** — a Finder-launched `.app` inherits a stripped `PATH` that omits the version manager's
+  bin dir (e.g. nvm's `~/.nvm/versions/node/<ver>/bin`), so npm-global servers like
+  `typescript-language-server`, `pyright-langserver`, `vscode-json-language-server`,
+  `bash-language-server`, and `yaml-language-server` couldn't be located even though they were installed.
+  `ProcessRunner` now resolves the user's **login-shell `PATH`** once (running `$SHELL -l -i -c` with a
+  timeout) and folds it into the PATH it gives every subprocess, recovering all version-manager and
+  profile-set dirs at a stroke. This also helps Git (a Homebrew `git`) and Mermaid (`mmdc`/`maid`).
+- **LSP loading bar in the status bar never stopped spinning** — it was only cleared by incoming
+  diagnostics or jdtls's vendor-specific status message, so a file with no diagnostics (or any non-jdtls
+  server) left it running indefinitely. It now clears as soon as the universal LSP `initialize`
+  handshake completes.
+
 - **Intermittent black screen / render glitches in the packaged macOS app after opening many files** —
   JavaFX's GPU texture pool defaults to a 512 MB ceiling; with enough open files (each holding editor +
   overlay + minimap textures, plus cached preview/diagram images) it filled up and the render thread

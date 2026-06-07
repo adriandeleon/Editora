@@ -9,7 +9,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -122,21 +124,21 @@ public final class ProcessRunner {
 
     private static volatile String cachedPath;
 
-    /** The inherited PATH plus any {@link #EXTRA_PATH_DIRS} that exist and aren't already present. */
+    /**
+     * The inherited PATH, the user's <em>login-shell</em> PATH (so a GUI-launched {@code .app} picks up
+     * version-manager dirs like nvm/fnm/asdf/volta and Homebrew that the profile sets — see
+     * {@link #loginShellPath()}), and any {@link #EXTRA_PATH_DIRS} that exist — de-duplicated, in that
+     * priority order. Cached after the first call. Best warmed off the FX thread (see the warm-up in
+     * {@code LspManager}) since the login-shell probe spawns a short-lived process.
+     */
     public static String augmentedPath() {
         String cached = cachedPath;
         if (cached != null) {
             return cached;
         }
-        List<String> dirs = new ArrayList<>();
-        String existing = System.getenv("PATH");
-        if (existing != null && !existing.isBlank()) {
-            for (String d : existing.split(File.pathSeparator)) {
-                if (!d.isBlank()) {
-                    dirs.add(d);
-                }
-            }
-        }
+        LinkedHashSet<String> dirs = new LinkedHashSet<>();
+        addPathEntries(dirs, System.getenv("PATH"));
+        addPathEntries(dirs, loginShellPath());
         for (String d : EXTRA_PATH_DIRS) {
             if (!dirs.contains(d) && Files.isDirectory(Path.of(d))) {
                 dirs.add(d);
@@ -145,6 +147,117 @@ public final class ProcessRunner {
         String built = String.join(File.pathSeparator, dirs);
         cachedPath = built;
         return built;
+    }
+
+    /** Splits a {@code PATH}-style string and adds each non-blank entry to {@code dirs} (set ⇒ de-dups). */
+    private static void addPathEntries(LinkedHashSet<String> dirs, String path) {
+        if (path == null || path.isBlank()) {
+            return;
+        }
+        for (String d : path.split(File.pathSeparator)) {
+            if (!d.isBlank()) {
+                dirs.add(d);
+            }
+        }
+    }
+
+    private static volatile boolean loginPathResolved;
+    private static volatile String loginShellPath;
+
+    /**
+     * The {@code PATH} reported by the user's login shell, or {@code null} (Windows, no usable shell, or
+     * the probe failed/timed out). A Finder-launched {@code .app} inherits a stripped PATH that omits
+     * everything the user's shell profile adds — most importantly Node version managers (nvm/fnm/asdf)
+     * whose bin dir is version-specific and so can't be hardcoded in {@link #EXTRA_PATH_DIRS}. Running an
+     * interactive login shell once and reading its {@code $PATH} recovers all of them at a stroke (the
+     * approach VS Code's {@code resolveShellEnv} uses). Resolved once and cached.
+     */
+    private static String loginShellPath() {
+        if (loginPathResolved) {
+            return loginShellPath;
+        }
+        synchronized (ProcessRunner.class) {
+            if (loginPathResolved) {
+                return loginShellPath;
+            }
+            loginShellPath = queryLoginShellPath();
+            loginPathResolved = true;
+            return loginShellPath;
+        }
+    }
+
+    private static final String PATH_MARK_BEGIN = "__EDITORA_PATH_BEGIN__";
+    private static final String PATH_MARK_END = "__EDITORA_PATH_END__";
+
+    private static String queryLoginShellPath() {
+        if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+            return null; // Windows has no POSIX login-shell PATH convention
+        }
+        String shell = System.getenv("SHELL");
+        if (shell == null || shell.isBlank()) {
+            shell = "/bin/zsh";
+        }
+        if (!Files.isExecutable(Path.of(shell))) {
+            return null;
+        }
+        // Interactive (-i) + login (-l) so the profile files that init version managers run; markers
+        // fence the PATH off from any banner/prompt an interactive rc may print. printf is a shell
+        // builtin, so it works even if PATH is empty. stderr is discarded and stdin is /dev/null so a
+        // chatty or input-waiting rc can't block or hang us.
+        List<String> cmd = List.of(shell, "-l", "-i", "-c",
+                "printf '%s%s%s' '" + PATH_MARK_BEGIN + "' \"$PATH\" '" + PATH_MARK_END + "'");
+        Process p = null;
+        try {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+            p = pb.start();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            Process proc = p;
+            Thread reader = new Thread(() -> {
+                try (InputStream in = proc.getInputStream()) {
+                    in.transferTo(out);
+                } catch (IOException ignored) {
+                    // process killed / pipe closed — partial output is handled by the marker parse
+                }
+            }, "login-shell-path-reader");
+            reader.setDaemon(true);
+            reader.start();
+            if (!p.waitFor(5, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return null;
+            }
+            reader.join(500);
+            return extractMarked(out.toString(StandardCharsets.UTF_8), PATH_MARK_BEGIN, PATH_MARK_END);
+        } catch (IOException e) {
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } finally {
+            if (p != null && p.isAlive()) {
+                p.destroyForcibly();
+            }
+        }
+    }
+
+    /** Returns the substring of {@code s} strictly between {@code begin} and {@code end}, or {@code null}
+     *  if either marker is missing or the span is empty/blank. Pure — unit-tested. */
+    static String extractMarked(String s, String begin, String end) {
+        if (s == null) {
+            return null;
+        }
+        int i = s.indexOf(begin);
+        if (i < 0) {
+            return null;
+        }
+        int from = i + begin.length();
+        int j = s.indexOf(end, from);
+        if (j < 0) {
+            return null;
+        }
+        String inner = s.substring(from, j);
+        return inner.isBlank() ? null : inner;
     }
 
     /** Rewrites a bare command name (e.g. {@code mmdc}) to its absolute path on the augmented PATH, so it
