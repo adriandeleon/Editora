@@ -80,6 +80,7 @@ public final class MessageLogPopup {
                 msg.setMinHeight(Region.USE_PREF_SIZE);
                 setPrefWidth(0);
                 MenuItem copy = new MenuItem(tr("messagelog.copy"));
+                copy.setGraphic(Icons.copy());
                 copy.setOnAction(e -> {
                     if (!getListView().getSelectionModel().getSelectedItems().contains(getItem())) {
                         getListView().getSelectionModel().clearAndSelect(getIndex());

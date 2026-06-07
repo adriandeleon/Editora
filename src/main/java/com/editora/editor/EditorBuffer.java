@@ -736,6 +736,7 @@ public class EditorBuffer implements TabContent {
                 items.add(new SeparatorMenuItem());
                 boolean hasSelection = area.getSelection().getLength() > 0;
                 MenuItem addNote = new MenuItem(tr(hasSelection ? "editmenu.addNoteSelection" : "editmenu.addNote"));
+                addNote.setGraphic(MenuIcons.note());
                 addNote.setOnAction(ev -> addNoteHandler.accept(this));
                 items.add(addNote);
             }
@@ -767,10 +768,13 @@ public class EditorBuffer implements TabContent {
      *  first so it targets the right-clicked symbol, then runs the controller-supplied action. */
     private List<MenuItem> lspMenuItems(int offset) {
         MenuItem def = new MenuItem(tr("command.lsp.gotoDefinition"));
+        def.setGraphic(MenuIcons.gotoDefinition());
         def.setOnAction(e -> { area.moveTo(offset); lspGotoDefinitionAction.run(); });
         MenuItem refs = new MenuItem(tr("command.lsp.findReferences"));
+        refs.setGraphic(MenuIcons.find());
         refs.setOnAction(e -> { area.moveTo(offset); lspFindReferencesAction.run(); });
         MenuItem hover = new MenuItem(tr("command.lsp.hover"));
+        hover.setGraphic(MenuIcons.about());
         hover.setOnAction(e -> { area.moveTo(offset); lspHoverAction.run(); });
         return List.of(def, refs, hover);
     }
@@ -778,14 +782,19 @@ public class EditorBuffer implements TabContent {
     /** Markdown inline-format actions for the right-click menu (markdown buffers only). */
     private List<MenuItem> markdownMenuItems() {
         MenuItem bold = new MenuItem(tr("command.markdown.bold"));
+        bold.setGraphic(MenuIcons.bold());
         bold.setOnAction(e -> formatInline("**"));
         MenuItem italic = new MenuItem(tr("command.markdown.italic"));
+        italic.setGraphic(MenuIcons.italic());
         italic.setOnAction(e -> formatInline("*"));
         MenuItem strike = new MenuItem(tr("command.markdown.strikethrough"));
+        strike.setGraphic(MenuIcons.strikethrough());
         strike.setOnAction(e -> formatInline("~~"));
         MenuItem code = new MenuItem(tr("command.markdown.code"));
+        code.setGraphic(MenuIcons.code());
         code.setOnAction(e -> formatInline("`"));
         MenuItem link = new MenuItem(tr("command.markdown.link"));
+        link.setGraphic(MenuIcons.link());
         link.setOnAction(e -> formatLinkFromClipboard());
         return List.of(bold, italic, strike, code, link);
     }
@@ -795,21 +804,27 @@ public class EditorBuffer implements TabContent {
         boolean hasSelection = area.getSelection().getLength() > 0;
         boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
         MenuItem cut = new MenuItem(tr("editmenu.cut"));
+        cut.setGraphic(MenuIcons.cut());
         cut.setOnAction(e -> area.cut());
         cut.setDisable(!hasSelection);
         MenuItem copy = new MenuItem(tr("editmenu.copy"));
+        copy.setGraphic(MenuIcons.copy());
         copy.setOnAction(e -> area.copy());
         copy.setDisable(!hasSelection);
         MenuItem paste = new MenuItem(tr("editmenu.paste"));
+        paste.setGraphic(MenuIcons.paste());
         paste.setOnAction(e -> area.paste());
         paste.setDisable(!hasClipboardText);
         MenuItem undo = new MenuItem(tr("editmenu.undo"));
+        undo.setGraphic(MenuIcons.undo());
         undo.setOnAction(e -> area.undo());
         undo.setDisable(!area.isUndoAvailable());
         MenuItem redo = new MenuItem(tr("editmenu.redo"));
+        redo.setGraphic(MenuIcons.redo());
         redo.setOnAction(e -> area.redo());
         redo.setDisable(!area.isRedoAvailable());
         MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
+        selectAll.setGraphic(MenuIcons.selectAll());
         selectAll.setOnAction(e -> area.selectAll());
         return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo,
                 new SeparatorMenuItem(), selectAll);
@@ -821,11 +836,13 @@ public class EditorBuffer implements TabContent {
         List<String> suggestions = spellChecker.suggest(hit.word());
         if (suggestions.isEmpty()) {
             MenuItem none = new MenuItem(tr("editmenu.noSuggestions"));
+            none.setGraphic(MenuIcons.spellcheck());
             none.setDisable(true);
             items.add(none);
         } else {
             for (String s : suggestions) {
                 MenuItem mi = new MenuItem(s);
+                mi.setGraphic(MenuIcons.spellcheck());
                 mi.getStyleClass().add("spell-suggestion");
                 mi.setOnAction(e -> {
                     if (isEditable()) {
@@ -837,8 +854,10 @@ public class EditorBuffer implements TabContent {
         }
         items.add(new SeparatorMenuItem());
         MenuItem add = new MenuItem(tr("editmenu.addToDictionary"));
+        add.setGraphic(MenuIcons.add());
         add.setOnAction(e -> addToDictionary(hit.word()));
         MenuItem ignore = new MenuItem(tr("editmenu.ignore"));
+        ignore.setGraphic(MenuIcons.block());
         ignore.setOnAction(e -> {
             spellChecker.ignore(hit.word());
             spellOverlay.refresh();
@@ -1363,12 +1382,16 @@ public class EditorBuffer implements TabContent {
     private void showPreviewContextMenu(double screenX, double screenY) {
         if (previewContextMenu == null) {
             MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
+            selectAll.setGraphic(MenuIcons.selectAll());
             selectAll.setOnAction(ev -> copyPreviewToClipboard());
             MenuItem copy = new MenuItem(tr("editmenu.copy"));
+            copy.setGraphic(MenuIcons.copy());
             copy.setOnAction(ev -> copyPreviewToClipboard());
             MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
+            pdf.setGraphic(MenuIcons.download());
             pdf.setOnAction(ev -> previewExportPdfHandler.run());
             MenuItem print = new MenuItem(tr("command.preview.print"));
+            print.setGraphic(MenuIcons.print());
             print.setOnAction(ev -> previewPrintHandler.run());
             previewContextMenu = new javafx.scene.control.ContextMenu(
                     selectAll, copy, new SeparatorMenuItem(), pdf, print);

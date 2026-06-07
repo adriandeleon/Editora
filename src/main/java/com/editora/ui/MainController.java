@@ -470,6 +470,7 @@ public class MainController {
         welcomeTab = tab;
         // Welcome is not a document: only a Close action (no Save/Rename/Pin).
         MenuItem close = new MenuItem(tr("menu.close"));
+        close.setGraphic(Icons.closeTab());
         close.setOnAction(e -> closeTab(tab));
         tab.setContextMenu(new ContextMenu(close));
         tab.setOnClosed(e -> {
@@ -3614,26 +3615,37 @@ public class MainController {
     /** Builds and attaches the right-click context menu for a tab. */
     private void installTabMenu(Tab tab, EditorBuffer buffer) {
         MenuItem save = new MenuItem(tr("menu.save"));
+        save.setGraphic(Icons.save());
         save.setOnAction(e -> save(buffer));
         MenuItem saveAs = new MenuItem(tr("menu.saveAs"));
+        saveAs.setGraphic(Icons.saveAs());
         saveAs.setOnAction(e -> saveAs(buffer));
         MenuItem close = new MenuItem(tr("menu.close"));
+        close.setGraphic(Icons.closeTab());
         close.setOnAction(e -> closeTab(tab));
         MenuItem closeOthers = new MenuItem(tr("menu.closeOthers"));
+        closeOthers.setGraphic(Icons.closeTab());
         closeOthers.setOnAction(e -> closeOtherTabs(tab));
         MenuItem closeAll = new MenuItem(tr("menu.closeAll"));
+        closeAll.setGraphic(Icons.closeTab());
         closeAll.setOnAction(e -> closeAllTabs());
         MenuItem closeUnmodified = new MenuItem(tr("menu.closeUnmodified"));
+        closeUnmodified.setGraphic(Icons.closeTab());
         closeUnmodified.setOnAction(e -> closeUnmodifiedTabs());
         MenuItem closeLeft = new MenuItem(tr("menu.closeLeft"));
+        closeLeft.setGraphic(Icons.closeTab());
         closeLeft.setOnAction(e -> closeTabsToLeft(tab));
         MenuItem closeRight = new MenuItem(tr("menu.closeRight"));
+        closeRight.setGraphic(Icons.closeTab());
         closeRight.setOnAction(e -> closeTabsToRight(tab));
         MenuItem copyPath = new MenuItem(tr("menu.copyPath"));
+        copyPath.setGraphic(Icons.copy());
         copyPath.setOnAction(e -> copyPath(buffer));
         MenuItem pin = new MenuItem(tr("menu.pin"));
+        pin.setGraphic(Icons.pin());
         pin.setOnAction(e -> togglePin(tab));
         MenuItem rename = new MenuItem(tr("menu.rename"));
+        rename.setGraphic(Icons.edit());
         rename.setOnAction(e -> renameFile(buffer, tab));
 
         ContextMenu menu = new ContextMenu(

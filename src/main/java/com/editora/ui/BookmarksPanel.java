@@ -452,8 +452,10 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         /** "Move Up"/"Move Down" items that act on this row (disabled while a filter is active). */
         private void addMoveItems(ContextMenu menu) {
             MenuItem up = new MenuItem(tr("bookmarks.moveUp"));
+            up.setGraphic(Icons.arrowUp());
             up.setOnAction(e -> { tree.getSelectionModel().select(getTreeItem()); moveSelected(-1); });
             MenuItem down = new MenuItem(tr("bookmarks.moveDown"));
+            down.setGraphic(Icons.arrowDown());
             down.setOnAction(e -> { tree.getSelectionModel().select(getTreeItem()); moveSelected(1); });
             up.setDisable(!reorderEnabled());
             down.setDisable(!reorderEnabled());
@@ -481,6 +483,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 setGraphic(Icons.fileSheet());
                 setTooltip(new Tooltip(f.file().toString()));
                 MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
+                deleteAll.setGraphic(Icons.trash());
                 deleteAll.setOnAction(e -> deleteFile(f));
                 ContextMenu menu = new ContextMenu(deleteAll);
                 addMoveItems(menu);
@@ -490,8 +493,10 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 setGraphic(Icons.bookmark());
                 setTooltip(new Tooltip(m.file() + ":" + (m.bm().line() + 1)));
                 MenuItem edit = new MenuItem(tr("bookmarks.editNoteItem"));
+                edit.setGraphic(Icons.edit());
                 edit.setOnAction(e -> editNote(m));
                 MenuItem delete = new MenuItem(tr("bookmarks.deleteItem"));
+                delete.setGraphic(Icons.trash());
                 delete.setOnAction(e -> deleteMark(m));
                 ContextMenu menu = new ContextMenu(edit, delete);
                 addMoveItems(menu);

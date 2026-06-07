@@ -320,19 +320,23 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         private ContextMenu buildMenu(FileRow f) {
             FileEntry e = f.entry();
             MenuItem open = new MenuItem(tr("gitpanel.menu.open"));
+            open.setGraphic(Icons.fileSheet());
             open.setOnAction(a -> actions.open(e.path()));
             ContextMenu menu = new ContextMenu(open);
             if (f.group() == Group.STAGED) {
                 MenuItem unstage = new MenuItem(tr("gitpanel.menu.unstage"));
+                unstage.setGraphic(Icons.remove());
                 unstage.setOnAction(a -> actions.unstage(e.path()));
                 menu.getItems().add(unstage);
             } else {
                 MenuItem stage = new MenuItem(tr("gitpanel.menu.stage"));
+                stage.setGraphic(Icons.stageAll());
                 stage.setOnAction(a -> actions.stage(e.path()));
                 menu.getItems().add(stage);
             }
             if (f.group() != Group.STAGED) {
                 MenuItem discard = new MenuItem(e.untracked() ? tr("gitpanel.menu.deleteUntracked") : tr("gitpanel.menu.discard"));
+                discard.setGraphic(Icons.trash());
                 discard.setOnAction(a -> actions.discard(e.path(), e.untracked()));
                 menu.getItems().add(discard);
             }

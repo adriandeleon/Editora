@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Icons on every right-click menu item** — all context menus (editor surface + Markdown preview, tab
+  strip, Project / Git / Bookmarks / Notes / Message-log panels) now show a leading Material-style glyph
+  next to each item, matching the toolbar and tool-window icons. Editor-package menus use a new
+  `MenuIcons` glyph factory (so the `editor` package stays independent of `ui`); colors track the theme
+  via the existing `.toolbar-icon` style, so there's no new CSS.
+
 - **Markdown preview right-click menu** — the preview pane now has a context menu with **Select All**,
   **Copy** (both copy the preview's rendered plain text — markup stripped, via commonmark
   `TextContentRenderer`), **Export to PDF**, and **Print**. Copy puts the visible text on the clipboard.

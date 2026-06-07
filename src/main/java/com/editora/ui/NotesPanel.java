@@ -187,6 +187,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
             if (item instanceof FileRow f) {
                 setText(fileName(f.fileKey()));
                 MenuItem deleteAll = new MenuItem(tr("notes.deleteAllInFile"));
+                deleteAll.setGraphic(Icons.trash());
                 deleteAll.setOnAction(e -> actions.deleteAll(f.fileKey()));
                 setContextMenu(new ContextMenu(deleteAll));
             } else if (item instanceof NoteRow n) {
@@ -202,12 +203,15 @@ public class NotesPanel extends VBox implements ToolWindowContent {
 
         private ContextMenu noteMenu(NoteRow n) {
             MenuItem edit = new MenuItem(tr("notes.editBody"));
+            edit.setGraphic(Icons.edit());
             edit.setOnAction(e -> actions.editBody(n.fileKey(), n.note()));
             boolean resolved = n.note().status() == NoteStatus.RESOLVED;
             MenuItem toggle = new MenuItem(resolved ? tr("notes.reopen") : tr("notes.resolve"));
+            toggle.setGraphic(resolved ? Icons.refresh() : Icons.check());
             toggle.setOnAction(e -> actions.setStatus(n.fileKey(), n.note(),
                     resolved ? NoteStatus.ACTIVE : NoteStatus.RESOLVED));
             MenuItem delete = new MenuItem(tr("notes.delete"));
+            delete.setGraphic(Icons.trash());
             delete.setOnAction(e -> actions.delete(n.fileKey(), n.note()));
             return new ContextMenu(edit, toggle, new SeparatorMenuItem(), delete);
         }

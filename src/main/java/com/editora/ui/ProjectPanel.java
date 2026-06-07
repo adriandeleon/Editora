@@ -590,10 +590,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir) {
             MenuItem rename = new MenuItem(tr("project.menu.rename"));
+            rename.setGraphic(Icons.edit());
             rename.setOnAction(e -> renameItem(treeItem));
             ContextMenu menu = new ContextMenu(rename);
             if (!isDir) {
                 MenuItem delete = new MenuItem(tr("project.menu.delete"));
+                delete.setGraphic(Icons.trash());
                 delete.setOnAction(e -> deleteItem(treeItem));
                 menu.getItems().add(delete);
             }

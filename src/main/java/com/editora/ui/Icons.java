@@ -259,4 +259,30 @@ final class Icons {
                 + "11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 "
                 + "1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z");
     }
+
+    /** Material "edit" (pencil) — rename / edit-note context-menu items. */
+    static Node edit() {
+        return of("M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-"
+                + "2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z");
+    }
+
+    /** Material "arrow_upward" — "Move Up" context-menu item. */
+    static Node arrowUp() {
+        return of("M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z");
+    }
+
+    /** Material "arrow_downward" — "Move Down" context-menu item. */
+    static Node arrowDown() {
+        return of("M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z");
+    }
+
+    /** Material "check" / done — "Resolve" note context-menu item. */
+    static Node check() {
+        return of("M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z");
+    }
+
+    /** Material "remove" (minus) — "Unstage" git context-menu item. */
+    static Node remove() {
+        return of("M19 13H5v-2h14v2z");
+    }
 }
