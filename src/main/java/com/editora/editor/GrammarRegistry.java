@@ -72,6 +72,21 @@ public final class GrammarRegistry {
         return scope == null ? null : grammarForScope(scope);
     }
 
+    /** Whether {@code fileName}'s extension maps to a bundled grammar at all (regardless of load state). */
+    public synchronized boolean hasGrammarFor(String fileName) {
+        return scopeForFileName(fileName) != null;
+    }
+
+    /**
+     * The grammar for {@code fileName} <em>only if already loaded</em> — never triggers a (possibly slow)
+     * Oniguruma compile. Returns {@code null} when not bundled <em>or</em> not yet loaded, so a caller can
+     * apply a cached grammar instantly and otherwise load it off-thread (see {@code hasGrammarFor}).
+     */
+    public synchronized IGrammar cachedForFileName(String fileName) {
+        String scope = scopeForFileName(fileName);
+        return scope == null ? null : grammarCache.get(scope);
+    }
+
     /**
      * The grammar for a language name (e.g. {@code "java"}, as produced by {@link LanguageRegistry}),
      * or {@code null} if no grammar is bundled for it.

@@ -160,16 +160,35 @@ final class WhitespaceOverlay extends Region {
         String line = area.getParagraph(paragraph).getText();
         int len = line.length();
         g.setTextAlign(TextAlignment.CENTER);
+        // getCharacterBoundsOnScreen is a synchronous layout query; a space-indented line would issue one
+        // per leading space. In a monospace font adjacent non-tab glyphs have equal-width, perfectly
+        // abutting boxes, so within a contiguous run of spaces we advance arithmetically from a single
+        // real query. Tabs (variable width → tab stops) are always queried, and any non-whitespace gap
+        // forces the next marker to re-query — so positions stay exact.
+        Bounds prev = null; // bounds of the previous whitespace marker, for arithmetic advance
+        int prevIndex = -2; // its index (contiguity check); prevTab guards advancing past a tab box
+        boolean prevTab = false;
         for (int i = 0; i < len; i++) {
             char c = line.charAt(i);
             if (c != ' ' && c != '\t') {
-                continue;
+                continue; // a non-whitespace gap; the next marker re-queries (contiguity broken)
             }
-            int abs = area.getAbsolutePosition(paragraph, i);
-            Bounds local = toLocal(area.getCharacterBoundsOnScreen(abs, abs + 1).orElse(null));
+            Bounds local;
+            if (c == ' ' && prev != null && i == prevIndex + 1 && !prevTab) {
+                double cw = prev.getWidth(); // a single-cell advance from the last real/derived box
+                local = new javafx.geometry.BoundingBox(prev.getMaxX(), prev.getMinY(), cw, prev.getHeight());
+            } else {
+                int abs = area.getAbsolutePosition(paragraph, i);
+                local = toLocal(area.getCharacterBoundsOnScreen(abs, abs + 1).orElse(null));
+            }
             if (local == null) {
+                prev = null;
+                prevIndex = -2;
                 continue;
             }
+            prev = local; // keep tracking even when off-screen so contiguity (and advance) holds
+            prevIndex = i;
+            prevTab = c == '\t';
             double cx = local.getMinX() + local.getWidth() / 2;
             if (cx < 0 || cx > w) {
                 continue; // off-screen horizontally

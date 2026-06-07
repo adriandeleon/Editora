@@ -290,6 +290,8 @@ public class EditorBuffer implements TabContent {
     private java.util.function.Consumer<String> onAddToDictionary = w -> { };
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
     private long highlightGen;
+    /** Bumped on every language/grammar change (FX thread only); drops a stale deferred grammar load. */
+    private long languageGen;
     /** Per-line grammar end-states from the last tokenization (FX-thread confined), so an edit can
      *  re-highlight only from the changed line forward instead of the whole document. */
     private final java.util.ArrayList<org.eclipse.tm4e.core.grammar.IStateStack> lineStates =
@@ -1393,6 +1395,7 @@ public class EditorBuffer implements TabContent {
         unsubscribePreview();
         previewGen++;   // discard any in-flight preview result for this (now closed) buffer
         highlightGen++; // discard any in-flight highlight result
+        languageGen++;  // discard any in-flight deferred grammar load
     }
 
     /**
@@ -2162,9 +2165,42 @@ public class EditorBuffer implements TabContent {
         this.path = path;
         String fileName = path == null ? null : path.getFileName().toString();
         String name = fileName == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(fileName);
-        IGrammar g = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
-        applyLanguage(name, g);
+        GrammarRegistry reg = GrammarRegistry.shared();
+        if (fileName == null || !reg.hasGrammarFor(fileName)) {
+            applyLanguage(name, null); // no bundled grammar for this type — nothing to load
+        } else {
+            IGrammar cached = reg.cachedForFileName(fileName);
+            if (cached != null) {
+                applyLanguage(name, cached); // already compiled this session — apply instantly (no flash)
+            } else {
+                applyLanguageDeferred(name, fileName); // first file of this type: compile off the FX thread
+            }
+        }
         recomputeRun(); // a Save-As to a runnable file type can show the gutter Run glyph
+    }
+
+    /**
+     * Applies the language immediately (plain text, with fold/spell modes updated) but resolves its
+     * not-yet-cached grammar <b>off the FX thread</b>, then re-highlights when it arrives — so opening the
+     * first file of a given type during session restore doesn't block the UI on the Oniguruma grammar
+     * compile. A {@link #languageGen} guard (bumped by every {@link #applyLanguage}) drops the result if a
+     * later setPath / language override / dispose superseded this load. The brief unstyled flash matches
+     * the existing deferred content-load behavior; cached files (every subsequent open) skip this path.
+     */
+    private void applyLanguageDeferred(String name, String fileName) {
+        applyLanguage(name, null); // bumps languageGen; show plain text now
+        long gen = languageGen;
+        HIGHLIGHT_POOL.execute(() -> {
+            IGrammar g = GrammarRegistry.shared().forFileName(fileName);
+            Platform.runLater(() -> {
+                if (gen != languageGen) {
+                    return; // a newer language change superseded this load
+                }
+                this.grammar = g;
+                invalidateHighlighting();
+                applyHighlighting();
+            });
+        });
     }
 
     /**
@@ -2202,6 +2238,7 @@ public class EditorBuffer implements TabContent {
 
     /** Applies a language name + grammar: updates fold strategy and re-highlights. */
     private void applyLanguage(String name, IGrammar g) {
+        languageGen++; // supersede any in-flight deferred grammar load (see applyLanguageDeferred)
         this.language = name;
         this.grammar = g;
         folds.setLanguage(language);
