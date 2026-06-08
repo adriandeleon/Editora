@@ -52,6 +52,9 @@ public class App extends Application {
                 ? new ConfigManager(java.nio.file.Path.of(cliConfigDir))
                 : new ConfigManager(devFlag(rawArgs));
         Settings settings = config.load();
+        // Mirror captured logs to a session file in the config dir so a packaged build's log survives a
+        // crash and can be attached to a bug report (the in-memory capture was installed in main()).
+        com.editora.ui.DebugLog.attachFile(config.getConfigDir());
 
         // Localize the UI: pick the language (explicit setting, else system, else English) and load the
         // message catalog before any UI text is created. A change takes effect on the next launch.
@@ -248,6 +251,9 @@ public class App extends Application {
         // AppKit, so SVG rendering still works while the AWT↔JavaFX conflict disappears. Must be set
         // before any AWT class loads; main() is the first app code, so this is safe for every entry point.
         System.setProperty("java.awt.headless", "true");
+        // Capture java.util.logging output + uncaught exceptions in-memory so a packaged build (no
+        // visible stderr) can show them via the Debug Log window. Cheap; safe before launch.
+        com.editora.ui.DebugLog.install();
         // --version / --help print and exit BEFORE the GUI launches (works for every entry point,
         // since the fat-jar Launcher and the jpackage module both run this main).
         for (String a : args) {

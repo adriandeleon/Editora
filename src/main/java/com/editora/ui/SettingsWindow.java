@@ -97,6 +97,7 @@ public class SettingsWindow {
     private final Consumer<Boolean> onToggleZen;
     private final Consumer<Path> onOpenFile;
     private final Runnable onExportConfig;
+    private final Runnable onShowDebugLog;
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
     private final com.editora.mermaid.MermaidService mermaidService;
@@ -195,7 +196,7 @@ public class SettingsWindow {
                           com.editora.mermaid.MermaidService mermaidService,
                           com.editora.lsp.LspManager lspManager,
                           Consumer<Settings> onApply, Consumer<Boolean> onToggleZen,
-                          Consumer<Path> onOpenFile, Runnable onExportConfig) {
+                          Consumer<Path> onOpenFile, Runnable onExportConfig, Runnable onShowDebugLog) {
         this.config = config;
         this.toolWindows = toolWindows;
         this.gitService = gitService;
@@ -205,6 +206,7 @@ public class SettingsWindow {
         this.onToggleZen = onToggleZen;
         this.onOpenFile = onOpenFile;
         this.onExportConfig = onExportConfig;
+        this.onShowDebugLog = onShowDebugLog;
     }
 
     public void show(Window owner) {
@@ -1136,6 +1138,17 @@ public class SettingsWindow {
         Label exportHint = note(tr("settings.exportConfig.hint"));
         VBox exportBox = new VBox(4, exportConfig, exportHint);
         row(p, Category.ADVANCED, ioSection, exportBox, "import export backup settings config zip archive");
+
+        Label debugSection = section(p, tr("settings.section.debug"));
+        Button debugLog = new Button(tr("settings.debugLog"));
+        debugLog.setOnAction(e -> {
+            if (onShowDebugLog != null) {
+                onShowDebugLog.run();
+            }
+        });
+        Label debugHint = note(tr("settings.debugLog.hint"));
+        VBox debugBox = new VBox(4, debugLog, debugHint);
+        row(p, Category.ADVANCED, debugSection, debugBox, "debug log logs errors warnings exceptions diagnostics bug report console");
         return p;
     }
 

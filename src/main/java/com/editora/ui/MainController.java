@@ -153,6 +153,7 @@ public class MainController {
     private StatusBar statusBar;
     private FileBreadcrumb breadcrumb;
     private SettingsWindow settingsWindow;
+    private final DebugLogWindow debugLogWindow = new DebugLogWindow();
     private QuickOpen<Path> recentPalette;
     private QuickOpen<StructurePanel.Outline> structurePalette;
     private QuickOpen<Tab> openFilesPalette;
@@ -314,7 +315,8 @@ public class MainController {
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows, gitService, mermaidService,
                 lspManager, this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath,
-                this::exportConfig);
+                this::exportConfig, this::showDebugLog);
+        debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
                 () -> tabPane.getSelectionModel().getSelectedItem(),
@@ -5499,6 +5501,12 @@ public class MainController {
      * (Settings → Advanced "Export configuration", and the {@code config.export} command). Shows the
      * resulting path in a confirmation dialog since the trigger lives in the Settings window.
      */
+    /** Opens the Debug Log window (captured java.util.logging output + uncaught exceptions). Backs the
+     *  {@code view.debugLog} command and the Settings → Advanced "Show Debug Log" button. */
+    private void showDebugLog() {
+        debugLogWindow.show(stage);
+    }
+
     private void exportConfig() {
         try {
             java.nio.file.Path zip = config.exportConfig();
@@ -6273,6 +6281,7 @@ public class MainController {
         registry.register(Command.of("help.about", this::onAbout));
         registry.register(Command.of("view.welcome", this::showWelcome));
         registry.register(Command.of("view.messageLog", statusBar::showMessageLog));
+        registry.register(Command.of("view.debugLog", this::showDebugLog));
         registry.register(Command.of("tool.project",
                 () -> { if (projectsEnabled()) { toolWindows.toggle(projectToolWindow); } }));
         registry.register(Command.of("tool.structure",

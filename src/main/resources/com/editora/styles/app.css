@@ -1336,3 +1336,13 @@
 /* Green play glyph for the gutter Run marker (compact source main line) + the right-click Run item. */
 .run-marker { -fx-fill: #3fb950; }
 .fold-gutter .run-slot:hover .run-marker { -fx-fill: #56d364; }
+
+/* Debug Log window: monospace read-only log area + a muted file-path footer. */
+.debug-log-area {
+    -fx-font-family: "JetBrains Mono", "Consolas", monospace;
+    -fx-font-size: 12px;
+}
+.debug-log-file {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}

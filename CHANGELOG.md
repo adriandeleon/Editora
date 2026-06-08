@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug Log viewer** — a new in-app window that shows the application log (java.util.logging output +
+  uncaught exceptions), so you can see errors/warnings in a packaged build (DMG/MSI/DEB) where stderr
+  isn't visible. Open it via the **Debug Log** command in the palette or **Settings → Advanced → Show
+  Debug Log…**; it has Refresh / Copy / Clear / Export. The same log is also mirrored to
+  `editora-session.log` in your config folder, so it survives a crash and can be attached to a bug report.
+
 - **Icons on every right-click menu item** — all context menus (editor surface + Markdown preview, tab
   strip, Project / Git / Bookmarks / Notes / Message-log panels) now show a leading Material-style glyph
   next to each item, matching the toolbar and tool-window icons. Editor-package menus use a new
