@@ -46,23 +46,32 @@ public class KeyDispatcher {
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handle);
         scene.addEventFilter(KeyEvent.KEY_TYPED, this::handleTyped);
         if (!IS_MAC) {
-            // Windows/Linux: a lone Alt press-and-release puts the native window into menu/mnemonic
-            // mode, which then swallows the following keystrokes (KEY_TYPED stops) and breaks every
-            // Alt-based (M-) chord — the editor's keymap is full of them (M-x, M-g, M-1…M-9, M-w, …),
-            // so it reads as "most keybindings stopped working, and after M-x I can't type". Consuming
-            // the bare Alt key (press in handle(), release here) stops the toolkit from ever entering
-            // that mode. The Alt+<key> combo is a separate event (code != ALT), so M- chords still
-            // resolve normally.
+            // Windows/Linux: a bare Alt (or an unbound Alt+<key>) is treated by the OS as menu/mnemonic
+            // activation, which puts the native window into "menu mode" — that freezes KEY_TYPED and
+            // breaks every Alt-based (M-) chord (the keymap is full of them: M-x, M-g, M-1…M-9, …). The
+            // user-visible symptom is "most keybindings stopped working and the keyboard locks up until
+            // restart". We consume bare Alt (press in handle(), release here) and any unbound plain-Alt
+            // key (in handle()) so the toolkit never enters menu mode. AltGr (reported as Ctrl+Alt) is
+            // never consumed, so international layouts keep composing characters.
             scene.addEventFilter(KeyEvent.KEY_RELEASED, KeyDispatcher::suppressMenuAlt);
         }
     }
 
-    /** Consumes a bare {@code Alt} key event so Windows doesn't enter system-menu mode. {@code ALT} only —
-     *  {@code ALT_GRAPH} (right Alt / AltGr) is left untouched so international layouts can still type. */
+    /** Consumes a bare {@code Alt} release so Windows doesn't enter system-menu mode on an Alt tap. */
     private static void suppressMenuAlt(KeyEvent event) {
         if (event.getCode() == KeyCode.ALT) {
             event.consume();
         }
+    }
+
+    /**
+     * Whether <em>plain</em> Alt (Left-Alt as Meta, not AltGr) is active on a non-macOS platform — the
+     * case where an otherwise-unhandled key must be consumed to avoid Windows menu activation. AltGr is
+     * reported as Ctrl+Alt, so requiring Alt down <em>and</em> Ctrl up excludes it (international AltGr
+     * typing and Ctrl+Alt chords are unaffected). macOS is never affected (Option = Meta). Pure — tested.
+     */
+    static boolean plainAltActive(boolean isMac, boolean altDown, boolean controlDown) {
+        return !isMac && altDown && !controlDown;
     }
 
     /**
@@ -81,8 +90,11 @@ public class KeyDispatcher {
 
     void handle(KeyEvent event) {
         consumedPress = false;
-        if (!IS_MAC && event.getCode() == KeyCode.ALT) {
-            event.consume(); // see install(): stop Windows from entering menu mode on a bare Alt press
+        // Bare Alt: consume so Windows can't enter menu mode (which freezes the keyboard). Plain Alt
+        // only — AltGr (Ctrl+Alt) is left alone (see plainAltActive).
+        if (event.getCode() == KeyCode.ALT
+                && plainAltActive(IS_MAC, event.isAltDown(), event.isControlDown())) {
+            event.consume();
             return;
         }
         String token = chord(event);
@@ -129,6 +141,15 @@ public class KeyDispatcher {
             consumedPress = true;
             statusListener.accept(sequence + " is undefined");
             reset();
+            return;
+        }
+        // Windows/Linux: an UNBOUND plain-Alt chord (e.g. M-n with no binding) must still be consumed.
+        // If it falls through, Windows treats the Alt+<key> as a menu mnemonic, enters native menu mode,
+        // and the keyboard freezes app-wide (mouse still works) until restart — the reported bug. AltGr
+        // (Ctrl+Alt) is excluded by plainAltActive, so international layouts keep composing characters.
+        if (plainAltActive(IS_MAC, event.isAltDown(), event.isControlDown())) {
+            event.consume();
+            consumedPress = true;
             return;
         }
         // A lone, unbound key: let it fall through so normal text input works.

@@ -101,11 +101,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Windows: most keybindings didn't work, and `M-x` froze typing** — pressing the Alt key (the `M-`/Meta
-  modifier) put the native window into menu/mnemonic mode, which then swallowed `KEY_TYPED` and broke
-  every Alt-based chord (the keymap is full of them: `M-x`, `M-g`, `M-1`…`M-9`, …). Editora now consumes
-  the bare Alt key on Windows/Linux so the menu mode never engages; `Alt+<key>` chords are unaffected,
-  and AltGr (right Alt) is left alone so international keyboard layouts keep working. macOS is unchanged.
+- **Windows: keyboard froze and the command palette wouldn't open.** Two distinct bugs (found via
+  on-device key-event logging):
+  - **Keyboard freeze on Alt.** A bare `Alt` or an *unbound* `Alt+<key>` was interpreted by Windows as
+    menu/mnemonic activation, putting the window into "menu mode" — which froze all keyboard input
+    app-wide (mouse still worked, restart required) and broke the many `M-` chords. Editora now consumes
+    the bare Alt and any unbound plain-Alt key on Windows/Linux so menu mode never engages. Bound `M-`
+    chords work as before; **AltGr** (Ctrl+Alt) is left alone so international layouts keep composing
+    characters; macOS is unchanged.
+  - **Command palette (`M-x`) never appeared.** It was a `javafx.stage.Popup`, which on Windows doesn't
+    reliably take OS keyboard focus — focus got orphaned and the keyboard went dead. It's now an in-scene
+    overlay (centered card + dim backdrop) that takes focus correctly on every platform.
+
+  (Note: if a *specific* chord like `Alt+X` still does nothing on Windows, check for a global hotkey
+  manager — e.g. XKeymaps — grabbing it before Editora; that's external to the editor.)
 
 - **Diagnostic hover tooltip flickered while the mouse moved over a mark** — the tooltip was re-shown
   (and re-positioned to the cursor) on every mouse-move event, so hovering a squiggle or a scrollbar

@@ -53,4 +53,32 @@ class KeyDispatcherTest {
         assertFalse(KeyDispatcher.isEditorContext("view.toggleZen"));
         assertFalse(KeyDispatcher.isEditorContext(null));
     }
+
+    // --- Windows/Linux Alt menu-mode guard (plainAltActive) ---
+
+    @Test
+    void plainAltOnWindowsIsGuarded() {
+        // Left-Alt (Meta) held, no Ctrl, non-mac → consumed so Windows can't enter menu mode (which
+        // otherwise freezes the keyboard on a bare or unbound Alt key).
+        assertTrue(KeyDispatcher.plainAltActive(false, true, false));
+    }
+
+    @Test
+    void macIsNeverGuarded() {
+        // macOS uses Option as Meta and has no menu-activation problem.
+        assertFalse(KeyDispatcher.plainAltActive(true, true, false));
+    }
+
+    @Test
+    void altGrIsNotGuarded() {
+        // AltGr is reported as Ctrl+Alt; guarding it would break international character composition,
+        // so Alt-down WITH Ctrl-down must NOT be guarded.
+        assertFalse(KeyDispatcher.plainAltActive(false, true, true));
+    }
+
+    @Test
+    void noAltIsNotGuarded() {
+        assertFalse(KeyDispatcher.plainAltActive(false, false, false)); // plain key
+        assertFalse(KeyDispatcher.plainAltActive(false, false, true));  // Ctrl-only chord
+    }
 }

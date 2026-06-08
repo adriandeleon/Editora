@@ -1041,6 +1041,12 @@
     -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
 }
 
+/* Full-scene backdrop behind the command palette overlay: a faint scrim that also makes the region
+   pickable so a click outside the palette card dismisses it. */
+.palette-backdrop {
+    -fx-background-color: rgba(0, 0, 0, 0.18);
+}
+
 .command-palette .list-cell .keybinding {
     -fx-text-fill: -color-fg-muted;
 }

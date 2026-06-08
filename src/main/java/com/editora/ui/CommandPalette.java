@@ -12,24 +12,35 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.control.Label;
-import javafx.stage.Popup;
-import javafx.stage.Window;
 
-/** A fuzzy-filtered command palette shown as a popup overlay (bound to {@code M-x}). */
+/**
+ * A fuzzy-filtered command palette (bound to {@code M-x}). Shown as an <em>in-scene</em> overlay in the
+ * main window's scene-root {@link StackPane} — <strong>not</strong> a {@link javafx.stage.Popup}. A Popup
+ * is a separate native window, and on Windows it doesn't reliably take OS keyboard focus: {@code
+ * input.requestFocus()} then orphans keyboard focus between the popup's scene and the main window, so the
+ * whole app stops receiving keystrokes (mouse still works) until restart. Living in the main scene keeps
+ * focus on the one window, which works on every platform (the find bar does the same).
+ */
 public class CommandPalette {
 
     private static final boolean IS_MAC =
@@ -40,10 +51,18 @@ public class CommandPalette {
     /** Only commands matching this predicate are listed (e.g. project commands hidden when disabled). */
     private final java.util.function.Predicate<Command> visible;
 
-    private final Popup popup = new Popup();
     private final TextField input = new TextField();
     private final ListView<Command> list = new ListView<>();
     private final ObservableList<Command> items = FXCollections.observableArrayList();
+
+    /** The palette card (header + input + list + hint); placed top-center of the overlay. */
+    private VBox content;
+    /** Full-scene overlay (dim backdrop + card) added to the scene-root StackPane; toggled by show/hide. */
+    private StackPane overlayRoot;
+    /** Shown state, mirroring the old Popup.showingProperty() for the toolbar button + MainController. */
+    private final BooleanProperty showing = new SimpleBooleanProperty(false);
+    /** Focus owner captured at show() time, restored on hide() so typing returns to the editor. */
+    private Node previousFocus;
 
     public CommandPalette(CommandRegistry registry, KeymapManager keymap) {
         this(registry, keymap, c -> true);
@@ -89,12 +108,29 @@ public class CommandPalette {
         header.getStyleClass().add("palette-title");
         Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ run  ·  esc cancel");
         hint.getStyleClass().add("palette-hint");
-        VBox content = new VBox(6, header, input, list, hint);
+        content = new VBox(6, header, input, list, hint);
         content.getStyleClass().add("command-palette");
         content.setPrefWidth(620);
+        content.setMaxSize(620, Region.USE_PREF_SIZE); // hug its content; don't stretch to fill the overlay
+        // Editor-context chords (C-n/C-p/arrows) are left to the palette's own handler while it's open.
+        content.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        // Clicks on the card must not reach the backdrop (which hides the palette).
+        content.addEventFilter(MouseEvent.MOUSE_CLICKED, MouseEvent::consume);
+    }
 
-        popup.getContent().add(content);
-        popup.setAutoHide(true);
+    /**
+     * Adds the palette to the scene-root overlay (hidden until {@link #show()}). Must be called once, after
+     * the scene exists. A transparent backdrop fills the scene and catches outside-clicks to dismiss.
+     */
+    public void installOverlay(StackPane sceneRoot) {
+        Region backdrop = new Region();
+        backdrop.getStyleClass().add("palette-backdrop");
+        backdrop.setOnMouseClicked(e -> hide());
+        StackPane.setAlignment(content, Pos.TOP_CENTER);
+        StackPane.setMargin(content, new Insets(90, 0, 0, 0));
+        overlayRoot = new StackPane(backdrop, content);
+        overlayRoot.setVisible(false); // hidden ⇒ not painted and not pickable, so the editor stays usable
+        sceneRoot.getChildren().add(overlayRoot);
     }
 
     private void onKey(KeyEvent e) {
@@ -184,26 +220,37 @@ public class CommandPalette {
         return i == needle.length();
     }
 
-    public void show(Window owner) {
+    public void show() {
+        if (overlayRoot == null) {
+            return; // installOverlay() not called yet
+        }
+        previousFocus = overlayRoot.getScene() == null ? null : overlayRoot.getScene().getFocusOwner();
         input.clear();
         filter("");
-        double width = 620;
-        double x = owner.getX() + (owner.getWidth() - width) / 2;
-        double y = owner.getY() + 90;
-        popup.show(owner, x, y);
+        overlayRoot.setVisible(true);
+        overlayRoot.toFront();
+        showing.set(true);
         input.requestFocus();
     }
 
     public void hide() {
-        popup.hide();
+        if (overlayRoot == null || !showing.get()) {
+            return;
+        }
+        overlayRoot.setVisible(false);
+        showing.set(false);
+        if (previousFocus != null) {
+            previousFocus.requestFocus(); // return typing to the editor
+        }
+        previousFocus = null;
     }
 
     public boolean isShown() {
-        return popup.isShowing();
+        return showing.get();
     }
 
     public javafx.beans.value.ObservableValue<Boolean> showingProperty() {
-        return popup.showingProperty();
+        return showing;
     }
 
     private final class CommandCell extends ListCell<Command> {

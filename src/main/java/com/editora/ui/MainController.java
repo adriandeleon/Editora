@@ -396,6 +396,10 @@ public class MainController {
         StackPane.setMargin(toolbarRestoreButton, new javafx.geometry.Insets(8, 12, 0, 0));
         sceneRoot.getChildren().add(toolbarRestoreButton);
 
+        // The command palette is an in-scene overlay (not a Popup — see CommandPalette) so it takes
+        // keyboard focus reliably on every platform; it lives in the same scene-root StackPane.
+        palette.installOverlay(sceneRoot);
+
         updateZenButton();
         updateToolbarRestoreButton();
     }
@@ -4047,7 +4051,7 @@ public class MainController {
 
     @FXML
     private void onPalette() {
-        palette.show(stage);
+        palette.show();
     }
 
     @FXML
