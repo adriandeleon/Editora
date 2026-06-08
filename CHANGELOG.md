@@ -107,6 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Settings → Mermaid:** the `mmdc`/`maid` detection status is now colored green (found) / red
+  (missing), matching the LSP and Git status labels, instead of plain text.
+
 - **Windows: keyboard froze and the command palette wouldn't open.** Two distinct bugs (found via
   on-device key-event logging):
   - **Keyboard freeze on Alt.** A bare `Alt` or an *unbound* `Alt+<key>` was interpreted by Windows as

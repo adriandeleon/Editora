@@ -920,10 +920,15 @@ public class SettingsWindow {
         if (mermaidStatusLabel == null || mermaidService == null) {
             return;
         }
+        mermaidStatusLabel.getStyleClass().setAll("settings-git-status");
         mermaidStatusLabel.setText(tr("settings.mermaid.checking"));
         mermaidService.detect(a -> {
             String mmdcState = a.mmdc() ? tr("settings.mermaid.found") : tr("settings.mermaid.notFound");
             String maidState = a.maid() ? tr("settings.mermaid.found") : tr("settings.mermaid.notFound");
+            // Color the label green/red like the LSP/Git status labels: green only when both tools are
+            // found, red when either is missing.
+            mermaidStatusLabel.getStyleClass().setAll("settings-git-status",
+                    a.mmdc() && a.maid() ? "settings-git-found" : "settings-git-missing");
             mermaidStatusLabel.setText(tr("settings.mermaid.status", mmdcState, maidState));
         });
     }
