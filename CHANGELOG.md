@@ -101,6 +101,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Windows: most keybindings didn't work, and `M-x` froze typing** — pressing the Alt key (the `M-`/Meta
+  modifier) put the native window into menu/mnemonic mode, which then swallowed `KEY_TYPED` and broke
+  every Alt-based chord (the keymap is full of them: `M-x`, `M-g`, `M-1`…`M-9`, …). Editora now consumes
+  the bare Alt key on Windows/Linux so the menu mode never engages; `Alt+<key>` chords are unaffected,
+  and AltGr (right Alt) is left alone so international keyboard layouts keep working. macOS is unchanged.
+
 - **Diagnostic hover tooltip flickered while the mouse moved over a mark** — the tooltip was re-shown
   (and re-positioned to the cursor) on every mouse-move event, so hovering a squiggle or a scrollbar
   diagnostic mark looked janky. It's now shown once and left in place until you move to a different

@@ -45,6 +45,24 @@ public class KeyDispatcher {
     public void install(Scene scene) {
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handle);
         scene.addEventFilter(KeyEvent.KEY_TYPED, this::handleTyped);
+        if (!IS_MAC) {
+            // Windows/Linux: a lone Alt press-and-release puts the native window into menu/mnemonic
+            // mode, which then swallows the following keystrokes (KEY_TYPED stops) and breaks every
+            // Alt-based (M-) chord — the editor's keymap is full of them (M-x, M-g, M-1…M-9, M-w, …),
+            // so it reads as "most keybindings stopped working, and after M-x I can't type". Consuming
+            // the bare Alt key (press in handle(), release here) stops the toolkit from ever entering
+            // that mode. The Alt+<key> combo is a separate event (code != ALT), so M- chords still
+            // resolve normally.
+            scene.addEventFilter(KeyEvent.KEY_RELEASED, KeyDispatcher::suppressMenuAlt);
+        }
+    }
+
+    /** Consumes a bare {@code Alt} key event so Windows doesn't enter system-menu mode. {@code ALT} only —
+     *  {@code ALT_GRAPH} (right Alt / AltGr) is left untouched so international layouts can still type. */
+    private static void suppressMenuAlt(KeyEvent event) {
+        if (event.getCode() == KeyCode.ALT) {
+            event.consume();
+        }
     }
 
     /**
@@ -63,6 +81,10 @@ public class KeyDispatcher {
 
     void handle(KeyEvent event) {
         consumedPress = false;
+        if (!IS_MAC && event.getCode() == KeyCode.ALT) {
+            event.consume(); // see install(): stop Windows from entering menu mode on a bare Alt press
+            return;
+        }
         String token = chord(event);
         if (token == null) {
             return; // a modifier key on its own
