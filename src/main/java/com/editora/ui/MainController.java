@@ -2109,8 +2109,17 @@ public class MainController {
         }, "checkout", "--track", remote);
     }
 
-    /** Opens the IntelliJ-style branch dropdown, fetching local + remote branches off-thread first. */
+    /** Toggles the IntelliJ-style branch dropdown, fetching local + remote branches off-thread first. */
     private void chooseBranch() {
+        // Toggle: a second click on the git status segment closes the open dropdown. (autoHide fires on
+        // the same click, hiding it, so also treat a just-now hide as "was open" and leave it closed.)
+        if (branchPopup.isShown()) {
+            branchPopup.hide();
+            return;
+        }
+        if (branchPopup.justHidden()) {
+            return;
+        }
         if (currentRepoRoot == null) {
             // Not under version control: the dropdown offers only "Clone Git repository…".
             branchPopup.showNoVcs(stage, statusBar.gitSegmentNode(), this::gitClone);

@@ -41,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Status bar polish** — the Git segment now **toggles** its branch dropdown (click to open, click
+  again to close). The status **message-log popup** is 20% wider and gains a **Copy** button (copies the
+  selected messages, or all of them when none are selected); its per-row right-click menu was removed in
+  favor of the more discoverable button (⌘/Ctrl+C still works too).
+- **Command palette polish** — removed the separator line above the footer legend, and the legend now
+  lists **`C-g`** alongside **esc** as a way to close the palette.
+
 - **`C-a` (beginning of line) is now "smart home"** — the first press moves to the beginning of the
   line's *text* (the first non-whitespace character); a second press toggles to the true line start
   (column 0). Shift-extends selection as before. Applies in the editor for every file type.

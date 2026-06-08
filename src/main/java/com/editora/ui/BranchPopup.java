@@ -86,6 +86,15 @@ public final class BranchPopup {
         content.setPrefWidth(480);
         popup.getContent().add(content);
         popup.setAutoHide(true);
+        popup.setOnHidden(e -> lastHiddenAt = System.currentTimeMillis());
+    }
+
+    /** When the popup last hid — lets the status-bar click that auto-hid it act as a clean toggle. */
+    private long lastHiddenAt;
+
+    /** True if the popup auto-hid within the last 250 ms (i.e. from the same click that's reopening it). */
+    public boolean justHidden() {
+        return System.currentTimeMillis() - lastHiddenAt < 250;
     }
 
     /**

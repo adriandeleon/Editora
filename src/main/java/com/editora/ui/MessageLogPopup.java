@@ -12,11 +12,9 @@ import javafx.geometry.Bounds;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -55,7 +53,7 @@ public final class MessageLogPopup {
         header.getStyleClass().add("message-log-header");
 
         list.getStyleClass().add("message-log-list");
-        list.setPrefSize(460, 280);
+        list.setPrefSize(552, 280); // 20% wider than the original 460
         // Rows are selectable (multiple) so they can be copied to the clipboard.
         list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         Label empty = new Label(tr("messagelog.empty"));
@@ -65,7 +63,6 @@ public final class MessageLogPopup {
             private final Label time = new Label();
             private final Label msg = new Label();
             private final HBox box = new HBox(10, time, msg);
-            private final ContextMenu menu = new ContextMenu();
             {
                 time.getStyleClass().add("message-log-time");
                 time.setMinWidth(Region.USE_PREF_SIZE); // never clip the timestamp
@@ -79,15 +76,6 @@ public final class MessageLogPopup {
                 msg.maxWidthProperty().bind(list.widthProperty().subtract(110));
                 msg.setMinHeight(Region.USE_PREF_SIZE);
                 setPrefWidth(0);
-                MenuItem copy = new MenuItem(tr("messagelog.copy"));
-                copy.setGraphic(Icons.copy());
-                copy.setOnAction(e -> {
-                    if (!getListView().getSelectionModel().getSelectedItems().contains(getItem())) {
-                        getListView().getSelectionModel().clearAndSelect(getIndex());
-                    }
-                    copySelection();
-                });
-                menu.getItems().add(copy);
             }
 
             @Override
@@ -95,14 +83,25 @@ public final class MessageLogPopup {
                 super.updateItem(item, isEmpty);
                 if (isEmpty || item == null) {
                     setGraphic(null);
-                    setContextMenu(null);
                     return;
                 }
                 time.setText(TIME_FMT.format(Instant.ofEpochMilli(item.epochMillis()).atZone(ZoneId.systemDefault())));
                 msg.setText(item.text());
-                setContextMenu(menu); // right-click → Copy
                 setGraphic(box);
             }
+        });
+
+        // Copy button: the discoverable replacement for the old per-row right-click menu. Copies the
+        // selected messages, or all of them when nothing is selected.
+        Button copy = new Button(tr("messagelog.copy"));
+        copy.setGraphic(Icons.copy());
+        copy.getStyleClass().addAll("flat");
+        copy.setFocusTraversable(false);
+        copy.setOnAction(e -> {
+            if (list.getSelectionModel().getSelectedItems().isEmpty()) {
+                list.getSelectionModel().selectAll();
+            }
+            copySelection();
         });
 
         Button clear = new Button(tr("messagelog.clear"));
@@ -118,7 +117,7 @@ public final class MessageLogPopup {
         HBox.setHgrow(spacer, Priority.ALWAYS);
         Label hint = new Label(tr("messagelog.hint"));
         hint.getStyleClass().add("message-log-hint");
-        HBox footer = new HBox(8, clear, spacer, hint);
+        HBox footer = new HBox(8, copy, clear, spacer, hint);
         footer.getStyleClass().add("message-log-footer");
         footer.setAlignment(Pos.CENTER_LEFT);
 

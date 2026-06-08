@@ -106,7 +106,7 @@ public class CommandPalette {
 
         Label header = new Label(tr("palette.header"));
         header.getStyleClass().add("palette-title");
-        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ run  ·  esc cancel");
+        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ run  ·  esc / C-g cancel");
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, header, input, list, hint);
         content.getStyleClass().add("command-palette");
