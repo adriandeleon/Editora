@@ -21,7 +21,10 @@
         <build.timestamp>${maven.build.timestamp}</build.timestamp>
         <javafx.version>25</javafx.version>
         <javafx.plugin.version>0.0.8</javafx.plugin.version>
-        <richtextfx.version>0.11.7</richtextfx.version>
+        <!-- Personal fork of RichTextFX (adds multiple cursors + column/box selection).
+             groupId io.github.adriandeleon, vendored in the in-project m2-repo (see <repositories>).
+             Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
+        <richtextfx.version>0.11.7-multicaret.1</richtextfx.version>
         <atlantafx.version>2.1.0</atlantafx.version>
         <jackson.version>2.19.0</jackson.version>
         <junit.version>5.11.4</junit.version>
@@ -49,6 +52,24 @@
         <wellbehavedfx.version>0.3.3</wellbehavedfx.version>
     </properties>
 
+    <!-- In-project Maven repository holding the personal RichTextFX fork
+         (io.github.adriandeleon:richtextfx). Checked into the repo so CI/CD resolves it with no
+         external registry or credentials. To update: rebuild the fork, then copy the new
+         richtextfx-<version>.{jar,pom} under m2-repo/ and bump <richtextfx.version> above. -->
+    <repositories>
+        <repository>
+            <id>in-project-fork</id>
+            <name>In-project RichTextFX fork</name>
+            <url>file://${project.basedir}/m2-repo</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>org.openjfx</groupId>
@@ -61,7 +82,7 @@
             <version>${javafx.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.fxmisc.richtext</groupId>
+            <groupId>io.github.adriandeleon</groupId>
             <artifactId>richtextfx</artifactId>
             <version>${richtextfx.version}</version>
         </dependency>
@@ -331,7 +352,7 @@
                                 </module>
                                 <module>
                                     <artifact>
-                                        <groupId>org.fxmisc.richtext</groupId>
+                                        <groupId>io.github.adriandeleon</groupId>
                                         <artifactId>richtextfx</artifactId>
                                         <version>${richtextfx.version}</version>
                                     </artifact>
@@ -348,6 +369,7 @@
                                             exports org.fxmisc.richtext.event;
                                             exports org.fxmisc.richtext.model;
                                             exports org.fxmisc.richtext.util;
+                                            exports org.fxmisc.richtext.multi;
                                         }
                                     </moduleInfoSource>
                                 </module>

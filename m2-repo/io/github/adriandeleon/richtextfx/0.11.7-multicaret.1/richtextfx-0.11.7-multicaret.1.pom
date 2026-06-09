@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <!-- This module was also published with a richer model, Gradle metadata,  -->
+  <!-- which should be used instead. Do not delete the following line which  -->
+  <!-- is to indicate to Gradle or any Gradle module metadata file consumer  -->
+  <!-- that they should prefer consuming it instead. -->
+  <!-- do_not_remove: published-with-gradle-metadata -->
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.github.adriandeleon</groupId>
+  <artifactId>richtextfx</artifactId>
+  <version>0.11.7-multicaret.1</version>
+  <name>RichTextFX</name>
+  <description>Rich-text area for JavaFX</description>
+  <url>https://github.com/FXMisc/RichTextFX/#richtextfx</url>
+  <licenses>
+    <license>
+      <name>The BSD 2-Clause License</name>
+      <url>http://opensource.org/licenses/BSD-2-Clause</url>
+      <distribution>repo</distribution>
+    </license>
+    <license>
+      <name>GPLv2 with the Classpath Exception</name>
+      <url>http://www.gnu.org/software/classpath/license.html</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <name>Tomas Mikula</name>
+    </developer>
+    <developer>
+      <name>Jordan Martinez</name>
+    </developer>
+    <developer>
+      <name>Jurgen Doll</name>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git@github.com:FXMisc/RichTextFX.git</connection>
+    <developerConnection>scm:git@github.com:FXMisc/RichTextFX.git</developerConnection>
+    <url>scm:git@github.com:FXMisc/RichTextFX.git</url>
+  </scm>
+  <dependencies>
+    <dependency>
+      <groupId>org.reactfx</groupId>
+      <artifactId>reactfx</artifactId>
+      <version>2.0-M5</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.fxmisc.undo</groupId>
+      <artifactId>undofx</artifactId>
+      <version>2.1.1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.fxmisc.flowless</groupId>
+      <artifactId>flowless</artifactId>
+      <version>0.7.4</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.fxmisc.wellbehaved</groupId>
+      <artifactId>wellbehavedfx</artifactId>
+      <version>0.3.3</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-base</artifactId>
+      <version>21.0.5</version>
+      <classifier>mac-aarch64</classifier>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-graphics</artifactId>
+      <version>21.0.5</version>
+      <classifier>mac-aarch64</classifier>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-controls</artifactId>
+      <version>21.0.5</version>
+      <classifier>mac-aarch64</classifier>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-fxml</artifactId>
+      <version>21.0.5</version>
+      <classifier>mac-aarch64</classifier>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+</project>
