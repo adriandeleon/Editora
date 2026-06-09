@@ -37,7 +37,19 @@ public final class OverlayHost {
 
     public OverlayHost() {
         backdrop.getStyleClass().add("overlay-backdrop");
-        backdrop.addEventHandler(MouseEvent.MOUSE_CLICKED, e -> hide());
+        // Pick across the full bounds even when the fill is (near-)transparent. A Region with a transparent
+        // background is otherwise not pickable, so an outside click would pass straight through instead of
+        // being caught here to dismiss the overlay. (Only pickable while the overlay is visible — it's
+        // setVisible(false) when hidden, so the editor stays fully interactive.)
+        backdrop.setPickOnBounds(true);
+        // Dismiss on PRESS (not CLICK) and consume it: a click is press+release, so consuming the press
+        // means the gesture that closes the overlay can't also reach the node behind it. In particular,
+        // re-pressing the same status-bar segment that opened an anchored popup closes it cleanly — the
+        // press is swallowed here, so the segment's own toggle handler never fires to reopen it.
+        backdrop.addEventHandler(MouseEvent.MOUSE_PRESSED, e -> {
+            hide();
+            e.consume();
+        });
         overlayRoot.setVisible(false); // hidden ⇒ not painted and not pickable, so the editor stays usable
         // Esc / C-g dismiss the overlay (the card's own handlers run after this capturing filter for
         // their action keys: Enter, arrows, C-n/C-p). C-g reaches us because the card sets
@@ -91,33 +103,42 @@ public final class OverlayHost {
         if (anchor == null) {
             StackPane.setAlignment(content, Pos.TOP_CENTER);
             StackPane.setMargin(content, new Insets(90, 0, 0, 0));
-        } else {
-            StackPane.setAlignment(content, Pos.TOP_LEFT);
-            StackPane.setMargin(content, Insets.EMPTY);
         }
         overlayRoot.getChildren().add(content);
         overlayRoot.setVisible(true);
         overlayRoot.toFront();
         showing.set(true);
         if (anchor != null) {
-            Platform.runLater(() -> positionAbove(content, anchor)); // needs the card's measured height
+            // Force a CSS + layout pass so overlayRoot has its real height now (the card may be added this
+            // pulse), then anchor the card. We pin the card's *bottom* via bottom-alignment + a bottom
+            // margin rather than computing its top from a measured height: the message-log ListView sizes
+            // its cells across several pulses, so a height-based position would land short on the first
+            // show and clip the footer. With the bottom pinned, the layout engine grows the card upward
+            // from a fixed bottom edge at its natural height — correct on the first show, no measuring.
+            overlayRoot.applyCss();
+            overlayRoot.layout();
+            positionAbove(content, anchor);
+            Platform.runLater(() -> positionAbove(content, anchor)); // re-pin after anchor bounds settle
         }
         if (onShown != null) {
             Platform.runLater(onShown); // after layout, so getCharacterBoundsOnScreen / focus work
         }
     }
 
-    /** Positions {@code content}'s bottom-left just above {@code anchor} (scene coordinates), clamped on-screen. */
+    /** Pins {@code content}'s bottom-left just above {@code anchor} (scene coordinates) using StackPane
+     *  bottom-alignment + margins, so the card's measured height is irrelevant. */
     private void positionAbove(Node content, Node anchor) {
         if (anchor.getScene() == null) {
             return;
         }
         javafx.geometry.Bounds a = anchor.localToScene(anchor.getBoundsInLocal());
-        double cardH = content.getLayoutBounds().getHeight();
-        double x = Math.max(4, a.getMinX());
-        double y = Math.max(4, a.getMinY() - cardH - 4);
-        content.setTranslateX(x);
-        content.setTranslateY(y);
+        double gap = 4;
+        double left = Math.max(4, a.getMinX());
+        // BOTTOM_LEFT: a bottom margin of M places the card's bottom edge M above the overlay's bottom.
+        // We want the card's bottom at the anchor's top minus a small gap, so M = overlayH - anchorTop + gap.
+        double bottomMargin = Math.max(4, overlayRoot.getHeight() - a.getMinY() + gap);
+        StackPane.setAlignment(content, Pos.BOTTOM_LEFT);
+        StackPane.setMargin(content, new Insets(0, 0, bottomMargin, left));
     }
 
     public void hide() {

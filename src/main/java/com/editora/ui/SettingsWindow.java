@@ -168,6 +168,25 @@ public class SettingsWindow {
     private Button notesMoveDown;
     private ToolWindow notesToolWindowRef;
     private Label notesDisabledNote;
+    // The Problems / Run / Debug rows, disabled until the LSP feature is on (Debug also needs Debugging on).
+    private CheckBox problemsShowCheck;
+    private ComboBox<ToolWindow.Side> problemsSideCombo;
+    private Button problemsMoveUp;
+    private Button problemsMoveDown;
+    private ToolWindow problemsToolWindowRef;
+    private Label problemsDisabledNote;
+    private CheckBox runShowCheck;
+    private ComboBox<ToolWindow.Side> runSideCombo;
+    private Button runMoveUp;
+    private Button runMoveDown;
+    private ToolWindow runToolWindowRef;
+    private Label runDisabledNote;
+    private CheckBox debugShowCheck;
+    private ComboBox<ToolWindow.Side> debugSideCombo;
+    private Button debugMoveUp;
+    private Button debugMoveDown;
+    private ToolWindow debugToolWindowRef;
+    private Label debugDisabledNote;
     private ComboBox<String> autoSaveCombo;
     private CheckBox pdfLineNumbersCheck;
     private CheckBox pdfHighlightCheck;
@@ -504,6 +523,7 @@ public class SettingsWindow {
             config.getSettings().setDebugSupport(now);
             apply();
             updateDebugRowsEnabled();
+            updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Debug row
             refreshDebugStatus();
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
@@ -531,6 +551,7 @@ public class SettingsWindow {
             config.getSettings().setLspSupport(now);
             apply();
             updateLspRowsEnabled();
+            updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Problems/Run/Debug rows
             refreshLspStatus();
         });
         for (LspServerUi srv : lspServerUis()) {
@@ -1232,6 +1253,24 @@ public class SettingsWindow {
                 notesMoveUp = moveUp;
                 notesMoveDown = moveDown;
                 notesToolWindowRef = tw;
+            } else if ("problems".equals(tw.getId())) {
+                problemsShowCheck = showCheck;
+                problemsSideCombo = sideCombo;
+                problemsMoveUp = moveUp;
+                problemsMoveDown = moveDown;
+                problemsToolWindowRef = tw;
+            } else if ("run".equals(tw.getId())) {
+                runShowCheck = showCheck;
+                runSideCombo = sideCombo;
+                runMoveUp = moveUp;
+                runMoveDown = moveDown;
+                runToolWindowRef = tw;
+            } else if ("debug".equals(tw.getId())) {
+                debugShowCheck = showCheck;
+                debugSideCombo = sideCombo;
+                debugMoveUp = moveUp;
+                debugMoveDown = moveDown;
+                debugToolWindowRef = tw;
             }
 
             Label title = new Label(tw.getTitle());
@@ -1253,6 +1292,18 @@ public class SettingsWindow {
                 notesDisabledNote = note(tr("settings.toolWindows.notesDisabled"));
                 notesDisabledNote.setWrapText(true);
                 rowBox.getChildren().add(notesDisabledNote);
+            } else if ("problems".equals(tw.getId())) {
+                problemsDisabledNote = note(tr("settings.toolWindows.problemsDisabled"));
+                problemsDisabledNote.setWrapText(true);
+                rowBox.getChildren().add(problemsDisabledNote);
+            } else if ("run".equals(tw.getId())) {
+                runDisabledNote = note(tr("settings.toolWindows.runDisabled"));
+                runDisabledNote.setWrapText(true);
+                rowBox.getChildren().add(runDisabledNote);
+            } else if ("debug".equals(tw.getId())) {
+                debugDisabledNote = note(tr("settings.toolWindows.debugDisabled"));
+                debugDisabledNote.setWrapText(true);
+                rowBox.getChildren().add(debugDisabledNote);
             }
             row(p, Category.TOOL_WINDOWS, null, rowBox, "tool window " + tw.getTitle() + " placement side show");
         }
@@ -1260,6 +1311,7 @@ public class SettingsWindow {
         updateProjectRowEnabled();
         updateGitRowEnabled();
         updateNotesRowEnabled();
+        updateLspToolRowsEnabled();
         return p;
     }
 
@@ -1586,6 +1638,7 @@ public class SettingsWindow {
             gitCheck.setSelected(settings.isGitSupport());
             updateGitRowEnabled();
             updateNotesRowEnabled();
+            updateLspToolRowsEnabled();
             mermaidCheck.setSelected(settings.isMermaidSupport());
             mmdcPathField.setText(settings.getMmdcPath());
             maidPathField.setText(settings.getMaidPath());
@@ -1699,6 +1752,47 @@ public class SettingsWindow {
         }
     }
 
+    /**
+     * Disables the feature-gated tool-window rows when their feature is off: Problems and Run need the LSP
+     * feature on; Debug needs Debugging (DAP) on (independent of LSP — Python/JS debugging doesn't use LSP,
+     * and {@code MainController.applyDebugGating} makes the Debug window available on {@code debugSupport}
+     * alone). Like the Commit/Notes rows, the Show checkbox value is left untouched — availability is
+     * transient, not the user's persisted visibility preference.
+     */
+    private void updateLspToolRowsEnabled() {
+        boolean lsp = config.getSettings().isLspSupport();
+        updateTransientRow(lsp, problemsShowCheck, problemsSideCombo, problemsMoveUp, problemsMoveDown,
+                problemsDisabledNote, problemsToolWindowRef);
+        updateTransientRow(lsp, runShowCheck, runSideCombo, runMoveUp, runMoveDown,
+                runDisabledNote, runToolWindowRef);
+        updateTransientRow(config.getSettings().isDebugSupport(), debugShowCheck, debugSideCombo,
+                debugMoveUp, debugMoveDown, debugDisabledNote, debugToolWindowRef);
+    }
+
+    /** Shared logic for a context-gated tool-window row: gray out the controls + show the "disabled" note
+     *  when {@code on} is false, else restore the normal show/side/move enabling. */
+    private void updateTransientRow(boolean on, CheckBox show, ComboBox<ToolWindow.Side> side,
+            Button up, Button down, Label disabledNote, ToolWindow ref) {
+        if (show == null) {
+            return;
+        }
+        show.setDisable(!on);
+        if (disabledNote != null) {
+            disabledNote.setVisible(!on);
+            disabledNote.setManaged(!on);
+        }
+        if (!on) {
+            side.setDisable(true);
+            up.setDisable(true);
+            down.setDisable(true);
+        } else {
+            boolean shown = show.isSelected();
+            side.setDisable(!shown);
+            up.setDisable(!shown || !toolWindows.canMove(ref, -1));
+            down.setDisable(!shown || !toolWindows.canMove(ref, 1));
+        }
+    }
+
     public void syncProjectsCheck() {
         if (!built) {
             return;
@@ -1767,6 +1861,7 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
+        updateLspToolRowsEnabled(); // the Problems/Run/Debug rows are gated by the LSP feature
         refreshLspStatus();
     }
 
