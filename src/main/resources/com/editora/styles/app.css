@@ -1041,10 +1041,17 @@
     -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
 }
 
-/* Full-scene backdrop behind the command palette overlay: a faint scrim that also makes the region
-   pickable so a click outside the palette card dismisses it. */
-.palette-backdrop {
+/* Full-scene backdrop behind an in-scene overlay (command palette, pickers): a faint scrim that also
+   makes the region pickable so a click outside the card dismisses it (see OverlayHost). */
+.overlay-backdrop {
     -fx-background-color: rgba(0, 0, 0, 0.18);
+}
+
+/* In-scene input form card (rename, clone, notes, go-to-line, …) shown in the OverlayHost — replaces the
+   native TextInputDialog/Dialog. Reuses the .command-palette card chrome with roomier padding/spacing. */
+.overlay-form {
+    -fx-padding: 14;
+    -fx-spacing: 10;
 }
 
 .command-palette .list-cell .keybinding {

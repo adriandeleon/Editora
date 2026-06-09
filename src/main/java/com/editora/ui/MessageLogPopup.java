@@ -7,8 +7,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.stream.Collectors;
 
-import javafx.application.Platform;
-import javafx.geometry.Bounds;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -24,7 +22,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.stage.Popup;
 import javafx.stage.Window;
 
 /**
@@ -38,10 +35,10 @@ import javafx.stage.Window;
 public final class MessageLogPopup {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
-    /** Rough popup height used for the initial placement before the real height is measured. */
-    private static final double APPROX_HEIGHT = 360;
 
-    private final Popup popup = new Popup();
+    /** Shared in-scene overlay host (injected by MainController) + shown state. */
+    private OverlayHost overlayHost;
+    private boolean showing;
     /** When the popup last hid — used so a click on the echo that auto-hid it doesn't immediately reopen. */
     private long lastHiddenAt;
     private final ListView<MessageLog.Entry> list = new ListView<>();
@@ -123,11 +120,14 @@ public final class MessageLogPopup {
 
         root = new VBox(6, header, list, footer);
         root.getStyleClass().add("message-log");
+        root.setMaxSize(552, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
+        root.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep nav/copy keys for the popup
         root.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            // Close on Esc, C-g (the app's keyboard-quit), or M-g.
+            // Close on Esc, C-g (the app's keyboard-quit), or M-g. (The OverlayHost also handles Esc/C-g,
+            // but keep this so M-g closes it too.)
             if (e.getCode() == KeyCode.ESCAPE
                     || (e.getCode() == KeyCode.G && (e.isControlDown() || e.isAltDown()))) {
-                popup.hide();
+                hide();
                 e.consume();
                 return;
             }
@@ -137,9 +137,11 @@ public final class MessageLogPopup {
                 e.consume();
             }
         });
-        popup.getContent().add(root);
-        popup.setAutoHide(true);
-        popup.setOnHidden(e -> lastHiddenAt = System.currentTimeMillis());
+    }
+
+    /** Injects the shared overlay host used to show the message-log card. */
+    public void setOverlayHost(OverlayHost overlayHost) {
+        this.overlayHost = overlayHost;
     }
 
     /**
@@ -148,12 +150,12 @@ public final class MessageLogPopup {
      * very recent auto-hide as "was open" and don't reopen, giving a clean toggle.
      */
     public void toggle(Window owner, Node anchor, MessageLog log) {
-        if (popup.isShowing()) {
-            popup.hide();
+        if (showing) {
+            hide();
             return;
         }
         if (System.currentTimeMillis() - lastHiddenAt < 250) {
-            return; // autoHide just closed it via this same click — leave it closed
+            return; // the backdrop click just closed it via this same click — leave it closed
         }
         show(owner, anchor, log);
     }
@@ -172,26 +174,22 @@ public final class MessageLogPopup {
         Clipboard.getSystemClipboard().setContent(content);
     }
 
-    /** Shows the log (newest first) anchored just above {@code anchor}. */
+    /** Shows the log (newest first) anchored just above {@code anchor}. {@code owner} is unused (kept
+     *  for call-site compatibility); the shared {@link OverlayHost} positions it within the main scene. */
     public void show(Window owner, Node anchor, MessageLog log) {
+        if (overlayHost == null) {
+            return;
+        }
         this.log = log;
         refreshItems();
-        Bounds b = anchor == null ? null : anchor.localToScreen(anchor.getBoundsInLocal());
-        double x = b == null ? owner.getX() + 20 : b.getMinX();
-        double y = b == null ? owner.getY() + owner.getHeight() - APPROX_HEIGHT : b.getMinY() - APPROX_HEIGHT;
-        popup.show(owner, x, Math.max(owner.getY() + 30, y));
         if (!list.getItems().isEmpty()) {
             list.getSelectionModel().clearAndSelect(0); // newest, so ⌘C copies the latest by default
         }
-        list.requestFocus();
-        // Reposition once laid out so the popup's bottom sits just above the echo area.
-        if (b != null) {
-            Platform.runLater(() -> {
-                double h = popup.getContent().get(0).getBoundsInParent().getHeight();
-                popup.setX(b.getMinX());
-                popup.setY(Math.max(owner.getY() + 30, b.getMinY() - h - 4));
-            });
-        }
+        showing = true;
+        overlayHost.show(root, anchor, list::requestFocus, () -> {
+            showing = false;
+            lastHiddenAt = System.currentTimeMillis();
+        });
     }
 
     private void refreshItems() {
@@ -199,10 +197,12 @@ public final class MessageLogPopup {
     }
 
     public void hide() {
-        popup.hide();
+        if (overlayHost != null) {
+            overlayHost.hide();
+        }
     }
 
     public boolean isShown() {
-        return popup.isShowing();
+        return showing;
     }
 }

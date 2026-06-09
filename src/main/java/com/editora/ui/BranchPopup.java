@@ -7,10 +7,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 
-import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.geometry.Bounds;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
@@ -24,7 +22,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.stage.Popup;
 import javafx.stage.Window;
 
 /**
@@ -48,7 +45,6 @@ public final class BranchPopup {
     private record BranchRow(String name, boolean remote, boolean current, String upstream,
                              int ahead, int behind, boolean gone, Runnable run) implements Row { }
 
-    private final Popup popup = new Popup();
     private final Label titleLabel = new Label(tr("branchpopup.title"));
     /** Remote URL shown in the header (origin's), ellipsized; empty when there's no remote. */
     private final Label remoteUrlLabel = new Label();
@@ -56,6 +52,11 @@ public final class BranchPopup {
     private final ListView<Row> list = new ListView<>();
     private final ObservableList<Row> items = FXCollections.observableArrayList();
     private List<Row> all = List.of();
+
+    /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
+    private OverlayHost overlayHost;
+    private VBox content;
+    private boolean showing;
 
     public BranchPopup() {
         search.setPromptText(tr("branchpopup.searchPrompt"));
@@ -79,14 +80,18 @@ public final class BranchPopup {
         HBox.setHgrow(remoteUrlLabel, Priority.ALWAYS);
         HBox header = new HBox(8, titleLabel, remoteUrlLabel);
         header.setAlignment(Pos.CENTER_LEFT);
-        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ select  ·  esc cancel");
+        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ select  ·  esc / C-g cancel");
         hint.getStyleClass().add("palette-hint");
-        VBox content = new VBox(6, header, search, list, hint);
+        content = new VBox(6, header, search, list, hint);
         content.getStyleClass().add("command-palette");
         content.setPrefWidth(480);
-        popup.getContent().add(content);
-        popup.setAutoHide(true);
-        popup.setOnHidden(e -> lastHiddenAt = System.currentTimeMillis());
+        content.setMaxSize(480, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
+        content.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p for the picker
+    }
+
+    /** Injects the shared overlay host used to show the branch dropdown. */
+    public void setOverlayHost(OverlayHost overlayHost) {
+        this.overlayHost = overlayHost;
     }
 
     /** When the popup last hid — lets the status-bar click that auto-hid it act as a clean toggle. */
@@ -156,31 +161,28 @@ public final class BranchPopup {
         present(owner, anchor);
     }
 
-    /** Filters to the current items and shows the popup just above {@code anchor}. */
+    /** Filters to the current items and shows the dropdown anchored just above {@code anchor}. */
     private void present(Window owner, Node anchor) {
+        if (overlayHost == null) {
+            return;
+        }
         search.clear();
         filter("");
-        Bounds b = anchor == null ? null : anchor.localToScreen(anchor.getBoundsInLocal());
-        double x = b == null ? owner.getX() + owner.getWidth() - 500 : b.getMinX();
-        double y = b == null ? owner.getY() + owner.getHeight() - 440 : b.getMinY() - 440;
-        popup.show(owner, x, Math.max(owner.getY() + 30, y));
-        // Reposition once laid out so the popup's bottom sits just above the anchored segment.
-        if (b != null) {
-            Platform.runLater(() -> {
-                double h = popup.getContent().get(0).getBoundsInParent().getHeight();
-                popup.setX(b.getMinX());
-                popup.setY(Math.max(owner.getY() + 30, b.getMinY() - h - 4));
-            });
-        }
-        search.requestFocus();
+        showing = true;
+        overlayHost.show(content, anchor, search::requestFocus, () -> {
+            showing = false;
+            lastHiddenAt = System.currentTimeMillis();
+        });
     }
 
     public void hide() {
-        popup.hide();
+        if (overlayHost != null) {
+            overlayHost.hide();
+        }
     }
 
     public boolean isShown() {
-        return popup.isShowing();
+        return showing;
     }
 
     // --- filtering + navigation ---

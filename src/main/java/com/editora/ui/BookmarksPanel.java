@@ -5,7 +5,6 @@ import static com.editora.i18n.Messages.tr;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Supplier;
 
 import com.editora.config.Bookmark;
@@ -17,7 +16,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
-import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -73,6 +71,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private final HBox header;
     private final TreeView<Row> tree = new TreeView<>();
     private final StackPane placeholderPane;
+
+    /** In-scene single-line prompt (injected by MainController) used to edit a bookmark's note. */
+    private OverlayInput.Prompt prompt;
 
     /** The row to reselect after the next {@link #refresh()} (set just before a reorder). */
     private Path reselectFile;
@@ -360,13 +361,16 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     // --- editing ---
 
     private void editNote(MarkRow m) {
-        TextInputDialog dialog = new TextInputDialog(m.bm().note());
-        dialog.initOwner(getScene() == null ? null : getScene().getWindow());
-        dialog.setTitle(tr("dialog.bookmarkNote.title"));
-        dialog.setHeaderText(null);
-        dialog.setContentText(tr("dialog.bookmarkNote.content"));
-        Optional<String> result = dialog.showAndWait();
-        result.ifPresent(note -> actions.setNote(m.file(), m.bm().line(), note.strip()));
+        if (prompt == null) {
+            return;
+        }
+        prompt.show(tr("dialog.bookmarkNote.title"), tr("dialog.bookmarkNote.content"), m.bm().note(),
+                note -> actions.setNote(m.file(), m.bm().line(), note.strip()));
+    }
+
+    /** Injects the in-scene prompt used to edit a bookmark's note (so the panel needs no overlay host). */
+    public void setPrompt(OverlayInput.Prompt prompt) {
+        this.prompt = prompt;
     }
 
     private void deleteMark(MarkRow m) {

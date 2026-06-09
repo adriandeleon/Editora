@@ -16,9 +16,7 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Node;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
@@ -55,14 +53,12 @@ public class CommandPalette {
     private final ListView<Command> list = new ListView<>();
     private final ObservableList<Command> items = FXCollections.observableArrayList();
 
-    /** The palette card (header + input + list + hint); placed top-center of the overlay. */
+    /** The palette card (header + input + list + hint); shown via the shared {@link OverlayHost}. */
     private VBox content;
-    /** Full-scene overlay (dim backdrop + card) added to the scene-root StackPane; toggled by show/hide. */
-    private StackPane overlayRoot;
-    /** Shown state, mirroring the old Popup.showingProperty() for the toolbar button + MainController. */
+    /** Shared in-scene overlay host (injected); shows the card centered with a dim backdrop. */
+    private OverlayHost overlayHost;
+    /** Shown state for the toolbar button + MainController; flipped by show()/the host's onHidden hook. */
     private final BooleanProperty showing = new SimpleBooleanProperty(false);
-    /** Focus owner captured at show() time, restored on hide() so typing returns to the editor. */
-    private Node previousFocus;
 
     public CommandPalette(CommandRegistry registry, KeymapManager keymap) {
         this(registry, keymap, c -> true);
@@ -118,19 +114,9 @@ public class CommandPalette {
         content.addEventFilter(MouseEvent.MOUSE_CLICKED, MouseEvent::consume);
     }
 
-    /**
-     * Adds the palette to the scene-root overlay (hidden until {@link #show()}). Must be called once, after
-     * the scene exists. A transparent backdrop fills the scene and catches outside-clicks to dismiss.
-     */
-    public void installOverlay(StackPane sceneRoot) {
-        Region backdrop = new Region();
-        backdrop.getStyleClass().add("palette-backdrop");
-        backdrop.setOnMouseClicked(e -> hide());
-        StackPane.setAlignment(content, Pos.TOP_CENTER);
-        StackPane.setMargin(content, new Insets(90, 0, 0, 0));
-        overlayRoot = new StackPane(backdrop, content);
-        overlayRoot.setVisible(false); // hidden ⇒ not painted and not pickable, so the editor stays usable
-        sceneRoot.getChildren().add(overlayRoot);
+    /** Injects the shared overlay host used to show the palette card. */
+    public void setOverlayHost(OverlayHost overlayHost) {
+        this.overlayHost = overlayHost;
     }
 
     private void onKey(KeyEvent e) {
@@ -221,28 +207,19 @@ public class CommandPalette {
     }
 
     public void show() {
-        if (overlayRoot == null) {
-            return; // installOverlay() not called yet
+        if (overlayHost == null) {
+            return; // setOverlayHost() not called yet
         }
-        previousFocus = overlayRoot.getScene() == null ? null : overlayRoot.getScene().getFocusOwner();
         input.clear();
         filter("");
-        overlayRoot.setVisible(true);
-        overlayRoot.toFront();
         showing.set(true);
-        input.requestFocus();
+        overlayHost.show(content, input::requestFocus, () -> showing.set(false));
     }
 
     public void hide() {
-        if (overlayRoot == null || !showing.get()) {
-            return;
+        if (overlayHost != null) {
+            overlayHost.hide(); // the host's onHidden hook clears `showing`
         }
-        overlayRoot.setVisible(false);
-        showing.set(false);
-        if (previousFocus != null) {
-            previousFocus.requestFocus(); // return typing to the editor
-        }
-        previousFocus = null;
     }
 
     public boolean isShown() {

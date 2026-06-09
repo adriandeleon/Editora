@@ -41,6 +41,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Keyboard popups are now in-scene overlays** — the command palette, the "Jump to…" pickers (recent
+  files, structure, open files, tool windows, bookmarks, notes, snippets, projects, LSP references,
+  spell/app/editor-theme), the file/folder finder, the IntelliJ-style Switcher, the Git **branch
+  dropdown**, and the status **message-log** popup no longer use separate `Popup` windows. They render as
+  a card inside the main window over a dim, click-to-dismiss backdrop (a shared `OverlayHost`). This
+  fixes a Windows bug where a `Popup` didn't reliably take OS keyboard focus — opening the palette (or a
+  picker) could leave the keyboard dead until restart. Anchored popups (branch dropdown, message log)
+  still "drop" from their status-bar segment; clicking the segment again closes them cleanly.
+- **Input dialogs are now in-scene too** — the text-input dialogs (Personal Note editor, file/bookmark
+  **rename**, bookmark **note**, Git **clone**, **new branch**, **go to line**) are no longer separate
+  native windows; they show as a form card in the main window over the same backdrop (a new shared
+  `OverlayInput` helper). `Esc`/`C-g` cancel; `Enter` accepts (`Ctrl/Cmd+Enter` for the multi-line note
+  editor). This continues the Windows keyboard-focus fix to every text prompt. (Simple yes/no
+  confirmations and choice pickers — overwrite, delete, set language/tab-size/line-endings — stay native.)
 - **Status bar polish** — the Git segment now **toggles** its branch dropdown (click to open, click
   again to close). The status **message-log popup** is 20% wider and gains a **Copy** button (copies the
   selected messages, or all of them when none are selected); its per-row right-click menu was removed in

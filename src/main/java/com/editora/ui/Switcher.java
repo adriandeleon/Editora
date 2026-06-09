@@ -17,7 +17,6 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
-import javafx.stage.Popup;
 import javafx.stage.Window;
 
 /**
@@ -34,10 +33,12 @@ public class Switcher {
     private final Consumer<Tab> activateTab;
     private final Consumer<Tab> closeTab;
 
-    private final Popup popup = new Popup();
     private final ListView<Tab> filesList = new ListView<>();
     private final Label pathLabel = new Label();
     private VBox root;
+    /** Shared in-scene overlay host (injected by MainController) + shown state. */
+    private OverlayHost overlayHost;
+    private boolean showing;
 
     public Switcher(Supplier<List<Tab>> tabsSupplier,
                     Supplier<Tab> activeTabSupplier,
@@ -88,21 +89,31 @@ public class Switcher {
         pathLabel.getStyleClass().add("switcher-path");
         pathLabel.setMaxWidth(Double.MAX_VALUE);
 
-        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ open  ·  C-d close  ·  esc cancel");
+        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ open  ·  C-d close  ·  esc / C-g cancel");
         hint.getStyleClass().add("switcher-hint");
 
         root = new VBox(column, pathLabel, hint);
         root.getStyleClass().add("switcher");
+        root.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p/arrows for the switcher
         root.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         // Releasing Ctrl activates the selection (IntelliJ Switcher behavior).
         root.addEventFilter(KeyEvent.KEY_RELEASED, e -> {
-            if (e.getCode() == KeyCode.CONTROL && popup.isShowing()) {
+            if (e.getCode() == KeyCode.CONTROL && showing) {
                 commit();
                 e.consume();
             }
         });
-        popup.getContent().add(root);
-        popup.setAutoHide(true);
+    }
+
+    /** Injects the shared overlay host used to show the switcher card. */
+    public void setOverlayHost(OverlayHost overlayHost) {
+        this.overlayHost = overlayHost;
+    }
+
+    public void hide() {
+        if (overlayHost != null) {
+            overlayHost.hide();
+        }
     }
 
     public void show(Window owner, boolean reverse) {
@@ -123,10 +134,11 @@ public class Switcher {
         root.setMaxWidth(width);
         pathLabel.setMaxWidth(width); // ellipsize rather than grow the popup
 
-        double x = owner.getX() + (owner.getWidth() - width) / 2;
-        double y = owner.getY() + 120;
-        popup.show(owner, x, y);
-        filesList.requestFocus();
+        if (overlayHost == null) {
+            return;
+        }
+        showing = true;
+        overlayHost.show(root, filesList::requestFocus, () -> showing = false);
     }
 
     /** Popup width sized to the longest file path (clamped), so it stays constant while navigating. */
@@ -157,12 +169,12 @@ public class Switcher {
     }
 
     public boolean isShown() {
-        return popup.isShowing();
+        return showing;
     }
 
     private void onKey(KeyEvent e) {
         switch (e.getCode()) {
-            case ESCAPE -> consume(e, popup::hide);
+            case ESCAPE -> consume(e, this::hide);
             case ENTER -> consume(e, this::commit);
             case DOWN -> consume(e, () -> move(1));
             case UP -> consume(e, () -> move(-1));
@@ -174,7 +186,7 @@ public class Switcher {
                 switch (e.getCode()) {
                     case N -> consume(e, () -> move(1));
                     case P -> consume(e, () -> move(-1));
-                    case G -> consume(e, popup::hide);
+                    case G -> consume(e, this::hide);
                     case D -> consume(e, this::removeSelected);
                     default -> { }
                 }
@@ -224,7 +236,7 @@ public class Switcher {
         if (tab != null) {
             activateTab.accept(tab);
         }
-        popup.hide();
+        hide();
     }
 
     private void removeSelected() {

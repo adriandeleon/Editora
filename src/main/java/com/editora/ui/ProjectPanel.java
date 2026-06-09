@@ -32,7 +32,6 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
-import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -66,6 +65,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final BiConsumer<Path, Path> onFileRenamed;
     private final Consumer<Path> onFileDeleted;
     private final java.util.function.Predicate<Path> isModified;
+
+    /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
+    private OverlayInput.Prompt prompt;
 
     private ProjectCombo projectCombo;
     private final Button closeButton = new Button();
@@ -421,14 +423,18 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     // --- rename / delete ---
 
+    /** Injects the in-scene prompt used to rename a file/folder (so the panel needs no overlay host). */
+    public void setPrompt(OverlayInput.Prompt prompt) {
+        this.prompt = prompt;
+    }
+
     private void renameItem(TreeItem<Path> item) {
+        if (prompt == null) {
+            return;
+        }
         Path path = item.getValue();
-        TextInputDialog dialog = new TextInputDialog(path.getFileName().toString());
-        dialog.initOwner(getScene() == null ? null : getScene().getWindow());
-        dialog.setTitle(tr("project.renameTitle"));
-        dialog.setHeaderText(null);
-        dialog.setContentText(tr("project.renameContent"));
-        dialog.showAndWait().ifPresent(input -> {
+        prompt.show(tr("project.renameTitle"), tr("project.renameContent"),
+                path.getFileName().toString(), input -> {
             String name = input.trim();
             if (name.isEmpty()) {
                 return;

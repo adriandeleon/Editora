@@ -14,7 +14,6 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
@@ -26,8 +25,8 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.stage.Popup;
 import javafx.stage.Window;
 
 /**
@@ -48,15 +47,18 @@ public class FileFinder {
     private final boolean pickDirectory;
     private final String title;
 
-    private final Popup popup = new Popup();
     private final TextField input = new TextField();
     private final ListView<Path> list = new ListView<>();
     private final ObservableList<Path> items = FXCollections.observableArrayList();
 
+    /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
+    private OverlayHost overlayHost;
+    private VBox content;
+    private boolean showing;
+
     /** Cached listing of {@link #currentDir}; re-read only when the directory part of the path changes. */
     private Path currentDir;
     private List<Path> dirEntries = List.of();
-    private boolean swallowNextTyped;
 
     public FileFinder(Supplier<Path> startDir, Consumer<Path> onChoose) {
         this(startDir, onChoose, false, tr("filefinder.title"));
@@ -79,53 +81,60 @@ public class FileFinder {
 
         input.textProperty().addListener((obs, old, now) -> refresh(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
-        input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (swallowNextTyped) {
-                swallowNextTyped = false;
-                e.consume();
-                return;
-            }
-            if (IS_MAC && (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown())) {
-                e.consume();
-            }
-        });
+        // macOS Option-composed chars while a chord modifier is held are swallowed; the opening chord's
+        // trailing KEY_TYPED is already swallowed by the global KeyDispatcher (card is in the main scene).
+        if (IS_MAC) {
+            input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
+                    e.consume();
+                }
+            });
+        }
 
         Label header = new Label(title);
         header.getStyleClass().add("palette-title");
-        Label hint = new Label("↑↓ / C-n C-p move  ·  tab complete  ·  ↵ open  ·  esc cancel");
+        Label hint = new Label("↑↓ / C-n C-p move  ·  tab complete  ·  ↵ open  ·  esc / C-g cancel");
         hint.getStyleClass().add("palette-hint");
-        VBox content = new VBox(6, header, input, list, hint);
+        content = new VBox(6, header, input, list, hint);
         content.getStyleClass().add("command-palette");
         content.setPrefWidth(620);
-        popup.getContent().add(content);
-        popup.setAutoHide(true);
+        content.setMaxSize(620, Region.USE_PREF_SIZE);
+        content.getProperties().put("editora.ownsKeys", Boolean.TRUE);
     }
 
+    /** Injects the shared overlay host used to show the picker card. */
+    public void setOverlayHost(OverlayHost overlayHost) {
+        this.overlayHost = overlayHost;
+    }
+
+    /** Shows the finder as a centered in-scene overlay. {@code owner} is unused (kept for call-site
+     *  compatibility); the shared {@link OverlayHost} positions it within the main scene. */
     public void show(Window owner) {
+        if (overlayHost == null) {
+            return;
+        }
         Path dir = startDir.get();
         currentDir = null;
         dirEntries = List.of();
-        swallowNextTyped = true;
         // Pre-fill with the start directory + separator so the user types a name straight away.
         input.setText(dir.toString().endsWith(SEP) ? dir.toString() : dir + SEP);
         input.positionCaret(input.getText().length());
         refresh(input.getText());
-
-        double width = 620;
-        double x = owner.getX() + (owner.getWidth() - width) / 2;
-        double y = owner.getY() + 90;
-        popup.show(owner, x, y);
-        input.requestFocus();
-        input.positionCaret(input.getText().length());
-        Platform.runLater(() -> swallowNextTyped = false);
+        showing = true;
+        overlayHost.show(content, () -> {
+            input.requestFocus();
+            input.positionCaret(input.getText().length());
+        }, () -> showing = false);
     }
 
     public void hide() {
-        popup.hide();
+        if (overlayHost != null) {
+            overlayHost.hide();
+        }
     }
 
     public boolean isShown() {
-        return popup.isShowing();
+        return showing;
     }
 
     /** The directory part of {@code text} (up to and including the last separator). */

@@ -49,7 +49,6 @@ import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
-import javafx.scene.control.Dialog;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.ContextMenu;
@@ -64,7 +63,6 @@ import javafx.scene.control.TabPane;
 import javafx.scene.control.ToolBar;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -154,6 +152,8 @@ public class MainController {
     private FileBreadcrumb breadcrumb;
     private SettingsWindow settingsWindow;
     private final DebugLogWindow debugLogWindow = new DebugLogWindow();
+    /** Shared in-scene overlay host for the command palette + pickers (replaces focus-stealing Popups). */
+    private final OverlayHost overlayHost = new OverlayHost();
     private QuickOpen<Path> recentPalette;
     private QuickOpen<StructurePanel.Outline> structurePalette;
     private QuickOpen<Tab> openFilesPalette;
@@ -398,12 +398,37 @@ public class MainController {
         StackPane.setMargin(toolbarRestoreButton, new javafx.geometry.Insets(8, 12, 0, 0));
         sceneRoot.getChildren().add(toolbarRestoreButton);
 
-        // The command palette is an in-scene overlay (not a Popup — see CommandPalette) so it takes
-        // keyboard focus reliably on every platform; it lives in the same scene-root StackPane.
-        palette.installOverlay(sceneRoot);
+        // In-scene overlay host (replaces focus-stealing Popups): the command palette and pickers show
+        // their card here so keyboard focus works on every platform. Installed last so it sits on top.
+        overlayHost.install(sceneRoot);
+        wireOverlayHost();
 
         updateZenButton();
         updateToolbarRestoreButton();
+    }
+
+    /**
+     * Injects the shared {@link OverlayHost} into every keyboard picker/popup so they render their card
+     * in the main scene (focus works on every platform) instead of a focus-stealing {@link javafx.stage.Popup}.
+     * Called once from {@link #installZenOverlay}, after all the field pickers are built in {@link #init}.
+     * On-demand pickers (LSP references, spell language) get the host at their construction sites.
+     */
+    private void wireOverlayHost() {
+        palette.setOverlayHost(overlayHost);
+        recentPalette.setOverlayHost(overlayHost);
+        structurePalette.setOverlayHost(overlayHost);
+        openFilesPalette.setOverlayHost(overlayHost);
+        toolWindowPalette.setOverlayHost(overlayHost);
+        bookmarkPalette.setOverlayHost(overlayHost);
+        notesPalette.setOverlayHost(overlayHost);
+        notesSearchPalette.setOverlayHost(overlayHost);
+        snippetPalette.setOverlayHost(overlayHost);
+        projectPicker.setOverlayHost(overlayHost);
+        fileFinder.setOverlayHost(overlayHost);
+        folderFinder.setOverlayHost(overlayHost);
+        switcher.setOverlayHost(overlayHost);
+        branchPopup.setOverlayHost(overlayHost);
+        statusBar.setOverlayHost(overlayHost);
     }
 
     /**
@@ -1135,6 +1160,7 @@ public class MainController {
         projectPanel = new ProjectPanel(this::openPath, this::switchToProject, this::closeProject,
                 this::deleteProject, this::onProjectFileRenamed, this::onProjectFileDeleted,
                 this::isPathModified);
+        projectPanel.setPrompt(this::promptText); // in-scene rename prompt
         projectToolWindow = new ToolWindow("project", tr("toolwindow.project"), ToolWindow.Side.RIGHT,
                 Icons::project, projectPanel, "tool.project");
         structurePanel = new StructurePanel();
@@ -1161,6 +1187,7 @@ public class MainController {
                         moveBookmarkFile(from, to);
                     }
                 });
+        bookmarksPanel.setPrompt(this::promptText); // in-scene bookmark-note prompt
         bookmarksToolWindow = new ToolWindow("bookmarks", tr("toolwindow.bookmarks"), ToolWindow.Side.RIGHT,
                 Icons::bookmark, bookmarksPanel, "tool.bookmarks");
         notesPanel = new NotesPanel(config::getNotes, new NotesPanel.Actions() {
@@ -1820,6 +1847,7 @@ public class MainController {
                     t -> t.file().getFileName() + ":" + (t.line() + 1),
                     t -> t.file().toString(),
                     t -> openAndGoto(t.file(), t.line(), t.character()));
+            picker.setOverlayHost(overlayHost);
             picker.show(stage);
         });
     }
@@ -2143,20 +2171,20 @@ public class MainController {
             setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
             return;
         }
-        TextInputDialog dialog = new TextInputDialog();
-        dialog.initOwner(stage);
-        dialog.setTitle(tr("dialog.newBranch.title"));
-        dialog.setHeaderText(null);
-        dialog.setContentText(tr("dialog.newBranch.content"));
-        dialog.showAndWait().map(String::strip).filter(s -> !s.isEmpty()).ifPresent(name ->
-                gitService.run(currentRepoRoot, r -> {
-                    if (r.ok()) {
-                        setStatus(tr("status.createdBranch", name));
-                    } else {
-                        gitError("Couldn't create branch " + name, r.message());
-                    }
-                    afterGitMutation();
-                }, "checkout", "-b", name));
+        promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
+            String name = input.strip();
+            if (name.isEmpty()) {
+                return;
+            }
+            gitService.run(currentRepoRoot, r -> {
+                if (r.ok()) {
+                    setStatus(tr("status.createdBranch", name));
+                } else {
+                    gitError("Couldn't create branch " + name, r.message());
+                }
+                afterGitMutation();
+            }, "checkout", "-b", name);
+        });
     }
 
     private void gitSync(String label, String... args) {
@@ -2223,20 +2251,16 @@ public class MainController {
      * requires a project.
      */
     private void gitClone() {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.initOwner(stage);
-        dialog.setTitle(tr("dialog.clone.title"));
-        dialog.setHeaderText(null);
-        ButtonType cloneType = new ButtonType(tr("dialog.clone.button"), ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(cloneType, ButtonType.CANCEL);
-
         TextField urlField = new TextField();
         urlField.setPromptText("https://github.com/user/repo.git");
         urlField.setPrefColumnCount(34);
+        com.editora.command.TextInputKeymap.install(urlField, keymap);
         TextField dirField = new TextField();
         dirField.setPromptText(tr("dialog.clone.dirPrompt"));
         dirField.setPrefColumnCount(28);
+        com.editora.command.TextInputKeymap.install(dirField, keymap);
         Button browse = new Button(tr("dialog.clone.browse"));
+        browse.setFocusTraversable(false);
 
         String defaultParent = System.getProperty("user.home", "");
         boolean[] dirEdited = {false};
@@ -2257,7 +2281,7 @@ public class MainController {
         browse.setOnAction(e -> {
             DirectoryChooser chooser = new DirectoryChooser();
             chooser.setTitle(tr("dialog.clone.parentTitle"));
-            java.io.File parent = chooser.showDialog(dialog.getDialogPane().getScene().getWindow());
+            java.io.File parent = chooser.showDialog(stage);
             if (parent != null) {
                 String name = repoNameFromUrl(urlField.getText());
                 dirField.setText(parent.toPath().resolve(name.isEmpty() ? "repository" : name).toString());
@@ -2267,7 +2291,6 @@ public class MainController {
         GridPane grid = new GridPane();
         grid.setHgap(8);
         grid.setVgap(8);
-        grid.setPadding(new Insets(4, 0, 0, 0));
         grid.add(new Label(tr("dialog.clone.url")), 0, 0);
         grid.add(urlField, 1, 0, 2, 1);
         grid.add(new Label(tr("dialog.clone.directory")), 0, 1);
@@ -2275,35 +2298,32 @@ public class MainController {
         grid.add(browse, 2, 1);
         GridPane.setHgrow(urlField, Priority.ALWAYS);
         GridPane.setHgrow(dirField, Priority.ALWAYS);
-        dialog.getDialogPane().setContent(grid);
-        dialog.setResultConverter(bt -> bt);
 
-        javafx.scene.Node cloneButton = dialog.getDialogPane().lookupButton(cloneType);
-        cloneButton.setDisable(true);
-        Runnable validate = () -> cloneButton.setDisable(
-                urlField.getText().isBlank() || dirField.getText().isBlank());
-        urlField.textProperty().addListener((o, a, b) -> validate.run());
-        dirField.textProperty().addListener((o, a, b) -> validate.run());
-        Platform.runLater(urlField::requestFocus);
+        // Enable Clone only when both fields are filled (mirrors the old dialog's validation).
+        javafx.beans.property.BooleanProperty valid = new javafx.beans.property.SimpleBooleanProperty(false);
+        Runnable revalidate = () -> valid.set(!urlField.getText().isBlank() && !dirField.getText().isBlank());
+        urlField.textProperty().addListener((o, a, b) -> revalidate.run());
+        dirField.textProperty().addListener((o, a, b) -> revalidate.run());
+        revalidate.run();
 
-        if (dialog.showAndWait().orElse(ButtonType.CANCEL) != cloneType) {
-            return;
-        }
-        String url = urlField.getText().strip();
-        Path destination = Path.of(dirField.getText().strip());
-        if (Files.exists(destination)) {
-            setStatus(tr("status.destExists", destination));
-            return;
-        }
-        setStatus(tr("status.cloning", url));
-        gitService.clone(url, destination, r -> {
-            if (r.ok()) {
-                setStatus(tr("status.clonedInto", destination));
-                openClonedEntry(destination);
-            } else {
-                gitError("Clone failed", r.message());
-            }
-        });
+        OverlayInput.show(overlayHost, tr("dialog.clone.title"), grid, urlField, tr("dialog.clone.button"),
+                valid, () -> {
+                    String url = urlField.getText().strip();
+                    Path destination = Path.of(dirField.getText().strip());
+                    if (Files.exists(destination)) {
+                        setStatus(tr("status.destExists", destination));
+                        return;
+                    }
+                    setStatus(tr("status.cloning", url));
+                    gitService.clone(url, destination, r -> {
+                        if (r.ok()) {
+                            setStatus(tr("status.clonedInto", destination));
+                            openClonedEntry(destination);
+                        } else {
+                            gitError("Clone failed", r.message());
+                        }
+                    });
+                }, null, false);
     }
 
     /**
@@ -3574,12 +3594,8 @@ public class MainController {
             return;
         }
         Path old = buffer.getPath();
-        TextInputDialog dialog = new TextInputDialog(old.getFileName().toString());
-        dialog.initOwner(stage);
-        dialog.setTitle(tr("dialog.renameFile.title"));
-        dialog.setHeaderText(null);
-        dialog.setContentText(tr("dialog.renameFile.content"));
-        dialog.showAndWait().ifPresent(name -> {
+        promptText(tr("dialog.renameFile.title"), tr("dialog.renameFile.content"),
+                old.getFileName().toString(), name -> {
             String trimmed = name.trim();
             if (trimmed.isEmpty()) {
                 return;
@@ -4183,6 +4199,7 @@ public class MainController {
                 id -> id,
                 id -> "",
                 id -> setSpellLanguage(buffer, id));
+        picker.setOverlayHost(overlayHost);
         picker.show(stage);
     }
 
@@ -4204,6 +4221,7 @@ public class MainController {
                 name -> name,
                 name -> "",
                 this::applyAppTheme);
+        picker.setOverlayHost(overlayHost);
         picker.show(stage);
     }
 
@@ -4215,6 +4233,7 @@ public class MainController {
                 name -> name,
                 name -> "",
                 this::applyEditorThemeChoice);
+        picker.setOverlayHost(overlayHost);
         picker.show(stage);
     }
 
@@ -4446,12 +4465,8 @@ public class MainController {
             return;
         }
         int total = area.getParagraphs().size();
-        TextInputDialog dialog = new TextInputDialog(String.valueOf(area.getCurrentParagraph() + 1));
-        dialog.initOwner(stage);
-        dialog.setTitle(tr("dialog.goToLine.title"));
-        dialog.setHeaderText(tr("dialog.goToLine.header"));
-        dialog.setContentText(tr("dialog.goToLine.content", total));
-        dialog.showAndWait().ifPresent(input -> {
+        promptText(tr("dialog.goToLine.title"), tr("dialog.goToLine.content", total),
+                String.valueOf(area.getCurrentParagraph() + 1), input -> {
             String text = input.trim();
             String[] parts = text.split(":", 2);
             try {
@@ -4951,12 +4966,7 @@ public class MainController {
                 break;
             }
         }
-        TextInputDialog dialog = new TextInputDialog(current);
-        dialog.initOwner(stage);
-        dialog.setTitle(tr("dialog.bookmarkNote.title"));
-        dialog.setHeaderText(null);
-        dialog.setContentText(tr("dialog.bookmarkNote.content"));
-        dialog.showAndWait().ifPresent(note -> {
+        promptText(tr("dialog.bookmarkNote.title"), tr("dialog.bookmarkNote.content"), current, note -> {
             if (!mgr.isBookmarked(line)) {
                 mgr.add(line, note.strip());
                 b.refreshGutterLine(line);
@@ -5290,15 +5300,29 @@ public class MainController {
     }
 
     /**
-     * Multi-line note editor dialog. Saves the (non-blank) body via {@code onAccept}; when {@code onDelete}
-     * is non-null an extra Delete button is shown (used when editing an existing note). Enter inserts a
-     * newline; Ctrl/Cmd+Enter saves.
+     * Single-line text prompt as an in-scene overlay (replaces {@code TextInputDialog} — see
+     * {@link OverlayInput}). {@code onAccept} runs only when the user accepts (Enter / OK) with the raw
+     * field text; the caller trims/validates. Cancelling does nothing. Also the {@link OverlayInput.Prompt}
+     * the tool-window panels call (so they don't need the overlay host / keymap directly).
+     */
+    void promptText(String title, String label, String initial,
+                    java.util.function.Consumer<String> onAccept) {
+        Label promptLabel = new Label(label);
+        TextField field = new TextField(initial == null ? "" : initial);
+        field.setPrefColumnCount(32);
+        // Honor the user's configured keybindings (Emacs caret movement + basic editing) in the field.
+        com.editora.command.TextInputKeymap.install(field, keymap);
+        VBox body = new VBox(6, promptLabel, field);
+        OverlayInput.show(overlayHost, title, body, field, tr("dialog.ok"), null,
+                () -> onAccept.accept(field.getText()), null, false);
+    }
+
+    /**
+     * Multi-line note editor as an in-scene overlay. Saves the (non-blank) body via {@code onAccept}; when
+     * {@code onDelete} is non-null an extra Delete button is shown (used when editing an existing note).
+     * Enter inserts a newline; Ctrl/Cmd+Enter saves.
      */
     private void showNoteDialog(String initial, java.util.function.Consumer<String> onAccept, Runnable onDelete) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.initOwner(stage);
-        dialog.setTitle(tr("dialog.note.title"));
-
         TextArea editor = new TextArea(initial == null ? "" : initial);
         editor.setWrapText(true);
         editor.setPrefRowCount(6);
@@ -5306,36 +5330,16 @@ public class MainController {
         // Honor the user's configured keybindings (Emacs caret movement + basic editing) in the note box.
         com.editora.command.TextInputKeymap.install(editor, keymap);
         Label prompt = new Label(tr("dialog.note.content"));
-        VBox box = new VBox(6, prompt, editor);
-        box.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(box);
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
-        ButtonType deleteType = null;
-        if (onDelete != null) {
-            deleteType = new ButtonType(tr("notes.delete"), ButtonBar.ButtonData.LEFT);
-            dialog.getDialogPane().getButtonTypes().add(deleteType);
-        }
-        // Enter alone inserts a newline in the TextArea; Ctrl/Cmd+Enter accepts the dialog.
-        editor.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.ENTER && (e.isShortcutDown() || e.isControlDown())) {
-                e.consume();
-                dialog.setResult(ButtonType.OK);
-                dialog.close();
-            }
-        });
-        Platform.runLater(editor::requestFocus);
-
-        final ButtonType deleteButton = deleteType;
-        dialog.showAndWait().ifPresent(bt -> {
-            if (deleteButton != null && bt == deleteButton) {
-                onDelete.run();
-            } else if (bt == ButtonType.OK) {
-                String text = editor.getText().strip();
-                if (!text.isBlank()) {
-                    onAccept.accept(text);
-                }
-            }
-        });
+        VBox body = new VBox(6, prompt, editor);
+        OverlayInput.Extra extra = onDelete == null ? null
+                : new OverlayInput.Extra(tr("notes.delete"), onDelete);
+        OverlayInput.show(overlayHost, tr("dialog.note.title"), body, editor, tr("dialog.save"), null,
+                () -> {
+                    String text = editor.getText().strip();
+                    if (!text.isBlank()) {
+                        onAccept.accept(text);
+                    }
+                }, extra, true);
     }
 
     private void onGutterNoteClick(EditorBuffer buffer, int line) {

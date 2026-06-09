@@ -7,7 +7,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
@@ -22,7 +21,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.stage.Popup;
 import javafx.stage.Window;
 
 /**
@@ -48,13 +46,15 @@ public class QuickOpen<T> {
     /** Optional per-item CSS class applied to the row's title label (e.g. "dirty-name"); null = none. */
     private Function<T, String> itemStyleClass;
 
-    private final Popup popup = new Popup();
     private final TextField input = new TextField();
     private final ListView<T> list = new ListView<>();
     private final ObservableList<T> items = FXCollections.observableArrayList();
     private List<T> all = List.of();
-    /** Swallows the one KEY_TYPED that leaks from the opening keybinding's final key. */
-    private boolean swallowNextTyped;
+
+    /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
+    private OverlayHost overlayHost;
+    private VBox content;
+    private boolean showing;
 
     public QuickOpen(String title, String prompt, Supplier<List<T>> itemsSupplier,
                      Function<T, String> label, Function<T, String> detail, Consumer<T> onChoose) {
@@ -81,6 +81,11 @@ public class QuickOpen<T> {
         this.itemStyleClass = itemStyleClass;
     }
 
+    /** Injects the shared overlay host used to show the picker card. */
+    public void setOverlayHost(OverlayHost overlayHost) {
+        this.overlayHost = overlayHost;
+    }
+
     private void build(String title, String prompt) {
         input.setPromptText(prompt);
         list.setItems(items);
@@ -89,32 +94,26 @@ public class QuickOpen<T> {
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
-        input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            // The opening keybinding's final key (e.g. the trailing 'b' of C-x b, or 'i' of M-g i)
-            // is consumed as a key-press by the dispatcher, but its paired KEY_TYPED is delivered to
-            // this just-focused field. Swallow that first typed char so it doesn't seed the filter.
-            if (swallowNextTyped) {
-                swallowNextTyped = false;
-                e.consume();
-                return;
-            }
-            // On macOS the opening chord can also emit an Option-composed character; swallow chars
-            // typed with a chord modifier held (plain typing passes through). See CommandPalette.
-            if (IS_MAC && (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown())) {
-                e.consume();
-            }
-        });
+        // On macOS the opening chord can emit an Option-composed character; swallow chars typed with a
+        // chord modifier held (plain typing passes through). The opening chord's trailing KEY_TYPED is
+        // already swallowed by the global KeyDispatcher (the card lives in the main scene now).
+        if (IS_MAC) {
+            input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
+                    e.consume();
+                }
+            });
+        }
 
         Label header = new Label(title);
         header.getStyleClass().add("palette-title");
-        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ select  ·  esc cancel");
+        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ select  ·  esc / C-g cancel");
         hint.getStyleClass().add("palette-hint");
-        VBox content = new VBox(6, header, input, list, hint);
+        content = new VBox(6, header, input, list, hint);
         content.getStyleClass().add("command-palette");
         content.setPrefWidth(620);
-
-        popup.getContent().add(content);
-        popup.setAutoHide(true);
+        content.setMaxSize(620, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
+        content.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p/arrows for the picker
     }
 
     private void onKey(KeyEvent e) {
@@ -190,28 +189,27 @@ public class QuickOpen<T> {
         }
     }
 
+    /** Shows the picker as a centered in-scene overlay. {@code owner} is unused (kept for call-site
+     *  compatibility); the shared {@link OverlayHost} positions it within the main scene. */
     public void show(Window owner) {
+        if (overlayHost == null) {
+            return;
+        }
         all = itemsSupplier.get();
         input.clear();
         filter("");
-        swallowNextTyped = true;
-        double width = 620;
-        double x = owner.getX() + (owner.getWidth() - width) / 2;
-        double y = owner.getY() + 90;
-        popup.show(owner, x, y);
-        input.requestFocus();
-        // If no chord-tail char leaks in (e.g. opened from the palette/mouse), clear the guard next
-        // pulse so the user's first real keystroke isn't eaten. The leaked KEY_TYPED, when present,
-        // is delivered before this runs.
-        Platform.runLater(() -> swallowNextTyped = false);
+        showing = true;
+        overlayHost.show(content, input::requestFocus, () -> showing = false);
     }
 
     public void hide() {
-        popup.hide();
+        if (overlayHost != null) {
+            overlayHost.hide();
+        }
     }
 
     public boolean isShown() {
-        return popup.isShowing();
+        return showing;
     }
 
     private final class ItemCell extends ListCell<T> {

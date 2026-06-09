@@ -139,6 +139,11 @@ public final class StatusBar extends HBox {
         messageLog.add(message); // no-ops for null/blank (a blank clears the echo)
     }
 
+    /** Injects the shared in-scene overlay host into the message-log popup. */
+    public void setOverlayHost(OverlayHost overlayHost) {
+        messageLogPopup.setOverlayHost(overlayHost);
+    }
+
     /** Toggles the session message-log popup (anchored just above the echo area). */
     public void showMessageLog() {
         Window owner = getScene() == null ? null : getScene().getWindow();
