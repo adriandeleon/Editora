@@ -28,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     status-bar "Debug" segment. Requires the Java LSP server enabled + jdtls and the plugin detected;
     everything no-ops cleanly otherwise.
 
+- **Python & JavaScript debugging (DAP)** — the debugger now also debugs **Python** (via **debugpy** over
+  stdio) and **JavaScript / Node** (via **vscode-js-debug** over a socket), reusing the same breakpoints,
+  Debug tool window, stepping, variables, console, and execution-line highlight. Each is enabled
+  per-language under Settings → **Debugging** (default on, only effective when the master debugging toggle is
+  on). Like the Java adapter, the runtimes are **not bundled** — install them with the new
+  `scripts/install-debugpy.sh` and `scripts/install-js-debug.sh` (auto-detected from
+  `~/.editora/plugins/dap/{python,javascript}`), or point Settings at an existing install. The breakpoint
+  gutter now appears only for debuggable files (Java / Python / JavaScript). JavaScript is Node-only for now
+  (no browser); TypeScript and remote attach for Python/JS are not yet supported.
+
 - **Debug Log viewer** — a new in-app window that shows the application log (java.util.logging output +
   uncaught exceptions), so you can see errors/warnings in a packaged build (DMG/MSI/DEB) where stderr
   isn't visible. Open it via the **Debug Log** command in the palette or **Settings → Advanced → Show

@@ -103,6 +103,7 @@ public class SettingsWindow {
     private final com.editora.git.GitService gitService;
     private final com.editora.mermaid.MermaidService mermaidService;
     private final com.editora.lsp.LspManager lspManager;
+    private final com.editora.dap.DapManager dapManager;
     private final Stage stage = new Stage();
 
     // --- controls (same set as before, regrouped into pages) ---
@@ -137,8 +138,10 @@ public class SettingsWindow {
     private CheckBox mermaidCheck;
     private TextField mmdcPathField;
     private CheckBox debugCheck;
-    private TextField debugPluginPathField;
-    private Label debugStatusLabel;
+    /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
+    private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
+    private final java.util.Map<String, TextField> debugCommandFields = new java.util.LinkedHashMap<>();
+    private final java.util.Map<String, Label> debugStatusLabels = new java.util.LinkedHashMap<>();
     private TextField maidPathField;
     private Label mermaidStatusLabel;
     private CheckBox lspCheck;
@@ -199,6 +202,7 @@ public class SettingsWindow {
                           com.editora.git.GitService gitService,
                           com.editora.mermaid.MermaidService mermaidService,
                           com.editora.lsp.LspManager lspManager,
+                          com.editora.dap.DapManager dapManager,
                           Consumer<Settings> onApply, Consumer<Boolean> onToggleZen,
                           Consumer<Path> onOpenFile, Runnable onExportConfig, Runnable onShowDebugLog) {
         this.config = config;
@@ -206,6 +210,7 @@ public class SettingsWindow {
         this.gitService = gitService;
         this.mermaidService = mermaidService;
         this.lspManager = lspManager;
+        this.dapManager = dapManager;
         this.onApply = onApply;
         this.onToggleZen = onToggleZen;
         this.onOpenFile = onOpenFile;
@@ -498,15 +503,28 @@ public class SettingsWindow {
         debugCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugSupport(now);
             apply();
+            updateDebugRowsEnabled();
             refreshDebugStatus();
         });
-        debugPluginPathField = new TextField();
-        debugPluginPathField.setPromptText("com.microsoft.java.debug.plugin-*.jar");
-        debugPluginPathField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setJavaDebugPluginPath(now);
-            apply();
-            refreshDebugStatus();
-        });
+        for (DebugAdapterUi dbg : debugAdapterUis()) {
+            if (dbg.setEnabled() != null) {
+                CheckBox enable = new CheckBox(tr(dbg.enableLabelKey()));
+                enable.selectedProperty().addListener((obs, was, now) -> {
+                    dbg.setEnabled().accept(now);
+                    apply();
+                    refreshDebugStatus();
+                });
+                debugEnableChecks.put(dbg.id(), enable);
+            }
+            TextField field = new TextField();
+            field.setPromptText(dbg.commandPrompt());
+            field.textProperty().addListener((obs, was, now) -> {
+                dbg.setCommand().accept(now);
+                apply();
+                refreshDebugStatus();
+            });
+            debugCommandFields.put(dbg.id(), field);
+        }
 
         lspCheck = new CheckBox(tr("settings.enableLsp"));
         lspCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -738,20 +756,70 @@ public class SettingsWindow {
         experimental.setWrapText(true);
         experimental.setMaxWidth(440);
         row(p, Category.DEBUG, null, experimental, "debug experimental beta");
-        debugStatusLabel = new Label(tr("settings.debug.status", tr("settings.debug.notFound")));
-        debugStatusLabel.getStyleClass().add("settings-git-status");
-        debugStatusLabel.setWrapText(true);
-        debugStatusLabel.setMaxWidth(440);
-        row(p, Category.DEBUG, null, debugStatusLabel, "debug java dap plugin found");
-        row(p, Category.DEBUG, null, debugCheck, "debug java dap breakpoint step variables enable");
-        row(p, Category.DEBUG, null,
-                exePathRow(tr("settings.debug.pluginPath"), debugPluginPathField),
-                "debug java plugin jar path java-debug");
+        row(p, Category.DEBUG, null, debugCheck, "debug dap breakpoint step variables enable");
+        for (DebugAdapterUi dbg : debugAdapterUis()) {
+            Label sec = section(p, tr(dbg.sectionKey()));
+            CheckBox enable = debugEnableChecks.get(dbg.id());
+            if (enable != null) {
+                row(p, Category.DEBUG, sec, enable, dbg.keywords());
+            }
+            Label status = new Label(tr("settings.debug.checking"));
+            status.getStyleClass().add("settings-git-status");
+            status.setWrapText(true);
+            status.setMaxWidth(440);
+            debugStatusLabels.put(dbg.id(), status);
+            row(p, Category.DEBUG, sec, status, dbg.keywords());
+            row(p, Category.DEBUG, sec,
+                    exePathRow(tr(dbg.commandLabelKey()), debugCommandFields.get(dbg.id())), dbg.keywords());
+        }
         Label hint = note(tr("settings.debug.note"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
-        row(p, Category.DEBUG, null, hint, "debug java plugin install vscode mason jdtls");
+        row(p, Category.DEBUG, null, hint, "debug install plugin vscode mason jdtls debugpy js-debug");
         return p;
+    }
+
+    /** A per-language debug-adapter Settings row group (data-driven, mirroring {@link LspServerUi}).
+     *  {@code setEnabled}/{@code getEnabled} are null for java (it has no separate enable flag — it is
+     *  gated by the java LSP server). {@code detect} runs the availability probe and reports found. */
+    private record DebugAdapterUi(String id, String sectionKey, String enableLabelKey,
+            String commandLabelKey, String commandPrompt, String keywords,
+            java.util.function.Consumer<Boolean> setEnabled,
+            java.util.function.BooleanSupplier getEnabled,
+            java.util.function.Consumer<String> setCommand,
+            java.util.function.Supplier<String> getCommand,
+            java.util.function.Consumer<Consumer<Boolean>> detect) {
+    }
+
+    /** The three debug adapters (java/python/javascript), in display order. */
+    private java.util.List<DebugAdapterUi> debugAdapterUis() {
+        return java.util.List.of(
+                new DebugAdapterUi("java", "settings.debug.java", null,
+                        "settings.debug.pluginPath", "com.microsoft.java.debug.plugin-*.jar",
+                        "debug java jdtls java-debug plugin jar path found",
+                        null, null,
+                        v -> config.getSettings().setJavaDebugPluginPath(v),
+                        () -> config.getSettings().getJavaDebugPluginPath(),
+                        cb -> cb.accept(com.editora.dap.DebugAdapterLocator.locate(
+                                config.getSettings().getJavaDebugPluginPath(),
+                                java.nio.file.Path.of(System.getProperty("user.home", ""))).isPresent())),
+                new DebugAdapterUi("python", "settings.debug.python", "settings.debug.enablePython",
+                        "settings.debug.pythonCommand",
+                        com.editora.dap.DapServerRegistry.DEFAULT_PYTHON_INTERPRETER,
+                        "debug python debugpy interpreter command path found",
+                        v -> config.getSettings().setPythonDebugEnabled(v),
+                        () -> config.getSettings().isPythonDebugEnabled(),
+                        v -> config.getSettings().setPythonDebugCommand(v),
+                        () -> config.getSettings().getPythonDebugCommand(),
+                        cb -> { if (dapManager != null) { dapManager.detectPython(cb); } else { cb.accept(false); } }),
+                new DebugAdapterUi("javascript", "settings.debug.javascript", "settings.debug.enableJs",
+                        "settings.debug.jsPath", "dapDebugServer.js",
+                        "debug javascript node js-debug vscode dapDebugServer path found",
+                        v -> config.getSettings().setJsDebugEnabled(v),
+                        () -> config.getSettings().isJsDebugEnabled(),
+                        v -> config.getSettings().setJsDebugPath(v),
+                        () -> config.getSettings().getJsDebugPath(),
+                        cb -> { if (dapManager != null) { dapManager.detectJs(cb); } else { cb.accept(false); } }));
     }
 
     private VBox lspPage() {
@@ -980,19 +1048,38 @@ public class SettingsWindow {
         });
     }
 
-    /** Re-checks whether the java-debug plugin jar is found (from the path or auto-detection) and colors
-     *  the status label green/red, like the LSP/Mermaid status. Filesystem locate is cheap. */
+    /** Re-checks each debug adapter's availability (java plugin jar / debugpy / js-debug+node) and colors
+     *  its status label green/red, like the LSP/Mermaid status. java locate is cheap; python/js probe a
+     *  subprocess off-thread and call back on the FX thread. */
     private void refreshDebugStatus() {
-        if (debugStatusLabel == null) {
+        if (debugStatusLabels.isEmpty()) {
             return;
         }
-        boolean found = com.editora.dap.DebugAdapterLocator.locate(
-                config.getSettings().getJavaDebugPluginPath(),
-                java.nio.file.Path.of(System.getProperty("user.home", ""))).isPresent();
-        debugStatusLabel.getStyleClass().setAll("settings-git-status",
-                found ? "settings-git-found" : "settings-git-missing");
-        debugStatusLabel.setText(tr("settings.debug.status",
-                tr(found ? "settings.debug.found" : "settings.debug.notFound")));
+        for (DebugAdapterUi dbg : debugAdapterUis()) {
+            Label status = debugStatusLabels.get(dbg.id());
+            if (status == null) {
+                continue;
+            }
+            status.getStyleClass().setAll("settings-git-status");
+            status.setText(tr("settings.debug.checking"));
+            dbg.detect().accept(found -> {
+                status.getStyleClass().setAll("settings-git-status",
+                        found ? "settings-git-found" : "settings-git-missing");
+                status.setText(tr("settings.debug.status",
+                        tr(found ? "settings.debug.found" : "settings.debug.notFound")));
+            });
+        }
+    }
+
+    /** The per-language debug enable checkboxes are only meaningful while the master debug toggle is on. */
+    private void updateDebugRowsEnabled() {
+        boolean on = debugCheck != null && debugCheck.isSelected();
+        for (CheckBox c : debugEnableChecks.values()) {
+            c.setDisable(!on);
+        }
+        for (TextField f : debugCommandFields.values()) {
+            f.setDisable(!on);
+        }
     }
 
     /** The per-server enable checkboxes are only meaningful while the global LSP toggle is on. */
@@ -1504,7 +1591,17 @@ public class SettingsWindow {
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
             debugCheck.setSelected(settings.isDebugSupport());
-            debugPluginPathField.setText(settings.getJavaDebugPluginPath());
+            for (DebugAdapterUi dbg : debugAdapterUis()) {
+                CheckBox enable = debugEnableChecks.get(dbg.id());
+                if (enable != null && dbg.getEnabled() != null) {
+                    enable.setSelected(dbg.getEnabled().getAsBoolean());
+                }
+                TextField field = debugCommandFields.get(dbg.id());
+                if (field != null) {
+                    field.setText(dbg.getCommand().get());
+                }
+            }
+            updateDebugRowsEnabled();
             refreshDebugStatus();
             lspCheck.setSelected(settings.isLspSupport());
             for (LspServerUi srv : lspServerUis()) {

@@ -176,4 +176,124 @@ public final class DebugAdapterLocator {
             // unreadable — skip
         }
     }
+
+    // --- vscode-js-debug (Node) -----------------------------------------------------------------
+
+    /** The DAP entry point of the vscode-js-debug bundle. */
+    private static final String JS_DEBUG_ENTRY = "dapDebugServer.js";
+
+    /**
+     * Resolves the vscode-js-debug DAP entry point ({@code dapDebugServer.js}). If {@code configuredPath}
+     * is non-blank it wins: a file named {@code dapDebugServer.js} is used directly, any other file or a
+     * directory is searched (bounded depth) for that entry. Otherwise the common install roots under
+     * {@code home} are searched — Editora's own {@code plugins/dap/javascript/} (where
+     * {@code install-js-debug.sh} extracts the release → {@code js-debug/src/dapDebugServer.js}), nvim
+     * mason's {@code js-debug-adapter}, and VS Code's {@code ms-vscode.js-debug-*} extension. The newest
+     * (by an embedded version in the path, else any) is returned. Filesystem-touching like {@link #locate}.
+     */
+    public static Optional<Path> locateJsDebugServer(String configuredPath, Path home) {
+        if (configuredPath != null && !configuredPath.isBlank()) {
+            Path p = Path.of(configuredPath);
+            if (Files.isRegularFile(p) && p.getFileName().toString().equals(JS_DEBUG_ENTRY)) {
+                return Optional.of(p);
+            }
+            Path root = Files.isDirectory(p) ? p : p.getParent();
+            return findNewestEntry(root == null ? List.of() : List.of(root));
+        }
+        return findNewestEntry(jsDebugRoots(home));
+    }
+
+    /** Common roots that contain a {@code dapDebugServer.js} somewhere beneath them. Pure construction. */
+    static List<Path> jsDebugRoots(Path home) {
+        List<Path> roots = new ArrayList<>();
+        roots.add(home.resolve(".editora").resolve("plugins").resolve("dap").resolve("javascript"));
+        roots.add(home.resolve(".editora-dev").resolve("plugins").resolve("dap").resolve("javascript"));
+        roots.add(home.resolve(".local").resolve("share").resolve("nvim").resolve("mason")
+                .resolve("packages").resolve("js-debug-adapter"));
+        for (Path ext : List.of(
+                home.resolve(".vscode").resolve("extensions"),
+                home.resolve(".vscode-server").resolve("extensions"),
+                home.resolve(".vscode-oss").resolve("extensions"))) {
+            if (Files.isDirectory(ext)) {
+                try (Stream<Path> s = Files.list(ext)) {
+                    s.filter(Files::isDirectory)
+                            .filter(d -> d.getFileName().toString().startsWith("ms-vscode.js-debug"))
+                            .forEach(roots::add);
+                } catch (IOException | RuntimeException ignored) {
+                    // unreadable — skip
+                }
+            }
+        }
+        return roots;
+    }
+
+    /** Searches each root (bounded depth) for {@code dapDebugServer.js} and returns the newest by the
+     *  numeric version embedded in its path (e.g. {@code js-debug-v1.2.3}), else the first found. */
+    private static Optional<Path> findNewestEntry(List<Path> roots) {
+        List<Path> found = new ArrayList<>();
+        for (Path root : roots) {
+            if (root == null || !Files.isDirectory(root)) {
+                continue;
+            }
+            try (Stream<Path> s = Files.walk(root, 6)) {
+                s.filter(Files::isRegularFile)
+                        .filter(f -> f.getFileName().toString().equals(JS_DEBUG_ENTRY))
+                        .forEach(found::add);
+            } catch (IOException | RuntimeException ignored) {
+                // unreadable — skip
+            }
+        }
+        Path best = null;
+        String bestVer = null;
+        for (Path f : found) {
+            String ver = pathVersion(f.toString());
+            if (best == null || compareVersions(ver, bestVer) > 0) {
+                best = f;
+                bestVer = ver;
+            }
+        }
+        return Optional.ofNullable(best);
+    }
+
+    /** Extracts the first {@code vMAJOR.MINOR[.PATCH]} version found in a path, else {@code ""}. Pure. */
+    static String pathVersion(String path) {
+        if (path == null) {
+            return "";
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("v?(\\d+\\.\\d+(?:\\.\\d+)?)").matcher(path);
+        return m.find() ? m.group(1) : "";
+    }
+
+    // --- debugpy (Python) -----------------------------------------------------------------------
+
+    /**
+     * Resolves a directory to put on {@code PYTHONPATH} so {@code python -m debugpy.adapter} works, i.e. a
+     * dir that contains a {@code debugpy/} package. If {@code configuredPath} is a dir containing
+     * {@code debugpy/} it wins; otherwise Editora's {@code plugins/dap/python/} (where
+     * {@code install-debugpy.sh} pip-installs {@code --target}) is checked. Empty when none found — the
+     * caller then relies on the configured/PATH {@code python} importing debugpy directly (probed
+     * separately via {@code python -c "import debugpy"}). Filesystem-touching.
+     */
+    public static Optional<Path> locateDebugpy(String configuredPath, Path home) {
+        if (configuredPath != null && !configuredPath.isBlank()) {
+            Path p = Path.of(configuredPath);
+            if (hasDebugpyPackage(p)) {
+                return Optional.of(p);
+            }
+        }
+        for (Path dir : List.of(
+                home.resolve(".editora").resolve("plugins").resolve("dap").resolve("python"),
+                home.resolve(".editora-dev").resolve("plugins").resolve("dap").resolve("python"))) {
+            if (hasDebugpyPackage(dir)) {
+                return Optional.of(dir);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** True if {@code dir} is a directory containing a {@code debugpy} package. Pure (one fs check). */
+    static boolean hasDebugpyPackage(Path dir) {
+        return dir != null && Files.isDirectory(dir) && Files.isDirectory(dir.resolve("debugpy"));
+    }
 }

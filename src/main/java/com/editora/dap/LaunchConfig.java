@@ -50,6 +50,36 @@ public final class LaunchConfig {
         return m;
     }
 
+    /**
+     * A {@code launch} request body for a single-program adapter (debugpy / vscode-js-debug). {@code type}
+     * is the adapter's launch type ({@code "python"} or {@code "pwa-node"}); {@code program} is the script
+     * to run (required). {@code cwd} + {@code stopOnEntry} are common; for {@code "python"} the
+     * {@code runtimeExecutable} (the interpreter) is emitted as {@code "python"}, and for any other type it
+     * is emitted as {@code "runtimeExecutable"} (the node binary) — both omitted when blank so the adapter
+     * uses its default. Pure shaping (unit-tested).
+     */
+    public static Map<String, Object> program(String type, String program, String cwd,
+            String runtimeExecutable, boolean stopOnEntry) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", type == null ? "" : type);
+        m.put("name", "Editora (Launch)");
+        m.put("request", "launch");
+        m.put("program", program == null ? "" : program);
+        if (notBlank(cwd)) {
+            m.put("cwd", cwd);
+        }
+        if (notBlank(runtimeExecutable)) {
+            if ("python".equals(type)) {
+                m.put("python", runtimeExecutable);
+            } else {
+                m.put("runtimeExecutable", runtimeExecutable);
+            }
+        }
+        m.put("console", "internalConsole");
+        m.put("stopOnEntry", stopOnEntry);
+        return m;
+    }
+
     /** An {@code attach} request body for a running JVM (JDWP). Blank host defaults to {@code localhost}. */
     public static Map<String, Object> attach(String host, int port) {
         Map<String, Object> m = new LinkedHashMap<>();

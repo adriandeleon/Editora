@@ -59,4 +59,38 @@ class LaunchConfigTest {
         assertEquals(9000, m.get("port"));
         assertTrue(m.containsKey("request"));
     }
+
+    @Test
+    void programForPythonEmitsInterpreterAsPython() {
+        Map<String, Object> m = LaunchConfig.program("python", "/work/app.py", "/work",
+                "/usr/bin/python3", true);
+        assertEquals("python", m.get("type"));
+        assertEquals("launch", m.get("request"));
+        assertEquals("/work/app.py", m.get("program"));
+        assertEquals("/work", m.get("cwd"));
+        assertEquals("/usr/bin/python3", m.get("python")); // interpreter under the "python" key
+        assertFalse(m.containsKey("runtimeExecutable"));
+        assertEquals("internalConsole", m.get("console"));
+        assertEquals(true, m.get("stopOnEntry"));
+    }
+
+    @Test
+    void programForNodeEmitsRuntimeExecutable() {
+        Map<String, Object> m = LaunchConfig.program("pwa-node", "/work/app.js", "/work",
+                "/usr/local/bin/node", false);
+        assertEquals("pwa-node", m.get("type"));
+        assertEquals("/work/app.js", m.get("program"));
+        assertEquals("/usr/local/bin/node", m.get("runtimeExecutable")); // node under "runtimeExecutable"
+        assertFalse(m.containsKey("python"));
+        assertEquals(false, m.get("stopOnEntry"));
+    }
+
+    @Test
+    void programOmitsBlankCwdAndInterpreter() {
+        Map<String, Object> m = LaunchConfig.program("python", "/a.py", "", "", false);
+        assertEquals("/a.py", m.get("program"));
+        assertFalse(m.containsKey("cwd"));
+        assertFalse(m.containsKey("python"));
+        assertFalse(m.containsKey("runtimeExecutable"));
+    }
 }

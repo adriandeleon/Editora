@@ -1,11 +1,15 @@
 package com.editora.dap;
 
+import java.io.File;
+import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.logging.Level;
@@ -70,6 +74,16 @@ public final class DapManager implements DapClient.Host {
     private String pluginPath = "";
     private List<String> bundlePaths = List.of();
 
+    // Python (debugpy, stdio) + JavaScript (vscode-js-debug, socket) — the standalone adapters.
+    private boolean pythonEnabled;
+    private String pythonCommand = "";   // interpreter exe (blank ⇒ python3 on PATH)
+    private Path debugpyDir;             // resolved PYTHONPATH dir for debugpy (null ⇒ rely on interpreter)
+    private boolean pythonAvailable;
+    private boolean jsEnabled;
+    private String jsPath = "";          // configured dapDebugServer.js path/dir (blank ⇒ auto-detect)
+    private Path jsServer;              // resolved dapDebugServer.js (null ⇒ not found)
+    private boolean jsAvailable;
+
     private DapClient client;
     private State state = State.INACTIVE;
     private int currentThreadId;
@@ -98,11 +112,35 @@ public final class DapManager implements DapClient.Host {
         }
     }
 
-    /** Stores the enable flag + the configured plugin path, and re-resolves the bundle jar(s). */
+    /** Java-only configure (kept for back-compat); delegates with python/js disabled. */
     public void configure(boolean enabled, String pluginPath) {
+        configure(enabled, pluginPath, false, "", false, "");
+    }
+
+    /**
+     * Stores the master enable flag + every language's enable/command, re-resolves the java-debug bundle
+     * jar(s) and the python/js adapter locations (filesystem, cheap — like the existing java {@code locate}).
+     * Availability (which needs a subprocess probe) is set later by {@link #detectPython}/{@link #detectJs}.
+     */
+    public void configure(boolean enabled, String javaPluginPath, boolean pythonEnabled,
+            String pythonCommand, boolean jsEnabled, String jsPath) {
         this.enabled = enabled;
-        this.pluginPath = pluginPath == null ? "" : pluginPath;
+        this.pluginPath = javaPluginPath == null ? "" : javaPluginPath;
         this.bundlePaths = enabled ? locate() : List.of();
+        this.pythonEnabled = pythonEnabled;
+        this.pythonCommand = pythonCommand == null ? "" : pythonCommand;
+        this.jsEnabled = jsEnabled;
+        this.jsPath = jsPath == null ? "" : jsPath;
+        this.debugpyDir = enabled && pythonEnabled
+                ? DebugAdapterLocator.locateDebugpy("", home()).orElse(null) : null;
+        this.jsServer = enabled && jsEnabled
+                ? DebugAdapterLocator.locateJsDebugServer(this.jsPath, home()).orElse(null) : null;
+        if (!enabled || !pythonEnabled) {
+            this.pythonAvailable = false;
+        }
+        if (!enabled || !jsEnabled) {
+            this.jsAvailable = false;
+        }
     }
 
     /** The located java-debug plugin jar(s) — for {@code LspManager.setDebugBundles}. Empty when not found. */
@@ -112,6 +150,19 @@ public final class DapManager implements DapClient.Host {
 
     public boolean isAdapterAvailable() {
         return !bundlePaths.isEmpty();
+    }
+
+    /** Whether a usable debug adapter is available for {@code language} (after detection). */
+    public boolean isLanguageAvailable(String language) {
+        if (language == null) {
+            return false;
+        }
+        return switch (language) {
+            case "java" -> !bundlePaths.isEmpty();
+            case "python" -> pythonAvailable;
+            case "javascript" -> jsAvailable;
+            default -> false;
+        };
     }
 
     /** Re-runs the (filesystem) locate and delivers whether the plugin jar was found, on the FX thread. */
@@ -125,9 +176,91 @@ public final class DapManager implements DapClient.Host {
         });
     }
 
+    /**
+     * Off-thread: relocates debugpy and probes {@code <python> -c "import debugpy"} (with the located dir
+     * on {@code PYTHONPATH}); delivers availability + caches it, on the FX thread.
+     */
+    public void detectPython(Consumer<Boolean> onResult) {
+        io.submit(() -> {
+            Path dir = DebugAdapterLocator.locateDebugpy("", home()).orElse(null);
+            boolean ok = enabled && pythonEnabled && probeDebugpy(dir);
+            Platform.runLater(() -> {
+                this.debugpyDir = dir;
+                this.pythonAvailable = ok;
+                onResult.accept(ok);
+            });
+        });
+    }
+
+    /**
+     * Off-thread: relocates the vscode-js-debug server and probes {@code node --version}; delivers
+     * availability (server found AND node runnable) + caches it, on the FX thread.
+     */
+    public void detectJs(Consumer<Boolean> onResult) {
+        io.submit(() -> {
+            Path server = DebugAdapterLocator.locateJsDebugServer(jsPath, home()).orElse(null);
+            boolean ok = enabled && jsEnabled && server != null && probeNode();
+            Platform.runLater(() -> {
+                this.jsServer = server;
+                this.jsAvailable = ok;
+                onResult.accept(ok);
+            });
+        });
+    }
+
     private List<String> locate() {
-        return DebugAdapterLocator.locate(pluginPath, Path.of(System.getProperty("user.home", "")))
+        return DebugAdapterLocator.locate(pluginPath, home())
                 .map(p -> List.of(p.toString())).orElse(List.of());
+    }
+
+    private static Path home() {
+        return Path.of(System.getProperty("user.home", ""));
+    }
+
+    /** Runs {@code <python> -c "import debugpy"} (debugpyDir on PYTHONPATH); true on a clean exit. */
+    private boolean probeDebugpy(Path dir) {
+        List<String> interp = DapServerRegistry.interpreterArgv("python", pythonCommand);
+        if (interp.isEmpty()) {
+            return false;
+        }
+        List<String> argv = new ArrayList<>(interp);
+        argv.add("-c");
+        argv.add("import debugpy");
+        return probe(argv, dir);
+    }
+
+    /** Runs {@code node --version}; true on a clean exit. */
+    private boolean probeNode() {
+        return probe(List.of("node", "--version"), null);
+    }
+
+    /** Launches {@code argv} (PATH-augmented; {@code pythonPathDir} prepended to PYTHONPATH when non-null),
+     *  discards its output, and returns whether it exits 0 within 5s. */
+    private static boolean probe(List<String> argv, Path pythonPathDir) {
+        try {
+            List<String> cmd = ProcessRunner.resolveExecutable(argv);
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            ProcessRunner.applyStandardEnv(pb);
+            if (pythonPathDir != null) {
+                prependPythonPath(pb, pythonPathDir);
+            }
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+            Process p = pb.start();
+            if (!p.waitFor(5, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return false;
+            }
+            return p.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void prependPythonPath(ProcessBuilder pb, Path dir) {
+        String existing = pb.environment().getOrDefault("PYTHONPATH", "");
+        pb.environment().put("PYTHONPATH",
+                existing.isEmpty() ? dir.toString() : dir + File.pathSeparator + existing);
     }
 
     public State state() {
@@ -145,9 +278,25 @@ public final class DapManager implements DapClient.Host {
     // --- Start (launch / attach) ----------------------------------------------------------------
 
     /**
-     * Launches a debug session for {@code file}: resolves the main class (asking {@code picker} if several
-     * are found), its classpath + java executable, starts the adapter, and connects. No-op (with an error
-     * to the listener) when debugging is unavailable.
+     * Launches a debug session for {@code file} in {@code language}: dispatches to the jdtls flow for
+     * {@code java} (the {@code picker} resolves an ambiguous main class), or to the standalone-adapter
+     * flow ({@link #startProgram}) for {@code python}/{@code javascript}. No-op (with an error) for an
+     * unsupported language.
+     */
+    public void startLaunch(Path file, String language, MainClassPicker picker) {
+        if ("java".equals(language)) {
+            startLaunch(file, picker);
+        } else if (DapServerRegistry.isDebuggable(language)) {
+            startProgram(file, language);
+        } else {
+            listener.onError("Debugging is not supported for this file type.");
+        }
+    }
+
+    /**
+     * Launches a Java debug session for {@code file}: resolves the main class (asking {@code picker} if
+     * several are found), its classpath + java executable, starts the adapter, and connects. No-op (with an
+     * error to the listener) when debugging is unavailable.
      */
     public void startLaunch(Path file, MainClassPicker picker) {
         if (!ready(file)) {
@@ -356,7 +505,7 @@ public final class DapManager implements DapClient.Host {
             // Connect off the FX thread (the socket open blocks with retries), then launch/attach. The
             // connect future completes on the DAP reader thread, so every state change here must be
             // marshaled back to the FX thread (it touches the Debug panel + status bar).
-            io.submit(() -> c.connect(port).whenComplete((caps, e) -> {
+            io.submit(() -> c.connect(port, "java").whenComplete((caps, e) -> {
                 if (e != null) {
                     fail("Could not connect to the debug adapter: " + msg(e));
                     return;
@@ -369,6 +518,142 @@ public final class DapManager implements DapClient.Host {
                 Platform.runLater(() -> setState(State.RUNNING));
             }));
         });
+    }
+
+    // --- Standalone adapters (python / javascript) ----------------------------------------------
+
+    /**
+     * Launches a debug session for a standalone-adapter language (python/javascript). Snapshots the
+     * breakpoints on the FX thread, then spawns the adapter + connects + sends {@code launch} off it.
+     */
+    private void startProgram(Path file, String language) {
+        if (!readyProgram(file, language)) {
+            return;
+        }
+        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor(language);
+        if (spec == null) {
+            listener.onError("No debug adapter is configured for this file type.");
+            return;
+        }
+        restartAction = () -> startProgram(file, language);
+        debugFile = file;
+        setState(State.STARTING);
+        // Snapshot UI state on the FX thread before going off it.
+        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<String> filters = exceptionFilters;
+        io.submit(() -> {
+            try {
+                if (spec.kind() == DapServerRegistry.Kind.STDIO) {
+                    startStdio(file, spec, bps, filters);
+                } else if (spec.kind() == DapServerRegistry.Kind.SOCKET) {
+                    startSocket(file, spec, bps, filters);
+                } else {
+                    fail("Unsupported debug transport for " + language + ".");
+                }
+            } catch (Exception e) {
+                fail("Could not start the debugger: " + msg(e));
+            }
+        });
+    }
+
+    private boolean readyProgram(Path file, String language) {
+        if (!enabled) {
+            listener.onError("Debugging is not enabled (turn it on in Settings → Debugging).");
+            return false;
+        }
+        if (file == null) {
+            listener.onError("Open a file to debug first.");
+            return false;
+        }
+        if (!isLanguageAvailable(language)) {
+            listener.onError("python".equals(language)
+                    ? "Python debugging is not available (enable it and install debugpy)."
+                    : "JavaScript debugging is not available (enable it and install vscode-js-debug).");
+            return false;
+        }
+        if (client != null) {
+            stop(); // one session at a time
+        }
+        return true;
+    }
+
+    /** debugpy over stdio: spawn {@code <python> -m debugpy.adapter}, wire DAP to its streams, launch. */
+    private void startStdio(Path file, DapServerRegistry.DapServerSpec spec,
+            List<DapModels.FileBreakpoints> bps, List<String> filters) throws Exception {
+        List<String> argv = new ArrayList<>(DapServerRegistry.interpreterArgv("python", pythonCommand));
+        argv.addAll(spec.adapterArgs()); // -m debugpy.adapter
+        List<String> cmd = ProcessRunner.resolveExecutable(argv);
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        ProcessRunner.applyStandardEnv(pb);
+        if (debugpyDir != null) {
+            prependPythonPath(pb, debugpyDir);
+        }
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD); // DAP is on stdin/stdout; an undrained PIPE deadlocks
+        Process proc = pb.start();
+        DapClient c = new DapClient(this);
+        c.setBreakpoints(bps);
+        c.setExceptionFilters(filters);
+        Platform.runLater(() -> client = c);
+        String interpExe = cmd.isEmpty() ? null : cmd.get(0);
+        c.connectStdio(proc, spec.adapterId()).whenComplete((caps, e) -> {
+            if (e != null) {
+                fail("Could not connect to debugpy: " + msg(e));
+                return;
+            }
+            c.launch(LaunchConfig.program(spec.launchType(), file.toString(), cwdOf(file), interpExe, false))
+                    .whenComplete((v, le) -> {
+                        if (le != null) {
+                            fail("launch failed: " + msg(le));
+                        }
+                    });
+            Platform.runLater(() -> setState(State.RUNNING));
+        });
+    }
+
+    /** vscode-js-debug over a socket: spawn {@code node dapDebugServer.js <port>}, connect, launch. */
+    private void startSocket(Path file, DapServerRegistry.DapServerSpec spec,
+            List<DapModels.FileBreakpoints> bps, List<String> filters) throws Exception {
+        if (jsServer == null) {
+            fail("The vscode-js-debug adapter was not found.");
+            return;
+        }
+        int port = freePort();
+        List<String> cmd = ProcessRunner.resolveExecutable(
+                List.of(spec.defaultInterpreter(), jsServer.toString(), String.valueOf(port)));
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        ProcessRunner.applyStandardEnv(pb);
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD); // DAP is on the socket; stdout/stderr are logs
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+        Process proc = pb.start();
+        String nodeExe = cmd.isEmpty() ? null : cmd.get(0);
+        DapClient c = new DapClient(this);
+        c.setBreakpoints(bps);
+        c.setExceptionFilters(filters);
+        c.setAdapterProcess(proc); // killed on dispose (it serves the socket)
+        Platform.runLater(() -> client = c);
+        c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
+            if (e != null) {
+                fail("Could not connect to vscode-js-debug: " + msg(e));
+                return;
+            }
+            c.launch(LaunchConfig.program(spec.launchType(), file.toString(), cwdOf(file), nodeExe, false))
+                    .whenComplete((v, le) -> {
+                        if (le != null) {
+                            fail("launch failed: " + msg(le));
+                        }
+                    });
+            Platform.runLater(() -> setState(State.RUNNING));
+        });
+    }
+
+    private static int freePort() throws Exception {
+        try (ServerSocket s = new ServerSocket(0)) {
+            return s.getLocalPort();
+        }
+    }
+
+    private static String cwdOf(Path file) {
+        return file.getParent() == null ? null : file.getParent().toString();
     }
 
     // --- Controls -------------------------------------------------------------------------------

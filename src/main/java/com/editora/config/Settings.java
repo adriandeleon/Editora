@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 15;
+    public static final int SCHEMA_VERSION = 16;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -83,6 +83,17 @@ public class Settings {
     /** Path to the {@code com.microsoft.java.debug.plugin-*.jar} (a jar, or a dir to scan); blank =
      *  auto-detect common install locations (VS Code java extension, mason, …). */
     private String javaDebugPluginPath = "";
+    /** Python debugging (debugpy over stdio): on by default, only effective when the master
+     *  {@code debugSupport} is on and debugpy is importable by the configured/PATH python. */
+    private boolean pythonDebugEnabled = true;
+    /** Python interpreter that runs {@code -m debugpy.adapter}; blank = resolve "python3" on PATH. */
+    private String pythonDebugCommand = "";
+    /** JavaScript (Node) debugging (vscode-js-debug over a socket): on by default, only effective when
+     *  {@code debugSupport} is on and the js-debug {@code dapDebugServer.js} + node are found. */
+    private boolean jsDebugEnabled = true;
+    /** Path to vscode-js-debug's {@code dapDebugServer.js} (or a dir to scan); blank = auto-detect
+     *  (Editora's plugins dir, mason, VS Code js-debug extension). */
+    private String jsDebugPath = "";
     /** Language Server Protocol support: off by default — needs an external language server. Phase 1
      *  covers Java (Eclipse JDT LS): diagnostics, hover/go-to-definition/references, completion. */
     private boolean lspSupport = false;
@@ -458,6 +469,38 @@ public class Settings {
 
     public void setJavaDebugPluginPath(String javaDebugPluginPath) {
         this.javaDebugPluginPath = javaDebugPluginPath == null ? "" : javaDebugPluginPath;
+    }
+
+    public boolean isPythonDebugEnabled() {
+        return pythonDebugEnabled;
+    }
+
+    public void setPythonDebugEnabled(boolean pythonDebugEnabled) {
+        this.pythonDebugEnabled = pythonDebugEnabled;
+    }
+
+    public String getPythonDebugCommand() {
+        return pythonDebugCommand == null ? "" : pythonDebugCommand;
+    }
+
+    public void setPythonDebugCommand(String pythonDebugCommand) {
+        this.pythonDebugCommand = pythonDebugCommand == null ? "" : pythonDebugCommand;
+    }
+
+    public boolean isJsDebugEnabled() {
+        return jsDebugEnabled;
+    }
+
+    public void setJsDebugEnabled(boolean jsDebugEnabled) {
+        this.jsDebugEnabled = jsDebugEnabled;
+    }
+
+    public String getJsDebugPath() {
+        return jsDebugPath == null ? "" : jsDebugPath;
+    }
+
+    public void setJsDebugPath(String jsDebugPath) {
+        this.jsDebugPath = jsDebugPath == null ? "" : jsDebugPath;
     }
 
     public String getJavaLspCommand() {

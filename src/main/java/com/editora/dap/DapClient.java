@@ -77,6 +77,8 @@ public final class DapClient implements IDebugProtocolClient {
     });
 
     private Socket socket;
+    /** The adapter subprocess for stdio transports (debugpy); null for socket transports. Killed on dispose. */
+    private Process adapterProcess;
     private IDebugProtocolServer server;
     private volatile boolean disposed;
     /** The breakpoints to install when the adapter signals {@code initialized} (snapshot taken on the FX
@@ -99,21 +101,52 @@ public final class DapClient implements IDebugProtocolClient {
 
     /**
      * Opens the socket to {@code 127.0.0.1:port} (with a few short retries — the adapter may need a moment
-     * to start listening), wires the DAP launcher, and sends {@code initialize}. The returned future
-     * completes when the adapter's capabilities arrive (the caller then sends {@code launch}/{@code attach}).
+     * to start listening), wires the DAP launcher, and sends {@code initialize} with {@code adapterId}
+     * (e.g. {@code "java"}/{@code "pwa-node"}). The returned future completes when the adapter's
+     * capabilities arrive (the caller then sends {@code launch}/{@code attach}).
+     *
+     * <p>Used for socket transports: the jdtls-started java adapter and the {@code vscode-js-debug}
+     * {@code dapDebugServer.js} (spawned by {@link DapManager}, which sets {@link #adapterProcess} via
+     * {@link #setAdapterProcess} so it is killed on {@link #dispose}).
      */
-    public CompletableFuture<Capabilities> connect(int port) {
+    public CompletableFuture<Capabilities> connect(int port, String adapterId) {
         try {
             socket = openWithRetry(port, 50);
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
                     this, socket.getInputStream(), socket.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
             launcher.startListening();
-            return server.initialize(initArgs());
+            return server.initialize(initArgs(adapterId));
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to connect to debug adapter on port " + port, e);
             return CompletableFuture.failedFuture(e);
         }
+    }
+
+    /**
+     * Wires the DAP launcher to a subprocess's stdin/stdout (the stdio transport used by debugpy:
+     * {@code python -m debugpy.adapter}) and sends {@code initialize} with {@code adapterId} (e.g.
+     * {@code "python"}). The process is killed (with its descendants) on {@link #dispose}; its stderr
+     * must be {@code Redirect.DISCARD}ed by the caller (an undrained PIPE deadlocks, like the LSP servers).
+     */
+    public CompletableFuture<Capabilities> connectStdio(Process process, String adapterId) {
+        try {
+            this.adapterProcess = process;
+            Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
+                    this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
+            server = launcher.getRemoteProxy();
+            launcher.startListening();
+            return server.initialize(initArgs(adapterId));
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Failed to wire stdio debug adapter", e);
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    /** Records the adapter subprocess (socket transports that spawn their own server, e.g. js-debug) so
+     *  {@link #dispose} kills it and its descendants. */
+    public void setAdapterProcess(Process process) {
+        this.adapterProcess = process;
     }
 
     private static Socket openWithRetry(int port, int tries) throws InterruptedException {
@@ -129,11 +162,11 @@ public final class DapClient implements IDebugProtocolClient {
         throw new IllegalStateException("could not connect to the debug adapter on port " + port);
     }
 
-    private static InitializeRequestArguments initArgs() {
+    private static InitializeRequestArguments initArgs(String adapterId) {
         InitializeRequestArguments a = new InitializeRequestArguments();
         a.setClientID("editora");
         a.setClientName("Editora");
-        a.setAdapterID("java");
+        a.setAdapterID(adapterId == null || adapterId.isBlank() ? "java" : adapterId);
         a.setPathFormat("path");
         a.setLinesStartAt1(true);
         a.setColumnsStartAt1(true);
@@ -333,7 +366,7 @@ public final class DapClient implements IDebugProtocolClient {
         ignore(server.stepOut(a));
     }
 
-    /** Disconnects (and terminates the debuggee) and closes the socket. */
+    /** Disconnects (terminates the debuggee), closes the socket, and kills the adapter subprocess tree. */
     public void dispose() {
         if (disposed) {
             return;
@@ -354,6 +387,18 @@ public final class DapClient implements IDebugProtocolClient {
             }
         } catch (Exception ignored) {
             // best effort
+        }
+        // Kill the adapter subprocess and its descendants (debugpy stdio, or a node js-debug server). Like
+        // LanguageServerSession: destroy the descendant tree first, then the root — a wrapper script
+        // (e.g. node launched via a shim) would otherwise orphan the real adapter.
+        Process p = adapterProcess;
+        if (p != null) {
+            try {
+                p.descendants().forEach(ProcessHandle::destroy);
+            } catch (RuntimeException ignored) {
+                // best effort
+            }
+            p.destroy();
         }
         executor.shutdownNow();
     }

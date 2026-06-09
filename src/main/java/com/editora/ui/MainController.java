@@ -324,7 +324,7 @@ public class MainController {
         bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows, gitService, mermaidService,
-                lspManager, this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath,
+                lspManager, dapManager, this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath,
                 this::exportConfig, this::showDebugLog);
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
@@ -1524,11 +1524,30 @@ public class MainController {
         return config.getSettings().isDebugSupport();
     }
 
-    /** Debugging is <em>effective</em> only when LSP + the java server are on and detected, and the
-     *  java-debug plugin jar was located. */
+    /** Debugging is <em>effective</em> for Java only when LSP + the java server are on and detected, and
+     *  the java-debug plugin jar was located. */
     private boolean debugEffective() {
-        return debugSupportEnabled() && lspEnabled() && serverEnabled("java")
-                && lspServerAvailable.getOrDefault("java", Boolean.FALSE) && dapManager.isAdapterAvailable();
+        return debugEffectiveFor("java");
+    }
+
+    /**
+     * Whether debugging is available for {@code language} (the editor/LSP language id): Java layers on
+     * the jdtls LSP server + the java-debug plugin; Python needs {@code pythonDebugEnabled} + debugpy
+     * detected; JavaScript needs {@code jsDebugEnabled} + the js-debug server + node detected.
+     */
+    private boolean debugEffectiveFor(String language) {
+        if (!debugSupportEnabled() || language == null) {
+            return false;
+        }
+        Settings s = config.getSettings();
+        return switch (language) {
+            case "java" -> lspEnabled() && serverEnabled("java")
+                    && lspServerAvailable.getOrDefault("java", Boolean.FALSE)
+                    && dapManager.isAdapterAvailable();
+            case "python" -> s.isPythonDebugEnabled() && dapManager.isLanguageAvailable("python");
+            case "javascript" -> s.isJsDebugEnabled() && dapManager.isLanguageAvailable("javascript");
+            default -> false;
+        };
     }
 
     /** Runs {@code action} only when the Debug feature is enabled; otherwise reports it. */
@@ -1552,7 +1571,12 @@ public class MainController {
     private void applyDebugSupport() {
         Settings s = config.getSettings();
         boolean on = s.isDebugSupport();
-        dapManager.configure(on, s.getJavaDebugPluginPath()); // locates the jar synchronously
+        // Configure all three adapters: java (jdtls plugin, located synchronously) + the standalone
+        // python (debugpy) / javascript (vscode-js-debug) adapters (paths resolved synchronously; their
+        // availability needs a subprocess probe, run async below).
+        dapManager.configure(on, s.getJavaDebugPluginPath(),
+                s.isPythonDebugEnabled(), s.getPythonDebugCommand(),
+                s.isJsDebugEnabled(), s.getJsDebugPath());
         List<String> bundles = on ? dapManager.bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
@@ -1565,15 +1589,20 @@ public class MainController {
             applyLspGating(); // re-open the java buffers on the fresh session
         }
         applyDebugGating();
+        if (on) {
+            // Probe debugpy / node off-thread; re-gate when each result lands (enables python/js gutters).
+            dapManager.detectPython(ok -> applyDebugGating());
+            dapManager.detectJs(ok -> applyDebugGating());
+        }
     }
 
-    /** Per-buffer breakpoint-gutter gate + Debug tool-window availability. */
+    /** Per-buffer breakpoint-gutter gate (only for debuggable languages) + Debug tool-window availability. */
     private void applyDebugGating() {
         boolean on = debugSupportEnabled();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
-                b.setBreakpointsEnabled(on);
+                b.setBreakpointsEnabled(on && isDebuggableBuffer(b));
             }
         }
         toolWindows.setAvailable(debugToolWindow, on);
@@ -1581,6 +1610,11 @@ public class MainController {
             statusBar.setDebug(null);
             statusBar.setDebugLoading(false);
         }
+    }
+
+    /** Whether a buffer's language has a registered debug adapter (java/python/javascript). */
+    private boolean isDebuggableBuffer(EditorBuffer b) {
+        return b != null && com.editora.dap.DapServerRegistry.isDebuggable(b.getLanguage());
     }
 
     /** Persists a buffer's breakpoints + (if a session is live) re-sends that file's set to the adapter. */
@@ -1762,7 +1796,8 @@ public class MainController {
             setStatus(tr("status.debug.saveFirst"));
             return;
         }
-        if (!debugEffective()) {
+        String language = b.getLanguage();
+        if (!debugEffectiveFor(language)) {
             setStatus(tr("status.debug.unavailable"));
             return;
         }
@@ -1770,7 +1805,7 @@ public class MainController {
             return;
         }
         toolWindows.open(debugToolWindow);
-        dapManager.startLaunch(b.getPath(), this::pickMainClass);
+        dapManager.startLaunch(b.getPath(), language, this::pickMainClass);
     }
 
     /** Attaches to a running JVM (asks for {@code host:port}). */
@@ -3172,8 +3207,9 @@ public class MainController {
         buffer.setRunHandler(this::runActiveFile); // "Run File" editor right-click item (runnable files)
         buffer.setRunEnabled(lspEnabled()); // the Run affordance is gated by the LSP feature
         buffer.setShellRunEnabled(lspEnabled() && config.getSettings().isBashLspEnabled());
-        // Debugging: the leftmost breakpoint gutter strip + persistence + live re-send to a session.
-        buffer.setBreakpointsEnabled(debugSupportEnabled());
+        // Debugging: the leftmost breakpoint gutter strip + persistence + live re-send to a session
+        // (only for debuggable languages — java/python/javascript).
+        buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
         buffer.setAddNoteHandler(this::addNoteFromContext);
         buffer.setNotesEnabled(notesEnabled());

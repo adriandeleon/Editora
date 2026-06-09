@@ -95,4 +95,82 @@ class DebugAdapterLocatorTest {
         assertTrue(DebugAdapterLocator.locate("", home).isEmpty());
         assertTrue(DebugAdapterLocator.locate(home.resolve("nope.jar").toString(), home).isEmpty());
     }
+
+    // --- vscode-js-debug -----------------------------------------------------------------------
+
+    @Test
+    void pathVersionExtractsFirstVersion() {
+        assertEquals("1.96.0", DebugAdapterLocator.pathVersion("/x/js-debug-v1.96.0/js-debug/src/x.js"));
+        assertEquals("1.96", DebugAdapterLocator.pathVersion("ms-vscode.js-debug-1.96/y"));
+        assertEquals("", DebugAdapterLocator.pathVersion("/no/version/here"));
+    }
+
+    @Test
+    void locateJsDebugUsesConfiguredEntryDirectly(@TempDir Path dir) throws IOException {
+        Path entry = dir.resolve("dapDebugServer.js");
+        Files.createFile(entry);
+        assertEquals(Optional.of(entry),
+                DebugAdapterLocator.locateJsDebugServer(entry.toString(), dir));
+    }
+
+    @Test
+    void locateJsDebugSearchesConfiguredDir(@TempDir Path dir) throws IOException {
+        Path nested = dir.resolve("js-debug/src");
+        Files.createDirectories(nested);
+        Path entry = nested.resolve("dapDebugServer.js");
+        Files.createFile(entry);
+        assertEquals(Optional.of(entry), DebugAdapterLocator.locateJsDebugServer(dir.toString(), dir));
+    }
+
+    @Test
+    void locateJsDebugAutoDetectsEditoraPluginDir(@TempDir Path home) throws IOException {
+        Path src = home.resolve(".editora/plugins/dap/javascript/js-debug/src");
+        Files.createDirectories(src);
+        Path entry = src.resolve("dapDebugServer.js");
+        Files.createFile(entry);
+        assertEquals(Optional.of(entry), DebugAdapterLocator.locateJsDebugServer("", home));
+    }
+
+    @Test
+    void locateJsDebugPicksNewestByPathVersion(@TempDir Path home) throws IOException {
+        Path oldExt = home.resolve(".vscode/extensions/ms-vscode.js-debug-1.80.0/src");
+        Path newExt = home.resolve(".vscode/extensions/ms-vscode.js-debug-1.96.0/src");
+        Files.createDirectories(oldExt);
+        Files.createDirectories(newExt);
+        Files.createFile(oldExt.resolve("dapDebugServer.js"));
+        Path newest = newExt.resolve("dapDebugServer.js");
+        Files.createFile(newest);
+        assertEquals(Optional.of(newest), DebugAdapterLocator.locateJsDebugServer("", home));
+    }
+
+    @Test
+    void locateJsDebugEmptyWhenNothingFound(@TempDir Path home) {
+        assertTrue(DebugAdapterLocator.locateJsDebugServer("", home).isEmpty());
+    }
+
+    // --- debugpy -------------------------------------------------------------------------------
+
+    @Test
+    void locateDebugpyFindsEditoraPluginDir(@TempDir Path home) throws IOException {
+        Path target = home.resolve(".editora/plugins/dap/python");
+        Files.createDirectories(target.resolve("debugpy"));
+        assertEquals(Optional.of(target), DebugAdapterLocator.locateDebugpy("", home));
+    }
+
+    @Test
+    void locateDebugpyUsesConfiguredDirWithPackage(@TempDir Path home) throws IOException {
+        Path custom = home.resolve("custom-pythonpath");
+        Files.createDirectories(custom.resolve("debugpy"));
+        assertEquals(Optional.of(custom), DebugAdapterLocator.locateDebugpy(custom.toString(), home));
+    }
+
+    @Test
+    void locateDebugpyEmptyWhenNoPackage(@TempDir Path home) throws IOException {
+        // A dir that exists but has no debugpy package, and no editora install → empty (caller falls back
+        // to a configured/PATH python importing debugpy directly).
+        Path custom = home.resolve("empty");
+        Files.createDirectories(custom);
+        assertTrue(DebugAdapterLocator.locateDebugpy(custom.toString(), home).isEmpty());
+        assertTrue(DebugAdapterLocator.locateDebugpy("", home).isEmpty());
+    }
 }
