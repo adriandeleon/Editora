@@ -432,7 +432,19 @@
                                         <name>org.eclipse.lsp4j</name>
                                     </moduleInfo>
                                 </module>
-                                <!-- DAP client: same treatment as lsp4j; requires jsonrpc. -->
+                                <!-- DAP JSON-RPC transport: required by lsp4j.debug (must be patched
+                                     first, in dependency order); requires jsonrpc. -->
+                                <module>
+                                    <artifact>
+                                        <groupId>org.eclipse.lsp4j</groupId>
+                                        <artifactId>org.eclipse.lsp4j.jsonrpc.debug</artifactId>
+                                        <version>${lsp4j.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>org.eclipse.lsp4j.jsonrpc.debug</name>
+                                    </moduleInfo>
+                                </module>
+                                <!-- DAP client: same treatment as lsp4j; requires jsonrpc + jsonrpc.debug. -->
                                 <module>
                                     <artifact>
                                         <groupId>org.eclipse.lsp4j</groupId>
@@ -551,6 +563,12 @@
                                         </zip>
                                         <move file="${project.build.directory}/mods/lsp4j-jsonrpc-unsigned.jar"
                                               tofile="${project.build.directory}/mods/org.eclipse.lsp4j.jsonrpc-${lsp4j.version}.jar"/>
+                                        <zip destfile="${project.build.directory}/mods/lsp4j-jsonrpc-debug-unsigned.jar">
+                                            <zipfileset src="${project.build.directory}/mods/org.eclipse.lsp4j.jsonrpc.debug-${lsp4j.version}.jar"
+                                                        excludes="META-INF/*.SF,META-INF/*.RSA,META-INF/*.DSA,META-INF/*.EC"/>
+                                        </zip>
+                                        <move file="${project.build.directory}/mods/lsp4j-jsonrpc-debug-unsigned.jar"
+                                              tofile="${project.build.directory}/mods/org.eclipse.lsp4j.jsonrpc.debug-${lsp4j.version}.jar"/>
                                         <zip destfile="${project.build.directory}/mods/lsp4j-debug-unsigned.jar">
                                             <zipfileset src="${project.build.directory}/mods/org.eclipse.lsp4j.debug-${lsp4j.version}.jar"
                                                         excludes="META-INF/*.SF,META-INF/*.RSA,META-INF/*.DSA,META-INF/*.EC"/>
