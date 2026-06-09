@@ -30,6 +30,11 @@ module com.editora {
     // (filename-derived names) — moditect injects real descriptors for the jlink dist build.
     requires org.eclipse.lsp4j;
     requires org.eclipse.lsp4j.jsonrpc;
+    // Debug Adapter Protocol client (LSP4J DAP). Automatic module, moditect-patched like lsp4j above.
+    requires org.eclipse.lsp4j.debug;
+    // Gson (already a transitive module via jsonrpc) — the DAP layer parses jdtls's untyped
+    // workspace/executeCommand results, which lsp4j hands back as gson JsonElements.
+    requires com.google.gson;
 
     opens com.editora to javafx.fxml;
     opens com.editora.ui to javafx.fxml;
@@ -47,6 +52,9 @@ module com.editora {
     // com.google.gson under jlink), so this must be an UNQUALIFIED opens — a qualified opens to
     // org.eclipse.lsp4j.jsonrpc alone leaves Gson unable to set the DTO fields accessible.
     opens com.editora.lsp;
+    // Same as com.editora.lsp: the DAP client (com.editora.dap) receives events via reflection and Gson
+    // reflectively reads the DAP DTOs — UNQUALIFIED opens for the unnamed-module Gson under javafx:run.
+    opens com.editora.dap;
 
     exports com.editora;
     exports com.editora.command;

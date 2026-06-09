@@ -25,6 +25,7 @@ import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
+import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverCapabilities;
 import org.eclipse.lsp4j.HoverParams;
@@ -78,6 +79,9 @@ final class LanguageServerSession implements LanguageClient {
     /** Server status sink: {@code accept(type, message)} — type is a JDT LS {@code language/status} type
      *  (e.g. "Starting"/"ServiceReady"/"Error") or "Message" for {@code window/showMessage}. */
     private final java.util.function.BiConsumer<String, String> onStatus;
+    /** Server-specific {@code initialize.initializationOptions} (e.g. jdtls {@code {"bundles":[…]}} to
+     *  load the java-debug plugin); null for the default. */
+    private final Object initializationOptions;
 
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "lsp-session");
@@ -97,10 +101,17 @@ final class LanguageServerSession implements LanguageClient {
     LanguageServerSession(LspServerRegistry.ServerSpec spec, Path root,
             Consumer<PublishDiagnosticsParams> onDiagnostics,
             java.util.function.BiConsumer<String, String> onStatus) {
+        this(spec, root, onDiagnostics, onStatus, null);
+    }
+
+    LanguageServerSession(LspServerRegistry.ServerSpec spec, Path root,
+            Consumer<PublishDiagnosticsParams> onDiagnostics,
+            java.util.function.BiConsumer<String, String> onStatus, Object initializationOptions) {
         this.command = spec.command();
         this.root = root;
         this.onDiagnostics = onDiagnostics;
         this.onStatus = onStatus == null ? (t, m) -> { } : onStatus;
+        this.initializationOptions = initializationOptions;
     }
 
     /** Launches the server process + LSP4J client and sends {@code initialize}. Returns false on failure. */
@@ -135,6 +146,9 @@ final class LanguageServerSession implements LanguageClient {
         ip.setRootUri(uri);
         ip.setWorkspaceFolders(List.of(new WorkspaceFolder(uri, root.getFileName().toString())));
         ip.setCapabilities(clientCapabilities());
+        if (initializationOptions != null) {
+            ip.setInitializationOptions(initializationOptions); // jdtls: {"bundles":[<java-debug jar>]}
+        }
         server.initialize(ip).thenAccept(result -> {
             capabilities = result.getCapabilities();
             server.initialized(new InitializedParams());
@@ -280,6 +294,35 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     // --- Requests (return raw LSP futures; LspManager marshals to the FX thread) ----------------
+
+    /**
+     * Runs a server-side command ({@code workspace/executeCommand}) — used to drive jdtls's debug
+     * commands ({@code vscode.java.resolveMainClass}/{@code resolveClasspath}/{@code startDebugSession}/…).
+     * Queued until {@code initialize} completes; completes exceptionally if the session is disposed first.
+     */
+    CompletableFuture<Object> executeCommand(String command, List<Object> args) {
+        CompletableFuture<Object> out = new CompletableFuture<>();
+        whenReady(() -> {
+            if (disposed || server == null) {
+                out.completeExceptionally(new IllegalStateException("language server not available"));
+                return;
+            }
+            try {
+                server.getWorkspaceService()
+                        .executeCommand(new ExecuteCommandParams(command, args == null ? List.of() : args))
+                        .whenComplete((r, e) -> {
+                            if (e != null) {
+                                out.completeExceptionally(e);
+                            } else {
+                                out.complete(r);
+                            }
+                        });
+            } catch (RuntimeException ex) {
+                out.completeExceptionally(ex);
+            }
+        });
+        return out;
+    }
 
     CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(String uri, Position pos) {
         if (!ready()) {

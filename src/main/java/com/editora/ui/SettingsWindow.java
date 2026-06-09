@@ -75,6 +75,7 @@ public class SettingsWindow {
         GIT(tr("settings.cat.git"), false),
         MERMAID(tr("settings.cat.mermaid"), false),
         LSP(tr("settings.cat.lsp"), false),
+        DEBUG(tr("settings.cat.debug"), false),
         KEYMAPS(tr("settings.cat.keymaps"), true),
         PLUGINS(tr("settings.cat.plugins"), true),
         AI(tr("settings.cat.ai"), true),
@@ -135,6 +136,9 @@ public class SettingsWindow {
     private Label gitStatusLabel;
     private CheckBox mermaidCheck;
     private TextField mmdcPathField;
+    private CheckBox debugCheck;
+    private TextField debugPluginPathField;
+    private Label debugStatusLabel;
     private TextField maidPathField;
     private Label mermaidStatusLabel;
     private CheckBox lspCheck;
@@ -490,6 +494,20 @@ public class SettingsWindow {
             refreshMermaidStatus();
         });
 
+        debugCheck = new CheckBox(tr("settings.enableDebug"));
+        debugCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugSupport(now);
+            apply();
+            refreshDebugStatus();
+        });
+        debugPluginPathField = new TextField();
+        debugPluginPathField.setPromptText("com.microsoft.java.debug.plugin-*.jar");
+        debugPluginPathField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setJavaDebugPluginPath(now);
+            apply();
+            refreshDebugStatus();
+        });
+
         lspCheck = new CheckBox(tr("settings.enableLsp"));
         lspCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setLspSupport(now);
@@ -577,6 +595,7 @@ public class SettingsWindow {
         pages.put(Category.GIT, gitPage());
         pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.LSP, lspPage());
+        pages.put(Category.DEBUG, debugPage());
         pages.put(Category.ADVANCED, advancedPage());
         for (Category c : Category.values()) {
             if (c.placeholder) {
@@ -712,8 +731,36 @@ public class SettingsWindow {
         return p;
     }
 
+    private VBox debugPage() {
+        VBox p = page(tr("settings.cat.debug"));
+        Label experimental = note(tr("settings.debug.experimental"));
+        experimental.getStyleClass().add("settings-experimental");
+        experimental.setWrapText(true);
+        experimental.setMaxWidth(440);
+        row(p, Category.DEBUG, null, experimental, "debug experimental beta");
+        debugStatusLabel = new Label(tr("settings.debug.status", tr("settings.debug.notFound")));
+        debugStatusLabel.getStyleClass().add("settings-git-status");
+        debugStatusLabel.setWrapText(true);
+        debugStatusLabel.setMaxWidth(440);
+        row(p, Category.DEBUG, null, debugStatusLabel, "debug java dap plugin found");
+        row(p, Category.DEBUG, null, debugCheck, "debug java dap breakpoint step variables enable");
+        row(p, Category.DEBUG, null,
+                exePathRow(tr("settings.debug.pluginPath"), debugPluginPathField),
+                "debug java plugin jar path java-debug");
+        Label hint = note(tr("settings.debug.note"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.DEBUG, null, hint, "debug java plugin install vscode mason jdtls");
+        return p;
+    }
+
     private VBox lspPage() {
         VBox p = page(tr("settings.cat.lsp"));
+        Label experimental = note(tr("settings.lsp.experimental"));
+        experimental.getStyleClass().add("settings-experimental");
+        experimental.setWrapText(true);
+        experimental.setMaxWidth(440);
+        row(p, Category.LSP, null, experimental, "lsp experimental beta");
         row(p, Category.LSP, null, lspCheck,
                 "lsp language server protocol enable java typescript python xml json bash diagnostics");
         for (LspServerUi srv : lspServerUis()) {
@@ -931,6 +978,21 @@ public class SettingsWindow {
                     a.mmdc() && a.maid() ? "settings-git-found" : "settings-git-missing");
             mermaidStatusLabel.setText(tr("settings.mermaid.status", mmdcState, maidState));
         });
+    }
+
+    /** Re-checks whether the java-debug plugin jar is found (from the path or auto-detection) and colors
+     *  the status label green/red, like the LSP/Mermaid status. Filesystem locate is cheap. */
+    private void refreshDebugStatus() {
+        if (debugStatusLabel == null) {
+            return;
+        }
+        boolean found = com.editora.dap.DebugAdapterLocator.locate(
+                config.getSettings().getJavaDebugPluginPath(),
+                java.nio.file.Path.of(System.getProperty("user.home", ""))).isPresent();
+        debugStatusLabel.getStyleClass().setAll("settings-git-status",
+                found ? "settings-git-found" : "settings-git-missing");
+        debugStatusLabel.setText(tr("settings.debug.status",
+                tr(found ? "settings.debug.found" : "settings.debug.notFound")));
     }
 
     /** The per-server enable checkboxes are only meaningful while the global LSP toggle is on. */
@@ -1441,6 +1503,9 @@ public class SettingsWindow {
             mmdcPathField.setText(settings.getMmdcPath());
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
+            debugCheck.setSelected(settings.isDebugSupport());
+            debugPluginPathField.setText(settings.getJavaDebugPluginPath());
+            refreshDebugStatus();
             lspCheck.setSelected(settings.isLspSupport());
             for (LspServerUi srv : lspServerUis()) {
                 CheckBox enable = lspEnableChecks.get(srv.id());

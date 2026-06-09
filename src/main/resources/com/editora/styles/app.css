@@ -1338,9 +1338,35 @@
     -fx-font-family: "JetBrains Mono", monospace;
     -fx-font-size: 12px;
 }
+/* Debug tool window: muted status + section labels; monospace console. */
+.debug-panel .debug-status { -fx-text-fill: -color-fg-muted; }
+.debug-panel .debug-section { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-font-weight: bold; }
+.debug-panel .debug-console {
+    -fx-font-family: "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+}
+/* "Experimental" notice at the top of the LSP / Debugging settings pages — amber to stand out. */
+.settings-experimental { -fx-text-fill: #bf8700; -fx-font-weight: bold; }
+
+/* Green "Start / Continue" play button in the Debug toolbar (text + the play glyph). */
+.debug-panel .debug-start { -fx-text-fill: #3fb950; -fx-font-weight: bold; }
+.debug-panel .debug-start .toolbar-icon { -fx-fill: #3fb950; }
+.debug-panel .debug-start:disabled { -fx-opacity: 0.5; }
 /* Green play glyph for the gutter Run marker (compact source main line) + the right-click Run item. */
 .run-marker { -fx-fill: #3fb950; }
 .fold-gutter .run-slot:hover .run-marker { -fx-fill: #56d364; }
+
+/* Gutter breakpoint dot (leftmost strip). Plain = solid red; conditional/logpoint tint it; disabled is
+   hollow/grey. A faint dot previews on hover over an empty strip so the click target is discoverable. */
+.breakpoint-marker { -fx-fill: #e51400; }
+.breakpoint-marker.breakpoint-conditional { -fx-fill: #d29922; }
+.breakpoint-marker.breakpoint-logpoint { -fx-fill: #1f6feb; }
+.breakpoint-marker.breakpoint-disabled { -fx-fill: -color-fg-muted; -fx-opacity: 0.5; }
+.fold-gutter .breakpoint-slot:hover { -fx-background-color: rgba(229, 20, 0, 0.12); }
+
+/* Current execution line while the debugger is suspended (a RichTextFX paragraph style). A translucent
+   amber wash so it reads over syntax colors; the caret-line highlight reinforces it. */
+.editor-area .paragraph-text.exec-line { -fx-background-color: rgba(210, 153, 34, 0.22); }
 
 /* Debug Log window: monospace read-only log area + a muted file-path footer. */
 .debug-log-area {

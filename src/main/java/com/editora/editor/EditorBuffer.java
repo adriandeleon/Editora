@@ -253,6 +253,13 @@ public class EditorBuffer implements TabContent {
     /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBookmarkClick =
             (buffer, line) -> buffer.toggleBookmark(line);
+    /** Breakpoints for this buffer (gutter strip + persistence + sent to a live DAP session). */
+    private final BreakpointManager breakpoints = new BreakpointManager(area);
+    /** When true, the leftmost breakpoint strip is reserved + clickable (debugging is enabled). */
+    private boolean debugEnabled = false;
+    /** Handles a breakpoint-strip click; default toggles. The controller overrides to persist + re-send. */
+    private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBreakpointClick =
+            (buffer, line) -> buffer.toggleBreakpoint(line);
     /** Personal Notes for this buffer (gutter marker + highlight + hover). */
     private final NoteManager notes = new NoteManager(area);
     private final NoteHighlightOverlay noteOverlay = new NoteHighlightOverlay(area);
@@ -347,6 +354,10 @@ public class EditorBuffer implements TabContent {
                         runHandler.run();
                     }
                 });
+        // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
+        folds.setBreakpointHooks(() -> debugEnabled, breakpoints::isBreakpoint, this::breakpointStyleClass,
+                line -> gutterBreakpointClick.accept(this, line));
+        breakpoints.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
         addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
@@ -1931,6 +1942,92 @@ public class EditorBuffer implements TabContent {
         boolean reanchored = bookmarks.restore(saved);
         refreshGutter();
         return reanchored;
+    }
+
+    // ---- Breakpoints (debugging) ----
+
+    public BreakpointManager getBreakpointManager() {
+        return breakpoints;
+    }
+
+    /** Enables/disables the leftmost breakpoint gutter strip (rebuilds the gutter when it changes). */
+    public void setBreakpointsEnabled(boolean enabled) {
+        if (enabled != debugEnabled) {
+            debugEnabled = enabled;
+            refreshGutter(); // the breakpoint slot appeared/disappeared on every row
+        }
+    }
+
+    public boolean isBreakpointsEnabled() {
+        return debugEnabled;
+    }
+
+    /** Sets the breakpoint-strip click handler ({@code (buffer, line)}) — the controller persists + re-sends. */
+    public void setGutterBreakpointClick(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
+        if (handler != null) {
+            this.gutterBreakpointClick = handler;
+        }
+    }
+
+    /** Callback fired after any breakpoint change (persist + re-send to a live DAP session). */
+    public void setOnBreakpointsChanged(Runnable callback) {
+        breakpoints.setOnChanged(callback);
+    }
+
+    /** Toggles the breakpoint on {@code line} and refreshes just that line's gutter strip. */
+    public boolean toggleBreakpoint(int line) {
+        boolean on = breakpoints.toggle(line);
+        refreshGutterLine(line);
+        return on;
+    }
+
+    /** Replaces this buffer's breakpoints from persisted state; returns whether any was re-anchored. */
+    public boolean applyBreakpoints(List<com.editora.config.Breakpoint> saved) {
+        boolean reanchored = breakpoints.restore(saved);
+        refreshGutter();
+        return reanchored;
+    }
+
+    /** 0-based line currently highlighted as the debugger's execution point, or -1 when none. */
+    private int executionLine = -1;
+
+    /**
+     * Marks {@code line} as the current execution point (a distinct paragraph background) and scrolls/moves
+     * the caret there so the built-in current-line highlight reinforces it. Clears any previous mark.
+     */
+    public void setExecutionLine(int line) {
+        clearExecutionLine();
+        if (line >= 0 && line < area.getParagraphs().size()) {
+            executionLine = line;
+            area.setParagraphStyle(line, java.util.List.of("exec-line"));
+            jumpToLine(line);
+        }
+    }
+
+    /** Removes the execution-point highlight (if any). */
+    public void clearExecutionLine() {
+        if (executionLine >= 0 && executionLine < area.getParagraphs().size()) {
+            area.setParagraphStyle(executionLine, java.util.Collections.emptyList());
+        }
+        executionLine = -1;
+    }
+
+    /** The extra glyph CSS-class suffix for the breakpoint on {@code line} (disabled/logpoint/conditional). */
+    private String breakpointStyleClass(int line) {
+        com.editora.config.Breakpoint bp = breakpoints.get(line);
+        if (bp == null) {
+            return null;
+        }
+        if (!bp.enabled()) {
+            return "disabled";
+        }
+        if (bp.isLogpoint()) {
+            return "logpoint";
+        }
+        if (bp.isConditional()) {
+            return "conditional";
+        }
+        return null;
     }
 
     // ---- Personal Notes ----

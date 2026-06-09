@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Java debugging (DAP)** — a full debugger for Java, complementing the existing Java LSP support, off by
+  default (Settings → **Debugging** → "Enable Java debugging"). It layers on the running **jdtls** language
+  server plus the Microsoft **java-debug** plugin jar (not bundled — auto-detected from a VS Code Java
+  extension / nvim mason install, or set its path in Settings) and speaks the Debug Adapter Protocol over a
+  socket. Features:
+  - **Breakpoints** in a clickable leftmost gutter strip (red dot), persisted per project in
+    `breakpoints.json` and re-anchored to their line's content across edits; **conditional breakpoints** and
+    **logpoints** via *Edit Breakpoint* (`C-c C-d e`).
+  - **Launch** a standalone Java file (incl. JEP 512 compact source) or a project main class (a picker
+    appears when several are found), or **attach** to a running JVM (`host:port`).
+  - **Stepping** (continue / over / into / out), a **current-execution-line** highlight that follows
+    execution, and a **Debug tool window** (`M-g d`) with the call stack, a lazily-expanding variables tree,
+    an output **console** with an evaluate REPL, and **exception breakpoints**.
+  - Commands `debug.start` (`C-c C-d d`), `debug.continue`/`stepOver`/`stepInto`/`stepOut`
+    (`C-c C-d c`/`n`/`i`/`o`), `debug.stop` (`C-c C-d k`), `debug.attach` (`C-c C-d a`),
+    `debug.toggleBreakpoint` (`C-c C-b`), `debug.restart`, `debug.toggleExceptionBreakpoints`, and a
+    status-bar "Debug" segment. Requires the Java LSP server enabled + jdtls and the plugin detected;
+    everything no-ops cleanly otherwise.
+
 - **Debug Log viewer** — a new in-app window that shows the application log (java.util.logging output +
   uncaught exceptions), so you can see errors/warnings in a packaged build (DMG/MSI/DEB) where stderr
   isn't visible. Open it via the **Debug Log** command in the palette or **Settings → Advanced → Show

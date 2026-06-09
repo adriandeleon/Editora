@@ -34,6 +34,7 @@ public class ConfigManager {
     static final String SETTINGS_FILE_NAME = "settings.toml";
     static final String WORKSPACE_FILE_NAME = "workspace-state.json";
     static final String BOOKMARKS_FILE_NAME = "bookmarks.json";
+    static final String BREAKPOINTS_FILE_NAME = "breakpoints.json";
     static final String NOTES_FILE_NAME = "notes.json";
     static final String DICTIONARY_FILE_NAME = "dictionary.txt";
     static final String PROJECTS_DIR_NAME = "projects";
@@ -52,6 +53,8 @@ public class ConfigManager {
     private BookmarkStore bookmarkStore = new BookmarkStore();
     /** Personal Notes (all files/projects), stored in {@code notes.json} — see {@link NoteStore}. */
     private NoteStore noteStore = new NoteStore();
+    /** Breakpoints (all files/projects), stored in {@code breakpoints.json} — see {@link BreakpointStore}. */
+    private BreakpointStore breakpointStore = new BreakpointStore();
     /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
     private final java.util.Set<String> userDictionary = new java.util.LinkedHashSet<>();
     /** The session-state file currently in use — the default, or a project's state file. */
@@ -138,6 +141,10 @@ public class ConfigManager {
         return configDir.resolve(NOTES_FILE_NAME);
     }
 
+    public Path getBreakpointsFile() {
+        return configDir.resolve(BREAKPOINTS_FILE_NAME);
+    }
+
     /**
      * Personal Notes (canonical file path -> notes) for the <em>active</em> project — bucket chosen by the
      * current session file, exactly like {@link #getBookmarks()}. Persist changes with {@link #saveNotes()}.
@@ -171,6 +178,22 @@ public class ConfigManager {
     }
 
     /**
+     * The breakpoint map (absolute file path -> breakpoints) for the <em>active</em> project — bucket
+     * chosen by the current session file, exactly like {@link #getBookmarks()}. Persist changes with
+     * {@link #saveBreakpoints()}.
+     */
+    public Map<String, List<Breakpoint>> getBreakpoints() {
+        return breakpointStore.bucket(currentBookmarkKey());
+    }
+
+    /** Removes a project's entire breakpoint bucket (called when the project is deleted) and persists. */
+    public void deleteBreakpointsForProject(String projectKey) {
+        if (breakpointStore.getByProject().remove(projectKey == null ? "" : projectKey) != null) {
+            saveBreakpoints();
+        }
+    }
+
+    /**
      * The project key for the active session: {@code ""} for the default {@code workspace-state.json}
      * (no project), otherwise the project id (the {@code projects/<id>.json} base name). Bookmarks are
      * bucketed by this key in {@code bookmarks.json}.
@@ -193,6 +216,7 @@ public class ConfigManager {
         workspaceState = ConfigMigrations.readVersioned(
                 getWorkspaceStateFile(), json, new WorkspaceState(), ConfigSchema.WORKSPACE);
         loadBookmarks();
+        loadBreakpoints();
         loadNotes();
         loadUserDictionary();
         return settings;
@@ -260,6 +284,16 @@ public class ConfigManager {
         saveBookmarks(); // create bookmarks.json so migration is one-time (even if empty)
     }
 
+    /** Loads {@code breakpoints.json} (a fresh, empty store if it doesn't exist yet — no legacy migration). */
+    private void loadBreakpoints() {
+        if (Files.exists(getBreakpointsFile())) {
+            breakpointStore = ConfigMigrations.readVersioned(
+                    getBreakpointsFile(), json, new BreakpointStore(), ConfigSchema.BREAKPOINTS);
+        } else {
+            breakpointStore = new BreakpointStore();
+        }
+    }
+
     /** Migrates bookmarks out of the legacy session files into their per-project buckets, stripping each. */
     private void migrateLegacyBookmarks() {
         extractAndStripBookmarks(configDir.resolve(WORKSPACE_FILE_NAME), ""); // no-project bucket
@@ -322,6 +356,16 @@ public class ConfigManager {
             json.writeValue(getBookmarksFile().toFile(), bookmarkStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write bookmarks to " + getBookmarksFile(), e);
+        }
+    }
+
+    /** Writes the breakpoints to {@code breakpoints.json}, independently of {@link #save()}. */
+    public void saveBreakpoints() {
+        try {
+            Files.createDirectories(configDir);
+            json.writeValue(getBreakpointsFile().toFile(), breakpointStore);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write breakpoints to " + getBreakpointsFile(), e);
         }
     }
 

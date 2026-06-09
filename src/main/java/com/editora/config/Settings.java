@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 14;
+    public static final int SCHEMA_VERSION = 15;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -76,6 +76,13 @@ public class Settings {
     private String mmdcPath = "";
     /** Path to the maid (probelabs/maid linter) executable; blank = resolve "maid" on PATH. */
     private String maidPath = "";
+    /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
+     *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
+     *  and the plugin jar is found. */
+    private boolean debugSupport = false;
+    /** Path to the {@code com.microsoft.java.debug.plugin-*.jar} (a jar, or a dir to scan); blank =
+     *  auto-detect common install locations (VS Code java extension, mason, …). */
+    private String javaDebugPluginPath = "";
     /** Language Server Protocol support: off by default — needs an external language server. Phase 1
      *  covers Java (Eclipse JDT LS): diagnostics, hover/go-to-definition/references, completion. */
     private boolean lspSupport = false;
@@ -435,6 +442,22 @@ public class Settings {
 
     public void setLspSupport(boolean lspSupport) {
         this.lspSupport = lspSupport;
+    }
+
+    public boolean isDebugSupport() {
+        return debugSupport;
+    }
+
+    public void setDebugSupport(boolean debugSupport) {
+        this.debugSupport = debugSupport;
+    }
+
+    public String getJavaDebugPluginPath() {
+        return javaDebugPluginPath == null ? "" : javaDebugPluginPath;
+    }
+
+    public void setJavaDebugPluginPath(String javaDebugPluginPath) {
+        this.javaDebugPluginPath = javaDebugPluginPath == null ? "" : javaDebugPluginPath;
     }
 
     public String getJavaLspCommand() {

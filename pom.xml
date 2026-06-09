@@ -173,6 +173,14 @@
             <artifactId>org.eclipse.lsp4j.jsonrpc</artifactId>
             <version>${lsp4j.version}</version>
         </dependency>
+        <!-- Debug Adapter Protocol client (DAP types + DSPLauncher), used by com.editora.dap for Java
+             debugging via jdtls + the Microsoft java-debug plugin. Automatic module (org.eclipse.lsp4j.debug),
+             patched by moditect for the dist build; reuses jsonrpc/gson above. -->
+        <dependency>
+            <groupId>org.eclipse.lsp4j</groupId>
+            <artifactId>org.eclipse.lsp4j.debug</artifactId>
+            <version>${lsp4j.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -424,6 +432,17 @@
                                         <name>org.eclipse.lsp4j</name>
                                     </moduleInfo>
                                 </module>
+                                <!-- DAP client: same treatment as lsp4j; requires jsonrpc. -->
+                                <module>
+                                    <artifact>
+                                        <groupId>org.eclipse.lsp4j</groupId>
+                                        <artifactId>org.eclipse.lsp4j.debug</artifactId>
+                                        <version>${lsp4j.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>org.eclipse.lsp4j.debug</name>
+                                    </moduleInfo>
+                                </module>
                             </modules>
                         </configuration>
                     </execution>
@@ -532,6 +551,12 @@
                                         </zip>
                                         <move file="${project.build.directory}/mods/lsp4j-jsonrpc-unsigned.jar"
                                               tofile="${project.build.directory}/mods/org.eclipse.lsp4j.jsonrpc-${lsp4j.version}.jar"/>
+                                        <zip destfile="${project.build.directory}/mods/lsp4j-debug-unsigned.jar">
+                                            <zipfileset src="${project.build.directory}/mods/org.eclipse.lsp4j.debug-${lsp4j.version}.jar"
+                                                        excludes="META-INF/*.SF,META-INF/*.RSA,META-INF/*.DSA,META-INF/*.EC"/>
+                                        </zip>
+                                        <move file="${project.build.directory}/mods/lsp4j-debug-unsigned.jar"
+                                              tofile="${project.build.directory}/mods/org.eclipse.lsp4j.debug-${lsp4j.version}.jar"/>
                                     </target>
                                 </configuration>
                             </execution>

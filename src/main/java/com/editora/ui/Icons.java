@@ -131,6 +131,35 @@ final class Icons {
         return of("M8 5v14l11-7z");
     }
 
+    /** Debug: Material "bug_report" — for the Debug tool window + status segment. */
+    static Node debug() {
+        return of("M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 "
+                + "5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05"
+                + ".33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 "
+                + "5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z");
+    }
+
+    /** Debug "stop" — a filled square (Material "stop"). */
+    static Node debugStop() {
+        return of("M6 6h12v12H6z");
+    }
+
+    /** Debug "step over" — a forward arc arrow (Material "redo"). */
+    static Node debugStepOver() {
+        return of("M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 "
+                + "4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z");
+    }
+
+    /** Debug "step into" — a downward arrow (Material "arrow_downward"). */
+    static Node debugStepInto() {
+        return of("M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z");
+    }
+
+    /** Debug "step out" — an upward arrow (Material "arrow_upward"). */
+    static Node debugStepOut() {
+        return of("M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z");
+    }
+
     static Node palette() {
         return of("M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 "
                 + "7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.96 17.55 11 21 11 21z");

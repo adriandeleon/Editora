@@ -50,6 +50,11 @@ public final class StatusBar extends HBox {
     // whole scene continuously (even while hidden), starving nearby repaints. setLspLoading() flips it to
     // indeterminate only while a server is actually loading.
     private final ProgressBar lspProgress = new ProgressBar(0);
+    /** Debugger state for the current session (e.g. "Debug: running"); clickable → Debug window. Hidden
+     *  when there's no active debug session. */
+    private final Label debug = segment("tool.debug", tr("statusbar.tip.debug"));
+    /** Indeterminate progress while the debug session is starting; hidden once running/suspended. */
+    private final ProgressBar debugProgress = new ProgressBar(0);
     private final Label position = segment("nav.goToLine", tr("statusbar.tip.goToLine"));
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
     private final Label indent = segment("buffer.setTabSize", tr("statusbar.tip.setTabSize"));
@@ -95,11 +100,19 @@ public final class StatusBar extends HBox {
         lspProgress.setVisible(false); // shown only while a language server is loading
         lspProgress.setManaged(false);
         lspProgress.setTooltip(new Tooltip(tr("statusbar.tip.lspLoading")));
+        debugProgress.getStyleClass().add("status-lsp-progress");
+        debugProgress.setPrefWidth(90);
+        debugProgress.setMaxHeight(10);
+        debugProgress.setVisible(false);
+        debugProgress.setManaged(false);
+        debugProgress.setTooltip(new Tooltip(tr("statusbar.tip.debugLoading")));
+        debug.setVisible(false);
+        debug.setManaged(false);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        getChildren().addAll(echo, spacer, lspProgress, git, lsp, readOnly, zoomGroup(), position, language,
-                indent, endings, size, encoding);
+        getChildren().addAll(echo, spacer, debugProgress, debug, lspProgress, git, lsp, readOnly, zoomGroup(),
+                position, language, indent, endings, size, encoding);
         refresh();
     }
 
@@ -210,6 +223,21 @@ public final class StatusBar extends HBox {
         lspProgress.setProgress(loading ? ProgressBar.INDETERMINATE_PROGRESS : 0);
         lspProgress.setVisible(loading);
         lspProgress.setManaged(loading);
+    }
+
+    /** Shows/updates the Debug segment ({@code state} non-blank → "Debug: state"; null/blank → hidden). */
+    public void setDebug(String state) {
+        boolean show = state != null && !state.isBlank();
+        debug.setText(show ? tr("statusbar.debug", state) : "");
+        debug.setVisible(show);
+        debug.setManaged(show);
+    }
+
+    /** Shows/hides the indeterminate progress bar while a debug session is starting. */
+    public void setDebugLoading(boolean loading) {
+        debugProgress.setProgress(loading ? ProgressBar.INDETERMINATE_PROGRESS : 0);
+        debugProgress.setVisible(loading);
+        debugProgress.setManaged(loading);
     }
 
     /** Re-binds live listeners to {@code buffer} (or none) and refreshes the segments. */

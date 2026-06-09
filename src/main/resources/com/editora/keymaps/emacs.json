@@ -104,5 +104,15 @@
   "C-=": "view.textZoomIn",
   "C-S-=": "view.textZoomIn",
   "C--": "view.textZoomOut",
-  "C-0": "view.textZoomReset"
+  "C-0": "view.textZoomReset",
+  "M-g d": "tool.debug",
+  "C-c C-b": "debug.toggleBreakpoint",
+  "C-c C-d d": "debug.start",
+  "C-c C-d c": "debug.continue",
+  "C-c C-d n": "debug.stepOver",
+  "C-c C-d i": "debug.stepInto",
+  "C-c C-d o": "debug.stepOut",
+  "C-c C-d k": "debug.stop",
+  "C-c C-d a": "debug.attach",
+  "C-c C-d e": "debug.editBreakpoint"
 }

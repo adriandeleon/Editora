@@ -64,6 +64,12 @@ public final class FoldManager {
     /** Width of the Run column, reserved on every row only while this is a compact source file. Snug
      *  around the (narrow) play glyph so it doesn't leave dead space next to the line number. */
     private static final double RUN_SLOT_WIDTH = 13;
+    /** Width of the breakpoint column (leftmost), reserved on every row only while debugging is enabled.
+     *  Clicking anywhere in this strip toggles a breakpoint (IntelliJ-style), so it never collides with
+     *  the gutter's bookmark-toggle click. */
+    private static final double BREAKPOINT_SLOT_WIDTH = 14;
+    /** Material "circle" — the filled red breakpoint dot. */
+    static final String BREAKPOINT_GLYPH_PATH = "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z";
     /** Material "play_arrow" triangle, shared by the gutter Run glyph and the right-click Run menu item. */
     static final String RUN_GLYPH_PATH = "M8 5v14l11-7z";
 
@@ -92,6 +98,16 @@ public final class FoldManager {
     private IntPredicate isRunLine = i -> false;
     /** Invoked when the user clicks the gutter Run glyph (runs the compact source file). */
     private Runnable onRun = () -> { };
+
+    /** Whether debugging is enabled for this buffer (reserve the leftmost breakpoint slot on every row). */
+    private BooleanSupplier breakpointsEnabled = () -> false;
+    /** Whether a line carries a breakpoint (draws the red dot there). */
+    private IntPredicate isBreakpoint = i -> false;
+    /** Extra CSS class for a line's breakpoint glyph (e.g. {@code conditional}/{@code logpoint}/disabled),
+     *  or {@code null} for a plain breakpoint. */
+    private IntFunction<String> breakpointClass = i -> null;
+    /** Invoked when the user clicks the breakpoint strip on a line (toggles the breakpoint). */
+    private IntConsumer onBreakpointToggle = i -> { };
 
     /** Whether Git change tracking is active for this buffer (reserve the change-bar slot). */
     private BooleanSupplier changeBarsEnabled = () -> false;
@@ -244,6 +260,20 @@ public final class FoldManager {
         this.runEnabled = enabled == null ? () -> false : enabled;
         this.isRunLine = isRunLine == null ? i -> false : isRunLine;
         this.onRun = onRun == null ? () -> { } : onRun;
+    }
+
+    /**
+     * Wires the gutter breakpoint column (leftmost): {@code enabled} reserves the fixed-width strip on
+     * every row while debugging is on, {@code isBreakpoint} draws the red dot, {@code classFor} gives an
+     * extra glyph class (conditional/logpoint/disabled) or {@code null}, and {@code onToggle} fires when
+     * the user clicks the strip on a line.
+     */
+    public void setBreakpointHooks(BooleanSupplier enabled, IntPredicate isBreakpoint,
+            IntFunction<String> classFor, IntConsumer onToggle) {
+        this.breakpointsEnabled = enabled == null ? () -> false : enabled;
+        this.isBreakpoint = isBreakpoint == null ? i -> false : isBreakpoint;
+        this.breakpointClass = classFor == null ? i -> null : classFor;
+        this.onBreakpointToggle = onToggle == null ? i -> { } : onToggle;
     }
 
     /**
@@ -513,6 +543,28 @@ public final class FoldManager {
             }
         });
 
+        // Breakpoint strip (leftmost), reserved on every row only while debugging is enabled. Clicking
+        // anywhere in the strip toggles a breakpoint and consumes the event, so it never also triggers the
+        // gutter's bookmark-toggle click. The red dot is drawn only on breakpointed lines.
+        if (breakpointsEnabled.getAsBoolean()) {
+            StackPane bpSlot = new StackPane();
+            bpSlot.getStyleClass().add("breakpoint-slot");
+            bpSlot.setMinWidth(BREAKPOINT_SLOT_WIDTH);
+            bpSlot.setPrefWidth(BREAKPOINT_SLOT_WIDTH);
+            bpSlot.setMaxWidth(BREAKPOINT_SLOT_WIDTH);
+            bpSlot.setMaxHeight(Double.MAX_VALUE);
+            if (isBreakpoint.test(idx)) {
+                bpSlot.getChildren().add(breakpointMarker(breakpointClass.apply(idx)));
+            }
+            bpSlot.setOnMouseClicked(e -> {
+                if (e.getButton() == MouseButton.PRIMARY) {
+                    onBreakpointToggle.accept(idx);
+                    e.consume(); // don't also toggle a bookmark via the gutter box click
+                }
+            });
+            box.getChildren().add(bpSlot);
+        }
+
         // A fixed-width bookmark slot is reserved on EVERY row, so toggling a bookmark only fills/empties
         // the slot and never changes the gutter width — which would otherwise shift that line's text
         // indentation rightward (the paragraph graphic's width is the text's left inset). The glyph
@@ -639,6 +691,20 @@ public final class FoldManager {
         svg.getStyleClass().add("run-marker");
         svg.setScaleX(0.78); // 30% larger than the other gutter glyphs so the Run target is easy to hit
         svg.setScaleY(0.78);
+        return new Group(svg);
+    }
+
+    /** A small filled red dot for the gutter breakpoint marker; colored via {@code .breakpoint-marker}.
+     *  {@code extraClass} (e.g. {@code conditional}/{@code logpoint}/{@code disabled}) tweaks the look. */
+    private Node breakpointMarker(String extraClass) {
+        SVGPath svg = new SVGPath();
+        svg.setContent(BREAKPOINT_GLYPH_PATH);
+        svg.getStyleClass().add("breakpoint-marker");
+        if (extraClass != null && !extraClass.isEmpty()) {
+            svg.getStyleClass().add("breakpoint-" + extraClass);
+        }
+        svg.setScaleX(0.5);
+        svg.setScaleY(0.5);
         return new Group(svg);
     }
 
