@@ -1,0 +1,31 @@
+{
+  "name": "HTML Page + CSS",
+  "description": "An HTML page with a linked stylesheet (multi-file)",
+  "files": [
+    {
+      "path": "${baseName:index}.html",
+      "body": [
+        "<!doctype html>",
+        "<html lang=\"en\">",
+        "<head>",
+        "    <meta charset=\"utf-8\">",
+        "    <title>${title:Document}</title>",
+        "    <link rel=\"stylesheet\" href=\"${baseName:index}.css\">",
+        "</head>",
+        "<body>",
+        "    ${cursor}",
+        "</body>",
+        "</html>"
+      ]
+    },
+    {
+      "path": "${baseName:index}.css",
+      "body": [
+        "body {",
+        "    margin: 0;",
+        "    font-family: system-ui, sans-serif;",
+        "}"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "Java Compact Source",
+  "description": "A JDK 25 compact source file (implicit class) with a void main",
+  "language": "java",
+  "fileName": "${baseName:Main}.java",
+  "body": [
+    "void main() {",
+    "    IO.println(\"${1:hello world}\");",
+    "}"
+  ]
+}

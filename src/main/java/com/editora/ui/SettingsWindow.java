@@ -144,6 +144,7 @@ public class SettingsWindow {
     private final java.util.Map<String, TextField> debugCommandFields = new java.util.LinkedHashMap<>();
     private final java.util.Map<String, Label> debugStatusLabels = new java.util.LinkedHashMap<>();
     private TextField maidPathField;
+    private TextField templateAuthorField;
     private Label mermaidStatusLabel;
     private CheckBox lspCheck;
     /** Per-server LSP controls, keyed by server id (data-driven so adding a server is one descriptor). */
@@ -520,6 +521,13 @@ public class SettingsWindow {
             refreshMermaidStatus();
         });
 
+        templateAuthorField = new TextField();
+        templateAuthorField.setPromptText(System.getProperty("user.name", ""));
+        templateAuthorField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAuthorName(now);
+            apply();
+        });
+
         debugCheck = new CheckBox(tr("settings.enableDebug"));
         debugCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugSupport(now);
@@ -737,6 +745,9 @@ public class SettingsWindow {
         row(p, Category.APPLICATION, features, projectsRow, "projects workspace folder");
         row(p, Category.APPLICATION, features, notesCheck, "personal notes annotations enable feature");
         row(p, Category.APPLICATION, features, zenCheck, "zen distraction free focus");
+        Label templates = section(p, tr("settings.section.templates"));
+        row(p, Category.APPLICATION, templates, labeled(tr("settings.authorName"), templateAuthorField),
+                "author name file templates new from template variable");
         return p;
     }
 
@@ -1635,6 +1646,7 @@ public class SettingsWindow {
             statusBarCheck.setSelected(settings.isShowStatusBar());
             tabBarCheck.setSelected(settings.isShowTabBar());
             breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
+            templateAuthorField.setText(settings.getAuthorNameRaw());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
             multiCaretCheck.setSelected(settings.isMultiCaret());

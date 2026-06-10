@@ -65,6 +65,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final BiConsumer<Path, Path> onFileRenamed;
     private final Consumer<Path> onFileDeleted;
     private final java.util.function.Predicate<Path> isModified;
+    /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
+    private Consumer<Path> onNewFromTemplate;
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
     private OverlayInput.Prompt prompt;
@@ -428,6 +430,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.prompt = prompt;
     }
 
+    /** Injects the "New From Template…" handler (given the target folder) shown on a folder's menu. */
+    public void setOnNewFromTemplate(Consumer<Path> onNewFromTemplate) {
+        this.onNewFromTemplate = onNewFromTemplate;
+    }
+
     private void renameItem(TreeItem<Path> item) {
         if (prompt == null) {
             return;
@@ -595,10 +602,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
 
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir) {
+            ContextMenu menu = new ContextMenu();
+            if (isDir && onNewFromTemplate != null) {
+                MenuItem newFromTemplate = new MenuItem(tr("project.menu.newFromTemplate"));
+                newFromTemplate.setGraphic(Icons.newFile());
+                newFromTemplate.setOnAction(e -> onNewFromTemplate.accept(treeItem.getValue()));
+                menu.getItems().add(newFromTemplate);
+            }
             MenuItem rename = new MenuItem(tr("project.menu.rename"));
             rename.setGraphic(Icons.edit());
             rename.setOnAction(e -> renameItem(treeItem));
-            ContextMenu menu = new ContextMenu(rename);
+            menu.getItems().add(rename);
             if (!isDir) {
                 MenuItem delete = new MenuItem(tr("project.menu.delete"));
                 delete.setGraphic(Icons.trash());

@@ -102,6 +102,8 @@ public class MainController {
     @FXML
     private Button newButton;
     @FXML
+    private Button newFromTemplateButton;
+    @FXML
     private Button openButton;
     @FXML
     private Button openFolderButton;
@@ -161,6 +163,7 @@ public class MainController {
     private QuickOpen<BookmarkEntry> bookmarkPalette;
     private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
     private com.editora.snippet.SnippetManager snippets;
+    private com.editora.template.TemplateRegistry templates;
     private com.editora.completion.CompletionEngine completion;
     private FileFinder fileFinder;
     private FileFinder folderFinder;
@@ -302,6 +305,7 @@ public class MainController {
         this.registry = registry;
         this.keymap = keymap;
         this.snippets = new com.editora.snippet.SnippetManager(config);
+        this.templates = new com.editora.template.TemplateRegistry(config);
         this.completion = new com.editora.completion.CompletionEngine(snippets, config::getUserDictionary);
         // Project commands (incl. the Project tool window) are hidden from the palette unless project
         // support is enabled.
@@ -1177,6 +1181,7 @@ public class MainController {
                 this::deleteProject, this::onProjectFileRenamed, this::onProjectFileDeleted,
                 this::isPathModified);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
+        projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
         projectToolWindow = new ToolWindow("project", tr("toolwindow.project"), ToolWindow.Side.RIGHT,
                 Icons::project, projectPanel, "tool.project");
         structurePanel = new StructurePanel();
@@ -3300,6 +3305,7 @@ public class MainController {
 
     private void setupToolbar() {
         setupButton(newButton, Icons.newFile(), tr("tooltip.new"));
+        setupButton(newFromTemplateButton, Icons.fileSheet(), tr("tooltip.newFromTemplate"));
         setupButton(openButton, Icons.open(), tr("tooltip.open"));
         setupButton(openFolderButton, Icons.openFolder(), tr("tooltip.openFolder"));
         setupButton(saveButton, Icons.save(), tr("tooltip.save"));
@@ -3950,6 +3956,11 @@ public class MainController {
     private void onNew() {
         addBuffer(new EditorBuffer());
         setStatus(tr("status.newBuffer"));
+    }
+
+    @FXML
+    private void onNewFromTemplate() {
+        newFromTemplate(null);
     }
 
     @FXML
@@ -6081,6 +6092,228 @@ public class MainController {
             }
             """;
 
+    // --- File templates --------------------------------------------------------------------------
+
+    /**
+     * Picks a template, runs the variable-entry wizard (if it has any unknown variables), then creates
+     * the file(s). {@code targetDir} {@code null} = a new untitled in-editor buffer (single-file only);
+     * non-null = write the file(s) into that folder and open the primary one.
+     */
+    private void newFromTemplate(java.nio.file.Path targetDir) {
+        List<com.editora.template.Template> all = templates.all();
+        if (all.isEmpty()) {
+            setStatus(tr("status.noTemplates"));
+            return;
+        }
+        QuickOpen<com.editora.template.Template> picker = new QuickOpen<>(
+                tr("template.picker.title"), tr("template.picker.prompt"),
+                () -> new ArrayList<>(all),
+                com.editora.template.Template::name,
+                com.editora.template.Template::description,
+                t -> beginTemplate(t, targetDir));
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Discovers the template's unknown variables; prompts for them via a wizard, else applies directly. */
+    private void beginTemplate(com.editora.template.Template t, java.nio.file.Path targetDir) {
+        List<String> texts = new ArrayList<>();
+        if (t.isMultiFile()) {
+            for (com.editora.template.TemplateFile f : t.files()) {
+                texts.add(f.path());
+                texts.add(f.body());
+            }
+        } else {
+            texts.add(t.fileName());
+            texts.add(t.body());
+        }
+        var vars = com.editora.template.TemplateEngine.discoverVariables(texts.toArray(new String[0]));
+        if (vars.isEmpty()) {
+            applyTemplate(t, targetDir, java.util.Map.of());
+            return;
+        }
+        VBox body = new VBox(8);
+        java.util.LinkedHashMap<String, TextField> fields = new java.util.LinkedHashMap<>();
+        for (var v : vars) {
+            TextField field = new TextField(v.defaultValue());
+            field.setPrefColumnCount(28);
+            com.editora.command.TextInputKeymap.install(field, keymap);
+            fields.put(v.name(), field);
+            body.getChildren().addAll(new Label(v.name()), field);
+        }
+        OverlayInput.show(overlayHost, tr("template.wizard.title"), body, fields.values().iterator().next(),
+                tr("dialog.template.create"), null,
+                () -> {
+                    java.util.LinkedHashMap<String, String> answers = new java.util.LinkedHashMap<>();
+                    fields.forEach((name, f) -> answers.put(name, f.getText()));
+                    applyTemplate(t, targetDir, answers);
+                },
+                null, false);
+    }
+
+    /** Renders {@code t} with {@code answers} and creates the file(s) (untitled buffer or written to disk). */
+    private void applyTemplate(com.editora.template.Template t, java.nio.file.Path targetDir,
+            java.util.Map<String, String> answers) {
+        Settings s = config.getSettings();
+        String author = s.getAuthorName();
+        String projectName = activeProjectName();
+        String packageName = "";
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+
+        if (t.isMultiFile()) {
+            applyMultiFileTemplate(t, targetDir != null ? targetDir : defaultNewDir(), answers,
+                    author, projectName, packageName, now);
+            return;
+        }
+        // Resolve the file name first (so the body's ${fileName}/${baseName}/${extension} are correct).
+        com.editora.template.TemplateVariableResolver pre = new com.editora.template.TemplateVariableResolver(
+                answers, author, projectName, packageName, "",
+                targetDir == null ? "" : targetDir.toString(), "", now);
+        String fileName = com.editora.template.TemplateEngine.expand(t.fileName(), pre);
+        if (fileName.isBlank()) {
+            fileName = "untitled";
+        }
+        java.nio.file.Path target = targetDir == null ? null : targetDir.resolve(fileName);
+        com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
+                answers, author, projectName, packageName, fileName,
+                targetDir == null ? "" : targetDir.toString(),
+                target == null ? "" : target.toString(), now);
+        com.editora.snippet.ParsedSnippet parsed = com.editora.template.TemplateEngine.substitute(t.body(), vars);
+
+        if (targetDir == null) {
+            EditorBuffer b = new EditorBuffer();
+            b.setDisplayName(fileName); // tab title + extension-based grammar; path stays null → Save-As
+            addBuffer(b, true);
+            b.applyTemplate(parsed);
+            setStatus(tr("status.templateCreated", fileName));
+        } else if (writeTemplateFile(target, parsed)) {
+            openAndPlaceCaret(target, finalCaret(parsed));
+            if (projectPanel != null) {
+                projectPanel.refreshTree();
+            }
+            setStatus(tr("status.templateCreated", fileName));
+        }
+    }
+
+    private void applyMultiFileTemplate(com.editora.template.Template t, java.nio.file.Path dir,
+            java.util.Map<String, String> answers, String author, String projectName, String packageName,
+            java.time.LocalDateTime now) {
+        com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
+                answers, author, projectName, packageName, "", dir.toString(), "", now);
+        java.nio.file.Path primary = null;
+        int primaryCaret = 0;
+        for (com.editora.template.TemplateFile f : t.files()) {
+            java.nio.file.Path target = com.editora.template.TemplateEngine.resolveTargetPath(dir, f.path(), vars);
+            if (target == null) {
+                setStatus(tr("status.templatePathEscape"));
+                continue;
+            }
+            com.editora.snippet.ParsedSnippet parsed =
+                    com.editora.template.TemplateEngine.substitute(f.body(), vars);
+            if (writeTemplateFile(target, parsed) && primary == null) {
+                primary = target;
+                primaryCaret = finalCaret(parsed);
+            }
+        }
+        if (primary != null) {
+            openAndPlaceCaret(primary, primaryCaret);
+            if (projectPanel != null) {
+                projectPanel.refreshTree();
+            }
+            setStatus(tr("status.templateCreated", primary.getFileName().toString()));
+        }
+    }
+
+    /** Writes a rendered template file (UTF-8), refusing to overwrite an existing file. */
+    private boolean writeTemplateFile(java.nio.file.Path target, com.editora.snippet.ParsedSnippet parsed) {
+        if (java.nio.file.Files.exists(target)) {
+            setStatus(tr("status.templateExists", target.getFileName()));
+            return false;
+        }
+        try {
+            if (target.getParent() != null) {
+                java.nio.file.Files.createDirectories(target.getParent());
+            }
+            java.nio.file.Files.writeString(target, parsed.text());
+            return true;
+        } catch (java.io.IOException e) {
+            setStatus(tr("status.templateWriteFailed", e.getMessage()));
+            return false;
+        }
+    }
+
+    /** Opens {@code target} and places the caret at the template's {@code ${cursor}} offset. */
+    private void openAndPlaceCaret(java.nio.file.Path target, int caret) {
+        openPath(target);
+        EditorBuffer b = activeBuffer();
+        if (b != null) {
+            CodeArea a = b.getArea();
+            int c = Math.max(0, Math.min(caret, a.getLength()));
+            javafx.application.Platform.runLater(() -> {
+                a.moveTo(c);
+                a.requestFollowCaret();
+            });
+        }
+    }
+
+    /** The absolute offset of the template's {@code $0} ({@code ${cursor}}) stop, else end of text. */
+    private static int finalCaret(com.editora.snippet.ParsedSnippet parsed) {
+        for (com.editora.snippet.TabStop stop : parsed.stops()) {
+            if (stop.isFinal()) {
+                return stop.ranges().get(0)[0];
+            }
+        }
+        return parsed.text().length();
+    }
+
+    /** The active project's name for {@code ${projectName}}, or {@code ""} when there is none. */
+    private String activeProjectName() {
+        Project p = projects == null ? null : projects.active();
+        return p == null ? "" : p.name();
+    }
+
+    /** The folder a "new in folder" template defaults to: the active file's dir, else project root, else home. */
+    private java.nio.file.Path defaultNewDir() {
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.getPath() != null && b.getPath().getParent() != null) {
+            return b.getPath().getParent();
+        }
+        Project p = projects == null ? null : projects.active();
+        if (p != null) {
+            return java.nio.file.Path.of(p.root());
+        }
+        return java.nio.file.Path.of(System.getProperty("user.home", "."));
+    }
+
+    /** Opens (creating from an example if needed) a user template file under {@code <configDir>/templates}. */
+    private void editUserTemplates() {
+        java.nio.file.Path file = templates.userDir().resolve("example.json");
+        try {
+            if (!java.nio.file.Files.exists(file)) {
+                java.nio.file.Files.createDirectories(file.getParent());
+                java.nio.file.Files.writeString(file, USER_TEMPLATE_EXAMPLE);
+            }
+            openPath(file);
+            setStatus(tr("status.editingTemplates"));
+        } catch (java.io.IOException e) {
+            setStatus(tr("status.templateOpenFailed", e.getMessage()));
+        }
+    }
+
+    private static final String USER_TEMPLATE_EXAMPLE = """
+            {
+              "name": "My Template",
+              "description": "A starter template — edit it, then run \\"Template: Reload Templates\\"",
+              "language": "java",
+              "fileName": "${className:Example}.java",
+              "body": [
+                "public class ${className:Example} {",
+                "    ${cursor}",
+                "}"
+              ]
+            }
+            """;
+
     /** Clears every bookmark in the active file. */
     private void clearBookmarksInFile() {
         EditorBuffer b = activeBuffer();
@@ -7262,6 +7495,13 @@ public class MainController {
         registry.register(Command.of("edit.addCaretAbove", () -> withMultiCaret(EditorBuffer::addCaretAbove)));
         registry.register(Command.of("edit.addCaretBelow", () -> withMultiCaret(EditorBuffer::addCaretBelow)));
         registry.register(Command.of("edit.collapseCarets", () -> withMultiCaret(EditorBuffer::collapseCarets)));
+        registry.register(Command.of("template.new", () -> newFromTemplate(null)));
+        registry.register(Command.of("template.newInFolder", () -> newFromTemplate(defaultNewDir())));
+        registry.register(Command.of("template.reload", () -> {
+            templates.reload();
+            setStatus(tr("status.templatesReloaded"));
+        }));
+        registry.register(Command.of("template.editUser", this::editUserTemplates));
         registry.register(Command.of("spell.setLanguage",
                 this::chooseSpellLanguage));
         registry.register(Command.of("view.toggleToolbar", this::toggleToolbar));

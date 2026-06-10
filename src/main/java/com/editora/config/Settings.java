@@ -10,8 +10,11 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 17;
+    public static final int SCHEMA_VERSION = 18;
     private int schemaVersion = SCHEMA_VERSION;
+
+    /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
+    private String authorName = "";
 
     private String fontFamily = "JetBrains Mono";
     private int fontSize = 14;
@@ -230,6 +233,21 @@ public class Settings {
 
     public void setUiLanguage(String uiLanguage) {
         this.uiLanguage = uiLanguage == null ? "" : uiLanguage;
+    }
+
+    /** The configured author name, or the OS user name when blank (used by template {@code ${author}}). */
+    public String getAuthorName() {
+        return authorName == null || authorName.isBlank()
+                ? System.getProperty("user.name", "") : authorName;
+    }
+
+    /** The raw configured author name (may be blank, meaning "follow the OS user"). */
+    public String getAuthorNameRaw() {
+        return authorName == null ? "" : authorName;
+    }
+
+    public void setAuthorName(String authorName) {
+        this.authorName = authorName == null ? "" : authorName;
     }
 
     public boolean isShowColumnRuler() {

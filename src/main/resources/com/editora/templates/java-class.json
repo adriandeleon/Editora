@@ -1,0 +1,14 @@
+{
+  "name": "Java Class",
+  "description": "A public Java class with a main method",
+  "language": "java",
+  "fileName": "${className:Main}.java",
+  "body": [
+    "public class ${className:Main} {",
+    "",
+    "    public static void main(String[] args) {",
+    "        ${cursor}",
+    "    }",
+    "}"
+  ]
+}

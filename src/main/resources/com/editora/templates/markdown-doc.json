@@ -1,0 +1,13 @@
+{
+  "name": "Markdown Document",
+  "description": "A Markdown document with a title and metadata",
+  "language": "markdown",
+  "fileName": "${baseName:document}.md",
+  "body": [
+    "# ${title:Title}",
+    "",
+    "> ${author} · ${date}",
+    "",
+    "${cursor}"
+  ]
+}

@@ -3261,6 +3261,27 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * Inserts an already-parsed file template into this (typically empty, untitled) buffer over its full
+     * content, honoring the template's {@code ${cursor}} ({@code $0}) final caret and any {@code $1…} tab
+     * stops via a snippet session. No-op when not editable.
+     */
+    public void applyTemplate(ParsedSnippet parsed) {
+        if (parsed == null || !isEditable()) {
+            return;
+        }
+        if (snippetSession != null) {
+            snippetSession.cancel();
+            snippetSession = null;
+        }
+        SnippetSession session = new SnippetSession(area, parsed, 0, area.getLength(), "");
+        if (session.isActive()) {
+            snippetSession = session;
+            session.setOnEnd(() -> snippetSession = null);
+        }
+        area.requestFocus();
+    }
+
     /** Leading whitespace (spaces/tabs) of a line, used to indent a snippet's continuation lines. */
     private static String leadingIndent(String line) {
         int i = 0;

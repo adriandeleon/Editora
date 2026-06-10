@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **File templates** — "New File From Template" creates a file (or set of files) from a reusable
+  template with `${variable}` substitution, a `${cursor}` placement, and a variable-entry wizard:
+  - A template picker (palette `Template: New File From Template…`, **C-c C-n**, and a toolbar button)
+    lists bundled + user templates; a wizard prompts for any variables the template references (e.g.
+    `${className:Main}`), pre-filled with defaults. Built-ins (`${author}`, `${projectName}`,
+    `${date}`, `${baseName}`, …) are filled automatically.
+  - **Single-file** templates open as an untitled buffer with the caret at `${cursor}`; **multi-file**
+    templates (a `files[]` array) and the project tree's folder right-click **New From Template…**
+    write the files to disk and open the primary one. A traversal guard rejects paths that escape the
+    target folder; existing files are never overwritten.
+  - User templates live in `<configDir>/templates/*.json` (`Template: Edit User Templates…`,
+    `Template: Reload Templates`); a new **Author name** setting (Settings → Application → Templates,
+    defaulting to the OS user) feeds `${author}`. Always-on, like snippets.
 - **Diff viewer** — compare files visually in a dedicated tab:
   - **Side-by-side** (default) with synchronized scrolling, original line numbers, syntax highlighting,
     per-line added/removed/changed backgrounds, and **intra-line word emphasis** on changed lines; a

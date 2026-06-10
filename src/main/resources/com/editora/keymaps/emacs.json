@@ -88,6 +88,7 @@
   "M-g n": "notes.jump",
   "M-g j": "nav.aceJump",
   "C-c i": "snippets.insert",
+  "C-c C-n": "template.new",
   "C-c m": "bookmarks.toggle",
   "C-c ]": "bookmarks.next",
   "C-c [": "bookmarks.previous",

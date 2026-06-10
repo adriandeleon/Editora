@@ -17,6 +17,7 @@
                 <ToolBar fx:id="toolBar">
                     <items>
                         <Button fx:id="newButton" onAction="#onNew"/>
+                        <Button fx:id="newFromTemplateButton" onAction="#onNewFromTemplate"/>
                         <Button fx:id="openButton" onAction="#onOpen"/>
                         <Button fx:id="openFolderButton" onAction="#onOpenFolder"/>
                         <Button fx:id="closeTabButton" onAction="#onCloseTab"/>

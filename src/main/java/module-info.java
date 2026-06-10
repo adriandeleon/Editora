@@ -45,6 +45,9 @@ module com.editora {
     // Jackson reflects on the snippet JSON DTO (SnippetManager.Dto). The bundled snippet *resources*
     // need no opens — our own SnippetManager reads them via Class.getResourceAsStream.
     opens com.editora.snippet to com.fasterxml.jackson.databind;
+    // Jackson reflects on the template JSON DTOs (TemplateRegistry.Dto/FileDto); bundled template
+    // resources are read via Class.getResourceAsStream and need no opens.
+    opens com.editora.template to com.fasterxml.jackson.databind;
     // tm4e (a separate module) reads these grammar resources via Class.getResourceAsStream;
     // without opening the package, JPMS encapsulates the .tmLanguage.json files and grammar
     // loading silently fails, falling back to the legacy regex highlighter.
