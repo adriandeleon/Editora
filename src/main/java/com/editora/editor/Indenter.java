@@ -26,6 +26,107 @@ public final class Indenter {
     public record EnterEdit(String insert, int caretOffset) {
     }
 
+    /** A smart-Tab edit: replace {@code [from,to)} with {@code replacement}, then select
+     *  {@code [selStart,selEnd)} (a collapsed caret when equal). */
+    public record TabEdit(int from, int to, String replacement, int selStart, int selEnd) {
+    }
+
+    /**
+     * Smart Tab / Shift-Tab for a code buffer (returns {@code null} for {@link Style#PLAIN}, so prose keeps
+     * the editor's default Tab). Uses the document's indent unit (tabs vs spaces), not a raw {@code \t}:
+     * <ul>
+     *   <li><b>Selection</b> → block indent every touched (non-blank) line by one unit; {@code shift}
+     *       dedents each by up to one unit. The affected lines stay selected.</li>
+     *   <li><b>Caret in leading whitespace / blank line</b> → indent the line by one unit ({@code shift}
+     *       dedents it).</li>
+     *   <li><b>Caret after content</b> → insert one unit at the caret ({@code shift} dedents the line).</li>
+     * </ul>
+     */
+    public static TabEdit smartTab(String text, int selStart, int selEnd, String language, int tabSize,
+            boolean shift) {
+        Style style = styleFor(language);
+        if (style == Style.PLAIN) {
+            return null;
+        }
+        String unit = detectUnit(text, tabSize);
+        int a = Math.min(selStart, selEnd);
+        int b = Math.max(selStart, selEnd);
+
+        if (a != b) { // block indent / dedent over the touched lines
+            int firstLS = lineStart(text, a);
+            int regionEnd = lineEnd(text, b > a ? b - 1 : b);
+            String region = text.substring(firstLS, regionEnd);
+            String[] lines = region.split("\n", -1);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < lines.length; i++) {
+                if (i > 0) {
+                    sb.append('\n');
+                }
+                String ln = lines[i];
+                if (shift) {
+                    sb.append(removeOneIndent(ln, tabSize));
+                } else {
+                    sb.append(ln.isEmpty() ? ln : unit + ln); // don't indent blank lines on Tab
+                }
+            }
+            return new TabEdit(firstLS, regionEnd, sb.toString(), firstLS, firstLS + sb.length());
+        }
+
+        int caret = a;
+        int ls = lineStart(text, caret);
+        if (shift) { // dedent the current line
+            String leading = leadingWhitespace(text.substring(ls, lineEnd(text, caret)));
+            int removed = leading.length() - removeOneIndent(leading, tabSize).length();
+            int newCaret = Math.max(ls, caret - removed);
+            return new TabEdit(ls, ls + removed, "", newCaret, newCaret);
+        }
+        String beforeCaret = text.substring(ls, caret);
+        if (beforeCaret.isBlank()) {
+            // In leading whitespace: snap the line up to the indent the surrounding code implies. Once it
+            // is already at (or past) that level, Tab does nothing — repeated Tab must not keep piling on
+            // indentation. (Use Shift-Tab to dedent.)
+            String leading = leadingWhitespace(text.substring(ls, lineEnd(text, caret)));
+            String suggested = suggestedIndent(text, ls, style, unit);
+            if (width(leading, tabSize) >= width(suggested, tabSize)) {
+                return new TabEdit(caret, caret, "", caret, caret); // no-op (consumed; no extra indent)
+            }
+            int newCaret = ls + suggested.length();
+            return new TabEdit(ls, ls + leading.length(), suggested, newCaret, newCaret);
+        }
+        int newCaret = caret + unit.length(); // mid-line → insert one unit at the caret
+        return new TabEdit(caret, caret, unit, newCaret, newCaret);
+    }
+
+    /** The indent the line at {@code lineStart} should have from context: the nearest previous non-blank
+     *  line's indent, plus one unit if that line opens a block. {@code ""} when there's no line above. */
+    private static String suggestedIndent(String text, int lineStart, Style style, String unit) {
+        int pos = lineStart;
+        int scanned = 0;
+        while (pos > 0 && scanned < MAX_SCAN) {
+            int prevStart = lineStart(text, pos - 1);
+            String prevLine = text.substring(prevStart, pos - 1);
+            scanned += pos - prevStart;
+            if (!prevLine.isBlank()) {
+                String ind = leadingWhitespace(prevLine);
+                return opensBlock(style, prevLine) ? ind + unit : ind;
+            }
+            pos = prevStart;
+        }
+        return "";
+    }
+
+    /** Removes one indent level from {@code line}'s start: a leading tab, else up to {@code tabSize} spaces. */
+    static String removeOneIndent(String line, int tabSize) {
+        if (line.startsWith("\t")) {
+            return line.substring(1);
+        }
+        int n = 0;
+        while (n < line.length() && n < Math.max(1, tabSize) && line.charAt(n) == ' ') {
+            n++;
+        }
+        return line.substring(n);
+    }
+
     private static final Set<String> SHELL_CLOSERS = Set.of("fi", "done", "esac", "else", "elif", ";;");
     private static final Set<String> RUBY_CLOSERS =
             Set.of("end", "else", "elsif", "when", "rescue", "ensure");

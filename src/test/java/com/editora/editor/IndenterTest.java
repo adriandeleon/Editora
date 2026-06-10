@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -194,5 +195,77 @@ class IndenterTest {
         assertEquals(0, Indenter.smartBackspaceCount("", "", true));           // column 0
         assertEquals(0, Indenter.smartBackspaceCount("    foo", "", true));    // caret after code
         assertEquals(0, Indenter.smartBackspaceCount("foo", "", true));        // no leading whitespace
+    }
+
+    // --- smart Tab -------------------------------------------------------------------------------
+
+    @Test
+    void smartTabNullForPlainLanguage() {
+        assertNull(Indenter.smartTab("hello", 0, 0, "plaintext", 4, false));
+        assertNull(Indenter.smartTab("hello", 0, 0, "markdown", 4, false));
+    }
+
+    @Test
+    void smartTabSnapsABlankLineToTheBlockIndent() {
+        // First Tab on a blank line inside a brace block jumps to the body indent (one level in),
+        // not just +1 space — the "smart" bit.
+        String text = "void m() {\n\n}"; // line 2 (offset 11) is blank
+        Indenter.TabEdit e = Indenter.smartTab(text, 11, 11, "java", 4, false);
+        assertEquals(11, e.from());
+        assertEquals(11, e.to());
+        assertEquals("\t", e.replacement()); // one level (file has no spaces → tab unit)
+    }
+
+    @Test
+    void smartTabIsNoOpOnceAtTheSuggestedLevel() {
+        // The line already sits at the block's indent ("\t"); repeated Tab must NOT keep indenting.
+        String text = "void m() {\n\tx\n}"; // line "\tx" starts at offset 11
+        Indenter.TabEdit e = Indenter.smartTab(text, 11, 11, "java", 4, false);
+        assertEquals(11, e.from());
+        assertEquals(11, e.to());
+        assertEquals("", e.replacement()); // no change
+    }
+
+    @Test
+    void smartTabUsesTheFilesSpaceUnitWhenSnapping() {
+        // Space-indented file: snapping a blank line uses spaces, never a raw \t.
+        String text = "class C {\n    int x;\n\n}"; // blank line at offset 21
+        Indenter.TabEdit e = Indenter.smartTab(text, 21, 21, "java", 4, false);
+        assertEquals("    ", e.replacement()); // snaps to the sibling's 4-space indent
+        assertEquals(21, e.from());
+        assertEquals(21, e.to());
+    }
+
+    @Test
+    void smartTabMidLineInsertsUnitAtCaret() {
+        Indenter.TabEdit e = Indenter.smartTab("foo", 3, 3, "java", 4, false);
+        assertEquals(3, e.from());
+        assertEquals(3, e.to());
+        assertEquals("\t", e.replacement());
+        assertEquals(4, e.selStart());
+    }
+
+    @Test
+    void smartTabShiftDedentsCurrentLine() {
+        Indenter.TabEdit e = Indenter.smartTab("        x", 8, 8, "java", 4, true); // 8 spaces
+        assertEquals(0, e.from());
+        assertEquals(4, e.to()); // removes one 4-space unit
+        assertEquals("", e.replacement());
+        assertEquals(4, e.selStart());
+    }
+
+    @Test
+    void smartTabBlockIndentsSelectedLinesAndDedents() {
+        Indenter.TabEdit ind = Indenter.smartTab("a\nb\nc", 0, 3, "java", 4, false);
+        assertEquals("\ta\n\tb", ind.replacement());
+        assertEquals(0, ind.from());
+        Indenter.TabEdit ded = Indenter.smartTab("\ta\n\tb\nc", 0, 5, "java", 4, true);
+        assertEquals("a\nb", ded.replacement());
+    }
+
+    @Test
+    void smartTabBlockSkipsBlankLines() {
+        Indenter.TabEdit e = Indenter.smartTab("a\n\nb", 0, 4, "java", 4, false);
+        assertEquals("\ta\n\n\tb", e.replacement()); // the empty middle line is left alone
     }
 }

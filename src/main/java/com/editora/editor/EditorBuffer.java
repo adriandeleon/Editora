@@ -2926,12 +2926,40 @@ public class EditorBuffer implements TabContent {
                 }
                 return;
             }
-            if (e.getCode() == KeyCode.TAB && !e.isShiftDown()
-                    && !e.isControlDown() && !e.isAltDown() && !e.isMetaDown()
-                    && expandPrefixAtCaret(a)) {
-                e.consume();
+            if (e.getCode() == KeyCode.TAB && !e.isControlDown() && !e.isAltDown() && !e.isMetaDown()
+                    && !completionShowing()) {
+                // Plain Tab first tries to expand a snippet prefix; otherwise smart-indent (Shift-Tab
+                // always dedents). Only code buffers get smart Tab — prose keeps the default. Skipped
+                // while a completion popup/ghost is showing, so Tab accepts the completion instead.
+                if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
+                    e.consume();
+                } else if (applySmartTab(a, e.isShiftDown())) {
+                    e.consume();
+                }
             }
         });
+    }
+
+    /**
+     * Smart Tab / Shift-Tab via the pure {@link Indenter#smartTab}: block-indent a selection, indent the
+     * current line in leading whitespace, insert one indent unit mid-line, and Shift-Tab dedents — using
+     * the file's indent unit. Returns false (leaving the default Tab) for prose / non-code buffers, in
+     * read-only/large-file mode.
+     */
+    private boolean applySmartTab(CodeArea a, boolean shift) {
+        if (!isEditable() || hugeFile) {
+            return false;
+        }
+        Indenter.TabEdit edit = Indenter.smartTab(a.getText(), a.getSelection().getStart(),
+                a.getSelection().getEnd(), language, tabSize, shift);
+        if (edit == null) {
+            return false; // PLAIN (prose/plaintext): keep the editor's default Tab behavior
+        }
+        if (edit.from() != edit.to() || !edit.replacement().isEmpty()) {
+            a.replaceText(edit.from(), edit.to(), edit.replacement());
+        }
+        a.selectRange(edit.selStart(), edit.selEnd());
+        return true;
     }
 
     /**
