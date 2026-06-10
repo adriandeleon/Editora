@@ -113,6 +113,8 @@ public final class FoldManager {
     private BooleanSupplier changeBarsEnabled = () -> false;
     /** CSS style class for a line's Git change bar (e.g. {@code git-added}), or {@code null} for none. */
     private IntFunction<String> changeClass = i -> null;
+    /** Hunk text (unified diff) for a line's change bar hover tooltip, or {@code null} for none. */
+    private IntFunction<String> changeTooltip = i -> null;
 
     /** Shared hover preview of a collapsed line's hidden content; reused across all lines. */
     private final Tooltip linePreview = new Tooltip();
@@ -281,9 +283,11 @@ public final class FoldManager {
      * reserved on every row, and {@code classFor} returns the CSS style class for a line's bar
      * (e.g. {@code git-modified}) or {@code null} when the line is unchanged.
      */
-    public void setChangeHook(BooleanSupplier enabled, IntFunction<String> classFor) {
+    public void setChangeHook(BooleanSupplier enabled, IntFunction<String> classFor,
+            IntFunction<String> tooltipFor) {
         this.changeBarsEnabled = enabled == null ? () -> false : enabled;
         this.changeClass = classFor == null ? i -> null : classFor;
+        this.changeTooltip = tooltipFor == null ? i -> null : tooltipFor;
     }
 
     public Optional<Region> regionStartingAt(int line) {
@@ -664,6 +668,13 @@ public final class FoldManager {
             String cls = changeClass.apply(idx);
             if (cls != null) {
                 bar.getStyleClass().add(cls);
+            }
+            String hunk = changeTooltip.apply(idx);
+            if (hunk != null && !hunk.isBlank()) {
+                Tooltip tip = new Tooltip(hunk);
+                tip.getStyleClass().add("git-diff-tooltip");
+                tip.setShowDelay(javafx.util.Duration.millis(300));
+                Tooltip.install(bar, tip);
             }
             box.getChildren().add(bar);
         }

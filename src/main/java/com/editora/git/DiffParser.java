@@ -76,4 +76,49 @@ public final class DiffParser {
     public static Map<Integer, ChangeType> parseToLineMap(String diff) {
         return toLineMap(parse(diff));
     }
+
+    /**
+     * Maps each gutter-marked line (same 0-based keys as {@link #parseToLineMap}) to its hunk's unified-diff
+     * body — the {@code -old}/{@code +new} lines from {@code git diff -U0} — for a hover tooltip on the
+     * change bar. Pure; unit-tested.
+     */
+    public static Map<Integer, String> parseToHunkText(String diff) {
+        Map<Integer, String> map = new LinkedHashMap<>();
+        if (diff == null || diff.isBlank()) {
+            return map;
+        }
+        String[] lines = diff.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            Matcher m = HUNK.matcher(lines[i]);
+            if (!m.find()) {
+                continue;
+            }
+            int newStart = Integer.parseInt(m.group(3));
+            int newCount = m.group(4) == null ? 1 : Integer.parseInt(m.group(4));
+            // The hunk body is the contiguous run of -/+ lines after the header (no context with -U0).
+            // File headers (---/+++) only precede the first hunk, so they never enter the body here.
+            StringBuilder body = new StringBuilder();
+            for (int j = i + 1; j < lines.length; j++) {
+                String l = lines[j];
+                if ((l.startsWith("-") && !l.startsWith("---")) || (l.startsWith("+") && !l.startsWith("+++"))) {
+                    body.append(l).append('\n');
+                } else if (l.startsWith("\\")) {
+                    // "\ No newline at end of file" — skip, not part of the shown diff.
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            String text = body.toString().strip();
+            if (text.isEmpty()) {
+                continue;
+            }
+            int start = newCount == 0 ? Math.max(0, newStart) : newStart - 1;
+            int count = newCount == 0 ? 1 : newCount;
+            for (int k = 0; k < count; k++) {
+                map.put(start + k, text);
+            }
+        }
+        return map;
+    }
 }

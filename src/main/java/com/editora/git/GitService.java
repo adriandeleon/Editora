@@ -30,13 +30,21 @@ import com.editora.process.ProcessRunner;
  */
 public final class GitService {
 
-    /** Combined refresh payload: the repo root, its status, and the active file's gutter change map. */
-    public record RepoState(Path root, GitStatus status, Map<Integer, ChangeType> changes) {
-        public static final RepoState NONE = new RepoState(null, GitStatus.NOT_A_REPO, Map.of());
+    /** Combined refresh payload: the repo root, its status, the active file's gutter change map, and a
+     *  per-line hunk-text map (for the change-bar hover tooltip). */
+    public record RepoState(Path root, GitStatus status, Map<Integer, ChangeType> changes,
+            Map<Integer, String> hunks) {
+        public static final RepoState NONE =
+                new RepoState(null, GitStatus.NOT_A_REPO, Map.of(), Map.of());
 
         public boolean isRepo() {
             return root != null && status.isRepo();
         }
+    }
+
+    /** A file's gutter diff vs HEAD: per-line {@link ChangeType} (bar color) + per-line hunk text (tooltip). */
+    public record GitDiff(Map<Integer, ChangeType> changes, Map<Integer, String> hunks) {
+        public static final GitDiff EMPTY = new GitDiff(Map.of(), Map.of());
     }
 
     private static final Duration QUICK = Duration.ofSeconds(10);
@@ -129,29 +137,26 @@ public final class GitService {
             return RepoState.NONE;
         }
         GitStatus status = StatusParser.parse(st.out());
-        Map<Integer, ChangeType> changes = Map.of();
-        if (diffFile != null) {
-            changes = diffHead(root, diffFile);
-        }
-        return new RepoState(root, status, changes);
+        GitDiff diff = diffFile != null ? diffHead(root, diffFile) : GitDiff.EMPTY;
+        return new RepoState(root, status, diff.changes(), diff.hunks());
     }
 
-    private Map<Integer, ChangeType> diffHead(Path root, Path file) {
-        // -U0: no context lines, so hunk headers map cleanly to changed line ranges.
+    private GitDiff diffHead(Path root, Path file) {
+        // -U0: no context lines, so hunk headers map cleanly to changed line ranges + tooltip bodies.
         ProcessRunner.Result r = git(root, QUICK, "diff", "--no-color", "-U0", "HEAD", "--",
                 file.toAbsolutePath().toString());
         if (!r.ok()) {
-            return Map.of(); // untracked / unmerged / new repo with no HEAD: no bars
+            return GitDiff.EMPTY; // untracked / unmerged / new repo with no HEAD: no bars
         }
-        return DiffParser.parseToLineMap(r.out());
+        return new GitDiff(DiffParser.parseToLineMap(r.out()), DiffParser.parseToHunkText(r.out()));
     }
 
-    /** Diffs a single file against {@code HEAD} for the gutter; posts the change map on the FX thread. */
-    public void diff(Path root, Path file, Consumer<Map<Integer, ChangeType>> onResult) {
+    /** Diffs a single file against {@code HEAD} for the gutter; posts the change + hunk maps on the FX thread. */
+    public void diff(Path root, Path file, Consumer<GitDiff> onResult) {
         exec.submit(() -> {
-            Map<Integer, ChangeType> changes =
-                    gitAvailable() && root != null && file != null ? diffHead(root, file) : Map.of();
-            Platform.runLater(() -> onResult.accept(changes));
+            GitDiff diff = gitAvailable() && root != null && file != null
+                    ? diffHead(root, file) : GitDiff.EMPTY;
+            Platform.runLater(() -> onResult.accept(diff));
         });
     }
 

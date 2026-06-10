@@ -55,18 +55,32 @@ public final class DiffViewerPane implements TabContent {
     private final String rightName;
     private final String headerLeft;
     private final String headerRight;
-    private final String leftText;
-    private final String rightText;
-    private final DiffModel model;
+    private String leftText;
+    private String rightText;
+    private DiffModel model;
     private final IGrammar grammar;
     private final String fontStyle;
     private final boolean showLineNumbers;
     private java.util.function.Consumer<String> onExportPatch = p -> { };
+    /** Re-fetches both sides + re-renders if changed (set by the controller); the file-on-disk refresh. */
+    private Runnable refresher = () -> { };
+
+    /** Which side is the editable/local file that "apply change" writes into (NONE = read-only diff). */
+    public enum EditableSide { NONE, LEFT, RIGHT }
+
+    private EditableSide editableSide = EditableSide.NONE;
+    /** Receives the editable side's full new text after a hunk is applied (controller writes it back). */
+    private java.util.function.Consumer<String> onApply = t -> { };
 
     private final BorderPane root = new BorderPane();
     private final Label summary = new Label();
     private final Label changeNav = new Label();
     private final Button toggleButton = new Button();
+    private final Button applyAllButton = new Button();
+    private final Button undoButton = new Button();
+    private final Button saveButton = new Button();
+    private Runnable onUndo = () -> { };
+    private Runnable onSave = () -> { };
 
     private boolean unified; // false = side-by-side (default)
     private int changeCursor = -1; // index into model.changeBlockStarts for prev/next nav
@@ -105,6 +119,73 @@ public final class DiffViewerPane implements TabContent {
         this.onExportPatch = onExportPatch == null ? p -> { } : onExportPatch;
     }
 
+    /** Installs the controller's re-fetch-and-rerender hook (run on focus-regain / after git mutation). */
+    public void setRefresher(Runnable refresher) {
+        this.refresher = refresher == null ? () -> { } : refresher;
+    }
+
+    /**
+     * Marks which side is the editable/local file and the callback that writes the applied text back.
+     * When set (not {@link EditableSide#NONE}), each change block shows an "apply change" chevron in
+     * that side's gutter (side-by-side view) that replaces the hunk with the other side's content.
+     */
+    public void setEditable(EditableSide side, java.util.function.Consumer<String> onApply,
+            Runnable onUndo, Runnable onSave) {
+        this.editableSide = side == null ? EditableSide.NONE : side;
+        this.onApply = onApply == null ? t -> { } : onApply;
+        this.onUndo = onUndo == null ? () -> { } : onUndo;
+        this.onSave = onSave == null ? () -> { } : onSave;
+        boolean editable = this.editableSide != EditableSide.NONE;
+        for (Button b : new Button[]{applyAllButton, undoButton, saveButton}) {
+            b.setVisible(editable);
+            b.setManaged(editable);
+        }
+        // Called after construction (the view is already built without arrows) — rebuild so the
+        // per-line "apply" chevrons appear in the editable side's gutter.
+        sideBySideNode = null;
+        unifiedNode = null;
+        leftArea = null;
+        rightArea = null;
+        unifiedArea = null;
+        if (unified) {
+            showUnified();
+        } else {
+            showSideBySide();
+        }
+    }
+
+    /** Re-fetches both sides and re-renders if they changed (no-op when content is identical). */
+    public void refresh() {
+        refresher.run();
+    }
+
+    /** Whether the displayed content already equals {@code l}/{@code r} (so a refresh can skip a rebuild,
+     *  keeping the current view + scroll position). */
+    public boolean matches(String l, String r) {
+        return java.util.Objects.equals(leftText, l) && java.util.Objects.equals(rightText, r);
+    }
+
+    /** Replaces the compared content + diff model and re-renders the current view (rebuilds both the
+     *  side-by-side and unified nodes lazily). Keeps the toolbar, headers, grammar, and view mode. */
+    public void updateContent(String newLeft, String newRight, DiffModel newModel) {
+        this.leftText = newLeft;
+        this.rightText = newRight;
+        this.model = newModel;
+        // Drop cached nodes so the next show* rebuilds from the new model.
+        sideBySideNode = null;
+        unifiedNode = null;
+        leftArea = null;
+        rightArea = null;
+        unifiedArea = null;
+        changeCursor = -1;
+        updateSummary();
+        if (unified) {
+            showUnified();
+        } else {
+            showSideBySide();
+        }
+    }
+
     /** The unified-diff text for the "export patch" action. */
     public String patchText(String leftLabel, String rightLabel) {
         return PatchWriter.unifiedDiff(leftLabel, rightLabel, leftText, rightText);
@@ -123,22 +204,45 @@ public final class DiffViewerPane implements TabContent {
 
     private HBox buildToolbar() {
         summary.getStyleClass().add("diff-summary");
-        summary.setText(tr("diff.summary", model.added(), model.removed()));
         changeNav.getStyleClass().add("diff-summary");
-        updateChangeNav();
+        updateSummary();
         Button prev = iconButton(Icons.arrowUp(), tr("diff.prevChange"), this::prevChange);
         Button next = iconButton(Icons.arrowDown(), tr("diff.nextChange"), this::nextChange);
         Button export = iconButton(Icons.saveAs(), tr("diff.exportPatch"),
                 () -> onExportPatch.accept(patchText("a/" + leftName, "b/" + rightName)));
+        // "Apply all": replace the editable file with the other side entirely. Shown only when a side is
+        // editable (set by setEditable, which runs after construction), so it starts hidden.
+        applyAllButton.setGraphic(Icons.check());
+        applyAllButton.setTooltip(new Tooltip(tr("diff.applyAll")));
+        applyAllButton.getStyleClass().addAll("flat", "diff-toolbar-button");
+        applyAllButton.setFocusTraversable(false);
+        applyAllButton.setOnAction(e -> applyAll());
+        applyAllButton.setVisible(false);
+        applyAllButton.setManaged(false);
+        // Undo / Save the applied changes (shown only when a side is editable).
+        editButton(undoButton, Icons.undo(), tr("diff.undo"), () -> onUndo.run());
+        editButton(saveButton, Icons.save(), tr("diff.save"), () -> onSave.run());
         toggleButton.setOnAction(e -> toggleView());
         toggleButton.getStyleClass().addAll("flat", "diff-toolbar-button");
         toggleButton.setFocusTraversable(false);
         updateToggleButton();
-        HBox bar = new HBox(2, summary, spacer(), changeNav, prev, next, sep(), toggleButton, export);
+        HBox bar = new HBox(2, summary, spacer(), changeNav, prev, next,
+                sep(), applyAllButton, undoButton, saveButton, sep(), toggleButton, export);
         bar.getStyleClass().add("diff-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(3, 6, 3, 6));
         return bar;
+    }
+
+    /** Configures an editable-only toolbar button (hidden until {@link #setEditable} shows it). */
+    private void editButton(Button b, Node icon, String tip, Runnable action) {
+        b.setGraphic(icon);
+        b.setTooltip(new Tooltip(tip));
+        b.getStyleClass().addAll("flat", "diff-toolbar-button");
+        b.setFocusTraversable(false);
+        b.setOnAction(e -> action.run());
+        b.setVisible(false);
+        b.setManaged(false);
     }
 
     private void updateToggleButton() {
@@ -230,8 +334,8 @@ public final class DiffViewerPane implements TabContent {
             leftArea.setParagraphStyle(i, leftLineClasses(rows.get(i).type()));
             rightArea.setParagraphStyle(i, rightLineClasses(rows.get(i).type()));
         }
-        installGutter(leftArea, leftNos);
-        installGutter(rightArea, rightNos);
+        installGutter(leftArea, leftNos, editableSide == EditableSide.LEFT);
+        installGutter(rightArea, rightNos, editableSide == EditableSide.RIGHT);
         syncScroll(leftArea, rightArea);
         syncScroll(rightArea, leftArea);
 
@@ -416,22 +520,125 @@ public final class DiffViewerPane implements TabContent {
         };
     }
 
-    /** A right-aligned original-line-number gutter; filler lines (-1) show blank. */
-    private void installGutter(CodeArea area, int[] lineNos) {
-        if (!showLineNumbers) {
+    /** A right-aligned original-line-number gutter; filler lines (-1) show blank. When {@code editable}
+     *  (this side is the local file), each change block's first row also gets an "apply change" chevron
+     *  that copies that hunk from the other side into this file. */
+    private void installGutter(CodeArea area, int[] lineNos, boolean editable) {
+        boolean apply = editable && editableSide != EditableSide.NONE && onApply != null;
+        List<Row> rows = model.rows();
+        boolean right = editableSide == EditableSide.RIGHT;
+        Set<Integer> blockStarts = apply ? new HashSet<>(model.changeBlockStarts()) : Set.of();
+        // Always render a gutter when apply arrows are needed, even if line numbers are off.
+        if (!showLineNumbers && !apply) {
             return;
         }
         int width = Math.max(2, String.valueOf(maxOf(lineNos)).length());
+        double numW = width * 9.0 + 12;
         IntFunction<Node> factory = i -> {
-            int no = i < lineNos.length ? lineNos[i] : -1;
-            Label l = new Label(no < 0 ? "" : String.valueOf(no));
-            l.getStyleClass().add("diff-lineno");
-            l.setMinWidth(width * 9.0 + 12);
-            l.setPrefWidth(width * 9.0 + 12);
-            l.setAlignment(Pos.CENTER_RIGHT);
-            return l;
+            Label num = new Label();
+            num.getStyleClass().add("diff-lineno");
+            if (showLineNumbers) {
+                int no = i < lineNos.length ? lineNos[i] : -1;
+                num.setText(no < 0 ? "" : String.valueOf(no));
+                num.setMinWidth(numW);
+                num.setPrefWidth(numW);
+            }
+            num.setAlignment(Pos.CENTER_RIGHT);
+            if (!apply) {
+                return num;
+            }
+            // Hunk apply (double chevron, at each change block's first row) + per-line apply (single
+            // chevron, on every changed row). Both copy the other side's content into the local file.
+            HBox hunkSlot = arrowSlot(blockStarts.contains(i)
+                    ? (right ? Icons.doubleChevronRight() : Icons.doubleChevronLeft()) : null,
+                    tr("diff.applyChange"), () -> applyBlock(i));
+            HBox lineSlot = arrowSlot(i < rows.size() && rows.get(i).type() != RowType.EQUAL
+                    ? (right ? Icons.chevronRight() : Icons.chevronLeft()) : null,
+                    tr("diff.applyLine"), () -> applyRow(i));
+            HBox box = new HBox(hunkSlot, lineSlot, num);
+            box.setAlignment(Pos.CENTER_LEFT);
+            return box;
         };
         area.setParagraphGraphicFactory(factory);
+    }
+
+    /** A fixed-width gutter cell holding {@code icon} (clickable, with {@code tip}) or empty for alignment. */
+    private HBox arrowSlot(Node icon, String tip, Runnable onClick) {
+        HBox slot = new HBox();
+        slot.setMinWidth(16);
+        slot.setPrefWidth(16);
+        slot.setMaxWidth(16);
+        slot.setAlignment(Pos.CENTER);
+        if (icon != null) {
+            slot.getStyleClass().add("diff-apply");
+            Tooltip.install(slot, new Tooltip(tip));
+            slot.setOnMouseClicked(e -> {
+                onClick.run();
+                e.consume();
+            });
+            slot.getChildren().add(icon);
+        }
+        return slot;
+    }
+
+    /** Whole-hunk apply: replaces the editable side's contiguous change block at {@code start} with the
+     *  other side's content. */
+    private void applyBlock(int start) {
+        onApply.accept(computeApplied(start, blockEndFrom(start)));
+    }
+
+    /** The exclusive end of the contiguous non-equal run starting at {@code start}. */
+    private int blockEndFrom(int start) {
+        List<Row> rows = model.rows();
+        int e = start;
+        while (e < rows.size() && rows.get(e).type() != RowType.EQUAL) {
+            e++;
+        }
+        return e;
+    }
+
+    /** Per-line apply: replaces the editable side's row {@code i} with the other side's content (insert /
+     *  delete / swap), then hands the editable side's new full text to {@link #onApply}. */
+    private void applyRow(int i) {
+        onApply.accept(computeApplied(i, i + 1));
+    }
+
+    /** "Apply all": makes the editable file identical to the other side (its exact fetched text). Since
+     *  this replaces the whole local file at once, it asks for confirmation first. */
+    private void applyAll() {
+        String otherText = editableSide == EditableSide.RIGHT ? leftText : rightText;
+        javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION, tr("diff.applyAll.confirm"),
+                javafx.scene.control.ButtonType.OK, javafx.scene.control.ButtonType.CANCEL);
+        confirm.setTitle(tr("diff.applyAll.confirmTitle"));
+        confirm.setHeaderText(null);
+        if (root.getScene() != null && root.getScene().getWindow() != null) {
+            confirm.initOwner(root.getScene().getWindow());
+        }
+        if (confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
+                == javafx.scene.control.ButtonType.OK) {
+            onApply.accept(otherText);
+        }
+    }
+
+    /** The editable side's full text after taking the other side's content for rows in {@code [start,end)}
+     *  and keeping the editable side's content elsewhere (filler = no line). */
+    private String computeApplied(int start, int end) {
+        boolean rightEditable = editableSide == EditableSide.RIGHT;
+        List<Row> rows = model.rows();
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Row r = rows.get(i);
+            boolean inBlock = i >= start && i < end;
+            String text = inBlock == rightEditable ? r.left() : r.right();
+            // inBlock → other side; outside → editable side. With rightEditable:
+            //   inBlock  → left (other);  outside → right (editable)
+            //   !rightEditable: inBlock → right (other); outside → left (editable)
+            if (text != null) {
+                out.add(text);
+            }
+        }
+        return String.join("\n", out);
     }
 
     private void installUnifiedGutter(CodeArea area, int[] lineNos, String[] signs) {
@@ -491,6 +698,12 @@ public final class DiffViewerPane implements TabContent {
         changeNav.setText(changeCursor < 0
                 ? tr("diff.changeCount", total)
                 : tr("diff.changePos", changeCursor + 1, total));
+    }
+
+    /** Refreshes the toolbar's +added/−removed summary and the change-count indicator from the model. */
+    private void updateSummary() {
+        summary.setText(tr("diff.summary", model.added(), model.removed()));
+        updateChangeNav();
     }
 
     /** Scrolls the active view to a side-by-side row index (mapped to the unified row when needed). */

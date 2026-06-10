@@ -262,6 +262,28 @@ final class Icons {
                 + "3.5L12 3.5 7.5 8z");
     }
 
+    /** Chevron pointing left (Material "chevron_left") — diff "apply change" arrow toward a left pane. */
+    static Node chevronLeft() {
+        return of("M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z");
+    }
+
+    /** Chevron pointing right (Material "chevron_right") — diff "apply change" arrow toward a right pane. */
+    static Node chevronRight() {
+        return of("M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z");
+    }
+
+    /** Double chevron left (Material "keyboard_double_arrow_left") — diff "apply whole hunk" toward left. */
+    static Node doubleChevronLeft() {
+        return of("M17.59 18 19 16.59 14.42 12 19 7.41 17.59 6l-6 6 6 6zm-6 0 1.41-1.41L8.42 "
+                + "12 13 7.41 11.59 6l-6 6 6 6z");
+    }
+
+    /** Double chevron right (Material "keyboard_double_arrow_right") — diff "apply whole hunk" toward right. */
+    static Node doubleChevronRight() {
+        return of("M6.41 6 5 7.41 9.58 12 5 16.59 6.41 18l6-6-6-6zm6 0L11 7.41 15.58 12 11 "
+                + "16.59 12.41 18l6-6-6-6z");
+    }
+
     static Node outline() {
         return of("M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-"
                 + "6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-"

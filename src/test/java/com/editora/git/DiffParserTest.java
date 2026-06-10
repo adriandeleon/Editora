@@ -85,4 +85,34 @@ class DiffParserTest {
         assertEquals(ChangeType.ADDED, map.get(6));
         assertEquals(3, map.size());
     }
+
+    @Test
+    void parseToHunkTextMapsEachMarkedLineToItsUnifiedBody() {
+        String diff = """
+                diff --git a/f.txt b/f.txt
+                index 111..222 100644
+                --- a/f.txt
+                +++ b/f.txt
+                @@ -2,1 +2,1 @@
+                -old line
+                +new line
+                @@ -10,0 +11,2 @@
+                +added one
+                +added two
+                """;
+        Map<Integer, String> hunks = DiffParser.parseToHunkText(diff);
+        // Modified line 2 (1-based) → 0-based key 1; tooltip is the -/+ body (file headers excluded).
+        assertEquals("-old line\n+new line", hunks.get(1));
+        // The two added lines (0-based 10, 11) share the addition hunk's body.
+        assertEquals("+added one\n+added two", hunks.get(10));
+        assertEquals("+added one\n+added two", hunks.get(11));
+    }
+
+    @Test
+    void parseToHunkTextDeletionMarksFollowingLine() {
+        // Pure deletion: marker sits on the new-file line below, tooltip shows the removed content.
+        Map<Integer, String> hunks = DiffParser.parseToHunkText("@@ -5,2 +4,0 @@\n-gone a\n-gone b\n");
+        assertEquals("-gone a\n-gone b", hunks.get(4));
+        assertEquals(1, hunks.size());
+    }
 }

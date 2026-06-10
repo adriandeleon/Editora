@@ -98,6 +98,13 @@
 .editor-area .fold-gutter .git-change-bar.git-deleted {
     -fx-background-color: -color-danger-emphasis;
 }
+/* Hover tooltip on a change bar: the hunk's unified diff, monospace so -/+ lines align. */
+.git-diff-tooltip {
+    -fx-font-family: "JetBrains Mono", "Consolas", monospace;
+    -fx-font-size: 12px;
+    -fx-background-color: -color-bg-overlay;
+    -fx-text-fill: -color-fg-default;
+}
 
 /* Hover preview of a collapsed region's hidden content. The colors are set inline per editor theme
    (FoldManager.setPreviewColors); these defaults match the default (Primer Light) editor theme. */
@@ -1449,6 +1456,10 @@
 /* Intra-line changed words: a stronger box behind the glyphs (RichTextFX's text-background property,
    since a JavaFX Text node can't paint -fx-background-color), keeping the syntax token color. */
 .diff-area .text.diff-word { -rtfx-background-color: rgba(210, 153, 34, 0.40); }
+/* "Apply change" chevron in the editable side's gutter (IntelliJ-style hunk-accept arrow). */
+.diff-apply { -fx-cursor: hand; }
+.diff-apply .toolbar-icon { -fx-fill: -color-accent-fg; }
+.diff-apply:hover .toolbar-icon { -fx-fill: -color-accent-emphasis; }
 
 /* --- Merge (conflict resolution) viewer ----------------------------------------------------------- */
 .merge-toolbar { -fx-background-color: -color-bg-subtle; -fx-border-color: transparent transparent -color-border-muted transparent; }

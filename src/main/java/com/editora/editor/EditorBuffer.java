@@ -293,6 +293,8 @@ public class EditorBuffer implements TabContent {
     /** Git gutter change bars: 0-based line → CSS class ({@code git-added}/{@code git-modified}/
      *  {@code git-deleted}); {@code null} when this buffer isn't under Git change tracking. */
     private java.util.Map<Integer, String> changeBars;
+    /** Per-line hunk text (the {@code -}/{@code +} diff) shown as a tooltip on the change bar; may be null. */
+    private java.util.Map<Integer, String> changeHunks;
 
     private Path path;
     /** Suggested name for a still-unsaved buffer (e.g. from {@code --new-file=foo.txt}); drives the tab
@@ -352,9 +354,11 @@ public class EditorBuffer implements TabContent {
         folds.setNoteHooks(line -> noteIndicators && notes.isNoted(line),
                 line -> gutterNoteClick.accept(this, line));
         notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
-        // Git change bars: the slot is reserved only while tracking is on (changeBars != null).
+        // Git change bars: the slot is reserved only while tracking is on (changeBars != null); the
+        // per-line hunk text feeds a hover tooltip on the bar.
         folds.setChangeHook(() -> changeBars != null,
-                line -> changeBars == null ? null : changeBars.get(line));
+                line -> changeBars == null ? null : changeBars.get(line),
+                line -> changeHunks == null ? null : changeHunks.get(line));
         // Gutter Run glyph: reserved only for a runnable file, on its entry line.
         folds.setRunHooks(() -> runnable, line -> runnable && line == runLine,
                 () -> {
@@ -2099,8 +2103,15 @@ public class EditorBuffer implements TabContent {
      * Off in large-file mode (the gutter is minimal there).
      */
     public void setChangeBars(java.util.Map<Integer, String> lineClasses) {
+        setChangeBars(lineClasses, null);
+    }
+
+    /** As {@link #setChangeBars(java.util.Map)} plus a per-line hunk-text map for the change-bar tooltip. */
+    public void setChangeBars(java.util.Map<Integer, String> lineClasses,
+            java.util.Map<Integer, String> hunkText) {
         if (largeFile && lineClasses != null) {
             lineClasses = null; // never track in large/huge-file mode
+            hunkText = null;
         }
         boolean wasTracked = changeBars != null;
         boolean nowTracked = lineClasses != null;
@@ -2112,6 +2123,7 @@ public class EditorBuffer implements TabContent {
             repaint.addAll(lineClasses.keySet());
         }
         changeBars = lineClasses;
+        changeHunks = hunkText;
         if (wasTracked != nowTracked) {
             refreshGutter(); // the reserved slot appeared/disappeared — rebuild the factory
         } else {

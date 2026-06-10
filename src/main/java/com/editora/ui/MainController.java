@@ -295,6 +295,7 @@ public class MainController {
                 if (projectPanel != null) {
                     projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
                 }
+                refreshOpenDiffs(); // a compared file may have changed on disk while we were away
             }
         });
         this.config = config;
@@ -2614,7 +2615,9 @@ public class MainController {
         if (b != null && b.getPath() != null) {
             java.util.Map<Integer, String> classes = new java.util.HashMap<>();
             state.changes().forEach((line, type) -> classes.put(line, type.cssClass()));
-            b.setChangeBars(classes); // an empty map still marks the buffer as tracked (reserves the slot)
+            // An empty map still marks the buffer as tracked (reserves the slot); hunk text feeds the
+            // change-bar hover tooltip.
+            b.setChangeBars(classes, state.hunks());
         }
     }
 
@@ -2642,37 +2645,142 @@ public class MainController {
             if (!p.startsWith(absRoot)) {
                 continue; // only files inside the affected repo
             }
-            gitService.diff(root, p, changes -> {
+            gitService.diff(root, p, diff -> {
                 java.util.Map<Integer, String> classes = new java.util.HashMap<>();
-                changes.forEach((line, type) -> classes.put(line, type.cssClass()));
-                buf.setChangeBars(classes);
+                diff.changes().forEach((line, type) -> classes.put(line, type.cssClass()));
+                buf.setChangeBars(classes, diff.hunks());
             });
         }
+        refreshOpenDiffs(); // a commit/stage/checkout changes HEAD/index/working → re-diff open diff tabs
     }
 
     /** Runs a Git mutation in the active repo, reports the outcome, and refreshes. */
     // --- Diff viewer ----------------------------------------------------------------------------
 
-    /** Opens a diff tab comparing two texts (diff computed off-thread); reports identical / too-large.
-     *  {@code headerLeft}/{@code headerRight} label the panes (e.g. "HEAD" / "Working tree"); the
-     *  clean {@code leftName}/{@code rightName} (real file names) drive grammar + patch labels. */
+    /** A re-fetchable side of a diff: delivers the current text (a git blob or the working copy) to a
+     *  callback. Re-invoked on refresh so the diff tracks on-disk / git changes. */
+    @FunctionalInterface
+    private interface DiffSide {
+        void fetch(java.util.function.Consumer<String> onText);
+    }
+
+    /**
+     * Opens a diff tab comparing two re-fetchable sides (diff computed off-thread); reports identical /
+     * too-large. {@code headerLeft}/{@code headerRight} label the panes (e.g. "HEAD" / "Working tree");
+     * the clean {@code leftName}/{@code rightName} (real file names) drive grammar + patch labels. The
+     * pane's refresher re-fetches both sides and re-renders only when the content changed.
+     */
     private void openDiff(String title, String headerLeft, String headerRight, String leftName,
-            String rightName, String leftText, String rightText) {
-        diffService.compute(leftText, rightText, model -> {
-            if (model == null) {
-                setStatus(tr("status.diff.tooLarge"));
-                return;
+            String rightName, DiffSide leftSide, DiffSide rightSide,
+            DiffViewerPane.EditableSide editableSide, Path target) {
+        leftSide.fetch(leftText -> rightSide.fetch(rightText ->
+                diffService.compute(leftText, rightText, model -> {
+                    if (model == null) {
+                        setStatus(tr("status.diff.tooLarge"));
+                        return;
+                    }
+                    DiffViewerPane pane = new DiffViewerPane(title, headerLeft, headerRight, leftName,
+                            rightName, leftText, rightText, model,
+                            config.getSettings().getFontFamily(), config.getSettings().getFontSize(),
+                            config.getSettings().isShowLineNumbers());
+                    pane.setOnExportPatch(this::exportPatch);
+                    // "Apply change" arrows write the hunk into the local/editable file (via an undoable
+                    // editor buffer), with Undo + Save acting on that buffer.
+                    if (editableSide != DiffViewerPane.EditableSide.NONE && target != null) {
+                        pane.setEditable(editableSide, newText -> applyToLocal(target, newText),
+                                () -> undoLocal(target), () -> saveLocal(target));
+                    }
+                    // Refresh: re-fetch both sides; re-render only if the content actually changed
+                    // (so a focus-regain with no change keeps the view + scroll position).
+                    pane.setRefresher(() -> leftSide.fetch(l -> rightSide.fetch(r -> {
+                        if (pane.matches(l, r)) {
+                            return;
+                        }
+                        diffService.compute(l, r, m -> {
+                            if (m != null) {
+                                pane.updateContent(l, r, m);
+                            }
+                        });
+                    })));
+                    addContentTab(pane, true);
+                    if (model.isEmpty()) {
+                        setStatus(tr("status.diff.identical"));
+                    }
+                })));
+    }
+
+    /** Re-fetches every open diff tab's sides (run on window focus-regain + after a git mutation), so a
+     *  file changed on disk or by a git command is reflected. Each pane skips the rebuild when unchanged. */
+    private void refreshOpenDiffs() {
+        for (Tab tab : tabPane.getTabs()) {
+            if (tab.getUserData() instanceof DiffViewerPane dp) {
+                dp.refresh();
             }
-            DiffViewerPane pane = new DiffViewerPane(title, headerLeft, headerRight, leftName, rightName,
-                    leftText, rightText, model,
-                    config.getSettings().getFontFamily(), config.getSettings().getFontSize(),
-                    config.getSettings().isShowLineNumbers());
-            pane.setOnExportPatch(this::exportPatch);
-            addContentTab(pane, true);
-            if (model.isEmpty()) {
-                setStatus(tr("status.diff.identical"));
+        }
+    }
+
+    /** Writes a diff "apply change" result into the local file {@code target} via an undoable editor
+     *  buffer (opened in the background if not already open), marking it dirty — Undo reverts the apply,
+     *  Save persists it. Then re-diffs every open diff tab so the applied hunk disappears. */
+    private void applyToLocal(Path target, String newText) {
+        EditorBuffer b = bufferForApply(target);
+        if (b == null) {
+            setStatus(tr("status.diff.applyFailed", target.getFileName()));
+            return;
+        }
+        b.getArea().replaceText(newText);
+        setStatus(tr("status.diff.applied"));
+        refreshOpenDiffs();
+    }
+
+    /** Undoes the last applied change on {@code target}'s buffer (the buffer's own undo). */
+    private void undoLocal(Path target) {
+        EditorBuffer b = openBufferFor(target);
+        if (b != null && b.getArea().isUndoAvailable()) {
+            b.getArea().undo();
+            refreshOpenDiffs();
+        }
+    }
+
+    /** Saves {@code target}'s buffer (persisting the applied changes) and re-diffs. */
+    private void saveLocal(Path target) {
+        EditorBuffer b = openBufferFor(target);
+        if (b == null) {
+            return;
+        }
+        if (save(b)) {
+            setStatus(tr("status.diff.saved", target.getFileName()));
+            refreshOpenDiffs();
+        }
+    }
+
+    /** The open buffer for {@code target} (canonical-path match), or null if not open. */
+    private EditorBuffer openBufferFor(Path target) {
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null && b.getPath() != null && canonicalPath(b.getPath()).equals(canonicalPath(target))) {
+                return b;
             }
-        });
+        }
+        return null;
+    }
+
+    /** The editable buffer to apply a diff hunk into: the open buffer for {@code target}, else a fresh
+     *  one opened in the background (no tab switch, so the diff stays focused). */
+    private EditorBuffer bufferForApply(Path target) {
+        EditorBuffer open = openBufferFor(target);
+        if (open != null) {
+            return open;
+        }
+        try {
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setPath(target);
+            loadInto(buffer, target);
+            addBuffer(buffer, false); // background: keep the diff tab focused
+            return buffer;
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /** Diff the active file's working copy against its committed (HEAD) version. */
@@ -2691,11 +2799,12 @@ public class MainController {
             setStatus(tr("status.diff.notInRepo"));
             return;
         }
-        String name = b.getPath().getFileName().toString();
-        String working = b.text();
-        gitService.show(currentRepoRoot, "HEAD:" + rel, head ->
-                openDiff(tr("diff.title.vsHead", name), tr("diff.side.head"), tr("diff.side.working"),
-                        name, name, head, working));
+        Path path = b.getPath();
+        String name = path.getFileName().toString();
+        openDiff(tr("diff.title.vsHead", name), tr("diff.side.head"), tr("diff.side.working"), name, name,
+                cb -> gitService.show(currentRepoRoot, "HEAD:" + rel, cb),
+                cb -> cb.accept(worktreeText(path)),
+                DiffViewerPane.EditableSide.RIGHT, path);
     }
 
     /** Pick a second file and diff it against the active file. */
@@ -2705,17 +2814,16 @@ public class MainController {
             setStatus(tr("status.diff.noFile"));
             return;
         }
-        String leftName = b.getPath().getFileName().toString();
-        String leftText = b.text();
+        Path basePath = b.getPath();
+        String leftName = basePath.getFileName().toString();
         FileFinder picker = new FileFinder(this::finderStartDir, chosen -> {
-            try {
-                String rightText = java.nio.file.Files.readString(chosen);
-                String rightName = chosen.getFileName().toString();
-                openDiff(tr("diff.title.compare", leftName, rightName),
-                        leftName, rightName, leftName, rightName, leftText, rightText);
-            } catch (java.io.IOException e) {
-                setStatus(tr("status.diff.readFailed", chosen.getFileName()));
-            }
+            String rightName = chosen.getFileName().toString();
+            // Both sides re-fetch via worktreeText (open buffer's live text if open, else disk), so the
+            // diff tracks either file changing on disk.
+            openDiff(tr("diff.title.compare", leftName, rightName), leftName, rightName, leftName, rightName,
+                    cb -> cb.accept(worktreeText(basePath)),
+                    cb -> cb.accept(worktreeText(chosen)),
+                    DiffViewerPane.EditableSide.LEFT, basePath);
         }, false, tr("diff.compareTitle"));
         picker.setOverlayHost(overlayHost);
         picker.show(stage);
@@ -2737,9 +2845,9 @@ public class MainController {
             setStatus(tr("status.diff.notInRepo"));
             return;
         }
-        String name = b.getPath().getFileName().toString();
-        String working = b.text();
-        gitService.log(currentRepoRoot, b.getPath(), 80, commits -> {
+        Path path = b.getPath();
+        String name = path.getFileName().toString();
+        gitService.log(currentRepoRoot, path, 80, commits -> {
             if (commits.isEmpty()) {
                 setStatus(tr("status.diff.noHistory"));
                 return;
@@ -2750,9 +2858,11 @@ public class MainController {
                     c -> c.shortHash() + "  " + c.subject(),
                     c -> c.date() + " · " + c.author(),
                     c -> c.shortHash() + " " + c.subject() + " " + c.author() + " " + c.date(),
-                    chosen -> gitService.show(currentRepoRoot, chosen.hash() + ":" + rel, old ->
-                            openDiff(tr("diff.title.vsCommit", name, chosen.shortHash()),
-                                    chosen.shortHash(), tr("diff.side.working"), name, name, old, working)));
+                    chosen -> openDiff(tr("diff.title.vsCommit", name, chosen.shortHash()),
+                            chosen.shortHash(), tr("diff.side.working"), name, name,
+                            cb -> gitService.show(currentRepoRoot, chosen.hash() + ":" + rel, cb),
+                            cb -> cb.accept(worktreeText(path)),
+                            DiffViewerPane.EditableSide.RIGHT, path));
             picker.setOverlayHost(overlayHost);
             picker.show(stage);
         });
@@ -2766,16 +2876,18 @@ public class MainController {
         java.nio.file.Path abs = currentRepoRoot.resolve(repoRel);
         String name = abs.getFileName().toString();
         if (staged) {
-            gitService.show(currentRepoRoot, "HEAD:" + repoRel, head ->
-                    gitService.show(currentRepoRoot, ":" + repoRel, index ->
-                            openDiff(tr("diff.title.staged", name), tr("diff.side.head"),
-                                    tr("diff.side.staged"), name, name, head, index)));
+            // index↔HEAD: neither side is the working file, so no "apply" (read-only diff).
+            openDiff(tr("diff.title.staged", name), tr("diff.side.head"), tr("diff.side.staged"),
+                    name, name,
+                    cb -> gitService.show(currentRepoRoot, "HEAD:" + repoRel, cb),
+                    cb -> gitService.show(currentRepoRoot, ":" + repoRel, cb),
+                    DiffViewerPane.EditableSide.NONE, null);
         } else {
-            gitService.show(currentRepoRoot, ":" + repoRel, index -> {
-                String working = worktreeText(abs);
-                openDiff(tr("diff.title.unstaged", name), tr("diff.side.staged"),
-                        tr("diff.side.working"), name, name, index, working);
-            });
+            openDiff(tr("diff.title.unstaged", name), tr("diff.side.staged"), tr("diff.side.working"),
+                    name, name,
+                    cb -> gitService.show(currentRepoRoot, ":" + repoRel, cb),
+                    cb -> cb.accept(worktreeText(abs)),
+                    DiffViewerPane.EditableSide.RIGHT, abs);
         }
     }
 
