@@ -146,10 +146,34 @@ public final class StatusBar extends HBox {
         return label;
     }
 
-    /** Sets the transient echo-area message (called by MainController.setStatus) and logs it for the session. */
+    /** Sets the transient echo-area message (called by MainController.setStatus) and logs it for the session.
+     *  The echo shows a single line only (a Label renders embedded newlines as line breaks, so a multi-line
+     *  message — e.g. a compiler error dump — would grow the whole status bar); the full text goes to the
+     *  message log, whose rows wrap and are copyable. */
     public void setMessage(String message) {
-        echo.setText(message == null ? "" : message);
-        messageLog.add(message); // no-ops for null/blank (a blank clears the echo)
+        echo.setText(echoLine(message));
+        messageLog.add(message); // full text; no-ops for null/blank (a blank clears the echo)
+    }
+
+    /** Maximum characters shown in the echo line; longer messages are truncated with an ellipsis. */
+    static final int MAX_ECHO_CHARS = 200;
+
+    /** First line of {@code message}, capped at {@link #MAX_ECHO_CHARS}, with {@code …} marking anything
+     *  cut (more lines or overlength). Pure — tested. */
+    static String echoLine(String message) {
+        if (message == null) {
+            return "";
+        }
+        int nl = message.indexOf('\n');
+        int cr = message.indexOf('\r');
+        int cut = nl < 0 ? cr : (cr < 0 ? nl : Math.min(nl, cr));
+        String line = (cut < 0 ? message : message.substring(0, cut)).stripTrailing();
+        boolean truncated = cut >= 0;
+        if (line.length() > MAX_ECHO_CHARS) {
+            line = line.substring(0, MAX_ECHO_CHARS);
+            truncated = true;
+        }
+        return truncated ? line + " …" : line;
     }
 
     /** Injects the shared in-scene overlay host into the message-log popup. */
