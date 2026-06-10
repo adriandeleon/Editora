@@ -1430,6 +1430,38 @@
    amber wash so it reads over syntax colors; the caret-line highlight reinforces it. */
 .editor-area .paragraph-text.exec-line { -fx-background-color: rgba(210, 153, 34, 0.22); }
 
+/* --- Diff viewer ---------------------------------------------------------------------------------
+   Two read-only editor-areas (side-by-side) or one (unified). Per-line backgrounds are translucent
+   washes (read over syntax colors); intra-line changed words get a stronger tint; filler lines (the
+   absent side of an add/remove) get a faint hatched-grey. Tuned to read in both light + dark themes. */
+.diff-toolbar { -fx-background-color: -color-bg-subtle; -fx-border-color: transparent transparent -color-border-muted transparent; }
+.diff-toolbar-button { -fx-padding: 3 6 3 6; }
+.diff-toolbar-separator { -fx-padding: 0 3 0 3; }
+.diff-summary { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
+.diff-pane-header { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-padding: 2 6 2 6; -fx-background-color: -color-bg-subtle; }
+.diff-lineno { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-padding: 0 6 0 0; -fx-opacity: 0.8; }
+.diff-sign { -fx-text-fill: -color-fg-muted; -fx-font-family: "JetBrains Mono", monospace; }
+/* Per-line diff backgrounds (RichTextFX paragraph styles). */
+.diff-area .paragraph-text.diff-added { -fx-background-color: rgba(63, 185, 80, 0.16); }
+.diff-area .paragraph-text.diff-removed { -fx-background-color: rgba(248, 81, 73, 0.16); }
+.diff-area .paragraph-text.diff-modified { -fx-background-color: rgba(210, 153, 34, 0.16); }
+.diff-area .paragraph-text.diff-filler { -fx-background-color: rgba(140, 148, 158, 0.10); }
+/* Intra-line changed words: a stronger box behind the glyphs (RichTextFX's text-background property,
+   since a JavaFX Text node can't paint -fx-background-color), keeping the syntax token color. */
+.diff-area .text.diff-word { -rtfx-background-color: rgba(210, 153, 34, 0.40); }
+
+/* --- Merge (conflict resolution) viewer ----------------------------------------------------------- */
+.merge-toolbar { -fx-background-color: -color-bg-subtle; -fx-border-color: transparent transparent -color-border-muted transparent; }
+.merge-status { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
+.merge-context { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-padding: 2 0 2 4; -fx-font-style: italic; }
+.merge-conflict-card { -fx-background-color: -color-bg-subtle; -fx-background-radius: 4; -fx-border-color: -color-border-muted; -fx-border-radius: 4; }
+.merge-conflict-header { -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
+.merge-side-label { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; }
+.merge-side { -fx-border-width: 0; }
+.merge-ours { -fx-control-inner-background: rgba(63, 185, 80, 0.10); }
+.merge-theirs { -fx-control-inner-background: rgba(68, 147, 248, 0.10); }
+.merge-chosen { -fx-text-fill: -color-success-fg; -fx-font-size: 11px; }
+
 /* Debug Log window: monospace read-only log area + a muted file-path footer. */
 .debug-log-area {
     -fx-font-family: "JetBrains Mono", "Consolas", monospace;

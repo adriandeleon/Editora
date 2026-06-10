@@ -207,6 +207,7 @@ public class MainController {
     private final com.editora.mermaid.MermaidService mermaidService = new com.editora.mermaid.MermaidService();
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
+    private final com.editora.diff.DiffService diffService = new com.editora.diff.DiffService();
     private boolean mermaidSupportApplied;
     private com.editora.mermaid.MermaidService.Availability mermaidAvail =
             new com.editora.mermaid.MermaidService.Availability(false, false);
@@ -1254,6 +1255,9 @@ public class MainController {
             @Override public void refresh() {
                 gitService.invalidateCaches();
                 afterGitMutation();
+            }
+            @Override public void diff(String path, boolean staged) {
+                diffGitPanelFile(path, staged);
             }
         });
         gitPanel.setOnClone(this::gitClone);
@@ -2647,6 +2651,196 @@ public class MainController {
     }
 
     /** Runs a Git mutation in the active repo, reports the outcome, and refreshes. */
+    // --- Diff viewer ----------------------------------------------------------------------------
+
+    /** Opens a diff tab comparing two texts (diff computed off-thread); reports identical / too-large.
+     *  {@code headerLeft}/{@code headerRight} label the panes (e.g. "HEAD" / "Working tree"); the
+     *  clean {@code leftName}/{@code rightName} (real file names) drive grammar + patch labels. */
+    private void openDiff(String title, String headerLeft, String headerRight, String leftName,
+            String rightName, String leftText, String rightText) {
+        diffService.compute(leftText, rightText, model -> {
+            if (model == null) {
+                setStatus(tr("status.diff.tooLarge"));
+                return;
+            }
+            DiffViewerPane pane = new DiffViewerPane(title, headerLeft, headerRight, leftName, rightName,
+                    leftText, rightText, model,
+                    config.getSettings().getFontFamily(), config.getSettings().getFontSize(),
+                    config.getSettings().isShowLineNumbers());
+            pane.setOnExportPatch(this::exportPatch);
+            addContentTab(pane, true);
+            if (model.isEmpty()) {
+                setStatus(tr("status.diff.identical"));
+            }
+        });
+    }
+
+    /** Diff the active file's working copy against its committed (HEAD) version. */
+    private void diffActiveVsHead() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null) {
+            setStatus(tr("status.diff.noFile"));
+            return;
+        }
+        if (currentRepoRoot == null) {
+            setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+            return;
+        }
+        String rel = com.editora.git.GitService.repoRelative(currentRepoRoot, b.getPath());
+        if (rel == null) {
+            setStatus(tr("status.diff.notInRepo"));
+            return;
+        }
+        String name = b.getPath().getFileName().toString();
+        String working = b.text();
+        gitService.show(currentRepoRoot, "HEAD:" + rel, head ->
+                openDiff(tr("diff.title.vsHead", name), tr("diff.side.head"), tr("diff.side.working"),
+                        name, name, head, working));
+    }
+
+    /** Pick a second file and diff it against the active file. */
+    private void compareActiveWithFile() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null) {
+            setStatus(tr("status.diff.noFile"));
+            return;
+        }
+        String leftName = b.getPath().getFileName().toString();
+        String leftText = b.text();
+        FileFinder picker = new FileFinder(this::finderStartDir, chosen -> {
+            try {
+                String rightText = java.nio.file.Files.readString(chosen);
+                String rightName = chosen.getFileName().toString();
+                openDiff(tr("diff.title.compare", leftName, rightName),
+                        leftName, rightName, leftName, rightName, leftText, rightText);
+            } catch (java.io.IOException e) {
+                setStatus(tr("status.diff.readFailed", chosen.getFileName()));
+            }
+        }, false, tr("diff.compareTitle"));
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Diff the active file against a commit chosen from its history. */
+    private void diffActiveVsCommit() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null) {
+            setStatus(tr("status.diff.noFile"));
+            return;
+        }
+        if (currentRepoRoot == null) {
+            setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+            return;
+        }
+        String rel = com.editora.git.GitService.repoRelative(currentRepoRoot, b.getPath());
+        if (rel == null) {
+            setStatus(tr("status.diff.notInRepo"));
+            return;
+        }
+        String name = b.getPath().getFileName().toString();
+        String working = b.text();
+        gitService.log(currentRepoRoot, b.getPath(), 80, commits -> {
+            if (commits.isEmpty()) {
+                setStatus(tr("status.diff.noHistory"));
+                return;
+            }
+            QuickOpen<com.editora.git.GitService.Commit> picker = new QuickOpen<>(
+                    tr("diff.commitPickerTitle"), tr("diff.commitPickerPrompt"),
+                    () -> commits,
+                    c -> c.shortHash() + "  " + c.subject(),
+                    c -> c.date() + " · " + c.author(),
+                    c -> c.shortHash() + " " + c.subject() + " " + c.author() + " " + c.date(),
+                    chosen -> gitService.show(currentRepoRoot, chosen.hash() + ":" + rel, old ->
+                            openDiff(tr("diff.title.vsCommit", name, chosen.shortHash()),
+                                    chosen.shortHash(), tr("diff.side.working"), name, name, old, working)));
+            picker.setOverlayHost(overlayHost);
+            picker.show(stage);
+        });
+    }
+
+    /** Diff a Git-panel file row: staged → index↔HEAD, unstaged → worktree↔index. */
+    private void diffGitPanelFile(String repoRel, boolean staged) {
+        if (currentRepoRoot == null) {
+            return;
+        }
+        java.nio.file.Path abs = currentRepoRoot.resolve(repoRel);
+        String name = abs.getFileName().toString();
+        if (staged) {
+            gitService.show(currentRepoRoot, "HEAD:" + repoRel, head ->
+                    gitService.show(currentRepoRoot, ":" + repoRel, index ->
+                            openDiff(tr("diff.title.staged", name), tr("diff.side.head"),
+                                    tr("diff.side.staged"), name, name, head, index)));
+        } else {
+            gitService.show(currentRepoRoot, ":" + repoRel, index -> {
+                String working = worktreeText(abs);
+                openDiff(tr("diff.title.unstaged", name), tr("diff.side.staged"),
+                        tr("diff.side.working"), name, name, index, working);
+            });
+        }
+    }
+
+    /** The current working-tree text of {@code abs}: an open buffer's (incl. unsaved edits) if open,
+     *  else the file on disk ("" when unreadable / deleted). */
+    private String worktreeText(java.nio.file.Path abs) {
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null && b.getPath() != null && canonicalPath(b.getPath()).equals(canonicalPath(abs))) {
+                return b.text();
+            }
+        }
+        try {
+            return java.nio.file.Files.exists(abs) ? java.nio.file.Files.readString(abs) : "";
+        } catch (java.io.IOException e) {
+            return "";
+        }
+    }
+
+    /** Saves a unified-diff patch (the diff viewer's export action) via a file chooser. */
+    private void exportPatch(String patch) {
+        if (patch == null || patch.isEmpty()) {
+            setStatus(tr("status.diff.identical"));
+            return;
+        }
+        javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+        fc.setTitle(tr("diff.exportPatch"));
+        fc.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("Patch (*.patch)", "*.patch"));
+        fc.setInitialFileName("changes.patch");
+        java.io.File f = fc.showSaveDialog(stage);
+        if (f == null) {
+            return;
+        }
+        try {
+            java.nio.file.Files.writeString(f.toPath(), patch);
+            setStatus(tr("status.diff.patchSaved", f.getName()));
+        } catch (java.io.IOException e) {
+            setStatus(tr("status.diff.patchFailed", e.getMessage() == null ? "" : e.getMessage()));
+        }
+    }
+
+    /** Opens the merge-conflict resolution view for the active buffer (if it has conflict markers). */
+    private void resolveConflicts() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            setStatus(tr("status.diff.noFile"));
+            return;
+        }
+        String text = b.text();
+        if (!com.editora.diff.ConflictParser.hasConflictMarkers(text)) {
+            setStatus(tr("status.merge.noConflicts"));
+            return;
+        }
+        java.util.List<String> raw = java.util.List.of(text.replace("\r\n", "\n").split("\n", -1));
+        com.editora.diff.ConflictParser.ConflictFile cf = com.editora.diff.ConflictParser.parse(raw);
+        String name = b.getPath() == null ? b.getTitle() : b.getPath().getFileName().toString();
+        MergeViewerPane pane = new MergeViewerPane(tr("merge.title", name), cf,
+                config.getSettings().getFontFamily(), config.getSettings().getFontSize(),
+                resolvedLines -> {
+                    b.getArea().replaceText(String.join("\n", resolvedLines));
+                    setStatus(tr("status.merge.applied"));
+                });
+        addContentTab(pane, true);
+    }
+
     private void gitOp(String successMessage, String... args) {
         if (currentRepoRoot == null) {
             setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
@@ -4282,6 +4476,12 @@ public class MainController {
         MenuItem rename = new MenuItem(tr("menu.rename"));
         rename.setGraphic(Icons.edit());
         rename.setOnAction(e -> renameFile(buffer, tab));
+        MenuItem diffHead = new MenuItem(tr("menu.diffHead"));
+        diffHead.setGraphic(Icons.diff());
+        diffHead.setOnAction(e -> ifGit(this::diffActiveVsHead));
+        MenuItem compareWith = new MenuItem(tr("menu.compareWith"));
+        compareWith.setGraphic(Icons.diff());
+        compareWith.setOnAction(e -> compareActiveWithFile());
 
         ContextMenu menu = new ContextMenu(
                 save, saveAs,
@@ -4290,6 +4490,8 @@ public class MainController {
                 new SeparatorMenuItem(),
                 closeLeft, closeRight,
                 new SeparatorMenuItem(),
+                diffHead, compareWith,
+                new SeparatorMenuItem(),
                 copyPath, pin, rename);
         menu.setOnShowing(e -> {
             closeLeft.setDisable(eligibleToLeft(tab).isEmpty());
@@ -4297,6 +4499,8 @@ public class MainController {
             boolean hasPath = buffer.getPath() != null;
             copyPath.setDisable(!hasPath);
             rename.setDisable(!hasPath);
+            compareWith.setDisable(!hasPath);
+            diffHead.setDisable(!hasPath || !gitEnabled());
             // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
             save.setDisable(hasPath && !buffer.isDirty());
             pin.setText(pinned.contains(tab) ? "Unpin Tab" : "Pin Tab");
@@ -7095,6 +7299,12 @@ public class MainController {
             gitService.invalidateCaches();
             afterGitMutation();
         })));
+        // Diff viewer + merge. The git-backed diffs are ifGit-gated; "Compare With…" and "Resolve
+        // Conflicts" work on any file (no repo needed), so they are not gated.
+        registry.register(Command.of("diff.vsHead", () -> ifGit(this::diffActiveVsHead)));
+        registry.register(Command.of("diff.compareWith", this::compareActiveWithFile));
+        registry.register(Command.of("diff.vsCommit", () -> ifGit(this::diffActiveVsCommit)));
+        registry.register(Command.of("merge.resolve", this::resolveConflicts));
         registry.register(Command.of("switcher.show",
                 () -> switcher.show(stage, false)));
         registry.register(Command.of("switcher.showReverse",

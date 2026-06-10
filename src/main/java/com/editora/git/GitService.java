@@ -155,6 +155,84 @@ public final class GitService {
         });
     }
 
+    // --- diff viewer: blob content + history -----------------------------------------------------
+
+    /**
+     * Fetches a blob's content via {@code git show <spec>} (e.g. {@code HEAD:rel/path} for the committed
+     * version, {@code :rel/path} for the staged/index version, {@code <ref>:rel/path} for any commit).
+     * Posts the content on the FX thread, or {@code ""} when the spec doesn't exist (a new/untracked file
+     * has no such blob) — callers treat {@code ""} as "empty side".
+     */
+    public void show(Path root, String spec, Consumer<String> onResult) {
+        exec.submit(() -> {
+            String content = "";
+            if (gitAvailable() && root != null && spec != null) {
+                ProcessRunner.Result r = git(root, QUICK, "show", spec);
+                if (r.ok()) {
+                    content = r.out();
+                }
+            }
+            String posted = content;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** One commit from the log, for the "diff against commit" picker. */
+    public record Commit(String hash, String shortHash, String subject, String author, String date) { }
+
+    /**
+     * Lists up to {@code max} commits touching {@code file} (most recent first) via one {@code git log},
+     * tab-separated fields parsed by the pure {@link #parseLog}. Posts on the FX thread.
+     */
+    public void log(Path root, Path file, int max, Consumer<List<Commit>> onResult) {
+        exec.submit(() -> {
+            List<Commit> commits = List.of();
+            if (gitAvailable() && root != null) {
+                List<String> args = new ArrayList<>(List.of("log", "--no-color",
+                        "--pretty=format:%H%x09%h%x09%an%x09%ad%x09%s", "--date=short", "-n", String.valueOf(max)));
+                if (file != null) {
+                    args.add("--");
+                    args.add(file.toAbsolutePath().toString());
+                }
+                ProcessRunner.Result r = git(root, QUICK, args.toArray(new String[0]));
+                if (r.ok()) {
+                    commits = parseLog(r.out());
+                }
+            }
+            List<Commit> posted = commits;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** Parses {@code %H\t%h\t%an\t%ad\t%s} log lines into {@link Commit}s. Pure — unit-tested. */
+    static List<Commit> parseLog(String out) {
+        List<Commit> commits = new ArrayList<>();
+        for (String line : out.split("\n")) {
+            if (line.isBlank()) {
+                continue;
+            }
+            String[] f = line.split("\t", 5);
+            if (f.length >= 5) {
+                commits.add(new Commit(f[0].strip(), f[1].strip(), f[4], f[2], f[3].strip()));
+            }
+        }
+        return commits;
+    }
+
+    /** The repo-relative, forward-slash path of {@code file} under {@code root} (for {@code git show} specs);
+     *  {@code null} if {@code file} isn't under {@code root}. Pure — unit-tested. */
+    public static String repoRelative(Path root, Path file) {
+        if (root == null || file == null) {
+            return null;
+        }
+        Path r = root.toAbsolutePath().normalize();
+        Path f = file.toAbsolutePath().normalize();
+        if (!f.startsWith(r)) {
+            return null;
+        }
+        return r.relativize(f).toString().replace('\\', '/');
+    }
+
     // --- branches --------------------------------------------------------------------------------
 
     /**

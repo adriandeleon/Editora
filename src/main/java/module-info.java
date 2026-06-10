@@ -35,6 +35,9 @@ module com.editora {
     // Gson (already a transitive module via jsonrpc) — the DAP layer parses jdtls's untyped
     // workspace/executeCommand results, which lsp4j hands back as gson JsonElements.
     requires com.google.gson;
+    // java-diff-utils: Myers line diff + unified-diff generation for the diff viewer (com.editora.diff).
+    // Automatic module — moditect injects a real descriptor for the jlink dist build.
+    requires io.github.javadiffutils;
 
     opens com.editora to javafx.fxml;
     opens com.editora.ui to javafx.fxml;

@@ -40,6 +40,7 @@
         <jsvg.version>1.7.2</jsvg.version>
         <pdfbox.version>3.0.5</pdfbox.version>
         <lucene.version>10.2.2</lucene.version>
+        <javadiffutils.version>4.12</javadiffutils.version>
         <moditect.version>1.2.2.Final</moditect.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
@@ -211,6 +212,16 @@
             <groupId>org.eclipse.lsp4j</groupId>
             <artifactId>org.eclipse.lsp4j.debug</artifactId>
             <version>${lsp4j.version}</version>
+        </dependency>
+
+        <!-- Diff viewer: java-diff-utils (Myers line diff + unified-diff/patch generation). An automatic
+             module (Automatic-Module-Name: io.github.javadiffutils, deps only java.base) — moditect injects
+             a real descriptor for the jlink dist build (like pdfbox). Intra-line word highlighting is done
+             in-house on top of it (com.editora.diff.InlineDiff), so no second diff library is needed. -->
+        <dependency>
+            <groupId>io.github.java-diff-utils</groupId>
+            <artifactId>java-diff-utils</artifactId>
+            <version>${javadiffutils.version}</version>
         </dependency>
 
         <dependency>
@@ -485,6 +496,19 @@
                                     </artifact>
                                     <moduleInfo>
                                         <name>org.eclipse.lsp4j.debug</name>
+                                    </moduleInfo>
+                                </module>
+                                <!-- java-diff-utils (diff viewer): Automatic-Module-Name only, deps just
+                                     java.base — jdeps generates a clean descriptor. Not signed, so no
+                                     signature-strip is needed in the antrun step below. -->
+                                <module>
+                                    <artifact>
+                                        <groupId>io.github.java-diff-utils</groupId>
+                                        <artifactId>java-diff-utils</artifactId>
+                                        <version>${javadiffutils.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>io.github.javadiffutils</name>
                                     </moduleInfo>
                                 </module>
                             </modules>

@@ -6,6 +6,7 @@
   "C-x C-q": "view.toggleReadOnly",
   "C-x C-x": "edit.exchangePointAndMark",
   "C-space": "edit.setMark",
+  "C-x v =": "diff.vsHead",
   "C-x b": "buffer.jump",
   "C-x k": "buffer.close",
   "C-x 1": "view.unsplit",

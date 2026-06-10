@@ -251,6 +251,17 @@ final class Icons {
                 + "-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z");
     }
 
+    /** Diff/compare glyph (Material "compare_arrows") — diff viewer tab + the vs-HEAD command. */
+    static Node diff() {
+        return of("M9.01 14H2v2h7.01v3L13 15l-3.99-4v3zm5.98-1v-3H22V8h-7.01V5L11 9l3.99 4z");
+    }
+
+    /** Merge glyph (Material "merge_type") — the conflict-resolution (merge) viewer tab. */
+    static Node merge() {
+        return of("M17 20.41L18.41 19 15 15.59 13.59 17 17 20.41zM7.5 8H11v5.59L5.59 19 7 20.41l6-6V8h"
+                + "3.5L12 3.5 7.5 8z");
+    }
+
     static Node outline() {
         return of("M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-"
                 + "6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-"

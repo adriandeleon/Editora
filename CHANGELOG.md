@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Diff viewer** — compare files visually in a dedicated tab:
+  - **Side-by-side** (default) with synchronized scrolling, original line numbers, syntax highlighting,
+    per-line added/removed/changed backgrounds, and **intra-line word emphasis** on changed lines; a
+    toolbar toggle switches to a **unified** (+/−) view.
+  - **Prev/next change** navigation and **Export patch…** (writes a `.patch`).
+  - Entry points: **Compare with HEAD** for the current file (`C-x v =`, also the tab and Git-panel
+    menus), **Compare With…** any other file, **Compare with Commit…** (pick from the file's history),
+    and **Show Diff** on a Git-panel row (staged → index↔HEAD, unstaged → working↔index).
+  - **Merge-conflict resolution** — open a file with Git conflict markers in a merge view and accept
+    **Ours / Theirs / Both** per conflict, then save the resolved file (`Merge: Resolve Conflicts`).
+  - Commands `diff.vsHead`, `diff.compareWith`, `diff.vsCommit`, `merge.resolve` (palette-discoverable).
+
 - **Better Compact Source File (JDK 25) support** — running and debugging single-file programs is now
   much more complete:
   - **Console input** — the Run window has an input field: type a line and press Enter to send it to

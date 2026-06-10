@@ -49,6 +49,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         void commit(String message);
         void push();
         void refresh();
+        /** Show a diff for the row: {@code staged} → index↔HEAD, else worktree↔index. */
+        void diff(String repoRelativePath, boolean staged);
     }
 
     /** Which group a file row sits under. */
@@ -323,6 +325,13 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             open.setGraphic(Icons.fileSheet());
             open.setOnAction(a -> actions.open(e.path()));
             ContextMenu menu = new ContextMenu(open);
+            if (!e.untracked()) { // an untracked file has no committed/index version to diff against
+                MenuItem showDiff = new MenuItem(tr("gitpanel.menu.showDiff"));
+                showDiff.setGraphic(Icons.diff());
+                boolean staged = f.group() == Group.STAGED;
+                showDiff.setOnAction(a -> actions.diff(e.path(), staged));
+                menu.getItems().add(showDiff);
+            }
             if (f.group() == Group.STAGED) {
                 MenuItem unstage = new MenuItem(tr("gitpanel.menu.unstage"));
                 unstage.setGraphic(Icons.remove());
