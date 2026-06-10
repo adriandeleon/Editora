@@ -221,6 +221,7 @@ public class EditorBuffer implements TabContent {
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
+    private final InlineValuesOverlay inlineValues = new InlineValuesOverlay(area);
     private final MermaidLintOverlay lintOverlay = new MermaidLintOverlay(area);
     private final LspDiagnosticOverlay lspOverlay = new LspDiagnosticOverlay(area);
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable. */
@@ -657,7 +658,7 @@ public class EditorBuffer implements TabContent {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, noteOverlay, searchOverlay, whitespace, spellOverlay, lintOverlay, lspOverlay, aceJump, minimap, diagnosticStripe, columnRuler);
+        root.getChildren().addAll(scrollPane, noteOverlay, searchOverlay, whitespace, spellOverlay, lintOverlay, lspOverlay, inlineValues, aceJump, minimap, diagnosticStripe, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -686,6 +687,13 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setLeftAnchor(lspOverlay, 0d);
         AnchorPane.setRightAnchor(lspOverlay, Minimap.WIDTH);
         installLspHover(area);
+        // Inline debugger values share the text rectangle, mouse-transparent (active only while
+        // execution is suspended in this file).
+        AnchorPane.setTopAnchor(inlineValues, 0d);
+        AnchorPane.setBottomAnchor(inlineValues, 0d);
+        AnchorPane.setLeftAnchor(inlineValues, 0d);
+        AnchorPane.setRightAnchor(inlineValues, Minimap.WIDTH);
+        installDebugHover(area);
         AnchorPane.setTopAnchor(searchOverlay, 0d);
         AnchorPane.setBottomAnchor(searchOverlay, 0d);
         AnchorPane.setLeftAnchor(searchOverlay, 0d);
@@ -1323,6 +1331,85 @@ public class EditorBuffer implements TabContent {
         });
     }
 
+    // --- Debugger editor surfaces: inline values + hover value tooltip --------------------------
+
+    /** While suspended: the frame's variable name → value map painted as grey end-of-line
+     *  annotations on visible lines that mention them; null/empty clears (resume/terminate). */
+    public void setInlineValues(java.util.Map<String, String> values) {
+        inlineValues.setValues(hugeFile ? null : values);
+    }
+
+    /** Async evaluator injected by the controller (DAP {@code evaluate} with context "hover"):
+     *  given the hovered identifier, deliver its rendered value (null/blank = show nothing). */
+    private java.util.function.BiConsumer<String, java.util.function.Consumer<String>> debugHoverEvaluator;
+    private boolean debugHoverActive;
+    private javafx.scene.control.Tooltip debugTooltip;
+    private String debugHoverWord;
+
+    public void setDebugHoverEvaluator(
+            java.util.function.BiConsumer<String, java.util.function.Consumer<String>> evaluator) {
+        this.debugHoverEvaluator = evaluator;
+    }
+
+    /** Flipped by the controller on suspend/resume so hovering costs nothing outside a pause. */
+    public void setDebugHoverActive(boolean on) {
+        this.debugHoverActive = on && !hugeFile;
+        if (!this.debugHoverActive) {
+            hideDebugTooltip();
+        }
+    }
+
+    /** IntelliJ's value popup: hovering an identifier while suspended evaluates it in the selected
+     *  frame and shows {@code name = value}. One evaluation per distinct hovered word. */
+    private void installDebugHover(CodeArea a) {
+        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
+            if (!debugHoverActive || debugHoverEvaluator == null) {
+                return;
+            }
+            try {
+                var hit = a.hit(e.getX(), e.getY());
+                var pos = a.offsetToPosition(hit.getInsertionIndex(),
+                        org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+                String line = a.getParagraph(pos.getMajor()).getText();
+                String word = DebugIdentifiers.wordAt(line, pos.getMinor());
+                if (word == null) {
+                    hideDebugTooltip();
+                    return;
+                }
+                if (word.equals(debugHoverWord)) {
+                    return; // already showing (or evaluating) this word
+                }
+                debugHoverWord = word;
+                double sx = e.getScreenX();
+                double sy = e.getScreenY();
+                debugHoverEvaluator.accept(word, value -> {
+                    if (!debugHoverActive || value == null || value.isBlank()
+                            || !word.equals(debugHoverWord)) {
+                        return; // evaluation failed / mouse moved on — show nothing
+                    }
+                    if (debugTooltip == null) {
+                        debugTooltip = new javafx.scene.control.Tooltip();
+                        debugTooltip.getStyleClass().add("debug-value-tooltip");
+                        debugTooltip.setWrapText(true);
+                        debugTooltip.setMaxWidth(480);
+                    }
+                    debugTooltip.setText(word + " = " + value);
+                    debugTooltip.show(a, sx + 12, sy + 16);
+                });
+            } catch (RuntimeException ignored) {
+                // viewport mid-layout / hit miss — ignore
+            }
+        });
+        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hideDebugTooltip());
+    }
+
+    private void hideDebugTooltip() {
+        if (debugTooltip != null) {
+            debugTooltip.hide();
+        }
+        debugHoverWord = null;
+    }
+
     public MarkdownViewMode getMarkdownViewMode() {
         return markdownViewMode;
     }
@@ -1917,6 +2004,7 @@ public class EditorBuffer implements TabContent {
             area2.setStyle(style);
         }
         whitespace.setFont(family, size);
+        inlineValues.setFont(family, size);
         scheduleRulerMeasure();
     }
 

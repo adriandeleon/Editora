@@ -48,6 +48,8 @@ public class WorkspaceState {
     private Map<String, String> spellLanguages = new LinkedHashMap<>();
     /** Files the user pinned read-only ("View mode"): absolute paths. */
     private List<String> readOnlyFiles = new ArrayList<>();
+    /** Debugger watch expressions (the Debug window's Watches node), re-evaluated on every stop. */
+    private List<String> debugWatches = new ArrayList<>();
 
     // --- Zen (distraction-free) mode. Entering Zen snapshots the user's view/chrome prefs into
     //     preZenView (key -> value) and the open tool windows into preZenToolWindows, then turns
@@ -212,6 +214,14 @@ public class WorkspaceState {
 
     public void setReadOnlyFiles(List<String> readOnlyFiles) {
         this.readOnlyFiles = readOnlyFiles == null ? new ArrayList<>() : readOnlyFiles;
+    }
+
+    public List<String> getDebugWatches() {
+        return debugWatches;
+    }
+
+    public void setDebugWatches(List<String> debugWatches) {
+        this.debugWatches = debugWatches == null ? new ArrayList<>() : debugWatches;
     }
 
     public boolean isZenMode() {

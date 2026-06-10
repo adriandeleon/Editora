@@ -114,5 +114,8 @@
   "C-c C-d o": "debug.stepOut",
   "C-c C-d k": "debug.stop",
   "C-c C-d a": "debug.attach",
-  "C-c C-d e": "debug.editBreakpoint"
+  "C-c C-d e": "debug.editBreakpoint",
+  "C-c C-d p": "debug.pause",
+  "C-c C-d u": "debug.runToCursor",
+  "C-c C-d j": "debug.jumpToLine"
 }

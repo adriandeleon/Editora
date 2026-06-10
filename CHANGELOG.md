@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **IntelliJ-style debugger UI** — the Debug tool window and the editor now match IntelliJ IDEA's
+  debugger as closely as practical:
+  - **New look** — an icon-only grouped toolbar (resume / pause / stop / restart | step over / into /
+    out / run to cursor, with full titles in tooltips), a **thread selector** dropdown over the call
+    stack, rich frame cells (`method:line, File`), and **type-colored variable values** (strings green,
+    numbers blue, booleans amber, null muted) with a muted type suffix.
+  - **Pause** (`C-c C-d p`) suspends a running program; **Run to Cursor** (`C-c C-d u`) resumes and
+    stops at the caret line via a temporary breakpoint that is cleaned up automatically.
+  - **Watches** — a "Watches" node at the top of the variables tree with a "+ Add watch…" row;
+    add/edit/remove via the context menu or double-click. Watches re-evaluate on every stop and frame
+    selection, expand when the result is structured, and persist across restarts (per project).
+  - **Set Value** — change a variable's value mid-session from the context menu, F2, or double-click;
+    the tree updates in place and watches re-evaluate.
+  - **Jump to Line** (`C-c C-d j`) — move the execution pointer to the caret line *without executing*
+    the code in between (like the IntelliJ "Jump to Line" plugin). Works with Python (debugpy); the
+    Java and JS adapters don't support it yet and say so.
+  - **Inline values** — while suspended, grey italic `name: value` annotations appear at the end of
+    each visible line that mentions a variable of the current frame, and vanish on resume.
+  - **Hover values** — hovering a variable in the editor while suspended shows its value in a tooltip.
+
 - **Multiple cursors & column/box selection** — VS Code–style multi-caret editing, powered by a personal
   RichTextFX fork. **Alt+drag** makes a vertical column/box selection; **Cmd/Ctrl+click** adds a caret at
   another spot; **Cmd/Ctrl+D** selects the next occurrence of the current selection; **Esc** collapses back

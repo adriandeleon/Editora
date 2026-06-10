@@ -271,6 +271,11 @@ public final class DapManager implements DapClient.Host {
         return client != null;
     }
 
+    /** The file the current (or last) session was started for; null before any session. */
+    public Path debugFile() {
+        return debugFile;
+    }
+
     public int currentThreadId() {
         return currentThreadId;
     }
@@ -665,6 +670,134 @@ public final class DapManager implements DapClient.Host {
         }
     }
 
+    /** Pauses a running session: targets the current thread if the adapter reports it, else the first.
+     *  The adapter answers with a {@code stopped(reason=pause)} event, which flows through onStopped. */
+    public void pause() {
+        DapClient c = client;
+        if (c == null || state != State.RUNNING) {
+            return;
+        }
+        c.threads().whenComplete((list, e) -> {
+            if (e != null || list == null || list.isEmpty()) {
+                return;
+            }
+            int id = list.get(0).id();
+            for (DapModels.ThreadInfo t : list) {
+                if (t.id() == currentThreadId) {
+                    id = t.id();
+                    break;
+                }
+            }
+            c.pause(id);
+        });
+    }
+
+    /** Lists the session's threads (callback on the FX thread). */
+    public void threads(Consumer<List<DapModels.ThreadInfo>> cb) {
+        if (client == null) {
+            cb.accept(List.of());
+            return;
+        }
+        client.threads().whenComplete((list, e) ->
+                Platform.runLater(() -> cb.accept(list == null ? List.of() : list)));
+    }
+
+    /** Switches the inspected thread and loads its call stack (callback on the FX thread). */
+    public void selectThread(int threadId, Consumer<List<DapModels.StackFrameInfo>> cb) {
+        currentThreadId = threadId;
+        stackTrace(threadId, cb);
+    }
+
+    /** While a run-to-cursor temp breakpoint is planted: the file holding it (re-sent clean on stop). */
+    private Path tempBreakpointFile;
+
+    /** Resumes and stops at {@code line} (0-based) in {@code file} via a temporary breakpoint that is
+     *  removed on the next stop (or on termination). Call on the FX thread while SUSPENDED. */
+    public void runToCursor(Path file, int line) {
+        DapClient c = client;
+        if (c == null || state != State.SUSPENDED || file == null) {
+            return;
+        }
+        tempBreakpointFile = file;
+        c.sendSetBreakpoints(withTempLine(breakpointsSupplier.get(), file, line));
+        resume();
+    }
+
+    /** Whether the connected adapter supports Jump to Line ({@code gotoTargets}/{@code goto}) —
+     *  debugpy does; java-debug and vscode-js-debug currently do not. */
+    public boolean supportsJumpToLine() {
+        DapClient c = client;
+        return c != null && c.supportsGotoTargets();
+    }
+
+    /**
+     * Jump to Line (the IntelliJ plugin's move-the-execution-pointer): teleports the suspended thread
+     * to {@code line} (0-based) of {@code file} <em>without executing</em> the code in between. The
+     * adapter's {@code stopped(reason=goto)} event then refreshes the UI like any stop. {@code onError}
+     * is called on the FX thread with "" when the line has no valid target, else the failure message.
+     */
+    public void jumpToLine(Path file, int line, Consumer<String> onError) {
+        DapClient c = client;
+        if (c == null || state != State.SUSPENDED || file == null) {
+            return;
+        }
+        int threadId = currentThreadId;
+        c.gotoTargets(file, line).whenComplete((ids, e) -> Platform.runLater(() -> {
+            if (e != null) {
+                onError.accept(msg(e));
+                return;
+            }
+            if (ids == null || ids.isEmpty()) {
+                onError.accept(""); // no jump target on that line
+                return;
+            }
+            c.gotoTarget(threadId, ids.get(0)).whenComplete((v, e2) -> {
+                if (e2 != null) {
+                    Platform.runLater(() -> onError.accept(msg(e2)));
+                }
+            });
+        }));
+    }
+
+    /** The file's existing breakpoints plus a temporary plain one at {@code line} (no duplicate when a
+     *  breakpoint already sits there). Pure — tested. */
+    static DapModels.FileBreakpoints withTempLine(List<DapModels.FileBreakpoints> all, Path file, int line) {
+        List<DapModels.LineBreakpoint> lines = new ArrayList<>();
+        for (DapModels.FileBreakpoints fb : all == null ? List.<DapModels.FileBreakpoints>of() : all) {
+            if (fb.file().equals(file)) {
+                lines.addAll(fb.breakpoints());
+            }
+        }
+        boolean present = false;
+        for (DapModels.LineBreakpoint lb : lines) {
+            if (lb.line() == line) {
+                present = true;
+                break;
+            }
+        }
+        if (!present) {
+            lines.add(new DapModels.LineBreakpoint(line, null, null));
+        }
+        return new DapModels.FileBreakpoints(file, lines);
+    }
+
+    /** Restores the real breakpoint set after a run-to-cursor temp breakpoint did its job (FX thread). */
+    private void clearTempBreakpoint() {
+        Path f = tempBreakpointFile;
+        tempBreakpointFile = null;
+        DapClient c = client;
+        if (f == null || c == null) {
+            return;
+        }
+        List<DapModels.LineBreakpoint> real = new ArrayList<>();
+        for (DapModels.FileBreakpoints fb : breakpointsSupplier.get()) {
+            if (fb.file().equals(f)) {
+                real.addAll(fb.breakpoints());
+            }
+        }
+        c.sendSetBreakpoints(new DapModels.FileBreakpoints(f, real));
+    }
+
     public void stepOver() {
         if (client != null) {
             client.next(currentThreadId);
@@ -738,6 +871,32 @@ public final class DapManager implements DapClient.Host {
                 Platform.runLater(() -> cb.accept(e != null ? "error: " + msg(e) : (r == null ? "" : r))));
     }
 
+    /** Full evaluate (result + expandable reference + type) for watches and the hover value popup.
+     *  Failures deliver an {@code EvalResult} with the error text and no children. */
+    public void evaluateFull(String expression, int frameId, String context,
+            Consumer<DapModels.EvalResult> cb) {
+        if (client == null) {
+            cb.accept(new DapModels.EvalResult("", 0, null));
+            return;
+        }
+        client.evaluateFull(expression, frameId, context).whenComplete((r, e) ->
+                Platform.runLater(() -> cb.accept(e != null
+                        ? new DapModels.EvalResult(msg(e), 0, null)
+                        : (r == null ? new DapModels.EvalResult("", 0, null) : r))));
+    }
+
+    /** Hover evaluate (context "hover"): failures deliver {@code null} — hovering a non-variable
+     *  identifier (keyword, type name) is normal and must show nothing, not an error. */
+    public void evaluateHover(String expression, int frameId, Consumer<String> cb) {
+        DapClient c = client;
+        if (c == null) {
+            cb.accept(null);
+            return;
+        }
+        c.evaluateFull(expression, frameId, "hover").whenComplete((r, e) ->
+                Platform.runLater(() -> cb.accept(e != null || r == null ? null : r.result())));
+    }
+
     public void setVariable(int ref, String name, String value, Consumer<String> cb) {
         if (client == null) {
             cb.accept(value);
@@ -763,6 +922,7 @@ public final class DapManager implements DapClient.Host {
             return;
         }
         client.stackTrace(threadId).whenComplete((frames, e) -> Platform.runLater(() -> {
+            clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
             state = State.SUSPENDED;
             listener.onState(State.SUSPENDED);
             listener.onStopped(threadId, reason, frames == null ? List.of() : frames);
@@ -782,6 +942,7 @@ public final class DapManager implements DapClient.Host {
     @Override
     public void onTerminated() {
         Platform.runLater(() -> {
+            tempBreakpointFile = null; // session over — nothing to restore
             DapClient c = client;
             client = null;
             if (c != null) {

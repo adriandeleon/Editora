@@ -144,6 +144,16 @@ final class Icons {
         return of("M6 6h12v12H6z");
     }
 
+    /** Debug "pause" — two bars (Material "pause"). */
+    static Node debugPause() {
+        return of("M6 19h4V5H6v14zm8-14v14h4V5h-4z");
+    }
+
+    /** Debug "run to cursor" — an arrow into a bar (Material "keyboard_tab"). */
+    static Node debugRunToCursor() {
+        return of("M11.59 7.41 15.17 11H1v2h14.17l-3.58 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z");
+    }
+
     /** Debug "step over" — a forward arc arrow (Material "redo"). */
     static Node debugStepOver() {
         return of("M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 "

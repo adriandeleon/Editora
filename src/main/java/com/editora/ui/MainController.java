@@ -937,6 +937,9 @@ public class MainController {
         if (notesPanel != null) {
             notesPanel.refresh(); // the swapped session has its own notes
         }
+        if (debugPanel != null) {
+            debugPanel.setWatches(config.getWorkspaceState().getDebugWatches()); // per-session watches
+        }
         gitService.invalidateCaches(); // a different project may be a different repo
         refreshGit();
         if (keepProjectPanelOpen && projectsEnabled() && !toolWindows.isOpen(projectToolWindow)) {
@@ -1278,6 +1281,12 @@ public class MainController {
         runToolWindow = new ToolWindow("run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM,
                 Icons::run, runPanel, "tool.run");
         debugPanel = new DebugPanel(debugActions());
+        debugPanel.setPrompt(this::promptText);
+        debugPanel.setWatches(config.getWorkspaceState().getDebugWatches());
+        debugPanel.setOnWatchesChanged(() -> {
+            config.getWorkspaceState().setDebugWatches(new java.util.ArrayList<>(debugPanel.getWatches()));
+            config.save();
+        });
         debugToolWindow = new ToolWindow("debug", tr("toolwindow.debug"), ToolWindow.Side.BOTTOM,
                 Icons::debug, debugPanel, "tool.debug");
         toolWindows.register(projectToolWindow);
@@ -1688,6 +1697,7 @@ public class MainController {
                 updateDebugStatus(state);
                 if (state != com.editora.dap.DapManager.State.SUSPENDED) {
                     clearExecHighlight();
+                    clearDebugEditorSurfaces(); // inline values + hover live only while suspended
                 }
                 boolean starting = state == com.editora.dap.DapManager.State.STARTING;
                 statusBar.setDebugLoading(starting);
@@ -1699,6 +1709,7 @@ public class MainController {
             @Override public void onStopped(int threadId, String reason,
                     List<com.editora.dap.DapModels.StackFrameInfo> frames) {
                 debugPanel.setCallStack(frames); // auto-selects the top frame → selectFrame highlights + loads vars
+                dapManager.threads(list -> debugPanel.setThreads(list, dapManager.currentThreadId()));
             }
 
             @Override public void onOutput(String text, String category) {
@@ -1726,6 +1737,18 @@ public class MainController {
                 debugStart(); // start a session when idle, or continue when suspended
             }
 
+            @Override public void pause() {
+                dapManager.pause();
+            }
+
+            @Override public void runToCursor() {
+                debugRunToCursor();
+            }
+
+            @Override public void selectThread(int threadId) {
+                dapManager.selectThread(threadId, frames -> debugPanel.setCallStack(frames));
+            }
+
             @Override public void stepOver() {
                 dapManager.stepOver();
             }
@@ -1747,8 +1770,12 @@ public class MainController {
             }
 
             @Override public void selectFrame(com.editora.dap.DapModels.StackFrameInfo frame) {
+                debugFrameId = frame.id(); // the hover evaluator's frame context
                 highlightFrame(frame);
-                dapManager.scopes(frame.id(), scopes -> debugPanel.setScopes(scopes));
+                dapManager.scopes(frame.id(), scopes -> {
+                    debugPanel.setScopes(scopes);
+                    applyInlineValues(frame, scopes);
+                });
             }
 
             @Override public void loadChildren(int ref,
@@ -1759,7 +1786,70 @@ public class MainController {
             @Override public void evaluate(String expr, int frameId, java.util.function.Consumer<String> cb) {
                 dapManager.evaluate(expr, frameId, "repl", cb);
             }
+
+            @Override public void evaluateWatch(String expr, int frameId,
+                    java.util.function.Consumer<com.editora.dap.DapModels.EvalResult> cb) {
+                dapManager.evaluateFull(expr, frameId, "watch", cb);
+            }
+
+            @Override public void setVariable(int parentRef, String name, String value,
+                    java.util.function.Consumer<String> cb) {
+                dapManager.setVariable(parentRef, name, value, cb);
+            }
         };
+    }
+
+    /** The selected stack frame's id (the hover evaluator's context); -1 while not suspended. */
+    private int debugFrameId = -1;
+    /** The buffer currently carrying inline values + an active hover (cleared on resume/terminate). */
+    private EditorBuffer debugValuesBuffer;
+    /** Inline-value fetch cap — frames can hold hundreds of locals; the overlay needs a name→value map. */
+    private static final int MAX_INLINE_VALUES = 100;
+
+    /** Fetches the selected frame's local variables and paints them as inline values in the frame's
+     *  file buffer; also arms the hover value tooltip there (IntelliJ's editor surfaces). */
+    private void applyInlineValues(com.editora.dap.DapModels.StackFrameInfo frame,
+            List<com.editora.dap.DapModels.ScopeInfo> scopes) {
+        if (frame == null || frame.file() == null || scopes.isEmpty()) {
+            return;
+        }
+        com.editora.dap.DapModels.ScopeInfo locals = scopes.stream()
+                .filter(s -> !s.expensive()).findFirst().orElse(null);
+        if (locals == null) {
+            return;
+        }
+        dapManager.variables(locals.variablesReference(), vars -> {
+            if (dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
+                return; // resumed while the request was in flight
+            }
+            java.util.Map<String, String> values = new java.util.LinkedHashMap<>();
+            for (com.editora.dap.DapModels.VariableInfo v : vars) {
+                if (values.size() == MAX_INLINE_VALUES) {
+                    break;
+                }
+                values.put(v.name(), v.value());
+            }
+            EditorBuffer b = bufferOf(tabForPath(frame.file()));
+            if (b == null) {
+                return;
+            }
+            if (debugValuesBuffer != null && debugValuesBuffer != b) {
+                debugValuesBuffer.setInlineValues(null); // frame moved to another file
+                debugValuesBuffer.setDebugHoverActive(false);
+            }
+            debugValuesBuffer = b;
+            b.setInlineValues(values);
+            b.setDebugHoverActive(true);
+        });
+    }
+
+    private void clearDebugEditorSurfaces() {
+        debugFrameId = -1;
+        if (debugValuesBuffer != null) {
+            debugValuesBuffer.setInlineValues(null);
+            debugValuesBuffer.setDebugHoverActive(false);
+            debugValuesBuffer = null;
+        }
     }
 
     /** Opens the frame's file and paints the execution-line highlight there. */
@@ -1787,11 +1877,21 @@ public class MainController {
 
     /** Starts a launch debug session for the active file (saving first, like Run). */
     private void debugStart() {
-        if (dapManager.isActive()) {
-            dapManager.resume(); // already debugging: F5-style continue
-            return;
-        }
         EditorBuffer b = activeBuffer();
+        if (dapManager.isActive()) {
+            // A session is live. If the user switched to a DIFFERENT debuggable file and the old
+            // session is merely running (not paused mid-step), retarget: stop it and launch the new
+            // file — otherwise the Debug window stays silently bound to the old file. While SUSPENDED
+            // the green button keeps its Continue semantics (never yank a paused session).
+            boolean differentFile = b != null && b.getPath() != null
+                    && !samePath(b.getPath(), dapManager.debugFile());
+            if (dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED
+                    || !differentFile || !debugEffectiveFor(b.getLanguage())) {
+                dapManager.resume(); // F5-style continue (no-op unless suspended)
+                return;
+            }
+            dapManager.stop(); // retarget to the newly active file below
+        }
         if (b == null || b.getPath() == null && !save(b)) {
             setStatus(tr("status.debug.saveFirst"));
             return;
@@ -1805,7 +1905,46 @@ public class MainController {
             return;
         }
         toolWindows.open(debugToolWindow);
+        debugPanel.setSessionFile(b.getPath().getFileName().toString());
         dapManager.startLaunch(b.getPath(), language, this::pickMainClass);
+    }
+
+    /** Whether two paths refer to the same file (normalized absolute comparison; null-safe). */
+    private static boolean samePath(Path a, Path b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        try {
+            return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize());
+        } catch (RuntimeException e) {
+            return a.equals(b);
+        }
+    }
+
+    /** Resumes and stops at the active buffer's caret line via a one-shot temporary breakpoint. */
+    private void debugRunToCursor() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null
+                || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
+            return;
+        }
+        dapManager.runToCursor(b.getPath(), b.getArea().getCurrentParagraph());
+    }
+
+    /** Jump to Line: move the execution pointer to the caret line without executing in-between code.
+     *  Capability-gated — debugpy supports it; java-debug/js-debug report "not supported". */
+    private void debugJumpToLine() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null
+                || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
+            return;
+        }
+        if (!dapManager.supportsJumpToLine()) {
+            setStatus(tr("status.debug.jumpUnsupported"));
+            return;
+        }
+        dapManager.jumpToLine(b.getPath(), b.getArea().getCurrentParagraph(), err ->
+                setStatus(err.isEmpty() ? tr("status.debug.jumpNoTarget") : err));
     }
 
     /** Attaches to a running JVM (asks for {@code host:port}). */
@@ -1831,6 +1970,7 @@ public class MainController {
             try {
                 int port = Integer.parseInt(portStr.trim());
                 toolWindows.open(debugToolWindow);
+                debugPanel.setSessionFile(b.getPath().getFileName().toString());
                 dapManager.startAttach(b.getPath(), host, port);
             } catch (NumberFormatException e) {
                 setStatus(tr("status.debug.badAddress", text));
@@ -3226,6 +3366,8 @@ public class MainController {
         buffer.setMultiCaretEnabled(acs.isMultiCaret()); // multiple cursors + Alt+drag column selection
         buffer.setMermaidValidator((text, cb) -> mermaidService.validate(text, cb));
         buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
+        // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
+        buffer.setDebugHoverEvaluator((expr, cb) -> dapManager.evaluateHover(expr, debugFrameId, cb));
         // LSP: debounced didChange sink, async completion source, then open+activate if eligible.
         buffer.setLspChangeListener(text -> {
             if (buffer.getPath() != null) {
@@ -6773,6 +6915,9 @@ public class MainController {
         registry.register(Command.of("debug.restart", () -> ifDebug(dapManager::restart)));
         registry.register(Command.of("debug.attach", () -> ifDebug(this::debugAttach)));
         registry.register(Command.of("debug.continue", () -> ifDebug(dapManager::resume)));
+        registry.register(Command.of("debug.pause", () -> ifDebug(dapManager::pause)));
+        registry.register(Command.of("debug.runToCursor", () -> ifDebug(this::debugRunToCursor)));
+        registry.register(Command.of("debug.jumpToLine", () -> ifDebug(this::debugJumpToLine)));
         registry.register(Command.of("debug.stepOver", () -> ifDebug(dapManager::stepOver)));
         registry.register(Command.of("debug.stepInto", () -> ifDebug(dapManager::stepInto)));
         registry.register(Command.of("debug.stepOut", () -> ifDebug(dapManager::stepOut)));

@@ -99,6 +99,15 @@ public final class DapClient implements IDebugProtocolClient {
         this.exceptionFilters = filters == null ? List.of() : List.copyOf(filters);
     }
 
+    /** The adapter's {@code initialize} capabilities (kept for feature gating, e.g. Jump to Line). */
+    private volatile Capabilities capabilities;
+
+    /** Whether the adapter supports {@code gotoTargets}/{@code goto} (debugpy does; java-debug and
+     *  vscode-js-debug currently do not). */
+    public boolean supportsGotoTargets() {
+        return capabilities != null && Boolean.TRUE.equals(capabilities.getSupportsGotoTargetsRequest());
+    }
+
     /**
      * Opens the socket to {@code 127.0.0.1:port} (with a few short retries — the adapter may need a moment
      * to start listening), wires the DAP launcher, and sends {@code initialize} with {@code adapterId}
@@ -116,7 +125,7 @@ public final class DapClient implements IDebugProtocolClient {
                     this, socket.getInputStream(), socket.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
             launcher.startListening();
-            return server.initialize(initArgs(adapterId));
+            return server.initialize(initArgs(adapterId)).thenApply(c -> { this.capabilities = c; return c; });
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to connect to debug adapter on port " + port, e);
             return CompletableFuture.failedFuture(e);
@@ -136,7 +145,7 @@ public final class DapClient implements IDebugProtocolClient {
                     this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
             launcher.startListening();
-            return server.initialize(initArgs(adapterId));
+            return server.initialize(initArgs(adapterId)).thenApply(c -> { this.capabilities = c; return c; });
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to wire stdio debug adapter", e);
             return CompletableFuture.failedFuture(e);
@@ -334,6 +343,17 @@ public final class DapClient implements IDebugProtocolClient {
         return server.evaluate(a).thenApply(EvaluateResponse::getResult);
     }
 
+    /** Like {@link #evaluate} but keeps the full response: result + expandable children reference + type
+     *  (for watches that expand into the variables tree and the hover value popup). */
+    public CompletableFuture<DapModels.EvalResult> evaluateFull(String expression, int frameId, String context) {
+        EvaluateArguments a = new EvaluateArguments();
+        a.setExpression(expression);
+        a.setFrameId(frameId);
+        a.setContext(context);
+        return server.evaluate(a).thenApply(r -> r == null ? null
+                : new DapModels.EvalResult(r.getResult(), r.getVariablesReference(), r.getType()));
+    }
+
     public CompletableFuture<String> setVariable(int variablesReference, String name, String value) {
         SetVariableArguments a = new SetVariableArguments();
         a.setVariablesReference(variablesReference);
@@ -346,6 +366,42 @@ public final class DapClient implements IDebugProtocolClient {
         ContinueArguments a = new ContinueArguments();
         a.setThreadId(threadId);
         ignore(server.continue_(a));
+    }
+
+    /** Pauses a running thread; the adapter answers with a {@code stopped(reason=pause)} event. */
+    public void pause(int threadId) {
+        org.eclipse.lsp4j.debug.PauseArguments a = new org.eclipse.lsp4j.debug.PauseArguments();
+        a.setThreadId(threadId);
+        ignore(server.pause(a));
+    }
+
+    /** Asks the adapter for the goto targets at {@code line} (0-based) of {@code file}; the first
+     *  target's id feeds {@link #gotoTarget}. Empty when the line isn't a valid jump target. */
+    public CompletableFuture<List<Integer>> gotoTargets(Path file, int line) {
+        Source source = new Source();
+        source.setName(file.getFileName().toString());
+        source.setPath(file.toString());
+        org.eclipse.lsp4j.debug.GotoTargetsArguments a = new org.eclipse.lsp4j.debug.GotoTargetsArguments();
+        a.setSource(source);
+        a.setLine(line + 1); // DAP is 1-based
+        return server.gotoTargets(a).thenApply(r -> {
+            List<Integer> ids = new ArrayList<>();
+            if (r != null && r.getTargets() != null) {
+                for (org.eclipse.lsp4j.debug.GotoTarget t : r.getTargets()) {
+                    ids.add(t.getId());
+                }
+            }
+            return ids;
+        });
+    }
+
+    /** Moves the execution pointer of {@code threadId} to a target from {@link #gotoTargets} (Jump to
+     *  Line); the adapter then emits {@code stopped(reason=goto)}, refreshing the UI like any stop. */
+    public CompletableFuture<Void> gotoTarget(int threadId, int targetId) {
+        org.eclipse.lsp4j.debug.GotoArguments a = new org.eclipse.lsp4j.debug.GotoArguments();
+        a.setThreadId(threadId);
+        a.setTargetId(targetId);
+        return server.goto_(a);
     }
 
     public void next(int threadId) {

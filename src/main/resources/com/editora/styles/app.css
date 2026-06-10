@@ -1338,12 +1338,68 @@
     -fx-font-family: "JetBrains Mono", monospace;
     -fx-font-size: 12px;
 }
-/* Debug tool window: muted status + section labels; monospace console. */
+/* Debug tool window: muted status + section labels; monospace console. Dense like the Structure/Git
+   panels — borderless transparent lists with tight cells, flattened split panes, compact toolbar. */
 .debug-panel .debug-status { -fx-text-fill: -color-fg-muted; }
 .debug-panel .debug-section { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-font-weight: bold; }
 .debug-panel .debug-console {
     -fx-font-family: "JetBrains Mono", monospace;
     -fx-font-size: 12px;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+}
+.debug-panel .debug-console .content { -fx-padding: 2 4 2 4; }
+.debug-panel .debug-stack,
+.debug-panel .debug-vars {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+    -fx-font-size: 12px;
+    -fx-padding: 0;
+}
+.debug-panel .debug-stack .list-cell,
+.debug-panel .debug-vars .tree-cell {
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 1 4 1 4;
+}
+.debug-panel .split-pane {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+.debug-panel .split-pane .split-pane-divider { -fx-padding: 0 1 0 1; }
+/* Compact icon-only toolbar (IntelliJ-style: full titles in tooltips) and evaluate field. */
+.debug-panel .debug-toolbar-button { -fx-padding: 3 6 3 6; }
+.debug-panel .debug-toolbar-separator { -fx-padding: 0 3 0 3; }
+.debug-panel .debug-eval {
+    -fx-font-size: 12px;
+    -fx-padding: 3 6 3 6;
+}
+/* Thread selector over the frames list. */
+.debug-panel .debug-threads {
+    -fx-font-size: 12px;
+    -fx-padding: 0;
+}
+/* Rich frame cells: frame name + muted ":line, File" location (IntelliJ-style). */
+.debug-panel .debug-frame-name { -fx-fill: -color-fg-default; }
+.debug-panel .debug-frame-loc { -fx-fill: -color-fg-muted; }
+/* Rich variable cells: name, muted " = ", type-colored value, muted type suffix. */
+.debug-panel .debug-var-name { -fx-fill: -color-fg-default; }
+.debug-panel .debug-var-eq { -fx-fill: -color-fg-muted; }
+.debug-panel .debug-var-type { -fx-fill: -color-fg-muted; }
+.debug-panel .debug-scope-row { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
+.debug-panel .debug-add-watch { -fx-fill: -color-accent-fg; }
+.debug-panel .debug-val-string { -fx-fill: #3fb950; }   /* green, like the run/start accent */
+.debug-panel .debug-val-number { -fx-fill: #4493f8; }   /* blue */
+.debug-panel .debug-val-bool { -fx-fill: #d29922; }     /* amber */
+.debug-panel .debug-val-null { -fx-fill: -color-fg-muted; }
+.debug-panel .debug-val-other { -fx-fill: -color-fg-default; }
+/* Hover value tooltip in the editor while suspended (IntelliJ's value popup). */
+.debug-value-tooltip {
+    -fx-font-size: 12px;
+    -fx-font-family: "JetBrains Mono", monospace;
+    -fx-background-color: -color-bg-overlay;
+    -fx-text-fill: -color-fg-default;
 }
 /* "Experimental" notice at the top of the LSP / Debugging settings pages — amber to stand out. */
 .settings-experimental { -fx-text-fill: #bf8700; -fx-font-weight: bold; }

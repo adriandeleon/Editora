@@ -34,6 +34,11 @@ public final class DapModels {
     public record StopLocation(int threadId, String reason, Path file, int line) {
     }
 
+    /** A full {@code evaluate} response: the rendered result, an expandable children reference (0 = leaf),
+     *  and the value's type when the adapter reports one. Used by watches and the hover value popup. */
+    public record EvalResult(String result, int variablesReference, String type) {
+    }
+
     /** A breakpoint to send to the adapter for one file: 0-based {@code line} + optional condition/log. */
     public record LineBreakpoint(int line, String condition, String logMessage) {
     }
