@@ -2,15 +2,20 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import java.util.function.Consumer;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+
+import com.editora.run.StackTraceLinks;
 
 /**
  * The "Run" tool window: a console that streams a launched program's stdout/stderr (see
@@ -29,8 +34,13 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     private final Label status = new Label();
     private final TextArea output = new TextArea();
+    private final TextField input = new TextField();
     private final Button stopButton = new Button();
     private final Button clearButton = new Button();
+    /** Receives a line typed into the stdin field (controller → process stdin). */
+    private Consumer<String> onInput;
+    /** Receives a double-clicked stack-trace location (controller resolves + jumps). */
+    private Consumer<StackTraceLinks.Link> onLink;
 
     public RunPanel(Runnable onStop) {
         getStyleClass().add("run-panel");
@@ -56,10 +66,54 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         output.setEditable(false);
         output.setWrapText(false);
         output.getStyleClass().add("run-output");
+        installLinkClicks(output, () -> onLink);
+
+        // stdin: one line per Enter, echoed into the console (the program won't echo it back).
+        input.getStyleClass().add("run-input");
+        input.setPromptText(tr("run.stdinPrompt"));
+        input.setDisable(true);
+        input.setOnAction(e -> {
+            String line = input.getText();
+            if (line == null || onInput == null) {
+                return;
+            }
+            appendOutput(line, false);
+            onInput.accept(line);
+            input.clear();
+        });
 
         VBox.setVgrow(output, Priority.ALWAYS);
-        getChildren().addAll(header, output);
+        getChildren().addAll(header, output, input);
         idle();
+    }
+
+    public void setOnInput(Consumer<String> onInput) {
+        this.onInput = onInput;
+    }
+
+    public void setOnLink(Consumer<StackTraceLinks.Link> onLink) {
+        this.onLink = onLink;
+    }
+
+    /** Double-clicking a console line that holds a stack-trace location jumps to it. Shared with the
+     *  Debug console (see {@link DebugPanel}). */
+    static void installLinkClicks(TextArea console,
+            java.util.function.Supplier<Consumer<StackTraceLinks.Link>> handler) {
+        console.setOnMouseClicked(e -> {
+            Consumer<StackTraceLinks.Link> h = handler.get();
+            if (h == null || e.getClickCount() != 2) {
+                return;
+            }
+            String text = console.getText();
+            int caret = Math.min(console.getCaretPosition(), text.length());
+            int start = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
+            int end = text.indexOf('\n', caret);
+            StackTraceLinks.Link link = StackTraceLinks.parse(
+                    text.substring(start, end < 0 ? text.length() : end));
+            if (link != null) {
+                h.accept(link);
+            }
+        });
     }
 
     private static Region spacer() {
@@ -72,13 +126,15 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     public void idle() {
         status.setText(tr("run.idle"));
         stopButton.setDisable(true);
+        input.setDisable(true);
     }
 
-    /** A run started: clears the console, shows the command, enables Stop. */
+    /** A run started: clears the console, shows the command, enables Stop + the stdin field. */
     public void started(String commandLine) {
         output.clear();
         status.setText(tr("run.running", commandLine));
         stopButton.setDisable(false);
+        input.setDisable(false);
     }
 
     /** Appends one line of program output (stdout or stderr), trims if over the cap, and auto-scrolls. */
@@ -98,12 +154,14 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     public void finished(int code) {
         status.setText(code < 0 ? tr("run.stopped") : tr("run.exited", code));
         stopButton.setDisable(true);
+        input.setDisable(true);
     }
 
     /** The process failed to launch (e.g. {@code java} not found). */
     public void failed(String message) {
         status.setText(tr("run.failed", message));
         stopButton.setDisable(true);
+        input.setDisable(true);
     }
 
     @Override

@@ -44,11 +44,80 @@ public final class RunService {
 
     private volatile Process current;
     private volatile int generation;
+    /** Cached {@code java -version} major (0 = not probed yet, -1 = probe failed/unparseable). */
+    private volatile int javaMajor;
 
     /** True while a launched process is still alive. */
     public boolean isRunning() {
         Process p = current;
         return p != null && p.isAlive();
+    }
+
+    /**
+     * Writes one line to the running process's stdin (for programs reading the console, e.g. a compact
+     * source file calling {@code IO.readln}). The write happens off the FX thread — a full pipe buffer
+     * must never block the UI. No-op when nothing is running.
+     */
+    public void sendInput(String line) {
+        Process p = current;
+        if (p == null || !p.isAlive() || line == null) {
+            return;
+        }
+        Thread t = new Thread(() -> {
+            try {
+                p.getOutputStream().write((line + System.lineSeparator())
+                        .getBytes(StandardCharsets.UTF_8));
+                p.getOutputStream().flush();
+            } catch (IOException ignored) {
+                // Process exited between the check and the write — nothing to report.
+            }
+        }, "run-stdin");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * Probes the {@code java} launcher's major version once (off-thread, cached) and delivers it on the
+     * FX thread: e.g. {@code 25}, {@code 21}, {@code 8} for a legacy {@code 1.8.0}; {@code -1} when java
+     * is missing or the output is unparseable. Used to preflight compact-source runs (need JDK 25+).
+     */
+    public void detectJavaMajor(java.util.function.IntConsumer cb) {
+        int cached = javaMajor;
+        if (cached != 0) {
+            cb.accept(cached);
+            return;
+        }
+        Thread t = new Thread(() -> {
+            ProcessRunner.Result r = ProcessRunner.run(null, java.time.Duration.ofSeconds(10),
+                    List.of("java", "-version"));
+            // `java -version` prints to stderr; some distributions use stdout.
+            int major = javaMajorOf(r == null ? "" : r.err() + "\n" + r.out());
+            javaMajor = major;
+            Platform.runLater(() -> cb.accept(major));
+        }, "run-java-probe");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * Parses the major version out of {@code java -version} output (pure — tested): the first quoted
+     * version token, e.g. {@code openjdk version "25.0.3"} → 25, {@code "21"} → 21, and the legacy
+     * {@code "1.8.0_392"} → 8. Returns -1 when absent/unparseable.
+     */
+    static int javaMajorOf(String output) {
+        if (output == null) {
+            return -1;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("version \"(\\d+)(?:\\.(\\d+))?[^\"]*\"").matcher(output);
+        if (!m.find()) {
+            return -1;
+        }
+        int first = Integer.parseInt(m.group(1));
+        if (first == 1 && m.group(2) != null) {
+            return Integer.parseInt(m.group(2)); // legacy 1.x scheme: "1.8.0_392" → 8
+        }
+        return first;
     }
 
     /**

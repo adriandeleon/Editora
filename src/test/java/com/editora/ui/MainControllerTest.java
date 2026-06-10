@@ -1,6 +1,8 @@
 package com.editora.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
@@ -99,5 +101,21 @@ class MainControllerTest {
         // A not-yet-on-disk path (e.g. an unsaved buffer) can't be realpath'd; fall back to normalize().
         Path missing = tmp.resolve("nope/../ghost.java");
         assertEquals(missing.toAbsolutePath().normalize(), MainController.canonicalPath(missing));
+    }
+
+    @Test
+    void compactSourceNoiseMatchesImplicitClassComplaintsOnly() {
+        // JDK 23+ JDT wording, the preview-gating message, and the JDK 21/22 preview-era name…
+        assertTrue(MainController.isCompactSourceNoise(
+                "Implicitly declared class must have a candidate main method"));
+        assertTrue(MainController.isCompactSourceNoise(
+                "Implicitly Declared Classes and Instance Main Methods is a preview feature and"
+                        + " disabled by default. Use --enable-preview to enable"));
+        assertTrue(MainController.isCompactSourceNoise(
+                "Unnamed Classes and Instance Main Methods is a preview feature"));
+        // …but real errors in the file still surface.
+        assertFalse(MainController.isCompactSourceNoise("The method foo() is undefined"));
+        assertFalse(MainController.isCompactSourceNoise("Syntax error on token \";\""));
+        assertFalse(MainController.isCompactSourceNoise(null));
     }
 }

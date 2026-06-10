@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Better Compact Source File (JDK 25) support** — running and debugging single-file programs is now
+  much more complete:
+  - **Console input** — the Run window has an input field: type a line and press Enter to send it to
+    the program's stdin (so `IO.readln(...)`-style interactive programs work instead of hanging).
+  - **Program arguments** — *Run File with Arguments…* prompts for arguments (quote-aware), remembers
+    them per file, and both **Run and Debug** pass them to the program. *Rerun Last Run* repeats the
+    previous run.
+  - **Clickable stack traces** — double-click a Java/Python/Node stack-trace line in the Run or Debug
+    console to jump straight to that file and line.
+  - **JDK version check** — running a `.java` file with an older JDK on PATH now says "Compact source
+    files need JDK 25 or newer — found Java N" instead of a cryptic launcher error.
+  - **Quieter diagnostics** — implicit-class complaints from a Java language server that doesn't know
+    JDK 25 yet are filtered out for compact files (real errors still show).
+  - **Snippets** — `cmain` (compact `void main()` skeleton), `ioprintln`, and `ioreadln`.
+
 - **IntelliJ-style debugger UI** — the Debug tool window and the editor now match IntelliJ IDEA's
   debugger as closely as practical:
   - **New look** — an icon-only grouped toolbar (resume / pause / stop / restart | step over / into /

@@ -108,6 +108,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private final java.util.List<String> watches = new java.util.ArrayList<>();
     private Runnable onWatchesChanged = () -> { };
     private OverlayInput.Prompt prompt;
+    /** Receives a double-clicked stack-trace location from the console (controller resolves + jumps). */
+    private java.util.function.Consumer<com.editora.run.StackTraceLinks.Link> onLink;
+
+    public void setOnLink(java.util.function.Consumer<com.editora.run.StackTraceLinks.Link> onLink) {
+        this.onLink = onLink;
+    }
     /** File name the current session was started for; shown beside the state so a session left running
      *  on another file is visibly bound to it. Cleared when the session ends. */
     private String sessionFile = "";
@@ -235,6 +241,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         console.setEditable(false);
         console.setWrapText(false);
         console.getStyleClass().add("debug-console");
+        RunPanel.installLinkClicks(console, () -> onLink); // double-click a stack-trace line → jump
         evalInput.getStyleClass().add("debug-eval");
         evalInput.setPromptText(tr("debugpanel.evalPrompt"));
         evalInput.setOnAction(e -> runEval());

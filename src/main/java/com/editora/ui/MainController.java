@@ -1278,10 +1278,13 @@ public class MainController {
         problemsToolWindow = new ToolWindow("problems", tr("toolwindow.problems"), ToolWindow.Side.BOTTOM,
                 Icons::problems, problemsPanel, "tool.problems");
         runPanel = new RunPanel(this::stopRun);
+        runPanel.setOnInput(runService::sendInput); // stdin field → the running process
+        runPanel.setOnLink(this::openRunLink);      // double-clicked stack-trace line → jump
         runToolWindow = new ToolWindow("run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM,
                 Icons::run, runPanel, "tool.run");
         debugPanel = new DebugPanel(debugActions());
         debugPanel.setPrompt(this::promptText);
+        debugPanel.setOnLink(this::openRunLink); // double-clicked stack-trace line → jump
         debugPanel.setWatches(config.getWorkspaceState().getDebugWatches());
         debugPanel.setOnWatchesChanged(() -> {
             config.getWorkspaceState().setDebugWatches(new java.util.ArrayList<>(debugPanel.getWatches()));
@@ -1906,6 +1909,8 @@ public class MainController {
         }
         toolWindows.open(debugToolWindow);
         debugPanel.setSessionFile(b.getPath().getFileName().toString());
+        // The debuggee gets the same per-file program arguments the Run feature uses.
+        dapManager.setProgramArgs(com.editora.run.ProgramArgs.tokenize(programArgsFor(b.getPath())));
         dapManager.startLaunch(b.getPath(), language, this::pickMainClass);
     }
 
@@ -2227,6 +2232,13 @@ public class MainController {
         // workspace noise from a single open file.
         Tab tab = tabForPath(file);
         EditorBuffer buffer = tab == null ? null : bufferOf(tab);
+        // A jdtls whose compliance predates JDK 25 flags a compact source file's implicit class as a
+        // preview/unsupported feature — pure noise for a file the JDK 25 launcher runs fine. Drop just
+        // those complaints (real errors in the file still surface).
+        if (buffer != null && "java".equals(buffer.getLanguage()) && buffer.isRunnable()) {
+            diagnostics = diagnostics.stream()
+                    .filter(d -> !isCompactSourceNoise(d.message())).toList();
+        }
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
         }
@@ -2236,6 +2248,18 @@ public class MainController {
             lspProblems.put(file, diagnostics);
         }
         refreshProblems();
+    }
+
+    /** Whether an LSP diagnostic on a compact source file is implicit-class noise from a server whose
+     *  Java compliance predates JDK 25 (JEP 512 final). Pure — tested. */
+    static boolean isCompactSourceNoise(String message) {
+        if (message == null) {
+            return false;
+        }
+        String m = message.toLowerCase(java.util.Locale.ROOT);
+        return m.contains("implicitly declared class")  // JDK 23+ JDT wording (incl. preview gating)
+                || m.contains("unnamed class")           // the JDK 21/22 preview-era wording
+                || m.contains("instance main method");   // "...Instance Main Methods is a preview feature"
     }
 
     private void refreshProblems() {
@@ -2326,6 +2350,51 @@ public class MainController {
     private void openAndGoto(Path file, int line0, int col0) {
         openPath(file);
         Platform.runLater(() -> gotoInFile(file, line0 + 1, col0 + 1));
+    }
+
+    /** A stack-trace location double-clicked in the Run/Debug console: resolve + jump. An absolute
+     *  path opens directly; a bare Java file name resolves against the open tabs, then the run file's
+     *  directory, then the active project root's top level. */
+    private void openRunLink(com.editora.run.StackTraceLinks.Link link) {
+        Path resolved = resolveRunLinkFile(link.file());
+        if (resolved == null) {
+            setStatus(tr("status.run.linkNotFound", link.file()));
+            return;
+        }
+        openAndGoto(resolved, link.line() - 1, 0); // console lines are 1-based
+    }
+
+    private Path resolveRunLinkFile(String fileToken) {
+        try {
+            Path p = Path.of(fileToken);
+            if (p.isAbsolute()) {
+                return java.nio.file.Files.isRegularFile(p) ? p : null;
+            }
+            String name = p.getFileName().toString();
+            for (Tab t : tabPane.getTabs()) { // an open tab with that file name wins
+                EditorBuffer b = bufferOf(t);
+                if (b != null && b.getPath() != null
+                        && b.getPath().getFileName().toString().equals(name)) {
+                    return b.getPath();
+                }
+            }
+            if (lastRunFile != null && lastRunFile.getParent() != null) {
+                Path sibling = lastRunFile.getParent().resolve(name);
+                if (java.nio.file.Files.isRegularFile(sibling)) {
+                    return sibling;
+                }
+            }
+            Project active = projects == null ? null : projects.active();
+            if (active != null) {
+                Path inRoot = Path.of(active.root()).resolve(name);
+                if (java.nio.file.Files.isRegularFile(inRoot)) {
+                    return inRoot;
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Malformed path token — treat as unresolvable.
+        }
+        return null;
     }
 
     /** The active buffer if it is LSP-managed, reporting + returning null otherwise. */
@@ -4571,6 +4640,32 @@ public class MainController {
      * while a previous run is still alive.
      */
     private void runActiveFile() {
+        runActiveFile(false);
+    }
+
+    /** Prompts for program arguments (pre-filled with the file's remembered ones), then runs. */
+    private void runActiveFileWithArgs() {
+        runActiveFile(true);
+    }
+
+    /** Re-runs the most recent run (same file + argv) without touching the active tab. */
+    private void rerunLast() {
+        if (lastRunFile == null || lastRunCommand == null) {
+            setStatus(tr("status.run.noRerun"));
+            return;
+        }
+        if (runService.isRunning()) {
+            setStatus(tr("status.run.busy"));
+            return;
+        }
+        launchRun(lastRunFile, lastRunCommand);
+    }
+
+    /** The most recent launch, for {@code run.rerun}. */
+    private Path lastRunFile;
+    private java.util.List<String> lastRunCommand;
+
+    private void runActiveFile(boolean promptArgs) {
         EditorBuffer buffer = activeBuffer();
         if (buffer == null || !buffer.isRunnable()) {
             setStatus(tr("status.run.notCompact"));
@@ -4587,14 +4682,59 @@ public class MainController {
             setStatus(tr("status.run.busy"));
             return;
         }
-        java.util.List<String> command;
-        if (buffer.isPython()) {
-            command = java.util.List.of("python3", path.toString());
-        } else if (buffer.isShell()) {
-            command = java.util.List.of("bash", path.toString());
+        boolean java = !buffer.isPython() && !buffer.isShell();
+        Runnable proceed = () -> {
+            String stored = programArgsFor(path);
+            if (promptArgs) {
+                promptText(tr("dialog.runArgs.title"), tr("dialog.runArgs.label"), stored, args -> {
+                    config.getWorkspaceState().getProgramArgs().put(path.toString(),
+                            args == null ? "" : args.strip());
+                    config.save();
+                    launchRun(path, buildRunCommand(buffer, path));
+                });
+            } else {
+                launchRun(path, buildRunCommand(buffer, path));
+            }
+        };
+        if (java) {
+            // Compact source files need the JDK 25+ source-file launcher; preflight so an older java
+            // on PATH yields a clear message instead of a cryptic launcher error. Cached after once.
+            runService.detectJavaMajor(major -> {
+                if (major > 0 && major < 25) {
+                    setStatus(tr("status.run.needJdk25", major));
+                    return;
+                }
+                proceed.run();
+            });
         } else {
-            command = java.util.List.of("java", path.toString());
+            proceed.run();
         }
+    }
+
+    /** The remembered program-arguments string for {@code path} ("" when none). */
+    private String programArgsFor(Path path) {
+        String s = config.getWorkspaceState().getProgramArgs().get(path.toString());
+        return s == null ? "" : s;
+    }
+
+    /** The launcher argv for the buffer's language: interpreter + file + the remembered args. */
+    private java.util.List<String> buildRunCommand(EditorBuffer buffer, Path path) {
+        java.util.List<String> command = new java.util.ArrayList<>();
+        if (buffer.isPython()) {
+            command.add("python3");
+        } else if (buffer.isShell()) {
+            command.add("bash");
+        } else {
+            command.add("java");
+        }
+        command.add(path.toString());
+        command.addAll(com.editora.run.ProgramArgs.tokenize(programArgsFor(path)));
+        return command;
+    }
+
+    private void launchRun(Path path, java.util.List<String> command) {
+        lastRunFile = path;
+        lastRunCommand = command;
         toolWindows.open(runToolWindow);
         runPanel.started(path.getFileName().toString());
         setStatus(tr("status.run.started", path.getFileName().toString()));
@@ -6907,6 +7047,8 @@ public class MainController {
         registry.register(Command.of("nav.aceJump", this::startAceJump));
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
         registry.register(Command.of("file.run", this::runActiveFile));
+        registry.register(Command.of("file.runWithArgs", this::runActiveFileWithArgs));
+        registry.register(Command.of("run.rerun", this::rerunLast));
         registry.register(Command.of("run.stop", this::stopRun));
         registry.register(Command.of("tool.run", () -> toolWindows.toggle(runToolWindow)));
         // Debugging (DAP). Gated by the "Enable Java debugging" setting (default off).

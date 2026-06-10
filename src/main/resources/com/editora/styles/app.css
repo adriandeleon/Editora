@@ -1408,6 +1408,12 @@
 .debug-panel .debug-start { -fx-text-fill: #3fb950; -fx-font-weight: bold; }
 .debug-panel .debug-start .toolbar-icon { -fx-fill: #3fb950; }
 .debug-panel .debug-start:disabled { -fx-opacity: 0.5; }
+/* The Run console's stdin field (compact, like the Debug evaluate field). */
+.run-panel .run-input {
+    -fx-font-size: 12px;
+    -fx-padding: 3 6 3 6;
+}
+
 /* Green play glyph for the gutter Run marker (compact source main line) + the right-click Run item. */
 .run-marker { -fx-fill: #3fb950; }
 .fold-gutter .run-slot:hover .run-marker { -fx-fill: #56d364; }

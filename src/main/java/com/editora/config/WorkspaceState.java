@@ -50,6 +50,8 @@ public class WorkspaceState {
     private List<String> readOnlyFiles = new ArrayList<>();
     /** Debugger watch expressions (the Debug window's Watches node), re-evaluated on every stop. */
     private List<String> debugWatches = new ArrayList<>();
+    /** Program arguments per runnable file (absolute path -> raw args string), shared by Run + Debug. */
+    private Map<String, String> programArgs = new LinkedHashMap<>();
 
     // --- Zen (distraction-free) mode. Entering Zen snapshots the user's view/chrome prefs into
     //     preZenView (key -> value) and the open tool windows into preZenToolWindows, then turns
@@ -218,6 +220,14 @@ public class WorkspaceState {
 
     public List<String> getDebugWatches() {
         return debugWatches;
+    }
+
+    public Map<String, String> getProgramArgs() {
+        return programArgs;
+    }
+
+    public void setProgramArgs(Map<String, String> programArgs) {
+        this.programArgs = programArgs == null ? new LinkedHashMap<>() : programArgs;
     }
 
     public void setDebugWatches(List<String> debugWatches) {

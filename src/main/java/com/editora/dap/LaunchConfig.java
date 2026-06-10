@@ -60,6 +60,13 @@ public final class LaunchConfig {
      */
     public static Map<String, Object> program(String type, String program, String cwd,
             String runtimeExecutable, boolean stopOnEntry) {
+        return program(type, program, cwd, runtimeExecutable, List.of(), stopOnEntry);
+    }
+
+    /** As {@link #program(String, String, String, String, boolean)} with program {@code args}
+     *  (debugpy and js-debug both take an argv array; omitted when empty). */
+    public static Map<String, Object> program(String type, String program, String cwd,
+            String runtimeExecutable, List<String> args, boolean stopOnEntry) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", type == null ? "" : type);
         m.put("name", "Editora (Launch)");
@@ -67,6 +74,9 @@ public final class LaunchConfig {
         m.put("program", program == null ? "" : program);
         if (notBlank(cwd)) {
             m.put("cwd", cwd);
+        }
+        if (notEmpty(args)) {
+            m.put("args", args);
         }
         if (notBlank(runtimeExecutable)) {
             if ("python".equals(type)) {

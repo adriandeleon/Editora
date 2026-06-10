@@ -298,6 +298,15 @@ public final class DapManager implements DapClient.Host {
         }
     }
 
+    /** Program arguments for the next launch (shared with the Run feature's per-file args). */
+    private volatile List<String> programArgs = List.of();
+
+    /** Sets the debuggee's program arguments; call before {@link #startLaunch}. Sticky across
+     *  {@link #restart()} (the restart re-runs the same launch). */
+    public void setProgramArgs(List<String> args) {
+        this.programArgs = args == null ? List.of() : List.copyOf(args);
+    }
+
     /**
      * Launches a Java debug session for {@code file}: resolves the main class (asking {@code picker} if
      * several are found), its classpath + java executable, starts the adapter, and connects. No-op (with an
@@ -394,7 +403,7 @@ public final class DapManager implements DapClient.Host {
                 String javaExec = asString(jx);
                 String cwd = file.getParent() == null ? null : file.getParent().toString();
                 startDebugSessionAndConnect(file, LaunchConfig.launch(opt.mainClass(), proj,
-                        classpaths, modulepaths, javaExec, cwd, List.of(), false), false);
+                        classpaths, modulepaths, javaExec, cwd, programArgs, false), false);
             });
         });
     }
@@ -426,7 +435,7 @@ public final class DapManager implements DapClient.Host {
                 String javaExec = firstOrNull(ProcessRunner.resolveExecutable(List.of("java")));
                 String cwd = file.getParent() == null ? null : file.getParent().toString();
                 Platform.runLater(() -> startDebugSessionAndConnect(file, LaunchConfig.launch(
-                        fqn, null, List.of(out.toString()), List.of(), javaExec, cwd, List.of(), false),
+                        fqn, null, List.of(out.toString()), List.of(), javaExec, cwd, programArgs, false),
                         false));
             } catch (Exception e) {
                 fail("Could not compile/launch " + fqn + ": " + msg(e));
@@ -605,7 +614,7 @@ public final class DapManager implements DapClient.Host {
                 fail("Could not connect to debugpy: " + msg(e));
                 return;
             }
-            c.launch(LaunchConfig.program(spec.launchType(), file.toString(), cwdOf(file), interpExe, false))
+            c.launch(LaunchConfig.program(spec.launchType(), file.toString(), cwdOf(file), interpExe, programArgs, false))
                     .whenComplete((v, le) -> {
                         if (le != null) {
                             fail("launch failed: " + msg(le));
@@ -641,7 +650,7 @@ public final class DapManager implements DapClient.Host {
                 fail("Could not connect to vscode-js-debug: " + msg(e));
                 return;
             }
-            c.launch(LaunchConfig.program(spec.launchType(), file.toString(), cwdOf(file), nodeExe, false))
+            c.launch(LaunchConfig.program(spec.launchType(), file.toString(), cwdOf(file), nodeExe, programArgs, false))
                     .whenComplete((v, le) -> {
                         if (le != null) {
                             fail("launch failed: " + msg(le));
