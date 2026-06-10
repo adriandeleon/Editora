@@ -46,6 +46,11 @@ public class QuickOpen<T> {
     /** Optional per-item CSS class applied to the row's title label (e.g. "dirty-name"); null = none. */
     private Function<T, String> itemStyleClass;
 
+    /** Fixed list-cell height; lets the result list hug its row count. */
+    private static final double CELL_HEIGHT = 26;
+    /** Max rows shown before the list scrolls. */
+    private static final int MAX_VISIBLE = 12;
+
     private final TextField input = new TextField();
     private final ListView<T> list = new ListView<>();
     private final ObservableList<T> items = FXCollections.observableArrayList();
@@ -89,7 +94,10 @@ public class QuickOpen<T> {
     private void build(String title, String prompt) {
         input.setPromptText(prompt);
         list.setItems(items);
-        list.setPrefHeight(280);
+        // Hug the result count: a fixed cell size lets the list size to its rows, capped at MAX_VISIBLE
+        // (then it scrolls), so the popup isn't a fixed-tall box with empty space for a few matches.
+        list.setFixedCellSize(CELL_HEIGHT);
+        items.addListener((javafx.collections.ListChangeListener<T>) c -> resizeList());
         list.setCellFactory(v -> new ItemCell());
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
@@ -114,6 +122,17 @@ public class QuickOpen<T> {
         content.setPrefWidth(620);
         content.setMaxSize(620, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p/arrows for the picker
+        resizeList();
+    }
+
+    /** Sizes the result list to its (filtered) item count, capped at {@link #MAX_VISIBLE} rows, so the
+     *  popup hugs the matches instead of reserving a fixed-tall area. */
+    private void resizeList() {
+        int rows = Math.max(1, Math.min(items.size(), MAX_VISIBLE));
+        double h = rows * CELL_HEIGHT + 2; // +2 for the list's border/insets
+        list.setMinHeight(h);
+        list.setPrefHeight(h);
+        list.setMaxHeight(h);
     }
 
     private void onKey(KeyEvent e) {

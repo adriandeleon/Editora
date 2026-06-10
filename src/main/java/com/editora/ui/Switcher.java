@@ -33,6 +33,10 @@ public class Switcher {
     private final Consumer<Tab> activateTab;
     private final Consumer<Tab> closeTab;
 
+    /** Fixed list-cell height + max rows before scrolling, so the list hugs the open-file count. */
+    private static final double CELL_HEIGHT = 26;
+    private static final int MAX_VISIBLE = 12;
+
     private final ListView<Tab> filesList = new ListView<>();
     private final Label pathLabel = new Label();
     private VBox root;
@@ -52,7 +56,10 @@ public class Switcher {
     }
 
     private void build() {
-        filesList.setPrefHeight(384); // width is set per-show from the longest path
+        // Hug the open-file count (capped at MAX_VISIBLE, then scroll) so a few tabs don't leave a tall
+        // empty box; width is set per-show from the longest path. Resizes as tabs are listed/closed.
+        filesList.setFixedCellSize(CELL_HEIGHT);
+        filesList.getItems().addListener((javafx.collections.ListChangeListener<Tab>) c -> resizeList());
 
         // Render the name in a Label graphic: the tab's own text is empty (its title lives in a graphic
         // node), and a Label also inherits a theme-aware fill so names stay readable in dark mode.
@@ -94,6 +101,9 @@ public class Switcher {
 
         root = new VBox(column, pathLabel, hint);
         root.getStyleClass().add("switcher");
+        // Hug content vertically (a plain VBox would otherwise be stretched to fill the overlay,
+        // leaving a tall empty card under the file list).
+        root.setMaxHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
         root.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p/arrows for the switcher
         root.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         // Releasing Ctrl activates the selection (IntelliJ Switcher behavior).
@@ -103,6 +113,15 @@ public class Switcher {
                 e.consume();
             }
         });
+    }
+
+    /** Sizes the file list to its item count, capped at {@link #MAX_VISIBLE} rows (then it scrolls). */
+    private void resizeList() {
+        int rows = Math.max(1, Math.min(filesList.getItems().size(), MAX_VISIBLE));
+        double h = rows * CELL_HEIGHT + 2;
+        filesList.setMinHeight(h);
+        filesList.setPrefHeight(h);
+        filesList.setMaxHeight(h);
     }
 
     /** Injects the shared overlay host used to show the switcher card. */
