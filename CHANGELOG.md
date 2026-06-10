@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multiple cursors & column/box selection** — VS Code–style multi-caret editing, powered by a personal
+  RichTextFX fork. **Alt+drag** makes a vertical column/box selection; **Cmd/Ctrl+click** adds a caret at
+  another spot; **Cmd/Ctrl+D** selects the next occurrence of the current selection; **Esc** collapses back
+  to a single caret. While multiple carets exist, typing, Enter/Tab, Backspace/Delete, paste (one line per
+  caret), and arrow/Home/End movement apply to every caret as a single undoable step. On by default; toggle
+  under **Settings → Editor → "Enable multiple cursors & column selection"** (or the `view.toggleMultiCaret`
+  command). The palette also lists *Add Caret at Next Occurrence / Above / Below* and *Collapse to Single
+  Caret* (unbound by default — bind them in your keymap if you like). With a single caret everything behaves
+  exactly as before. *(Note: Emacs movement chords like `C-f`/`C-n` act on the primary caret only — use the
+  arrow keys to move all carets together.)*
+
 - **Java debugging (DAP)** — a full debugger for Java, complementing the existing Java LSP support, off by
   default (Settings → **Debugging** → "Enable Java debugging"). It layers on the running **jdtls** language
   server plus the Microsoft **java-debug** plugin jar (not bundled — auto-detected from a VS Code Java

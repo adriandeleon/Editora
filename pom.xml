@@ -24,7 +24,7 @@
         <!-- Personal fork of RichTextFX (adds multiple cursors + column/box selection).
              groupId io.github.adriandeleon, vendored in the in-project m2-repo (see <repositories>).
              Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
-        <richtextfx.version>0.11.7-multicaret.1</richtextfx.version>
+        <richtextfx.version>0.11.7-multicaret.2</richtextfx.version>
         <atlantafx.version>2.1.0</atlantafx.version>
         <jackson.version>2.19.0</jackson.version>
         <junit.version>5.11.4</junit.version>
@@ -85,6 +85,16 @@
             <groupId>io.github.adriandeleon</groupId>
             <artifactId>richtextfx</artifactId>
             <version>${richtextfx.version}</version>
+            <!-- The fork's pom pins JavaFX 21.0.5 (with a mac-aarch64 classifier baked in). Letting that
+                 transitively onto the path mixes javafx.base/graphics 21.0.5 with our javafx.controls 25 —
+                 e.g. Spinner crashes with NoSuchFieldError AccessibleAttribute.VALUE_STRING. Exclude it so
+                 only our JavaFX 25 (declared above) is used. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.openjfx</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.github.mkpaz</groupId>

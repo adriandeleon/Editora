@@ -136,7 +136,21 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
 
 ## Packaging note (important)
 
-RichTextFX and its transitive deps (`reactfx`, `flowless`, `undofx`, `wellbehavedfx`)
+RichTextFX is a **personal fork** (`io.github.adriandeleon:richtextfx`, vendored in the in-project
+`m2-repo/`, source at github.com/adriandeleon/RichTextFX) that adds VS Code–style **multiple cursors +
+Alt+drag column/box selection** via a self-contained `org.fxmisc.richtext.multi.MultiCaretController.install(area)`
+add-on (a layered wellbehaved `InputMap`, gated on `MultiCaretManager.hasExtras()` so it's transparent with
+one caret). **`EditorBuffer`** installs it on `area`/`area2` via `setMultiCaretEnabled(...)` (gated by
+`Settings.multiCaret`, default on; pushed by `MainController.applyMultiCaret`), exposes
+`hasMultipleCarets()` + delegating `addCaretNextOccurrence`/`addCaretAbove`/`addCaretBelow`/`collapseCarets`
+(palette commands `edit.addCaret*`/`edit.collapseCarets`, `view.toggleMultiCaret` — **no keymap bindings**:
+gestures are mouse + Esc, native to the fork). Because Editora's area-level KEY filters (auto-indent/close,
+snippets, completion, view paging) are capture-phase *filters* that run before the fork's node InputMap,
+each one early-returns (no consume) via `multiCaretActiveOn(a)` when that area has extra carets, so editing
+fans out to all carets. *Known limitation:* Emacs movement chords (`C-f`/`C-n`/…) are resolved by the
+scene-level `KeyDispatcher` on the primary caret and don't fan out — use arrows for multi-caret movement.
+To update the fork: rebuild it, copy the new `richtextfx-<version>.{jar,pom}` into `m2-repo/`, bump
+`<richtextfx.version>`. RichTextFX and its transitive deps (`reactfx`, `flowless`, `undofx`, `wellbehavedfx`)
 are **automatic modules**, which `jlink` cannot link. The `moditect-maven-plugin` in
 the `dist` profile injects explicit `module-info` descriptors into them. If you bump
 RichTextFX or add a dep it uses, you may need to adjust those descriptors' `requires`

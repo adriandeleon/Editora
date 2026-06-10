@@ -3223,6 +3223,7 @@ public class MainController {
         Settings acs = config.getSettings();
         buffer.setAutocomplete(acs.isAutocomplete(), acs.isAutocompleteProse(),
                 acs.isAutocompleteSnippets(), effectiveMermaidAutocomplete());
+        buffer.setMultiCaretEnabled(acs.isMultiCaret()); // multiple cursors + Alt+drag column selection
         buffer.setMermaidValidator((text, cb) -> mermaidService.validate(text, cb));
         buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
         // LSP: debounced didChange sink, async completion source, then open+activate if eligible.
@@ -4311,6 +4312,13 @@ public class MainController {
         if (!activeEditable()) {
             return;
         }
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.multiCaretCut()) { // every caret's selection, one undoable step
+            deactivateMark();
+            refreshPasteState();
+            setStatus(tr("status.cut"));
+            return;
+        }
         CodeArea area = activeArea();
         if (area == null) {
             return;
@@ -4324,6 +4332,13 @@ public class MainController {
 
     @FXML
     private void onCopy() {
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.multiCaretCopy()) { // every caret's selection (VS Code one-line-per-caret)
+            deactivateMark();
+            refreshPasteState();
+            setStatus(tr("status.copied"));
+            return;
+        }
         CodeArea area = activeArea();
         if (area == null) {
             return;
@@ -4338,6 +4353,12 @@ public class MainController {
     @FXML
     private void onPaste() {
         if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.multiCaretPaste()) { // distribute clipboard lines one per caret
+            deactivateMark();
+            setStatus(tr("status.pasted"));
             return;
         }
         CodeArea area = activeArea();
@@ -4576,6 +4597,29 @@ public class MainController {
         applyAutocomplete();
         settingsWindow.syncAutocompleteChecks();
         setStatus(tr("status.toggle.autocompleteMermaid", tr(s.isAutocompleteMermaid() ? "common.on" : "common.off")));
+    }
+
+    private void toggleMultiCaret() {
+        Settings s = config.getSettings();
+        s.setMultiCaret(!s.isMultiCaret());
+        requestSave();
+        applyMultiCaret();
+        settingsWindow.syncMultiCaretCheck(); // keep the Settings window in step if it's open
+        setStatus(tr("status.toggle.multiCaret", tr(s.isMultiCaret() ? "common.on" : "common.off")));
+    }
+
+    // --- Multiple cursors / column selection commands (delegate to the active buffer's fork add-on) ---
+
+    /** Runs {@code action} on the active buffer when multi-caret is enabled; else reports it. */
+    private void withMultiCaret(java.util.function.Consumer<EditorBuffer> action) {
+        if (!config.getSettings().isMultiCaret()) {
+            setStatus(tr("status.multiCaret.disabled"));
+            return;
+        }
+        EditorBuffer b = activeBuffer();
+        if (b != null) {
+            action.accept(b);
+        }
     }
 
     /** Opens a picker to set the spell-check dictionary language for the active file (persisted per file). */
@@ -6177,6 +6221,7 @@ public class MainController {
         applyMermaidSupport();
         applyAutoSave();
         applyAutocomplete();
+        applyMultiCaret();
         applyLspSupport(); // (re)configure LSP: command/enabled change re-detects + re-gates buffers
         applyDebugSupport(); // (re)configure DAP after LSP (it layers on jdtls)
         applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
@@ -6190,6 +6235,17 @@ public class MainController {
         // Projects/Git toggles that may have just changed.
         if (welcomeTab != null) {
             welcomePane.refresh();
+        }
+    }
+
+    /** Pushes the multiple-cursors / column-selection setting to every open buffer. */
+    private void applyMultiCaret() {
+        boolean on = config.getSettings().isMultiCaret();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer buffer = bufferOf(tab);
+            if (buffer != null) {
+                buffer.setMultiCaretEnabled(on);
+            }
         }
     }
 
@@ -6586,6 +6642,12 @@ public class MainController {
         registry.register(Command.of("view.toggleAutocompleteProse", this::toggleAutocompleteProse));
         registry.register(Command.of("view.toggleAutocompleteSnippets", this::toggleAutocompleteSnippets));
         registry.register(Command.of("view.toggleAutocompleteMermaid", this::toggleAutocompleteMermaid));
+        registry.register(Command.of("view.toggleMultiCaret", this::toggleMultiCaret));
+        registry.register(Command.of("edit.addCaretNextOccurrence",
+                () -> withMultiCaret(EditorBuffer::addCaretNextOccurrence)));
+        registry.register(Command.of("edit.addCaretAbove", () -> withMultiCaret(EditorBuffer::addCaretAbove)));
+        registry.register(Command.of("edit.addCaretBelow", () -> withMultiCaret(EditorBuffer::addCaretBelow)));
+        registry.register(Command.of("edit.collapseCarets", () -> withMultiCaret(EditorBuffer::collapseCarets)));
         registry.register(Command.of("spell.setLanguage",
                 this::chooseSpellLanguage));
         registry.register(Command.of("view.toggleToolbar", this::toggleToolbar));

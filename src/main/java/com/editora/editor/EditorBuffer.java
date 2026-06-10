@@ -19,6 +19,7 @@ import org.reactfx.Subscription;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.fxmisc.richtext.multi.MultiCaretController;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
@@ -94,6 +95,12 @@ public class EditorBuffer implements TabContent {
     private AnchorPane root2;
     private Minimap minimap2;
     private Split split = Split.NONE;
+
+    /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork add-on). Installed on {@link #area}
+     *  (and {@link #area2} when split) while {@link #multiCaretEnabled}; transparent with one caret. */
+    private boolean multiCaretEnabled;
+    private MultiCaretController<?, ?, ?> multiCaret;
+    private MultiCaretController<?, ?, ?> multiCaret2;
 
     /** IntelliJ-style Markdown preview modes (only meaningful for Markdown files). */
     public enum MarkdownViewMode { EDITOR, SPLIT, PREVIEW }
@@ -428,6 +435,9 @@ public class EditorBuffer implements TabContent {
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+                return;
+            }
             if (e.getCode() == KeyCode.ESCAPE) {
                 hideFormatBar(); // don't consume — let other Escape behavior run
             }
@@ -1488,9 +1498,135 @@ public class EditorBuffer implements TabContent {
      */
     public void dispose() {
         unsubscribePreview();
+        disposeMultiCaret();
         previewGen++;   // discard any in-flight preview result for this (now closed) buffer
         highlightGen++; // discard any in-flight highlight result
         languageGen++;  // discard any in-flight deferred grammar load
+    }
+
+    // --- Multiple cursors + column/box selection (RichTextFX fork) -------------------------------
+
+    /**
+     * Enables/disables the multi-caret add-on. When on, installs {@link MultiCaretController} on the
+     * primary area (and the secondary split view if present); when off, removes it (collapsing to one
+     * caret). Skipped for huge files (editing is already inert there). Idempotent.
+     */
+    public void setMultiCaretEnabled(boolean enabled) {
+        this.multiCaretEnabled = enabled;
+        if (enabled && !hugeFile) {
+            if (multiCaret == null) {
+                multiCaret = MultiCaretController.install(area);
+            }
+            if (area2 != null && multiCaret2 == null) {
+                multiCaret2 = MultiCaretController.install(area2);
+            }
+        } else {
+            disposeMultiCaret();
+        }
+    }
+
+    private void disposeMultiCaret() {
+        if (multiCaret != null) {
+            multiCaret.dispose();
+            multiCaret = null;
+        }
+        if (multiCaret2 != null) {
+            multiCaret2.dispose();
+            multiCaret2 = null;
+        }
+    }
+
+    /** The multi-caret manager for the area that currently has focus (secondary split view, else primary),
+     *  or null when the add-on isn't installed. */
+    private org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?> activeManager() {
+        if (multiCaret2 != null && area2 != null && area2.isFocused()) {
+            return multiCaret2.getManager();
+        }
+        return multiCaret == null ? null : multiCaret.getManager();
+    }
+
+    /** True while any area of this buffer has more than the primary caret (extra carets / box selection). */
+    public boolean hasMultipleCarets() {
+        return (multiCaret != null && multiCaret.getManager().hasExtras())
+                || (multiCaret2 != null && multiCaret2.getManager().hasExtras());
+    }
+
+    /** Selects the next occurrence of the current selection as an additional caret (VS Code Cmd/Ctrl+D). */
+    public void addCaretNextOccurrence() {
+        var m = activeManager();
+        if (m != null) {
+            m.addNextOccurrence();
+        }
+    }
+
+    /** Adds a caret on the line above the (primary) caret. */
+    public void addCaretAbove() {
+        var m = activeManager();
+        if (m != null) {
+            m.addCaretLineUpDown(false);
+        }
+    }
+
+    /** Adds a caret on the line below the (primary) caret. */
+    public void addCaretBelow() {
+        var m = activeManager();
+        if (m != null) {
+            m.addCaretLineUpDown(true);
+        }
+    }
+
+    /** True when {@code a} currently has extra carets, so this buffer's single-caret KEY filters
+     *  (auto-indent/close, snippets, completion, view paging) should stand down and let the fork's
+     *  multi-caret input map handle the key for every caret. */
+    private boolean multiCaretActiveOn(CodeArea a) {
+        if (a == area) {
+            return multiCaret != null && multiCaret.getManager().hasExtras();
+        }
+        if (a == area2) {
+            return multiCaret2 != null && multiCaret2.getManager().hasExtras();
+        }
+        return false;
+    }
+
+    /** Copies every caret's selection to the clipboard (VS Code one-line-per-caret) when extra carets
+     *  exist; returns whether it handled it (so the caller can fall back to the single-caret copy). */
+    public boolean multiCaretCopy() {
+        var m = activeManager();
+        if (m != null && m.hasExtras()) {
+            m.copy();
+            return true;
+        }
+        return false;
+    }
+
+    /** Cuts every caret's selection (multi-caret aware); returns whether it handled it. */
+    public boolean multiCaretCut() {
+        var m = activeManager();
+        if (m != null && m.hasExtras()) {
+            m.cut();
+            return true;
+        }
+        return false;
+    }
+
+    /** Pastes at every caret (distributing clipboard lines one per caret); returns whether it handled it. */
+    public boolean multiCaretPaste() {
+        var m = activeManager();
+        if (m != null && m.hasExtras()) {
+            m.paste();
+            return true;
+        }
+        return false;
+    }
+
+    /** Collapses any extra carets / box selection back to a single caret. */
+    public void collapseCarets() {
+        if (multiCaret != null) {
+            multiCaret.getManager().collapseToPrimary();
+        }
+        if (multiCaret2 != null) {
+            multiCaret2.getManager().collapseToPrimary();
+        }
     }
 
     /**
@@ -1733,6 +1869,9 @@ public class EditorBuffer implements TabContent {
         addAutoIndent(area2);
         addCompletionKeys(area2);
         installCompletionTrigger(area2);
+        if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
+            multiCaret2 = MultiCaretController.install(area2); // same multi-caret add-on in the split view
+        }
         area2.setLineHighlighterFill(lineHighlightColor);
         area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
@@ -2634,6 +2773,9 @@ public class EditorBuffer implements TabContent {
      */
     private void addViewModePaging(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+                return;
+            }
             if (!viewMode || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
                 return;
             }
@@ -2667,6 +2809,9 @@ public class EditorBuffer implements TabContent {
      */
     private void addSnippetKeys(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+                return;
+            }
             if (hasActiveSnippet()) {
                 if (e.getCode() == KeyCode.TAB) {
                     if (e.isShiftDown()) {
@@ -2698,6 +2843,9 @@ public class EditorBuffer implements TabContent {
      */
     private void addAutoIndent(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+                return;
+            }
             if (e.getCode() != KeyCode.ENTER || e.isShiftDown() || e.isControlDown()
                     || e.isAltDown() || e.isMetaDown()) {
                 return;
@@ -2745,6 +2893,9 @@ public class EditorBuffer implements TabContent {
         // Only consumes when it removes more than one char, so a normal single-char Backspace still runs
         // everywhere else (and the auto-close empty-pair handler, registered earlier, gets first dibs).
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+                return;
+            }
             if (e.getCode() != KeyCode.BACK_SPACE || viewMode || !isEditable() || hasActiveSnippet()
                     || e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShiftDown()
                     || a.getSelection().getLength() > 0) {
@@ -2765,6 +2916,9 @@ public class EditorBuffer implements TabContent {
             }
         });
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+                return;
+            }
             if (!isEditable() || hasActiveSnippet() || e.getCharacter().length() != 1
                     || e.isControlDown() || e.isAltDown() || e.isMetaDown()
                     || a.getSelection().getLength() > 0) {
@@ -2798,6 +2952,9 @@ public class EditorBuffer implements TabContent {
      */
     private void addAutoClose(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+                return;
+            }
             if (!isEditable() || hasActiveSnippet() || e.getCharacter().length() != 1
                     || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
                 return;
@@ -2833,6 +2990,9 @@ public class EditorBuffer implements TabContent {
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+                return;
+            }
             if (e.getCode() != KeyCode.BACK_SPACE || viewMode || !isEditable() || hasActiveSnippet()
                     || e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShiftDown()
                     || a.getSelection().getLength() > 0) {
@@ -3027,6 +3187,9 @@ public class EditorBuffer implements TabContent {
      */
     private void addCompletionKeys(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+                return;
+            }
             // Inline ghost text (prose): Tab accepts, Esc dismisses; anything else lets the caret move
             // (the caret listener then clears it and the debounce recomputes).
             if (ghostVisible()) {

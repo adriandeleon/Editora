@@ -132,6 +132,7 @@ public class SettingsWindow {
     private CheckBox breadcrumbCheck;
     private CheckBox toolStripeCheck;
     private CheckBox markdownFormatBarCheck;
+    private CheckBox multiCaretCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
     private Label gitStatusLabel;
@@ -482,6 +483,7 @@ public class SettingsWindow {
         breadcrumbCheck = viewCheck(tr("settings.showBreadcrumb"), Settings::setShowBreadcrumb);
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
         markdownFormatBarCheck = viewCheck(tr("settings.markdownFormatBar"), Settings::setMarkdownFormatBar);
+        multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
 
         projectsCheck = new CheckBox(tr("settings.enableProjects"));
         projectsCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -672,6 +674,8 @@ public class SettingsWindow {
         row(p, Category.EDITOR, display, minimapCheck, "minimap overview");
         row(p, Category.EDITOR, display, whitespaceCheck, "hidden characters whitespace spaces tabs eol");
         row(p, Category.EDITOR, display, noteIndicatorsCheck, "personal notes gutter marker highlight indicators");
+        row(p, Category.EDITOR, display, multiCaretCheck,
+                "multiple cursors carets column box selection alt drag vs code");
         Label indent = section(p, tr("settings.section.indentation"));
         row(p, Category.EDITOR, indent, labeled(tr("settings.tabSize"), tabSizeSpinner), "tab size indent width spaces");
         Label completion = section(p, tr("settings.section.completion"));
@@ -1633,6 +1637,7 @@ public class SettingsWindow {
             breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
+            multiCaretCheck.setSelected(settings.isMultiCaret());
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
@@ -1835,6 +1840,20 @@ public class SettingsWindow {
         }
     }
 
+    /** Re-reads the multiple-cursors checkbox from settings (used after the palette toggle command). */
+    public void syncMultiCaretCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            multiCaretCheck.setSelected(config.getSettings().isMultiCaret());
+        } finally {
+            loading = prev;
+        }
+    }
+
     /** Re-reads the "show toolbar" checkbox from settings (used after the palette/floating toggle). */
     public void syncToolbarCheck() {
         if (!built) {
@@ -1923,6 +1942,7 @@ public class SettingsWindow {
             breadcrumbCheck.setSelected(s.isShowBreadcrumb());
             toolStripeCheck.setSelected(s.isShowToolStripe());
             markdownFormatBarCheck.setSelected(s.isMarkdownFormatBar());
+            multiCaretCheck.setSelected(s.isMultiCaret());
             projectsCheck.setSelected(s.isProjectSupport());
         } finally {
             loading = prev;

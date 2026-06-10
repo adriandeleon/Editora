@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 16;
+    public static final int SCHEMA_VERSION = 17;
     private int schemaVersion = SCHEMA_VERSION;
 
     private String fontFamily = "JetBrains Mono";
@@ -43,6 +43,8 @@ public class Settings {
     private String markdownPreviewTheme = "";
     /** Show the floating format bar on a text selection in Markdown buffers. */
     private boolean markdownFormatBar = true;
+    /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork). Transparent with one caret. */
+    private boolean multiCaret = true;
     private boolean spellCheck = true;
     /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
     private String spellLanguage = "en_US";
@@ -349,6 +351,14 @@ public class Settings {
 
     public void setMarkdownFormatBar(boolean markdownFormatBar) {
         this.markdownFormatBar = markdownFormatBar;
+    }
+
+    public boolean isMultiCaret() {
+        return multiCaret;
+    }
+
+    public void setMultiCaret(boolean multiCaret) {
+        this.multiCaret = multiCaret;
     }
 
     public boolean isShowToolbar() {
