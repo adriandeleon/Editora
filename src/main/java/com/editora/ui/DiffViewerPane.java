@@ -206,8 +206,8 @@ public final class DiffViewerPane implements TabContent {
         summary.getStyleClass().add("diff-summary");
         changeNav.getStyleClass().add("diff-summary");
         updateSummary();
-        Button prev = iconButton(Icons.arrowUp(), tr("diff.prevChange"), this::prevChange);
         Button next = iconButton(Icons.arrowDown(), tr("diff.nextChange"), this::nextChange);
+        Button prev = iconButton(Icons.arrowUp(), tr("diff.prevChange"), this::prevChange);
         Button export = iconButton(Icons.saveAs(), tr("diff.exportPatch"),
                 () -> onExportPatch.accept(patchText("a/" + leftName, "b/" + rightName)));
         // "Apply all": replace the editable file with the other side entirely. Shown only when a side is
@@ -226,7 +226,7 @@ public final class DiffViewerPane implements TabContent {
         toggleButton.getStyleClass().addAll("flat", "diff-toolbar-button");
         toggleButton.setFocusTraversable(false);
         updateToggleButton();
-        HBox bar = new HBox(2, summary, spacer(), changeNav, prev, next,
+        HBox bar = new HBox(2, summary, spacer(), changeNav, next, prev,
                 sep(), applyAllButton, undoButton, saveButton, sep(), toggleButton, export);
         bar.getStyleClass().add("diff-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
@@ -544,20 +544,26 @@ public final class DiffViewerPane implements TabContent {
                 num.setPrefWidth(numW);
             }
             num.setAlignment(Pos.CENTER_RIGHT);
+            HBox gutter;
             if (!apply) {
-                return num;
+                gutter = new HBox(num);
+            } else {
+                // Hunk apply (double chevron, at each change block's first row) + per-line apply (single
+                // chevron, on every changed row). Both copy the other side's content into the local file.
+                HBox hunkSlot = arrowSlot(blockStarts.contains(i)
+                        ? (right ? Icons.doubleChevronRight() : Icons.doubleChevronLeft()) : null,
+                        tr("diff.applyChange"), () -> applyBlock(i));
+                HBox lineSlot = arrowSlot(i < rows.size() && rows.get(i).type() != RowType.EQUAL
+                        ? (right ? Icons.chevronRight() : Icons.chevronLeft()) : null,
+                        tr("diff.applyLine"), () -> applyRow(i));
+                gutter = new HBox(hunkSlot, lineSlot, num);
             }
-            // Hunk apply (double chevron, at each change block's first row) + per-line apply (single
-            // chevron, on every changed row). Both copy the other side's content into the local file.
-            HBox hunkSlot = arrowSlot(blockStarts.contains(i)
-                    ? (right ? Icons.doubleChevronRight() : Icons.doubleChevronLeft()) : null,
-                    tr("diff.applyChange"), () -> applyBlock(i));
-            HBox lineSlot = arrowSlot(i < rows.size() && rows.get(i).type() != RowType.EQUAL
-                    ? (right ? Icons.chevronRight() : Icons.chevronLeft()) : null,
-                    tr("diff.applyLine"), () -> applyRow(i));
-            HBox box = new HBox(hunkSlot, lineSlot, num);
-            box.setAlignment(Pos.CENTER_LEFT);
-            return box;
+            // The "lineno" class gives the gutter the editor's opaque (theme-aware) background, so text
+            // scrolled horizontally never bleeds under the line numbers.
+            gutter.getStyleClass().add("lineno");
+            gutter.setAlignment(Pos.CENTER_LEFT);
+            gutter.setMaxHeight(Double.MAX_VALUE);
+            return gutter;
         };
         area.setParagraphGraphicFactory(factory);
     }
@@ -695,9 +701,11 @@ public final class DiffViewerPane implements TabContent {
      *  once the user starts stepping through changes. */
     private void updateChangeNav() {
         int total = model.changeBlockStarts().size();
-        changeNav.setText(changeCursor < 0
-                ? tr("diff.changeCount", total)
-                : tr("diff.changePos", changeCursor + 1, total));
+        if (changeCursor >= 0) {
+            changeNav.setText(tr("diff.changePos", changeCursor + 1, total));
+        } else {
+            changeNav.setText(tr(total == 1 ? "diff.changeCount.one" : "diff.changeCount", total));
+        }
     }
 
     /** Refreshes the toolbar's +added/−removed summary and the change-count indicator from the model. */
@@ -706,14 +714,32 @@ public final class DiffViewerPane implements TabContent {
         updateChangeNav();
     }
 
-    /** Scrolls the active view to a side-by-side row index (mapped to the unified row when needed). */
+    /** Scrolls to, and selects, the change block starting at side-by-side row {@code sideRow}, so the
+     *  user sees which change the nav advanced to. */
     private void scrollToRow(int sideRow) {
+        int sideEnd = blockEndFrom(sideRow);
         if (unified && unifiedArea != null) {
             int u = unifiedRowFor(sideRow);
             unifiedArea.showParagraphAtTop(Math.max(0, u));
-        } else if (leftArea != null) {
+            selectLines(unifiedArea, u, unifiedRowFor(sideEnd));
+        } else if (leftArea != null && rightArea != null) {
             leftArea.showParagraphAtTop(Math.max(0, sideRow));
+            // Highlight the block on both panes; focus the editable side (or the left) so it's visible.
+            selectLines(leftArea, sideRow, sideEnd);
+            selectLines(rightArea, sideRow, sideEnd);
+            (editableSide == EditableSide.RIGHT ? rightArea : leftArea).requestFocus();
         }
+    }
+
+    /** Selects whole lines {@code [start, end)} in {@code area} (clamped), as a visible block highlight. */
+    private static void selectLines(CodeArea area, int start, int end) {
+        int pars = area.getParagraphs().size();
+        if (pars == 0) {
+            return;
+        }
+        int s = Math.max(0, Math.min(start, pars - 1));
+        int e = Math.max(s + 1, Math.min(end, pars));
+        area.selectRange(s, 0, e - 1, area.getParagraph(e - 1).length());
     }
 
     /** Maps a side-by-side row index to the first unified row at/after it (unified expands MODIFIED). */
