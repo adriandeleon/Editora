@@ -66,6 +66,14 @@ public final class OverlayInput {
     public static void show(OverlayHost host, String title, Node body, Node focus,
                             String okLabel, ObservableValue<? extends Boolean> okEnabled,
                             Runnable onAccept, Extra extra, boolean ctrlEnterToSubmit) {
+        show(host, title, body, focus, okLabel, okEnabled, onAccept, extra, ctrlEnterToSubmit, false);
+    }
+
+    /** As {@link #show} but {@code centered} places the card in the vertical middle of the overlay
+     *  (instead of near the top). */
+    public static void show(OverlayHost host, String title, Node body, Node focus,
+                            String okLabel, ObservableValue<? extends Boolean> okEnabled,
+                            Runnable onAccept, Extra extra, boolean ctrlEnterToSubmit, boolean centered) {
         if (host == null) {
             return;
         }
@@ -125,7 +133,7 @@ public final class OverlayInput {
             }
         });
 
-        host.show(card, () -> {
+        host.show(card, centered, () -> {
             focus.requestFocus();
             if (focus instanceof TextField tf) {
                 tf.selectAll();

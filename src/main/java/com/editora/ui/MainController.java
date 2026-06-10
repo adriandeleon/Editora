@@ -5499,8 +5499,24 @@ public class MainController {
             return;
         }
         int total = area.getParagraphs().size();
-        promptText(tr("dialog.goToLine.title"), tr("dialog.goToLine.content", total),
-                String.valueOf(area.getCurrentParagraph() + 1), input -> {
+        // Centered card (lowered to the middle of the app) with a muted note re-reminding the user of the
+        // line:column notation.
+        Label promptLabel = new Label(tr("dialog.goToLine.content", total));
+        TextField field = new TextField(String.valueOf(area.getCurrentParagraph() + 1));
+        field.setPrefColumnCount(32);
+        com.editora.command.TextInputKeymap.install(field, keymap);
+        Label note = new Label(tr("dialog.goToLine.header"));
+        note.getStyleClass().add("overlay-note");
+        note.setWrapText(true);
+        VBox body = new VBox(6, promptLabel, field, note);
+        OverlayInput.show(overlayHost, tr("dialog.goToLine.title"), body, field,
+                tr("dialog.goToLine.button"), null,
+                () -> handleGoToLine(field.getText(), area, total), null, false, true);
+    }
+
+    /** Parses {@code input} as {@code line} or {@code line:column} and moves the caret there. */
+    private void handleGoToLine(String input, CodeArea area, int total) {
+        {
             String text = input.trim();
             String[] parts = text.split(":", 2);
             try {
@@ -5521,7 +5537,7 @@ public class MainController {
             } catch (NumberFormatException e) {
                 setStatus(tr("status.gotoInvalid", input));
             }
-        });
+        }
     }
 
     /** Lets the user override the syntax language/grammar for the active buffer. */

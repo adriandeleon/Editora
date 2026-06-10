@@ -1060,6 +1060,11 @@
     -fx-padding: 14;
     -fx-spacing: 10;
 }
+/* A muted hint line under an overlay-form field (e.g. the go-to-line line:column reminder). */
+.overlay-note {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
 
 .command-palette .list-cell .keybinding {
     -fx-text-fill: -color-fg-muted;

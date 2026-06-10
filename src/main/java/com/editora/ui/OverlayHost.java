@@ -78,15 +78,26 @@ public final class OverlayHost {
      */
     /** Shows {@code content} centered near the top (no anchor). */
     public void show(Node content, Runnable onShown, Runnable onHidden) {
-        show(content, null, onShown, onHidden);
+        show(content, null, false, onShown, onHidden);
+    }
+
+    /** Shows {@code content} with no anchor, either centered near the top (default) or in the middle of
+     *  the overlay ({@code centered}). */
+    public void show(Node content, boolean centered, Runnable onShown, Runnable onHidden) {
+        show(content, null, centered, onShown, onHidden);
+    }
+
+    /** Anchored variant (positioned above {@code anchor}); never centered. */
+    public void show(Node content, Node anchor, Runnable onShown, Runnable onHidden) {
+        show(content, anchor, false, onShown, onHidden);
     }
 
     /**
      * Shows {@code content} as an overlay. When {@code anchor} is non-null the card is positioned just
      * <em>above</em> that node (e.g. a status-bar segment, so the dropdown "drops" from it); otherwise it
-     * is centered near the top like the command palette.
+     * is centered near the top like the command palette, or in the vertical middle when {@code centered}.
      */
-    public void show(Node content, Node anchor, Runnable onShown, Runnable onHidden) {
+    private void show(Node content, Node anchor, boolean centered, Runnable onShown, Runnable onHidden) {
         // Replacing one overlay with another (e.g. palette → file finder): clear the previous component's
         // flag, but keep the original focus owner so dismissal returns to the editor, not the prior card.
         if (showing.get()) {
@@ -101,8 +112,8 @@ public final class OverlayHost {
         content.setTranslateX(0);
         content.setTranslateY(0);
         if (anchor == null) {
-            StackPane.setAlignment(content, Pos.TOP_CENTER);
-            StackPane.setMargin(content, new Insets(90, 0, 0, 0));
+            StackPane.setAlignment(content, centered ? Pos.CENTER : Pos.TOP_CENTER);
+            StackPane.setMargin(content, centered ? Insets.EMPTY : new Insets(90, 0, 0, 0));
         }
         overlayRoot.getChildren().add(content);
         overlayRoot.setVisible(true);
