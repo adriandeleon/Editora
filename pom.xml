@@ -24,7 +24,7 @@
         <!-- Personal fork of RichTextFX (adds multiple cursors + column/box selection).
              groupId io.github.adriandeleon, vendored in the in-project m2-repo (see <repositories>).
              Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
-        <richtextfx.version>0.11.7-multicaret.2</richtextfx.version>
+        <richtextfx.version>0.11.7-multicaret.3</richtextfx.version>
         <atlantafx.version>2.1.0</atlantafx.version>
         <jackson.version>2.19.0</jackson.version>
         <junit.version>5.11.4</junit.version>

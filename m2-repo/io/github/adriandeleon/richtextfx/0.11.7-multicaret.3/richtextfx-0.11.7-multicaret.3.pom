@@ -9,7 +9,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.adriandeleon</groupId>
   <artifactId>richtextfx</artifactId>
-  <version>0.11.7-multicaret.2</version>
+  <version>0.11.7-multicaret.3</version>
   <name>RichTextFX</name>
   <description>Rich-text area for JavaFX</description>
   <url>https://github.com/FXMisc/RichTextFX/#richtextfx</url>
