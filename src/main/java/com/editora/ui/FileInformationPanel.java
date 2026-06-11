@@ -66,8 +66,8 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     private final TextField charCategoryValue = value();
 
     private EditorBuffer attached;
-    private final ChangeListener<Number> caretListener = (o, w, n) -> refresh();
-    private final ChangeListener<String> textListener = (o, w, n) -> refresh();
+    private final ChangeListener<Number> caretListener = (o, w, n) -> refreshCaret();
+    private final ChangeListener<String> textListener = (o, w, n) -> refreshText();
 
     public FileInformationPanel() {
         getStyleClass().add("file-info-panel");
@@ -209,7 +209,29 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
             clearAll();
             return;
         }
-        refreshFile(attached.getPath());
+        refreshFile(attached.getPath()); // reads disk attributes — only on attach (tab switch), not edits
+        refreshTextSettings(attached);
+        refreshCounts(attached);
+        refreshCharacter(attached);
+    }
+
+    /** Caret moved: only the position + character-under-caret change — never re-read the file (a network
+     *  round-trip for remote files). */
+    private void refreshCaret() {
+        if (attached == null) {
+            return;
+        }
+        refreshCounts(attached);     // includes line / column / caret location
+        refreshCharacter(attached);
+    }
+
+    /** Text edited: re-derive the in-memory counts + char info; disk metadata only changes on save (which
+     *  re-attaches), so still no file read here. */
+    private void refreshText() {
+        if (attached == null) {
+            clearAll();
+            return;
+        }
         refreshTextSettings(attached);
         refreshCounts(attached);
         refreshCharacter(attached);
@@ -242,8 +264,10 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         fullPathValue.setText(path.toString());
         try {
             BasicFileAttributes basic = Files.readAttributes(path, BasicFileAttributes.class);
-            createdValue.setText(formatTime(basic.creationTime().toInstant()));
-            modifiedValue.setText(formatTime(basic.lastModifiedTime().toInstant()));
+            // SFTP (and some filesystems) don't report a creation/modified time — guard the nulls.
+            createdValue.setText(basic.creationTime() != null ? formatTime(basic.creationTime().toInstant()) : "–");
+            modifiedValue.setText(
+                    basic.lastModifiedTime() != null ? formatTime(basic.lastModifiedTime().toInstant()) : "–");
             sizeValue.setText(formatSize(basic.size()));
         } catch (IOException e) {
             createdValue.setText("–");
@@ -252,8 +276,9 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         }
         try {
             PosixFileAttributes posix = Files.readAttributes(path, PosixFileAttributes.class);
-            permissionsValue.setText(formatPermissions(posix.permissions()));
-            ownerValue.setText(posix.owner().getName());
+            // SFTP returns POSIX attributes but with a null owner/permissions — guard them.
+            permissionsValue.setText(posix.permissions() != null ? formatPermissions(posix.permissions()) : "–");
+            ownerValue.setText(posix.owner() != null ? posix.owner().getName() : "–");
         } catch (IOException | UnsupportedOperationException e) {
             permissionsValue.setText("–");
             ownerValue.setText("–");

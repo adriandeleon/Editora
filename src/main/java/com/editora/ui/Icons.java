@@ -38,6 +38,12 @@ final class Icons {
         return of("M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z");
     }
 
+    /** A cloud glyph marking a remote (SFTP) file/tab. */
+    static Node remote() {
+        return of("M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 "
+                + "3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z");
+    }
+
     /** Source-control branch glyph (Material "account_tree"/fork) for the Git tool window stripe. */
     static Node git() {
         return of("M17 6c0-1.66-1.34-3-3-3s-3 1.34-3 3c0 1.3.84 2.4 2 2.82V11c0 1.1-.9 2-2 2H8.82C8.4 "

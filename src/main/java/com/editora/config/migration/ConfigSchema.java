@@ -3,6 +3,7 @@ package com.editora.config.migration;
 import java.util.Map;
 
 import com.editora.config.BookmarkStore;
+import com.editora.config.ConnectionStore;
 import com.editora.config.BreakpointStore;
 import com.editora.config.NoteStore;
 import com.editora.config.ProjectManager;
@@ -56,7 +57,8 @@ public enum ConfigSchema {
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of()),
     /** Legacy {@code recent-files.json} was a bare JSON array (v0); v1 wraps it in an object. */
     RECENT(RecentFiles.SCHEMA_VERSION, 1, Map.of(0, ConfigMigrations::wrapRecentFilesArray)),
-    NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of());
+    NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of()),
+    CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;
     private final int assumedLegacyVersion;

@@ -39,10 +39,17 @@ module com.editora {
     // java-diff-utils: Myers line diff + unified-diff generation for the diff viewer (com.editora.diff).
     // Automatic module — moditect injects a real descriptor for the jlink dist build.
     requires io.github.javadiffutils;
+    // Apache MINA SSHD: SFTP client + nio FileSystemProvider for remote (SFTP) file access
+    // (com.editora.vfs). The combined sshd-osgi bundle (org.apache.sshd.osgi) avoids the
+    // sshd-common/sshd-core split-package conflict; sshd-sftp adds the SFTP FileSystemProvider.
+    // Automatic modules — moditect injects descriptors for the jlink dist build.
+    requires org.apache.sshd.osgi;
+    requires org.apache.sshd.sftp;
 
     opens com.editora to javafx.fxml;
     opens com.editora.ui to javafx.fxml;
     opens com.editora.config to com.fasterxml.jackson.databind;
+    opens com.editora.vfs to com.fasterxml.jackson.databind; // RemoteConnection record in connections.json
     // Jackson reflects on the snippet JSON DTO (SnippetManager.Dto). The bundled snippet *resources*
     // need no opens — our own SnippetManager reads them via Class.getResourceAsStream.
     opens com.editora.snippet to com.fasterxml.jackson.databind;

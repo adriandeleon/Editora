@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Remote file access (SFTP)** — connect to a server over SSH/SFTP and edit its files as if they were
+  local. **Remote: Connect to SFTP…** opens a connection form (host/port/user, and auth via your default
+  `~/.ssh` keys, a chosen key file, or a password); on connect the remote folder is **mounted in the
+  Project tool window** so you can browse it, and opening a file edits + saves it directly over SFTP. Saved
+  connections are remembered (metadata only — never a password) and reachable via **Remote: Saved
+  Connections…**; **Remote: Open File…** opens a single `sftp://` URI and **Remote: Disconnect** returns to
+  your local project. Features that need a local process (language servers, debugging, Git, Run, the HTTP
+  client) are automatically disabled for remote files. Built on Apache MINA SSHD; no external tools needed.
 - **HTTP Client (`.http`/`.rest` files)** — open a `.http` file with syntax highlighting and a green
   ▶ on every request; click it to run that request and see the response (status, headers, pretty-printed
   JSON body, timing/size) in an "HTTP Client" tool window (`M-0`). Uses Editora's **built-in HTTP

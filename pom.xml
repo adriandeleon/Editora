@@ -41,6 +41,8 @@
         <pdfbox.version>3.0.5</pdfbox.version>
         <lucene.version>10.2.2</lucene.version>
         <javadiffutils.version>4.12</javadiffutils.version>
+        <sshd.version>2.15.0</sshd.version>
+        <slf4j.version>2.0.17</slf4j.version>
         <moditect.version>1.2.2.Final</moditect.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
@@ -222,6 +224,55 @@
             <groupId>io.github.java-diff-utils</groupId>
             <artifactId>java-diff-utils</artifactId>
             <version>${javadiffutils.version}</version>
+        </dependency>
+
+        <!-- Apache MINA SSHD — SFTP client + a real nio FileSystemProvider, so remote (SFTP) files reuse
+             the app's existing Files.*/Path machinery. We use the combined sshd-osgi bundle (module
+             org.apache.sshd.osgi) instead of sshd-common+sshd-core: those two split the
+             org.apache.sshd.common/server packages across two automatic modules (illegal under JPMS).
+             sshd-sftp then excludes them so the split can't reappear transitively. Automatic modules →
+             moditect injects descriptors for the jlink dist build (like pdfbox/tm4e/lsp4j). -->
+        <dependency>
+            <groupId>org.apache.sshd</groupId>
+            <artifactId>sshd-osgi</artifactId>
+            <version>${sshd.version}</version>
+            <exclusions>
+                <!-- jcl-over-slf4j provides module org.apache.commons.logging, which collides with
+                     pdfbox's commons-logging (same module name) and breaks jlink/jpackage. We already
+                     have the real commons-logging, so drop the bridge. -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>jcl-over-slf4j</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.sshd</groupId>
+            <artifactId>sshd-sftp</artifactId>
+            <version>${sshd.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.sshd</groupId>
+                    <artifactId>sshd-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.sshd</groupId>
+                    <artifactId>sshd-common</artifactId>
+                </exclusion>
+                <!-- The JCL→SLF4J bridge provides module org.apache.commons.logging, colliding with
+                     pdfbox's commons-logging under jlink/jpackage; we keep the real commons-logging. -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>jcl-over-slf4j</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- MINA SSHD pins slf4j-api 1.7.36 (an automatic module jlink can't link); force 2.0.17, which
+             is a real JPMS module (and API-compatible for SSHD's logging calls). -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
         </dependency>
 
         <dependency>
@@ -454,7 +505,13 @@
                                 </module>
                                 <!-- LSP4J (+ its JSON-RPC transport) ship only Bundle-SymbolicName, so
                                      jlink needs real descriptors. jsonrpc requires gson (already modular);
-                                     lsp4j requires jsonrpc. Listed in dependency order. -->
+                                     lsp4j requires jsonrpc. Listed in dependency order.
+                                     `<open>true</open>` makes them open modules so gson can reflect into
+                                     lsp4j's DTOs (ClientCapabilities, the jsonrpc.messages types, …) for
+                                     JSON-RPC (de)serialization — under jlink a real module otherwise does
+                                     not open its packages to com.google.gson and `initialize` throws
+                                     InaccessibleObjectException. (On the classpath every automatic module is
+                                     already open, so this only bites the dist build.) -->
                                 <module>
                                     <artifact>
                                         <groupId>org.eclipse.lsp4j</groupId>
@@ -463,6 +520,7 @@
                                     </artifact>
                                     <moduleInfo>
                                         <name>org.eclipse.lsp4j.jsonrpc</name>
+                                        <open>true</open>
                                     </moduleInfo>
                                 </module>
                                 <module>
@@ -473,6 +531,7 @@
                                     </artifact>
                                     <moduleInfo>
                                         <name>org.eclipse.lsp4j</name>
+                                        <open>true</open>
                                     </moduleInfo>
                                 </module>
                                 <!-- DAP JSON-RPC transport: required by lsp4j.debug (must be patched
@@ -485,6 +544,7 @@
                                     </artifact>
                                     <moduleInfo>
                                         <name>org.eclipse.lsp4j.jsonrpc.debug</name>
+                                        <open>true</open>
                                     </moduleInfo>
                                 </module>
                                 <!-- DAP client: same treatment as lsp4j; requires jsonrpc + jsonrpc.debug. -->
@@ -496,6 +556,7 @@
                                     </artifact>
                                     <moduleInfo>
                                         <name>org.eclipse.lsp4j.debug</name>
+                                        <open>true</open>
                                     </moduleInfo>
                                 </module>
                                 <!-- java-diff-utils (diff viewer): Automatic-Module-Name only, deps just
@@ -510,6 +571,47 @@
                                     <moduleInfo>
                                         <name>io.github.javadiffutils</name>
                                     </moduleInfo>
+                                </module>
+                                <!-- Apache MINA SSHD (SFTP remote files): the combined sshd-osgi bundle
+                                     first (so sshd-sftp's descriptor can require it by name), then
+                                     sshd-sftp. Automatic modules, not signed (no signature-strip needed).
+                                     jdeps with the ignore-missing-deps arg handles optional deps such as
+                                     bouncycastle. -->
+                                <module>
+                                    <artifact>
+                                        <groupId>org.apache.sshd</groupId>
+                                        <artifactId>sshd-osgi</artifactId>
+                                        <version>${sshd.version}</version>
+                                    </artifact>
+                                    <!-- Hand-maintained descriptor: the jdeps-generated one (106 exports +
+                                         the RootedFileSystemProvider service) plus `requires org.slf4j`,
+                                         which jdeps drops under ignore-missing-deps — without it every SSHD
+                                         class fails at load time (its static slf4j Logger is unreadable). -->
+                                    <moduleInfoFile>${project.basedir}/src/moditect/module-info-sshd-osgi.java</moduleInfoFile>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.apache.sshd</groupId>
+                                        <artifactId>sshd-sftp</artifactId>
+                                        <version>${sshd.version}</version>
+                                    </artifact>
+                                    <!-- Hand-written: client-only. jdeps under ignore-missing-deps emits no
+                                         requires and a provides for the SFTP *server* SubsystemFactory we
+                                         never use, which jlink then rejects (sftp can't read the service's
+                                         package). We export just the client packages the app touches and
+                                         keep only the nio FileSystemProvider service. -->
+                                    <moduleInfoSource>
+                                        module org.apache.sshd.sftp {
+                                            requires org.apache.sshd.osgi;
+                                            requires org.slf4j;
+                                            exports org.apache.sshd.sftp;
+                                            exports org.apache.sshd.sftp.client;
+                                            exports org.apache.sshd.sftp.client.fs;
+                                            exports org.apache.sshd.sftp.common;
+                                            provides java.nio.file.spi.FileSystemProvider
+                                                with org.apache.sshd.sftp.client.fs.SftpFileSystemProvider;
+                                        }
+                                    </moduleInfoSource>
                                 </module>
                             </modules>
                         </configuration>

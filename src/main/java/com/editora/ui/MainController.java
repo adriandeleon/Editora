@@ -48,6 +48,8 @@ import javafx.scene.Node;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.PasswordField;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
@@ -205,6 +207,9 @@ public class MainController {
     private final com.editora.search.SearchService searchService = new com.editora.search.SearchService();
     private QuickOpen<NoteEntry> notesPalette;
     private QuickOpen<NoteEntry> notesSearchPalette;
+    // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) ---
+    private com.editora.vfs.RemoteFileSystems remoteFs; // lazily created on first remote use
+    private String activeRemoteAuthority;               // the connection backing the mounted remote root
     // --- Git (native-CLI integration; off-thread via GitService) ---
     private final com.editora.git.GitService gitService = new com.editora.git.GitService();
     private final com.editora.mermaid.MermaidService mermaidService = new com.editora.mermaid.MermaidService();
@@ -1827,7 +1832,14 @@ public class MainController {
 
     /** Whether a buffer's language has a registered debug adapter (java/python/javascript). */
     private boolean isDebuggableBuffer(EditorBuffer b) {
-        return b != null && com.editora.dap.DapServerRegistry.isDebuggable(b.getLanguage());
+        return b != null && com.editora.vfs.Vfs.isLocal(b.getPath())
+                && com.editora.dap.DapServerRegistry.isDebuggable(b.getLanguage());
+    }
+
+    /** True when {@code b}'s file is on the local filesystem (or untitled) — the gate for every feature
+     *  that shells out to a local process (LSP/DAP/git/run/HTTP). Remote (SFTP) buffers are text-only. */
+    private boolean isLocalBuffer(EditorBuffer b) {
+        return b != null && com.editora.vfs.Vfs.isLocal(b.getPath());
     }
 
     /** Persists a buffer's breakpoints + (if a session is live) re-sends that file's set to the adapter. */
@@ -2381,7 +2393,8 @@ public class MainController {
         Path path = buffer.getPath();
         String lang = buffer.getLanguage();
         String serverId = com.editora.lsp.LspServerRegistry.serverIdFor(lang);
-        boolean eligible = lspEnabled() && path != null && serverId != null && serverEnabled(serverId)
+        boolean eligible = lspEnabled() && path != null && com.editora.vfs.Vfs.isLocal(path)
+                && serverId != null && serverEnabled(serverId)
                 && Boolean.TRUE.equals(lspServerAvailable.get(serverId));
         if (eligible) {
             if (!lspManager.isManaged(path)) {
@@ -2781,6 +2794,11 @@ public class MainController {
         EditorBuffer b = activeBuffer();
         Path file = b == null ? null : b.getPath();
         Path context = gitContextPath();
+        // Git shells out to a local process — a remote (SFTP) context has no local repo.
+        if (context != null && !com.editora.vfs.Vfs.isLocal(context)) {
+            applyGitState(com.editora.git.GitService.RepoState.NONE);
+            return;
+        }
         // Only diff a real, non-huge file (huge files disable the gutter anyway).
         Path diffFile = (file != null && b != null && !b.isLargeFile()) ? file : null;
         gitService.refresh(context, diffFile, this::applyGitState);
@@ -3423,6 +3441,193 @@ public class MainController {
                 }, null, false);
     }
 
+    // ===== Remote files (SFTP) =====
+
+    private com.editora.vfs.RemoteFileSystems remoteFs() {
+        if (remoteFs == null) {
+            remoteFs = new com.editora.vfs.RemoteFileSystems(); // starts the SSH client + wires Vfs resolver
+        }
+        return remoteFs;
+    }
+
+    private void connectRemote() {
+        connectRemote(null);
+    }
+
+    /** Shows the SFTP connection form (optionally pre-filled from a saved connection); on success, mounts
+     *  the remote folder in the Project tool window. */
+    private void connectRemote(com.editora.vfs.RemoteConnection prefill) {
+        TextField hostField = new TextField();
+        hostField.setPromptText(tr("remote.hostPrompt"));
+        hostField.setPrefColumnCount(24);
+        com.editora.command.TextInputKeymap.install(hostField, keymap);
+        TextField portField = new TextField("22");
+        portField.setPrefColumnCount(5);
+        TextField userField = new TextField(System.getProperty("user.name", ""));
+        userField.setPrefColumnCount(16);
+        com.editora.command.TextInputKeymap.install(userField, keymap);
+        TextField pathField = new TextField();
+        pathField.setPromptText(tr("remote.pathPrompt"));
+        com.editora.command.TextInputKeymap.install(pathField, keymap);
+
+        ComboBox<com.editora.vfs.RemoteConnection.AuthMethod> authCombo = new ComboBox<>();
+        authCombo.getItems().setAll(com.editora.vfs.RemoteConnection.AuthMethod.values());
+        authCombo.setValue(com.editora.vfs.RemoteConnection.AuthMethod.DEFAULT_KEYS);
+        authCombo.setConverter(new javafx.util.StringConverter<com.editora.vfs.RemoteConnection.AuthMethod>() {
+            @Override
+            public String toString(com.editora.vfs.RemoteConnection.AuthMethod m) {
+                return m == null ? "" : switch (m) {
+                    case DEFAULT_KEYS -> tr("remote.auth.defaultKeys");
+                    case KEY -> tr("remote.auth.key");
+                    case PASSWORD -> tr("remote.auth.password");
+                };
+            }
+
+            @Override
+            public com.editora.vfs.RemoteConnection.AuthMethod fromString(String s) {
+                return null;
+            }
+        });
+        PasswordField secretField = new PasswordField();
+        secretField.setPromptText(tr("remote.secretPrompt"));
+        TextField keyField = new TextField();
+        keyField.setPromptText(tr("remote.keyPrompt"));
+        com.editora.command.TextInputKeymap.install(keyField, keymap);
+        Button keyBrowse = new Button(tr("dialog.clone.browse"));
+        keyBrowse.setFocusTraversable(false);
+        keyBrowse.setOnAction(e -> {
+            FileChooser fc = new FileChooser();
+            fc.setTitle(tr("remote.keyPrompt"));
+            java.io.File f = fc.showOpenDialog(stage);
+            if (f != null) {
+                keyField.setText(f.getAbsolutePath());
+            }
+        });
+        // Show only the fields relevant to the chosen auth method.
+        Runnable syncAuth = () -> {
+            var m = authCombo.getValue();
+            boolean key = m == com.editora.vfs.RemoteConnection.AuthMethod.KEY;
+            boolean pwd = m == com.editora.vfs.RemoteConnection.AuthMethod.PASSWORD;
+            keyField.setDisable(!key);
+            keyBrowse.setDisable(!key);
+            secretField.setDisable(!key && !pwd);
+            secretField.setPromptText(pwd ? tr("remote.secretPrompt") : tr("remote.passphrasePrompt"));
+        };
+        authCombo.valueProperty().addListener((o, a, b) -> syncAuth.run());
+        if (prefill != null) { // reconnecting a saved connection — fill everything but the secret
+            hostField.setText(prefill.host());
+            portField.setText(String.valueOf(prefill.port()));
+            userField.setText(prefill.user() == null ? "" : prefill.user());
+            authCombo.setValue(prefill.auth());
+            keyField.setText(prefill.keyPath() == null ? "" : prefill.keyPath());
+            pathField.setText(prefill.lastPath() == null ? "" : prefill.lastPath());
+        }
+        syncAuth.run();
+
+        GridPane grid = new GridPane();
+        grid.setHgap(8);
+        grid.setVgap(8);
+        grid.add(new Label(tr("remote.host")), 0, 0);
+        grid.add(hostField, 1, 0);
+        grid.add(new Label(tr("remote.port")), 2, 0);
+        grid.add(portField, 3, 0);
+        grid.add(new Label(tr("remote.user")), 0, 1);
+        grid.add(userField, 1, 1);
+        grid.add(new Label(tr("remote.auth")), 0, 2);
+        grid.add(authCombo, 1, 2, 3, 1);
+        grid.add(new Label(tr("remote.key")), 0, 3);
+        grid.add(keyField, 1, 3, 2, 1);
+        grid.add(keyBrowse, 3, 3);
+        grid.add(new Label(tr("remote.secret")), 0, 4);
+        grid.add(secretField, 1, 4, 3, 1);
+        grid.add(new Label(tr("remote.path")), 0, 5);
+        grid.add(pathField, 1, 5, 3, 1);
+        GridPane.setHgrow(hostField, Priority.ALWAYS);
+
+        javafx.beans.property.BooleanProperty valid = new javafx.beans.property.SimpleBooleanProperty(false);
+        Runnable revalidate = () -> valid.set(!hostField.getText().isBlank() && !userField.getText().isBlank());
+        hostField.textProperty().addListener((o, a, b) -> revalidate.run());
+        userField.textProperty().addListener((o, a, b) -> revalidate.run());
+        revalidate.run();
+
+        OverlayInput.show(overlayHost, tr("remote.connect.title"), grid, hostField, tr("remote.connect.button"),
+                valid, () -> {
+                    int port = 22;
+                    try {
+                        port = Integer.parseInt(portField.getText().strip());
+                    } catch (NumberFormatException ignore) {
+                        // keep the default port
+                    }
+                    String path = pathField.getText().strip();
+                    com.editora.vfs.RemoteConnection conn = new com.editora.vfs.RemoteConnection(
+                            hostField.getText().strip(), port, userField.getText().strip(),
+                            authCombo.getValue(), keyField.getText().strip(), null,
+                            path.isEmpty() ? null : path);
+                    char[] secret = secretField.getText().isEmpty() ? null : secretField.getText().toCharArray();
+                    setStatus(tr("status.remote.connecting", conn.displayLabel()));
+                    remoteFs().connect(conn, secret, r -> {
+                        if (r.ok()) {
+                            mountRemote(conn, r.root());
+                        } else {
+                            gitError(tr("status.remote.failed", conn.displayLabel()), r.error());
+                        }
+                    });
+                }, null, false);
+    }
+
+    /** Mounts a connected remote folder as the Project tree root + opens the Project tool window. */
+    private void mountRemote(com.editora.vfs.RemoteConnection conn, Path root) {
+        activeRemoteAuthority = conn.id();
+        config.putConnection(conn); // remember the connection (metadata only — no secret) for next time
+        projectPanel.setRoot(root);
+        toolWindows.open(projectToolWindow);
+        setStatus(tr("status.remote.connected", conn.displayLabel()));
+    }
+
+    /** A picker over the saved SFTP connections; choosing one re-opens the connect form pre-filled. */
+    private void manageRemoteConnections() {
+        var saved = config.getConnections();
+        if (saved.isEmpty()) {
+            connectRemote(); // nothing saved yet — go straight to a fresh connection
+            return;
+        }
+        QuickOpen<com.editora.vfs.RemoteConnection> picker = new QuickOpen<>(
+                tr("remote.manage.title"), tr("remote.manage.prompt"),
+                () -> List.copyOf(config.getConnections()),
+                com.editora.vfs.RemoteConnection::displayLabel,
+                com.editora.vfs.RemoteConnection::id,
+                this::connectRemote);
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Opens a single remote file from an {@code sftp://user@host/path} URI (its connection must be open). */
+    private void openRemoteFile() {
+        promptText(tr("remote.openFile.title"), tr("remote.openFile.label"), "sftp://", uri -> {
+            Path p = com.editora.vfs.Vfs.parseStorable(uri.strip());
+            if (p == null) {
+                setStatus(tr("status.remote.notConnected"));
+                return;
+            }
+            openPath(p);
+        });
+    }
+
+    /** Disconnects the mounted remote folder and returns the Project tree to the active local project. */
+    private void disconnectRemote() {
+        if (activeRemoteAuthority == null || remoteFs == null) {
+            setStatus(tr("status.remote.notConnected"));
+            return;
+        }
+        remoteFs.disconnect(activeRemoteAuthority);
+        activeRemoteAuthority = null;
+        Project active = projects.active();
+        if (active != null) {
+            projectPanel.setRoot(Path.of(active.root()));
+        }
+        setStatus(tr("status.remote.disconnected"));
+    }
+
     /**
      * Opens a representative file from a freshly cloned repo (its README if present) so Git activates
      * for it — no project involved. If there's no obvious entry file, the clone is just reported and the
@@ -3917,10 +4122,11 @@ public class MainController {
             }
         });
         buffer.setRunHandler(this::runActiveFile); // "Run File" editor right-click item (runnable files)
-        buffer.setRunEnabled(lspEnabled()); // the Run affordance is gated by the LSP feature
-        buffer.setShellRunEnabled(lspEnabled() && config.getSettings().isBashLspEnabled());
+        boolean local = isLocalBuffer(buffer); // remote (SFTP) files can't run a local process
+        buffer.setRunEnabled(lspEnabled() && local); // the Run affordance is gated by the LSP feature
+        buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
         buffer.setHttpRunHandler(line -> runHttpRequest(buffer, line)); // .http request ▶
-        buffer.setHttpEnabled(httpEnabled());
+        buffer.setHttpEnabled(httpEnabled() && local);
         // Debugging: the leftmost breakpoint gutter strip + persistence + live re-send to a session
         // (only for debuggable languages — java/python/javascript).
         buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
@@ -4046,6 +4252,11 @@ public class MainController {
         if (isPinned) {
             header.getChildren().add(Icons.pin());
         }
+        Path p = buffer.getPath();
+        boolean remote = com.editora.vfs.Vfs.isRemote(p);
+        if (remote) {
+            header.getChildren().add(Icons.remote()); // cloud glyph: this file lives on a remote host
+        }
         header.getChildren().add(title);
         enableTabDrag(header, tab);
         tab.setText("");
@@ -4053,8 +4264,9 @@ public class MainController {
         toggleClass(tab, "dirty", dirty);
         toggleClass(tab, "pinned", isPinned);
         toggleClass(tab, "read-only", !buffer.isEditable());
-        Path p = buffer.getPath();
-        tab.setTooltip(new Tooltip(p != null ? p.toAbsolutePath().toString() : "untitled"));
+        toggleClass(tab, "remote", remote);
+        tab.setTooltip(new Tooltip(p == null ? "untitled"
+                : remote ? com.editora.vfs.Vfs.displayLabel(p) : p.toAbsolutePath().toString()));
     }
 
     /** Wires drag-and-drop on a tab's header so the user can reorder the strip with the mouse. */
@@ -4334,6 +4546,9 @@ public class MainController {
                 return;
             }
             Path file = buffer.getPath();
+            if (com.editora.vfs.Vfs.isRemote(file)) {
+                return; // remote (SFTP) mtime polling would be a network call per focus — skipped for now
+            }
             if (!Files.exists(file)) {
                 return; // deleted/renamed externally — keep what's open (no prompt)
             }
@@ -4428,6 +4643,12 @@ public class MainController {
     }
 
     private boolean saveAs(EditorBuffer buffer) {
+        if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
+            // A remote buffer always opens with a path, so plain Save writes it back over SFTP; choosing a
+            // new remote destination (an async prompt) isn't supported yet.
+            setStatus(tr("status.remote.saveAsUnsupported"));
+            return false;
+        }
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("dialog.saveAs.title"));
         if (buffer.getDisplayName() != null) {
@@ -4902,15 +5123,25 @@ public class MainController {
     }
 
     private Tab tabForPath(Path file) {
-        Path target = canonicalPath(file);
+        String target = pathKey(file);
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             Path p = buffer == null ? null : buffer.getPath();
-            if (p != null && canonicalPath(p).equals(target)) {
+            if (p != null && pathKey(p).equals(target)) {
                 return tab;
             }
         }
         return null;
+    }
+
+    /** A provider-safe identity key for a path: the canonical string for a local file, the {@code sftp://}
+     *  URI for a remote one. Avoids {@code Path.equals} across filesystems (MINA SFTP paths throw a
+     *  {@link java.nio.file.ProviderMismatchException} when compared to a local path) and a network
+     *  {@code toRealPath()} for remote files. */
+    private static String pathKey(Path p) {
+        return com.editora.vfs.Vfs.isRemote(p)
+                ? com.editora.vfs.Vfs.toStorableString(p)
+                : canonicalPath(p).toString();
     }
 
     /** A path for cross-source identity comparison: the real (symlink-resolved) path when it exists,
@@ -7862,6 +8093,10 @@ public class MainController {
                 () -> ifGit(() -> toolWindows.toggle(commitToolWindow))));
         // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
         // absent / not in a repo. The ifGit wrapper disables the commands + keybindings when Git is off.
+        registry.register(Command.of("remote.connect", this::connectRemote));
+        registry.register(Command.of("remote.openFile", this::openRemoteFile));
+        registry.register(Command.of("remote.manageConnections", this::manageRemoteConnections));
+        registry.register(Command.of("remote.disconnect", this::disconnectRemote));
         registry.register(Command.of("git.clone", () -> ifGit(this::gitClone)));
         registry.register(Command.of("git.commit", () -> ifGit(this::gitCommitFocus)));
         registry.register(Command.of("git.stageFile",

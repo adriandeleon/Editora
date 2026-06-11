@@ -196,7 +196,8 @@ public final class LspManager {
     }
 
     public boolean isManaged(Path file) {
-        return file != null && sessionByDocUri.containsKey(uri(file));
+        // A remote (SFTP) file is never LSP-managed; bail before uri(), whose toUri() throws for such paths.
+        return file != null && com.editora.vfs.Vfs.isLocal(file) && sessionByDocUri.containsKey(uri(file));
     }
 
     private LanguageServerSession sessionForRoot(Path root, String languageId) {

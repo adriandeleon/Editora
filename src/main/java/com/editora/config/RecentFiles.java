@@ -56,7 +56,10 @@ public class RecentFiles {
         if (path == null) {
             return;
         }
-        recents.remove(path);
+        // De-dupe by the storable string, not Path.equals — a remote (SFTP) Path.equals against a local
+        // Path throws ProviderMismatchException, so a mixed local/remote list can't be compared directly.
+        String key = com.editora.vfs.Vfs.toStorableString(path);
+        recents.removeIf(p -> com.editora.vfs.Vfs.toStorableString(p).equals(key));
         recents.add(0, path);
         while (recents.size() > MAX_ENTRIES) {
             recents.remove(recents.size() - 1);
@@ -65,7 +68,11 @@ public class RecentFiles {
     }
 
     public void remove(Path path) {
-        if (recents.remove(path)) {
+        if (path == null) {
+            return;
+        }
+        String key = com.editora.vfs.Vfs.toStorableString(path);
+        if (recents.removeIf(p -> com.editora.vfs.Vfs.toStorableString(p).equals(key))) {
             save();
         }
     }
@@ -79,14 +86,20 @@ public class RecentFiles {
 
     private void load() {
         Stored stored = ConfigMigrations.readVersioned(file, mapper, new Stored(), ConfigSchema.RECENT);
-        recents.setAll(stored.files.stream().map(Path::of).limit(MAX_ENTRIES).toList());
+        // Local paths round-trip as plain strings; remote (sftp://) entries resolve only once their
+        // connection is open (else parseStorable returns null and the entry is dropped on this load).
+        recents.setAll(stored.files.stream()
+                .map(com.editora.vfs.Vfs::parseStorable)
+                .filter(java.util.Objects::nonNull)
+                .limit(MAX_ENTRIES)
+                .toList());
     }
 
     private void save() {
         try {
             Files.createDirectories(file.getParent());
             Stored stored = new Stored();
-            stored.files = recents.stream().map(Path::toString).toList();
+            stored.files = recents.stream().map(com.editora.vfs.Vfs::toStorableString).toList();
             mapper.writeValue(file.toFile(), stored);
         } catch (IOException e) {
             // Best effort.

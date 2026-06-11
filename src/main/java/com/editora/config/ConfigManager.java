@@ -36,6 +36,7 @@ public class ConfigManager {
     static final String BOOKMARKS_FILE_NAME = "bookmarks.json";
     static final String BREAKPOINTS_FILE_NAME = "breakpoints.json";
     static final String NOTES_FILE_NAME = "notes.json";
+    static final String CONNECTIONS_FILE_NAME = "connections.json";
     static final String DICTIONARY_FILE_NAME = "dictionary.txt";
     static final String PROJECTS_DIR_NAME = "projects";
 
@@ -55,6 +56,8 @@ public class ConfigManager {
     private NoteStore noteStore = new NoteStore();
     /** Breakpoints (all files/projects), stored in {@code breakpoints.json} — see {@link BreakpointStore}. */
     private BreakpointStore breakpointStore = new BreakpointStore();
+    /** Saved SFTP connections (metadata only, no secrets), stored in {@code connections.json}. */
+    private ConnectionStore connectionStore = new ConnectionStore();
     /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
     private final java.util.Set<String> userDictionary = new java.util.LinkedHashSet<>();
     /** The session-state file currently in use — the default, or a project's state file. */
@@ -145,6 +148,34 @@ public class ConfigManager {
         return configDir.resolve(BREAKPOINTS_FILE_NAME);
     }
 
+    public Path getConnectionsFile() {
+        return configDir.resolve(CONNECTIONS_FILE_NAME);
+    }
+
+    /** The saved SFTP connections (metadata only), most-recent first. */
+    public List<com.editora.vfs.RemoteConnection> getConnections() {
+        return connectionStore.connections;
+    }
+
+    /** Saves (or refreshes) a connection and persists {@code connections.json}. */
+    public void putConnection(com.editora.vfs.RemoteConnection conn) {
+        connectionStore.put(conn);
+        saveConnections();
+    }
+
+    public void removeConnection(String id) {
+        connectionStore.remove(id);
+        saveConnections();
+    }
+
+    public void saveConnections() {
+        try {
+            json.writeValue(getConnectionsFile().toFile(), connectionStore);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write connections to " + getConnectionsFile(), e);
+        }
+    }
+
     /**
      * Personal Notes (canonical file path -> notes) for the <em>active</em> project — bucket chosen by the
      * current session file, exactly like {@link #getBookmarks()}. Persist changes with {@link #saveNotes()}.
@@ -218,6 +249,7 @@ public class ConfigManager {
         loadBookmarks();
         loadBreakpoints();
         loadNotes();
+        loadConnections();
         loadUserDictionary();
         return settings;
     }
@@ -285,6 +317,15 @@ public class ConfigManager {
     }
 
     /** Loads {@code breakpoints.json} (a fresh, empty store if it doesn't exist yet — no legacy migration). */
+    private void loadConnections() {
+        if (Files.exists(getConnectionsFile())) {
+            connectionStore = ConfigMigrations.readVersioned(
+                    getConnectionsFile(), json, new ConnectionStore(), ConfigSchema.CONNECTIONS);
+        } else {
+            connectionStore = new ConnectionStore();
+        }
+    }
+
     private void loadBreakpoints() {
         if (Files.exists(getBreakpointsFile())) {
             breakpointStore = ConfigMigrations.readVersioned(
