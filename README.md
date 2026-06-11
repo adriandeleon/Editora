@@ -48,9 +48,10 @@ Emacs-style keymap or a fuzzy command palette.
   (On macOS, the Option dead keys `Option`+`e`/`i`/`u`/`n`/`` ` `` are intercepted by the OS for
   accent composition, so a few `M-`-chords like `M-e` aren't reachable by keyboard there — the
   command palette still works.)
-- **Syntax highlighting** — TextMate grammars (via [tm4e](https://github.com/eclipse/tm4e))
-  for 21 languages: Java, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin,
-  Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, and SQL.
+- **Syntax highlighting** — TextMate grammars (via [tm4e](https://github.com/eclipse/tm4e)) for 30+
+  languages: Java, TypeScript/JavaScript, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin,
+  Ruby, PHP, C, C++, Rust, Go, C#, Lua, Markdown, JSON, CSS, HTML, YAML, INI, TOML, SQL, Dockerfile,
+  Terraform/HCL, Mermaid, and `.http`.
 - **Bundled fonts** — JetBrains Mono (default), Cascadia Code, Fira Code, IBM Plex Mono,
   and Source Code Pro ship with the app; no system install required.
 - **Editor view options** — 80-column ruler and current-line highlight.
@@ -63,11 +64,33 @@ Emacs-style keymap or a fuzzy command palette.
   bracket matching the one next to the caret is highlighted.
 - **Comment / uncomment** (`M-;`) — toggles a line comment for a single line and a block/region comment
   for a multi-line selection, using the language's comment syntax (`//`, `#`, `<!-- -->`, `/* */`, `--`, …).
+- **Multiple cursors & column selection** — VS Code–style multi-caret editing: add a caret at the next
+  occurrence of the selection / above / below, type or edit everywhere at once, `Esc` to collapse; plus
+  Alt-drag column/box selection. (Powered by a personal RichTextFX fork.)
 - **Spell checking** — red wavy underlines on misspelled words, with right-click suggestions,
   Add-to-Dictionary, and Ignore. Source files only check comments and string literals; plaintext and
   Markdown are checked in full. Toggle via "View: Toggle Spell Check"; choose a dictionary per file
   ("Spell Check: Set Language…", ships English en_US/en_GB, Spanish, and French). Pure-Java (Apache
   Lucene Hunspell).
+- **Code intelligence (LSP)** — language smarts via the Language Server Protocol, with **21 servers**
+  auto-detected on `PATH` (Java/JDT LS, TypeScript/JavaScript, Python/Pyright, Go, Rust, C/C++/clangd,
+  C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML).
+  Inline diagnostics + a Problems tool window (`M-8`) + minimap/scrollbar stripes, go-to-definition
+  (`M-.`), find references (`M-?`), hover docs (`C-c h`), LSP-backed completion, and auto-imports.
+  Off by default; per-server command + enable in *Settings → LSP*.
+- **Search** — incremental find bar (`C-s`/`C-r`) with regex, case, and whole-word toggles, a match
+  count, and live highlight-all; **Find in Files** (`C-S-f`) across the project + open buffers with
+  replace-in-files and a results tool window (`M-6`); and **AceJump** (`M-g j`) — type a character, then
+  a label, to fly the caret to any on-screen occurrence.
+- **Run a file from a gutter ▶** — a green play glyph runs a Java 25 compact-source file
+  (`java <file>`), a Python script (`python3`), or a shell script (`bash`); output streams into a Run
+  tool window (`M-9`) with clickable stack traces, stdin, and per-file program arguments. Gated by the
+  LSP feature.
+- **Debugging (DAP)** — a full debugger for **Java**, **Python** (debugpy), and **JavaScript/Node**
+  (vscode-js-debug): breakpoints (conditional / logpoints), step / resume / pause / run-to-cursor /
+  jump-to-line, call stack, variables, watches and set-value, inline values and a value-hover popup, and
+  an IntelliJ-style Debug tool window (`M-g d`). Off by default (*Settings → Debugging*); adapters are
+  user-installed (helper scripts provided).
 - **Read-only / View mode** — toggle a buffer read-only (`C-x C-q` or the palette) to view without
   editing; typing and edit commands are blocked while everything else keeps working. Files that aren't
   writable on disk open read-only automatically, and the per-file state is remembered across restarts.
@@ -94,12 +117,19 @@ Emacs-style keymap or a fuzzy command palette.
   vector text (headings, lists, tables, images, embedded diagrams), or a standalone Mermaid `.mmd`
   diagram. Run "File: Export to PDF" / "File: Export Preview to PDF" from the palette; choose line
   numbers, syntax highlighting, and page size (Letter / A4) under *Settings → Editor → PDF Export*.
+- **Print** — native printing of code or the rendered Markdown preview, with a print-preview window
+  first (always light, what-you-preview-is-what-prints), reusing the PDF layout core. Run "File: Print"
+  / "File: Print Preview" from the palette.
 - **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a prefix + Tab to
   expand (or pick via `C-c i` / "Snippet: Insert…"); Tab/Shift-Tab cycle fields, placeholders are
   pre-selected, mirrors update live, `$0` is the final caret. Standard body syntax (`$1`,
   `${1:default}`, mirrors, choices, variables, escapes). Snippets ship for all 21 highlighted languages
   (most from the MIT [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection);
   add your own in `~/.editora/snippets/<language>.json` (user snippets override bundled).
+- **File templates** — "New File From Template" (`C-c C-n`) creates a file (or a whole set of files) from
+  a reusable template, prompting for any `${variables}` in a wizard and placing the caret at `${cursor}`.
+  Bundled templates (Java class, HTML page / multi-file bundle, Markdown doc, Python script) plus your
+  own in `~/.editora/templates/`.
 - **Autocomplete** — appears as you type (and on demand via `C-M-i` / `M-/`). In **code**, a popup of
   **snippet** completions (accepting expands the snippet with its tab stops; Enter/Tab accept, arrows
   navigate). In **prose** (plain text / Markdown), inline **"ghost text"** — a single greyed
@@ -133,7 +163,23 @@ Emacs-style keymap or a fuzzy command palette.
   current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
   repo and opens a file from it — independent of projects). All off the UI thread; hidden when not in a
   repo or when `git` isn't on `PATH`.
-- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Bookmarks, Personal Notes, Structure, File Information).
+- **Diff viewer & merge** — compare files in a dedicated tab: side-by-side or unified, with word-level
+  intra-line highlights, prev/next-change navigation, apply-a-hunk / apply-all (undoable), live refresh,
+  and patch export. Diff against `HEAD` (`C-x v =`), another commit, or any other file; a separate
+  merge-conflict resolver accepts ours / theirs / both per conflict.
+- **HTTP client** — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
+  Editora's **built-in** HTTP client; the response (status, headers, pretty-printed JSON body, timing/
+  size) shows in an HTTP Client tool window (`M-0`). Supports `{{variable}}`/`@var` substitution,
+  environment files (`http-client.env.json`) with a picker, run-whole-file, and saving the response. Off
+  by default (*Settings → HTTP Client*).
+- **Remote files (SFTP)** — connect to a server over SSH/SFTP (*Remote: Connect to SFTP…*) and edit its
+  files as if they were local: the remote folder mounts in the Project tool window, and open/edit/save go
+  straight over SFTP. Authenticates with your default `~/.ssh` keys, a chosen key file, or a password;
+  saved connections (metadata only — never a password) reconnect via a picker. Features that need a local
+  process (language servers, debugging, Git, Run, the HTTP client) auto-disable for remote files. Off by
+  default; built on Apache MINA SSHD.
+- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Structure, File Information,
+  Bookmarks, Personal Notes, Problems, Search Results, Run, Debug, HTTP Client).
 - **Settings** — a category sidebar (Appearance, Editor, Tool Windows, Spell Check, Application, …) with a
   search box, a live font/theme preview, and Reset to Defaults. Changes apply instantly.
 - **Multi-language interface** — run Editora in **English, Italian, Spanish, French, Portuguese, or
@@ -224,8 +270,9 @@ print and exit without opening a window. Works on macOS, Linux, and Windows.
 User preferences live in `~/.editora/settings.toml` (font, theme, keymap, tab size,
 view options, auto-save mode, and keybinding overrides). Session state — collapsed fold
 regions and tool-window layout — is stored as JSON in `workspace-state.json`, recent
-files in `recent-files.json`, bookmarks (scoped per project) in `bookmarks.json`, and
-personal notes (also scoped per project) in `notes.json`, all alongside it.
+files in `recent-files.json`, bookmarks and breakpoints (scoped per project) in `bookmarks.json` /
+`breakpoints.json`, personal notes (also scoped per project) in `notes.json`, and saved SFTP
+connections (metadata only, never a password) in `connections.json`, all alongside it.
 
 To use a different config folder, pass `--config-dir <path>` (or `--config-dir=<path>`) on the command
 line, or set the `EDITORA_CONFIG_DIR` environment variable. Precedence is **`--config-dir` >

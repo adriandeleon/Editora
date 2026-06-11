@@ -183,6 +183,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line's *text* (the first non-whitespace character); a second press toggles to the true line start
   (column 0). Shift-extends selection as before. Applies in the editor for every file type.
 
+### Fixed
+
+- **LSP (and DAP) failed to initialize in the packaged native build** — in the modular `jlink` runtime,
+  `lsp4j` is a real module that didn't open its packages to `gson`, so its JSON-RPC `initialize` threw
+  `InaccessibleObjectException` the moment a language server (or debugger) started. The `lsp4j` modules
+  are now built as open modules. Only affected the installers / app image (not `mvn javafx:run`).
+
 ### Added
 
 - **LSP support for C/C++, C#, HTML, CSS, Kotlin, Lua, Dockerfile, SQL, Terraform, and TOML** — ten more

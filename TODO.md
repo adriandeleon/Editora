@@ -3,6 +3,26 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Remote file access (SFTP) — connect over SSH/SFTP and edit a server's files as if local: the remote
+      folder mounts in the Project tool window, open/edit/save go straight over SFTP, saved connections
+      (metadata only) reconnect via a picker; local-process features (LSP/DAP/Git/Run/HTTP) auto-disable
+      for remote files. Off by default; built on Apache MINA SSHD (Remote: Connect / Saved Connections /
+      Open File / Disconnect)
+- [x] HTTP Client (`.http`/`.rest` files) — a green ▶ on every request runs it with the built-in JDK
+      HTTP client; response (status/headers/pretty-JSON/timing) in an HTTP Client tool window (`M-0`);
+      `{{var}}`/`@var` substitution, environment files (`http-client.env.json`), run-whole-file
+- [x] File templates — "New File From Template" (`C-c C-n`): single- or multi-file templates with a
+      `${var}` wizard and `$0`/`${cursor}` placeholders; bundled (Java class, HTML page/bundle, Markdown,
+      Python) + user templates in `~/.editora/templates/`
+- [x] Debugging (DAP) — full debugger for **Java** (java-debug over jdtls), **Python** (debugpy), and
+      **JavaScript/Node** (vscode-js-debug): breakpoints (conditional/logpoints), step/resume/pause/
+      run-to-cursor/jump-to-line, call stack + variables + watches + set-value, inline values + hover, an
+      IntelliJ-style Debug tool window (`M-g d`); off by default
+- [x] Diff viewer & merge — side-by-side / unified diff (vs HEAD, a commit, or another file) with
+      word-level highlights, prev/next nav, apply-hunk / apply-all (undoable), live refresh, patch export;
+      a merge-conflict resolver (accept ours/theirs/both)
+- [x] Multiple cursors & column/box selection — VS Code–style multi-caret editing (add caret at next
+      occurrence / above / below) + Alt-drag column selection, via the personal RichTextFX fork
 - [x] LSP support — **21 language servers** auto-detected on PATH (per-server Settings command + enable,
       off by default): Java (JDT LS), TypeScript/JavaScript, Python (Pyright), XML (lemminx), JSON,
       Bash/Shell, YAML, Go (gopls), Rust (rust-analyzer), PHP (phpactor), Ruby (ruby-lsp), C/C++ (clangd),
@@ -57,7 +77,8 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Markdown formatting — format bar + smart list/heading/link/table editing (see "Recently shipped")
 - [ ] Format document — whole-document reformat (will ride LSP formatting; GFM table reflow exists)
 - [x] Column select support — column/block selection (overlay + column-aware edits)
-- [ ] Multiple cursors support
+- [x] Multiple cursors support — VS Code–style multi-caret (add at next occurrence / above / below) +
+      Alt-drag column selection (personal RichTextFX fork); see "Recently shipped"
 - [ ] Advanced Undo/Redo support
 - [x] Spell check support — Lucene Hunspell, red squiggles, suggestions, user dictionary, en_US/en_GB
 - [x] Private comments/notes — see **Personal Notes** under "Recently shipped"
@@ -86,11 +107,14 @@ A backlog of planned features and improvements. Unordered within each section.
 
 ## Files & version control
 - [x] Git support — native CLI (branch/status, gutter change bars, commit workflow, fetch/pull/push)
-- [ ] Git: history / log view, file blame, side-by-side diff viewer, merge-conflict UI (later phase)
+- [x] Diff viewer + merge-conflict UI — side-by-side / unified diff (vs HEAD / commit / another file),
+      word-level highlights, apply-hunk / apply-all, patch export, merge-conflict resolver
+- [ ] Git: history / log view, file blame (later phase)
 - [ ] Local History support
 - [x] Detect external file changes — prompt to reload when a file changes on disk (focus-regain / tab switch)
 - [ ] Auto-reload modified files
-- [ ] Remote file editing support
+- [x] Remote file editing support — SSH/SFTP: browse/open/edit/save remote files; saved connections
+      (metadata only); local-process features auto-disable for remote (see "Recently shipped")
 - [ ] Log mode support
 
 ## Keybindings
