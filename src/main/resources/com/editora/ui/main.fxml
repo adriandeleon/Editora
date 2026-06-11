@@ -41,6 +41,7 @@
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="paletteButton" onAction="#onPalette"/>
                         <Separator orientation="VERTICAL"/>
+                        <Button fx:id="simpleModeButton" onAction="#onToggleSimpleMode"/>
                         <Button fx:id="settingsButton" onAction="#onSettings"/>
                         <Button fx:id="aboutButton" onAction="#onAbout"/>
                         <Separator orientation="VERTICAL"/>

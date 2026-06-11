@@ -124,7 +124,7 @@ public class App extends Application {
         var raw = getParameters().getRaw();
         String project = projectArg(raw);
         controller.startup(project == null ? null : java.nio.file.Path.of(project),
-                fileTargets(raw), zenFlag(raw), newFileArg(raw));
+                fileTargets(raw), zenFlag(raw), newFileArg(raw), simpleFlag(raw));
     }
 
     /** True when running on macOS (used to opt the UI chrome into the native system font). */
@@ -281,6 +281,7 @@ public class App extends Application {
                   --project[=]<dir>     Open <dir> as a project (only when Projects are enabled)
                   --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named)
                   --zen                 Start in Zen (distraction-free) mode
+                  --simple              Start in Simple UI mode (minimal chrome; session only)
                   --version, -V         Print the version and exit
                   --help, -h            Print this help and exit
 
@@ -303,6 +304,11 @@ public class App extends Application {
     /** True if {@code --zen} is present. */
     static boolean zenFlag(java.util.List<String> args) {
         return args != null && args.contains("--zen");
+    }
+
+    /** True if {@code --simple} is present (session-only Simple UI mode override). */
+    static boolean simpleFlag(java.util.List<String> args) {
+        return args != null && args.contains("--simple");
     }
 
     /**

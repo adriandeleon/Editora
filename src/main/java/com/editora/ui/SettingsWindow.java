@@ -131,6 +131,7 @@ public class SettingsWindow {
     private CheckBox statusBarCheck;
     private CheckBox tabBarCheck;
     private CheckBox breadcrumbCheck;
+    private CheckBox simpleModeCheck;
     private CheckBox toolStripeCheck;
     private CheckBox markdownFormatBarCheck;
     private CheckBox multiCaretCheck;
@@ -484,6 +485,7 @@ public class SettingsWindow {
         statusBarCheck = viewCheck(tr("settings.showStatusBar"), Settings::setShowStatusBar);
         tabBarCheck = viewCheck(tr("settings.showTabBar"), Settings::setShowTabBar);
         breadcrumbCheck = viewCheck(tr("settings.showBreadcrumb"), Settings::setShowBreadcrumb);
+        simpleModeCheck = viewCheck(tr("settings.simpleMode"), Settings::setSimpleMode);
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
         markdownFormatBarCheck = viewCheck(tr("settings.markdownFormatBar"), Settings::setMarkdownFormatBar);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
@@ -742,6 +744,8 @@ public class SettingsWindow {
         row(p, Category.APPLICATION, chrome, statusBarCheck, "status bar");
         row(p, Category.APPLICATION, chrome, tabBarCheck, "tab bar tabs");
         row(p, Category.APPLICATION, chrome, breadcrumbCheck, "breadcrumb file path");
+        row(p, Category.APPLICATION, chrome, simpleModeCheck, "simple minimal ui mode chrome distraction");
+        p.getChildren().add(note(tr("settings.simpleMode.note")));
         Label features = section(p, tr("settings.section.features"));
         Label projectsInfo = new Label("ⓘ");
         projectsInfo.getStyleClass().add("info-badge");
@@ -1664,6 +1668,7 @@ public class SettingsWindow {
             statusBarCheck.setSelected(settings.isShowStatusBar());
             tabBarCheck.setSelected(settings.isShowTabBar());
             breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
+            simpleModeCheck.setSelected(settings.isSimpleMode());
             templateAuthorField.setText(settings.getAuthorNameRaw());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
@@ -1857,6 +1862,20 @@ public class SettingsWindow {
         }
     }
 
+    /** Re-sync the Simple-UI checkbox to the saved setting (after the palette/toolbar toggle or --simple). */
+    public void syncSimpleModeCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            simpleModeCheck.setSelected(config.getSettings().isSimpleMode());
+        } finally {
+            loading = prev;
+        }
+    }
+
     /** Re-reads the Markdown "format bar" checkbox from settings (used after the palette toggle command). */
     public void syncMarkdownFormatBarCheck() {
         if (!built) {
@@ -1971,6 +1990,7 @@ public class SettingsWindow {
             statusBarCheck.setSelected(s.isShowStatusBar());
             tabBarCheck.setSelected(s.isShowTabBar());
             breadcrumbCheck.setSelected(s.isShowBreadcrumb());
+            simpleModeCheck.setSelected(s.isSimpleMode());
             toolStripeCheck.setSelected(s.isShowToolStripe());
             markdownFormatBarCheck.setSelected(s.isMarkdownFormatBar());
             multiCaretCheck.setSelected(s.isMultiCaret());

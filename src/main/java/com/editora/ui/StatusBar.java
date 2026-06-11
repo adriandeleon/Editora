@@ -67,6 +67,11 @@ public final class StatusBar extends HBox {
     private final Label zoomPercent = new Label("100%");
 
     private EditorBuffer attached;
+    /** Simple UI mode hides the git / language / tab-size / line-ending / size / encoding / LSP segments. */
+    private boolean simpleMode;
+    /** Latest LSP server name + loading state, so Simple-mode toggling can re-apply their visibility. */
+    private String lspServerName = "";
+    private boolean lspLoadingState;
     /** A single listener refreshes every segment on caret / text / selection changes. */
     private final InvalidationListener changeListener = obs -> refresh();
 
@@ -234,19 +239,28 @@ public final class StatusBar extends HBox {
      * (segment shown); null/blank → the segment is hidden (no language server for this file).
      */
     public void setLsp(String serverName) {
-        boolean show = serverName != null && !serverName.isBlank();
-        lsp.setText(show ? tr("statusbar.lsp", serverName) : "");
-        lsp.setVisible(show);
-        lsp.setManaged(show);
+        lspServerName = serverName == null ? "" : serverName;
+        applyLspStatusVisibility();
     }
 
     /** Shows/hides the indeterminate progress bar while a language server is starting/loading. */
     public void setLspLoading(boolean loading) {
-        // Flip indeterminate only while loading; a fixed value when idle stops the animation timeline
-        // (which otherwise keeps pulsing the scene and starves nearby repaints — see the field comment).
-        lspProgress.setProgress(loading ? ProgressBar.INDETERMINATE_PROGRESS : 0);
-        lspProgress.setVisible(loading);
-        lspProgress.setManaged(loading);
+        lspLoadingState = loading;
+        applyLspStatusVisibility();
+    }
+
+    /** Applies the LSP segment + loading-bar visibility from the stored state — both suppressed in Simple
+     *  mode. The progress bar is only set indeterminate while actually shown; a fixed value otherwise stops
+     *  the animation timeline (which would keep pulsing the scene and starve repaints — see field comment). */
+    private void applyLspStatusVisibility() {
+        boolean showLsp = !lspServerName.isBlank() && !simpleMode;
+        lsp.setText(lspServerName.isBlank() ? "" : tr("statusbar.lsp", lspServerName));
+        lsp.setVisible(showLsp);
+        lsp.setManaged(showLsp);
+        boolean showProgress = lspLoadingState && !simpleMode;
+        lspProgress.setProgress(showProgress ? ProgressBar.INDETERMINATE_PROGRESS : 0);
+        lspProgress.setVisible(showProgress);
+        lspProgress.setManaged(showProgress);
     }
 
     /** Shows/updates the Debug segment ({@code state} non-blank → "Debug: state"; null/blank → hidden). */
@@ -284,9 +298,18 @@ public final class StatusBar extends HBox {
     public void refresh() {
         EditorBuffer buffer = activeBuffer.get();
         boolean hasBuffer = buffer != null;
-        for (Label seg : new Label[]{position, language, endings, size}) {
-            seg.setVisible(hasBuffer);
-            seg.setManaged(hasBuffer);
+        position.setVisible(hasBuffer);
+        position.setManaged(hasBuffer);
+        // Simple UI mode hides these segments; otherwise they follow buffer presence.
+        for (Label seg : new Label[]{language, endings, size}) {
+            boolean vis = hasBuffer && !simpleMode;
+            seg.setVisible(vis);
+            seg.setManaged(vis);
+        }
+        // These are normally always shown; Simple mode hides them.
+        for (Label seg : new Label[]{git, indent, encoding}) {
+            seg.setVisible(!simpleMode);
+            seg.setManaged(!simpleMode);
         }
         // The read-only segment is a toggle: always shown (when there's a buffer), reflecting and
         // flipping the state. "Read-Only" (amber/active) ⇄ "Editable" (muted); click runs the command.
@@ -328,6 +351,15 @@ public final class StatusBar extends HBox {
         language.setText(displayLanguage(buffer.getLanguage()));
         endings.setText(buffer.getLineEnding());
         size.setText(formatSize(buffer.getContent().getBytes(StandardCharsets.UTF_8).length));
+    }
+
+    /** Simple UI mode: hide the git / language / tab-size / line-ending / size / encoding segments. */
+    public void setSimpleMode(boolean simpleMode) {
+        if (this.simpleMode != simpleMode) {
+            this.simpleMode = simpleMode;
+            refresh();
+            applyLspStatusVisibility(); // the LSP segment + loading bar are event-driven, not in refresh()
+        }
     }
 
     /** Human-readable byte size (e.g. {@code 512 B}, {@code 1.2 kB}, {@code 3.4 MB}). */

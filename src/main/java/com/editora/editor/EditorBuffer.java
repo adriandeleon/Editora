@@ -347,6 +347,9 @@ public class EditorBuffer implements TabContent {
      *  line reaches column 80 (see {@link #measureAndPlaceRuler}). */
     private boolean rulerVisible;
     private boolean lineNumbersVisible = true;
+    /** When false (Simple UI mode), the entire gutter is removed (null paragraph-graphic factory) — no
+     *  line numbers, fold chevrons, bookmark/note/run/breakpoint slots, or git change bars. */
+    private boolean gutterVisible = true;
     /** Coalesces ruler re-measurement onto a later pulse (see {@link #scheduleRulerMeasure}). */
     private boolean rulerMeasurePending;
 
@@ -2145,10 +2148,20 @@ public class EditorBuffer implements TabContent {
         refreshGutter();
     }
 
-    /** Rebuilds the gutter graphic factory (line numbers + fold chevrons + markers) from current state. */
+    /** Show/hide the entire gutter (Simple UI mode removes it completely). */
+    public void setGutterVisible(boolean visible) {
+        this.gutterVisible = visible;
+        refreshGutter();
+    }
+
+    /** Rebuilds the gutter graphic factory (line numbers + fold chevrons + markers) from current state, or
+     *  removes the gutter entirely (null factory) when {@link #gutterVisible} is off. */
     public void refreshGutter() {
         noteOverlay.refresh();
-        area.setParagraphGraphicFactory(folds.gutterFactory(lineNumbersVisible));
+        area.setParagraphGraphicFactory(gutterVisible ? folds.gutterFactory(lineNumbersVisible) : null);
+        if (area2 != null) {
+            area2.setParagraphGraphicFactory(gutterVisible ? LineNumberFactory.get(area2) : null);
+        }
     }
 
     public FoldManager getFoldManager() {

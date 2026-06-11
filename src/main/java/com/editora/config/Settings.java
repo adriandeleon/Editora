@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 19;
+    public static final int SCHEMA_VERSION = 20;
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
@@ -66,6 +66,10 @@ public class Settings {
     /** Show the tool stripes (the side icon bars). UI only — tool windows still open via keys/palette.
      *  Hiding the stripe takes precedence over each tool window's individual visibility. */
     private boolean showToolStripe = true;
+    /** Simple UI mode: hides a curated set of chrome (extra toolbar groups, project selector, line-number
+     *  gutter, minimap, and several status-bar segments) for a minimal editing surface. Persisted; the
+     *  {@code --simple} CLI flag is a session-only override on top of this. */
+    private boolean simpleMode = false;
     /** Auto-save mode: "off" | "afterDelay" | "onFocusChange" (parsed leniently; unknown ⇒ off). */
     private String autoSave = "off";
     private int autoSaveDelayMillis = 1000;
@@ -437,6 +441,14 @@ public class Settings {
 
     public void setShowToolStripe(boolean showToolStripe) {
         this.showToolStripe = showToolStripe;
+    }
+
+    public boolean isSimpleMode() {
+        return simpleMode;
+    }
+
+    public void setSimpleMode(boolean simpleMode) {
+        this.simpleMode = simpleMode;
     }
 
     public String getAutoSave() {

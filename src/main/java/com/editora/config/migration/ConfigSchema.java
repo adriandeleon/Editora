@@ -50,7 +50,8 @@ public enum ConfigSchema {
             Map.entry(15, (Migration) ConfigMigrations::identity),
             Map.entry(16, (Migration) ConfigMigrations::identity),
             Map.entry(17, (Migration) ConfigMigrations::identity),
-            Map.entry(18, (Migration) ConfigMigrations::identity))),
+            Map.entry(18, (Migration) ConfigMigrations::identity),
+            Map.entry(19, (Migration) ConfigMigrations::identity))), // v19→20: + simpleMode (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

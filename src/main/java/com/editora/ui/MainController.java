@@ -136,6 +136,8 @@ public class MainController {
     @FXML
     private Button closeTabButton;
     @FXML
+    private Button simpleModeButton;
+    @FXML
     private Button settingsButton;
     @FXML
     private Button aboutButton;
@@ -207,6 +209,8 @@ public class MainController {
     private final com.editora.search.SearchService searchService = new com.editora.search.SearchService();
     private QuickOpen<NoteEntry> notesPalette;
     private QuickOpen<NoteEntry> notesSearchPalette;
+    /** Session-only Simple-UI override from the {@code --simple} CLI flag; OR'd with the saved setting. */
+    private boolean cliSimpleOverride;
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) ---
     private com.editora.vfs.RemoteFileSystems remoteFs; // lazily created on first remote use
     private String activeRemoteAuthority;               // the connection backing the mounted remote root
@@ -322,15 +326,15 @@ public class MainController {
         this.palette = new CommandPalette(registry, keymap,
                 c -> (config.getSettings().isProjectSupport()
                         || (!c.id().startsWith("project.") && !c.id().equals("tool.project")))
-                        && (config.getSettings().isGitSupport()
+                        && (gitEnabled()
                         || (!c.id().startsWith("git.") && !c.id().equals("tool.commit")))
                         && (config.getSettings().isNotesSupport()
                         || (!c.id().startsWith("notes.") && !c.id().equals("tool.notes")))
                         && (config.getSettings().isMermaidSupport()
                         || !c.id().startsWith("mermaid."))
-                        && (config.getSettings().isLspSupport()
+                        && (lspEnabled()
                         || (!c.id().startsWith("lsp.") && !c.id().equals("tool.problems")))
-                        && (config.getSettings().isHttpClientSupport()
+                        && (httpEnabled()
                         || (!c.id().startsWith("http.") && !c.id().equals("tool.http"))));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
@@ -394,11 +398,67 @@ public class MainController {
         if (!s.isShowTabBar()) {
             tabPane.getStyleClass().add("no-tab-header");
         }
-        breadcrumb.setEnabled(s.isShowBreadcrumb());
+        // Breadcrumb + tool stripes are also hidden by Simple UI mode (effective value preserves the saved
+        // prefs, which return when Simple mode is turned off).
+        boolean simple = simpleModeActive();
+        breadcrumb.setEnabled(s.isShowBreadcrumb() && !simple);
         // Tool stripes (UI only): hidden stripes still let tool windows open via keybinding/palette.
-        toolWindows.setStripesEnabled(s.isShowToolStripe());
+        toolWindows.setStripesEnabled(s.isShowToolStripe() && !simple);
+        applySimpleMode();
         updateZenButton();
         updateToolbarRestoreButton();
+    }
+
+    /** True when Simple UI mode is active (the saved setting OR the session-only {@code --simple} flag). */
+    private boolean simpleModeActive() {
+        return config.getSettings().isSimpleMode() || cliSimpleOverride;
+    }
+
+    /**
+     * Simple UI mode: hide the marked toolbar groups + status-bar segments (line numbers/minimap are
+     * handled via {@link #applyViewSettings}; the project trio via {@link #applyProjectSupport}). Inert
+     * when Simple mode is off (everything returns to its normal, gate-respecting state).
+     */
+    private void applySimpleMode() {
+        boolean simple = simpleModeActive();
+        // Curated toolbar buttons hidden in Simple mode (project trio + openFolder are gated in
+        // applyProjectSupport so its later pass doesn't re-show them).
+        for (Button b : new Button[]{newFromTemplateButton, openButton, clearRecentButton,
+                findInFilesButton, splitVerticalButton, splitHorizontalButton}) {
+            b.setVisible(!simple);
+            b.setManaged(!simple);
+        }
+        recentButton.setVisible(!simple);
+        recentButton.setManaged(!simple);
+        collapseToolbarSeparators();
+        statusBar.setSimpleMode(simple);
+    }
+
+    /**
+     * Hide toolbar {@link Separator}s that would be orphaned (leading, trailing, or with no visible
+     * control between them and the previous separator), so hiding button groups leaves no stray dividers.
+     * Self-correcting — when nothing is hidden, every separator is shown.
+     */
+    private void collapseToolbarSeparators() {
+        Separator pending = null;       // a separator with a visible item before it, awaiting one after
+        boolean visibleSincePending = false;
+        for (javafx.scene.Node item : toolBar.getItems()) {
+            if (item instanceof Separator sep) {
+                sep.setVisible(false);
+                sep.setManaged(false);
+                if (visibleSincePending) {
+                    pending = sep;
+                    visibleSincePending = false;
+                }
+            } else if (item.isVisible()) {
+                if (pending != null) {
+                    pending.setVisible(true);
+                    pending.setManaged(true);
+                    pending = null;
+                }
+                visibleSincePending = true;
+            }
+        }
     }
 
     /**
@@ -788,14 +848,17 @@ public class MainController {
                 return; // leave the project UI in place
             }
         }
-        openFolderButton.setVisible(on);
-        openFolderButton.setManaged(on);
-        toolbarProjectCombo.setVisible(on);
-        toolbarProjectCombo.setManaged(on);
-        projectToolbarLabel.setVisible(on);
-        projectToolbarLabel.setManaged(on);
-        projectToolbarGap.setVisible(on);
-        projectToolbarGap.setManaged(on);
+        // The project toolbar group is also hidden by Simple UI mode (it stays a project even though the
+        // selector is hidden); kept here so this later pass doesn't re-show it over applySimpleMode.
+        boolean showProjectGroup = on && !simpleModeActive();
+        openFolderButton.setVisible(showProjectGroup);
+        openFolderButton.setManaged(showProjectGroup);
+        toolbarProjectCombo.setVisible(showProjectGroup);
+        toolbarProjectCombo.setManaged(showProjectGroup);
+        projectToolbarLabel.setVisible(showProjectGroup);
+        projectToolbarLabel.setManaged(showProjectGroup);
+        projectToolbarGap.setVisible(showProjectGroup);
+        projectToolbarGap.setManaged(showProjectGroup);
         // Project tool window: force-hide when off; reveal once on the off→on transition; otherwise
         // leave it to the user (so it can be hidden/shown normally while projects are enabled).
         if (!on) {
@@ -1453,9 +1516,10 @@ public class MainController {
      * off the FX thread via {@link com.editora.git.GitService}. Cheap to over-call: stale results are
      * dropped by the service's generation guard, and nothing runs when Git is absent / not a repo.
      */
-    /** Whether the Git integration is enabled in Settings (default off). */
+    /** Whether the Git integration is enabled in Settings (default off). Off in Simple UI mode. */
     private boolean gitEnabled() {
-        return config.getSettings().isGitSupport();
+        // Simple UI mode disables Git (status-bar VCS segment, gutter change bars, Commit window); saved setting unchanged.
+        return config.getSettings().isGitSupport() && !simpleModeActive();
     }
 
     /**
@@ -1564,7 +1628,8 @@ public class MainController {
     // --- HTTP Client (.http via ijhttp) ----------------------------------------------------------
 
     private boolean httpEnabled() {
-        return config.getSettings().isHttpClientSupport();
+        // Simple UI mode disables the HTTP client entirely (without changing the saved setting).
+        return config.getSettings().isHttpClientSupport() && !simpleModeActive();
     }
 
     /** Runs {@code action} only when the HTTP Client is enabled; otherwise reports it. */
@@ -1582,7 +1647,7 @@ public class MainController {
      * the response tool window. Runs at startup and on every settings apply.
      */
     private void applyHttpClientSupport() {
-        boolean on = config.getSettings().isHttpClientSupport();
+        boolean on = httpEnabled(); // effective: off in Simple UI mode
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
@@ -1739,7 +1804,8 @@ public class MainController {
     // --- Debugging (DAP) integration -----------------------------------------------------------
 
     private boolean debugSupportEnabled() {
-        return config.getSettings().isDebugSupport();
+        // Simple UI mode disables debugging (+ the breakpoint gutter) entirely; saved setting unchanged.
+        return config.getSettings().isDebugSupport() && !simpleModeActive();
     }
 
     /** Debugging is <em>effective</em> for Java only when LSP + the java server are on and detected, and
@@ -1788,7 +1854,7 @@ public class MainController {
      */
     private void applyDebugSupport() {
         Settings s = config.getSettings();
-        boolean on = s.isDebugSupport();
+        boolean on = debugSupportEnabled(); // effective: off in Simple UI mode
         // Configure all three adapters: java (jdtls plugin, located synchronously) + the standalone
         // python (debugpy) / javascript (vscode-js-debug) adapters (paths resolved synchronously; their
         // availability needs a subprocess probe, run async below).
@@ -2247,7 +2313,8 @@ public class MainController {
     // --- LSP (Language Server Protocol) integration --------------------------------------------
 
     private boolean lspEnabled() {
-        return config.getSettings().isLspSupport();
+        // Simple UI mode disables LSP (servers, diagnostics, completion, navigation); saved setting unchanged.
+        return config.getSettings().isLspSupport() && !simpleModeActive();
     }
 
     /**
@@ -2257,7 +2324,7 @@ public class MainController {
      */
     private void applyLspSupport() {
         Settings s = config.getSettings();
-        boolean on = s.isLspSupport();
+        boolean on = lspEnabled(); // effective: off in Simple UI mode
         lspManager.configure(on, java.util.Map.ofEntries(
                 java.util.Map.entry("java", s.getJavaLspCommand()),
                 java.util.Map.entry("typescript", s.getTypescriptLspCommand()),
@@ -3717,6 +3784,7 @@ public class MainController {
         setupButton(splitHorizontalButton, Icons.splitHorizontal(), tr("tooltip.splitHorizontal"));
         setupButton(paletteButton, Icons.palette(), tr("tooltip.palette"));
         setupButton(closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"));
+        setupButton(simpleModeButton, Icons.simpleMode(), tr("tooltip.simpleMode"));
         setupButton(settingsButton, Icons.settings(), tr("tooltip.settings"));
         setupButton(aboutButton, Icons.about(), tr("tooltip.about"));
         setupButton(quitButton, Icons.quit(), tr("tooltip.quit"));
@@ -3955,17 +4023,25 @@ public class MainController {
      * (jumping to line:column) and enters Zen, all additive on top of the restored session. With no
      * arguments it's exactly the old {@code openInitialBuffer()}.
      */
-    public void startup(Path projectDir, List<OpenTarget> targets, boolean zen, String newFile) {
+    public void startup(Path projectDir, List<OpenTarget> targets, boolean zen, String newFile,
+            boolean simple) {
         if (projectDir != null && projectsEnabled()) {
             activateStartupProject(projectDir); // swap to the project's session before it's restored
         }
         // Run CLI actions AFTER the (deferred, pulse-paced) session restore, so a restored caret can't
         // override a requested line:column.
-        pendingAfterRestore = () -> applyStartupTargets(targets, zen, newFile);
+        pendingAfterRestore = () -> applyStartupTargets(targets, zen, newFile, simple);
         openInitialBuffer();
     }
 
-    private void applyStartupTargets(List<OpenTarget> targets, boolean zen, String newFile) {
+    private void applyStartupTargets(List<OpenTarget> targets, boolean zen, String newFile, boolean simple) {
+        if (simple) {
+            // --simple: a session-only override (doesn't change the saved setting). Re-apply chrome +
+            // per-buffer view settings now that the session's buffers are restored.
+            cliSimpleOverride = true;
+            applyViewSettingsToAllBuffers(config.getSettings());
+            settingsWindow.syncSimpleModeCheck();
+        }
         if (newFile != null) {
             // --new-file[=NAME]: open a fresh buffer instead of the Welcome page. "" = blank untitled.
             EditorBuffer buffer = new EditorBuffer();
@@ -4143,7 +4219,7 @@ public class MainController {
         Settings acs = config.getSettings();
         buffer.setAutocomplete(acs.isAutocomplete(), acs.isAutocompleteProse(),
                 acs.isAutocompleteSnippets(), effectiveMermaidAutocomplete());
-        buffer.setMultiCaretEnabled(acs.isMultiCaret()); // multiple cursors + Alt+drag column selection
+        buffer.setMultiCaretEnabled(multiCaretEnabled()); // multiple cursors + Alt+drag column selection (off in Simple UI mode)
         buffer.setMermaidValidator((text, cb) -> mermaidService.validate(text, cb));
         buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
@@ -5543,6 +5619,11 @@ public class MainController {
     }
 
     @FXML
+    private void onToggleSimpleMode() {
+        toggleSimpleMode();
+    }
+
+    @FXML
     private void onAbout() {
         SettingsWindow.showAbout(stage, config.getSettingsFile(), this::openPath, this::openExternalUrl,
                 config.isDev() ? com.editora.AppInfo.gitCommit() : ""); // build commit shown only in --dev
@@ -5564,6 +5645,16 @@ public class MainController {
         applyViewSettingsToAllBuffers(s); // → applyChromeVisibility → toolWindows.setStripesEnabled
         settingsWindow.syncToolStripeCheck();
         setStatus(tr("status.toggle.toolStripe", tr(s.isShowToolStripe() ? "common.on" : "common.off")));
+    }
+
+    private void toggleSimpleMode() {
+        Settings s = config.getSettings();
+        cliSimpleOverride = false; // an explicit in-app toggle takes over from the --simple session flag
+        s.setSimpleMode(!s.isSimpleMode());
+        requestSave();
+        applyViewSettingsToAllBuffers(s); // → applyChromeVisibility/applySimpleMode + per-buffer gutter/minimap
+        settingsWindow.syncSimpleModeCheck();
+        setStatus(tr("status.toggle.simpleMode", tr(s.isSimpleMode() ? "common.on" : "common.off")));
     }
 
     private void toggleLineHighlight() {
@@ -5655,7 +5746,7 @@ public class MainController {
 
     /** Runs {@code action} on the active buffer when multi-caret is enabled; else reports it. */
     private void withMultiCaret(java.util.function.Consumer<EditorBuffer> action) {
-        if (!config.getSettings().isMultiCaret()) {
+        if (!multiCaretEnabled()) {
             setStatus(tr("status.multiCaret.disabled"));
             return;
         }
@@ -7468,8 +7559,13 @@ public class MainController {
         buffer.setColumnRulerVisible(s.isShowColumnRuler());
         buffer.setNoteIndicatorsVisible(s.isNotesSupport() && s.isShowNoteIndicators());
         buffer.setLineHighlightOn(s.isHighlightCurrentLine());
-        buffer.setLineNumbersVisible(s.isShowLineNumbers());
-        buffer.setMinimapVisible(s.isShowMinimap());
+        boolean simple = simpleModeActive(); // Simple UI mode hides the whole gutter + minimap (without
+        buffer.setLineNumbersVisible(s.isShowLineNumbers() && !simple); // clobbering the saved prefs)
+        buffer.setMinimapVisible(s.isShowMinimap() && !simple);
+        buffer.setGutterVisible(!simple); // Simple mode removes the entire gutter strip
+        if (simple) {
+            buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
+        }
         buffer.setWhitespaceVisible(s.isShowWhitespace());
         buffer.setTabSize(s.getTabSize());
         buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
@@ -7520,9 +7616,14 @@ public class MainController {
         }
     }
 
+    /** Whether multiple cursors / column selection is active. Off in Simple UI mode; saved setting unchanged. */
+    private boolean multiCaretEnabled() {
+        return config.getSettings().isMultiCaret() && !simpleModeActive();
+    }
+
     /** Pushes the multiple-cursors / column-selection setting to every open buffer. */
     private void applyMultiCaret() {
-        boolean on = config.getSettings().isMultiCaret();
+        boolean on = multiCaretEnabled(); // effective: off in Simple UI mode
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
@@ -7904,6 +8005,7 @@ public class MainController {
                 this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe",
                 this::toggleToolStripe));
+        registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
         registry.register(Command.of("config.export", this::exportConfig));
         registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
         registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));

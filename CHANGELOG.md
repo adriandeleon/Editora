@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Simple UI mode** — a one-toggle minimal layout that strips the editor to the essentials: it hides the
+  extra toolbar groups (new-from-template/open, recent, find-in-files, split, project selector), the
+  tool-window stripe, the file breadcrumb, the **entire gutter** (line numbers, fold chevrons, and
+  bookmark/note/run/breakpoint/git markers — any collapsed regions are unfolded first so nothing is
+  stranded), the minimap, and most status-bar segments (git, the LSP server indicator, language, tab size,
+  line endings, size, encoding), while keeping
+  the tabs, core toolbar icons, and the echo / read-only / zoom / Ln-Col status. It also **disables the
+  heavier features** — language servers (LSP), debugging, the HTTP client, Git, and multiple cursors /
+  column selection — for a quiet, plain
+  editor (the saved enable settings are untouched and restored on exit). Toggle it from the toolbar
+  icon, the command palette (**View: Toggle Simple UI Mode**),
+  or *Settings → Application*; it persists. The **`--simple`** command-line flag starts a session in Simple
+  mode without changing the saved preference. Your own line-number/minimap preferences are preserved and
+  return when you toggle it off.
 - **Remote file access (SFTP)** — connect to a server over SSH/SFTP and edit its files as if they were
   local. **Remote: Connect to SFTP…** opens a connection form (host/port/user, and auth via your default
   `~/.ssh` keys, a chosen key file, or a password); on connect the remote folder is **mounted in the

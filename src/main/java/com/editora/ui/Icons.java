@@ -38,6 +38,11 @@ final class Icons {
         return of("M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z");
     }
 
+    /** A minimal square-frame glyph for the Simple-UI-mode toggle. */
+    static Node simpleMode() {
+        return of("M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z");
+    }
+
     /** A cloud glyph marking a remote (SFTP) file/tab. */
     static Node remote() {
         return of("M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 "

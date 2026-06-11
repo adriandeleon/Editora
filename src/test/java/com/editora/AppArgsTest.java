@@ -52,6 +52,12 @@ class AppArgsTest {
     }
 
     @Test
+    void simpleFlag() {
+        assertTrue(App.simpleFlag(List.of("--simple")));
+        assertFalse(App.simpleFlag(List.of("--config-dir", "/x", "f.txt")));
+    }
+
+    @Test
     void devFlag() {
         assertTrue(App.devFlag(List.of("--dev")));
         assertFalse(App.devFlag(List.of("--zen", "f.txt")));
