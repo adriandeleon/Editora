@@ -118,6 +118,7 @@ export const commandGroups: CmdGroup[] = [
       { title: "View: Toggle Minimap", id: "view.toggleMinimap" },
       { title: "View: Toggle Multiple Cursors", id: "view.toggleMultiCaret" },
       { title: "View: Toggle Read-Only (View Mode)", id: "view.toggleReadOnly", keys: "C-x C-q", desc: "Make the buffer read-only / editable." },
+      { title: "View: Toggle Simple UI Mode", id: "view.toggleSimpleMode" },
       { title: "View: Toggle Spell Check", id: "view.toggleSpellCheck" },
       { title: "View: Toggle Status Bar", id: "view.toggleStatusBar", keys: "C-c s" },
       { title: "View: Toggle Tab Bar", id: "view.toggleTabBar", keys: "C-c b" },
