@@ -1,151 +1,30 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import { commandGroups } from "../lib/commands";
 
-// Mirrors resources/com/editora/keymaps/emacs.json, grouped for humans.
-// Keep in sync when bindings change.
-type Binding = { keys: string; desc: string };
-type Group = { title: string; bindings: Binding[] };
+// Derived from the same source as the Commands page: every command that has a
+// default keybinding, grouped by category. Stays in sync automatically.
+const groups = commandGroups
+  .map((g) => ({
+    title: g.title,
+    bindings: g.commands.filter((c) => c.keys),
+  }))
+  .filter((g) => g.bindings.length > 0);
 
-const groups: Group[] = [
-  {
-    title: "Files & buffers",
-    bindings: [
-      { keys: "C-x C-f", desc: "Find file (open by path)" },
-      { keys: "C-x C-s", desc: "Save" },
-      { keys: "C-x C-w", desc: "Save as…" },
-      { keys: "C-x C-r", desc: "Recent files" },
-      { keys: "C-x b", desc: "Jump to open buffer" },
-      { keys: "C-x C-b", desc: "Buffer switcher" },
-      { keys: "C-x k", desc: "Close buffer" },
-      { keys: "C-c a", desc: "Toggle auto-save" },
-      { keys: "C-x C-c", desc: "Quit" },
-    ],
-  },
-  {
-    title: "Editing",
-    bindings: [
-      { keys: "C-space", desc: "Set mark" },
-      { keys: "C-x C-x", desc: "Exchange point and mark" },
-      { keys: "C-w", desc: "Cut (kill region)" },
-      { keys: "M-w", desc: "Copy" },
-      { keys: "C-y", desc: "Paste (yank)" },
-      { keys: "C-d", desc: "Delete character forward" },
-      { keys: "M-d", desc: "Kill word" },
-      { keys: "C-k", desc: "Kill to end of line" },
-      { keys: "C-/", desc: "Undo" },
-      { keys: "C-S-/", desc: "Redo" },
-      { keys: "M-;", desc: "Toggle line/block comment" },
-      { keys: "C-c i", desc: "Insert snippet" },
-      { keys: "C-g", desc: "Cancel" },
-    ],
-  },
-  {
-    title: "Navigation",
-    bindings: [
-      { keys: "C-a", desc: "Line start" },
-      { keys: "C-e", desc: "Line end" },
-      { keys: "C-f", desc: "Forward character" },
-      { keys: "C-b", desc: "Backward character" },
-      { keys: "C-n", desc: "Next line" },
-      { keys: "C-p", desc: "Previous line" },
-      { keys: "M-f", desc: "Forward word" },
-      { keys: "M-b", desc: "Backward word" },
-      { keys: "M-m", desc: "Back to indentation" },
-      { keys: "C-v", desc: "Page down" },
-      { keys: "M-v", desc: "Page up" },
-      { keys: "C-l", desc: "Recenter view" },
-      { keys: "M-S-,", desc: "Document start" },
-      { keys: "M-S-.", desc: "Document end" },
-      { keys: "M-S-[", desc: "Previous paragraph" },
-      { keys: "M-S-]", desc: "Next paragraph" },
-      { keys: "M-a", desc: "Previous sentence" },
-      { keys: "M-e", desc: "Next sentence" },
-      { keys: "M-g g", desc: "Go to line" },
-      { keys: "M-g i", desc: "Jump to symbol / structure" },
-      { keys: "M-g b", desc: "Jump to bookmark (cross-file)" },
-      { keys: "M-g t", desc: "Jump to tool window" },
-    ],
-  },
-  {
-    title: "Search & replace",
-    bindings: [
-      { keys: "C-s", desc: "Find" },
-      { keys: "C-r", desc: "Find backward" },
-      { keys: "M-S-5", desc: "Replace" },
-      { keys: "M-x", desc: "Command palette" },
-    ],
-  },
-  {
-    title: "View & folding",
-    bindings: [
-      { keys: "C-c C-t", desc: "Toggle fold at cursor" },
-      { keys: "C-c C-f", desc: "Fold" },
-      { keys: "C-c C-u", desc: "Unfold" },
-      { keys: "C-c f", desc: "Fold all" },
-      { keys: "C-c u", desc: "Unfold all" },
-      { keys: "C-c w", desc: "Toggle whitespace" },
-      { keys: "C-c t", desc: "Toggle toolbar" },
-      { keys: "C-c s", desc: "Toggle status bar" },
-      { keys: "C-c b", desc: "Toggle tab bar" },
-      { keys: "C-c p", desc: "Toggle breadcrumb" },
-      { keys: "C-c z", desc: "Toggle Zen mode" },
-      { keys: "C-x C-q", desc: "Toggle read-only / View mode" },
-    ],
-  },
-  {
-    title: "Windows & splits",
-    bindings: [
-      { keys: "C-x 2", desc: "Split horizontally" },
-      { keys: "C-x 3", desc: "Split vertically" },
-      { keys: "C-x 1", desc: "Unsplit" },
-      { keys: "C-x o", desc: "Other window" },
-    ],
-  },
-  {
-    title: "Tool windows",
-    bindings: [
-      { keys: "M-1", desc: "Project" },
-      { keys: "M-2", desc: "Bookmarks" },
-      { keys: "M-3", desc: "File Information" },
-      { keys: "M-7", desc: "Structure" },
-    ],
-  },
-  {
-    title: "Bookmarks",
-    bindings: [
-      { keys: "C-c m", desc: "Toggle bookmark" },
-      { keys: "C-c ]", desc: "Next bookmark (in file)" },
-      { keys: "C-c [", desc: "Previous bookmark (in file)" },
-    ],
-  },
-  {
-    title: "Projects",
-    bindings: [
-      { keys: "C-x C-p", desc: "Open project" },
-      { keys: "C-x p", desc: "Switch project" },
-    ],
-  },
-  {
-    title: "Zoom",
-    bindings: [
-      { keys: "C-=", desc: "Zoom text in" },
-      { keys: "C--", desc: "Zoom text out" },
-      { keys: "C-0", desc: "Reset zoom" },
-    ],
-  },
-];
+const count = groups.reduce((n, g) => n + g.bindings.length, 0);
 ---
 
 <Layout
   title="Keybindings — Editora"
-  description="The full Emacs-style keymap for Editora: files, editing, navigation, search, folding, tool windows, bookmarks, projects, and zoom."
+  description="The full Emacs-style keymap for Editora — every command with a default keybinding, grouped by area."
 >
   <main class="page">
     <h1>Keybindings</h1>
     <p class="lead">
-      Editora ships with an Emacs-style keymap. Every binding maps to a
-      <strong>command</strong>, so the same actions are reachable from the
-      <kbd>M-x</kbd> palette and can be rebound in Settings.
+      Editora ships an Emacs-style keymap — {count} commands have a default
+      binding. Every binding maps to a <strong>command</strong>, so the same
+      actions are reachable from the <kbd>M-x</kbd> palette (see the full
+      <a href="/commands">command list</a>) and can be rebound in Settings.
     </p>
 
     <div class="legend">
@@ -171,7 +50,7 @@ const groups: Group[] = [
                         <kbd>{tok}</kbd>
                       ))}
                     </td>
-                    <td class="desc">{b.desc}</td>
+                    <td class="desc">{b.title}</td>
                   </tr>
                 ))}
               </tbody>

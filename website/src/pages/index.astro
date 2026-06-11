@@ -14,7 +14,7 @@ const featureGroups = [
     cards: [
       {
         title: "Command-driven core",
-        body: "Hunting through menus? Every action is a registered <code>Command</code> — bound to a chord or one <kbd>M-x</kbd> search away. Nothing is buried.",
+        body: "Hunting through menus? Every action is a registered <code>Command</code> — bound to a chord or one <kbd>M-x</kbd> search away. 200+ commands, nothing buried.",
       },
       {
         title: "Emacs-style keymap",
@@ -23,6 +23,10 @@ const featureGroups = [
       {
         title: "Jump-to popups",
         body: "Lost in a big project? Fuzzy-jump to recent files, symbols, open tabs, and tool windows — plus an Emacs <code>find-file</code>-style path finder.",
+      },
+      {
+        title: "Multiple cursors",
+        body: "Add a caret at the next occurrence or above/below, or <kbd>Alt</kbd>-drag a column/box selection — edit many places at once, VS Code-style.",
       },
     ],
   },
@@ -52,15 +56,66 @@ const featureGroups = [
     ],
   },
   {
-    title: "Languages",
+    title: "Code intelligence",
     cards: [
       {
         title: "Syntax highlighting",
         body: "TextMate grammars (via tm4e) for 21 languages: Java, Python, Rust, Go, Kotlin, C/C++, C#, Ruby, SQL, Markdown, and more.",
       },
       {
+        title: "Language servers (LSP)",
+        body: "Go-to-definition, find references, hover docs, diagnostics, and completions via 20+ language servers (Java, TypeScript, Python, Go, Rust, C/C++, and more) — auto-detected, never bundled.",
+      },
+      {
+        title: "Autocomplete",
+        body: "As-you-type completion — a popup for code (LSP + snippets) and inline ghost text for prose. Trigger with <kbd>C-M-i</kbd> / <kbd>M-/</kbd>.",
+      },
+    ],
+  },
+  {
+    title: "Run & debug",
+    cards: [
+      {
+        title: "Run files",
+        body: "Run a Java compact source file, Python, or shell script from a gutter ▶ — output and <code>stdin</code> in the Run console, with clickable stack traces and per-file arguments.",
+      },
+      {
+        title: "Debugging (DAP)",
+        body: "Full debugging for Java, Python, and JavaScript: breakpoints, step in/over/out, watches, set-value, run-to-cursor, inline values, and an interactive console.",
+      },
+      {
+        title: "HTTP client",
+        body: "Run <code>.http</code> / <code>.rest</code> requests from a gutter ▶ — environments, variables, and a formatted response view. Built on the JDK HTTP client.",
+      },
+    ],
+  },
+  {
+    title: "Git & diff",
+    cards: [
+      {
+        title: "Git integration",
+        body: "Native Git: branch + ahead/behind in the status bar, gutter change bars vs HEAD, a Commit tool window (stage / unstage / discard / commit), and fetch / pull / push + branch switching.",
+      },
+      {
+        title: "Diff & merge",
+        body: "Side-by-side and unified diff (vs HEAD, a commit, or another file) with word-level highlights and apply-hunk arrows — plus a merge-conflict resolver.",
+      },
+    ],
+  },
+  {
+    title: "Docs & diagrams",
+    cards: [
+      {
         title: "Markdown preview",
         body: "IntelliJ-style 3-mode view (Editor / Split / Preview), rendered natively with CommonMark + GFM. GitHub-style output: task-list checkboxes, code pills, and local/remote images. Live and theme-matched.",
+      },
+      {
+        title: "Mermaid diagrams",
+        body: "Render Mermaid diagrams inline in Markdown and in standalone <code>.mmd</code> files, with live linting and export to SVG / PNG / PDF.",
+      },
+      {
+        title: "Export to PDF & print",
+        body: "Export code or the Markdown preview to a syntax-highlighted PDF, or print with a preview — light-themed and generated off-thread.",
       },
     ],
   },
@@ -72,8 +127,16 @@ const featureGroups = [
         body: "VS Code single-folder workspaces: a root folder plus its own saved session (open files, layout, folds), shown as a filterable file tree.",
       },
       {
-        title: "Bookmarks",
-        body: "Bouncing between spots across files? Drop line bookmarks with notes — cross-file jump picker, a tool window across every file, reorderable by drag-and-drop, scoped per project.",
+        title: "Bookmarks & notes",
+        body: "Line bookmarks (gutter markers, cross-file jump, per-project), plus Personal Notes attached to a word/line/range — stored outside the file, surviving renames, with Markdown bodies.",
+      },
+      {
+        title: "Find in files",
+        body: "Project-wide search and replace with a results panel, plus AceJump to leap the caret to any visible spot by typing a label.",
+      },
+      {
+        title: "File templates",
+        body: "New File From Template — single- or multi-file scaffolds with interactive placeholders (author, date, file name, …).",
       },
       {
         title: "Read-only / View mode",
@@ -82,11 +145,15 @@ const featureGroups = [
     ],
   },
   {
-    title: "Appearance",
+    title: "Appearance & language",
     cards: [
       {
         title: "Themes & fonts",
-        body: "Switchable themes (Primer, Nord, Cupertino, Dracula) with matching editor color themes, and five bundled monospace fonts — no install needed.",
+        body: "Six editor themes (Primer, Nord, Cupertino, Dracula, Islands — light &amp; dark) that follow the app theme, plus five bundled monospace fonts — no install needed.",
+      },
+      {
+        title: "Localized UI",
+        body: "The whole interface is translated — English, Italian, Spanish, French, Portuguese, and German — selectable in Settings.",
       },
     ],
   },
