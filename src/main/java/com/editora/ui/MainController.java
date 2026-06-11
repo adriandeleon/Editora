@@ -422,8 +422,9 @@ public class MainController {
     private void applySimpleMode() {
         boolean simple = simpleModeActive();
         // Curated toolbar buttons hidden in Simple mode (project trio + openFolder are gated in
-        // applyProjectSupport so its later pass doesn't re-show them).
-        for (Button b : new Button[]{newFromTemplateButton, openButton, clearRecentButton,
+        // applyProjectSupport so its later pass doesn't re-show them). The Open icon is deliberately
+        // KEPT so opening a file stays one click away in Simple mode.
+        for (Button b : new Button[]{newFromTemplateButton, clearRecentButton,
                 findInFilesButton, splitVerticalButton, splitHorizontalButton}) {
             b.setVisible(!simple);
             b.setManaged(!simple);

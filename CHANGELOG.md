@@ -10,12 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Simple UI mode** — a one-toggle minimal layout that strips the editor to the essentials: it hides the
-  extra toolbar groups (new-from-template/open, recent, find-in-files, split, project selector), the
+  extra toolbar groups (new-from-template, recent, find-in-files, split, project selector), the
   tool-window stripe, the file breadcrumb, the **entire gutter** (line numbers, fold chevrons, and
   bookmark/note/run/breakpoint/git markers — any collapsed regions are unfolded first so nothing is
   stranded), the minimap, and most status-bar segments (git, the LSP server indicator, language, tab size,
   line endings, size, encoding), while keeping
-  the tabs, core toolbar icons, and the echo / read-only / zoom / Ln-Col status. It also **disables the
+  the tabs, core toolbar icons (including **Open**), and the echo / read-only / zoom / Ln-Col status. It also **disables the
   heavier features** — language servers (LSP), debugging, the HTTP client, Git, and multiple cursors /
   column selection — for a quiet, plain
   editor (the saved enable settings are untouched and restored on exit). Toggle it from the toolbar

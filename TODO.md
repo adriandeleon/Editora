@@ -3,6 +3,13 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Simple UI mode — a one-toggle minimal layout (toolbar icon, **View: Toggle Simple UI Mode**,
+      Settings → Application, or `--simple`): hides the extra toolbar groups (new-from-template, recent,
+      find-in-files, split, project selector), the tool-window stripe, breadcrumb, the entire gutter
+      (collapsed regions unfolded first), minimap, and most status-bar segments — keeping tabs, the core
+      toolbar icons (incl. **Open**), and echo/read-only/zoom/Ln-Col. Also disables the heavier features
+      (LSP, debugging, HTTP client, Git, multiple cursors / column selection). Persisted; `--simple` is a
+      session-only override; saved preferences are untouched and restored on exit
 - [x] Remote file access (SFTP) — connect over SSH/SFTP and edit a server's files as if local: the remote
       folder mounts in the Project tool window, open/edit/save go straight over SFTP, saved connections
       (metadata only) reconnect via a picker; local-process features (LSP/DAP/Git/Run/HTTP) auto-disable

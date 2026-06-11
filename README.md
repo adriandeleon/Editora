@@ -98,10 +98,11 @@ Emacs-style keymap or a fuzzy command palette.
   file is writable). While read-only, Space pages down and Backspace pages up (pager-style).
 - **Simple UI mode** — a single toggle (toolbar icon, **View: Toggle Simple UI Mode** in the palette,
   *Settings → Application*, or the `--simple` launch flag) that strips the window to a minimal editing
-  surface: it hides the extra toolbar groups, the project selector, the tool-window stripe, the breadcrumb,
+  surface: it hides the extra toolbar groups (new-from-template, recent, find-in-files, split, project
+  selector), the tool-window stripe, the breadcrumb,
   the entire gutter (line numbers + fold chevrons + markers; collapsed regions are unfolded first), the
   minimap, and most status-bar segments (git, LSP, language, tab size, line endings, size, encoding), while
-  keeping the tabs and essential controls. It also **disables the heavier features** — language
+  keeping the tabs and the essential toolbar icons (including **Open**). It also **disables the heavier features** — language
   servers (LSP), debugging, the HTTP client, Git, and multiple cursors / column selection — for a quiet
   plain editor. Persists across restarts; your saved preferences (line numbers, minimap, breadcrumb, tool
   stripe, LSP/debug/HTTP/Git and multi-caret enables) are all restored when you turn it off.
