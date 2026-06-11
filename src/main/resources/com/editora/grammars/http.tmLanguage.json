@@ -1,0 +1,60 @@
+{
+  "name": "HTTP Request",
+  "scopeName": "source.http",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#separator" },
+    { "include": "#variable-declaration" },
+    { "include": "#request-line" },
+    { "include": "#header" },
+    { "include": "#variable" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        { "match": "^\\s*#(?!##).*$", "name": "comment.line.number-sign.http" },
+        { "match": "^\\s*//.*$", "name": "comment.line.double-slash.http" }
+      ]
+    },
+    "separator": {
+      "match": "^\\s*(###)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "punctuation.definition.separator.http" },
+        "2": { "name": "entity.name.section.http" }
+      }
+    },
+    "variable-declaration": {
+      "match": "^\\s*(@)([A-Za-z0-9_.\\-]+)\\s*(=)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "punctuation.definition.variable.http" },
+        "2": { "name": "variable.other.definition.http" },
+        "3": { "name": "keyword.operator.assignment.http" },
+        "4": { "name": "string.unquoted.http", "patterns": [{ "include": "#variable" }] }
+      }
+    },
+    "request-line": {
+      "match": "^\\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE|CONNECT)\\b\\s*(.*?)\\s*(HTTP/[0-9.]+)?\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.http" },
+        "2": { "name": "markup.underline.link.http", "patterns": [{ "include": "#variable" }] },
+        "3": { "name": "constant.language.http-version.http" }
+      }
+    },
+    "header": {
+      "match": "^\\s*([A-Za-z][A-Za-z0-9\\-]*)\\s*(:)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "entity.name.tag.http" },
+        "2": { "name": "punctuation.separator.key-value.http" },
+        "3": { "name": "string.unquoted.http", "patterns": [{ "include": "#variable" }] }
+      }
+    },
+    "variable": {
+      "match": "(\\{\\{)([^}]*)(\\}\\})",
+      "name": "variable.other.readwrite.http",
+      "captures": {
+        "1": { "name": "punctuation.definition.variable.begin.http" },
+        "3": { "name": "punctuation.definition.variable.end.http" }
+      }
+    }
+  }
+}

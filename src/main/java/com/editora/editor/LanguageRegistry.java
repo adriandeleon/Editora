@@ -56,7 +56,9 @@ public final class LanguageRegistry {
             // Terraform / HCL — brace-delimited blocks.
             Map.entry("tf", "terraform"), Map.entry("tfvars", "terraform"), Map.entry("hcl", "terraform"),
             // TOML — its own grammar + the taplo LSP (was previously highlighted via the INI grammar).
-            Map.entry("toml", "toml"), Map.entry("tml", "toml"));
+            Map.entry("toml", "toml"), Map.entry("tml", "toml"),
+            // HTTP request files (JetBrains/VS Code REST format).
+            Map.entry("http", "http"), Map.entry("rest", "http"));
 
     private LanguageRegistry() {
     }

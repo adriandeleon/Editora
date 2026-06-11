@@ -94,10 +94,10 @@ public final class FoldManager {
 
     /** Whether this is a compact source file (reserve the Run slot on every row while true). */
     private BooleanSupplier runEnabled = () -> false;
-    /** Whether a line is the top-level {@code main} (draws the clickable green Run glyph there). */
+    /** Whether a line draws the clickable green Run glyph (a single {@code main}, or each .http request). */
     private IntPredicate isRunLine = i -> false;
-    /** Invoked when the user clicks the gutter Run glyph (runs the compact source file). */
-    private Runnable onRun = () -> { };
+    /** Invoked with the clicked line when the user clicks a gutter Run glyph. */
+    private IntConsumer onRun = i -> { };
 
     /** Whether debugging is enabled for this buffer (reserve the leftmost breakpoint slot on every row). */
     private BooleanSupplier breakpointsEnabled = () -> false;
@@ -258,10 +258,10 @@ public final class FoldManager {
      * slot on every row while this is a compact source file (so the glyph appearing never shifts text),
      * {@code isRunLine} marks the top-level {@code main} line, and {@code onRun} runs the file on a click.
      */
-    public void setRunHooks(BooleanSupplier enabled, IntPredicate isRunLine, Runnable onRun) {
+    public void setRunHooks(BooleanSupplier enabled, IntPredicate isRunLine, IntConsumer onRun) {
         this.runEnabled = enabled == null ? () -> false : enabled;
         this.isRunLine = isRunLine == null ? i -> false : isRunLine;
-        this.onRun = onRun == null ? () -> { } : onRun;
+        this.onRun = onRun == null ? i -> { } : onRun;
     }
 
     /**
@@ -617,9 +617,10 @@ public final class FoldManager {
             if (isRunLine.test(idx)) {
                 Node marker = runGlyph();
                 marker.setCursor(Cursor.HAND);
+                final int runIdx = idx;
                 marker.setOnMouseClicked(e -> {
                     if (e.getButton() == MouseButton.PRIMARY) {
-                        onRun.run();
+                        onRun.accept(runIdx);
                         e.consume(); // don't also toggle a bookmark via the gutter click
                     }
                 });

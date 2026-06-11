@@ -176,6 +176,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.dockerfile", "dockerfile");
         scopeToResource.put("source.hcl.terraform", "terraform");
         scopeToResource.put("source.toml", "toml");
+        scopeToResource.put("source.http", "http");
 
         // file extension -> scope name
         mapExtensions("source.java", "java");
@@ -210,6 +211,7 @@ public final class GrammarRegistry {
         mapExtensions("source.dockerfile", "dockerfile"); // bare "Dockerfile" handled in scopeForFileName
         mapExtensions("source.hcl.terraform", "tf", "tfvars", "hcl");
         mapExtensions("source.toml", "toml", "tml");
+        mapExtensions("source.http", "http", "rest");
     }
 
     private void mapExtensions(String scope, String... extensions) {

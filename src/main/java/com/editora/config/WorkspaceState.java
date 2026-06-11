@@ -52,6 +52,8 @@ public class WorkspaceState {
     private List<String> debugWatches = new ArrayList<>();
     /** Program arguments per runnable file (absolute path -> raw args string), shared by Run + Debug. */
     private Map<String, String> programArgs = new LinkedHashMap<>();
+    /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
+    private String httpEnvironment = "";
 
     // --- Zen (distraction-free) mode. Entering Zen snapshots the user's view/chrome prefs into
     //     preZenView (key -> value) and the open tool windows into preZenToolWindows, then turns
@@ -232,6 +234,14 @@ public class WorkspaceState {
 
     public void setDebugWatches(List<String> debugWatches) {
         this.debugWatches = debugWatches == null ? new ArrayList<>() : debugWatches;
+    }
+
+    public String getHttpEnvironment() {
+        return httpEnvironment == null ? "" : httpEnvironment;
+    }
+
+    public void setHttpEnvironment(String httpEnvironment) {
+        this.httpEnvironment = httpEnvironment == null ? "" : httpEnvironment;
     }
 
     public boolean isZenMode() {

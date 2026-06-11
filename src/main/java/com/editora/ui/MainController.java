@@ -214,6 +214,10 @@ public class MainController {
     private boolean mermaidSupportApplied;
     private com.editora.mermaid.MermaidService.Availability mermaidAvail =
             new com.editora.mermaid.MermaidService.Availability(false, false);
+    /** HTTP Client: the ijhttp façade, the response tool window, and whether ijhttp was detected. */
+    private final com.editora.http.HttpClientService httpService = new com.editora.http.HttpClientService();
+    private HttpClientPanel httpPanel;
+    private ToolWindow httpToolWindow;
     /** LSP: manager (one server per workspace root), the Problems window, and the latest diagnostics. */
     private final com.editora.lsp.LspManager lspManager =
             new com.editora.lsp.LspManager(this::onLspDiagnostics, this::onLspServerStatus);
@@ -320,7 +324,9 @@ public class MainController {
                         && (config.getSettings().isMermaidSupport()
                         || !c.id().startsWith("mermaid."))
                         && (config.getSettings().isLspSupport()
-                        || (!c.id().startsWith("lsp.") && !c.id().equals("tool.problems"))));
+                        || (!c.id().startsWith("lsp.") && !c.id().equals("tool.problems")))
+                        && (config.getSettings().isHttpClientSupport()
+                        || (!c.id().startsWith("http.") && !c.id().equals("tool.http"))));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -330,8 +336,8 @@ public class MainController {
         bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows, gitService, mermaidService,
-                lspManager, dapManager, this::applyViewSettingsToAllBuffers, this::setZenMode, this::openPath,
-                this::exportConfig, this::showDebugLog);
+                lspManager, dapManager, this::applyViewSettingsToAllBuffers, this::setZenMode,
+                this::openPath, this::exportConfig, this::showDebugLog);
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
@@ -354,6 +360,7 @@ public class MainController {
         applyGitSupport(); // hide Git UI when disabled (default)
         applyNotesSupport(); // hide Personal Notes UI when disabled (default)
         applyMermaidSupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
+        applyHttpClientSupport(); // configure ijhttp; .http run glyphs off when disabled (default)
         applyLspSupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
         applyDebugSupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on jdtls)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
@@ -1302,6 +1309,13 @@ public class MainController {
         });
         debugToolWindow = new ToolWindow("debug", tr("toolwindow.debug"), ToolWindow.Side.BOTTOM,
                 Icons::debug, debugPanel, "tool.debug");
+        httpPanel = new HttpClientPanel(this::saveHttpResponse);
+        httpPanel.setOnEnvironmentChanged(env -> {
+            config.getWorkspaceState().setHttpEnvironment(env);
+            config.save();
+        });
+        httpToolWindow = new ToolWindow("http", tr("toolwindow.http"), ToolWindow.Side.BOTTOM,
+                Icons::httpClient, httpPanel, "tool.http");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
@@ -1314,6 +1328,8 @@ public class MainController {
         toolWindows.setAvailable(runToolWindow, false); // shown only when the active file is a compact source
         toolWindows.register(debugToolWindow);
         toolWindows.setAvailable(debugToolWindow, false); // shown only while debugging is enabled
+        toolWindows.register(httpToolWindow);
+        toolWindows.setAvailable(httpToolWindow, false); // shown only for a .http file with the feature on
         dapManager.setListener(dapListener());
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
     }
@@ -1537,6 +1553,181 @@ public class MainController {
             action.run();
         } else {
             setStatus(tr("statusbar.tip.mermaidDisabled"));
+        }
+    }
+
+    // --- HTTP Client (.http via ijhttp) ----------------------------------------------------------
+
+    private boolean httpEnabled() {
+        return config.getSettings().isHttpClientSupport();
+    }
+
+    /** Runs {@code action} only when the HTTP Client is enabled; otherwise reports it. */
+    private void ifHttp(Runnable action) {
+        if (httpEnabled()) {
+            action.run();
+        } else {
+            setStatus(tr("statusbar.tip.httpDisabled"));
+        }
+    }
+
+    /**
+     * Reconciles the HTTP Client feature with its setting (mirrors {@link #applyMermaidSupport}):
+     * configures the ijhttp command, detects it (cached, async), then gates the request ▶ glyphs +
+     * the response tool window. Runs at startup and on every settings apply.
+     */
+    private void applyHttpClientSupport() {
+        boolean on = config.getSettings().isHttpClientSupport();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null) {
+                b.setHttpEnabled(on);
+            }
+        }
+        updateRunButton(); // re-gate the HTTP tool window on the active buffer
+    }
+
+    /** Runs the request at the caret line of the active {@code .http} buffer (palette command). */
+    private void runHttpRequestAtCaret() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isHttpFile()) {
+            setStatus(tr("status.http.noRequest"));
+            return;
+        }
+        runHttpRequest(b, b.getArea().getCurrentParagraph());
+    }
+
+    /** Executes the request containing {@code line} with the built-in HTTP client, shows the response. */
+    private void runHttpRequest(EditorBuffer buffer, int line) {
+        if (!httpEnabled()) {
+            setStatus(tr("statusbar.tip.httpDisabled"));
+            return;
+        }
+        if (buffer == null || buffer.getPath() == null) {
+            setStatus(tr("status.http.saveFirst"));
+            return;
+        }
+        String text = buffer.getContent();
+        int index = com.editora.http.HttpFile.requestIndexAt(text, line);
+        if (index < 0) {
+            setStatus(tr("status.http.noRequest"));
+            return;
+        }
+        com.editora.http.HttpFile.Request req = com.editora.http.HttpFile.parse(text).get(index);
+        com.editora.http.HttpFile.Parsed parsed = com.editora.http.HttpFile.parseRequest(req.block());
+        String label = parsed.method() + " " + parsed.url();
+        startHttpRun(label);
+        httpService.run(parsed, httpVariables(buffer, text), r -> finishHttpRun(label, r));
+    }
+
+    /** Runs every request in the active {@code .http} file sequentially (palette command). */
+    private void runHttpFile() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isHttpFile()) {
+            setStatus(tr("status.http.noRequest"));
+            return;
+        }
+        if (!httpEnabled()) {
+            setStatus(tr("statusbar.tip.httpDisabled"));
+            return;
+        }
+        if (b.getPath() == null) {
+            setStatus(tr("status.http.saveFirst"));
+            return;
+        }
+        String text = b.getContent();
+        java.util.List<com.editora.http.HttpFile.Parsed> reqs = com.editora.http.HttpFile.parse(text).stream()
+                .map(r -> com.editora.http.HttpFile.parseRequest(r.block())).toList();
+        if (reqs.isEmpty()) {
+            setStatus(tr("status.http.noRequest"));
+            return;
+        }
+        String label = b.getPath().getFileName().toString();
+        startHttpRun(label);
+        httpService.runAll(reqs, httpVariables(b, text), results -> {
+            StringBuilder sb = new StringBuilder();
+            boolean allOk = true;
+            for (int i = 0; i < results.size(); i++) {
+                if (i > 0) {
+                    sb.append("\n\n").append("─".repeat(40)).append("\n\n");
+                }
+                sb.append(com.editora.http.HttpResponseFormat.render(results.get(i)));
+                allOk &= results.get(i).ok();
+            }
+            httpPanel.showResult(sb.toString(), allOk ? 0 : 1);
+            setStatus(allOk ? tr("status.http.done", label) : tr("status.http.failed", reqs.size()));
+        });
+    }
+
+    private void startHttpRun(String label) {
+        toolWindows.open(httpToolWindow);
+        httpPanel.started(label);
+        setStatus(tr("status.http.running", label));
+    }
+
+    private void finishHttpRun(String label, com.editora.http.HttpResult r) {
+        httpPanel.showResult(com.editora.http.HttpResponseFormat.render(r), r.ok() ? 0 : 1);
+        setStatus(r.failed() || !r.ok() ? tr("status.http.failed", r.status()) : tr("status.http.done", label));
+    }
+
+    /** The resolved variable map for a {@code .http} buffer: the selected environment's vars (public +
+     *  private env files) overlaid with the file's {@code @var} declarations. */
+    private java.util.Map<String, String> httpVariables(EditorBuffer buffer, String text) {
+        java.nio.file.Path dir = buffer.getPath().toAbsolutePath().getParent();
+        String env = httpPanel.getSelectedEnvironment();
+        java.util.Map<String, String> envVars = new java.util.LinkedHashMap<>();
+        envVars.putAll(httpEnvVars(dir == null ? null : dir.resolve("http-client.env.json"), env));
+        envVars.putAll(httpEnvVars(dir == null ? null : dir.resolve("http-client.private.env.json"), env));
+        return com.editora.http.HttpVars.resolve(envVars,
+                com.editora.http.HttpFile.fileVariablePairs(text), java.time.LocalDateTime.now());
+    }
+
+    private java.util.Map<String, String> httpEnvVars(java.nio.file.Path file, String env) {
+        if (file == null || env == null || env.isEmpty() || !java.nio.file.Files.exists(file)) {
+            return java.util.Map.of();
+        }
+        try {
+            return com.editora.http.HttpEnv.variables(java.nio.file.Files.readString(file), env);
+        } catch (java.io.IOException e) {
+            return java.util.Map.of();
+        }
+    }
+
+    /** The environment names declared in the {@code .http} file's directory (for the picker). */
+    private java.util.List<String> httpEnvironmentNames(java.nio.file.Path dir) {
+        if (dir == null) {
+            return java.util.List.of();
+        }
+        java.nio.file.Path env = dir.resolve("http-client.env.json");
+        if (!java.nio.file.Files.exists(env)) {
+            return java.util.List.of();
+        }
+        try {
+            return com.editora.http.HttpEnv.environmentNames(java.nio.file.Files.readString(env));
+        } catch (java.io.IOException e) {
+            return java.util.List.of();
+        }
+    }
+
+    /** Saves the current HTTP response text to a chosen file. */
+    private void saveHttpResponse() {
+        String text = httpPanel.getResponseText();
+        if (text == null || text.isEmpty()) {
+            setStatus(tr("status.http.noResponse"));
+            return;
+        }
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle(tr("dialog.saveResponse.title"));
+        chooser.setInitialFileName("response.txt");
+        java.nio.file.Path file = pathOf(chooser.showSaveDialog(stage));
+        if (file == null) {
+            return;
+        }
+        try {
+            java.nio.file.Files.writeString(file, text);
+            setStatus(tr("status.http.saved", file.getFileName()));
+        } catch (java.io.IOException e) {
+            setStatus(tr("status.http.saveFailed", e.getMessage()));
         }
     }
 
@@ -3728,6 +3919,8 @@ public class MainController {
         buffer.setRunHandler(this::runActiveFile); // "Run File" editor right-click item (runnable files)
         buffer.setRunEnabled(lspEnabled()); // the Run affordance is gated by the LSP feature
         buffer.setShellRunEnabled(lspEnabled() && config.getSettings().isBashLspEnabled());
+        buffer.setHttpRunHandler(line -> runHttpRequest(buffer, line)); // .http request ▶
+        buffer.setHttpEnabled(httpEnabled());
         // Debugging: the leftmost breakpoint gutter strip + persistence + live re-send to a session
         // (only for debuggable languages — java/python/javascript).
         buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
@@ -4953,9 +5146,19 @@ public class MainController {
      *  the green gutter Run glyph on the entry line + the right-click menu). */
     private void updateRunButton() {
         EditorBuffer buffer = activeBuffer();
-        boolean runnable = buffer != null && buffer.isRunnable();
+        boolean http = buffer != null && buffer.isHttpFile();
+        boolean runnable = buffer != null && buffer.isRunnable() && !http;
         if (runToolWindow != null) {
             toolWindows.setAvailable(runToolWindow, runnable);
+        }
+        boolean httpActive = http && httpEnabled();
+        if (httpToolWindow != null) {
+            toolWindows.setAvailable(httpToolWindow, httpActive);
+        }
+        if (httpActive && buffer.getPath() != null) {
+            java.nio.file.Path dir = buffer.getPath().toAbsolutePath().getParent();
+            httpPanel.setEnvironments(httpEnvironmentNames(dir),
+                    config.getWorkspaceState().getHttpEnvironment());
         }
     }
 
@@ -7066,6 +7269,7 @@ public class MainController {
         applyGitSupport();
         applyNotesSupport();
         applyMermaidSupport();
+        applyHttpClientSupport();
         applyAutoSave();
         applyAutocomplete();
         applyMultiCaret();
@@ -7623,6 +7827,12 @@ public class MainController {
         registry.register(Command.of("run.rerun", this::rerunLast));
         registry.register(Command.of("run.stop", this::stopRun));
         registry.register(Command.of("tool.run", () -> toolWindows.toggle(runToolWindow)));
+        // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
+        registry.register(Command.of("http.runRequest", () -> ifHttp(this::runHttpRequestAtCaret)));
+        registry.register(Command.of("http.runFile", () -> ifHttp(this::runHttpFile)));
+        registry.register(Command.of("http.selectEnvironment",
+                () -> ifHttp(() -> toolWindows.open(httpToolWindow, true))));
+        registry.register(Command.of("tool.http", () -> ifHttp(() -> toolWindows.toggle(httpToolWindow))));
         // Debugging (DAP). Gated by the "Enable Java debugging" setting (default off).
         registry.register(Command.of("debug.start", () -> ifDebug(this::debugStart)));
         registry.register(Command.of("debug.stop", () -> ifDebug(dapManager::stop)));

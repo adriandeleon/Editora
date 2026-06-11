@@ -233,6 +233,13 @@ public class EditorBuffer implements TabContent {
     /** Whether shell scripts may show the Run glyph (gated by the Bash LSP server toggle, under the LSP
      *  feature) — separate from Java/Python, which only need {@link #runFeatureEnabled}. */
     private boolean shellRunEnabled;
+    /** Whether the HTTP Client feature is enabled (gated by {@code Settings.httpClientSupport} + ijhttp
+     *  detection) — a {@code .http} file then shows a Run glyph on every request line. */
+    private boolean httpFeatureEnabled;
+    /** The 0-based start lines of each request in a {@code .http} buffer (each gets a Run glyph). */
+    private java.util.List<Integer> httpRequestLines = java.util.List.of();
+    /** Fired with the clicked request's start line when a {@code .http} Run glyph is clicked. */
+    private java.util.function.IntConsumer httpRunHandler = i -> { };
     /** Whether this file is runnable (a Java 25 compact source file, a Python script, or — when the Bash
      *  LSP is enabled — a shell script) — drives the gutter Run glyph + the Run tool window. */
     private boolean runnable;
@@ -359,13 +366,9 @@ public class EditorBuffer implements TabContent {
         folds.setChangeHook(() -> changeBars != null,
                 line -> changeBars == null ? null : changeBars.get(line),
                 line -> changeHunks == null ? null : changeHunks.get(line));
-        // Gutter Run glyph: reserved only for a runnable file, on its entry line.
-        folds.setRunHooks(() -> runnable, line -> runnable && line == runLine,
-                () -> {
-                    if (runHandler != null) {
-                        runHandler.run();
-                    }
-                });
+        // Gutter Run glyph: reserved for a runnable file — one entry line for a script, or one per
+        // request for a .http file.
+        folds.setRunHooks(() -> runnable, this::isRunGlyphLine, this::onRunGlyph);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(() -> debugEnabled, breakpoints::isBreakpoint, this::breakpointStyleClass,
                 line -> gutterBreakpointClick.accept(this, line));
@@ -1178,14 +1181,62 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Recomputes runnable status + the gutter entry line; refreshes the gutter and fires the callback. */
+    /** True for a {@code .http}/{@code .rest} buffer (drives the HTTP Client run glyphs + tool window). */
+    public boolean isHttpFile() {
+        return "http".equals(language);
+    }
+
+    /** Enables/disables the HTTP Client Run glyphs for a {@code .http} buffer (gated by the feature +
+     *  ijhttp detection). */
+    public void setHttpEnabled(boolean enabled) {
+        if (enabled != httpFeatureEnabled) {
+            httpFeatureEnabled = enabled;
+            recomputeRun();
+        }
+    }
+
+    /** Injects the handler run with a request's start line when its {@code .http} gutter ▶ is clicked. */
+    public void setHttpRunHandler(java.util.function.IntConsumer handler) {
+        this.httpRunHandler = handler == null ? i -> { } : handler;
+    }
+
+    /** Whether {@code line} draws a Run glyph: every request line for an enabled {@code .http} buffer,
+     *  else the single script entry line. */
+    private boolean isRunGlyphLine(int line) {
+        if (!runnable) {
+            return false;
+        }
+        if (httpFeatureEnabled && isHttpFile()) {
+            return httpRequestLines.contains(line);
+        }
+        return line == runLine;
+    }
+
+    /** Dispatches a Run-glyph click: a {@code .http} request runner (with the clicked line), else the
+     *  script run handler. */
+    private void onRunGlyph(int line) {
+        if (httpFeatureEnabled && isHttpFile()) {
+            httpRunHandler.accept(line);
+        } else if (runHandler != null) {
+            runHandler.run();
+        }
+    }
+
+    /** Recomputes runnable status + the gutter entry line(s); refreshes the gutter and fires the callback. */
     private void recomputeRun() {
         String name = path != null ? path.getFileName().toString() : displayName;
         String text = area.getText();
         boolean eligible = runFeatureEnabled && !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
+        boolean httpEligible = httpFeatureEnabled && !largeFile && isHttpFile();
         boolean nowRunnable;
         int nowLine;
-        if (eligible && "python".equals(language)) {
+        java.util.List<Integer> nowHttpLines = java.util.List.of();
+        if (httpEligible) {
+            nowHttpLines = com.editora.http.HttpFile.parse(text).stream()
+                    .map(com.editora.http.HttpFile.Request::startLine).toList();
+            nowRunnable = !nowHttpLines.isEmpty();
+            nowLine = -1; // .http uses the line set, not a single entry line
+        } else if (eligible && "python".equals(language)) {
             nowRunnable = true;
             nowLine = pythonRunLine(text); // the __main__ guard, else the first line
         } else if (eligible && shellRunEnabled && "shell".equals(language)) {
@@ -1199,12 +1250,16 @@ public class EditorBuffer implements TabContent {
             nowLine = -1;
         }
         boolean changed = nowRunnable != runnable;
+        boolean httpLinesChanged = !nowHttpLines.equals(httpRequestLines);
         int oldLine = runLine;
         runnable = nowRunnable;
         runLine = nowLine;
+        httpRequestLines = nowHttpLines;
         if (changed) {
             onRunnableChanged.run();
             refreshGutter(); // the Run slot appeared/disappeared on every row — rebuild the factory
+        } else if (httpLinesChanged) {
+            refreshGutter(); // requests added/removed in a .http file — relight the glyphs
         } else if (nowLine != oldLine) {
             // The entry line moved (edits above it) — repaint just the old and new gutter rows.
             if (oldLine >= 0) {

@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 18;
+    public static final int SCHEMA_VERSION = 19;
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
@@ -81,6 +81,10 @@ public class Settings {
     private String mmdcPath = "";
     /** Path to the maid (probelabs/maid linter) executable; blank = resolve "maid" on PATH. */
     private String maidPath = "";
+    /** HTTP Client support (run {@code .http} requests via the JetBrains {@code ijhttp} CLI): off by default. */
+    private boolean httpClientSupport = false;
+    /** The {@code ijhttp} command/path; blank = resolve {@code ijhttp} on PATH. */
+    private String ijhttpCommand = "";
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -248,6 +252,22 @@ public class Settings {
 
     public void setAuthorName(String authorName) {
         this.authorName = authorName == null ? "" : authorName;
+    }
+
+    public boolean isHttpClientSupport() {
+        return httpClientSupport;
+    }
+
+    public void setHttpClientSupport(boolean httpClientSupport) {
+        this.httpClientSupport = httpClientSupport;
+    }
+
+    public String getIjhttpCommand() {
+        return ijhttpCommand == null ? "" : ijhttpCommand;
+    }
+
+    public void setIjhttpCommand(String ijhttpCommand) {
+        this.ijhttpCommand = ijhttpCommand == null ? "" : ijhttpCommand;
     }
 
     public boolean isShowColumnRuler() {

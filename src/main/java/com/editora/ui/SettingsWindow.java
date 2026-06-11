@@ -74,6 +74,7 @@ public class SettingsWindow {
         APPLICATION(tr("settings.cat.application"), false),
         GIT(tr("settings.cat.git"), false),
         MERMAID(tr("settings.cat.mermaid"), false),
+        HTTP_CLIENT(tr("settings.cat.httpClient"), false),
         LSP(tr("settings.cat.lsp"), false),
         DEBUG(tr("settings.cat.debug"), false),
         KEYMAPS(tr("settings.cat.keymaps"), true),
@@ -137,6 +138,7 @@ public class SettingsWindow {
     private CheckBox gitCheck;
     private Label gitStatusLabel;
     private CheckBox mermaidCheck;
+    private CheckBox httpCheck;
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -521,6 +523,12 @@ public class SettingsWindow {
             refreshMermaidStatus();
         });
 
+        httpCheck = new CheckBox(tr("settings.httpClient.enable"));
+        httpCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setHttpClientSupport(now);
+            apply();
+        });
+
         templateAuthorField = new TextField();
         templateAuthorField.setPromptText(System.getProperty("user.name", ""));
         templateAuthorField.textProperty().addListener((obs, was, now) -> {
@@ -643,6 +651,7 @@ public class SettingsWindow {
         pages.put(Category.APPLICATION, applicationPage());
         pages.put(Category.GIT, gitPage());
         pages.put(Category.MERMAID, mermaidPage());
+        pages.put(Category.HTTP_CLIENT, httpClientPage());
         pages.put(Category.LSP, lspPage());
         pages.put(Category.DEBUG, debugPage());
         pages.put(Category.ADVANCED, advancedPage());
@@ -782,6 +791,16 @@ public class SettingsWindow {
         hint.setWrapText(true);
         hint.setMaxWidth(440);
         row(p, Category.MERMAID, null, hint, "mermaid install npm mmdc maid cli");
+        return p;
+    }
+
+    private VBox httpClientPage() {
+        VBox p = page(tr("settings.cat.httpClient"));
+        row(p, Category.HTTP_CLIENT, null, httpCheck, "http client rest request enable run send");
+        Label hint = note(tr("settings.httpClient.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.HTTP_CLIENT, null, hint, "http rest request response built-in client");
         return p;
     }
 
@@ -1066,7 +1085,6 @@ public class SettingsWindow {
         return box;
     }
 
-    /** Re-probes mmdc/maid presence and updates the status label (async; FX-thread callback). */
     private void refreshMermaidStatus() {
         if (mermaidStatusLabel == null || mermaidService == null) {
             return;
@@ -1660,6 +1678,7 @@ public class SettingsWindow {
             mmdcPathField.setText(settings.getMmdcPath());
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
+            httpCheck.setSelected(settings.isHttpClientSupport());
             debugCheck.setSelected(settings.isDebugSupport());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());

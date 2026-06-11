@@ -33,6 +33,11 @@ final class Icons {
         return of("M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z");
     }
 
+    /** Request/response arrows (Material "swap_horiz") — the HTTP Client tool window. */
+    static Node httpClient() {
+        return of("M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z");
+    }
+
     /** Source-control branch glyph (Material "account_tree"/fork) for the Git tool window stripe. */
     static Node git() {
         return of("M17 6c0-1.66-1.34-3-3-3s-3 1.34-3 3c0 1.3.84 2.4 2 2.82V11c0 1.1-.9 2-2 2H8.82C8.4 "

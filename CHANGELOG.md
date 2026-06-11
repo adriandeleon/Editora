@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTTP Client (`.http`/`.rest` files)** — open a `.http` file with syntax highlighting and a green
+  ▶ on every request; click it to run that request and see the response (status, headers, pretty-printed
+  JSON body, timing/size) in an "HTTP Client" tool window (`M-0`). Uses Editora's **built-in HTTP
+  client** — no external tools needed (off by default; enable in **Settings → HTTP Client**). Supports
+  in-file `@variable`/`{{var}}` substitution (incl. `{{$uuid}}`/`{{$timestamp}}`), **environment files**
+  (`http-client.env.json` + `.private.env.json`, with an environment picker), running the whole file,
+  and **saving the response**. Commands: `HTTP: Run Request at Caret`, `HTTP: Run All Requests in File`,
+  `HTTP: Select Environment`.
+
 - **File templates** — "New File From Template" creates a file (or set of files) from a reusable
   template with `${variable}` substitution, a `${cursor}` placement, and a variable-entry wizard:
   - A template picker (palette `Template: New File From Template…`, **C-c C-n**, and a toolbar button)

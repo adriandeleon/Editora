@@ -29,7 +29,8 @@ public enum ConfigSchema {
     // servers; v11 → v12 added the C/C++/HTML/CSS/Kotlin/Lua/Dockerfile/SQL/Terraform/TOML servers;
     // v12 → v13 added the C# server; v13 → v14 added markdownFormatBar; v14 → v15 added
     // debugSupport + javaDebugPluginPath; v15 → v16 added pythonDebug/jsDebug enable+command;
-    // v16 → v17 added multiCaret; v17 → v18 added authorName (file templates) — all additive, so identity.
+    // v16 → v17 added multiCaret; v17 → v18 added authorName (file templates); v18 → v19 added
+    // httpClientSupport + ijhttpCommand — all additive, so identity.
     SETTINGS(Settings.SCHEMA_VERSION, 1, Map.<Integer, Migration>ofEntries(
             Map.entry(1, (Migration) ConfigMigrations::identity),
             Map.entry(2, (Migration) ConfigMigrations::identity),
@@ -47,7 +48,8 @@ public enum ConfigSchema {
             Map.entry(14, (Migration) ConfigMigrations::identity),
             Map.entry(15, (Migration) ConfigMigrations::identity),
             Map.entry(16, (Migration) ConfigMigrations::identity),
-            Map.entry(17, (Migration) ConfigMigrations::identity))),
+            Map.entry(17, (Migration) ConfigMigrations::identity),
+            Map.entry(18, (Migration) ConfigMigrations::identity))),
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
