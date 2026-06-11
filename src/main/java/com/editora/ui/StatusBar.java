@@ -67,7 +67,7 @@ public final class StatusBar extends HBox {
     private final Label zoomPercent = new Label("100%");
 
     private EditorBuffer attached;
-    /** Simple UI mode hides the git / language / tab-size / line-ending / size / encoding / LSP segments. */
+    /** Simple UI mode hides the git / language / tab-size / line-ending / encoding / LSP segments (size is kept). */
     private boolean simpleMode;
     /** Latest LSP server name + loading state, so Simple-mode toggling can re-apply their visibility. */
     private String lspServerName = "";
@@ -300,8 +300,11 @@ public final class StatusBar extends HBox {
         boolean hasBuffer = buffer != null;
         position.setVisible(hasBuffer);
         position.setManaged(hasBuffer);
+        // Ln/Col and the file size follow buffer presence even in Simple mode (kept visible there).
+        size.setVisible(hasBuffer);
+        size.setManaged(hasBuffer);
         // Simple UI mode hides these segments; otherwise they follow buffer presence.
-        for (Label seg : new Label[]{language, endings, size}) {
+        for (Label seg : new Label[]{language, endings}) {
             boolean vis = hasBuffer && !simpleMode;
             seg.setVisible(vis);
             seg.setManaged(vis);
@@ -353,7 +356,7 @@ public final class StatusBar extends HBox {
         size.setText(formatSize(buffer.getContent().getBytes(StandardCharsets.UTF_8).length));
     }
 
-    /** Simple UI mode: hide the git / language / tab-size / line-ending / size / encoding segments. */
+    /** Simple UI mode: hide the git / language / tab-size / line-ending / encoding segments (size is kept). */
     public void setSimpleMode(boolean simpleMode) {
         if (this.simpleMode != simpleMode) {
             this.simpleMode = simpleMode;

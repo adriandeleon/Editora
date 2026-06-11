@@ -101,8 +101,8 @@ Emacs-style keymap or a fuzzy command palette.
   surface: it hides the extra toolbar groups (new-from-template, recent, find-in-files, split, project
   selector), the tool-window stripe, the breadcrumb,
   the entire gutter (line numbers + fold chevrons + markers; collapsed regions are unfolded first), the
-  minimap, and most status-bar segments (git, LSP, language, tab size, line endings, size, encoding), while
-  keeping the tabs and the essential toolbar icons (including **Open**). It also **disables the heavier features** — language
+  minimap, and most status-bar segments (git, LSP, language, tab size, line endings, encoding), while
+  keeping the tabs, the essential toolbar icons (including **Open**), and the file-size segment. It also **disables the heavier features** — language
   servers (LSP), debugging, the HTTP client, Git, and multiple cursors / column selection — for a quiet
   plain editor. Persists across restarts; your saved preferences (line numbers, minimap, breadcrumb, tool
   stripe, LSP/debug/HTTP/Git and multi-caret enables) are all restored when you turn it off.
