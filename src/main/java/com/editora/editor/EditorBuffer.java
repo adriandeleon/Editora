@@ -1225,9 +1225,13 @@ public class EditorBuffer implements TabContent {
     /** Recomputes runnable status + the gutter entry line(s); refreshes the gutter and fires the callback. */
     private void recomputeRun() {
         String name = path != null ? path.getFileName().toString() : displayName;
-        String text = area.getText();
         boolean eligible = runFeatureEnabled && !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
-        boolean httpEligible = httpFeatureEnabled && !largeFile && isHttpFile();
+        boolean httpEligible = httpFeatureEnabled && !largeFile && isHttpFile()
+                && area.getLength() <= COMPACT_SCAN_LIMIT;
+        // Only materialize the whole document when we actually scan it (compact-source / .http detection).
+        // Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on every
+        // 150 ms edit pulse just to discard it as run-ineligible.
+        String text = (eligible || httpEligible) ? area.getText() : "";
         boolean nowRunnable;
         int nowLine;
         java.util.List<Integer> nowHttpLines = java.util.List.of();
