@@ -151,4 +151,9 @@ public final class PrintService {
     private static String message(Exception e) {
         return e.getMessage() == null ? e.toString() : e.getMessage();
     }
+
+    /** Stops the background prepare thread (called when the owning window closes). */
+    public void shutdown() {
+        exec.shutdownNow();
+    }
 }

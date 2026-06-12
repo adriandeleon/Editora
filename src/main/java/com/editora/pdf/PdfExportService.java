@@ -75,4 +75,9 @@ public final class PdfExportService {
             Platform.runLater(() -> onResult.accept(r));
         });
     }
+
+    /** Stops the background export thread (called when the owning window closes). */
+    public void shutdown() {
+        exec.shutdownNow();
+    }
 }

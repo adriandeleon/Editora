@@ -90,4 +90,9 @@ public final class MermaidService {
             }
         });
     }
+
+    /** Stops the background render/validate thread (called when the owning window closes). */
+    public void shutdown() {
+        exec.shutdownNow();
+    }
 }

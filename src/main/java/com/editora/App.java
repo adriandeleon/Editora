@@ -4,21 +4,15 @@ import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import com.editora.command.CommandRegistry;
-import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
-import com.editora.config.WorkspaceState;
+import com.editora.config.SharedConfig;
 import com.editora.ui.MainController;
 
 import com.editora.ui.Themes;
 
 import javafx.application.Application;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Scene;
-import javafx.scene.layout.BorderPane;
-import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 public class App extends Application {
@@ -44,17 +38,27 @@ public class App extends Application {
     public void start(Stage stage) throws IOException {
         com.editora.ui.Fonts.load(); // register bundled fonts before any UI/CSS uses them
 
+        // On macOS the JavaFX/AppKit (FX application) thread's context classloader can be null, which
+        // breaks loading FXML-referenced classes (and other lazy class loads) when building windows at
+        // runtime — the single-window app loaded its FXML once at startup and never hit this, but
+        // multi-window builds a window per project. Pin a real classloader as the FXMLLoader default and
+        // as this thread's context classloader so every runtime window build (and lazy load) resolves.
+        javafx.fxml.FXMLLoader.setDefaultClassLoader(App.class.getClassLoader());
+        Thread.currentThread().setContextClassLoader(App.class.getClassLoader());
+
         // Config dir precedence: --config-dir CLI arg > EDITORA_CONFIG_DIR env var > default
-        // (~/.editora, or ~/.editora-dev with --dev so a dev instance can't disturb production).
+        // (~/.editora, or ~/.editora-dev with --dev so a dev instance can't disturb production). The
+        // bootstrap ConfigManager loads the shared config once; per-window ConfigManagers reuse it.
         var rawArgs = getParameters().getRaw();
         String cliConfigDir = configDirArg(rawArgs);
-        ConfigManager config = cliConfigDir != null
+        ConfigManager bootstrap = cliConfigDir != null
                 ? new ConfigManager(java.nio.file.Path.of(cliConfigDir))
                 : new ConfigManager(devFlag(rawArgs));
-        Settings settings = config.load();
+        Settings settings = bootstrap.load();
+        SharedConfig shared = bootstrap.shared();
         // Mirror captured logs to a session file in the config dir so a packaged build's log survives a
         // crash and can be attached to a bug report (the in-memory capture was installed in main()).
-        com.editora.ui.DebugLog.attachFile(config.getConfigDir());
+        com.editora.ui.DebugLog.attachFile(shared.getConfigDir());
 
         // Localize the UI: pick the language (explicit setting, else system, else English) and load the
         // message catalog before any UI text is created. A change takes effect on the next launch.
@@ -69,62 +73,23 @@ public class App extends Application {
 
         Application.setUserAgentStylesheet(Themes.stylesheetFor(settings.getTheme()));
 
-        CommandRegistry registry = new CommandRegistry();
         KeymapManager keymap = new KeymapManager();
         keymap.loadNamed(settings.getKeymap());
         keymap.applyOverrides(settings.getKeybindings());
 
-        FXMLLoader loader = new FXMLLoader(App.class.getResource("ui/main.fxml"));
-        BorderPane root = loader.load();
-        MainController controller = loader.getController();
-        controller.init(stage, config, registry, keymap);
-        controller.setHostServices(getHostServices()); // for the Welcome page's home-page link
-
-        // Wrap the UI in a StackPane so a floating overlay (the Zen-mode exit button) can sit on top.
-        javafx.scene.layout.StackPane sceneRoot = new javafx.scene.layout.StackPane(root);
         // Experiment: on macOS, render the UI chrome in the native system font (San Francisco) instead of
-        // AtlantaFX's Inter — across every window (main, dialogs, the Settings window, and popups like the
-        // command palette / context menus / tooltips). See installMacSystemFont.
+        // AtlantaFX's Inter — across every window. A listener on the live window list covers windows
+        // opened later (so each project window picks it up). See installMacSystemFont.
         if (isMac()) {
             installMacSystemFont();
         }
-        controller.installZenOverlay(sceneRoot);
-        Scene scene = new Scene(sceneRoot, 1000, 700);
-        // Pre-fill with the theme background so the first frame isn't JavaFX's default light gray
-        // (which otherwise flashes before the CSS is applied — most visible with a dark theme). The
-        // root and editor are transparent until CSS paints them, so this fill shows through. (Scene
-        // fill isn't a CSS property, so it doesn't interfere with later theme switches.)
-        scene.setFill(Themes.backgroundFor(settings.getTheme()));
-        scene.getStylesheets().addAll(
-                App.class.getResource("styles/app.css").toExternalForm(),
-                App.class.getResource("styles/syntax.css").toExternalForm());
 
-        KeyDispatcher keyDispatcher = new KeyDispatcher(registry, keymap, controller::setStatus);
-        keyDispatcher.install(scene);
-        controller.setKeyDispatcher(keyDispatcher);
-
-        // Ctrl + mouse wheel zooms (and is consumed so the editor/preview doesn't also scroll): the
-        // Markdown preview when the pointer is over it, otherwise the editor text.
-        scene.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
-            if (e.isControlDown() && e.getDeltaY() != 0) {
-                controller.zoomFromWheel(e);
-                e.consume();
-            }
-        });
-
-        stage.setScene(scene);
-        stage.setTitle("Editora");
-        loadAppIcons(stage);
-        controller.applyEditorTheme(settings.getEditorTheme());
-        restoreWindowBounds(stage, config.getWorkspaceState());
-        stage.show();
-
-        // Startup CLI actions: open a project (if enabled), restore the session, open any FILE(s)
-        // (jumping to LINE:COLUMN), and enter Zen — all on top of the restored session.
-        var raw = getParameters().getRaw();
-        String project = projectArg(raw);
-        controller.startup(project == null ? null : java.nio.file.Path.of(project),
-                fileTargets(raw), zenFlag(raw), newFileArg(raw), simpleFlag(raw));
+        // WindowManager builds each window (reusing the primary stage for the first) and, with projects
+        // enabled, restores every window that was open at last quit. CLI targets go to the first window.
+        com.editora.ui.WindowManager windows =
+                new com.editora.ui.WindowManager(shared, keymap, getHostServices());
+        windows.launch(stage, projectArg(rawArgs), fileTargets(rawArgs), zenFlag(rawArgs),
+                newFileArg(rawArgs), simpleFlag(rawArgs));
     }
 
     /** True when running on macOS (used to opt the UI chrome into the native system font). */
@@ -207,39 +172,6 @@ public class App extends Application {
             }
         }
         return null;
-    }
-
-    /**
-     * Restores the main window's size, position, and maximized state from the last session. Bounds
-     * are only applied when they were saved (non-zero size) and still land on a connected screen, so
-     * a disconnected monitor or first launch falls back to the scene's default size and OS centering.
-     */
-    private void restoreWindowBounds(Stage stage, WorkspaceState state) {
-        double w = state.getWindowWidth();
-        double h = state.getWindowHeight();
-        if (w > 0 && h > 0) {
-            double x = state.getWindowX();
-            double y = state.getWindowY();
-            if (!Screen.getScreensForRectangle(x, y, w, h).isEmpty()) {
-                stage.setX(x);
-                stage.setY(y);
-            }
-            stage.setWidth(w);
-            stage.setHeight(h);
-        }
-        if (state.isWindowMaximized()) {
-            stage.setMaximized(true);
-        }
-    }
-
-    /** Adds the app icon (multiple sizes) so it shows in the title bar, dock, and taskbar. */
-    private void loadAppIcons(Stage stage) {
-        for (int size : new int[]{16, 32, 48, 128, 256, 512}) {
-            var in = App.class.getResourceAsStream("/com/editora/icons/icon-" + size + ".png");
-            if (in != null) {
-                stage.getIcons().add(new javafx.scene.image.Image(in));
-            }
-        }
     }
 
     public static void main(String[] args) {

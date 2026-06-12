@@ -146,4 +146,9 @@ public final class SearchService {
             return null;
         }
     }
+
+    /** Stops the background search thread (called when the owning window closes). */
+    public void shutdown() {
+        exec.shutdownNow();
+    }
 }

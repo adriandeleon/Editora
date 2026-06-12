@@ -26,14 +26,17 @@ public class ProjectManager {
     static final String INDEX_FILE_NAME = "projects.json";
     static final String PROJECTS_DIR = "projects";
 
-    /** The serialized index: the known projects and which one is active ("" = none). */
+    /** The serialized index: the known projects, the last-focused one, and the open-window set. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Index {
-        /** Current on-disk schema version of {@code projects.json}. */
-        public static final int SCHEMA_VERSION = 1;
+        /** Current on-disk schema version of {@code projects.json}. v1→v2 added {@code openProjectIds}. */
+        public static final int SCHEMA_VERSION = 2;
         private int schemaVersion = SCHEMA_VERSION;
         private List<Project> projects = new ArrayList<>();
+        /** The last-focused project ("" = the no-project/global window). Drives focus on restore. */
         private String activeProjectId = "";
+        /** Project ids whose windows were open at last quit ("" = the global window). Empty ⇒ open global. */
+        private List<String> openProjectIds = new ArrayList<>();
 
         public int getSchemaVersion() {
             return schemaVersion;
@@ -57,6 +60,14 @@ public class ProjectManager {
 
         public void setActiveProjectId(String activeProjectId) {
             this.activeProjectId = activeProjectId == null ? "" : activeProjectId;
+        }
+
+        public List<String> getOpenProjectIds() {
+            return openProjectIds;
+        }
+
+        public void setOpenProjectIds(List<String> openProjectIds) {
+            this.openProjectIds = openProjectIds == null ? new ArrayList<>() : openProjectIds;
         }
     }
 
@@ -100,6 +111,29 @@ public class ProjectManager {
         index.setActiveProjectId(projectId == null ? "" : projectId);
     }
 
+    /** The project keys whose windows were open ({@code ""} = the global window). Callers persist via {@link #save()}. */
+    public List<String> openProjectIds() {
+        return List.copyOf(index.getOpenProjectIds());
+    }
+
+    /** Records that a window for {@code projectKey} ({@code ""} = global) is open. Callers persist via {@link #save()}. */
+    public void markOpen(String projectKey) {
+        String key = projectKey == null ? "" : projectKey;
+        if (!index.getOpenProjectIds().contains(key)) {
+            index.getOpenProjectIds().add(key);
+        }
+    }
+
+    /** Records that the window for {@code projectKey} ({@code ""} = global) has closed. Callers persist via {@link #save()}. */
+    public void markClosed(String projectKey) {
+        index.getOpenProjectIds().remove(projectKey == null ? "" : projectKey);
+    }
+
+    /** True if a window for {@code projectKey} ({@code ""} = global) is recorded as open. */
+    public boolean isOpen(String projectKey) {
+        return index.getOpenProjectIds().contains(projectKey == null ? "" : projectKey);
+    }
+
     /**
      * Removes the project from the index and deletes its per-project session-state file. The project's
      * folder and its files on disk are left untouched. Clears the active project if it was the one
@@ -113,6 +147,7 @@ public class ProjectManager {
         if (projectId.equals(index.getActiveProjectId())) {
             index.setActiveProjectId("");
         }
+        index.getOpenProjectIds().remove(projectId); // a deleted project can't have an open window
         try {
             Files.deleteIfExists(configDir.resolve(PROJECTS_DIR).resolve(projectId + ".json"));
         } catch (IOException ignored) {

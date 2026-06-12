@@ -173,6 +173,12 @@ public class MainController {
     private FileFinder folderFinder;
     private ProjectPanel projectPanel;
     private ProjectManager projects;
+    /** The multi-window coordinator (null in single-window/test use); set right after {@link #init}. */
+    private WindowManager windowManager;
+    /** This window's project ({@code null} = the no-project/global window). */
+    private Project windowProject;
+    /** This window's project key ({@code ""} = global), kept in sync with {@link #windowProject}. */
+    private String projectKey = "";
     private QuickOpen<Project> projectPicker;
     private ProjectCombo toolbarProjectCombo;
     private Label projectToolbarLabel;
@@ -302,8 +308,23 @@ public class MainController {
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
         this.stage = stage;
         stage.setOnCloseRequest(e -> {
-            if (!confirmQuit() || !confirmCloseAllBuffers()) {
+            // Save/prompt this window's dirty buffers + persist its session; cancel the close if the
+            // user backs out. (No separate "Quit?" prompt — each window closes independently now.)
+            if (!confirmCloseAllBuffers()) {
                 e.consume();
+                return;
+            }
+            // Defensive: a disposal hiccup must never block the close (or it would look like the window
+            // can't be closed). Let JavaFX close this stage normally afterwards; the app keeps running
+            // while other windows remain (implicitExit quits only when the last window closes).
+            try {
+                disposeWindow();
+            } catch (RuntimeException | Error t) {
+                java.util.logging.Logger.getLogger(MainController.class.getName())
+                        .log(java.util.logging.Level.WARNING, "disposeWindow failed on close", t);
+            }
+            if (windowManager != null) {
+                windowManager.onWindowClosed(this);
             }
         });
         // Detect files changed by another program: re-check open files whenever the window regains focus.
@@ -350,7 +371,7 @@ public class MainController {
         bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(config, toolWindows, gitService, mermaidService,
-                lspManager, dapManager, this::applyViewSettingsToAllBuffers, this::setZenMode,
+                lspManager, dapManager, this::onSettingsApplied, this::setZenMode,
                 this::openPath, this::exportConfig, this::showDebugLog);
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
@@ -612,6 +633,76 @@ public class MainController {
     }
 
     /**
+     * Binds this window to the multi-window coordinator and records which project it edits ({@code null}
+     * = the no-project/global window). Called by {@link WindowManager} right after {@link #init} and
+     * before {@link #startup}, so the project panel root, title, and combo reflect <em>this</em> window's
+     * project (not the globally last-focused one).
+     */
+    public void setWindowContext(WindowManager windowManager, Project project) {
+        this.windowManager = windowManager;
+        this.windowProject = project;
+        this.projectKey = project == null ? "" : project.id();
+        projectPanel.setRoot(project == null ? null : Path.of(project.root()));
+        refreshProjectPanelList();
+        updateWindowTitle();
+        // When a project window is freshly opened, show the Projects tool window so the file tree is
+        // right there (called only on a new window build, never when focusing an already-open project).
+        if (project != null && projectsEnabled() && projectToolWindow != null) {
+            toolWindows.open(projectToolWindow, false);
+        }
+    }
+
+    /** Re-applies preferences + the editor theme to this window after a Settings change in any window. */
+    public void reapplyAfterSharedSettingsChange(Settings settings) {
+        applyViewSettingsToAllBuffers(settings);
+    }
+
+    /**
+     * A Settings change was applied in this window. Re-apply it to every open window (the {@link Settings}
+     * object is shared by reference, so other windows already see the new values — they just need to
+     * restyle). Falls back to this window only when multi-window isn't wired.
+     */
+    private void onSettingsApplied(Settings settings) {
+        if (windowManager != null) {
+            windowManager.broadcastSettingsApplied(); // re-applies to every window, including this one
+        } else {
+            applyViewSettingsToAllBuffers(settings);
+        }
+    }
+
+    /**
+     * Closes this window's session programmatically (the "Close Project" command): prompts to save dirty
+     * buffers, persists the session, and releases the window's resources. Returns {@code false} if the
+     * user cancelled (the window stays open). The caller ({@link WindowManager}) closes the stage.
+     */
+    public boolean closeWindowProgrammatically() {
+        if (!confirmCloseAllBuffers()) {
+            return false;
+        }
+        disposeWindow();
+        return true;
+    }
+
+    /** Releases this window's resources on close: language servers, debug session, and worker threads. */
+    private void disposeWindow() {
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer buffer = bufferOf(tab);
+            if (buffer != null) {
+                buffer.dispose();
+            }
+        }
+        lspManager.shutdownAll(); // don't orphan this window's external language servers
+        dapManager.stop();        // end any debug session
+        gitService.shutdown();
+        searchService.shutdown();
+        mermaidService.shutdown();
+        pdfService.shutdown();
+        printService.shutdown();
+        runService.stop();
+        autoSaveExecutor.shutdownNow();
+    }
+
+    /**
      * Wires the key dispatcher's first-look hook so that <b>M-g</b>, while a tool window is focused,
      * closes that window and returns focus to the editor (instead of starting the go-to prefix).
      */
@@ -780,7 +871,8 @@ public class MainController {
 
     /** Loads the projects index and, if a project is active, points the session at it before restore. */
     private void setupProjects() {
-        projects = new ProjectManager(config.getConfigDir());
+        // The projects index is shared across all windows (one source of truth), so use the shared one.
+        projects = config.projects();
         projectPicker = new QuickOpen<>("Switch Project", "Type to filter projects…",
                 this::projectsWithNoProject,
                 Project::name,
@@ -789,12 +881,8 @@ public class MainController {
         // Keyboard "Open Project Folder" — mirrors the file finder, but picks a directory.
         folderFinder = new FileFinder(this::finderStartDir, this::openProjectRoot,
                 true, "Open Project Folder");
-        Project active = projects.active();
-        if (active != null) {
-            // Restore this project's session (openInitialBuffer + toolWindows.restore run after init).
-            config.setWorkspaceStateFile(projects.stateFile(active));
-            projectPanel.setRoot(Path.of(active.root()));
-        }
+        // Which project this window edits (and its session file) is set by WindowManager via
+        // setWindowContext(); the global window just keeps the default workspace-state.json.
         refreshProjectPanelList();
         updateWindowTitle();
     }
@@ -817,11 +905,10 @@ public class MainController {
     }
 
     private void refreshProjectPanelList() {
-        Project active = projects.active();
-        String activeId = active == null ? "" : active.id();
-        projectPanel.setProjects(projects.list(), activeId);
+        // The combo shows THIS window's project as selected (each window is one project).
+        projectPanel.setProjects(projects.list(), projectKey);
         if (toolbarProjectCombo != null) {
-            toolbarProjectCombo.setProjects(projects.list(), activeId);
+            toolbarProjectCombo.setProjects(projects.list(), projectKey);
         }
     }
 
@@ -840,20 +927,9 @@ public class MainController {
     /** Shows/hides all project UI per the "Enable projects" setting: toolbar icon + combo, tool window. */
     private void applyProjectSupport() {
         boolean on = projectsEnabled();
-        // Turning projects off while one is active: return to the global session first (saving the
-        // project's session) so the editor isn't stranded in a now-hidden project. If the user cancels
-        // the unsaved-changes prompt, abort the disable and re-check the box. The projectSupportApplied
-        // guard limits this to the runtime on→off toggle (it's false during the initial apply).
-        if (!on && projectSupportApplied && projects != null && projects.active() != null) {
-            if (!switchToProject(ProjectCombo.NO_PROJECT)) {
-                config.getSettings().setProjectSupport(true);
-                requestSave();
-                if (settingsWindow != null) {
-                    settingsWindow.syncProjectsCheck();
-                }
-                return; // leave the project UI in place
-            }
-        }
+        // Turning projects off just hides the project chrome — each window keeps editing its open files
+        // (windows no longer share one session that could be "stranded"). On the next launch with projects
+        // off, WindowManager opens a single global window.
         // The project toolbar group is also hidden by Simple UI mode (it stays a project even though the
         // selector is hidden); kept here so this later pass doesn't re-show it over applySimpleMode.
         boolean showProjectGroup = on && !simpleModeActive();
@@ -876,74 +952,55 @@ public class MainController {
     }
 
     /**
-     * Switches the editor to {@code p}'s session (saving the current one first). An empty id is the
-     * "No Project" sentinel — it returns to the default global session without closing any project.
+     * Opens (or focuses) {@code p}'s window. Each project lives in its own window now, so this no longer
+     * swaps the current window's session in place — it brings up that project's window, leaving this one
+     * as-is. The "No Project" sentinel (empty id) opens/focuses the global window.
      */
     private boolean switchToProject(Project p) {
         if (p == null) {
             return false;
         }
-        boolean toNoProject = p.id().isEmpty();
-        Project active = projects.active();
-        if (toNoProject ? active == null : p.equals(active)) {
-            return true; // already there (e.g. re-selected in the combo)
+        if (windowManager == null) {
+            return false; // multi-window not wired (shouldn't happen in the running app)
         }
-        if (!confirmCloseAllBuffers()) {
-            refreshProjectPanelList(); // cancelled — snap the combo back to the actual active project
-            return false;
+        if (p.id().equals(projectKey)) {
+            return true; // already this window (e.g. the combo re-selected the current project)
         }
-        exitZenIfActive();
-        if (toNoProject) {
-            projects.setActive("");
-            projects.save();
-            config.useDefaultWorkspaceStateFile();
-            activateSession(null);
-            setStatus(tr("status.noProject"));
-        } else {
-            projects.setActive(p.id());
-            projects.save();
-            config.setWorkspaceStateFile(projects.stateFile(p));
-            activateSession(Path.of(p.root()));
-            setStatus(tr("status.project", p.name()));
-        }
+        windowManager.openOrFocus(p.id().isEmpty() ? null : p);
+        // This window didn't change; snap its combo back to its own project.
+        refreshProjectPanelList();
         return true;
     }
 
-    /** Closes the active project (with confirmation), returning to the default global session. */
+    /** Closes this project window (with confirmation via the save prompts). */
     private void closeProject() {
-        Project active = projects.active();
-        if (active == null) {
+        if (windowProject == null) {
             setStatus(tr("status.noProjectOpen"));
             return;
         }
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                tr("dialog.closeProject.body", active.name()), ButtonType.OK, ButtonType.CANCEL);
+                tr("dialog.closeProject.body", windowProject.name()), ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.closeProject.title"));
         confirm.setHeaderText(null);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        if (!confirmCloseAllBuffers()) {
-            return;
+        if (windowManager != null) {
+            windowManager.requestClose(this); // persists + closes this window
         }
-        exitZenIfActive();
-        projects.setActive("");
-        projects.save();
-        config.useDefaultWorkspaceStateFile();
-        activateSession(null);
-        setStatus(tr("status.projectClosed"));
     }
 
-    /** Deletes the active project (with confirmation). */
+    /** Deletes this window's project (with confirmation). */
     private void deleteProject() {
-        deleteProject(projects.active());
+        deleteProject(windowProject);
     }
 
     /**
-     * Deletes a specific project from the managed list (with confirmation). Only the project entry + its
-     * saved session are removed — the folder and its files on disk are left untouched. If it's the
-     * active project, the global session is restored; otherwise the current session is untouched.
+     * Deletes a project from the shared list (with confirmation). Only the project entry, its saved
+     * session, and its bookmark/note/breakpoint buckets are removed — the folder and its files on disk are
+     * left untouched. If the project has an open window, it is closed first (saving its dirty buffers); a
+     * cancelled save prompt aborts the deletion.
      */
     private void deleteProject(Project p) {
         if (p == null || p.id().isEmpty()) {
@@ -959,85 +1016,22 @@ public class MainController {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        if (p.equals(projects.active())) {
-            // Deleting the open project: save/close its buffers and fall back to the global session.
-            if (!confirmCloseAllBuffers()) {
-                return;
-            }
-            exitZenIfActive();
-            projects.delete(p.id()); // also clears the active id
-            projects.save();
-            config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
-            config.deleteNotesForProject(p.id()); // ...and its personal notes
-            config.useDefaultWorkspaceStateFile();
-            activateSession(null); // restores the global session + refreshes the combos/panel
-        } else {
-            // Deleting a project we're not in: just drop it from the list; the session is unaffected.
-            projects.delete(p.id());
-            projects.save();
-            config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
-            config.deleteNotesForProject(p.id()); // ...and its personal notes
-            refreshProjectPanelList();
+        // Close the project's window first (persisting its session + saving dirty buffers); a cancelled
+        // save prompt leaves everything intact. No-op when the project has no open window.
+        if (windowManager != null && !windowManager.closeWindowForKey(p.id())) {
+            return;
         }
+        projects.delete(p.id()); // drops it from the index + open set + deletes its state file
+        projects.save();
+        config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
+        config.deleteNotesForProject(p.id());     // ...its personal notes
+        config.deleteBreakpointsForProject(p.id()); // ...and its breakpoints
+        refreshProjectPanelList();
         setStatus(tr("status.deletedProject", p.name()));
     }
 
-    /**
-     * Leaves Zen before a session switch, restoring the real view settings. The snapshot needed to
-     * restore them lives in the *current* session's {@link WorkspaceState}; once the workspace-state
-     * file is swapped that snapshot is orphaned, so exiting Zen first prevents a permanently mangled
-     * UI (all chrome off with no way back).
-     */
-    private void exitZenIfActive() {
-        if (config.getWorkspaceState().isZenMode()) {
-            setZenMode(false);
-        }
-    }
-
-    /** Replaces the editor + tool-window state with the freshly-loaded session (after the file swap). */
-    private void activateSession(Path root) {
-        // Switching from the Project tool window's own combo shouldn't close the panel the user is in,
-        // even if the target session didn't have it open — keep it open across the switch if it was.
-        boolean keepProjectPanelOpen = toolWindows.isOpen(projectToolWindow);
-        // A live session switch lands in normal (non-Zen) view. Zen is transient and its restore
-        // snapshot belongs to the previous session, so drop any persisted Zen flag on the incoming
-        // session to keep it consistent with the chrome already restored by exitZenIfActive().
-        WorkspaceState incoming = config.getWorkspaceState();
-        if (incoming.isZenMode()) {
-            incoming.setZenMode(false);
-            incoming.getPreZenView().clear();
-            incoming.getPreZenToolWindows().clear();
-        }
-        tabPane.getTabs().clear(); // the tabs listener clears mru/pinned for removed tabs
-        mru.clear();
-        pinned.clear();
-        openInitialBuffer();
-        toolWindows.closeAllOpen();
-        toolWindows.restore();
-        toolWindows.setZenStripesHidden(false);
-        applyChromeVisibility();
-        projectPanel.setRoot(root);
-        refreshProjectPanelList();
-        if (bookmarksPanel != null) {
-            bookmarksPanel.refresh(); // the swapped session has its own bookmarks
-        }
-        if (notesPanel != null) {
-            notesPanel.refresh(); // the swapped session has its own notes
-        }
-        if (debugPanel != null) {
-            debugPanel.setWatches(config.getWorkspaceState().getDebugWatches()); // per-session watches
-        }
-        gitService.invalidateCaches(); // a different project may be a different repo
-        refreshGit();
-        if (keepProjectPanelOpen && projectsEnabled() && !toolWindows.isOpen(projectToolWindow)) {
-            toolWindows.open(projectToolWindow, false); // keep-open across a session swap; don't grab focus
-        }
-        updateWindowTitle();
-    }
-
     private void updateWindowTitle() {
-        Project active = projects == null ? null : projects.active();
-        stage.setTitle(active == null ? "Editora" : "Editora — " + active.name());
+        stage.setTitle(windowProject == null ? "Editora" : "Editora — " + windowProject.name());
     }
 
     /** Syncs editor/session state after the Project tree renames a file on disk (old → target). */
