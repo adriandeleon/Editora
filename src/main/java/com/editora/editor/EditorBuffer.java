@@ -222,6 +222,9 @@ public class EditorBuffer implements TabContent {
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
     private final InlineValuesOverlay inlineValues = new InlineValuesOverlay(area);
+    private final BlameOverlay blameOverlay = new BlameOverlay(area);
+    /** Per-line blame (for {@link #blameHashAtCaret}); null = blame off. Mirrors what the overlay paints. */
+    private java.util.List<BlameInfo> blameLines;
     private final MermaidLintOverlay lintOverlay = new MermaidLintOverlay(area);
     private final LspDiagnosticOverlay lspOverlay = new LspDiagnosticOverlay(area);
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable. */
@@ -668,7 +671,7 @@ public class EditorBuffer implements TabContent {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, noteOverlay, searchOverlay, whitespace, spellOverlay, lintOverlay, lspOverlay, inlineValues, aceJump, minimap, diagnosticStripe, columnRuler);
+        root.getChildren().addAll(scrollPane, noteOverlay, searchOverlay, whitespace, spellOverlay, lintOverlay, lspOverlay, inlineValues, blameOverlay, aceJump, minimap, diagnosticStripe, columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -704,6 +707,11 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setLeftAnchor(inlineValues, 0d);
         AnchorPane.setRightAnchor(inlineValues, Minimap.WIDTH);
         installDebugHover(area);
+        // Inline git blame shares the text rectangle, mouse-transparent (active only while blame is on).
+        AnchorPane.setTopAnchor(blameOverlay, 0d);
+        AnchorPane.setBottomAnchor(blameOverlay, 0d);
+        AnchorPane.setLeftAnchor(blameOverlay, 0d);
+        AnchorPane.setRightAnchor(blameOverlay, Minimap.WIDTH);
         AnchorPane.setTopAnchor(searchOverlay, 0d);
         AnchorPane.setBottomAnchor(searchOverlay, 0d);
         AnchorPane.setLeftAnchor(searchOverlay, 0d);
@@ -1405,6 +1413,27 @@ public class EditorBuffer implements TabContent {
         inlineValues.setValues(hugeFile ? null : values);
     }
 
+    /** GitLens-style inline blame for the caret line: per-0-based-line annotations (null/empty clears it).
+     *  Already formatted + localized by the controller, so {@code editor} stays git-free. Off on huge files. */
+    public void setBlame(java.util.List<BlameInfo> lines) {
+        this.blameLines = (hugeFile || lines == null || lines.isEmpty()) ? null : java.util.List.copyOf(lines);
+        blameOverlay.setBlame(blameLines);
+    }
+
+    /** Whether inline blame is currently showing (non-null per-line data). */
+    public boolean isBlameOn() {
+        return blameLines != null;
+    }
+
+    /** The commit hash that last touched the caret line (for "show this commit"), or null. */
+    public String blameHashAtCaret() {
+        if (blameLines == null) {
+            return null;
+        }
+        int p = area.getCurrentParagraph();
+        return (p >= 0 && p < blameLines.size()) ? blameLines.get(p).hash() : null;
+    }
+
     /** Async evaluator injected by the controller (DAP {@code evaluate} with context "hover"):
      *  given the hovered identifier, deliver its rendered value (null/blank = show nothing). */
     private java.util.function.BiConsumer<String, java.util.function.Consumer<String>> debugHoverEvaluator;
@@ -2071,6 +2100,7 @@ public class EditorBuffer implements TabContent {
         }
         whitespace.setFont(family, size);
         inlineValues.setFont(family, size);
+        blameOverlay.setFont(family, size);
         scheduleRulerMeasure();
     }
 

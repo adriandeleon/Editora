@@ -51,7 +51,8 @@ public enum ConfigSchema {
             Map.entry(16, (Migration) ConfigMigrations::identity),
             Map.entry(17, (Migration) ConfigMigrations::identity),
             Map.entry(18, (Migration) ConfigMigrations::identity),
-            Map.entry(19, (Migration) ConfigMigrations::identity))), // v19→20: + simpleMode (additive)
+            Map.entry(19, (Migration) ConfigMigrations::identity), // v19→20: + simpleMode (additive)
+            Map.entry(20, (Migration) ConfigMigrations::identity))), // v20→21: + gitBlameInline (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

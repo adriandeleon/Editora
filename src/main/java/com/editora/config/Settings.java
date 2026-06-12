@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 20;
+    public static final int SCHEMA_VERSION = 21;
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
@@ -78,6 +78,9 @@ public class Settings {
     /** Git integration: off by default — hides the status-bar VCS segment, Commit tool window, gutter
      *  change bars, and Git commands/keybindings until enabled. */
     private boolean gitSupport = false;
+    /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
+     *  ("author, N days ago • summary") after the caret line. */
+    private boolean gitBlameInline = false;
     /** Mermaid diagram support: off by default — needs the external mmdc (render/export) and maid
      *  (validation) CLIs. Renders .mmd files and ```mermaid Markdown blocks in the preview. */
     private boolean mermaidSupport = false;
@@ -481,6 +484,14 @@ public class Settings {
 
     public void setGitSupport(boolean gitSupport) {
         this.gitSupport = gitSupport;
+    }
+
+    public boolean isGitBlameInline() {
+        return gitBlameInline;
+    }
+
+    public void setGitBlameInline(boolean gitBlameInline) {
+        this.gitBlameInline = gitBlameInline;
     }
 
     public boolean isMermaidSupport() {

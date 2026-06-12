@@ -137,6 +137,7 @@ public class SettingsWindow {
     private CheckBox multiCaretCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
+    private CheckBox blameCheck;
     private Label gitStatusLabel;
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
@@ -502,6 +503,13 @@ public class SettingsWindow {
             config.getSettings().setGitSupport(now);
             apply();
             updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
+            blameCheck.setDisable(!now); // inline blame only matters when Git is on
+        });
+
+        blameCheck = new CheckBox(tr("settings.git.blameInline"));
+        blameCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setGitBlameInline(now);
+            apply();
         });
 
         mermaidCheck = new CheckBox(tr("settings.enableMermaid"));
@@ -772,6 +780,7 @@ public class SettingsWindow {
         gitStatusLabel.setMaxWidth(440);
         row(p, Category.GIT, null, gitStatusLabel, "git command found version installed not found");
         row(p, Category.GIT, null, gitCheck, "git version control vcs enable");
+        row(p, Category.GIT, null, blameCheck, "git blame annotate inline author history line");
         Label hint = note(tr("settings.git.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
@@ -1676,6 +1685,8 @@ public class SettingsWindow {
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
+            blameCheck.setSelected(settings.isGitBlameInline());
+            blameCheck.setDisable(!settings.isGitSupport());
             updateGitRowEnabled();
             updateNotesRowEnabled();
             updateLspToolRowsEnabled();
@@ -1843,6 +1854,21 @@ public class SettingsWindow {
         try {
             projectsCheck.setSelected(config.getSettings().isProjectSupport());
             updateProjectRowEnabled();
+        } finally {
+            loading = prev;
+        }
+    }
+
+    /** Re-reads the inline-blame checkbox from settings (used after the {@code git.toggleBlame} command). */
+    public void syncGitBlameCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            blameCheck.setSelected(config.getSettings().isGitBlameInline());
+            blameCheck.setDisable(!config.getSettings().isGitSupport());
         } finally {
             loading = prev;
         }

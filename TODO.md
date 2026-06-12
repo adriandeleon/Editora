@@ -3,6 +3,11 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Git history, blame & stash (IntelliJ/VSCode parity) — a **Git Log** tool window (`M-g h` / *Show File
+      History*): browse commits, see a commit's files, double-click for a read-only diff, right-click to
+      Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame** (`M-g a`,
+      GitLens-style "author, time ago • summary" on the current line; off by default). **Stash**
+      push/pop/apply/drop (palette + branch dropdown). All Git-gated (off in Simple UI mode)
 - [x] Simple UI mode — a one-toggle minimal layout (toolbar icon, **View: Toggle Simple UI Mode**,
       Settings → Application, or `--simple`): hides the extra toolbar groups (new-from-template, recent,
       find-in-files, split, project selector), the tool-window stripe, breadcrumb, the entire gutter
@@ -116,7 +121,6 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Git support — native CLI (branch/status, gutter change bars, commit workflow, fetch/pull/push)
 - [x] Diff viewer + merge-conflict UI — side-by-side / unified diff (vs HEAD / commit / another file),
       word-level highlights, apply-hunk / apply-all, patch export, merge-conflict resolver
-- [ ] Git: history / log view, file blame (later phase)
 - [ ] Local History support
 - [x] Detect external file changes — prompt to reload when a file changes on disk (focus-regain / tab switch)
 - [ ] Auto-reload modified files

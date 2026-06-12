@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Git history, blame & stash** (IntelliJ/VSCode parity) — a **Git Log** tool window (`M-g h`, or *Show
+  File History* on a tab) lists commits; select one to see its changed files, double-click a file for a
+  read-only diff against its parent, and right-click a commit to Copy Hash / Checkout / Reset
+  (soft·mixed·hard) / Revert / Cherry-Pick / New Branch. **Inline blame** (`M-g a`, GitLens-style) shows a
+  faint "author, time ago • summary" after the current line, following the caret; toggle it from *Settings
+  → Git* or the palette. **Stash** push (with an optional message) / pop / apply / drop via the palette or
+  the status-bar branch dropdown. All require Git enabled (and are off in Simple UI mode); blame is off by
+  default.
 - **Simple UI mode** — a one-toggle minimal layout that strips the editor to the essentials: it hides the
   extra toolbar groups (new-from-template, recent, find-in-files, split, project selector), the
   tool-window stripe, the file breadcrumb, the **entire gutter** (line numbers, fold chevrons, and

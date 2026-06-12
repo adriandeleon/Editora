@@ -75,6 +75,25 @@ final class Icons {
                 + "2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z");
     }
 
+    /** Clock-with-arrow "history" glyph (Material "history") for the Git Log tool window. */
+    static Node gitLog() {
+        return of("M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 "
+                + "7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 "
+                + "9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z");
+    }
+
+    /** Person-with-lines "annotate/blame" glyph (Material "person") for inline blame. */
+    static Node blame() {
+        return of("M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 "
+                + "4v2h16v-2c0-2.66-5.33-4-8-4z");
+    }
+
+    /** Inbox/archive "stash" glyph (Material "inbox"). */
+    static Node stash() {
+        return of("M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 "
+                + "12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H5V5h14v10z");
+    }
+
     static Node open() {
         return of("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
     }

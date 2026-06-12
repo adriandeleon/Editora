@@ -260,6 +260,10 @@ public class MainController {
     private javafx.stage.Popup lspHoverPopup;
     private GitPanel gitPanel;
     private ToolWindow commitToolWindow;
+    private GitLogPanel gitLogPanel;
+    private ToolWindow gitLogToolWindow;
+    /** The path the Git Log is currently filtered to (file history), or null for the whole repo. */
+    private Path gitLogFilter;
     /** IntelliJ-style branch dropdown (actions + Local/Remote branches), anchored to the status bar. */
     private final BranchPopup branchPopup = new BranchPopup();
     /** Repo root for the active file, set when {@link #applyGitState} runs (FX thread); null = no repo. */
@@ -327,7 +331,8 @@ public class MainController {
                 c -> (config.getSettings().isProjectSupport()
                         || (!c.id().startsWith("project.") && !c.id().equals("tool.project")))
                         && (gitEnabled()
-                        || (!c.id().startsWith("git.") && !c.id().equals("tool.commit")))
+                        || (!c.id().startsWith("git.") && !c.id().equals("tool.commit")
+                            && !c.id().equals("tool.gitLog")))
                         && (config.getSettings().isNotesSupport()
                         || (!c.id().startsWith("notes.") && !c.id().equals("tool.notes")))
                         && (config.getSettings().isMermaidSupport()
@@ -1345,6 +1350,9 @@ public class MainController {
         gitPanel.setOnClone(this::gitClone);
         commitToolWindow = new ToolWindow("commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT,
                 Icons::git, gitPanel, "tool.commit");
+        gitLogPanel = new GitLogPanel(gitLogActions());
+        gitLogToolWindow = new ToolWindow("gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM,
+                Icons::gitLog, gitLogPanel, "tool.gitLog");
         searchPanel = new SearchPanel(new SearchPanel.Actions() {
             @Override public void search(com.editora.search.SearchQuery query) {
                 runFileSearch(query);
@@ -1390,6 +1398,8 @@ public class MainController {
         toolWindows.register(bookmarksToolWindow);
         toolWindows.register(notesToolWindow);
         toolWindows.register(commitToolWindow);
+        toolWindows.register(gitLogToolWindow);
+        toolWindows.setAvailable(gitLogToolWindow, false); // shown only inside a repo (gated by applyGitState)
         toolWindows.register(fileInfoToolWindow);
         toolWindows.register(searchToolWindow);
         toolWindows.register(problemsToolWindow);
@@ -1535,6 +1545,7 @@ public class MainController {
         statusBar.setGitEnabled(on);
         if (!on) {
             toolWindows.setAvailable(commitToolWindow, false);
+            toolWindows.setAvailable(gitLogToolWindow, false);
             currentRepoRoot = null;
             currentBranchName = "";
             currentUpstream = "";
@@ -1543,6 +1554,7 @@ public class MainController {
                 EditorBuffer b = bufferOf(tab);
                 if (b != null) {
                     b.setChangeBars(null);
+                    b.setBlame(null);
                 }
             }
         } else if (!gitSupportApplied) {
@@ -2879,6 +2891,7 @@ public class MainController {
         // The Commit tool window is only available inside a Git repo (transient, doesn't touch the
         // user's show/hide preference).
         toolWindows.setAvailable(commitToolWindow, state.isRepo());
+        toolWindows.setAvailable(gitLogToolWindow, state.isRepo());
         if (!state.isRepo()) {
             currentBranchName = "";
             currentUpstream = "";
@@ -2886,6 +2899,7 @@ public class MainController {
             gitPanel.setStatus(null);
             if (b != null) {
                 b.setChangeBars(null);
+                b.setBlame(null);
             }
             return;
         }
@@ -2901,6 +2915,7 @@ public class MainController {
             // change-bar hover tooltip.
             b.setChangeBars(classes, state.hunks());
         }
+        refreshBlame(b); // inline blame for the active file (no-op + clears when blame is off)
     }
 
     /**
@@ -3342,6 +3357,8 @@ public class MainController {
                     new BranchPopup.MenuAction(tr("branch.pull"), "", () -> gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
                     new BranchPopup.MenuAction(tr("branch.fetch"), "", () -> gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
                     new BranchPopup.MenuAction(tr("branch.push"), "", this::gitPush),
+                    new BranchPopup.MenuAction(tr("branch.stash"), "", this::gitStash),
+                    new BranchPopup.MenuAction(tr("branch.unstash"), "", this::gitUnstash),
                     new BranchPopup.MenuAction(tr("branch.commit"), "C-x g", this::gitCommitFocus));
             branchPopup.show(stage, statusBar.gitSegmentNode(), currentBranchName,
                     branches.local(), branches.remote(), branches.remoteUrl(), actions,
@@ -3402,6 +3419,295 @@ public class MainController {
         } else {
             gitSync(tr("gitlabel.push"), "push");
         }
+    }
+
+    // --- Git Log / History tool window -----------------------------------------------------------
+
+    /** The {@link GitLogPanel.Actions} the Git Log tool window routes user actions through. */
+    private GitLogPanel.Actions gitLogActions() {
+        return new GitLogPanel.Actions() {
+            @Override public void refresh() {
+                loadGitLog(gitLogFilter);
+            }
+            @Override public void showAll() {
+                loadGitLog(null);
+            }
+            @Override public void selected(String hash) {
+                if (currentRepoRoot != null) {
+                    gitService.commitFiles(currentRepoRoot, hash, gitLogPanel::setCommitFiles);
+                }
+            }
+            @Override public void openFileDiff(String hash, String repoRel) {
+                diffCommitFile(hash, repoRel);
+            }
+            @Override public void copyHash(String hash) {
+                ClipboardContent content = new ClipboardContent();
+                content.putString(hash);
+                Clipboard.getSystemClipboard().setContent(content);
+                setStatus(tr("status.git.copiedHash", shortHash(hash)));
+            }
+            @Override public void checkout(String hash) {
+                gitMutate(tr("status.git.checkedOut", shortHash(hash)), "checkout", hash);
+            }
+            @Override public void reset(String hash, String mode) {
+                gitMutate(tr("status.git.reset", mode, shortHash(hash)), "reset", "--" + mode, hash);
+                Platform.runLater(MainController.this::checkExternalChanges);
+            }
+            @Override public void revert(String hash) {
+                gitMutate(tr("status.git.reverted", shortHash(hash)), "revert", "--no-edit", hash);
+            }
+            @Override public void cherryPick(String hash) {
+                gitMutate(tr("status.git.cherryPicked", shortHash(hash)), "cherry-pick", hash);
+            }
+            @Override public void newBranch(String hash) {
+                promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
+                    String name = input.strip();
+                    if (!name.isEmpty()) {
+                        gitMutate(tr("status.createdBranch", name), "checkout", "-b", name, hash);
+                        Platform.runLater(MainController.this::reloadAllFromDiskSilently);
+                    }
+                });
+            }
+        };
+    }
+
+    /** A short 7-char hash for status messages. */
+    private static String shortHash(String hash) {
+        return hash == null ? "" : hash.substring(0, Math.min(7, hash.length()));
+    }
+
+    /** Opens the Git Log tool window showing the whole-repo history. */
+    private void showGitLog() {
+        loadGitLog(null);
+        toolWindows.open(gitLogToolWindow);
+    }
+
+    /** Opens the Git Log filtered to the active file's history. */
+    private void showFileHistory() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null) {
+            setStatus(tr("status.diff.noFile"));
+            return;
+        }
+        loadGitLog(b.getPath());
+        toolWindows.open(gitLogToolWindow);
+    }
+
+    /** Loads up to 200 commits (whole-repo when {@code file} is null, else that file's history). */
+    private void loadGitLog(Path file) {
+        gitLogFilter = file;
+        if (currentRepoRoot == null) {
+            gitLogPanel.setLog(List.of(), null);
+            setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+            return;
+        }
+        String name = file != null ? file.getFileName().toString() : null;
+        gitService.log(currentRepoRoot, file, 200, commits -> gitLogPanel.setLog(commits, name));
+    }
+
+    /** Read-only diff of one file at a commit vs its first parent (from the Git Log file list). */
+    private void diffCommitFile(String hash, String repoRel) {
+        if (currentRepoRoot == null) {
+            return;
+        }
+        String name = repoRel.substring(repoRel.lastIndexOf('/') + 1);
+        openDiff(tr("diff.title.commitFile", name, shortHash(hash)),
+                tr("diff.side.parent"), tr("diff.title.vsCommitShort", shortHash(hash)), name, name,
+                cb -> gitService.show(currentRepoRoot, hash + "~1:" + repoRel, cb),
+                cb -> gitService.show(currentRepoRoot, hash + ":" + repoRel, cb),
+                DiffViewerPane.EditableSide.NONE, null);
+    }
+
+    /** A history mutation (checkout/reset/revert/cherry-pick/branch): run, report, refresh + reload log. */
+    private void gitMutate(String successMessage, String... args) {
+        if (currentRepoRoot == null) {
+            setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+            return;
+        }
+        gitService.run(currentRepoRoot, r -> {
+            if (r.ok()) {
+                setStatus(successMessage);
+            } else {
+                gitError(tr("status.git.opFailed"), r.message());
+            }
+            afterGitMutation();
+            loadGitLog(gitLogFilter); // HEAD/refs moved → refresh the log
+        }, args);
+    }
+
+    // --- Inline blame ----------------------------------------------------------------------------
+
+    /** Whether inline blame is effectively on (Git enabled + the setting + not Simple mode). */
+    private boolean gitBlameEnabled() {
+        return gitEnabled() && config.getSettings().isGitBlameInline();
+    }
+
+    /** Pushes blame to the active buffer (and clears it everywhere else); runs on init / settings apply /
+     *  tab switch / git mutation. Only the focused buffer shows blame (caret-line annotation). */
+    private void applyGitBlame() {
+        EditorBuffer active = activeBuffer();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null && b != active) {
+                b.setBlame(null);
+            }
+        }
+        refreshBlame(active);
+    }
+
+    /** Fetches blame for {@code b} off-thread and pushes formatted annotations (or clears when ineligible). */
+    private void refreshBlame(EditorBuffer b) {
+        if (b == null) {
+            return;
+        }
+        if (!gitBlameEnabled() || b.getPath() == null || b.isLargeFile()
+                || !isLocalBuffer(b) || currentRepoRoot == null) {
+            b.setBlame(null);
+            return;
+        }
+        Path file = b.getPath();
+        gitService.blame(currentRepoRoot, file, lines -> {
+            if (activeBuffer() != b) {
+                return; // the user switched tabs while blame ran
+            }
+            b.setBlame(toBlameInfos(lines));
+        });
+    }
+
+    private List<com.editora.editor.BlameInfo> toBlameInfos(List<com.editora.git.BlameParser.BlameLine> lines) {
+        long now = System.currentTimeMillis() / 1000L;
+        List<com.editora.editor.BlameInfo> out = new java.util.ArrayList<>(lines.size());
+        for (com.editora.git.BlameParser.BlameLine bl : lines) {
+            String text = bl.uncommitted() ? tr("blame.uncommitted")
+                    : tr("blame.annotation", bl.author(), relativeTimeLabel(bl.epochSeconds(), now), bl.summary());
+            out.add(new com.editora.editor.BlameInfo(text, bl.uncommitted() ? "" : bl.hash()));
+        }
+        return out;
+    }
+
+    /** Localized "N days ago"-style label from the pure {@link com.editora.git.RelativeTime} bucketing. */
+    private String relativeTimeLabel(long epochSeconds, long nowSeconds) {
+        com.editora.git.RelativeTime.Span span = com.editora.git.RelativeTime.of(epochSeconds, nowSeconds);
+        long v = span.value();
+        return switch (span.unit()) {
+            case NOW -> tr("blame.now");
+            case MINUTES -> tr("blame.minutesAgo", v);
+            case HOURS -> tr("blame.hoursAgo", v);
+            case DAYS -> tr("blame.daysAgo", v);
+            case WEEKS -> tr("blame.weeksAgo", v);
+            case MONTHS -> tr("blame.monthsAgo", v);
+            case YEARS -> tr("blame.yearsAgo", v);
+        };
+    }
+
+    /** Toggles inline blame (palette + {@code M-g a}); persists the setting and re-applies. */
+    private void toggleGitBlame() {
+        ifGit(() -> {
+            Settings s = config.getSettings();
+            s.setGitBlameInline(!s.isGitBlameInline());
+            requestSave();
+            applyGitBlame();
+            settingsWindow.syncGitBlameCheck();
+            setStatus(tr("status.toggle.gitBlame", tr(s.isGitBlameInline() ? "common.on" : "common.off")));
+        });
+    }
+
+    /** Opens the read-only diff of the active file at the caret line's commit vs its parent. */
+    private void blameShowCommit() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null || currentRepoRoot == null) {
+            return;
+        }
+        String hash = b.blameHashAtCaret();
+        if (hash == null || hash.isBlank()) {
+            setStatus(tr("status.git.noBlameLine"));
+            return;
+        }
+        String rel = com.editora.git.GitService.repoRelative(currentRepoRoot, b.getPath());
+        if (rel != null) {
+            diffCommitFile(hash, rel);
+        }
+    }
+
+    // --- Stash -----------------------------------------------------------------------------------
+
+    /** Stashes the working tree (optionally with a message). */
+    private void gitStash() {
+        if (currentRepoRoot == null) {
+            setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+            return;
+        }
+        promptText(tr("stash.prompt.title"), tr("stash.prompt.label"), "", msg -> {
+            String m = msg.strip();
+            String[] args = m.isEmpty()
+                    ? new String[]{"stash", "push"}
+                    : new String[]{"stash", "push", "-m", m};
+            gitService.run(currentRepoRoot, r -> {
+                if (r.ok()) {
+                    setStatus(tr("stash.pushed"));
+                } else {
+                    gitError(tr("status.git.opFailed"), r.message());
+                }
+                afterGitMutation();
+                Platform.runLater(this::checkExternalChanges);
+            }, args);
+        });
+    }
+
+    /** Pops the most recent stash. */
+    private void gitStashPop() {
+        gitMutateStash(tr("stash.popped"), "stash", "pop");
+    }
+
+    /** Opens a picker over the stash list to apply / pop / drop a chosen entry. */
+    private void gitUnstash() {
+        chooseStash(tr("stash.picker.applyTitle"), entry ->
+                gitMutateStash(tr("stash.applied"), "stash", "apply", entry.ref()));
+    }
+
+    /** Opens a picker over the stash list to drop a chosen entry. */
+    private void gitStashDrop() {
+        chooseStash(tr("stash.picker.dropTitle"), entry ->
+                gitMutateStash(tr("stash.dropped"), "stash", "drop", entry.ref()));
+    }
+
+    private void chooseStash(String title,
+            java.util.function.Consumer<com.editora.git.StashParser.StashEntry> onPick) {
+        if (currentRepoRoot == null) {
+            setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+            return;
+        }
+        gitService.stashList(currentRepoRoot, stashes -> {
+            if (stashes.isEmpty()) {
+                setStatus(tr("stash.empty"));
+                return;
+            }
+            QuickOpen<com.editora.git.StashParser.StashEntry> picker = new QuickOpen<>(
+                    title, tr("stash.picker.prompt"),
+                    () -> stashes,
+                    e -> e.ref() + "  " + e.subject(),
+                    e -> e.branch(),
+                    e -> e.ref() + " " + e.subject() + " " + e.branch(),
+                    onPick);
+            picker.setOverlayHost(overlayHost);
+            picker.show(stage);
+        });
+    }
+
+    private void gitMutateStash(String successMessage, String... args) {
+        if (currentRepoRoot == null) {
+            setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+            return;
+        }
+        gitService.run(currentRepoRoot, r -> {
+            if (r.ok()) {
+                setStatus(successMessage);
+            } else {
+                gitError(tr("status.git.opFailed"), r.message());
+            }
+            afterGitMutation();
+            Platform.runLater(this::checkExternalChanges);
+        }, args);
     }
 
     /**
@@ -5096,6 +5402,9 @@ public class MainController {
         MenuItem compareWith = new MenuItem(tr("menu.compareWith"));
         compareWith.setGraphic(Icons.diff());
         compareWith.setOnAction(e -> compareActiveWithFile());
+        MenuItem history = new MenuItem(tr("command.git.fileHistory"));
+        history.setGraphic(Icons.gitLog());
+        history.setOnAction(e -> ifGit(this::showFileHistory));
 
         ContextMenu menu = new ContextMenu(
                 save, saveAs,
@@ -5104,7 +5413,7 @@ public class MainController {
                 new SeparatorMenuItem(),
                 closeLeft, closeRight,
                 new SeparatorMenuItem(),
-                diffHead, compareWith,
+                diffHead, compareWith, history,
                 new SeparatorMenuItem(),
                 copyPath, pin, rename);
         menu.setOnShowing(e -> {
@@ -7595,6 +7904,7 @@ public class MainController {
         applyChromeVisibility();
         applyProjectSupport();
         applyGitSupport();
+        applyGitBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
         applyNotesSupport();
         applyMermaidSupport();
         applyHttpClientSupport();
@@ -8215,6 +8525,15 @@ public class MainController {
             gitService.invalidateCaches();
             afterGitMutation();
         })));
+        // History / Log, blame, and stash (Core-trio parity with IntelliJ/VSCode).
+        registry.register(Command.of("tool.gitLog", () -> ifGit(this::showGitLog)));
+        registry.register(Command.of("git.fileHistory", () -> ifGit(this::showFileHistory)));
+        registry.register(Command.of("git.toggleBlame", this::toggleGitBlame));
+        registry.register(Command.of("git.blameShowCommit", () -> ifGit(this::blameShowCommit)));
+        registry.register(Command.of("git.stash", () -> ifGit(this::gitStash)));
+        registry.register(Command.of("git.stashPop", () -> ifGit(this::gitStashPop)));
+        registry.register(Command.of("git.unstash", () -> ifGit(this::gitUnstash)));
+        registry.register(Command.of("git.stashDrop", () -> ifGit(this::gitStashDrop)));
         // Diff viewer + merge. The git-backed diffs are ifGit-gated; "Compare With…" and "Resolve
         // Conflicts" work on any file (no repo needed), so they are not gated.
         registry.register(Command.of("diff.vsHead", () -> ifGit(this::diffActiveVsHead)));

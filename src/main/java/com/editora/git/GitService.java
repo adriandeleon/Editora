@@ -25,8 +25,9 @@ import com.editora.process.ProcessRunner;
  * are cached per directory. When Git is absent or a path isn't in a work tree, callers get
  * {@link RepoState#NONE} / {@link GitStatus#NOT_A_REPO} and keep the Git UI hidden.
  *
- * <p>v1 scope: status, gutter diff, staging, commit, branch switch/create, and fetch/pull/push.
- * History/blame/diff-viewer are a later phase.
+ * <p>Scope: status, gutter diff, staging, commit, branch switch/create, fetch/pull/push, the diff
+ * viewer (blob {@link #show}/{@link #log}), commit history ({@link #commitFiles}), inline blame
+ * ({@link #blame}), and stash ({@link #stashList} + {@code run("stash", …)}).
  */
 public final class GitService {
 
@@ -222,6 +223,89 @@ public final class GitService {
             }
         }
         return commits;
+    }
+
+    // --- blame / commit files / stash (history & annotate) ---------------------------------------
+
+    /**
+     * Annotates every line of {@code file} via {@code git blame --line-porcelain}, parsed by the pure
+     * {@link BlameParser}. Posts the per-line list (file order) on the FX thread, or an empty list when
+     * git is absent / the file isn't tracked.
+     */
+    public void blame(Path root, Path file, Consumer<List<BlameParser.BlameLine>> onResult) {
+        exec.submit(() -> {
+            List<BlameParser.BlameLine> lines = List.of();
+            if (gitAvailable() && root != null && file != null) {
+                ProcessRunner.Result r = git(root, QUICK, "blame", "--line-porcelain", "--",
+                        file.toAbsolutePath().toString());
+                if (r.ok()) {
+                    lines = BlameParser.parse(r.out());
+                }
+            }
+            List<BlameParser.BlameLine> posted = lines;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** One file changed by a commit: its name-status letter, path, and (for rename/copy) the original path. */
+    public record CommitFile(char status, String path, String origPath) { }
+
+    /**
+     * Lists the files a commit changed (vs its first parent) via {@code git diff-tree --name-status -r -M},
+     * parsed by the pure {@link #parseNameStatus}. Posts on the FX thread.
+     */
+    public void commitFiles(Path root, String hash, Consumer<List<CommitFile>> onResult) {
+        exec.submit(() -> {
+            List<CommitFile> files = List.of();
+            if (gitAvailable() && root != null && hash != null && !hash.isBlank()) {
+                ProcessRunner.Result r = git(root, QUICK, "diff-tree", "--no-commit-id",
+                        "--name-status", "-r", "-M", hash);
+                if (r.ok()) {
+                    files = parseNameStatus(r.out());
+                }
+            }
+            List<CommitFile> posted = files;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** Parses {@code git diff-tree --name-status} lines ({@code M\tpath}, {@code R100\told\tnew}, …). Pure. */
+    static List<CommitFile> parseNameStatus(String out) {
+        List<CommitFile> list = new ArrayList<>();
+        if (out == null) {
+            return list;
+        }
+        for (String line : out.split("\n")) {
+            if (line.isBlank()) {
+                continue;
+            }
+            String[] f = line.split("\t");
+            if (f.length < 2 || f[0].isEmpty()) {
+                continue;
+            }
+            char status = f[0].charAt(0);
+            if ((status == 'R' || status == 'C') && f.length >= 3) {
+                list.add(new CommitFile(status, f[2], f[1])); // new path + original path
+            } else {
+                list.add(new CommitFile(status, f[1], null));
+            }
+        }
+        return list;
+    }
+
+    /** Lists the working-tree stashes via {@code git stash list}, parsed by the pure {@link StashParser}. */
+    public void stashList(Path root, Consumer<List<StashParser.StashEntry>> onResult) {
+        exec.submit(() -> {
+            List<StashParser.StashEntry> list = List.of();
+            if (gitAvailable() && root != null) {
+                ProcessRunner.Result r = git(root, QUICK, "stash", "list");
+                if (r.ok()) {
+                    list = StashParser.parse(r.out());
+                }
+            }
+            List<StashParser.StashEntry> posted = list;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
     }
 
     /** The repo-relative, forward-slash path of {@code file} under {@code root} (for {@code git show} specs);

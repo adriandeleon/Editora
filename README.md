@@ -171,8 +171,12 @@ Emacs-style keymap or a fuzzy command palette.
   modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
   stage, unstage, discard, **Stage All**, and a commit box. Palette/keys cover commit (`C-x g`), stage
   current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
-  repo and opens a file from it — independent of projects). All off the UI thread; hidden when not in a
-  repo or when `git` isn't on `PATH`.
+  repo and opens a file from it — independent of projects). A **Git Log** tool window (`M-g h`, or *Show
+  File History* on a tab) browses commits — select one to see its files, double-click for a read-only
+  diff, right-click to Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame**
+  (`M-g a`, GitLens-style) annotates the current line with "author, time ago • summary" (toggle in
+  *Settings → Git*, off by default). **Stash** push / pop / apply / drop from the palette or the branch
+  dropdown. All off the UI thread; hidden when not in a repo or when `git` isn't on `PATH`.
 - **Diff viewer & merge** — compare files in a dedicated tab: side-by-side or unified, with word-level
   intra-line highlights, prev/next-change navigation, apply-a-hunk / apply-all (undoable), live refresh,
   and patch export. Diff against `HEAD` (`C-x v =`), another commit, or any other file; a separate
