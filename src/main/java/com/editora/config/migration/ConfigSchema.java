@@ -56,7 +56,8 @@ public enum ConfigSchema {
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
-    PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
+    PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),
     /** Legacy {@code recent-files.json} was a bare JSON array (v0); v1 wraps it in an object. */
     RECENT(RecentFiles.SCHEMA_VERSION, 1, Map.of(0, ConfigMigrations::wrapRecentFilesArray)),
     NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of()),

@@ -6,6 +6,7 @@ import java.nio.file.Path;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -129,6 +130,25 @@ public final class ConfigMigrations {
     static JsonNode wrapRecentFilesArray(JsonNode input) {
         ObjectNode o = JsonNodeFactory.instance.objectNode();
         o.set("files", input != null && input.isArray() ? input : JsonNodeFactory.instance.arrayNode());
+        return o;
+    }
+
+    /**
+     * v1 → v2 for {@code projects.json}: seed the new {@code openProjectIds} (the open-window set) from the
+     * single {@code activeProjectId} that pre-multi-window installs tracked, so the previously-active
+     * project reopens as its own window on first launch. No active project ⇒ an empty set (the global
+     * window opens by default).
+     */
+    static JsonNode seedOpenProjectIds(JsonNode input) {
+        if (!(input instanceof ObjectNode o) || o.has("openProjectIds")) {
+            return input;
+        }
+        ArrayNode ids = JsonNodeFactory.instance.arrayNode();
+        JsonNode active = o.get("activeProjectId");
+        if (active != null && active.isTextual() && !active.asText().isEmpty()) {
+            ids.add(active.asText());
+        }
+        o.set("openProjectIds", ids);
         return o;
     }
 }

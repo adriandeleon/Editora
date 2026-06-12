@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -76,5 +79,40 @@ class ProjectManagerTest {
         ProjectManager reloaded = new ProjectManager(dir);
         assertEquals(1, reloaded.list().size());
         assertNull(reloaded.active());
+    }
+
+    @Test
+    void openWindowSetTracksAndPersists(@TempDir Path dir) {
+        ProjectManager pm = new ProjectManager(dir);
+        Project a = pm.createOrGet("A", dir.resolve("a"));
+        pm.markOpen("");        // the global window
+        pm.markOpen(a.id());    // a project window
+        pm.markOpen(a.id());    // idempotent
+        assertEquals(List.of("", a.id()), pm.openProjectIds());
+        assertTrue(pm.isOpen(a.id()));
+        pm.save();
+
+        ProjectManager reloaded = new ProjectManager(dir);
+        assertEquals(List.of("", a.id()), reloaded.openProjectIds());
+
+        reloaded.markClosed("");
+        assertEquals(List.of(a.id()), reloaded.openProjectIds());
+        // Deleting a project also drops it from the open set.
+        reloaded.delete(a.id());
+        assertFalse(reloaded.isOpen(a.id()));
+        assertTrue(reloaded.openProjectIds().isEmpty());
+    }
+
+    @Test
+    void migratesV1ActiveProjectIntoOpenSet(@TempDir Path dir) throws Exception {
+        // A pre-multi-window (v1) projects.json: a single activeProjectId, no openProjectIds.
+        Files.writeString(dir.resolve("projects.json"), """
+                {"schemaVersion":1,"activeProjectId":"myrepo-1a2b3c",
+                 "projects":[{"id":"myrepo-1a2b3c","name":"MyRepo","root":"/tmp/myrepo"}]}""");
+        ProjectManager pm = new ProjectManager(dir);
+        // The active project is seeded into the open-window set so it reopens as its own window.
+        assertEquals(List.of("myrepo-1a2b3c"), pm.openProjectIds());
+        assertNotNull(pm.active());
+        assertEquals("myrepo-1a2b3c", pm.active().id());
     }
 }
