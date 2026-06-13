@@ -468,7 +468,8 @@ const isActive = (href: string) => {
     position: sticky;
     top: 0;
     z-index: 10;
-    background: rgba(13, 17, 23, 0.8);
+    /* translucent version of the active theme's background */
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--border);
   }
