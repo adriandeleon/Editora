@@ -40,9 +40,13 @@ pick a language per file with "Spell Check: Set Language…". See
 
 ## Can I rebind keys or use a different keymap?
 
-Yes — Editora is keyboard-first and every action is a command. User keybinding
-overrides layer on top of the default Emacs-style keymap in `settings.toml`. See
-the [keybindings reference](/keybindings).
+Yes — Editora is keyboard-first and every action is a command. In **Settings →
+Keymaps** you can switch between five built-in keymaps — **Emacs** (default),
+**CUA**, **Sublime Text**, **VS Code**, and **IntelliJ IDEA** — and rebind any
+command with the built-in keybinding editor (recording multi-key chords like
+`C-x C-s`). Changes apply live and your overrides are saved in
+`settings.toml`, layered on top of the active keymap. See the
+[keybindings reference](/keybindings).
 
 ## How do I run a separate, throwaway config?
 

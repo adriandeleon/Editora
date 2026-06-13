@@ -1,30 +1,36 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import { commandGroups } from "../lib/commands";
+import { commandGroups, keymaps } from "../lib/commands";
 
-// Derived from the same source as the Commands page: every command that has a
-// default keybinding, grouped by category. Stays in sync automatically.
-const groups = commandGroups
-  .map((g) => ({
-    title: g.title,
-    bindings: g.commands.filter((c) => c.keys),
-  }))
-  .filter((g) => g.bindings.length > 0);
-
-const count = groups.reduce((n, g) => n + g.bindings.length, 0);
+// For each bundled keymap, the command groups with at least one bound command,
+// each with that keymap's chord. Derived from the same generated source as the
+// Commands page, so it stays in sync automatically.
+const byKeymap = keymaps.map((km) => {
+  const groups = commandGroups
+    .map((g) => ({
+      title: g.title,
+      bindings: g.commands
+        .filter((c) => c.bindings && c.bindings[km.id])
+        .map((c) => ({ keys: c.bindings![km.id], title: c.title })),
+    }))
+    .filter((g) => g.bindings.length > 0);
+  const count = groups.reduce((n, g) => n + g.bindings.length, 0);
+  return { ...km, groups, count };
+});
 ---
 
 <Layout
   title="Keybindings — Editora"
-  description="The full Emacs-style keymap for Editora — every command with a default keybinding, grouped by area."
+  description="Editora's keymaps — Emacs (default), CUA, Sublime Text, VS Code, and IntelliJ IDEA. Every command with its default binding, grouped by area. Rebind anything in Settings → Keymaps."
 >
   <main class="page">
     <h1>Keybindings</h1>
     <p class="lead">
-      Editora ships an Emacs-style keymap — {count} commands have a default
-      binding. Every binding maps to a <strong>command</strong>, so the same
-      actions are reachable from the <kbd>M-x</kbd> palette (see the full
-      <a href="/commands">command list</a>) and can be rebound in Settings.
+      Editora ships five keymaps — pick one below. <strong>Emacs</strong> is the
+      default; you can switch to any of them (or rebind any command) in
+      <strong>Settings → Keymaps</strong>. Every binding maps to a
+      <strong>command</strong>, so the same actions are also reachable from the
+      <kbd>M-x</kbd> palette (see the full <a href="/commands">command list</a>).
     </p>
 
     <div class="legend">
@@ -36,37 +42,71 @@ const count = groups.reduce((n, g) => n + g.bindings.length, 0);
         ></span>
     </div>
 
-    <div class="columns">
+    <form class="keymaps">
       {
-        groups.map((g) => (
-          <section class="group">
-            <h2>{g.title}</h2>
-            <table>
-              <tbody>
-                {g.bindings.map((b) => (
-                  <tr>
-                    <td class="keys">
-                      {b.keys.split(" ").map((tok) => (
-                        <kbd>{tok}</kbd>
-                      ))}
-                    </td>
-                    <td class="desc">{b.title}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+        byKeymap.map((km, i) => (
+          <input
+            type="radio"
+            name="km"
+            id={`km-${km.id}`}
+            class="km-radio"
+            checked={i === 0}
+          />
         ))
       }
-    </div>
+      <div class="tabs" role="tablist">
+        {
+          byKeymap.map((km) => (
+            <label for={`km-${km.id}`} class="tab">
+              {km.name}
+            </label>
+          ))
+        }
+      </div>
+
+      <div class="km-panels">
+        {
+          byKeymap.map((km) => (
+            <section class="km-panel" id={`panel-${km.id}`}>
+              <p class="km-count">
+                <strong>{km.name}</strong> — {km.count} commands with a default binding.
+              </p>
+              <div class="columns">
+                {km.groups.map((g) => (
+                  <section class="group">
+                    <h2>{g.title}</h2>
+                    <table>
+                      <tbody>
+                        {g.bindings.map((b) => (
+                          <tr>
+                            <td class="keys">
+                              {b.keys.split(" ").map((tok) => (
+                                <kbd>{tok}</kbd>
+                              ))}
+                            </td>
+                            <td class="desc">{b.title}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </section>
+                ))}
+              </div>
+            </section>
+          ))
+        }
+      </div>
+    </form>
 
     <p class="note">
-      <strong>macOS note:</strong> the Option dead keys
+      <strong>macOS:</strong> the CUA, Sublime Text, VS Code, and IntelliJ keymaps
+      use <kbd>⌘</kbd> (Command) wherever the tables above show <kbd>C-</kbd>
+      (Control). In the Emacs keymap, the Option dead keys
       (<kbd>Option</kbd>+<kbd>e</kbd>/<kbd>i</kbd>/<kbd>u</kbd>/<kbd>n</kbd>/<kbd
         >`</kbd
       >) are intercepted by the OS for accent composition, so a few
-      <kbd>M-</kbd> chords like <kbd>M-e</kbd> aren't reachable by keyboard
-      there — the command palette still works.
+      <kbd>M-</kbd> chords like <kbd>M-e</kbd> aren't reachable by keyboard there
+      — the command palette still works.
     </p>
   </main>
 </Layout>
@@ -100,7 +140,69 @@ const count = groups.reduce((n, g) => n + g.bindings.length, 0);
     border-radius: var(--radius);
     font-size: 0.9rem;
     color: var(--muted);
-    margin-bottom: 2.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  /* Keymap switcher: hidden radios drive the tab bar + panels via :checked. */
+  .km-radio {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    padding: 0.5rem 0.9rem;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-top-left-radius: var(--radius);
+    border-top-right-radius: var(--radius);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.95rem;
+    user-select: none;
+    margin-bottom: -1px;
+  }
+
+  .tab:hover {
+    color: var(--text);
+  }
+
+  .km-panel {
+    display: none;
+  }
+
+  /* Show the panel + highlight the tab for the checked keymap (one rule per keymap). */
+  #km-emacs:checked ~ .km-panels #panel-emacs,
+  #km-cua:checked ~ .km-panels #panel-cua,
+  #km-sublime:checked ~ .km-panels #panel-sublime,
+  #km-vscode:checked ~ .km-panels #panel-vscode,
+  #km-intellij:checked ~ .km-panels #panel-intellij {
+    display: block;
+  }
+
+  #km-emacs:checked ~ .tabs label[for="km-emacs"],
+  #km-cua:checked ~ .tabs label[for="km-cua"],
+  #km-sublime:checked ~ .tabs label[for="km-sublime"],
+  #km-vscode:checked ~ .tabs label[for="km-vscode"],
+  #km-intellij:checked ~ .tabs label[for="km-intellij"] {
+    color: var(--text);
+    border-color: var(--border);
+    background: var(--bg-soft);
+    font-weight: 600;
+  }
+
+  .km-count {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin: 0 0 1.5rem;
   }
 
   .columns {
