@@ -5956,6 +5956,12 @@ public class MainController {
         cliSimpleOverride = false; // an explicit in-app toggle takes over from the --simple session flag
         s.setSimpleMode(!s.isSimpleMode());
         requestSave();
+        if (simpleModeActive()) {
+            // Entering Simple mode hides the tool stripe, so close any docked tool window too.
+            for (ToolWindow tw : toolWindows.getOpenToolWindows()) {
+                toolWindows.close(tw);
+            }
+        }
         applyViewSettingsToAllBuffers(s); // → applyChromeVisibility/applySimpleMode + per-buffer gutter/minimap
         settingsWindow.syncSimpleModeCheck();
         setStatus(tr("status.toggle.simpleMode", tr(s.isSimpleMode() ? "common.on" : "common.off")));
