@@ -22,10 +22,10 @@ const nav = [
   { href: url("news"), label: "News" },
   { href: url("blog"), label: "Blog" },
   { href: url("docs"), label: "Docs" },
-  { href: `${repo}/discussions`, label: "Discussions" },
+  { href: `${repo}/discussions`, label: "Discussions", external: true },
   { href: url("roadmap"), label: "Roadmap" },
   { href: url("plugins"), label: "Plugins" },
-  { href: repo, label: "GitHub" },
+  { href: repo, label: "GitHub", external: true },
 ];
 
 const footerCols = [
@@ -149,8 +149,31 @@ const isActive = (href: string) => {
         <nav class="nav-links">
           {
             nav.map((item) => (
-              <a href={item.href} class={isActive(item.href) ? "active" : ""}>
+              <a
+                href={item.href}
+                class={isActive(item.href) ? "active" : ""}
+                target={item.external ? "_blank" : undefined}
+                rel={item.external ? "noopener noreferrer" : undefined}
+              >
                 {item.label}
+                {item.external && (
+                  <svg
+                    class="ext-icon"
+                    viewBox="0 0 24 24"
+                    width="11"
+                    height="11"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 4h6v6" />
+                    <path d="M20 4 11 13" />
+                    <path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" />
+                  </svg>
+                )}
               </a>
             ))
           }
@@ -499,6 +522,16 @@ const isActive = (href: string) => {
   .nav-links a.active {
     color: var(--text);
     text-decoration: none;
+  }
+
+  .nav-links a .ext-icon {
+    margin-left: 0.2rem;
+    vertical-align: -1px;
+    opacity: 0.6;
+  }
+
+  .nav-links a:hover .ext-icon {
+    opacity: 1;
   }
 
   .theme-picker select {
