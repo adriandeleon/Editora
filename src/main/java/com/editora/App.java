@@ -187,15 +187,20 @@ public class App extends Application {
         // visible stderr) can show them via the Debug Log window. Cheap; safe before launch.
         com.editora.ui.DebugLog.install();
         // --version / --help print and exit BEFORE the GUI launches (works for every entry point,
-        // since the fat-jar Launcher and the jpackage module both run this main).
+        // since the fat-jar Launcher and the jpackage module both run this main). Use System.exit, not
+        // a bare return: when this Application subclass is launched in module mode (the jpackage app,
+        // mvn javafx:run), the Java/FX launcher pre-starts the JavaFX toolkit, whose non-daemon
+        // keep-alive thread keeps the JVM alive after main() returns — so a plain return would print
+        // the text and then hang until killed. (The fat-jar Launcher path has no toolkit and is
+        // unaffected, but exit(0) is correct there too.)
         for (String a : args) {
             if ("--help".equals(a) || "-h".equals(a)) {
                 System.out.println(helpText());
-                return;
+                System.exit(0);
             }
             if ("--version".equals(a) || "-V".equals(a)) {
                 System.out.println(AppInfo.versionLine());
-                return;
+                System.exit(0);
             }
         }
         launch(args);

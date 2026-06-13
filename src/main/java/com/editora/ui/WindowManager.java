@@ -274,6 +274,20 @@ public class WindowManager {
                 stage.setMaximized(false);
             }
             stage.show();
+            // AOT-cache training hook (build-time only; see the dist profile in pom.xml). When
+            // -Deditora.aotTrainExit is set, render the first window then exit, so a -XX:AOTCacheOutput
+            // training run captures the real GUI startup classes (JavaFX scene/controls/CSS, the editor,
+            // highlighting) — which a headless run can't — then terminates cleanly. The short settle
+            // lets the initial layout + syntax highlight run so those classes are archived too. Inert
+            // (zero cost) in every normal launch since the property is never set at runtime.
+            if (System.getProperty("editora.aotTrainExit") != null) {
+                Thread t = new Thread(() -> {
+                    try { Thread.sleep(2500); } catch (InterruptedException ignored) { }
+                    System.exit(0);
+                }, "aot-train-exit");
+                t.setDaemon(true);
+                t.start();
+            }
             // Offset a new window so it doesn't land exactly on top of an existing one, then bring it
             // to the front so it's clearly a separate window rather than an in-place swap.
             cascadeIfOverlapping(stage);
