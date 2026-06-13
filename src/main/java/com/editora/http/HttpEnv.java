@@ -1,11 +1,10 @@
 package com.editora.http;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Reads the environment names from an HTTP Client environment file ({@code http-client.env.json} /
@@ -18,8 +17,7 @@ public final class HttpEnv {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private HttpEnv() {
-    }
+    private HttpEnv() {}
 
     /** The variables of one environment ({@code name → value}) from {@code json}, or empty if absent. */
     public static java.util.Map<String, String> variables(String json, String environment) {

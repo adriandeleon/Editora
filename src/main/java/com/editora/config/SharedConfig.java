@@ -1,5 +1,13 @@
 package com.editora.config;
 
+import com.editora.config.migration.ConfigMigrations;
+import com.editora.config.migration.ConfigSchema;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -8,16 +16,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
-
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.dataformat.toml.TomlMapper;
-
-import com.editora.config.migration.ConfigMigrations;
-import com.editora.config.migration.ConfigSchema;
 
 /**
  * The <em>shared</em>, app-wide half of the configuration: preferences ({@link Settings}) plus the
@@ -41,6 +39,7 @@ public class SharedConfig {
     private final Path configDir;
     /** Whether this instance was started in dev mode ({@code --dev}); surfaced in the UI (toolbar badge). */
     private final boolean dev;
+
     private Settings settings = new Settings();
     /** Global bookmarks (all files/projects), stored in {@code bookmarks.json} — see {@link BookmarkStore}. */
     private BookmarkStore bookmarkStore = new BookmarkStore();
@@ -113,8 +112,12 @@ public class SharedConfig {
      */
     public Path exportConfig() throws IOException {
         Path home = Path.of(System.getProperty("user.home"));
-        return ConfigExporter.export(configDir, home, com.editora.AppInfo.VERSION,
-                System.getProperty("user.name"), java.time.LocalDateTime.now());
+        return ConfigExporter.export(
+                configDir,
+                home,
+                com.editora.AppInfo.VERSION,
+                System.getProperty("user.name"),
+                java.time.LocalDateTime.now());
     }
 
     // --- file locations ---
@@ -160,8 +163,8 @@ public class SharedConfig {
 
     private void loadPlugins() {
         if (Files.exists(getPluginsFile())) {
-            pluginStore = ConfigMigrations.readVersioned(
-                    getPluginsFile(), json, new PluginStore(), ConfigSchema.PLUGINS);
+            pluginStore =
+                    ConfigMigrations.readVersioned(getPluginsFile(), json, new PluginStore(), ConfigSchema.PLUGINS);
         } else {
             pluginStore = new PluginStore();
         }
@@ -250,8 +253,11 @@ public class SharedConfig {
         }
         try {
             Files.createDirectories(configDir);
-            Files.writeString(getUserDictionaryFile(), w + System.lineSeparator(),
-                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            Files.writeString(
+                    getUserDictionaryFile(),
+                    w + System.lineSeparator(),
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
         } catch (IOException e) {
             // non-fatal: the word still applies for this session, just isn't persisted
         }
@@ -318,10 +324,12 @@ public class SharedConfig {
         Path projectsDir = configDir.resolve(ConfigManager.PROJECTS_DIR_NAME);
         if (Files.isDirectory(projectsDir)) {
             try (Stream<Path> s = Files.list(projectsDir)) {
-                s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().forEach(f -> {
-                    String fn = f.getFileName().toString();
-                    extractAndStripBookmarks(f, fn.substring(0, fn.length() - ".json".length()));
-                });
+                s.filter(p -> p.getFileName().toString().endsWith(".json"))
+                        .sorted()
+                        .forEach(f -> {
+                            String fn = f.getFileName().toString();
+                            extractAndStripBookmarks(f, fn.substring(0, fn.length() - ".json".length()));
+                        });
             } catch (IOException ignored) {
                 // best-effort migration; a missing/unreadable projects dir just means nothing to migrate
             }
@@ -344,7 +352,7 @@ public class SharedConfig {
             JsonNode bm = obj.get("bookmarks");
             if (bm != null && bm.isObject() && !bm.isEmpty()) {
                 Map<String, List<Bookmark>> legacy =
-                        json.convertValue(bm, new TypeReference<LinkedHashMap<String, List<Bookmark>>>() { });
+                        json.convertValue(bm, new TypeReference<LinkedHashMap<String, List<Bookmark>>>() {});
                 Map<String, List<Bookmark>> into = bookmarkStore.bucket(projectKey);
                 legacy.forEach(into::putIfAbsent);
             }

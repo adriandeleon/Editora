@@ -3,15 +3,13 @@ package com.editora.pdf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.TextMateHighlighter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.TextMateHighlighter;
 
 class CodePdfWriterTest {
 

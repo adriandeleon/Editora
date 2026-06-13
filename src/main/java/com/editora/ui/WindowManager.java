@@ -1,10 +1,5 @@
 package com.editora.ui;
 
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
@@ -14,7 +9,10 @@ import com.editora.config.ProjectManager;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.config.WorkspaceState;
-
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import javafx.application.HostServices;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
@@ -36,16 +34,17 @@ import javafx.stage.Stage;
 public class WindowManager {
 
     private final SharedConfig shared;
-    private final KeymapManager keymap;   // shared, read-only across windows
+    private final KeymapManager keymap; // shared, read-only across windows
     private final HostServices hostServices;
     /** Shared plugin manager: classes load once here; each window builds its own plugin instances/nodes. */
     private final com.editora.plugin.PluginManager pluginManager;
+
     private final List<Holder> windows = new ArrayList<>();
     /** The JavaFX primary stage, reused for the first window built (then null — others get a new Stage). */
     private Stage primaryStage;
 
     /** A live window: its project key ({@code ""} = the global session), its stage and controller. */
-    private record Holder(String key, Stage stage, MainController controller) { }
+    private record Holder(String key, Stage stage, MainController controller) {}
 
     public WindowManager(SharedConfig shared, KeymapManager keymap, HostServices hostServices) {
         this.shared = shared;
@@ -53,8 +52,10 @@ public class WindowManager {
         this.hostServices = hostServices;
         // Discover plugins once (startup I/O + class loaders). The predicate factors the master gate, so
         // no untrusted code loads unless plugins are enabled; the Settings page still lists all of them.
-        this.pluginManager = new com.editora.plugin.PluginManager(shared.getPluginsDir(),
-                id -> shared.getSettings().isPluginSupport() && shared.getPluginStore().isEnabled(id));
+        this.pluginManager = new com.editora.plugin.PluginManager(
+                shared.getPluginsDir(),
+                id -> shared.getSettings().isPluginSupport()
+                        && shared.getPluginStore().isEnabled(id));
         this.pluginManager.discover();
     }
 
@@ -74,8 +75,13 @@ public class WindowManager {
      * CLI targets). With projects enabled, restores every window that was open at last quit (plus a CLI
      * {@code --project}), routing the CLI targets to the primary window.
      */
-    public void launch(Stage primaryStage, String projectArg, List<MainController.OpenTarget> targets,
-                       boolean zen, String newFile, boolean simple) {
+    public void launch(
+            Stage primaryStage,
+            String projectArg,
+            List<MainController.OpenTarget> targets,
+            boolean zen,
+            String newFile,
+            boolean simple) {
         this.primaryStage = primaryStage; // reused for the first window built
         Settings settings = shared.getSettings();
         if (!settings.isProjectSupport()) {
@@ -87,7 +93,9 @@ public class WindowManager {
         Project cli = null;
         if (projectArg != null) {
             Path root = Path.of(projectArg).toAbsolutePath().normalize();
-            String name = root.getFileName() == null ? root.toString() : root.getFileName().toString();
+            String name = root.getFileName() == null
+                    ? root.toString()
+                    : root.getFileName().toString();
             cli = pm.createOrGet(name, root);
             pm.save();
             toOpen.add(cli.id());
@@ -95,10 +103,13 @@ public class WindowManager {
         if (toOpen.isEmpty()) {
             toOpen.add(""); // nothing remembered ⇒ open the global window
         }
-        String primary = cli != null ? cli.id()
-                : toOpen.contains("") ? ""
-                : (pm.active() != null && toOpen.contains(pm.active().id())) ? pm.active().id()
-                : toOpen.iterator().next();
+        String primary = cli != null
+                ? cli.id()
+                : toOpen.contains("")
+                        ? ""
+                        : (pm.active() != null && toOpen.contains(pm.active().id()))
+                                ? pm.active().id()
+                                : toOpen.iterator().next();
 
         for (String key : toOpen) {
             Project project = key.isEmpty() ? null : findProject(key);
@@ -106,9 +117,14 @@ public class WindowManager {
                 continue; // a stale id (project deleted out from under the open set)
             }
             boolean isPrimary = key.equals(primary);
-            buildWindow(key, project, project == null ? null : pm.stateFile(project),
-                    isPrimary ? targets : List.of(), isPrimary && zen,
-                    isPrimary ? newFile : null, isPrimary && simple);
+            buildWindow(
+                    key,
+                    project,
+                    project == null ? null : pm.stateFile(project),
+                    isPrimary ? targets : List.of(),
+                    isPrimary && zen,
+                    isPrimary ? newFile : null,
+                    isPrimary && simple);
             pm.markOpen(key);
         }
         pm.save();
@@ -142,8 +158,7 @@ public class WindowManager {
             setActiveAndSave(project.id());
             return existing.stage;
         }
-        Stage stage = buildWindow(project.id(), project, projects().stateFile(project),
-                List.of(), false, null, false);
+        Stage stage = buildWindow(project.id(), project, projects().stateFile(project), List.of(), false, null, false);
         projects().markOpen(project.id());
         setActiveAndSave(project.id());
         return stage;
@@ -217,16 +232,19 @@ public class WindowManager {
 
     // --- window construction (extracted from App.start) ---
 
-    private Stage buildWindow(String key, Project project, Path stateFile,
-                              List<MainController.OpenTarget> targets, boolean zen, String newFile,
-                              boolean simple) {
+    private Stage buildWindow(
+            String key,
+            Project project,
+            Path stateFile,
+            List<MainController.OpenTarget> targets,
+            boolean zen,
+            String newFile,
+            boolean simple) {
         try {
             Stage stage = primaryStage != null ? primaryStage : new Stage();
             primaryStage = null; // only the first window reuses the JavaFX primary stage
             CommandRegistry registry = new CommandRegistry();
-            ConfigManager config = project == null
-                    ? new ConfigManager(shared)
-                    : new ConfigManager(shared, stateFile);
+            ConfigManager config = project == null ? new ConfigManager(shared) : new ConfigManager(shared, stateFile);
             config.setWorkspaceStateFile(config.getWorkspaceStateFile()); // load this window's session
 
             FXMLLoader loader = new FXMLLoader(WindowManager.class.getResource("main.fxml"));
@@ -246,9 +264,14 @@ public class WindowManager {
             Scene scene = new Scene(sceneRoot, 1000, 700);
             Settings settings = shared.getSettings();
             scene.setFill(Themes.backgroundFor(settings.getTheme()));
-            scene.getStylesheets().addAll(
-                    WindowManager.class.getResource("/com/editora/styles/app.css").toExternalForm(),
-                    WindowManager.class.getResource("/com/editora/styles/syntax.css").toExternalForm());
+            scene.getStylesheets()
+                    .addAll(
+                            WindowManager.class
+                                    .getResource("/com/editora/styles/app.css")
+                                    .toExternalForm(),
+                            WindowManager.class
+                                    .getResource("/com/editora/styles/syntax.css")
+                                    .toExternalForm());
 
             KeyDispatcher keyDispatcher = new KeyDispatcher(registry, keymap, controller::setStatus);
             keyDispatcher.install(scene);
@@ -281,10 +304,15 @@ public class WindowManager {
             // lets the initial layout + syntax highlight run so those classes are archived too. Inert
             // (zero cost) in every normal launch since the property is never set at runtime.
             if (System.getProperty("editora.aotTrainExit") != null) {
-                Thread t = new Thread(() -> {
-                    try { Thread.sleep(2500); } catch (InterruptedException ignored) { }
-                    System.exit(0);
-                }, "aot-train-exit");
+                Thread t = new Thread(
+                        () -> {
+                            try {
+                                Thread.sleep(2500);
+                            } catch (InterruptedException ignored) {
+                            }
+                            System.exit(0);
+                        },
+                        "aot-train-exit");
                 t.setDaemon(true);
                 t.start();
             }
@@ -404,7 +432,7 @@ public class WindowManager {
 
     /** Adds the app icon (multiple sizes) so it shows in the title bar, dock, and taskbar. */
     private static void loadAppIcons(Stage stage) {
-        for (int size : new int[]{16, 32, 48, 128, 256, 512}) {
+        for (int size : new int[] {16, 32, 48, 128, 256, 512}) {
             var in = WindowManager.class.getResourceAsStream("/com/editora/icons/icon-" + size + ".png");
             if (in != null) {
                 stage.getIcons().add(new javafx.scene.image.Image(in));

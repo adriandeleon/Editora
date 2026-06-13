@@ -5,13 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.editora.config.ConfigManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import com.editora.config.ConfigManager;
 
 /** Tests loading bundled snippets, language + global scoping, and user overrides. */
 class SnippetManagerTest {
@@ -23,10 +21,10 @@ class SnippetManagerTest {
     @Test
     void loadsBundledLanguageAndGlobalSnippets(@TempDir Path dir) {
         SnippetManager m = manager(dir);
-        assertNotNull(m.byPrefix("java", "main"));  // bundled java
+        assertNotNull(m.byPrefix("java", "main")); // bundled java
         assertNotNull(m.byPrefix("java", "fori"));
         assertNotNull(m.byPrefix("python", "def")); // bundled python
-        assertNotNull(m.byPrefix("java", "date"));  // global available in every language
+        assertNotNull(m.byPrefix("java", "date")); // global available in every language
     }
 
     @Test
@@ -34,10 +32,31 @@ class SnippetManagerTest {
         SnippetManager m = manager(dir);
         // Every language Editora highlights should have a bundled snippet file that parses to >=1
         // language-specific snippet (a parse failure would fall back to global only).
-        for (String lang : new String[]{"java", "c", "cpp", "csharp", "css", "go", "html", "kotlin",
-                "markdown", "powershell", "python", "ruby", "rust", "shell", "sql",
-                "xml", "batchfile", "groovy", "json", "yaml", "ini"}) {
-            boolean own = m.forLanguage(lang).stream().anyMatch(s -> s.language().equals(lang));
+        for (String lang : new String[] {
+            "java",
+            "c",
+            "cpp",
+            "csharp",
+            "css",
+            "go",
+            "html",
+            "kotlin",
+            "markdown",
+            "powershell",
+            "python",
+            "ruby",
+            "rust",
+            "shell",
+            "sql",
+            "xml",
+            "batchfile",
+            "groovy",
+            "json",
+            "yaml",
+            "ini"
+        }) {
+            boolean own =
+                    m.forLanguage(lang).stream().anyMatch(s -> s.language().equals(lang));
             assertTrue(own, "no bundled snippets parsed for " + lang);
         }
     }
@@ -46,7 +65,8 @@ class SnippetManagerTest {
     void arrayPrefixRegistersEveryTrigger(@TempDir Path dir) throws Exception {
         // VS Code allows an array of prefixes; friendly-snippets uses this (e.g. PowerShell).
         Files.createDirectories(dir.resolve("snippets"));
-        Files.writeString(dir.resolve("snippets").resolve("java.json"),
+        Files.writeString(
+                dir.resolve("snippets").resolve("java.json"),
                 "{ \"Multi\": { \"prefix\": [\"aa\", \"bb\"], \"body\": \"X\", \"scope\": \"java\" } }");
         SnippetManager m = manager(dir);
         assertNotNull(m.byPrefix("java", "aa"));
@@ -63,7 +83,8 @@ class SnippetManagerTest {
     @Test
     void userSnippetOverridesBundledByPrefix(@TempDir Path dir) throws Exception {
         Files.createDirectories(dir.resolve("snippets"));
-        Files.writeString(dir.resolve("snippets").resolve("java.json"),
+        Files.writeString(
+                dir.resolve("snippets").resolve("java.json"),
                 "{ \"My For\": { \"prefix\": \"for\", \"body\": \"USERFOR\", \"description\": \"mine\" } }");
         SnippetManager m = manager(dir);
         assertEquals("USERFOR", m.byPrefix("java", "for").body());
@@ -75,7 +96,8 @@ class SnippetManagerTest {
         SnippetManager m = manager(dir);
         assertNull(m.byPrefix("java", "zzz"));
         Files.createDirectories(dir.resolve("snippets"));
-        Files.writeString(dir.resolve("snippets").resolve("java.json"),
+        Files.writeString(
+                dir.resolve("snippets").resolve("java.json"),
                 "{ \"Z\": { \"prefix\": \"zzz\", \"body\": [\"a\", \"b\"] } }");
         m.reload();
         Snippet s = m.byPrefix("java", "zzz");

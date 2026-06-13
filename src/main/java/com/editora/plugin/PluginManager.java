@@ -1,5 +1,7 @@
 package com.editora.plugin;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -12,9 +14,6 @@ import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Discovers and loads plugins from {@code <configDir>/plugins/<id>/plugin.json}. <b>Shared</b> across all
@@ -34,8 +33,7 @@ public final class PluginManager {
 
     private final Path pluginsDir;
     private final Predicate<String> isEnabled;
-    private final ObjectMapper mapper = new ObjectMapper()
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     private volatile List<PluginDescriptor> descriptors = List.of();
 
@@ -101,8 +99,10 @@ public final class PluginManager {
         List<URL> urls = new ArrayList<>();
         collectJars(dir, urls);
         collectJars(dir.resolve("lib"), urls);
-        return new URLClassLoader("plugin:" + dir.getFileName(),
-                urls.toArray(new URL[0]), getClass().getClassLoader());
+        return new URLClassLoader(
+                "plugin:" + dir.getFileName(),
+                urls.toArray(new URL[0]),
+                getClass().getClassLoader());
     }
 
     private static void collectJars(Path dir, List<URL> out) {

@@ -1,15 +1,13 @@
 package com.editora.ui;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Locale;
-import java.util.function.Supplier;
-
 import static com.editora.i18n.Messages.tr;
 
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.function.Supplier;
 import javafx.beans.InvalidationListener;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -39,6 +37,7 @@ public final class StatusBar extends HBox {
     private final Label echo = new Label(tr("statusbar.ready"));
     /** In-memory, session-only history of echo messages, shown by clicking the echo area. */
     private final MessageLog messageLog = new MessageLog();
+
     private final MessageLogPopup messageLogPopup = new MessageLogPopup();
     /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
@@ -55,6 +54,7 @@ public final class StatusBar extends HBox {
     private final Label debug = segment("tool.debug", tr("statusbar.tip.debug"));
     /** Indeterminate progress while the debug session is starting; hidden once running/suspended. */
     private final ProgressBar debugProgress = new ProgressBar(0);
+
     private final Label position = segment("nav.goToLine", tr("statusbar.tip.goToLine"));
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
     private final Label indent = segment("buffer.setTabSize", tr("statusbar.tip.setTabSize"));
@@ -71,12 +71,12 @@ public final class StatusBar extends HBox {
     private boolean simpleMode;
     /** Latest LSP server name + loading state, so Simple-mode toggling can re-apply their visibility. */
     private String lspServerName = "";
+
     private boolean lspLoadingState;
     /** A single listener refreshes every segment on caret / text / selection changes. */
     private final InvalidationListener changeListener = obs -> refresh();
 
-    public StatusBar(Supplier<EditorBuffer> activeBuffer, CommandRegistry registry,
-            Supplier<Settings> settings) {
+    public StatusBar(Supplier<EditorBuffer> activeBuffer, CommandRegistry registry, Supplier<Settings> settings) {
         this.activeBuffer = activeBuffer;
         this.registry = registry;
         this.settings = settings;
@@ -116,8 +116,23 @@ public final class StatusBar extends HBox {
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        getChildren().addAll(echo, spacer, debugProgress, debug, lspProgress, git, lsp, readOnly, zoomGroup(),
-                position, language, indent, endings, size, encoding);
+        getChildren()
+                .addAll(
+                        echo,
+                        spacer,
+                        debugProgress,
+                        debug,
+                        lspProgress,
+                        git,
+                        lsp,
+                        readOnly,
+                        zoomGroup(),
+                        position,
+                        language,
+                        indent,
+                        endings,
+                        size,
+                        encoding);
         refresh();
     }
 
@@ -315,13 +330,13 @@ public final class StatusBar extends HBox {
         size.setVisible(hasBuffer);
         size.setManaged(hasBuffer);
         // Simple UI mode hides these segments; otherwise they follow buffer presence.
-        for (Label seg : new Label[]{language, endings}) {
+        for (Label seg : new Label[] {language, endings}) {
             boolean vis = hasBuffer && !simpleMode;
             seg.setVisible(vis);
             seg.setManaged(vis);
         }
         // These are normally always shown; Simple mode hides them.
-        for (Label seg : new Label[]{git, indent, encoding}) {
+        for (Label seg : new Label[] {git, indent, encoding}) {
             seg.setVisible(!simpleMode);
             seg.setManaged(!simpleMode);
         }
@@ -339,9 +354,7 @@ public final class StatusBar extends HBox {
             } else {
                 readOnly.getStyleClass().remove("active");
             }
-            readOnly.getTooltip().setText(ro
-                    ? tr("statusbar.tip.readOnly")
-                    : tr("statusbar.tip.editable"));
+            readOnly.getTooltip().setText(ro ? tr("statusbar.tip.readOnly") : tr("statusbar.tip.editable"));
         }
 
         indent.setText(tr("statusbar.tabSize", settings.get().getTabSize()));
@@ -356,8 +369,7 @@ public final class StatusBar extends HBox {
         String text = "Ln " + line + ", Col " + col;
         if (selected > 0) {
             long lines = area.getSelectedText().lines().count();
-            text += lines > 1 ? " (" + selected + " selected, " + lines + " lines)"
-                    : " (" + selected + " selected)";
+            text += lines > 1 ? " (" + selected + " selected, " + lines + " lines)" : " (" + selected + " selected)";
         }
         position.setText(text);
         position.getTooltip().setText(tr("statusbar.tip.offset", area.getCaretPosition()));

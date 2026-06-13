@@ -4,7 +4,6 @@ import static com.editora.i18n.Messages.tr;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
-
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;

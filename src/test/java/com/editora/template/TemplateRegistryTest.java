@@ -6,13 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.editora.config.ConfigManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import com.editora.config.ConfigManager;
 
 /** Tests loading bundled templates and user overrides/additions against a temp config dir. */
 class TemplateRegistryTest {
@@ -48,7 +46,8 @@ class TemplateRegistryTest {
     @Test
     void userTemplateOverridesBundledById(@TempDir Path dir) throws Exception {
         Files.createDirectories(dir.resolve("templates"));
-        Files.writeString(dir.resolve("templates").resolve("java-class.json"),
+        Files.writeString(
+                dir.resolve("templates").resolve("java-class.json"),
                 "{ \"name\": \"Mine\", \"language\": \"java\", \"fileName\": \"X.java\", \"body\": \"X\" }");
         Template t = byId(registry(dir), "java-class");
         assertEquals("Mine", t.name());
@@ -58,7 +57,8 @@ class TemplateRegistryTest {
     @Test
     void userOnlyTemplateAppears(@TempDir Path dir) throws Exception {
         Files.createDirectories(dir.resolve("templates"));
-        Files.writeString(dir.resolve("templates").resolve("note.json"),
+        Files.writeString(
+                dir.resolve("templates").resolve("note.json"),
                 "{ \"name\": \"Note\", \"fileName\": \"note.txt\", \"body\": [\"a\", \"b\"] }");
         Template t = byId(registry(dir), "note");
         assertNotNull(t);
@@ -70,7 +70,8 @@ class TemplateRegistryTest {
         TemplateRegistry r = registry(dir);
         assertNull(byId(r, "zzz"));
         Files.createDirectories(dir.resolve("templates"));
-        Files.writeString(dir.resolve("templates").resolve("zzz.json"),
+        Files.writeString(
+                dir.resolve("templates").resolve("zzz.json"),
                 "{ \"name\": \"Z\", \"fileName\": \"z.txt\", \"body\": \"z\" }");
         r.reload();
         assertNotNull(byId(r, "zzz"));

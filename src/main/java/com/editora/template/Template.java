@@ -11,8 +11,14 @@ import java.util.List;
  *
  * <p>Pure data produced by {@link TemplateRegistry}; rendering lives in {@link TemplateEngine}.
  */
-public record Template(String id, String name, String description, String language,
-        String fileName, String body, List<TemplateFile> files) {
+public record Template(
+        String id,
+        String name,
+        String description,
+        String language,
+        String fileName,
+        String body,
+        List<TemplateFile> files) {
 
     /** True when this template generates several files (uses {@link #files()} rather than body/fileName). */
     public boolean isMultiFile() {

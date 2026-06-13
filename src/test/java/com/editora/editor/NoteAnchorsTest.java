@@ -52,7 +52,8 @@ class NoteAnchorsTest {
 
     @Test
     void relocateOrphansWhenTextIsGone() {
-        assertNull(NoteAnchors.relocate("totally different content", 0, 4, "missing", "", ""),
+        assertNull(
+                NoteAnchors.relocate("totally different content", 0, 4, "missing", "", ""),
                 "no occurrence → orphan (null)");
     }
 

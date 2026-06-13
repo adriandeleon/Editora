@@ -51,8 +51,7 @@ class InlineDiffTest {
 
     @Test
     void mergeCoalescesAdjacentRanges() {
-        int[][] merged = InlineDiff.merge(java.util.List.of(
-                new int[]{0, 3}, new int[]{3, 5}, new int[]{7, 9}));
+        int[][] merged = InlineDiff.merge(java.util.List.of(new int[] {0, 3}, new int[] {3, 5}, new int[] {7, 9}));
         assertEquals(2, merged.length);
         assertEquals(0, merged[0][0]);
         assertEquals(5, merged[0][1]);

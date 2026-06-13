@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.atomic.AtomicInteger;
-
 import org.junit.jupiter.api.Test;
 
 class CommandRegistryTest {
@@ -29,10 +28,8 @@ class CommandRegistryTest {
     @Test
     void preservesRegistrationOrder() {
         CommandRegistry registry = new CommandRegistry();
-        registry.register(Command.of("a", "A", () -> {
-        }));
-        registry.register(Command.of("b", "B", () -> {
-        }));
+        registry.register(Command.of("a", "A", () -> {}));
+        registry.register(Command.of("b", "B", () -> {}));
         assertEquals(2, registry.all().size());
         assertEquals("a", registry.all().iterator().next().id());
     }

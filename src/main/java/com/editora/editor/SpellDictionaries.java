@@ -10,12 +10,10 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
+import javafx.application.Platform;
 import org.apache.lucene.analysis.hunspell.Dictionary;
 import org.apache.lucene.analysis.hunspell.Hunspell;
 import org.apache.lucene.store.ByteBuffersDirectory;
-
-import javafx.application.Platform;
 
 /**
  * Loads and caches the bundled Hunspell dictionaries (Apache Lucene's pure-Java engine). Each language
@@ -39,8 +37,7 @@ public final class SpellDictionaries {
         return t;
     });
 
-    private SpellDictionaries() {
-    }
+    private SpellDictionaries() {}
 
     /** The bundled language ids, e.g. {@code en_US}, {@code en_GB}. */
     public static List<String> available() {

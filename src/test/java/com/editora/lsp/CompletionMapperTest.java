@@ -3,13 +3,11 @@ package com.editora.lsp;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.editora.completion.Completion;
 import java.util.List;
-
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.InsertTextFormat;
 import org.junit.jupiter.api.Test;
-
-import com.editora.completion.Completion;
 
 class CompletionMapperTest {
 
@@ -41,7 +39,7 @@ class CompletionMapperTest {
 
         List<Completion> out = CompletionMapper.map(List.of(method, field));
         assertEquals("greeting(name)", out.get(0).insert()); // placeholders stripped, not raw $-text
-        assertEquals("names", out.get(1).insert());           // never the decorated label
+        assertEquals("names", out.get(1).insert()); // never the decorated label
     }
 
     @Test

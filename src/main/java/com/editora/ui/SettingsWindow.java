@@ -2,6 +2,11 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import com.editora.config.ConfigManager;
+import com.editora.config.Settings;
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.SpellDictionaries;
+import com.editora.editor.TextMateHighlighter;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -13,17 +18,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
-
-import org.eclipse.tm4e.core.grammar.IGrammar;
-import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.model.StyleSpans;
-
-import com.editora.config.ConfigManager;
-import com.editora.config.Settings;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.SpellDictionaries;
-import com.editora.editor.TextMateHighlighter;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -53,6 +47,9 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.StringConverter;
+import org.eclipse.tm4e.core.grammar.IGrammar;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
 
 /**
  * The Settings window: a left category sidebar + per-category pages, a search box, and a live
@@ -92,7 +89,7 @@ public class SettingsWindow {
     }
 
     /** A searchable settings row: its page, its node (hidden when filtered out), and its keywords. */
-    private record SettingRow(Category category, Node node, String keywords, Label section) { }
+    private record SettingRow(Category category, Node node, String keywords, Label section) {}
 
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
@@ -145,6 +142,7 @@ public class SettingsWindow {
     private CheckBox debugCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
+
     private final java.util.Map<String, TextField> debugCommandFields = new java.util.LinkedHashMap<>();
     private final java.util.Map<String, Label> debugStatusLabels = new java.util.LinkedHashMap<>();
     private TextField maidPathField;
@@ -156,12 +154,13 @@ public class SettingsWindow {
     private VBox pluginListBox; // rebuilt on each load() from the shared PluginManager's descriptors
     private TextField pluginRegistryField;
     private Label pluginRegistryWarn; // shown when the registry URL isn't the trusted default
-    private Runnable onBrowsePlugins;       // → MainController.browsePlugins
+    private Runnable onBrowsePlugins; // → MainController.browsePlugins
     private Runnable onInstallPluginFromFile; // → MainController.installPluginFromDisk
     private Consumer<String> onUninstallPlugin; // id → MainController.uninstallPlugin
     private CheckBox lspCheck;
     /** Per-server LSP controls, keyed by server id (data-driven so adding a server is one descriptor). */
     private final java.util.Map<String, CheckBox> lspEnableChecks = new java.util.LinkedHashMap<>();
+
     private final java.util.Map<String, TextField> lspCommandFields = new java.util.LinkedHashMap<>();
     private final java.util.Map<String, Label> lspStatusLabels = new java.util.LinkedHashMap<>();
     private CheckBox zenCheck;
@@ -232,13 +231,18 @@ public class SettingsWindow {
     private boolean built;
     private boolean loading;
 
-    public SettingsWindow(ConfigManager config, ToolWindowManager toolWindows,
-                          com.editora.git.GitService gitService,
-                          com.editora.mermaid.MermaidService mermaidService,
-                          com.editora.lsp.LspManager lspManager,
-                          com.editora.dap.DapManager dapManager,
-                          Consumer<Settings> onApply, Consumer<Boolean> onToggleZen,
-                          Consumer<Path> onOpenFile, Runnable onExportConfig, Runnable onShowDebugLog) {
+    public SettingsWindow(
+            ConfigManager config,
+            ToolWindowManager toolWindows,
+            com.editora.git.GitService gitService,
+            com.editora.mermaid.MermaidService mermaidService,
+            com.editora.lsp.LspManager lspManager,
+            com.editora.dap.DapManager dapManager,
+            Consumer<Settings> onApply,
+            Consumer<Boolean> onToggleZen,
+            Consumer<Path> onOpenFile,
+            Runnable onExportConfig,
+            Runnable onShowDebugLog) {
         this.config = config;
         this.toolWindows = toolWindows;
         this.gitService = gitService;
@@ -338,9 +342,14 @@ public class SettingsWindow {
 
         Scene scene = new Scene(root, WIDTH, HEIGHT);
         // The live preview needs the editor surface + token colors; the dialog controls keep AtlantaFX.
-        scene.getStylesheets().addAll(
-                SettingsWindow.class.getResource("/com/editora/styles/app.css").toExternalForm(),
-                SettingsWindow.class.getResource("/com/editora/styles/syntax.css").toExternalForm());
+        scene.getStylesheets()
+                .addAll(
+                        SettingsWindow.class
+                                .getResource("/com/editora/styles/app.css")
+                                .toExternalForm(),
+                        SettingsWindow.class
+                                .getResource("/com/editora/styles/syntax.css")
+                                .toExternalForm());
         stage.setScene(scene);
 
         sidebar.getSelectionModel().select(Category.APPEARANCE);
@@ -354,11 +363,15 @@ public class SettingsWindow {
         languageCombo.getItems().addAll(com.editora.i18n.Messages.available().keySet());
         languageCombo.setPrefWidth(220);
         languageCombo.setConverter(new StringConverter<>() {
-            @Override public String toString(String code) {
+            @Override
+            public String toString(String code) {
                 return code == null || code.isEmpty()
-                        ? tr("settings.language.auto") : com.editora.i18n.Messages.languageName(code);
+                        ? tr("settings.language.auto")
+                        : com.editora.i18n.Messages.languageName(code);
             }
-            @Override public String fromString(String s) {
+
+            @Override
+            public String fromString(String s) {
                 return s;
             }
         });
@@ -464,10 +477,13 @@ public class SettingsWindow {
         pdfPageSizeCombo = new ComboBox<>();
         pdfPageSizeCombo.getItems().setAll("letter", "a4");
         pdfPageSizeCombo.setConverter(new StringConverter<>() {
-            @Override public String toString(String key) {
+            @Override
+            public String toString(String key) {
                 return "a4".equals(key) ? tr("settings.pdf.pageSize.a4") : tr("settings.pdf.pageSize.letter");
             }
-            @Override public String fromString(String label) {
+
+            @Override
+            public String fromString(String label) {
                 return label;
             }
         });
@@ -492,10 +508,13 @@ public class SettingsWindow {
         spellLanguageCombo.getItems().setAll(SpellDictionaries.available());
         spellLanguageCombo.setPrefWidth(220);
         spellLanguageCombo.setConverter(new StringConverter<>() {
-            @Override public String toString(String id) {
+            @Override
+            public String toString(String id) {
                 return id == null ? "" : spellLanguageName(id);
             }
-            @Override public String fromString(String s) {
+
+            @Override
+            public String fromString(String s) {
                 return s;
             }
         });
@@ -645,13 +664,17 @@ public class SettingsWindow {
         });
 
         autoSaveCombo = new ComboBox<>();
-        autoSaveCombo.getItems().setAll(
-                MainController.AUTOSAVE_OFF, MainController.AUTOSAVE_DELAY, MainController.AUTOSAVE_FOCUS);
+        autoSaveCombo
+                .getItems()
+                .setAll(MainController.AUTOSAVE_OFF, MainController.AUTOSAVE_DELAY, MainController.AUTOSAVE_FOCUS);
         autoSaveCombo.setConverter(new StringConverter<>() {
-            @Override public String toString(String key) {
+            @Override
+            public String toString(String key) {
                 return key == null ? "" : MainController.autoSaveLabel(key);
             }
-            @Override public String fromString(String label) {
+
+            @Override
+            public String fromString(String label) {
                 return label;
             }
         });
@@ -713,16 +736,34 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.appearance"));
         Label langNote = note(tr("settings.uiLanguage.note"));
         VBox langBox = new VBox(4, languageCombo, langNote);
-        row(p, Category.APPEARANCE, null, labeled(tr("settings.uiLanguage"), langBox),
+        row(
+                p,
+                Category.APPEARANCE,
+                null,
+                labeled(tr("settings.uiLanguage"), langBox),
                 "language interface ui locale translation");
         Label fontNote = note(tr("settings.fontNote"));
         VBox fontBox = new VBox(4, fontFamily, fontNote);
-        row(p, Category.APPEARANCE, null, labeled(tr("settings.fontFamily"), fontBox), "font family typeface monospace");
+        row(
+                p,
+                Category.APPEARANCE,
+                null,
+                labeled(tr("settings.fontFamily"), fontBox),
+                "font family typeface monospace");
         row(p, Category.APPEARANCE, null, labeled(tr("settings.fontSize"), fontSize), "font size text");
-        row(p, Category.APPEARANCE, null, labeled(tr("settings.theme"), themeCombo), "theme appearance dark light app chrome");
+        row(
+                p,
+                Category.APPEARANCE,
+                null,
+                labeled(tr("settings.theme"), themeCombo),
+                "theme appearance dark light app chrome");
         Label etNote = note(tr("settings.editorThemeNote"));
         VBox etBox = new VBox(4, editorThemeCombo, etNote);
-        row(p, Category.APPEARANCE, null, labeled(tr("settings.editorTheme"), etBox),
+        row(
+                p,
+                Category.APPEARANCE,
+                null,
+                labeled(tr("settings.editorTheme"), etBox),
                 "editor theme syntax colors highlighting");
         Label previewSection = section(p, tr("settings.livePreview"));
         row(p, Category.APPEARANCE, previewSection, preview, "preview sample code");
@@ -738,38 +779,55 @@ public class SettingsWindow {
         row(p, Category.EDITOR, display, minimapCheck, "minimap overview");
         row(p, Category.EDITOR, display, whitespaceCheck, "hidden characters whitespace spaces tabs eol");
         row(p, Category.EDITOR, display, noteIndicatorsCheck, "personal notes gutter marker highlight indicators");
-        row(p, Category.EDITOR, display, multiCaretCheck,
+        row(
+                p,
+                Category.EDITOR,
+                display,
+                multiCaretCheck,
                 "multiple cursors carets column box selection alt drag vs code");
         Label indent = section(p, tr("settings.section.indentation"));
-        row(p, Category.EDITOR, indent, labeled(tr("settings.tabSize"), tabSizeSpinner), "tab size indent width spaces");
+        row(
+                p,
+                Category.EDITOR,
+                indent,
+                labeled(tr("settings.tabSize"), tabSizeSpinner),
+                "tab size indent width spaces");
         Label completion = section(p, tr("settings.section.completion"));
-        row(p, Category.EDITOR, completion, autocompleteCheck,
-                "autocomplete completion suggestions enable popup");
+        row(p, Category.EDITOR, completion, autocompleteCheck, "autocomplete completion suggestions enable popup");
         HBox proseRow = new HBox(autocompleteProseCheck);
         proseRow.setPadding(new Insets(0, 0, 0, 20));
-        row(p, Category.EDITOR, completion, proseRow,
-                "autocomplete prose words dictionary ghost text spelling");
+        row(p, Category.EDITOR, completion, proseRow, "autocomplete prose words dictionary ghost text spelling");
         HBox snippetsRow = new HBox(autocompleteSnippetsCheck);
         snippetsRow.setPadding(new Insets(0, 0, 0, 20));
-        row(p, Category.EDITOR, completion, snippetsRow,
-                "autocomplete snippets popup templates");
+        row(p, Category.EDITOR, completion, snippetsRow, "autocomplete snippets popup templates");
         HBox mermaidRow = new HBox(autocompleteMermaidCheck);
         mermaidRow.setPadding(new Insets(0, 0, 0, 20));
-        row(p, Category.EDITOR, completion, mermaidRow,
-                "autocomplete mermaid diagram keywords snippets mmd");
+        row(p, Category.EDITOR, completion, mermaidRow, "autocomplete mermaid diagram keywords snippets mmd");
         Label markdown = section(p, tr("settings.section.markdown"));
-        row(p, Category.EDITOR, markdown, markdownFormatBarCheck,
+        row(
+                p,
+                Category.EDITOR,
+                markdown,
+                markdownFormatBarCheck,
                 "markdown format bar selection bold italic toolbar floating");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
-        row(p, Category.EDITOR, saving, labeled(tr("settings.autoSave"), autoSaveBox),
+        row(
+                p,
+                Category.EDITOR,
+                saving,
+                labeled(tr("settings.autoSave"), autoSaveBox),
                 "auto save autosave delay inactivity focus");
         Label pdf = section(p, tr("settings.section.pdf"));
         row(p, Category.EDITOR, pdf, pdfLineNumbersCheck, "pdf export line numbers gutter");
         row(p, Category.EDITOR, pdf, pdfHighlightCheck, "pdf export syntax highlighting colors");
-        row(p, Category.EDITOR, pdf, labeled(tr("settings.pdf.pageSize"), pdfPageSizeCombo),
+        row(
+                p,
+                Category.EDITOR,
+                pdf,
+                labeled(tr("settings.pdf.pageSize"), pdfPageSizeCombo),
                 "pdf export page size letter a4 paper");
         return p;
     }
@@ -777,7 +835,11 @@ public class SettingsWindow {
     private VBox spellPage() {
         VBox p = page(tr("settings.cat.spellCheck"));
         row(p, Category.SPELL_CHECK, null, spellCheckBox, "spell check spelling enable");
-        row(p, Category.SPELL_CHECK, null, labeled(tr("settings.language"), spellLanguageCombo),
+        row(
+                p,
+                Category.SPELL_CHECK,
+                null,
+                labeled(tr("settings.language"), spellLanguageCombo),
                 "spell language dictionary english spanish french");
         return p;
     }
@@ -804,7 +866,11 @@ public class SettingsWindow {
         row(p, Category.APPLICATION, features, notesCheck, "personal notes annotations enable feature");
         row(p, Category.APPLICATION, features, zenCheck, "zen distraction free focus");
         Label templates = section(p, tr("settings.section.templates"));
-        row(p, Category.APPLICATION, templates, labeled(tr("settings.authorName"), templateAuthorField),
+        row(
+                p,
+                Category.APPLICATION,
+                templates,
+                labeled(tr("settings.authorName"), templateAuthorField),
                 "author name file templates new from template variable");
         return p;
     }
@@ -833,9 +899,17 @@ public class SettingsWindow {
         mermaidStatusLabel.setMaxWidth(440);
         row(p, Category.MERMAID, null, mermaidStatusLabel, "mermaid mmdc maid found installed not found");
         row(p, Category.MERMAID, null, mermaidCheck, "mermaid diagram enable mmdc render mmd");
-        row(p, Category.MERMAID, null, exePathRow(tr("settings.mermaid.mmdcPath"), mmdcPathField),
+        row(
+                p,
+                Category.MERMAID,
+                null,
+                exePathRow(tr("settings.mermaid.mmdcPath"), mmdcPathField),
                 "mermaid mmdc path executable render");
-        row(p, Category.MERMAID, null, exePathRow(tr("settings.mermaid.maidPath"), maidPathField),
+        row(
+                p,
+                Category.MERMAID,
+                null,
+                exePathRow(tr("settings.mermaid.maidPath"), maidPathField),
                 "mermaid maid path executable lint validate");
         Label hint = note(tr("settings.mermaid.hint"));
         hint.setWrapText(true);
@@ -864,7 +938,8 @@ public class SettingsWindow {
         row(p, Category.PLUGINS, null, pluginCheck, "plugins extensions enable support");
 
         Label folderLabel = new Label(tr("settings.plugins.folder"));
-        Label folderPath = new Label(pluginManager == null ? "" : config.getPluginsDir().toString());
+        Label folderPath =
+                new Label(pluginManager == null ? "" : config.getPluginsDir().toString());
         folderPath.getStyleClass().add("settings-hint");
         folderPath.setWrapText(true);
         folderPath.setMaxWidth(380);
@@ -907,14 +982,17 @@ public class SettingsWindow {
         regNote.setWrapText(true);
         regNote.setMaxWidth(440);
         VBox regBox = new VBox(4, pluginRegistryField, pluginRegistryWarn, regNote);
-        row(p, Category.PLUGINS, market, labeled(tr("settings.plugins.registryUrl"), regBox),
+        row(
+                p,
+                Category.PLUGINS,
+                market,
+                labeled(tr("settings.plugins.registryUrl"), regBox),
                 "plugins registry url index marketplace github browse");
         Label sigNote = note(tr("settings.plugins.requireSignatureNote"));
         sigNote.setWrapText(true);
         sigNote.setMaxWidth(440);
         VBox sigBox = new VBox(2, pluginRequireSigCheck, sigNote);
-        row(p, Category.PLUGINS, market, sigBox,
-                "plugins signature signed verify registry security trust");
+        row(p, Category.PLUGINS, market, sigBox, "plugins signature signed verify registry security trust");
         Button browse = new Button(tr("settings.plugins.browse"));
         browse.setOnAction(e -> {
             if (onBrowsePlugins != null) {
@@ -932,8 +1010,7 @@ public class SettingsWindow {
         });
         HBox marketButtons = new HBox(8, browse, installFile);
         marketButtons.setAlignment(Pos.CENTER_LEFT);
-        row(p, Category.PLUGINS, market, marketButtons,
-                "plugins browse install file zip marketplace registry");
+        row(p, Category.PLUGINS, market, marketButtons, "plugins browse install file zip marketplace registry");
 
         Label installed = section(p, tr("settings.plugins.installed"));
         pluginListBox = new VBox(8);
@@ -958,11 +1035,9 @@ public class SettingsWindow {
         }
         boolean master = config.getSettings().isPluginSupport();
         for (com.editora.plugin.PluginDescriptor d : ds) {
-            String name = d.manifest().name == null || d.manifest().name.isBlank()
-                    ? d.id() : d.manifest().name;
+            String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
             String ver = d.manifest().version == null ? "" : d.manifest().version;
-            String label = ver.isBlank() ? name + "  (" + d.id() + ")"
-                    : name + "  " + ver + "  (" + d.id() + ")";
+            String label = ver.isBlank() ? name + "  (" + d.id() + ")" : name + "  " + ver + "  (" + d.id() + ")";
             CheckBox cb = new CheckBox(label);
             cb.setSelected(config.getPluginStore().isEnabled(d.id()));
             cb.setDisable(!master);
@@ -1008,7 +1083,8 @@ public class SettingsWindow {
             return;
         }
         String url = config.getSettings().getPluginRegistryUrl();
-        boolean custom = url != null && !url.isBlank()
+        boolean custom = url != null
+                && !url.isBlank()
                 && !url.strip().equals(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
         String host = "";
         if (custom) {
@@ -1026,7 +1102,9 @@ public class SettingsWindow {
     /** Capability-disclosure confirm before enabling a plugin (mirrors the install gate). */
     private boolean confirmEnablePlugin(com.editora.plugin.PluginDescriptor d) {
         String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
-        String body = tr("dialog.plugins.enableBody", name,
+        String body = tr(
+                "dialog.plugins.enableBody",
+                name,
                 d.manifest().version == null ? "" : d.manifest().version,
                 MainController.pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
@@ -1057,8 +1135,12 @@ public class SettingsWindow {
             status.setMaxWidth(440);
             debugStatusLabels.put(dbg.id(), status);
             row(p, Category.DEBUG, sec, status, dbg.keywords());
-            row(p, Category.DEBUG, sec,
-                    exePathRow(tr(dbg.commandLabelKey()), debugCommandFields.get(dbg.id())), dbg.keywords());
+            row(
+                    p,
+                    Category.DEBUG,
+                    sec,
+                    exePathRow(tr(dbg.commandLabelKey()), debugCommandFields.get(dbg.id())),
+                    dbg.keywords());
         }
         Label hint = note(tr("settings.debug.note"));
         hint.setWrapText(true);
@@ -1070,28 +1152,41 @@ public class SettingsWindow {
     /** A per-language debug-adapter Settings row group (data-driven, mirroring {@link LspServerUi}).
      *  {@code setEnabled}/{@code getEnabled} are null for java (it has no separate enable flag — it is
      *  gated by the java LSP server). {@code detect} runs the availability probe and reports found. */
-    private record DebugAdapterUi(String id, String sectionKey, String enableLabelKey,
-            String commandLabelKey, String commandPrompt, String keywords,
+    private record DebugAdapterUi(
+            String id,
+            String sectionKey,
+            String enableLabelKey,
+            String commandLabelKey,
+            String commandPrompt,
+            String keywords,
             java.util.function.Consumer<Boolean> setEnabled,
             java.util.function.BooleanSupplier getEnabled,
             java.util.function.Consumer<String> setCommand,
             java.util.function.Supplier<String> getCommand,
-            java.util.function.Consumer<Consumer<Boolean>> detect) {
-    }
+            java.util.function.Consumer<Consumer<Boolean>> detect) {}
 
     /** The three debug adapters (java/python/javascript), in display order. */
     private java.util.List<DebugAdapterUi> debugAdapterUis() {
         return java.util.List.of(
-                new DebugAdapterUi("java", "settings.debug.java", null,
-                        "settings.debug.pluginPath", "com.microsoft.java.debug.plugin-*.jar",
+                new DebugAdapterUi(
+                        "java",
+                        "settings.debug.java",
+                        null,
+                        "settings.debug.pluginPath",
+                        "com.microsoft.java.debug.plugin-*.jar",
                         "debug java jdtls java-debug plugin jar path found",
-                        null, null,
+                        null,
+                        null,
                         v -> config.getSettings().setJavaDebugPluginPath(v),
                         () -> config.getSettings().getJavaDebugPluginPath(),
                         cb -> cb.accept(com.editora.dap.DebugAdapterLocator.locate(
-                                config.getSettings().getJavaDebugPluginPath(),
-                                java.nio.file.Path.of(System.getProperty("user.home", ""))).isPresent())),
-                new DebugAdapterUi("python", "settings.debug.python", "settings.debug.enablePython",
+                                        config.getSettings().getJavaDebugPluginPath(),
+                                        java.nio.file.Path.of(System.getProperty("user.home", "")))
+                                .isPresent())),
+                new DebugAdapterUi(
+                        "python",
+                        "settings.debug.python",
+                        "settings.debug.enablePython",
                         "settings.debug.pythonCommand",
                         com.editora.dap.DapServerRegistry.DEFAULT_PYTHON_INTERPRETER,
                         "debug python debugpy interpreter command path found",
@@ -1099,15 +1194,31 @@ public class SettingsWindow {
                         () -> config.getSettings().isPythonDebugEnabled(),
                         v -> config.getSettings().setPythonDebugCommand(v),
                         () -> config.getSettings().getPythonDebugCommand(),
-                        cb -> { if (dapManager != null) { dapManager.detectPython(cb); } else { cb.accept(false); } }),
-                new DebugAdapterUi("javascript", "settings.debug.javascript", "settings.debug.enableJs",
-                        "settings.debug.jsPath", "dapDebugServer.js",
+                        cb -> {
+                            if (dapManager != null) {
+                                dapManager.detectPython(cb);
+                            } else {
+                                cb.accept(false);
+                            }
+                        }),
+                new DebugAdapterUi(
+                        "javascript",
+                        "settings.debug.javascript",
+                        "settings.debug.enableJs",
+                        "settings.debug.jsPath",
+                        "dapDebugServer.js",
                         "debug javascript node js-debug vscode dapDebugServer path found",
                         v -> config.getSettings().setJsDebugEnabled(v),
                         () -> config.getSettings().isJsDebugEnabled(),
                         v -> config.getSettings().setJsDebugPath(v),
                         () -> config.getSettings().getJsDebugPath(),
-                        cb -> { if (dapManager != null) { dapManager.detectJs(cb); } else { cb.accept(false); } }));
+                        cb -> {
+                            if (dapManager != null) {
+                                dapManager.detectJs(cb);
+                            } else {
+                                cb.accept(false);
+                            }
+                        }));
     }
 
     private VBox lspPage() {
@@ -1117,7 +1228,11 @@ public class SettingsWindow {
         experimental.setWrapText(true);
         experimental.setMaxWidth(440);
         row(p, Category.LSP, null, experimental, "lsp experimental beta");
-        row(p, Category.LSP, null, lspCheck,
+        row(
+                p,
+                Category.LSP,
+                null,
+                lspCheck,
                 "lsp language server protocol enable java typescript python xml json bash diagnostics");
         for (LspServerUi srv : lspServerUis()) {
             row(p, Category.LSP, null, lspEnableChecks.get(srv.id()), srv.keywords());
@@ -1127,8 +1242,12 @@ public class SettingsWindow {
             status.setMaxWidth(440);
             lspStatusLabels.put(srv.id(), status);
             row(p, Category.LSP, null, status, srv.keywords());
-            row(p, Category.LSP, null,
-                    exePathRow(tr(srv.commandLabelKey()), lspCommandFields.get(srv.id())), srv.keywords());
+            row(
+                    p,
+                    Category.LSP,
+                    null,
+                    exePathRow(tr(srv.commandLabelKey()), lspCommandFields.get(srv.id())),
+                    srv.keywords());
         }
         Label hint = note(tr("settings.lsp.hint"));
         hint.setWrapText(true);
@@ -1138,162 +1257,247 @@ public class SettingsWindow {
     }
 
     /** A configurable LSP server's Settings row (data-driven so adding a server is one descriptor). */
-    private record LspServerUi(String id, String defaultCommand, String enableLabelKey,
-            String commandLabelKey, String statusKey, String keywords,
+    private record LspServerUi(
+            String id,
+            String defaultCommand,
+            String enableLabelKey,
+            String commandLabelKey,
+            String statusKey,
+            String keywords,
             java.util.function.Consumer<Boolean> setEnabled,
             java.util.function.BooleanSupplier getEnabled,
             java.util.function.Consumer<String> setCommand,
-            java.util.function.Supplier<String> getCommand) {
-    }
+            java.util.function.Supplier<String> getCommand) {}
 
     /** The six configurable LSP servers, in display order. Lambdas read/write the live {@code Settings}. */
     private java.util.List<LspServerUi> lspServerUis() {
         return java.util.List.of(
-                new LspServerUi("java", com.editora.lsp.LspServerRegistry.DEFAULT_JAVA_COMMAND,
-                        "settings.lsp.enableJava", "settings.lsp.javaCommand", "settings.lsp.status",
+                new LspServerUi(
+                        "java",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_JAVA_COMMAND,
+                        "settings.lsp.enableJava",
+                        "settings.lsp.javaCommand",
+                        "settings.lsp.status",
                         "lsp java jdtls language server found installed not found command path executable",
                         v -> config.getSettings().setJavaLspEnabled(v),
                         () -> config.getSettings().isJavaLspEnabled(),
                         v -> config.getSettings().setJavaLspCommand(v),
                         () -> config.getSettings().getJavaLspCommand()),
-                new LspServerUi("typescript", com.editora.lsp.LspServerRegistry.DEFAULT_TYPESCRIPT_COMMAND,
-                        "settings.lsp.enableTypescript", "settings.lsp.typescriptCommand",
+                new LspServerUi(
+                        "typescript",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_TYPESCRIPT_COMMAND,
+                        "settings.lsp.enableTypescript",
+                        "settings.lsp.typescriptCommand",
                         "settings.lsp.tsStatus",
                         "lsp typescript javascript language server found installed not found command path",
                         v -> config.getSettings().setTypescriptLspEnabled(v),
                         () -> config.getSettings().isTypescriptLspEnabled(),
                         v -> config.getSettings().setTypescriptLspCommand(v),
                         () -> config.getSettings().getTypescriptLspCommand()),
-                new LspServerUi("python", com.editora.lsp.LspServerRegistry.DEFAULT_PYTHON_COMMAND,
-                        "settings.lsp.enablePython", "settings.lsp.pythonCommand", "settings.lsp.pyStatus",
+                new LspServerUi(
+                        "python",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_PYTHON_COMMAND,
+                        "settings.lsp.enablePython",
+                        "settings.lsp.pythonCommand",
+                        "settings.lsp.pyStatus",
                         "lsp python pyright language server found installed not found command path executable",
                         v -> config.getSettings().setPythonLspEnabled(v),
                         () -> config.getSettings().isPythonLspEnabled(),
                         v -> config.getSettings().setPythonLspCommand(v),
                         () -> config.getSettings().getPythonLspCommand()),
-                new LspServerUi("xml", com.editora.lsp.LspServerRegistry.DEFAULT_XML_COMMAND,
-                        "settings.lsp.enableXml", "settings.lsp.xmlCommand", "settings.lsp.xmlStatus",
+                new LspServerUi(
+                        "xml",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_XML_COMMAND,
+                        "settings.lsp.enableXml",
+                        "settings.lsp.xmlCommand",
+                        "settings.lsp.xmlStatus",
                         "lsp xml lemminx language server found installed not found command path executable",
                         v -> config.getSettings().setXmlLspEnabled(v),
                         () -> config.getSettings().isXmlLspEnabled(),
                         v -> config.getSettings().setXmlLspCommand(v),
                         () -> config.getSettings().getXmlLspCommand()),
-                new LspServerUi("json", com.editora.lsp.LspServerRegistry.DEFAULT_JSON_COMMAND,
-                        "settings.lsp.enableJson", "settings.lsp.jsonCommand", "settings.lsp.jsonStatus",
+                new LspServerUi(
+                        "json",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_JSON_COMMAND,
+                        "settings.lsp.enableJson",
+                        "settings.lsp.jsonCommand",
+                        "settings.lsp.jsonStatus",
                         "lsp json language server found installed not found command path executable",
                         v -> config.getSettings().setJsonLspEnabled(v),
                         () -> config.getSettings().isJsonLspEnabled(),
                         v -> config.getSettings().setJsonLspCommand(v),
                         () -> config.getSettings().getJsonLspCommand()),
-                new LspServerUi("bash", com.editora.lsp.LspServerRegistry.DEFAULT_BASH_COMMAND,
-                        "settings.lsp.enableBash", "settings.lsp.bashCommand", "settings.lsp.bashStatus",
+                new LspServerUi(
+                        "bash",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_BASH_COMMAND,
+                        "settings.lsp.enableBash",
+                        "settings.lsp.bashCommand",
+                        "settings.lsp.bashStatus",
                         "lsp bash shell shellcheck language server found installed not found command path",
                         v -> config.getSettings().setBashLspEnabled(v),
                         () -> config.getSettings().isBashLspEnabled(),
                         v -> config.getSettings().setBashLspCommand(v),
                         () -> config.getSettings().getBashLspCommand()),
-                new LspServerUi("yaml", com.editora.lsp.LspServerRegistry.DEFAULT_YAML_COMMAND,
-                        "settings.lsp.enableYaml", "settings.lsp.yamlCommand", "settings.lsp.yamlStatus",
+                new LspServerUi(
+                        "yaml",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_YAML_COMMAND,
+                        "settings.lsp.enableYaml",
+                        "settings.lsp.yamlCommand",
+                        "settings.lsp.yamlStatus",
                         "lsp yaml yml language server found installed not found command path executable",
                         v -> config.getSettings().setYamlLspEnabled(v),
                         () -> config.getSettings().isYamlLspEnabled(),
                         v -> config.getSettings().setYamlLspCommand(v),
                         () -> config.getSettings().getYamlLspCommand()),
-                new LspServerUi("go", com.editora.lsp.LspServerRegistry.DEFAULT_GO_COMMAND,
-                        "settings.lsp.enableGo", "settings.lsp.goCommand", "settings.lsp.goStatus",
+                new LspServerUi(
+                        "go",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_GO_COMMAND,
+                        "settings.lsp.enableGo",
+                        "settings.lsp.goCommand",
+                        "settings.lsp.goStatus",
                         "lsp go golang gopls language server found installed not found command path",
                         v -> config.getSettings().setGoLspEnabled(v),
                         () -> config.getSettings().isGoLspEnabled(),
                         v -> config.getSettings().setGoLspCommand(v),
                         () -> config.getSettings().getGoLspCommand()),
-                new LspServerUi("rust", com.editora.lsp.LspServerRegistry.DEFAULT_RUST_COMMAND,
-                        "settings.lsp.enableRust", "settings.lsp.rustCommand", "settings.lsp.rustStatus",
+                new LspServerUi(
+                        "rust",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_RUST_COMMAND,
+                        "settings.lsp.enableRust",
+                        "settings.lsp.rustCommand",
+                        "settings.lsp.rustStatus",
                         "lsp rust rust-analyzer cargo language server found installed not found command path",
                         v -> config.getSettings().setRustLspEnabled(v),
                         () -> config.getSettings().isRustLspEnabled(),
                         v -> config.getSettings().setRustLspCommand(v),
                         () -> config.getSettings().getRustLspCommand()),
-                new LspServerUi("php", com.editora.lsp.LspServerRegistry.DEFAULT_PHP_COMMAND,
-                        "settings.lsp.enablePhp", "settings.lsp.phpCommand", "settings.lsp.phpStatus",
+                new LspServerUi(
+                        "php",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_PHP_COMMAND,
+                        "settings.lsp.enablePhp",
+                        "settings.lsp.phpCommand",
+                        "settings.lsp.phpStatus",
                         "lsp php phpactor intelephense language server found installed not found command path",
                         v -> config.getSettings().setPhpLspEnabled(v),
                         () -> config.getSettings().isPhpLspEnabled(),
                         v -> config.getSettings().setPhpLspCommand(v),
                         () -> config.getSettings().getPhpLspCommand()),
-                new LspServerUi("ruby", com.editora.lsp.LspServerRegistry.DEFAULT_RUBY_COMMAND,
-                        "settings.lsp.enableRuby", "settings.lsp.rubyCommand", "settings.lsp.rubyStatus",
+                new LspServerUi(
+                        "ruby",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_RUBY_COMMAND,
+                        "settings.lsp.enableRuby",
+                        "settings.lsp.rubyCommand",
+                        "settings.lsp.rubyStatus",
                         "lsp ruby ruby-lsp solargraph language server found installed not found command path",
                         v -> config.getSettings().setRubyLspEnabled(v),
                         () -> config.getSettings().isRubyLspEnabled(),
                         v -> config.getSettings().setRubyLspCommand(v),
                         () -> config.getSettings().getRubyLspCommand()),
-                new LspServerUi("clangd", com.editora.lsp.LspServerRegistry.DEFAULT_CLANGD_COMMAND,
-                        "settings.lsp.enableClangd", "settings.lsp.clangdCommand", "settings.lsp.clangdStatus",
+                new LspServerUi(
+                        "clangd",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_CLANGD_COMMAND,
+                        "settings.lsp.enableClangd",
+                        "settings.lsp.clangdCommand",
+                        "settings.lsp.clangdStatus",
                         "lsp c cpp c++ clangd language server found installed not found command path",
                         v -> config.getSettings().setClangdLspEnabled(v),
                         () -> config.getSettings().isClangdLspEnabled(),
                         v -> config.getSettings().setClangdLspCommand(v),
                         () -> config.getSettings().getClangdLspCommand()),
-                new LspServerUi("html", com.editora.lsp.LspServerRegistry.DEFAULT_HTML_COMMAND,
-                        "settings.lsp.enableHtml", "settings.lsp.htmlCommand", "settings.lsp.htmlStatus",
+                new LspServerUi(
+                        "html",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_HTML_COMMAND,
+                        "settings.lsp.enableHtml",
+                        "settings.lsp.htmlCommand",
+                        "settings.lsp.htmlStatus",
                         "lsp html language server found installed not found command path executable",
                         v -> config.getSettings().setHtmlLspEnabled(v),
                         () -> config.getSettings().isHtmlLspEnabled(),
                         v -> config.getSettings().setHtmlLspCommand(v),
                         () -> config.getSettings().getHtmlLspCommand()),
-                new LspServerUi("css", com.editora.lsp.LspServerRegistry.DEFAULT_CSS_COMMAND,
-                        "settings.lsp.enableCss", "settings.lsp.cssCommand", "settings.lsp.cssStatus",
+                new LspServerUi(
+                        "css",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_CSS_COMMAND,
+                        "settings.lsp.enableCss",
+                        "settings.lsp.cssCommand",
+                        "settings.lsp.cssStatus",
                         "lsp css scss less language server found installed not found command path",
                         v -> config.getSettings().setCssLspEnabled(v),
                         () -> config.getSettings().isCssLspEnabled(),
                         v -> config.getSettings().setCssLspCommand(v),
                         () -> config.getSettings().getCssLspCommand()),
-                new LspServerUi("kotlin", com.editora.lsp.LspServerRegistry.DEFAULT_KOTLIN_COMMAND,
-                        "settings.lsp.enableKotlin", "settings.lsp.kotlinCommand", "settings.lsp.kotlinStatus",
+                new LspServerUi(
+                        "kotlin",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_KOTLIN_COMMAND,
+                        "settings.lsp.enableKotlin",
+                        "settings.lsp.kotlinCommand",
+                        "settings.lsp.kotlinStatus",
                         "lsp kotlin language server found installed not found command path executable",
                         v -> config.getSettings().setKotlinLspEnabled(v),
                         () -> config.getSettings().isKotlinLspEnabled(),
                         v -> config.getSettings().setKotlinLspCommand(v),
                         () -> config.getSettings().getKotlinLspCommand()),
-                new LspServerUi("lua", com.editora.lsp.LspServerRegistry.DEFAULT_LUA_COMMAND,
-                        "settings.lsp.enableLua", "settings.lsp.luaCommand", "settings.lsp.luaStatus",
+                new LspServerUi(
+                        "lua",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_LUA_COMMAND,
+                        "settings.lsp.enableLua",
+                        "settings.lsp.luaCommand",
+                        "settings.lsp.luaStatus",
                         "lsp lua language server found installed not found command path executable",
                         v -> config.getSettings().setLuaLspEnabled(v),
                         () -> config.getSettings().isLuaLspEnabled(),
                         v -> config.getSettings().setLuaLspCommand(v),
                         () -> config.getSettings().getLuaLspCommand()),
-                new LspServerUi("dockerfile", com.editora.lsp.LspServerRegistry.DEFAULT_DOCKERFILE_COMMAND,
-                        "settings.lsp.enableDockerfile", "settings.lsp.dockerfileCommand",
+                new LspServerUi(
+                        "dockerfile",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_DOCKERFILE_COMMAND,
+                        "settings.lsp.enableDockerfile",
+                        "settings.lsp.dockerfileCommand",
                         "settings.lsp.dockerfileStatus",
                         "lsp dockerfile docker language server found installed not found command path",
                         v -> config.getSettings().setDockerfileLspEnabled(v),
                         () -> config.getSettings().isDockerfileLspEnabled(),
                         v -> config.getSettings().setDockerfileLspCommand(v),
                         () -> config.getSettings().getDockerfileLspCommand()),
-                new LspServerUi("sql", com.editora.lsp.LspServerRegistry.DEFAULT_SQL_COMMAND,
-                        "settings.lsp.enableSql", "settings.lsp.sqlCommand", "settings.lsp.sqlStatus",
+                new LspServerUi(
+                        "sql",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_SQL_COMMAND,
+                        "settings.lsp.enableSql",
+                        "settings.lsp.sqlCommand",
+                        "settings.lsp.sqlStatus",
                         "lsp sql language server found installed not found command path executable",
                         v -> config.getSettings().setSqlLspEnabled(v),
                         () -> config.getSettings().isSqlLspEnabled(),
                         v -> config.getSettings().setSqlLspCommand(v),
                         () -> config.getSettings().getSqlLspCommand()),
-                new LspServerUi("terraform", com.editora.lsp.LspServerRegistry.DEFAULT_TERRAFORM_COMMAND,
-                        "settings.lsp.enableTerraform", "settings.lsp.terraformCommand",
+                new LspServerUi(
+                        "terraform",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_TERRAFORM_COMMAND,
+                        "settings.lsp.enableTerraform",
+                        "settings.lsp.terraformCommand",
                         "settings.lsp.terraformStatus",
                         "lsp terraform hcl terraform-ls language server found installed not found command path",
                         v -> config.getSettings().setTerraformLspEnabled(v),
                         () -> config.getSettings().isTerraformLspEnabled(),
                         v -> config.getSettings().setTerraformLspCommand(v),
                         () -> config.getSettings().getTerraformLspCommand()),
-                new LspServerUi("toml", com.editora.lsp.LspServerRegistry.DEFAULT_TOML_COMMAND,
-                        "settings.lsp.enableToml", "settings.lsp.tomlCommand", "settings.lsp.tomlStatus",
+                new LspServerUi(
+                        "toml",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_TOML_COMMAND,
+                        "settings.lsp.enableToml",
+                        "settings.lsp.tomlCommand",
+                        "settings.lsp.tomlStatus",
                         "lsp toml taplo language server found installed not found command path executable",
                         v -> config.getSettings().setTomlLspEnabled(v),
                         () -> config.getSettings().isTomlLspEnabled(),
                         v -> config.getSettings().setTomlLspCommand(v),
                         () -> config.getSettings().getTomlLspCommand()),
-                new LspServerUi("csharp", com.editora.lsp.LspServerRegistry.DEFAULT_CSHARP_COMMAND,
-                        "settings.lsp.enableCsharp", "settings.lsp.csharpCommand", "settings.lsp.csharpStatus",
+                new LspServerUi(
+                        "csharp",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_CSHARP_COMMAND,
+                        "settings.lsp.enableCsharp",
+                        "settings.lsp.csharpCommand",
+                        "settings.lsp.csharpStatus",
                         "lsp c# csharp csharp-ls dotnet language server found installed not found command path",
                         v -> config.getSettings().setCsharpLspEnabled(v),
                         () -> config.getSettings().isCsharpLspEnabled(),
@@ -1329,8 +1533,11 @@ public class SettingsWindow {
             String maidState = a.maid() ? tr("settings.mermaid.found") : tr("settings.mermaid.notFound");
             // Color the label green/red like the LSP/Git status labels: green only when both tools are
             // found, red when either is missing.
-            mermaidStatusLabel.getStyleClass().setAll("settings-git-status",
-                    a.mmdc() && a.maid() ? "settings-git-found" : "settings-git-missing");
+            mermaidStatusLabel
+                    .getStyleClass()
+                    .setAll(
+                            "settings-git-status",
+                            a.mmdc() && a.maid() ? "settings-git-found" : "settings-git-missing");
             mermaidStatusLabel.setText(tr("settings.mermaid.status", mmdcState, maidState));
         });
     }
@@ -1350,10 +1557,10 @@ public class SettingsWindow {
             status.getStyleClass().setAll("settings-git-status");
             status.setText(tr("settings.debug.checking"));
             dbg.detect().accept(found -> {
-                status.getStyleClass().setAll("settings-git-status",
-                        found ? "settings-git-found" : "settings-git-missing");
-                status.setText(tr("settings.debug.status",
-                        tr(found ? "settings.debug.found" : "settings.debug.notFound")));
+                status.getStyleClass()
+                        .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+                status.setText(
+                        tr("settings.debug.status", tr(found ? "settings.debug.found" : "settings.debug.notFound")));
             });
         }
     }
@@ -1383,28 +1590,30 @@ public class SettingsWindow {
         }
         // The manager caches its probe per command; configure it with the current commands first.
         Settings cs = config.getSettings();
-        lspManager.configure(cs.isLspSupport(), java.util.Map.ofEntries(
-                java.util.Map.entry("java", cs.getJavaLspCommand()),
-                java.util.Map.entry("typescript", cs.getTypescriptLspCommand()),
-                java.util.Map.entry("python", cs.getPythonLspCommand()),
-                java.util.Map.entry("xml", cs.getXmlLspCommand()),
-                java.util.Map.entry("json", cs.getJsonLspCommand()),
-                java.util.Map.entry("bash", cs.getBashLspCommand()),
-                java.util.Map.entry("yaml", cs.getYamlLspCommand()),
-                java.util.Map.entry("go", cs.getGoLspCommand()),
-                java.util.Map.entry("rust", cs.getRustLspCommand()),
-                java.util.Map.entry("php", cs.getPhpLspCommand()),
-                java.util.Map.entry("ruby", cs.getRubyLspCommand()),
-                java.util.Map.entry("clangd", cs.getClangdLspCommand()),
-                java.util.Map.entry("html", cs.getHtmlLspCommand()),
-                java.util.Map.entry("css", cs.getCssLspCommand()),
-                java.util.Map.entry("kotlin", cs.getKotlinLspCommand()),
-                java.util.Map.entry("lua", cs.getLuaLspCommand()),
-                java.util.Map.entry("dockerfile", cs.getDockerfileLspCommand()),
-                java.util.Map.entry("sql", cs.getSqlLspCommand()),
-                java.util.Map.entry("terraform", cs.getTerraformLspCommand()),
-                java.util.Map.entry("toml", cs.getTomlLspCommand()),
-                java.util.Map.entry("csharp", cs.getCsharpLspCommand())));
+        lspManager.configure(
+                cs.isLspSupport(),
+                java.util.Map.ofEntries(
+                        java.util.Map.entry("java", cs.getJavaLspCommand()),
+                        java.util.Map.entry("typescript", cs.getTypescriptLspCommand()),
+                        java.util.Map.entry("python", cs.getPythonLspCommand()),
+                        java.util.Map.entry("xml", cs.getXmlLspCommand()),
+                        java.util.Map.entry("json", cs.getJsonLspCommand()),
+                        java.util.Map.entry("bash", cs.getBashLspCommand()),
+                        java.util.Map.entry("yaml", cs.getYamlLspCommand()),
+                        java.util.Map.entry("go", cs.getGoLspCommand()),
+                        java.util.Map.entry("rust", cs.getRustLspCommand()),
+                        java.util.Map.entry("php", cs.getPhpLspCommand()),
+                        java.util.Map.entry("ruby", cs.getRubyLspCommand()),
+                        java.util.Map.entry("clangd", cs.getClangdLspCommand()),
+                        java.util.Map.entry("html", cs.getHtmlLspCommand()),
+                        java.util.Map.entry("css", cs.getCssLspCommand()),
+                        java.util.Map.entry("kotlin", cs.getKotlinLspCommand()),
+                        java.util.Map.entry("lua", cs.getLuaLspCommand()),
+                        java.util.Map.entry("dockerfile", cs.getDockerfileLspCommand()),
+                        java.util.Map.entry("sql", cs.getSqlLspCommand()),
+                        java.util.Map.entry("terraform", cs.getTerraformLspCommand()),
+                        java.util.Map.entry("toml", cs.getTomlLspCommand()),
+                        java.util.Map.entry("csharp", cs.getCsharpLspCommand())));
         for (LspServerUi srv : lspServerUis()) {
             Label status = lspStatusLabels.get(srv.id());
             if (status == null) {
@@ -1414,8 +1623,8 @@ public class SettingsWindow {
             status.getStyleClass().setAll("settings-git-status");
             status.setText(tr("settings.lsp.checking"));
             lspManager.detect(srv.id(), found -> {
-                status.getStyleClass().setAll("settings-git-status",
-                        found ? "settings-git-found" : "settings-git-missing");
+                status.getStyleClass()
+                        .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
                 status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
             });
         }
@@ -1433,11 +1642,10 @@ public class SettingsWindow {
         gitStatusLabel.setText(tr("settings.git.checking"));
         gitService.version(version -> {
             boolean found = version != null && !version.isBlank();
-            gitStatusLabel.getStyleClass().setAll("settings-git-status",
-                    found ? "settings-git-found" : "settings-git-missing");
-            gitStatusLabel.setText(found
-                    ? tr("settings.git.found", version)
-                    : tr("settings.git.notFound"));
+            gitStatusLabel
+                    .getStyleClass()
+                    .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+            gitStatusLabel.setText(found ? tr("settings.git.found", version) : tr("settings.git.notFound"));
             gitCheck.setDisable(!found);
         });
     }
@@ -1461,10 +1669,15 @@ public class SettingsWindow {
             ComboBox<ToolWindow.Side> sideCombo = new ComboBox<>();
             sideCombo.getItems().setAll(ToolWindow.Side.values());
             sideCombo.setConverter(new StringConverter<>() {
-                @Override public String toString(ToolWindow.Side side) {
-                    return side == null ? "" : side.name().charAt(0) + side.name().substring(1).toLowerCase();
+                @Override
+                public String toString(ToolWindow.Side side) {
+                    return side == null
+                            ? ""
+                            : side.name().charAt(0) + side.name().substring(1).toLowerCase();
                 }
-                @Override public ToolWindow.Side fromString(String s) {
+
+                @Override
+                public ToolWindow.Side fromString(String s) {
                     return ToolWindow.Side.valueOf(s.toUpperCase());
                 }
             });
@@ -1620,7 +1833,12 @@ public class SettingsWindow {
         });
         Label debugHint = note(tr("settings.debugLog.hint"));
         VBox debugBox = new VBox(4, debugLog, debugHint);
-        row(p, Category.ADVANCED, debugSection, debugBox, "debug log logs errors warnings exceptions diagnostics bug report console");
+        row(
+                p,
+                Category.ADVANCED,
+                debugSection,
+                debugBox,
+                "debug log logs errors warnings exceptions diagnostics bug report console");
         return p;
     }
 
@@ -1679,7 +1897,8 @@ public class SettingsWindow {
             return true;
         }
         return keywords != null
-                && keywords.toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT).strip());
+                && keywords.toLowerCase(Locale.ROOT)
+                        .contains(query.toLowerCase(Locale.ROOT).strip());
     }
 
     private void filter(String query) {
@@ -1781,15 +2000,15 @@ public class SettingsWindow {
         if (preview == null || fontFamily.getValue() == null || fontSize.getValue() == null) {
             return;
         }
-        preview.setStyle("-fx-font-family: \"" + fontFamily.getValue() + "\"; -fx-font-size: "
-                + fontSize.getValue() + "px;");
+        preview.setStyle(
+                "-fx-font-family: \"" + fontFamily.getValue() + "\"; -fx-font-size: " + fontSize.getValue() + "px;");
     }
 
     // --- reset -----------------------------------------------------------------------------------
 
     private void resetAll() {
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                tr("settings.reset.confirm"), ButtonType.OK, ButtonType.CANCEL);
+        Alert confirm =
+                new Alert(Alert.AlertType.CONFIRMATION, tr("settings.reset.confirm"), ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setTitle(tr("settings.reset.title"));
         confirm.setHeaderText(null);
@@ -1953,8 +2172,8 @@ public class SettingsWindow {
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());
             autoSaveCombo.setValue(mode);
-            autoSaveDelaySpinner.getValueFactory()
-                    .setValue(Math.max(1, (int) Math.round(settings.getAutoSaveDelayMillis() / 1000.0)));
+            autoSaveDelaySpinner.getValueFactory().setValue(Math.max(1, (int)
+                    Math.round(settings.getAutoSaveDelayMillis() / 1000.0)));
             autoSaveDelaySpinner.setDisable(!MainController.AUTOSAVE_DELAY.equals(mode));
         } finally {
             loading = false;
@@ -2042,18 +2261,35 @@ public class SettingsWindow {
      */
     private void updateLspToolRowsEnabled() {
         boolean lsp = config.getSettings().isLspSupport();
-        updateTransientRow(lsp, problemsShowCheck, problemsSideCombo, problemsMoveUp, problemsMoveDown,
-                problemsDisabledNote, problemsToolWindowRef);
-        updateTransientRow(lsp, runShowCheck, runSideCombo, runMoveUp, runMoveDown,
-                runDisabledNote, runToolWindowRef);
-        updateTransientRow(config.getSettings().isDebugSupport(), debugShowCheck, debugSideCombo,
-                debugMoveUp, debugMoveDown, debugDisabledNote, debugToolWindowRef);
+        updateTransientRow(
+                lsp,
+                problemsShowCheck,
+                problemsSideCombo,
+                problemsMoveUp,
+                problemsMoveDown,
+                problemsDisabledNote,
+                problemsToolWindowRef);
+        updateTransientRow(lsp, runShowCheck, runSideCombo, runMoveUp, runMoveDown, runDisabledNote, runToolWindowRef);
+        updateTransientRow(
+                config.getSettings().isDebugSupport(),
+                debugShowCheck,
+                debugSideCombo,
+                debugMoveUp,
+                debugMoveDown,
+                debugDisabledNote,
+                debugToolWindowRef);
     }
 
     /** Shared logic for a context-gated tool-window row: gray out the controls + show the "disabled" note
      *  when {@code on} is false, else restore the normal show/side/move enabling. */
-    private void updateTransientRow(boolean on, CheckBox show, ComboBox<ToolWindow.Side> side,
-            Button up, Button down, Label disabledNote, ToolWindow ref) {
+    private void updateTransientRow(
+            boolean on,
+            CheckBox show,
+            ComboBox<ToolWindow.Side> side,
+            Button up,
+            Button down,
+            Label disabledNote,
+            ToolWindow ref) {
         if (show == null) {
             return;
         }
@@ -2233,7 +2469,8 @@ public class SettingsWindow {
         loading = true;
         try {
             themeCombo.setValue(config.getSettings().getTheme());
-            editorThemeCombo.setValue(EditorThemes.normalize(config.getSettings().getEditorTheme()));
+            editorThemeCombo.setValue(
+                    EditorThemes.normalize(config.getSettings().getEditorTheme()));
         } finally {
             loading = prev;
         }
@@ -2283,7 +2520,9 @@ public class SettingsWindow {
             }
             narrow.setFont(font);
             wide.setFont(font);
-            if (Math.abs(narrow.getLayoutBounds().getWidth() - wide.getLayoutBounds().getWidth()) < 0.5) {
+            if (Math.abs(narrow.getLayoutBounds().getWidth()
+                            - wide.getLayoutBounds().getWidth())
+                    < 0.5) {
                 families.add(family);
             }
         }
@@ -2302,7 +2541,9 @@ public class SettingsWindow {
 
     private void commitFontSize() {
         try {
-            int value = Math.max(8, Math.min(48, Integer.parseInt(fontSize.getEditor().getText().trim())));
+            int value = Math.max(
+                    8,
+                    Math.min(48, Integer.parseInt(fontSize.getEditor().getText().trim())));
             fontSize.getValueFactory().setValue(value);
             fontSize.getEditor().setText(String.valueOf(value));
         } catch (NumberFormatException e) {
@@ -2329,8 +2570,8 @@ public class SettingsWindow {
      * Shows the About dialog. Shared by the {@code help.about} command and the toolbar About button.
      * The settings-file path is a link that opens that file in the editor via {@code openFile}.
      */
-    public static void showAbout(Window owner, Path settingsFile, Consumer<Path> openFile,
-                                 Consumer<String> openUrl, String commit) {
+    public static void showAbout(
+            Window owner, Path settingsFile, Consumer<Path> openFile, Consumer<String> openUrl, String commit) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
         alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));

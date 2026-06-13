@@ -2,10 +2,14 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import com.editora.AppInfo;
+import com.editora.command.CommandRegistry;
+import com.editora.command.KeymapManager;
+import com.editora.config.RecentFiles;
+import com.editora.editor.TabContent;
 import java.nio.file.Path;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -17,12 +21,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-
-import com.editora.AppInfo;
-import com.editora.command.CommandRegistry;
-import com.editora.command.KeymapManager;
-import com.editora.config.RecentFiles;
-import com.editora.editor.TabContent;
 
 /**
  * The VSCode-style empty state shown in the editor area when no file tabs are open (startup with no
@@ -58,9 +56,15 @@ public final class WelcomePane extends Region implements TabContent {
     /** Adds vertical/horizontal scrollbars when the content doesn't fit the viewport. */
     private final ScrollPane scroll = new ScrollPane(centerHost);
 
-    public WelcomePane(CommandRegistry registry, KeymapManager keymap, RecentFiles recentFiles,
-                       Consumer<Path> onOpenRecent, Consumer<String> openUrl,
-                       BooleanSupplier projectsEnabled, BooleanSupplier gitEnabled, String devCommit) {
+    public WelcomePane(
+            CommandRegistry registry,
+            KeymapManager keymap,
+            RecentFiles recentFiles,
+            Consumer<Path> onOpenRecent,
+            Consumer<String> openUrl,
+            BooleanSupplier projectsEnabled,
+            BooleanSupplier gitEnabled,
+            String devCommit) {
         this.registry = registry;
         this.keymap = keymap;
         this.recentFiles = recentFiles;
@@ -83,7 +87,7 @@ public final class WelcomePane extends Region implements TabContent {
         centerHost.setMinWidth(ACTIONS_WIDTH + 2 * MARGIN);
 
         scroll.getStyleClass().add("welcome-scroll");
-        scroll.setFitToWidth(true);   // fill the viewport so the content stays centered; clamps to minWidth
+        scroll.setFitToWidth(true); // fill the viewport so the content stays centered; clamps to minWidth
         scroll.setFitToHeight(false); // let it grow taller than the viewport → vertical scrollbar
         getChildren().add(scroll);
         refresh();
@@ -118,13 +122,14 @@ public final class WelcomePane extends Region implements TabContent {
 
     /** Rebuilds the Start actions + Recent list (call before showing, so toggles/recents are current). */
     public void refresh() {
-        content.getChildren().setAll(
-                header(),
-                section(tr("welcome.start")),
-                startActions(),
-                section(tr("welcome.recent")),
-                recentList(),
-                footer());
+        content.getChildren()
+                .setAll(
+                        header(),
+                        section(tr("welcome.start")),
+                        startActions(),
+                        section(tr("welcome.recent")),
+                        recentList(),
+                        footer());
     }
 
     /** App version + home-page link, with the copyright + license beneath. */

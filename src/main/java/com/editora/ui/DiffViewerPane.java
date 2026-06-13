@@ -2,6 +2,14 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import com.editora.diff.DiffModels.DiffModel;
+import com.editora.diff.DiffModels.Row;
+import com.editora.diff.DiffModels.RowType;
+import com.editora.diff.DiffModels.UnifiedRow;
+import com.editora.diff.PatchWriter;
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.TabContent;
+import com.editora.editor.TextMateHighlighter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -9,7 +17,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.IntFunction;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -21,21 +28,10 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
-
+import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
-
-import org.eclipse.tm4e.core.grammar.IGrammar;
-
-import com.editora.diff.DiffModels.DiffModel;
-import com.editora.diff.DiffModels.Row;
-import com.editora.diff.DiffModels.RowType;
-import com.editora.diff.DiffModels.UnifiedRow;
-import com.editora.diff.PatchWriter;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.TabContent;
-import com.editora.editor.TextMateHighlighter;
 
 /**
  * A diff viewer tab ({@link TabContent}) comparing two texts. The default is **side-by-side** — two
@@ -61,16 +57,20 @@ public final class DiffViewerPane implements TabContent {
     private final IGrammar grammar;
     private final String fontStyle;
     private final boolean showLineNumbers;
-    private java.util.function.Consumer<String> onExportPatch = p -> { };
+    private java.util.function.Consumer<String> onExportPatch = p -> {};
     /** Re-fetches both sides + re-renders if changed (set by the controller); the file-on-disk refresh. */
-    private Runnable refresher = () -> { };
+    private Runnable refresher = () -> {};
 
     /** Which side is the editable/local file that "apply change" writes into (NONE = read-only diff). */
-    public enum EditableSide { NONE, LEFT, RIGHT }
+    public enum EditableSide {
+        NONE,
+        LEFT,
+        RIGHT
+    }
 
     private EditableSide editableSide = EditableSide.NONE;
     /** Receives the editable side's full new text after a hunk is applied (controller writes it back). */
-    private java.util.function.Consumer<String> onApply = t -> { };
+    private java.util.function.Consumer<String> onApply = t -> {};
 
     private final BorderPane root = new BorderPane();
     private final Label summary = new Label();
@@ -79,8 +79,8 @@ public final class DiffViewerPane implements TabContent {
     private final Button applyAllButton = new Button();
     private final Button undoButton = new Button();
     private final Button saveButton = new Button();
-    private Runnable onUndo = () -> { };
-    private Runnable onSave = () -> { };
+    private Runnable onUndo = () -> {};
+    private Runnable onSave = () -> {};
 
     private boolean unified; // false = side-by-side (default)
     private int changeCursor = -1; // index into model.changeBlockStarts for prev/next nav
@@ -93,9 +93,19 @@ public final class DiffViewerPane implements TabContent {
     private Node unifiedNode;
     private boolean syncing; // re-entrancy guard for scroll sync
 
-    public DiffViewerPane(String title, String headerLeft, String headerRight, String leftName,
-            String rightName, String leftText, String rightText, DiffModel model, String fontFamily,
-            int fontSize, boolean showLineNumbers, String grammarPath) {
+    public DiffViewerPane(
+            String title,
+            String headerLeft,
+            String headerRight,
+            String leftName,
+            String rightName,
+            String leftText,
+            String rightText,
+            DiffModel model,
+            String fontFamily,
+            int fontSize,
+            boolean showLineNumbers,
+            String grammarPath) {
         this.title = title;
         this.leftName = leftName;
         this.rightName = rightName;
@@ -117,12 +127,12 @@ public final class DiffViewerPane implements TabContent {
     }
 
     public void setOnExportPatch(java.util.function.Consumer<String> onExportPatch) {
-        this.onExportPatch = onExportPatch == null ? p -> { } : onExportPatch;
+        this.onExportPatch = onExportPatch == null ? p -> {} : onExportPatch;
     }
 
     /** Installs the controller's re-fetch-and-rerender hook (run on focus-regain / after git mutation). */
     public void setRefresher(Runnable refresher) {
-        this.refresher = refresher == null ? () -> { } : refresher;
+        this.refresher = refresher == null ? () -> {} : refresher;
     }
 
     /**
@@ -130,14 +140,14 @@ public final class DiffViewerPane implements TabContent {
      * When set (not {@link EditableSide#NONE}), each change block shows an "apply change" chevron in
      * that side's gutter (side-by-side view) that replaces the hunk with the other side's content.
      */
-    public void setEditable(EditableSide side, java.util.function.Consumer<String> onApply,
-            Runnable onUndo, Runnable onSave) {
+    public void setEditable(
+            EditableSide side, java.util.function.Consumer<String> onApply, Runnable onUndo, Runnable onSave) {
         this.editableSide = side == null ? EditableSide.NONE : side;
-        this.onApply = onApply == null ? t -> { } : onApply;
-        this.onUndo = onUndo == null ? () -> { } : onUndo;
-        this.onSave = onSave == null ? () -> { } : onSave;
+        this.onApply = onApply == null ? t -> {} : onApply;
+        this.onUndo = onUndo == null ? () -> {} : onUndo;
+        this.onSave = onSave == null ? () -> {} : onSave;
         boolean editable = this.editableSide != EditableSide.NONE;
-        for (Button b : new Button[]{applyAllButton, undoButton, saveButton}) {
+        for (Button b : new Button[] {applyAllButton, undoButton, saveButton}) {
             b.setVisible(editable);
             b.setManaged(editable);
         }
@@ -209,7 +219,9 @@ public final class DiffViewerPane implements TabContent {
         updateSummary();
         Button next = iconButton(Icons.arrowDown(), tr("diff.nextChange"), this::nextChange);
         Button prev = iconButton(Icons.arrowUp(), tr("diff.prevChange"), this::prevChange);
-        Button export = iconButton(Icons.saveAs(), tr("diff.exportPatch"),
+        Button export = iconButton(
+                Icons.saveAs(),
+                tr("diff.exportPatch"),
                 () -> onExportPatch.accept(patchText("a/" + leftName, "b/" + rightName)));
         // "Apply all": replace the editable file with the other side entirely. Shown only when a side is
         // editable (set by setEditable, which runs after construction), so it starts hidden.
@@ -227,8 +239,20 @@ public final class DiffViewerPane implements TabContent {
         toggleButton.getStyleClass().addAll("flat", "diff-toolbar-button");
         toggleButton.setFocusTraversable(false);
         updateToggleButton();
-        HBox bar = new HBox(2, summary, spacer(), changeNav, next, prev,
-                sep(), applyAllButton, undoButton, saveButton, sep(), toggleButton, export);
+        HBox bar = new HBox(
+                2,
+                summary,
+                spacer(),
+                changeNav,
+                next,
+                prev,
+                sep(),
+                applyAllButton,
+                undoButton,
+                saveButton,
+                sep(),
+                toggleButton,
+                export);
         bar.getStyleClass().add("diff-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(3, 6, 3, 6));
@@ -447,8 +471,7 @@ public final class DiffViewerPane implements TabContent {
                 base = null;
             }
         }
-        StyleSpans<Collection<String>> words = wordRanges.isEmpty() ? null
-                : buildWordSpans(text.length(), wordRanges);
+        StyleSpans<Collection<String>> words = wordRanges.isEmpty() ? null : buildWordSpans(text.length(), wordRanges);
         if (base != null && words != null) {
             area.setStyleSpans(0, base.overlay(words, DiffViewerPane::union));
         } else if (base != null) {
@@ -499,7 +522,7 @@ public final class DiffViewerPane implements TabContent {
             return;
         }
         for (int[] r : ranges) {
-            out.add(new int[]{lineOffset + r[0], lineOffset + r[1]});
+            out.add(new int[] {lineOffset + r[0], lineOffset + r[1]});
         }
     }
 
@@ -551,12 +574,18 @@ public final class DiffViewerPane implements TabContent {
             } else {
                 // Hunk apply (double chevron, at each change block's first row) + per-line apply (single
                 // chevron, on every changed row). Both copy the other side's content into the local file.
-                HBox hunkSlot = arrowSlot(blockStarts.contains(i)
-                        ? (right ? Icons.doubleChevronRight() : Icons.doubleChevronLeft()) : null,
-                        tr("diff.applyChange"), () -> applyBlock(i));
-                HBox lineSlot = arrowSlot(i < rows.size() && rows.get(i).type() != RowType.EQUAL
-                        ? (right ? Icons.chevronRight() : Icons.chevronLeft()) : null,
-                        tr("diff.applyLine"), () -> applyRow(i));
+                HBox hunkSlot = arrowSlot(
+                        blockStarts.contains(i)
+                                ? (right ? Icons.doubleChevronRight() : Icons.doubleChevronLeft())
+                                : null,
+                        tr("diff.applyChange"),
+                        () -> applyBlock(i));
+                HBox lineSlot = arrowSlot(
+                        i < rows.size() && rows.get(i).type() != RowType.EQUAL
+                                ? (right ? Icons.chevronRight() : Icons.chevronLeft())
+                                : null,
+                        tr("diff.applyLine"),
+                        () -> applyRow(i));
                 gutter = new HBox(hunkSlot, lineSlot, num);
             }
             // The "lineno" class gives the gutter the editor's opaque (theme-aware) background, so text
@@ -615,8 +644,10 @@ public final class DiffViewerPane implements TabContent {
     private void applyAll() {
         String otherText = editableSide == EditableSide.RIGHT ? leftText : rightText;
         javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.CONFIRMATION, tr("diff.applyAll.confirm"),
-                javafx.scene.control.ButtonType.OK, javafx.scene.control.ButtonType.CANCEL);
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                tr("diff.applyAll.confirm"),
+                javafx.scene.control.ButtonType.OK,
+                javafx.scene.control.ButtonType.CANCEL);
         confirm.setTitle(tr("diff.applyAll.confirmTitle"));
         confirm.setHeaderText(null);
         if (root.getScene() != null && root.getScene().getWindow() != null) {

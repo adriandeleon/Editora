@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import com.editora.i18n.Messages;
+import com.editora.mermaid.Mermaid;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
@@ -7,15 +9,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
-
-import com.editora.i18n.Messages;
-import com.editora.mermaid.Mermaid;
 
 /**
  * Renders Mermaid diagrams to JavaFX nodes for the preview, asynchronously. Mirrors
@@ -30,13 +28,14 @@ import com.editora.mermaid.Mermaid;
 public final class MermaidImages {
 
     /** A finished render: a {@code loaded} image (success) or an {@code error} message (failure). */
-    private record Cached(PreviewImageLoader.Loaded loaded, String error) { }
+    private record Cached(PreviewImageLoader.Loaded loaded, String error) {}
 
     /** Cap on cached rendered diagrams. Each successful entry holds a GPU texture, so the cache is
      *  bounded (LRU) rather than growing unbounded as more diagrams are rendered. */
     private static final int MAX_CACHED = 48;
-    private static final Map<String, Cached> CACHE = java.util.Collections.synchronizedMap(
-            new java.util.LinkedHashMap<String, Cached>(32, 0.75f, true) {
+
+    private static final Map<String, Cached> CACHE =
+            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, Cached>(32, 0.75f, true) {
                 @Override
                 protected boolean removeEldestEntry(java.util.Map.Entry<String, Cached> eldest) {
                     return size() > MAX_CACHED;
@@ -53,8 +52,7 @@ public final class MermaidImages {
     private static volatile List<String> maid = List.of("maid");
     private static volatile boolean dark;
 
-    private MermaidImages() {
-    }
+    private MermaidImages() {}
 
     /** Pushes the live Mermaid config (called at startup + every settings/theme apply). The commands are
      *  tokenized (a bare binary or e.g. {@code npx -y @probelabs/maid}). */
@@ -108,8 +106,8 @@ public final class MermaidImages {
                     result = new Cached(null, Messages.tr("mermaid.renderFailed"));
                 } else {
                     // PNG is rendered at RENDER_SCALE×; display at logical (CSS-pixel) width.
-                    result = new Cached(
-                            new PreviewImageLoader.Loaded(img, img.getWidth() / Mermaid.RENDER_SCALE), null);
+                    result =
+                            new Cached(new PreviewImageLoader.Loaded(img, img.getWidth() / Mermaid.RENDER_SCALE), null);
                 }
             } else {
                 // On a render failure, prefer maid's precise line/column diagnostics over mmdc's raw error.
@@ -159,7 +157,8 @@ public final class MermaidImages {
     }
 
     private static Label errorNode(String message) {
-        String body = message == null || message.isBlank() ? Messages.tr("mermaid.renderFailed")
+        String body = message == null || message.isBlank()
+                ? Messages.tr("mermaid.renderFailed")
                 : Messages.tr("mermaid.renderFailed") + "\n" + message.strip();
         Label label = new Label(body);
         label.getStyleClass().add("mermaid-error");

@@ -1,11 +1,9 @@
 package com.editora.print;
 
+import com.editora.editor.MarkdownRenderer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-
-import com.editora.editor.MarkdownRenderer;
-
 import javafx.print.PageLayout;
 import javafx.scene.Group;
 import javafx.scene.Node;
@@ -28,8 +26,7 @@ import javafx.scene.layout.VBox;
  */
 public final class MarkdownPrintLayout {
 
-    private MarkdownPrintLayout() {
-    }
+    private MarkdownPrintLayout() {}
 
     /**
      * Greedily packs block {@code heights} into pages no taller than {@code pageHeight}, never

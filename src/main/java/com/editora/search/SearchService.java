@@ -15,7 +15,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-
 import javafx.application.Platform;
 
 /**
@@ -28,8 +27,7 @@ import javafx.application.Platform;
 public final class SearchService {
 
     /** The result set, with caps so a huge tree can't freeze the UI. */
-    public record Outcome(List<FileResult> files, int totalMatches, int fileCount, boolean truncated) {
-    }
+    public record Outcome(List<FileResult> files, int totalMatches, int fileCount, boolean truncated) {}
 
     private static final int MAX_DEPTH = 25;
     private static final int MAX_FILES_SCANNED = 20_000;
@@ -47,8 +45,7 @@ public final class SearchService {
      * Searches {@code scopeRoot} (may be null) plus all {@code openContents} (path → in-memory text)
      * and posts the {@link Outcome} on the FX thread, unless a newer search has since started.
      */
-    public void search(SearchQuery query, Path scopeRoot, Map<Path, String> openContents,
-            Consumer<Outcome> onResult) {
+    public void search(SearchQuery query, Path scopeRoot, Map<Path, String> openContents, Consumer<Outcome> onResult) {
         long g = gen.incrementAndGet();
         Map<Path, String> open = openContents == null ? Map.of() : Map.copyOf(openContents);
         exec.submit(() -> {
@@ -103,15 +100,20 @@ public final class SearchService {
     private void collect(Path root, Set<Path> out) {
         try {
             int[] scanned = {0};
-            Files.walkFileTree(root, java.util.EnumSet.noneOf(java.nio.file.FileVisitOption.class),
-                    MAX_DEPTH, new SimpleFileVisitor<>() {
+            Files.walkFileTree(
+                    root,
+                    java.util.EnumSet.noneOf(java.nio.file.FileVisitOption.class),
+                    MAX_DEPTH,
+                    new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) {
-                            if (!dir.equals(root) && dir.getFileName().toString().startsWith(".")) {
+                            if (!dir.equals(root)
+                                    && dir.getFileName().toString().startsWith(".")) {
                                 return FileVisitResult.SKIP_SUBTREE; // .git, .idea, etc.
                             }
                             return scanned[0] > MAX_FILES_SCANNED
-                                    ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
+                                    ? FileVisitResult.TERMINATE
+                                    : FileVisitResult.CONTINUE;
                         }
 
                         @Override

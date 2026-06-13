@@ -1,5 +1,7 @@
 package com.editora.completion;
 
+import com.editora.snippet.Snippet;
+import com.editora.snippet.SnippetManager;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -7,9 +9,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
-
-import com.editora.snippet.Snippet;
-import com.editora.snippet.SnippetManager;
 
 /**
  * Merges completion sources for the word being typed: <b>snippets</b> (prefix-matched for the buffer's
@@ -57,7 +56,8 @@ public final class CompletionEngine {
     public static List<Completion> snippetCompletions(List<Snippet> all, String prefix) {
         List<Snippet> matched = new ArrayList<>();
         for (Snippet s : all) {
-            if (s.prefix() != null && startsWithIgnoreCase(s.prefix(), prefix)
+            if (s.prefix() != null
+                    && startsWithIgnoreCase(s.prefix(), prefix)
                     && !s.prefix().equalsIgnoreCase(prefix)) {
                 matched.add(s);
             }
@@ -71,8 +71,7 @@ public final class CompletionEngine {
     }
 
     /** Combines snippet + word completions, de-dupes by insert text (snippet wins), and caps. Pure. */
-    public static List<Completion> merge(List<Completion> snippets, List<Completion> words,
-            String prefix, int max) {
+    public static List<Completion> merge(List<Completion> snippets, List<Completion> words, String prefix, int max) {
         Map<String, Completion> byInsert = new LinkedHashMap<>();
         for (Completion c : snippets) {
             byInsert.putIfAbsent(c.insert(), c);

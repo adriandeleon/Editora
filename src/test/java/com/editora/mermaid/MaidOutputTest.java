@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.List;
-
 import org.junit.jupiter.api.Test;
 
 class MaidOutputTest {
@@ -78,23 +77,34 @@ class MaidOutputTest {
         assertEquals(List.of("mmdc"), Mermaid.command(null, "mmdc"));
         assertEquals(List.of("/opt/mmdc"), Mermaid.command("  /opt/mmdc  ", "mmdc"));
         // A multi-token command (e.g. the maid default) splits on whitespace.
-        assertEquals(List.of("npx", "-y", "@probelabs/maid"),
-                Mermaid.command("", "npx -y @probelabs/maid"));
-        assertEquals(List.of("npx", "-y", "@probelabs/maid"),
-                Mermaid.command("npx -y @probelabs/maid", "maid"));
+        assertEquals(List.of("npx", "-y", "@probelabs/maid"), Mermaid.command("", "npx -y @probelabs/maid"));
+        assertEquals(List.of("npx", "-y", "@probelabs/maid"), Mermaid.command("npx -y @probelabs/maid", "maid"));
     }
 
     @Test
     void renderArgsPrefixesTheBaseCommand() {
-        List<String> args = Mermaid.renderArgs(List.of("mmdc"), Path.of("/tmp/in.mmd"),
-                Path.of("/tmp/out.png"), true);
-        assertEquals(List.of("mmdc", "-i", "/tmp/in.mmd", "-o", "/tmp/out.png", "-t", "dark",
-                "-b", "transparent", "-s", "2"), args);
-        assertEquals("default",
-                Mermaid.renderArgs(List.of("mmdc"), Path.of("a"), Path.of("b"), false).get(6));
+        List<String> args = Mermaid.renderArgs(List.of("mmdc"), Path.of("/tmp/in.mmd"), Path.of("/tmp/out.png"), true);
+        assertEquals(
+                List.of(
+                        "mmdc",
+                        "-i",
+                        "/tmp/in.mmd",
+                        "-o",
+                        "/tmp/out.png",
+                        "-t",
+                        "dark",
+                        "-b",
+                        "transparent",
+                        "-s",
+                        "2"),
+                args);
+        assertEquals(
+                "default",
+                Mermaid.renderArgs(List.of("mmdc"), Path.of("a"), Path.of("b"), false)
+                        .get(6));
         // Multi-token base (npx) is preserved at the front.
-        assertEquals(List.of("npx", "-y", "mmdc-pkg", "-i", "a", "-o", "b", "-t", "dark", "-b",
-                "transparent", "-s", "2"),
+        assertEquals(
+                List.of("npx", "-y", "mmdc-pkg", "-i", "a", "-o", "b", "-t", "dark", "-b", "transparent", "-s", "2"),
                 Mermaid.renderArgs(List.of("npx", "-y", "mmdc-pkg"), Path.of("a"), Path.of("b"), true));
     }
 }

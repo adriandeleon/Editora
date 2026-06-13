@@ -3,9 +3,8 @@ package com.editora.editor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import org.junit.jupiter.api.Test;
-
 import com.editora.editor.Transposer.Edit;
+import org.junit.jupiter.api.Test;
 
 /** Unit tests for the pure Emacs transpose engine (no toolkit). */
 class TransposerTest {

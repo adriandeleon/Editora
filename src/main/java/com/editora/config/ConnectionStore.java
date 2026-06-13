@@ -1,11 +1,9 @@
 package com.editora.config;
 
+import com.editora.vfs.RemoteConnection;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.List;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
-import com.editora.vfs.RemoteConnection;
 
 /**
  * The persisted list of saved SFTP connections (in {@code connections.json}). Only non-secret metadata is

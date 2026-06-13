@@ -4,15 +4,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.time.LocalDateTime;
-
 import org.junit.jupiter.api.Test;
 
 /** Tests snippet variable resolution (fixed clock so date/time are deterministic). */
 class VariableResolverTest {
 
     private VariableResolver resolver() {
-        return new VariableResolver("App.java", "/home/me/src", "/home/me/src/App.java",
-                "selected", "clip", 4, "  return x;", LocalDateTime.of(2026, 6, 1, 9, 8, 7));
+        return new VariableResolver(
+                "App.java",
+                "/home/me/src",
+                "/home/me/src/App.java",
+                "selected",
+                "clip",
+                4,
+                "  return x;",
+                LocalDateTime.of(2026, 6, 1, 9, 8, 7));
     }
 
     @Test

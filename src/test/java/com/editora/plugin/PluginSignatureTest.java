@@ -10,7 +10,6 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.util.Base64;
-
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for Ed25519 registry-signature verification (pure, no network). */
@@ -30,7 +29,8 @@ class PluginSignatureTest {
         String sig = Base64.getEncoder().encodeToString(sign(kp.getPrivate(), data));
 
         assertTrue(PluginSignature.verify(data, sig, kp.getPublic()), "valid signature");
-        assertFalse(PluginSignature.verify("tampered".getBytes(StandardCharsets.UTF_8), sig, kp.getPublic()),
+        assertFalse(
+                PluginSignature.verify("tampered".getBytes(StandardCharsets.UTF_8), sig, kp.getPublic()),
                 "tampered data must fail");
 
         KeyPair other = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();

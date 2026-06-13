@@ -1,5 +1,6 @@
 package com.editora.run;
 
+import com.editora.process.ProcessRunner;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -7,10 +8,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
-
 import javafx.application.Platform;
-
-import com.editora.process.ProcessRunner;
 
 /**
  * Runs a single Java source file via the JDK's source-file launcher ({@code java <file.java>}) and streams
@@ -63,15 +61,16 @@ public final class RunService {
         if (p == null || !p.isAlive() || line == null) {
             return;
         }
-        Thread t = new Thread(() -> {
-            try {
-                p.getOutputStream().write((line + System.lineSeparator())
-                        .getBytes(StandardCharsets.UTF_8));
-                p.getOutputStream().flush();
-            } catch (IOException ignored) {
-                // Process exited between the check and the write — nothing to report.
-            }
-        }, "run-stdin");
+        Thread t = new Thread(
+                () -> {
+                    try {
+                        p.getOutputStream().write((line + System.lineSeparator()).getBytes(StandardCharsets.UTF_8));
+                        p.getOutputStream().flush();
+                    } catch (IOException ignored) {
+                        // Process exited between the check and the write — nothing to report.
+                    }
+                },
+                "run-stdin");
         t.setDaemon(true);
         t.start();
     }
@@ -87,14 +86,16 @@ public final class RunService {
             cb.accept(cached);
             return;
         }
-        Thread t = new Thread(() -> {
-            ProcessRunner.Result r = ProcessRunner.run(null, java.time.Duration.ofSeconds(10),
-                    List.of("java", "-version"));
-            // `java -version` prints to stderr; some distributions use stdout.
-            int major = javaMajorOf(r == null ? "" : r.err() + "\n" + r.out());
-            javaMajor = major;
-            Platform.runLater(() -> cb.accept(major));
-        }, "run-java-probe");
+        Thread t = new Thread(
+                () -> {
+                    ProcessRunner.Result r =
+                            ProcessRunner.run(null, java.time.Duration.ofSeconds(10), List.of("java", "-version"));
+                    // `java -version` prints to stderr; some distributions use stdout.
+                    int major = javaMajorOf(r == null ? "" : r.err() + "\n" + r.out());
+                    javaMajor = major;
+                    Platform.runLater(() -> cb.accept(major));
+                },
+                "run-java-probe");
         t.setDaemon(true);
         t.start();
     }
@@ -108,8 +109,8 @@ public final class RunService {
         if (output == null) {
             return -1;
         }
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("version \"(\\d+)(?:\\.(\\d+))?[^\"]*\"").matcher(output);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("version \"(\\d+)(?:\\.(\\d+))?[^\"]*\"")
+                .matcher(output);
         if (!m.find()) {
             return -1;
         }
@@ -148,20 +149,22 @@ public final class RunService {
         listener.onStart(String.join(" ", command));
         pump(process.getInputStream(), false, gen, listener);
         pump(process.getErrorStream(), true, gen, listener);
-        Thread waiter = new Thread(() -> {
-            int code;
-            try {
-                code = process.waitFor();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                code = -1;
-            }
-            int finalCode = code;
-            postIfCurrent(gen, () -> {
-                current = null;
-                listener.onExit(finalCode);
-            });
-        }, "run-wait");
+        Thread waiter = new Thread(
+                () -> {
+                    int code;
+                    try {
+                        code = process.waitFor();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        code = -1;
+                    }
+                    int finalCode = code;
+                    postIfCurrent(gen, () -> {
+                        current = null;
+                        listener.onExit(finalCode);
+                    });
+                },
+                "run-wait");
         waiter.setDaemon(true);
         waiter.start();
     }
@@ -179,18 +182,20 @@ public final class RunService {
 
     /** Drains a stream line-by-line on a daemon thread, posting each line to the FX thread (if still current). */
     private void pump(InputStream in, boolean stderr, int gen, Listener listener) {
-        Thread t = new Thread(() -> {
-            try (BufferedReader reader =
-                    new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    String text = line;
-                    postIfCurrent(gen, () -> listener.onOutput(text, stderr));
-                }
-            } catch (IOException ignored) {
-                // Stream closed as the process ended — nothing to report.
-            }
-        }, stderr ? "run-stderr" : "run-stdout");
+        Thread t = new Thread(
+                () -> {
+                    try (BufferedReader reader =
+                            new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            String text = line;
+                            postIfCurrent(gen, () -> listener.onOutput(text, stderr));
+                        }
+                    } catch (IOException ignored) {
+                        // Stream closed as the process ended — nothing to report.
+                    }
+                },
+                stderr ? "run-stderr" : "run-stdout");
         t.setDaemon(true);
         t.start();
     }

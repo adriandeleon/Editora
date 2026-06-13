@@ -8,8 +8,8 @@ class DebugValuesTest {
 
     @Test
     void stringsByQuoteStyle() {
-        assertEquals(DebugValues.ValueKind.STRING, DebugValues.kind("\"hello\""));   // Java / JS
-        assertEquals(DebugValues.ValueKind.STRING, DebugValues.kind("'hello'"));     // Python
+        assertEquals(DebugValues.ValueKind.STRING, DebugValues.kind("\"hello\"")); // Java / JS
+        assertEquals(DebugValues.ValueKind.STRING, DebugValues.kind("'hello'")); // Python
     }
 
     @Test

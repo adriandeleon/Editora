@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
-
+import javafx.application.Platform;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
@@ -20,8 +20,6 @@ import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
 import org.apache.sshd.sftp.client.SftpClientFactory;
 import org.apache.sshd.sftp.client.fs.SftpFileSystem;
-
-import javafx.application.Platform;
 
 /**
  * Owns the SFTP connections (one {@link SftpFileSystem} per {@code user@host:port}) and reconstructs remote
@@ -33,8 +31,7 @@ public final class RemoteFileSystems {
 
     /** The result of a connect attempt: {@code root} is the remote start directory (the connection's last
      *  path, else the SFTP home) when {@code ok}, else {@code error} explains the failure. */
-    public record Result(boolean ok, Path root, String error) {
-    }
+    public record Result(boolean ok, Path root, String error) {}
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration AUTH_TIMEOUT = Duration.ofSeconds(20);
@@ -51,11 +48,10 @@ public final class RemoteFileSystems {
         client = SshClient.setUpDefaultClient();
         // Trust the server key on first connect (the editor has no known_hosts/TOFU prompt UI yet); a
         // proper known_hosts check is a deferred hardening. Without this, MINA rejects unknown host keys.
-        client.setServerKeyVerifier(
-                org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE);
+        client.setServerKeyVerifier(org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE);
         client.start();
-        Vfs.setRemoteResolver(this::resolve);      // remote sftp:// strings → live Paths
-        Vfs.setRemoteStorable(this::storableFor);  // remote Path → sftp:// string (Path.toUri() throws for SFTP)
+        Vfs.setRemoteResolver(this::resolve); // remote sftp:// strings → live Paths
+        Vfs.setRemoteStorable(this::storableFor); // remote Path → sftp:// string (Path.toUri() throws for SFTP)
     }
 
     /** The {@code sftp://user@host:port/path} string for a remote Path, by finding its owning connection. */
@@ -92,7 +88,8 @@ public final class RemoteFileSystems {
 
     private SftpFileSystem open(RemoteConnection conn, char[] secret) throws IOException {
         ClientSession session = client.connect(conn.user(), conn.host(), conn.port())
-                .verify(CONNECT_TIMEOUT).getSession();
+                .verify(CONNECT_TIMEOUT)
+                .getSession();
         switch (conn.auth()) {
             case PASSWORD -> {
                 if (secret != null) {

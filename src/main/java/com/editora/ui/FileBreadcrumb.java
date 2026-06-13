@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import atlantafx.base.controls.Breadcrumbs;
+import atlantafx.base.controls.Breadcrumbs.BreadCrumbItem;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -8,10 +10,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
-
-import atlantafx.base.controls.Breadcrumbs;
-import atlantafx.base.controls.Breadcrumbs.BreadCrumbItem;
-
 import javafx.application.Platform;
 import javafx.geometry.Side;
 import javafx.scene.Node;
@@ -44,6 +42,7 @@ public class FileBreadcrumb extends StackPane {
 
     /** The bar is shown only when enabled (the user setting) and a file is active. */
     private boolean enabled;
+
     private Path currentFile;
 
     public FileBreadcrumb(Consumer<Path> onOpenFile) {
@@ -151,8 +150,7 @@ public class FileBreadcrumb extends StackPane {
         } catch (IOException | RuntimeException ex) {
             return; // unreadable directory — nothing to show
         }
-        Comparator<Path> byName =
-                Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
+        Comparator<Path> byName = Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
         dirs.sort(byName);
         files.sort(byName);
 

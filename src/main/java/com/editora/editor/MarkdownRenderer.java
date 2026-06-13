@@ -3,7 +3,22 @@ package com.editora.editor;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.Separator;
+import javafx.scene.control.Tooltip;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
 import org.commonmark.ext.autolink.AutolinkExtension;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
@@ -32,23 +47,6 @@ import org.commonmark.node.StrongEmphasis;
 import org.commonmark.node.ThematicBreak;
 import org.commonmark.parser.Parser;
 
-import javafx.geometry.Pos;
-import javafx.scene.Node;
-import javafx.scene.control.CheckBox;
-import javafx.scene.control.Label;
-import javafx.scene.control.Separator;
-import javafx.scene.control.Tooltip;
-import javafx.scene.image.ImageView;
-import javafx.scene.layout.ColumnConstraints;
-import javafx.scene.layout.GridPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Pane;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
-import javafx.scene.text.Text;
-import javafx.scene.text.TextFlow;
-
 /**
  * Renders Markdown to native JavaFX nodes for the in-editor preview. Parsing (CommonMark + GFM
  * extensions: tables, strikethrough, task lists, autolinks) is a pure off-thread step
@@ -72,10 +70,11 @@ public final class MarkdownRenderer {
 
     /** Renders the same AST to plain text (markup stripped) — "what you see" in the preview, for copy. */
     private static final org.commonmark.renderer.text.TextContentRenderer TEXT_RENDERER =
-            org.commonmark.renderer.text.TextContentRenderer.builder().extensions(EXTENSIONS).build();
+            org.commonmark.renderer.text.TextContentRenderer.builder()
+                    .extensions(EXTENSIONS)
+                    .build();
 
-    private MarkdownRenderer() {
-    }
+    private MarkdownRenderer() {}
 
     /** Parses Markdown to a CommonMark AST. Pure CPU — safe to call off the FX thread. */
     public static org.commonmark.node.Node parseToDocument(String markdown) {
@@ -147,8 +146,7 @@ public final class MarkdownRenderer {
         if (node instanceof FencedCodeBlock f) {
             if (isMermaidInfo(f.getInfo()) && MermaidImages.isEnabled()) {
                 // Show at natural size, but never wider than the reading column.
-                return MermaidImages.node(stripTrailingNewline(f.getLiteral()),
-                        lw -> Math.min(lw, MAX_CONTENT_WIDTH));
+                return MermaidImages.node(stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, MAX_CONTENT_WIDTH));
             }
             return codeBlock(f.getLiteral());
         }
@@ -209,6 +207,7 @@ public final class MarkdownRenderer {
     /** A table column never narrower/wider than this many "characters" of weight (keeps short columns
      *  readable and stops one long cell from starving the rest). */
     private static final int MIN_COL_WEIGHT = 6;
+
     private static final int MAX_COL_WEIGHT = 40;
 
     private static Node renderTable(TableBlock tb, Path baseDir) {
@@ -308,15 +307,14 @@ public final class MarkdownRenderer {
         return flow;
     }
 
-    private static void appendInline(org.commonmark.node.Node parent, TextFlow flow,
-            List<String> styles, Path baseDir) {
+    private static void appendInline(
+            org.commonmark.node.Node parent, TextFlow flow, List<String> styles, Path baseDir) {
         for (org.commonmark.node.Node n = parent.getFirstChild(); n != null; n = n.getNext()) {
             emitInline(n, flow, styles, baseDir);
         }
     }
 
-    private static void emitInline(org.commonmark.node.Node n, TextFlow flow,
-            List<String> styles, Path baseDir) {
+    private static void emitInline(org.commonmark.node.Node n, TextFlow flow, List<String> styles, Path baseDir) {
         if (n instanceof org.commonmark.node.Text t) {
             flow.getChildren().add(styledText(t.getLiteral(), styles));
         } else if (n instanceof Code c) {

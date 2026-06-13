@@ -6,5 +6,4 @@ package com.editora.editor;
  * {@code [selStart, selEnd]} (a zero-length selection places the caret). Mirrors {@code Commenter.Edit};
  * applied by {@code EditorBuffer} via {@code area.replaceText(...)} + {@code area.selectRange(...)}.
  */
-public record MarkdownEdit(int from, int to, String replacement, int selStart, int selEnd) {
-}
+public record MarkdownEdit(int from, int to, String replacement, int selStart, int selEnd) {}

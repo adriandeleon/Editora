@@ -6,4 +6,4 @@ package com.editora.editor;
  * that last touched the line (for click-to-open). Kept in {@code editor} so the package stays free of
  * any {@code com.editora.git} dependency — {@code MainController} maps git blame into these.
  */
-public record BlameInfo(String text, String hash) { }
+public record BlameInfo(String text, String hash) {}

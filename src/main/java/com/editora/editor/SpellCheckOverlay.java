@@ -2,14 +2,12 @@ package com.editora.editor;
 
 import java.util.Collection;
 import java.util.List;
-
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
-
 import org.fxmisc.richtext.CodeArea;
 
 /**
@@ -24,8 +22,8 @@ import org.fxmisc.richtext.CodeArea;
 final class SpellCheckOverlay extends Region {
 
     private static final Color SQUIGGLE = Color.web("#e5484d");
-    private static final double AMP = 1.6;   // squiggle peak-to-baseline amplitude (px)
-    private static final double STEP = 2.0;  // half-wavelength (px)
+    private static final double AMP = 1.6; // squiggle peak-to-baseline amplitude (px)
+    private static final double STEP = 2.0; // half-wavelength (px)
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
@@ -170,8 +168,8 @@ final class SpellCheckOverlay extends Region {
             if (!spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)) {
                 continue;
             }
-            Bounds b = toLocal(area.getCharacterBoundsOnScreen(abs,
-                    area.getAbsolutePosition(paragraph, end)).orElse(null));
+            Bounds b = toLocal(area.getCharacterBoundsOnScreen(abs, area.getAbsolutePosition(paragraph, end))
+                    .orElse(null));
             if (b == null) {
                 continue;
             }

@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
-
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link DebugLog}'s pure helpers (logger-name shortening, bounded buffer, formatting). */

@@ -2,15 +2,13 @@ package com.editora.snippet;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.model.PlainTextChange;
-import org.reactfx.Subscription;
-
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.PlainTextChange;
+import org.reactfx.Subscription;
 
 /**
  * One active snippet expansion bound to a {@link CodeArea}: it inserts the parsed text, tracks each
@@ -25,12 +23,12 @@ public final class SnippetSession {
 
     private final CodeArea area;
     private final List<Field> fields = new ArrayList<>(); // ordered: 1,2,… then $0 last
-    private final int[] finalRange;                        // $0 caret (or end of insert); shifts with edits
+    private final int[] finalRange; // $0 caret (or end of insert); shifts with edits
     private int active = -1;
     private Subscription sub;
     private boolean applying;
     private boolean ended;
-    private Runnable onEnd = () -> { };
+    private Runnable onEnd = () -> {};
     private ContextMenu choiceMenu;
 
     /** One tab stop's live document ranges; {@code ranges.get(0)} is the editable primary, rest mirror. */
@@ -38,11 +36,13 @@ public final class SnippetSession {
         final int number;
         final List<int[]> ranges;
         final List<String> choices;
+
         Field(int number, List<int[]> ranges, List<String> choices) {
             this.number = number;
             this.ranges = ranges;
             this.choices = choices;
         }
+
         int[] primary() {
             return ranges.get(0);
         }
@@ -63,7 +63,7 @@ public final class SnippetSession {
         for (TabStop s : p.stops()) {
             List<int[]> abs = new ArrayList<>();
             for (int[] r : s.ranges()) {
-                abs.add(new int[]{from + r[0], from + r[1]});
+                abs.add(new int[] {from + r[0], from + r[1]});
             }
             if (s.isFinal()) {
                 dollarZero = abs.get(0);
@@ -84,7 +84,7 @@ public final class SnippetSession {
     }
 
     public void setOnEnd(Runnable onEnd) {
-        this.onEnd = onEnd == null ? () -> { } : onEnd;
+        this.onEnd = onEnd == null ? () -> {} : onEnd;
     }
 
     public boolean isActive() {
@@ -167,8 +167,7 @@ public final class SnippetSession {
             if (ended || choiceMenu != menu) {
                 return;
             }
-            java.util.Optional<Bounds> bounds =
-                    area.getCharacterBoundsOnScreen(r[0], Math.max(r[0] + 1, r[1]));
+            java.util.Optional<Bounds> bounds = area.getCharacterBoundsOnScreen(r[0], Math.max(r[0] + 1, r[1]));
             if (bounds.isPresent()) {
                 menu.show(area, bounds.get().getMinX(), bounds.get().getMaxY());
             } else {
@@ -315,7 +314,7 @@ public final class SnippetSession {
         for (TabStop s : parsed.stops()) {
             List<int[]> rs = new ArrayList<>();
             for (int[] r : s.ranges()) {
-                rs.add(new int[]{r[0] + add[r[0]], r[1] + add[r[1]]});
+                rs.add(new int[] {r[0] + add[r[0]], r[1] + add[r[1]]});
             }
             stops.add(new TabStop(s.number(), rs, s.placeholder()));
         }

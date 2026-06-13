@@ -1,17 +1,13 @@
 package com.editora;
 
-import java.io.IOException;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
-import com.editora.ui.MainController;
-
 import com.editora.ui.Themes;
-
+import java.io.IOException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javafx.application.Application;
 import javafx.stage.Stage;
 
@@ -86,15 +82,21 @@ public class App extends Application {
 
         // WindowManager builds each window (reusing the primary stage for the first) and, with projects
         // enabled, restores every window that was open at last quit. CLI targets go to the first window.
-        com.editora.ui.WindowManager windows =
-                new com.editora.ui.WindowManager(shared, keymap, getHostServices());
-        windows.launch(stage, projectArg(rawArgs), fileTargets(rawArgs), zenFlag(rawArgs),
-                newFileArg(rawArgs), simpleFlag(rawArgs));
+        com.editora.ui.WindowManager windows = new com.editora.ui.WindowManager(shared, keymap, getHostServices());
+        windows.launch(
+                stage,
+                projectArg(rawArgs),
+                fileTargets(rawArgs),
+                zenFlag(rawArgs),
+                newFileArg(rawArgs),
+                simpleFlag(rawArgs));
     }
 
     /** True when running on macOS (used to opt the UI chrome into the native system font). */
     private static boolean isMac() {
-        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
+        return System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("mac");
     }
 
     /**
@@ -117,8 +119,8 @@ public class App extends Application {
      * covers windows opened later.
      */
     private static void installMacSystemFont() {
-        javafx.stage.Window.getWindows().addListener(
-                (javafx.collections.ListChangeListener<javafx.stage.Window>) change -> {
+        javafx.stage.Window.getWindows().addListener((javafx.collections.ListChangeListener<javafx.stage.Window>)
+                change -> {
                     while (change.next()) {
                         for (javafx.stage.Window w : change.getAddedSubList()) {
                             hookWindowFont(w);

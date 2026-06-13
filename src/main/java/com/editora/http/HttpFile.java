@@ -16,11 +16,10 @@ import java.util.Set;
  */
 public final class HttpFile {
 
-    private static final Set<String> METHODS = Set.of(
-            "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT");
+    private static final Set<String> METHODS =
+            Set.of("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT");
 
-    private HttpFile() {
-    }
+    private HttpFile() {}
 
     /**
      * One request: its 0-based {@code startLine} (the method/URL line — where the ▶ goes) through
@@ -29,8 +28,7 @@ public final class HttpFile {
      * {@code name} (from a {@code ### name} separator or a {@code # @name x} comment), and the raw
      * {@code block} text (the request, from start to end line).
      */
-    public record Request(int startLine, int endLine, String method, String url, String name, String block) {
-    }
+    public record Request(int startLine, int endLine, String method, String url, String name, String block) {}
 
     /** Parses {@code text} into its requests, in document order. */
     public static List<Request> parse(String text) {
@@ -97,8 +95,7 @@ public final class HttpFile {
 
     /** A single request broken into its parts for the built-in executor. {@code headers} is a list of
      *  {@code [name, value]}; {@code url}/{@code value}s/{@code body} may still contain {@code {{vars}}}. */
-    public record Parsed(String method, String url, List<String[]> headers, String body) {
-    }
+    public record Parsed(String method, String url, List<String[]> headers, String body) {}
 
     /** Parses one request {@code block} (from {@link Request#block()}) into method/URL/headers/body. */
     public static Parsed parseRequest(String block) {
@@ -119,7 +116,9 @@ public final class HttpFile {
         StringBuilder url = new StringBuilder(mu[1]);
         i++;
         // URL continuation lines (indented, typically starting with ?/& — IntelliJ splits long query strings).
-        while (i < lines.length && !lines[i].isEmpty() && Character.isWhitespace(lines[i].charAt(0))
+        while (i < lines.length
+                && !lines[i].isEmpty()
+                && Character.isWhitespace(lines[i].charAt(0))
                 && !lines[i].strip().isEmpty()) {
             url.append(lines[i].strip());
             i++;
@@ -128,8 +127,10 @@ public final class HttpFile {
         for (; i < lines.length && !lines[i].strip().isEmpty(); i++) {
             int colon = lines[i].indexOf(':');
             if (colon > 0) {
-                headers.add(new String[]{lines[i].substring(0, colon).strip(),
-                        lines[i].substring(colon + 1).strip()});
+                headers.add(new String[] {
+                    lines[i].substring(0, colon).strip(),
+                    lines[i].substring(colon + 1).strip()
+                });
             }
         }
         while (i < lines.length && lines[i].strip().isEmpty()) {
@@ -159,7 +160,9 @@ public final class HttpFile {
             String s = line.strip();
             if (isVarDecl(s)) {
                 int eq = s.indexOf('=');
-                out.add(new String[]{s.substring(1, eq).strip(), s.substring(eq + 1).strip()});
+                out.add(new String[] {
+                    s.substring(1, eq).strip(), s.substring(eq + 1).strip()
+                });
             }
         }
         return out;
@@ -246,9 +249,9 @@ public final class HttpFile {
         String first = sp < 0 ? s : s.substring(0, sp);
         if (sp > 0 && METHODS.contains(first)) {
             String rest = s.substring(sp + 1).strip();
-            return new String[]{first, dropHttpVersion(rest)};
+            return new String[] {first, dropHttpVersion(rest)};
         }
-        return new String[]{"GET", dropHttpVersion(s)};
+        return new String[] {"GET", dropHttpVersion(s)};
     }
 
     private static String dropHttpVersion(String url) {

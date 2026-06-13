@@ -32,15 +32,16 @@ final class MarkdownFormatBar {
         node.setPadding(new Insets(3));
         node.setAlignment(Pos.CENTER_LEFT);
 
-        node.getChildren().addAll(
-                button("B", "tooltip.markdown.bold", "md-fmt-bold", () -> buffer.formatInline("**")),
-                button("I", "tooltip.markdown.italic", "md-fmt-italic", () -> buffer.formatInline("*")),
-                button("S", "tooltip.markdown.strikethrough", "md-fmt-strike", () -> buffer.formatInline("~~")),
-                button("</>", "tooltip.markdown.code", null, () -> buffer.formatInline("`")),
-                button("Link", "tooltip.markdown.link", null, buffer::formatLinkFromClipboard),
-                button("List", "tooltip.markdown.bulletList", null, buffer::formatBulletList),
-                new Separator(javafx.geometry.Orientation.VERTICAL),
-                headingBox(buffer));
+        node.getChildren()
+                .addAll(
+                        button("B", "tooltip.markdown.bold", "md-fmt-bold", () -> buffer.formatInline("**")),
+                        button("I", "tooltip.markdown.italic", "md-fmt-italic", () -> buffer.formatInline("*")),
+                        button("S", "tooltip.markdown.strikethrough", "md-fmt-strike", () -> buffer.formatInline("~~")),
+                        button("</>", "tooltip.markdown.code", null, () -> buffer.formatInline("`")),
+                        button("Link", "tooltip.markdown.link", null, buffer::formatLinkFromClipboard),
+                        button("List", "tooltip.markdown.bulletList", null, buffer::formatBulletList),
+                        new Separator(javafx.geometry.Orientation.VERTICAL),
+                        headingBox(buffer));
     }
 
     Node node() {

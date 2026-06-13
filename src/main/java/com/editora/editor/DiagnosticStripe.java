@@ -3,7 +3,6 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntConsumer;
-
 import javafx.application.Platform;
 import javafx.scene.Cursor;
 import javafx.scene.canvas.Canvas;
@@ -12,7 +11,6 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
-
 import org.fxmisc.richtext.CodeArea;
 
 /**
@@ -47,7 +45,7 @@ final class DiagnosticStripe extends Region {
      *  re-{@code show()} that would otherwise re-position the popup on every mouse-move (flicker). */
     private String shownText;
     /** Called with a 0-based line when a mark is clicked; injected by {@link EditorBuffer}. */
-    private IntConsumer onActivate = line -> { };
+    private IntConsumer onActivate = line -> {};
 
     DiagnosticStripe(CodeArea area) {
         this.area = area;
@@ -104,7 +102,7 @@ final class DiagnosticStripe extends Region {
 
     /** Injects the click-to-jump action (0-based line); null disables jumping. */
     void setOnActivate(IntConsumer onActivate) {
-        this.onActivate = onActivate == null ? line -> { } : onActivate;
+        this.onActivate = onActivate == null ? line -> {} : onActivate;
     }
 
     @Override
@@ -160,9 +158,10 @@ final class DiagnosticStripe extends Region {
         }
         double markH = markHeight(h, total);
         // Info/warning first, errors last so the most severe marks sit on top.
-        for (LspDiagnostic.Severity sev : new LspDiagnostic.Severity[]{
-                LspDiagnostic.Severity.HINT, LspDiagnostic.Severity.INFO,
-                LspDiagnostic.Severity.WARNING, LspDiagnostic.Severity.ERROR}) {
+        for (LspDiagnostic.Severity sev : new LspDiagnostic.Severity[] {
+            LspDiagnostic.Severity.HINT, LspDiagnostic.Severity.INFO,
+            LspDiagnostic.Severity.WARNING, LspDiagnostic.Severity.ERROR
+        }) {
             g.setFill(color(sev));
             for (LspDiagnostic d : diagnostics) {
                 if (d.severity() != sev) {
@@ -212,9 +211,10 @@ final class DiagnosticStripe extends Region {
         }
         double h = canvas.getHeight();
         double markH = markHeight(h, total);
-        for (LspDiagnostic.Severity sev : new LspDiagnostic.Severity[]{
-                LspDiagnostic.Severity.ERROR, LspDiagnostic.Severity.WARNING,
-                LspDiagnostic.Severity.INFO, LspDiagnostic.Severity.HINT}) {
+        for (LspDiagnostic.Severity sev : new LspDiagnostic.Severity[] {
+            LspDiagnostic.Severity.ERROR, LspDiagnostic.Severity.WARNING,
+            LspDiagnostic.Severity.INFO, LspDiagnostic.Severity.HINT
+        }) {
             for (LspDiagnostic d : diagnostics) {
                 if (d.severity() != sev) {
                     continue;

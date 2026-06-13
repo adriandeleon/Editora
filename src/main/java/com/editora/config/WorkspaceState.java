@@ -1,11 +1,10 @@
 package com.editora.config;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
  * Persisted workspace/session state (not user preferences): collapsed fold regions and tool-window
@@ -17,6 +16,7 @@ public class WorkspaceState {
 
     /** Current on-disk schema version of {@code workspace-state.json} / {@code projects/<id>.json}. */
     public static final int SCHEMA_VERSION = 1;
+
     private int schemaVersion = SCHEMA_VERSION;
 
     public int getSchemaVersion() {
@@ -82,8 +82,7 @@ public class WorkspaceState {
         private int caret;
         private boolean pinned;
 
-        public OpenFile() {
-        }
+        public OpenFile() {}
 
         public OpenFile(String path, int caret, boolean pinned) {
             this.path = path;

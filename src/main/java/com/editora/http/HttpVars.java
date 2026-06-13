@@ -22,16 +22,14 @@ public final class HttpVars {
 
     private static final Pattern VAR = Pattern.compile("\\{\\{\\s*([^}]*?)\\s*\\}\\}");
 
-    private HttpVars() {
-    }
+    private HttpVars() {}
 
     /**
      * Builds the effective variable map: the environment variables, then the file's {@code @var}
      * declarations layered on top (each resolved against the accumulating map, so a later {@code @var}
      * may reference an earlier one or an env var).
      */
-    public static Map<String, String> resolve(Map<String, String> envVars, List<String[]> fileVars,
-            LocalDateTime now) {
+    public static Map<String, String> resolve(Map<String, String> envVars, List<String[]> fileVars, LocalDateTime now) {
         Map<String, String> map = new LinkedHashMap<>(envVars == null ? Map.of() : envVars);
         if (fileVars != null) {
             for (String[] pair : fileVars) {

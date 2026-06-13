@@ -15,8 +15,7 @@ import java.util.List;
  */
 public final class RootResolver {
 
-    private RootResolver() {
-    }
+    private RootResolver() {}
 
     /**
      * The workspace root for {@code filePath}. Uses {@code projectRoot} when non-null; else the nearest

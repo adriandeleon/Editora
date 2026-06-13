@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -100,9 +99,14 @@ public final class DebugLogWindow {
         VBox.setVgrow(area, Priority.ALWAYS);
 
         Scene scene = new Scene(root, 900, 600);
-        scene.getStylesheets().addAll(
-                DebugLogWindow.class.getResource("/com/editora/styles/app.css").toExternalForm(),
-                DebugLogWindow.class.getResource("/com/editora/styles/syntax.css").toExternalForm());
+        scene.getStylesheets()
+                .addAll(
+                        DebugLogWindow.class
+                                .getResource("/com/editora/styles/app.css")
+                                .toExternalForm(),
+                        DebugLogWindow.class
+                                .getResource("/com/editora/styles/syntax.css")
+                                .toExternalForm());
         stage.setScene(scene);
     }
 
@@ -117,8 +121,7 @@ public final class DebugLogWindow {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("debuglog.export"));
         chooser.setInitialFileName("editora-log.txt");
-        chooser.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("Log/Text", "*.log", "*.txt"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Log/Text", "*.log", "*.txt"));
         java.io.File target = chooser.showSaveDialog(stage);
         if (target != null) {
             try {

@@ -8,11 +8,12 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * relocate the note after the file changes. A Jackson-serialized record.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record TextAnchor(int line, int column, int endLine, int endColumn,
-        String selectedText, String prefix, String suffix) {
+public record TextAnchor(
+        int line, int column, int endLine, int endColumn, String selectedText, String prefix, String suffix) {
 
     /** Max stored length of the captured selection / context windows. */
     public static final int MAX_TEXT = 200;
+
     public static final int MAX_CONTEXT = 80;
 
     public TextAnchor {

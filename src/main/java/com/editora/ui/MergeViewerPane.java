@@ -2,10 +2,17 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import com.editora.diff.ConflictParser;
+import com.editora.diff.ConflictParser.Choice;
+import com.editora.diff.ConflictParser.Conflict;
+import com.editora.diff.ConflictParser.ConflictFile;
+import com.editora.diff.ConflictParser.ConflictSegment;
+import com.editora.diff.ConflictParser.PlainSegment;
+import com.editora.diff.ConflictParser.Segment;
+import com.editora.editor.TabContent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -18,15 +25,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-
-import com.editora.diff.ConflictParser;
-import com.editora.diff.ConflictParser.Choice;
-import com.editora.diff.ConflictParser.Conflict;
-import com.editora.diff.ConflictParser.ConflictFile;
-import com.editora.diff.ConflictParser.ConflictSegment;
-import com.editora.diff.ConflictParser.PlainSegment;
-import com.editora.diff.ConflictParser.Segment;
-import com.editora.editor.TabContent;
 
 /**
  * A merge-conflict resolution tab ({@link TabContent}) for a file containing Git conflict markers. Each
@@ -46,11 +44,11 @@ public final class MergeViewerPane implements TabContent {
     private final Label status = new Label();
     private final String fontStyle;
 
-    public MergeViewerPane(String title, ConflictFile file, String fontFamily, int fontSize,
-            Consumer<List<String>> onSave) {
+    public MergeViewerPane(
+            String title, ConflictFile file, String fontFamily, int fontSize, Consumer<List<String>> onSave) {
         this.title = title;
         this.file = file;
-        this.onSave = onSave == null ? lines -> { } : onSave;
+        this.onSave = onSave == null ? lines -> {} : onSave;
         this.fontStyle = "-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;";
         this.choices = new ArrayList<>(java.util.Collections.nCopies(file.conflictCount(), Choice.UNRESOLVED));
 
@@ -99,8 +97,10 @@ public final class MergeViewerPane implements TabContent {
         header.getStyleClass().add("merge-conflict-header");
 
         VBox ours = sideBox(tr("merge.ours", c.oursLabel().isEmpty() ? "HEAD" : c.oursLabel()), c.ours(), "merge-ours");
-        VBox theirs = sideBox(tr("merge.theirs", c.theirsLabel().isEmpty() ? "incoming" : c.theirsLabel()),
-                c.theirs(), "merge-theirs");
+        VBox theirs = sideBox(
+                tr("merge.theirs", c.theirsLabel().isEmpty() ? "incoming" : c.theirsLabel()),
+                c.theirs(),
+                "merge-theirs");
         HBox.setHgrow(ours, Priority.ALWAYS);
         HBox.setHgrow(theirs, Priority.ALWAYS);
         HBox sides = new HBox(8, ours, theirs);

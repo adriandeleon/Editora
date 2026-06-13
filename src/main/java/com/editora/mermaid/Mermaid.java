@@ -1,5 +1,6 @@
 package com.editora.mermaid;
 
+import com.editora.process.ProcessRunner;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -7,8 +8,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-
-import com.editora.process.ProcessRunner;
 
 /**
  * Low-level facade over the Mermaid command-line tools — <b>mmdc</b> (mermaid-cli, renders/exports) and
@@ -43,8 +42,7 @@ public final class Mermaid {
         }
     }
 
-    private Mermaid() {
-    }
+    private Mermaid() {}
 
     /**
      * The command to invoke: the user-configured value if set, else {@code defaultCommand}; either may be

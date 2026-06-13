@@ -1,5 +1,7 @@
 package com.editora.template;
 
+import com.editora.snippet.ParsedSnippet;
+import com.editora.snippet.SnippetParser;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -7,9 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import com.editora.snippet.ParsedSnippet;
-import com.editora.snippet.SnippetParser;
 
 /**
  * Pure template rendering, layered on {@link SnippetParser}: variable discovery (which named variables a
@@ -20,15 +19,12 @@ import com.editora.snippet.SnippetParser;
 public final class TemplateEngine {
 
     /** Matches a {@code ${name}} or {@code ${name:default}} reference (name starts with a letter/_). */
-    private static final Pattern VAR =
-            Pattern.compile("\\$\\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\\}");
+    private static final Pattern VAR = Pattern.compile("\\$\\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\\}");
 
-    private TemplateEngine() {
-    }
+    private TemplateEngine() {}
 
     /** A named variable a template references that is not a built-in: its {@code name} and default value. */
-    public record TemplateVar(String name, String defaultValue) {
-    }
+    public record TemplateVar(String name, String defaultValue) {}
 
     /**
      * The distinct, ordered named variables across {@code texts} (body + fileName + paths) that are
@@ -67,7 +63,8 @@ public final class TemplateEngine {
 
     /** Expands a single-line pattern (file name) to plain text — no tab stops, {@code ${cursor}} dropped. */
     public static String expand(String pattern, SnippetParser.Variables vars) {
-        return SnippetParser.parse((pattern == null ? "" : pattern).replace("${cursor}", ""), vars).text();
+        return SnippetParser.parse((pattern == null ? "" : pattern).replace("${cursor}", ""), vars)
+                .text();
     }
 
     /**

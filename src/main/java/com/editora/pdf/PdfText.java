@@ -2,13 +2,11 @@ package com.editora.pdf;
 
 import java.awt.Color;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-
 import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
-
-import java.util.Collection;
 
 /**
  * Pure text-layout helpers for the code PDF: flatten a document + its highlight {@link StyleSpans} into
@@ -18,11 +16,9 @@ import java.util.Collection;
 public final class PdfText {
 
     /** A run of same-styled text on one line. */
-    public record Run(String text, Color color, boolean bold, boolean italic) {
-    }
+    public record Run(String text, Color color, boolean bold, boolean italic) {}
 
-    private PdfText() {
-    }
+    private PdfText() {}
 
     /**
      * Splits {@code text} into lines of {@link Run}s. When {@code spans} is non-null each run carries its
@@ -95,8 +91,8 @@ public final class PdfText {
         return lines;
     }
 
-    private static void flush(List<Run> line, StringBuilder buf, Color color, boolean bold, boolean italic,
-            boolean have) {
+    private static void flush(
+            List<Run> line, StringBuilder buf, Color color, boolean bold, boolean italic, boolean have) {
         if (have && buf.length() > 0) {
             line.add(new Run(buf.toString(), color, bold, italic));
         }

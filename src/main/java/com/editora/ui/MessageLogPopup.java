@@ -6,7 +6,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.stream.Collectors;
-
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -38,9 +37,11 @@ public final class MessageLogPopup {
 
     /** Shared in-scene overlay host (injected by MainController) + shown state. */
     private OverlayHost overlayHost;
+
     private boolean showing;
     /** When the popup last hid — used so a click on the echo that auto-hid it doesn't immediately reopen. */
     private long lastHiddenAt;
+
     private final ListView<MessageLog.Entry> list = new ListView<>();
     private final VBox root;
     private MessageLog log;
@@ -60,6 +61,7 @@ public final class MessageLogPopup {
             private final Label time = new Label();
             private final Label msg = new Label();
             private final HBox box = new HBox(10, time, msg);
+
             {
                 time.getStyleClass().add("message-log-time");
                 time.setMinWidth(Region.USE_PREF_SIZE); // never clip the timestamp
@@ -82,7 +84,8 @@ public final class MessageLogPopup {
                     setGraphic(null);
                     return;
                 }
-                time.setText(TIME_FMT.format(Instant.ofEpochMilli(item.epochMillis()).atZone(ZoneId.systemDefault())));
+                time.setText(
+                        TIME_FMT.format(Instant.ofEpochMilli(item.epochMillis()).atZone(ZoneId.systemDefault())));
                 msg.setText(item.text());
                 setGraphic(box);
             }
@@ -125,8 +128,7 @@ public final class MessageLogPopup {
         root.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             // Close on Esc, C-g (the app's keyboard-quit), or M-g. (The OverlayHost also handles Esc/C-g,
             // but keep this so M-g closes it too.)
-            if (e.getCode() == KeyCode.ESCAPE
-                    || (e.getCode() == KeyCode.G && (e.isControlDown() || e.isAltDown()))) {
+            if (e.getCode() == KeyCode.ESCAPE || (e.getCode() == KeyCode.G && (e.isControlDown() || e.isAltDown()))) {
                 hide();
                 e.consume();
                 return;

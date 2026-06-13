@@ -2,13 +2,11 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import com.editora.editor.EditorBuffer;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-
-import com.editora.editor.EditorBuffer;
-
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -35,6 +33,7 @@ public class Switcher {
 
     /** Fixed list-cell height + max rows before scrolling, so the list hugs the open-file count. */
     private static final double CELL_HEIGHT = 26;
+
     private static final int MAX_VISIBLE = 12;
 
     private final ListView<Tab> filesList = new ListView<>();
@@ -42,12 +41,14 @@ public class Switcher {
     private VBox root;
     /** Shared in-scene overlay host (injected by MainController) + shown state. */
     private OverlayHost overlayHost;
+
     private boolean showing;
 
-    public Switcher(Supplier<List<Tab>> tabsSupplier,
-                    Supplier<Tab> activeTabSupplier,
-                    Consumer<Tab> activateTab,
-                    Consumer<Tab> closeTab) {
+    public Switcher(
+            Supplier<List<Tab>> tabsSupplier,
+            Supplier<Tab> activeTabSupplier,
+            Consumer<Tab> activateTab,
+            Consumer<Tab> closeTab) {
         this.tabsSupplier = tabsSupplier;
         this.activeTabSupplier = activeTabSupplier;
         this.activateTab = activateTab;
@@ -207,7 +208,7 @@ public class Switcher {
                     case P -> consume(e, () -> move(-1));
                     case G -> consume(e, this::hide);
                     case D -> consume(e, this::removeSelected);
-                    default -> { }
+                    default -> {}
                 }
             }
         }

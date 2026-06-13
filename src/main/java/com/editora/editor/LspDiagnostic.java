@@ -7,11 +7,22 @@ package com.editora.editor;
  * from {@code mermaid.MaidOutput.Diagnostic}, which is a single line + length.
  */
 public record LspDiagnostic(
-        int startLine, int startCol, int endLine, int endCol,
-        Severity severity, String message, String code, String source) {
+        int startLine,
+        int startCol,
+        int endLine,
+        int endCol,
+        Severity severity,
+        String message,
+        String code,
+        String source) {
 
     /** LSP severity levels (1..4), ordered most→least severe. */
-    public enum Severity { ERROR, WARNING, INFO, HINT }
+    public enum Severity {
+        ERROR,
+        WARNING,
+        INFO,
+        HINT
+    }
 
     /** A short "source: code" suffix for tooltips/lists, or "" when neither is present. */
     public String origin() {

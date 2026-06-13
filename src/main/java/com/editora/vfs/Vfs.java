@@ -20,8 +20,7 @@ public final class Vfs {
      *  we can't use {@code Path.toUri()} because MINA SSHD's implementation throws for SFTP paths. */
     private static volatile Function<Path, String> remoteStorable;
 
-    private Vfs() {
-    }
+    private Vfs() {}
 
     public static void setRemoteResolver(Function<String, Path> resolver) {
         remoteResolver = resolver;

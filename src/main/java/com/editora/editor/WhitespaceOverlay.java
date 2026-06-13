@@ -9,7 +9,6 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.TextAlignment;
-
 import org.fxmisc.richtext.CodeArea;
 
 /**
@@ -199,8 +198,9 @@ final class WhitespaceOverlay extends Region {
         if (paragraph < total - 1) {
             Bounds eol = len > 0
                     ? toLocal(area.getCharacterBoundsOnScreen(
-                            area.getAbsolutePosition(paragraph, len - 1),
-                            area.getAbsolutePosition(paragraph, len - 1) + 1).orElse(null))
+                                    area.getAbsolutePosition(paragraph, len - 1),
+                                    area.getAbsolutePosition(paragraph, len - 1) + 1)
+                            .orElse(null))
                     : toLocal(area.getParagraphBoundsOnScreen(paragraph).orElse(null));
             // For an empty line, anchor the ¶ at the text-area left edge, not the line's
             // on-screen minX (which is the gutter); skip if no reference x is available.

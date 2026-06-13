@@ -1,12 +1,11 @@
 package com.editora.config;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * The bookmarks store, serialized as JSON to {@code bookmarks.json} in the config dir. Kept in its own
@@ -22,6 +21,7 @@ public class BookmarkStore {
 
     /** Current on-disk schema version of {@code bookmarks.json}. */
     public static final int SCHEMA_VERSION = 1;
+
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Project key ({@code ""} = no project) -> (absolute file path -> bookmarks). */

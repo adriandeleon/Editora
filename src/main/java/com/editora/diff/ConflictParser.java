@@ -11,31 +11,32 @@ import java.util.List;
  */
 public final class ConflictParser {
 
-    private ConflictParser() {
-    }
+    private ConflictParser() {}
 
     /** What to keep for one conflict. */
-    public enum Choice { UNRESOLVED, OURS, THEIRS, BOTH }
+    public enum Choice {
+        UNRESOLVED,
+        OURS,
+        THEIRS,
+        BOTH
+    }
 
     /** One conflict: the {@code ours} lines, the {@code theirs} lines, and the labels from the markers. */
-    public record Conflict(String oursLabel, List<String> ours, String theirsLabel, List<String> theirs) {
-    }
+    public record Conflict(String oursLabel, List<String> ours, String theirsLabel, List<String> theirs) {}
 
-    public sealed interface Segment permits PlainSegment, ConflictSegment {
-    }
+    public sealed interface Segment permits PlainSegment, ConflictSegment {}
 
     /** A run of non-conflicting lines. */
-    public record PlainSegment(List<String> lines) implements Segment {
-    }
+    public record PlainSegment(List<String> lines) implements Segment {}
 
     /** A conflict region. */
-    public record ConflictSegment(Conflict conflict) implements Segment {
-    }
+    public record ConflictSegment(Conflict conflict) implements Segment {}
 
     /** A parsed file: its segments in order, with a count of conflict regions. */
     public record ConflictFile(List<Segment> segments) {
         public int conflictCount() {
-            return (int) segments.stream().filter(s -> s instanceof ConflictSegment).count();
+            return (int)
+                    segments.stream().filter(s -> s instanceof ConflictSegment).count();
         }
 
         public boolean hasConflicts() {
@@ -79,7 +80,9 @@ public final class ConflictParser {
                 String theirsLabel = "";
                 i++;
                 // ours lines until the base (|||||||) or separator (=======)
-                while (i < n && !lines.get(i).startsWith(SEP) && !lines.get(i).startsWith(BASE)
+                while (i < n
+                        && !lines.get(i).startsWith(SEP)
+                        && !lines.get(i).startsWith(BASE)
                         && !lines.get(i).startsWith(THEIRS)) {
                     ours.add(lines.get(i));
                     i++;
@@ -87,7 +90,9 @@ public final class ConflictParser {
                 // optional base region (3-way) — skip it
                 if (i < n && lines.get(i).startsWith(BASE)) {
                     i++;
-                    while (i < n && !lines.get(i).startsWith(SEP) && !lines.get(i).startsWith(THEIRS)) {
+                    while (i < n
+                            && !lines.get(i).startsWith(SEP)
+                            && !lines.get(i).startsWith(THEIRS)) {
                         i++;
                     }
                 }
@@ -102,8 +107,8 @@ public final class ConflictParser {
                     theirsLabel = label(lines.get(i), THEIRS);
                     i++;
                 }
-                segments.add(new ConflictSegment(new Conflict(oursLabel, List.copyOf(ours),
-                        theirsLabel, List.copyOf(theirs))));
+                segments.add(new ConflictSegment(
+                        new Conflict(oursLabel, List.copyOf(ours), theirsLabel, List.copyOf(theirs))));
             } else {
                 plain.add(line);
                 i++;

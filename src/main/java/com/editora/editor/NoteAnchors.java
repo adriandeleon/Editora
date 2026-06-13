@@ -3,7 +3,6 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 
-
 /**
  * Pure anchoring math for Personal Notes (no toolkit; unit-tested). Two concerns:
  *
@@ -22,8 +21,7 @@ public final class NoteAnchors {
     /** Cap on scanned occurrences so relocation stays bounded on pathological inputs. */
     static final int MAX_OCCURRENCES = 5000;
 
-    private NoteAnchors() {
-    }
+    private NoteAnchors() {}
 
     /** New position of {@code offset} after an edit at {@code pos} that removed {@code removed} chars and inserted {@code inserted}. */
     public static int shiftOffset(int offset, int pos, int removed, int inserted) {
@@ -47,8 +45,8 @@ public final class NoteAnchors {
      * Locates the anchor's text in {@code doc}. Returns {@code {start,end}} (end exclusive) or {@code null}
      * if it can't be relocated (the note should be marked orphaned).
      */
-    public static int[] relocate(String doc, int savedStart, int savedEnd,
-            String selectedText, String prefix, String suffix) {
+    public static int[] relocate(
+            String doc, int savedStart, int savedEnd, String selectedText, String prefix, String suffix) {
         if (doc == null) {
             return null;
         }
@@ -59,7 +57,8 @@ public final class NoteAnchors {
             return new int[] {s, s};
         }
         // Level 1: the saved offset still holds the text.
-        if (savedStart >= 0 && savedStart + needle.length() <= doc.length()
+        if (savedStart >= 0
+                && savedStart + needle.length() <= doc.length()
                 && doc.regionMatches(savedStart, needle, 0, needle.length())) {
             return new int[] {savedStart, savedStart + needle.length()};
         }
@@ -72,8 +71,8 @@ public final class NoteAnchors {
         long bestScore = Long.MIN_VALUE;
         int from = Math.max(savedStart, 0);
         for (int o : occ) {
-            long score = (contextMatches(doc, o, needle, prefix, suffix) ? 1_000_000_000L : 0)
-                    - Math.abs((long) o - from);
+            long score =
+                    (contextMatches(doc, o, needle, prefix, suffix) ? 1_000_000_000L : 0) - Math.abs((long) o - from);
             if (score > bestScore) {
                 bestScore = score;
                 best = o;
@@ -83,10 +82,12 @@ public final class NoteAnchors {
     }
 
     private static boolean contextMatches(String doc, int at, String needle, String prefix, String suffix) {
-        boolean pre = prefix == null || prefix.isEmpty()
+        boolean pre = prefix == null
+                || prefix.isEmpty()
                 || (at - prefix.length() >= 0 && doc.regionMatches(at - prefix.length(), prefix, 0, prefix.length()));
         int after = at + needle.length();
-        boolean suf = suffix == null || suffix.isEmpty()
+        boolean suf = suffix == null
+                || suffix.isEmpty()
                 || (after + suffix.length() <= doc.length() && doc.regionMatches(after, suffix, 0, suffix.length()));
         return pre && suf;
     }

@@ -1,11 +1,10 @@
 package com.editora.config;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
  * The Personal Notes store, serialized as JSON to {@code notes.json}. Mirrors {@link BookmarkStore}:
@@ -20,6 +19,7 @@ public class NoteStore {
 
     /** Current on-disk schema version of {@code notes.json}. */
     public static final int SCHEMA_VERSION = 1;
+
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Project key ({@code ""} = no project) -> (canonical file path -> notes). */
@@ -51,8 +51,8 @@ public class NoteStore {
      * in {@code previousOrder} come first (using the up-to-date snapshot instance), then any new notes in
      * their natural order. Pure + unit-testable; keeps list order stable across re-anchoring/saves.
      */
-    public static List<PersonalNote> mergePreservingOrder(List<PersonalNote> previousOrder,
-            List<PersonalNote> current) {
+    public static List<PersonalNote> mergePreservingOrder(
+            List<PersonalNote> previousOrder, List<PersonalNote> current) {
         if (previousOrder == null || previousOrder.isEmpty()) {
             return new ArrayList<>(current == null ? List.of() : current);
         }

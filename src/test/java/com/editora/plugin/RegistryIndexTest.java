@@ -4,12 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
-
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for the plugin-registry index parsing + the HTTPS guard (pure, no network). */

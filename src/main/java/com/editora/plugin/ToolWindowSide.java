@@ -5,5 +5,7 @@ package com.editora.plugin;
  * package so a plugin never needs to depend on {@code com.editora.ui}.
  */
 public enum ToolWindowSide {
-    LEFT, RIGHT, BOTTOM
+    LEFT,
+    RIGHT,
+    BOTTOM
 }

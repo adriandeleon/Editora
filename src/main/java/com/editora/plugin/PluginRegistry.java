@@ -1,5 +1,7 @@
 package com.editora.plugin;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -14,10 +16,6 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import javafx.application.Platform;
 
 /**
@@ -55,8 +53,7 @@ public final class PluginRegistry {
             .connectTimeout(CONNECT_TIMEOUT)
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
-    private final ObjectMapper mapper = new ObjectMapper()
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
     private final ConcurrentHashMap<String, Result> cache = new ConcurrentHashMap<>();
 
     /** Clears the per-URL cache so the next {@link #fetch} re-downloads. */
@@ -121,8 +118,7 @@ public final class PluginRegistry {
                     .header("Accept", "application/json")
                     .GET()
                     .build();
-            HttpResponse<java.io.InputStream> resp =
-                    client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<java.io.InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() / 100 != 2) {
                 resp.body().close();
                 return new Result(List.of(), "HTTP " + resp.statusCode(), false);
@@ -136,8 +132,10 @@ public final class PluginRegistry {
             return new Result(List.copyOf(idx.plugins), null, signed);
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to fetch plugin registry " + url, e);
-            return new Result(List.of(), e.getClass().getSimpleName()
-                    + (e.getMessage() == null ? "" : ": " + e.getMessage()), false);
+            return new Result(
+                    List.of(),
+                    e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()),
+                    false);
         }
     }
 
@@ -151,9 +149,10 @@ public final class PluginRegistry {
         }
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(indexUrl.strip() + ".sig"))
-                    .timeout(REQUEST_TIMEOUT).GET().build();
-            HttpResponse<java.io.InputStream> resp =
-                    client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+                    .timeout(REQUEST_TIMEOUT)
+                    .GET()
+                    .build();
+            HttpResponse<java.io.InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() / 100 != 2) {
                 resp.body().close();
                 return false;

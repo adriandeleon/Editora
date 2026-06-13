@@ -1,7 +1,6 @@
 package com.editora.editor;
 
 import java.util.List;
-
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.geometry.VPos;
@@ -12,7 +11,6 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontPosture;
 import javafx.scene.text.TextAlignment;
-
 import org.fxmisc.richtext.CodeArea;
 
 /**
@@ -31,6 +29,7 @@ final class BlameOverlay extends Region {
     private final Canvas canvas = new Canvas(1, 1);
     /** Per 0-based line; {@code null} = inactive (blame off or not yet loaded). */
     private List<BlameInfo> blame;
+
     private boolean redrawPending;
     private Font font = Font.font("monospace", FontPosture.ITALIC, 14);
 
@@ -128,7 +127,8 @@ final class BlameOverlay extends Region {
             int lastChar = line.length() - 1;
             int abs = area.getAbsolutePosition(p, lastChar);
             Bounds b = area.getCharacterBoundsOnScreen(abs, abs + 1)
-                    .map(canvas::screenToLocal).orElse(null);
+                    .map(canvas::screenToLocal)
+                    .orElse(null);
             if (b == null) {
                 return;
             }

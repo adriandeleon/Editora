@@ -23,8 +23,7 @@ public final class Unzip {
     /** Max number of entries. */
     public static final int MAX_ENTRIES = 10_000;
 
-    private Unzip() {
-    }
+    private Unzip() {}
 
     /**
      * Rejects an entry name that can't be safely joined to a destination dir: blank, absolute, a Windows

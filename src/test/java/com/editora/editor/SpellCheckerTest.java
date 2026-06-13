@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.util.List;
 import java.util.Set;
-
 import org.junit.jupiter.api.Test;
 
 /**
@@ -26,7 +25,9 @@ class SpellCheckerTest {
     void wordSpansSplitsLettersKeepingApostrophes() {
         String line = "  don't  recieve, the  ";
         List<int[]> spans = SpellChecker.wordSpans(line);
-        assertEquals(List.of("don't", "recieve", "the"), spans.stream().map(s -> word(line, s)).toList());
+        assertEquals(
+                List.of("don't", "recieve", "the"),
+                spans.stream().map(s -> word(line, s)).toList());
     }
 
     @Test
@@ -35,18 +36,20 @@ class SpellCheckerTest {
         assertTrue(SpellChecker.wordSpans("12 + 34 = 46").isEmpty()); // no letters
         // Trailing apostrophe / quotes are trimmed.
         String q = "'quoted'";
-        assertEquals(List.of("quoted"), SpellChecker.wordSpans(q).stream().map(s -> word(q, s)).toList());
+        assertEquals(
+                List.of("quoted"),
+                SpellChecker.wordSpans(q).stream().map(s -> word(q, s)).toList());
     }
 
     @Test
     void skipsIdentifiersAcronymsNumbersAndShortWords() {
-        assertTrue(SpellChecker.skip("a"));        // too short
-        assertTrue(SpellChecker.skip("getName"));  // camelCase
+        assertTrue(SpellChecker.skip("a")); // too short
+        assertTrue(SpellChecker.skip("getName")); // camelCase
         assertTrue(SpellChecker.skip("HttpClient")); // PascalCase
-        assertTrue(SpellChecker.skip("HTTP"));     // acronym
-        assertTrue(SpellChecker.skip("md5"));      // has a digit
-        assertFalse(SpellChecker.skip("the"));     // normal word
-        assertFalse(SpellChecker.skip("Hello"));   // capitalized prose word
+        assertTrue(SpellChecker.skip("HTTP")); // acronym
+        assertTrue(SpellChecker.skip("md5")); // has a digit
+        assertFalse(SpellChecker.skip("the")); // normal word
+        assertFalse(SpellChecker.skip("Hello")); // capitalized prose word
     }
 
     // --- spelling against the bundled dictionary ---
@@ -60,11 +63,11 @@ class SpellCheckerTest {
         assertTrue(c.isMisspelled("recieve"));
         assertFalse(c.isMisspelled("the"));
         assertFalse(c.isMisspelled("receive"));
-        assertFalse(c.isMisspelled("editora"));   // user word
-        assertFalse(c.isMisspelled("getName"));   // skipped (camelCase)
+        assertFalse(c.isMisspelled("editora")); // user word
+        assertFalse(c.isMisspelled("getName")); // skipped (camelCase)
 
         c.ignore("zzx");
-        assertFalse(c.isMisspelled("zzx"));        // ignored this session
+        assertFalse(c.isMisspelled("zzx")); // ignored this session
 
         assertTrue(c.suggest("teh").contains("the"));
     }

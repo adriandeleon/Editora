@@ -2,9 +2,10 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import com.editora.dap.DapManager;
+import com.editora.dap.DapModels;
 import java.util.List;
 import java.util.function.Consumer;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
@@ -29,9 +30,6 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.util.StringConverter;
-
-import com.editora.dap.DapManager;
-import com.editora.dap.DapModels;
 
 /**
  * The "Debug" tool window, styled after IntelliJ's debugger: an icon-only grouped control toolbar
@@ -106,7 +104,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private boolean settingThreads;
     /** Watch expressions (the "Watches" node merged into the variables tree, IntelliJ-style). */
     private final java.util.List<String> watches = new java.util.ArrayList<>();
-    private Runnable onWatchesChanged = () -> { };
+
+    private Runnable onWatchesChanged = () -> {};
     private OverlayInput.Prompt prompt;
     /** Receives a double-clicked stack-trace location from the console (controller resolves + jumps). */
     private java.util.function.Consumer<com.editora.run.StackTraceLinks.Link> onLink;
@@ -117,15 +116,20 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** File name the current session was started for; shown beside the state so a session left running
      *  on another file is visibly bound to it. Cleared when the session ends. */
     private String sessionFile = "";
+
     private DapManager.State lastState = DapManager.State.INACTIVE;
 
     /** Row kinds in the variables tree (watches are merged into it, IntelliJ-style). */
-    enum Kind { SCOPE, VARIABLE, WATCH, ADD_WATCH }
+    enum Kind {
+        SCOPE,
+        VARIABLE,
+        WATCH,
+        ADD_WATCH
+    }
 
     /** A variables-tree row; {@code ref > 0} means expandable, {@code parentRef} is the DAP container
      *  reference (for set-variable), and {@code kind} drives rendering + context actions. */
-    record VarRow(String name, String value, String type, int ref, int parentRef, Kind kind) {
-    }
+    record VarRow(String name, String value, String type, int ref, int parentRef, Kind kind) {}
 
     public DebugPanel(Actions actions) {
         this.actions = actions;
@@ -136,7 +140,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         status.getStyleClass().add("debug-status");
         // IntelliJ-style grouped, icon-only toolbar; the session state + file sit at the right edge.
-        HBox toolbar = new HBox(2,
+        HBox toolbar = new HBox(
+                2,
                 btn(start, "debug.start", actions::start, Icons.run()),
                 btn(pause, "debug.pause", actions::pause, Icons.debugPause()),
                 btn(stop, "debug.stop", actions::stop, Icons.debugStop()),
@@ -146,7 +151,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 btn(stepInto, "debug.stepInto", actions::stepInto, Icons.debugStepInto()),
                 btn(stepOut, "debug.stepOut", actions::stepOut, Icons.debugStepOut()),
                 btn(runToCursor, "debug.runToCursor", actions::runToCursor, Icons.debugRunToCursor()),
-                spacer(), status);
+                spacer(),
+                status);
         start.getStyleClass().add("debug-start"); // green play accent
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
@@ -155,10 +161,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threads.setMaxWidth(Double.MAX_VALUE);
         threads.setPromptText(tr("debugpanel.threads"));
         threads.setConverter(new StringConverter<>() {
-            @Override public String toString(DapModels.ThreadInfo t) {
+            @Override
+            public String toString(DapModels.ThreadInfo t) {
                 return t == null ? "" : t.name();
             }
-            @Override public DapModels.ThreadInfo fromString(String s) {
+
+            @Override
+            public DapModels.ThreadInfo fromString(String s) {
                 return null;
             }
         });
@@ -171,7 +180,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // Call stack: rich cells — frame name + muted ":line, File" location.
         stack.getStyleClass().add("debug-stack"); // dense, borderless (Structure/Git panel idiom)
         stack.setCellFactory(v -> new ListCell<>() {
-            @Override protected void updateItem(DapModels.StackFrameInfo f, boolean empty) {
+            @Override
+            protected void updateItem(DapModels.StackFrameInfo f, boolean empty) {
                 super.updateItem(f, empty);
                 setText(null);
                 if (empty || f == null) {
@@ -201,7 +211,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         variables.setShowRoot(false);
         variables.setRoot(new TreeItem<>());
         variables.setCellFactory(v -> new TreeCell<>() {
-            @Override protected void updateItem(VarRow row, boolean empty) {
+            @Override
+            protected void updateItem(VarRow row, boolean empty) {
                 super.updateItem(row, empty);
                 setText(null);
                 setGraphic(empty || row == null ? null : renderRow(row));
@@ -429,7 +440,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     public void setOnWatchesChanged(Runnable r) {
-        this.onWatchesChanged = r == null ? () -> { } : r;
+        this.onWatchesChanged = r == null ? () -> {} : r;
     }
 
     /** The Watches tree node: one row per expression (evaluated async against the selected frame,
@@ -445,8 +456,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 actions.evaluateWatch(expr, selectedFrameId, r -> {
                     int idx = node.getChildren().indexOf(item);
                     if (idx >= 0) {
-                        node.getChildren().set(idx, lazyItem(new VarRow(expr, r.result(),
-                                r.type() == null ? "" : r.type(), r.variablesReference(), 0, Kind.WATCH)));
+                        node.getChildren()
+                                .set(
+                                        idx,
+                                        lazyItem(new VarRow(
+                                                expr,
+                                                r.result(),
+                                                r.type() == null ? "" : r.type(),
+                                                r.variablesReference(),
+                                                0,
+                                                Kind.WATCH)));
                     }
                 });
             }
@@ -541,8 +560,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 return;
             }
             actions.setVariable(row.parentRef(), row.name(), value, newValue -> {
-                item.setValue(new VarRow(row.name(), newValue, row.type(), row.ref(), row.parentRef(),
-                        Kind.VARIABLE));
+                item.setValue(new VarRow(row.name(), newValue, row.type(), row.ref(), row.parentRef(), Kind.VARIABLE));
                 refreshWatchesNode();
             });
         });
@@ -568,14 +586,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         appendOutput("> " + expr + "\n", "console");
         evalInput.clear();
-        actions.evaluate(expr, selectedFrameId,
-                result -> appendOutput((result == null ? "" : result) + "\n", "console"));
+        actions.evaluate(
+                expr, selectedFrameId, result -> appendOutput((result == null ? "" : result) + "\n", "console"));
     }
 
     /** A tree item whose children are loaded on first expand (when {@code ref > 0}). */
     private TreeItem<VarRow> lazyItem(VarRow row) {
         TreeItem<VarRow> item = new TreeItem<>(row) {
-            @Override public boolean isLeaf() {
+            @Override
+            public boolean isLeaf() {
                 return row.ref() <= 0;
             }
         };
@@ -587,9 +606,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     actions.loadChildren(row.ref(), vars -> {
                         item.getChildren().clear();
                         for (DapModels.VariableInfo v : vars) {
-                            item.getChildren().add(lazyItem(new VarRow(v.name(), v.value(),
-                                    v.type() == null ? "" : v.type(),
-                                    v.variablesReference(), row.ref(), Kind.VARIABLE)));
+                            item.getChildren()
+                                    .add(lazyItem(new VarRow(
+                                            v.name(),
+                                            v.value(),
+                                            v.type() == null ? "" : v.type(),
+                                            v.variablesReference(),
+                                            row.ref(),
+                                            Kind.VARIABLE)));
                         }
                     });
                 }

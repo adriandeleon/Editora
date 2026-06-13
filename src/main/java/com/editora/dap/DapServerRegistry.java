@@ -28,7 +28,11 @@ import java.util.Set;
 public final class DapServerRegistry {
 
     /** Adapter transport: jdtls-hosted (java), a stdio subprocess (debugpy), or a socket server (js-debug). */
-    public enum Kind { JDTLS, STDIO, SOCKET }
+    public enum Kind {
+        JDTLS,
+        STDIO,
+        SOCKET
+    }
 
     /**
      * A resolved debug-adapter spec. {@code launchType} is the DAP {@code launch} request {@code type};
@@ -37,21 +41,38 @@ public final class DapServerRegistry {
      * {@code adapterArgs} are the fixed args after it (e.g. {@code -m debugpy.adapter}); the located adapter
      * entry + port (js) are appended by the caller.
      */
-    public record DapServerSpec(String language, Kind kind, String launchType, String adapterId,
-            String defaultInterpreter, List<String> adapterArgs) {
-    }
+    public record DapServerSpec(
+            String language,
+            Kind kind,
+            String launchType,
+            String adapterId,
+            String defaultInterpreter,
+            List<String> adapterArgs) {}
 
     /** Default interpreter when the user leaves the Settings command field blank. */
     public static final String DEFAULT_PYTHON_INTERPRETER = "python3";
+
     public static final String DEFAULT_NODE_INTERPRETER = "node";
 
     /** Per-language debug-adapter definitions (the served editor language ids → adapter transport/launch). */
     private enum Def {
         JAVA("java", Kind.JDTLS, "java", "java", "", List.of(), Set.of("java")),
-        PYTHON("python", Kind.STDIO, "python", "python", DEFAULT_PYTHON_INTERPRETER,
-                List.of("-m", "debugpy.adapter"), Set.of("python")),
-        JAVASCRIPT("javascript", Kind.SOCKET, "pwa-node", "pwa-node", DEFAULT_NODE_INTERPRETER,
-                List.of(), Set.of("javascript"));
+        PYTHON(
+                "python",
+                Kind.STDIO,
+                "python",
+                "python",
+                DEFAULT_PYTHON_INTERPRETER,
+                List.of("-m", "debugpy.adapter"),
+                Set.of("python")),
+        JAVASCRIPT(
+                "javascript",
+                Kind.SOCKET,
+                "pwa-node",
+                "pwa-node",
+                DEFAULT_NODE_INTERPRETER,
+                List.of(),
+                Set.of("javascript"));
 
         final String language;
         final Kind kind;
@@ -61,8 +82,14 @@ public final class DapServerRegistry {
         final List<String> adapterArgs;
         final Set<String> languageIds;
 
-        Def(String language, Kind kind, String launchType, String adapterId, String defaultInterpreter,
-                List<String> adapterArgs, Set<String> languageIds) {
+        Def(
+                String language,
+                Kind kind,
+                String launchType,
+                String adapterId,
+                String defaultInterpreter,
+                List<String> adapterArgs,
+                Set<String> languageIds) {
             this.language = language;
             this.kind = kind;
             this.launchType = launchType;
@@ -73,8 +100,7 @@ public final class DapServerRegistry {
         }
     }
 
-    private DapServerRegistry() {
-    }
+    private DapServerRegistry() {}
 
     private static Def defFor(String languageId) {
         if (languageId == null) {
@@ -110,8 +136,7 @@ public final class DapServerRegistry {
         if (d == null) {
             return null;
         }
-        return new DapServerSpec(d.language, d.kind, d.launchType, d.adapterId,
-                d.defaultInterpreter, d.adapterArgs);
+        return new DapServerSpec(d.language, d.kind, d.launchType, d.adapterId, d.defaultInterpreter, d.adapterArgs);
     }
 
     /**

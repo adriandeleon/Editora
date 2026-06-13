@@ -87,8 +87,8 @@ class CompactSourceTest {
 
     @Test
     void mainLineIsMinusOneForNormalClass() {
-        org.junit.jupiter.api.Assertions.assertEquals(-1,
-                CompactSource.mainLine("class A { public static void main(String[] a) {} }"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                -1, CompactSource.mainLine("class A { public static void main(String[] a) {} }"));
     }
 
     @Test

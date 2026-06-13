@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,19 +19,23 @@ class ConfigExporterTest {
 
     @Test
     void zipNameDropsLeadingDotAndEmbedsVersionUserTime() {
-        assertEquals("editora-config-1.0.0-adriandeleon-2026-06-04_153012.zip",
+        assertEquals(
+                "editora-config-1.0.0-adriandeleon-2026-06-04_153012.zip",
                 ConfigExporter.zipName(Path.of(".editora"), "1.0.0", "adriandeleon", WHEN));
-        assertEquals("editora-dev-config-1.0.0-adriandeleon-2026-06-04_153012.zip",
+        assertEquals(
+                "editora-dev-config-1.0.0-adriandeleon-2026-06-04_153012.zip",
                 ConfigExporter.zipName(Path.of(".editora-dev"), "1.0.0", "adriandeleon", WHEN));
         // A custom --config-dir with no leading dot keeps its name.
-        assertEquals("myconf-config-2.1-bob-2026-06-04_153012.zip",
+        assertEquals(
+                "myconf-config-2.1-bob-2026-06-04_153012.zip",
                 ConfigExporter.zipName(Path.of("/tmp/myconf"), "2.1", "bob", WHEN));
     }
 
     @Test
     void zipNameSanitizesUnsafeVersionAndUser() {
         // Spaces/slashes in a username collapse to a single underscore; result stays a single segment.
-        assertEquals("editora-config-1.0.0_beta-jo_hn_doe-2026-06-04_153012.zip",
+        assertEquals(
+                "editora-config-1.0.0_beta-jo_hn_doe-2026-06-04_153012.zip",
                 ConfigExporter.zipName(Path.of(".editora"), "1.0.0 beta", "jo/hn doe", WHEN));
     }
 
@@ -59,7 +62,7 @@ class ConfigExporterTest {
 
         List<String> entries = new ArrayList<>();
         try (ZipFile zf = new ZipFile(zip.toFile())) {
-            for (var it = zf.entries(); it.hasMoreElements();) {
+            for (var it = zf.entries(); it.hasMoreElements(); ) {
                 ZipEntry e = it.nextElement();
                 entries.add(e.getName());
             }

@@ -4,10 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.UUID;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 class NoteStoreTest {
@@ -34,8 +33,8 @@ class NoteStoreTest {
     @Test
     void roundTripsThroughJacksonWithDefaultMapper() throws Exception {
         NoteStore store = new NoteStore();
-        store.bucket("").put("/p/x.txt", List.of(note("check this", NoteScope.RANGE),
-                note("a line note", NoteScope.LINE)));
+        store.bucket("")
+                .put("/p/x.txt", List.of(note("check this", NoteScope.RANGE), note("a line note", NoteScope.LINE)));
         String text = json.writeValueAsString(store);
         NoteStore back = json.readValue(text, NoteStore.class);
 
@@ -58,8 +57,10 @@ class NoteStoreTest {
         // current snapshot: b (edited), a, plus a new note c
         PersonalNote bEdited = b.withBody("b2");
         List<PersonalNote> merged = NoteStore.mergePreservingOrder(List.of(a, b), List.of(bEdited, a, c));
-        assertEquals(List.of(a.id(), b.id(), c.id()),
-                merged.stream().map(PersonalNote::id).toList(), "previous order first, new appended");
+        assertEquals(
+                List.of(a.id(), b.id(), c.id()),
+                merged.stream().map(PersonalNote::id).toList(),
+                "previous order first, new appended");
         assertEquals("b2", merged.get(1).body(), "uses the up-to-date instance");
         assertNotSame(b, merged.get(1));
     }

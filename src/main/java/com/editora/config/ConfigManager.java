@@ -1,17 +1,15 @@
 package com.editora.config;
 
+import com.editora.config.migration.ConfigMigrations;
+import com.editora.config.migration.ConfigSchema;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-
-import com.editora.config.migration.ConfigMigrations;
-import com.editora.config.migration.ConfigSchema;
 
 /**
  * The <em>per-window</em> view of the configuration. Each window owns its own session state
@@ -31,6 +29,7 @@ public class ConfigManager {
     static final String APP_DIR_NAME = ".editora";
     /** Dev-mode config dir (--dev), kept separate from the production config so they don't interfere. */
     static final String APP_DIR_NAME_DEV = ".editora-dev";
+
     static final String SETTINGS_FILE_NAME = "settings.toml";
     static final String WORKSPACE_FILE_NAME = "workspace-state.json";
     static final String BOOKMARKS_FILE_NAME = "bookmarks.json";
@@ -47,6 +46,7 @@ public class ConfigManager {
 
     /** The shared, app-wide config (preferences + cross-project stores), shared by reference. */
     private final SharedConfig shared;
+
     private WorkspaceState workspaceState = new WorkspaceState();
     /** The session-state file currently in use — the default, or a project's state file. */
     private Path workspaceStateFile;
@@ -263,8 +263,8 @@ public class ConfigManager {
     /** Reads all config (shared + this window's session), merging stored values onto defaults. */
     public Settings load() {
         shared.load();
-        workspaceState = ConfigMigrations.readVersioned(
-                workspaceStateFile, json, new WorkspaceState(), ConfigSchema.WORKSPACE);
+        workspaceState =
+                ConfigMigrations.readVersioned(workspaceStateFile, json, new WorkspaceState(), ConfigSchema.WORKSPACE);
         return shared.getSettings();
     }
 
@@ -306,7 +306,6 @@ public class ConfigManager {
         if (editoraHome != null && !editoraHome.isBlank()) {
             return Path.of(editoraHome.trim());
         }
-        return Path.of(userHome == null || userHome.isBlank() ? "." : userHome,
-                dev ? APP_DIR_NAME_DEV : APP_DIR_NAME);
+        return Path.of(userHome == null || userHome.isBlank() ? "." : userHome, dev ? APP_DIR_NAME_DEV : APP_DIR_NAME);
     }
 }

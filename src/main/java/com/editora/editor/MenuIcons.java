@@ -18,8 +18,7 @@ final class MenuIcons {
 
     private static final double ICON_SCALE = 0.8;
 
-    private MenuIcons() {
-    }
+    private MenuIcons() {}
 
     private static Node of(String content) {
         SVGPath svg = new SVGPath();

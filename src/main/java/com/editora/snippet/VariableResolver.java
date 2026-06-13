@@ -10,23 +10,35 @@ import java.time.format.DateTimeFormatter;
  */
 public final class VariableResolver implements SnippetParser.Variables {
 
-    private final String fileName;     // bare file name, or "" when untitled
-    private final String directory;    // absolute parent directory, or ""
-    private final String filePath;     // absolute file path, or ""
+    private final String fileName; // bare file name, or "" when untitled
+    private final String directory; // absolute parent directory, or ""
+    private final String filePath; // absolute file path, or ""
     private final String selectedText; // current selection, or ""
-    private final String clipboard;    // clipboard text, or ""
-    private final int lineIndex;       // 0-based caret line
-    private final String currentLine;  // text of the caret line
+    private final String clipboard; // clipboard text, or ""
+    private final int lineIndex; // 0-based caret line
+    private final String currentLine; // text of the caret line
     private final LocalDateTime now;
 
-    public VariableResolver(String fileName, String directory, String filePath, String selectedText,
-            String clipboard, int lineIndex, String currentLine) {
-        this(fileName, directory, filePath, selectedText, clipboard, lineIndex, currentLine,
-                LocalDateTime.now());
+    public VariableResolver(
+            String fileName,
+            String directory,
+            String filePath,
+            String selectedText,
+            String clipboard,
+            int lineIndex,
+            String currentLine) {
+        this(fileName, directory, filePath, selectedText, clipboard, lineIndex, currentLine, LocalDateTime.now());
     }
 
-    VariableResolver(String fileName, String directory, String filePath, String selectedText,
-            String clipboard, int lineIndex, String currentLine, LocalDateTime now) {
+    VariableResolver(
+            String fileName,
+            String directory,
+            String filePath,
+            String selectedText,
+            String clipboard,
+            int lineIndex,
+            String currentLine,
+            LocalDateTime now) {
         this.fileName = fileName == null ? "" : fileName;
         this.directory = directory == null ? "" : directory;
         this.filePath = filePath == null ? "" : filePath;

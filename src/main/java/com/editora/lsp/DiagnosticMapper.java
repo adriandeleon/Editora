@@ -1,19 +1,16 @@
 package com.editora.lsp;
 
+import com.editora.editor.LspDiagnostic;
 import java.util.ArrayList;
 import java.util.List;
-
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Range;
 
-import com.editora.editor.LspDiagnostic;
-
 /** Pure mapping from LSP {@link Diagnostic}s to the editor's flat {@link LspDiagnostic} value type. */
 public final class DiagnosticMapper {
 
-    private DiagnosticMapper() {
-    }
+    private DiagnosticMapper() {}
 
     /** Maps a server's diagnostic list (may be null) to editor diagnostics, skipping malformed entries. */
     public static List<LspDiagnostic> map(List<Diagnostic> diagnostics) {
@@ -27,11 +24,14 @@ public final class DiagnosticMapper {
                 continue;
             }
             out.add(new LspDiagnostic(
-                    r.getStart().getLine(), r.getStart().getCharacter(),
-                    r.getEnd().getLine(), r.getEnd().getCharacter(),
+                    r.getStart().getLine(),
+                    r.getStart().getCharacter(),
+                    r.getEnd().getLine(),
+                    r.getEnd().getCharacter(),
                     severity(d.getSeverity()),
                     d.getMessage() == null ? "" : d.getMessage(),
-                    code(d), d.getSource()));
+                    code(d),
+                    d.getSource()));
         }
         return out;
     }

@@ -1,12 +1,11 @@
 package com.editora.plugin;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * A remote plugin registry's parsed {@code index.json}: a schema version + a flat list of
@@ -18,6 +17,7 @@ public class RegistryIndex {
 
     /** Index format version (currently 1); reserved for future migrations. */
     public int schemaVersion = 1;
+
     public List<RegistryEntry> plugins = new ArrayList<>();
 
     /** Parses an {@code index.json} stream. Pure (no I/O beyond the stream) — unit-tested. */

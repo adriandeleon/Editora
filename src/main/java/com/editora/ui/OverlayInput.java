@@ -31,12 +31,10 @@ import javafx.scene.layout.VBox;
  */
 public final class OverlayInput {
 
-    private OverlayInput() {
-    }
+    private OverlayInput() {}
 
     /** A secondary, left-aligned action button (e.g. <em>Delete</em> when editing an existing note). */
-    public record Extra(String label, Runnable action) {
-    }
+    public record Extra(String label, Runnable action) {}
 
     /**
      * A reusable single-line text prompt, so tool-window panels (which can't see the {@link OverlayHost}
@@ -63,17 +61,32 @@ public final class OverlayInput {
      * @param ctrlEnterToSubmit  true for a multi-line body — plain Enter inserts a newline and only
      *                           {@code Ctrl/Cmd+Enter} accepts; false — plain Enter accepts
      */
-    public static void show(OverlayHost host, String title, Node body, Node focus,
-                            String okLabel, ObservableValue<? extends Boolean> okEnabled,
-                            Runnable onAccept, Extra extra, boolean ctrlEnterToSubmit) {
+    public static void show(
+            OverlayHost host,
+            String title,
+            Node body,
+            Node focus,
+            String okLabel,
+            ObservableValue<? extends Boolean> okEnabled,
+            Runnable onAccept,
+            Extra extra,
+            boolean ctrlEnterToSubmit) {
         show(host, title, body, focus, okLabel, okEnabled, onAccept, extra, ctrlEnterToSubmit, false);
     }
 
     /** As {@link #show} but {@code centered} places the card in the vertical middle of the overlay
      *  (instead of near the top). */
-    public static void show(OverlayHost host, String title, Node body, Node focus,
-                            String okLabel, ObservableValue<? extends Boolean> okEnabled,
-                            Runnable onAccept, Extra extra, boolean ctrlEnterToSubmit, boolean centered) {
+    public static void show(
+            OverlayHost host,
+            String title,
+            Node body,
+            Node focus,
+            String okLabel,
+            ObservableValue<? extends Boolean> okEnabled,
+            Runnable onAccept,
+            Extra extra,
+            boolean ctrlEnterToSubmit,
+            boolean centered) {
         if (host == null) {
             return;
         }
@@ -133,13 +146,17 @@ public final class OverlayInput {
             }
         });
 
-        host.show(card, centered, () -> {
-            focus.requestFocus();
-            if (focus instanceof TextField tf) {
-                tf.selectAll();
-            } else if (focus instanceof TextArea ta) {
-                ta.positionCaret(ta.getLength());
-            }
-        }, () -> { });
+        host.show(
+                card,
+                centered,
+                () -> {
+                    focus.requestFocus();
+                    if (focus instanceof TextField tf) {
+                        tf.selectAll();
+                    } else if (focus instanceof TextArea ta) {
+                        ta.positionCaret(ta.getLength());
+                    }
+                },
+                () -> {});
     }
 }

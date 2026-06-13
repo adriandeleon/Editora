@@ -1,11 +1,10 @@
 package com.editora.plugin;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
  * The parsed {@code plugin.json} manifest (a lenient Jackson POJO, like {@code SnippetManager.Dto} —
@@ -18,6 +17,7 @@ public class PluginManifest {
 
     /** Stable plugin id (folder name when omitted). */
     public String id = "";
+
     public String name = "";
     public String version = "";
     /** Fully-qualified class implementing {@link Plugin}; blank = declarative-only plugin. */

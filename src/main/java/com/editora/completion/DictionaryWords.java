@@ -14,7 +14,6 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
 import javafx.application.Platform;
 
 /**
@@ -32,17 +31,18 @@ public final class DictionaryWords {
 
     /** langId -> sorted (case-insensitive), de-duplicated base words. */
     private static final Map<String, String[]> CACHE = new ConcurrentHashMap<>();
+
     private static final Set<String> BUILDING = ConcurrentHashMap.newKeySet();
     /** onReady callbacks waiting for an in-flight build (fired once, on the FX thread, when it lands). */
     private static final Map<String, java.util.List<Runnable>> PENDING = new ConcurrentHashMap<>();
+
     private static final ExecutorService BUILDER = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "completion-dictionary-builder");
         t.setDaemon(true);
         return t;
     });
 
-    private DictionaryWords() {
-    }
+    private DictionaryWords() {}
 
     public static boolean isAvailable(String langId) {
         return AVAILABLE.contains(langId);
@@ -67,7 +67,8 @@ public final class DictionaryWords {
             return;
         }
         if (onReady != null) {
-            PENDING.computeIfAbsent(langId, k -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(onReady);
+            PENDING.computeIfAbsent(langId, k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                    .add(onReady);
         }
         if (!BUILDING.add(langId)) {
             return; // a build is already in flight; the callback (if any) was queued above

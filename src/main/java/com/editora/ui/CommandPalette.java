@@ -2,25 +2,23 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import com.editora.command.Command;
+import com.editora.command.CommandRegistry;
+import com.editora.command.KeymapManager;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-
-import com.editora.command.Command;
-import com.editora.command.CommandRegistry;
-import com.editora.command.KeymapManager;
-
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
+import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
@@ -29,7 +27,6 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.control.Label;
 
 /**
  * A fuzzy-filtered command palette (bound to {@code M-x}). Shown as an <em>in-scene</em> overlay in the
@@ -64,8 +61,8 @@ public class CommandPalette {
         this(registry, keymap, c -> true);
     }
 
-    public CommandPalette(CommandRegistry registry, KeymapManager keymap,
-                          java.util.function.Predicate<Command> visible) {
+    public CommandPalette(
+            CommandRegistry registry, KeymapManager keymap, java.util.function.Predicate<Command> visible) {
         this.registry = registry;
         this.commandToKey = invert(keymap.bindings());
         this.visible = visible;
@@ -155,8 +152,7 @@ public class CommandPalette {
                     e.consume();
                 }
             }
-            default -> {
-            }
+            default -> {}
         }
     }
 

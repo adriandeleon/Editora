@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
-
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for the pure SVG content sniff used by the preview image loader. */
@@ -28,7 +27,7 @@ class PreviewImageLoaderTest {
 
     @Test
     void rejectsRasterAndOtherContent() {
-        assertFalse(PreviewImageLoader.looksLikeSvg(new byte[]{(byte) 0x89, 'P', 'N', 'G'})); // PNG magic
+        assertFalse(PreviewImageLoader.looksLikeSvg(new byte[] {(byte) 0x89, 'P', 'N', 'G'})); // PNG magic
         assertFalse(PreviewImageLoader.looksLikeSvg(b("<html><body>not svg</body></html>")));
         assertFalse(PreviewImageLoader.looksLikeSvg(b("just some text")));
         assertFalse(PreviewImageLoader.looksLikeSvg(new byte[0]));

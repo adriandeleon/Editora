@@ -13,13 +13,11 @@ import java.util.regex.Pattern;
 public final class BlameParser {
 
     /** One blamed line: the commit it last changed in, the author, commit time (epoch seconds), and subject. */
-    public record BlameLine(String hash, String author, long epochSeconds, String summary,
-            boolean uncommitted) { }
+    public record BlameLine(String hash, String author, long epochSeconds, String summary, boolean uncommitted) {}
 
     private static final Pattern HEADER = Pattern.compile("^[0-9a-f]{40} \\d+ \\d+");
 
-    private BlameParser() {
-    }
+    private BlameParser() {}
 
     public static List<BlameLine> parse(String porcelain) {
         List<BlameLine> out = new ArrayList<>();
@@ -47,7 +45,8 @@ public final class BlameParser {
                 author = line.substring("author ".length()).strip();
             } else if (line.startsWith("author-time ")) {
                 try {
-                    time = Long.parseLong(line.substring("author-time ".length()).strip());
+                    time = Long.parseLong(
+                            line.substring("author-time ".length()).strip());
                 } catch (NumberFormatException ignored) {
                     // leave time = 0
                 }

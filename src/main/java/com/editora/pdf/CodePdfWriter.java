@@ -1,12 +1,10 @@
 package com.editora.pdf;
 
-import java.awt.Color;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
-
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -25,10 +23,9 @@ public final class CodePdfWriter {
     private static final float FONT_SIZE = 9f;
     private static final float LINE_HEIGHT = FONT_SIZE * 1.35f;
     private static final float FOOTER_SIZE = 7.5f;
-    private static final float GUTTER_GAP = 8f;   // space between line numbers and code
+    private static final float GUTTER_GAP = 8f; // space between line numbers and code
 
-    private CodePdfWriter() {
-    }
+    private CodePdfWriter() {}
 
     /** "a4" → A4, anything else → US Letter. */
     public static PDRectangle pageRectangle(String pageSizeKey) {
@@ -39,8 +36,14 @@ public final class CodePdfWriter {
      * Writes {@code text} to {@code out} as a PDF. {@code spans} (highlight) may be null for plain text;
      * {@code title} is shown in the footer. Tabs expand by {@code tabSize}.
      */
-    public static void write(String text, StyleSpans<Collection<String>> spans,
-            boolean lineNumbers, int tabSize, String pageSizeKey, Path out) throws IOException {
+    public static void write(
+            String text,
+            StyleSpans<Collection<String>> spans,
+            boolean lineNumbers,
+            int tabSize,
+            String pageSizeKey,
+            Path out)
+            throws IOException {
         PDRectangle pageSize = pageRectangle(pageSizeKey);
         List<List<PdfText.Run>> sourceLines = PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize));
 
@@ -96,8 +99,15 @@ public final class CodePdfWriter {
         cs.endText();
     }
 
-    private static void drawRuns(PDPageContentStream cs, List<PdfText.Run> runs, float x, float y,
-            PDType0Font regular, PDType0Font bold, PDType0Font italic, PDType0Font boldItalic)
+    private static void drawRuns(
+            PDPageContentStream cs,
+            List<PdfText.Run> runs,
+            float x,
+            float y,
+            PDType0Font regular,
+            PDType0Font bold,
+            PDType0Font italic,
+            PDType0Font boldItalic)
             throws IOException {
         if (runs.isEmpty()) {
             return;
@@ -137,8 +147,8 @@ public final class CodePdfWriter {
     }
 
     private static PDType0Font font(PDDocument doc, String name) throws IOException {
-        try (InputStream in = CodePdfWriter.class.getResourceAsStream(
-                "/com/editora/fonts/jetbrains-mono/" + name + ".ttf")) {
+        try (InputStream in =
+                CodePdfWriter.class.getResourceAsStream("/com/editora/fonts/jetbrains-mono/" + name + ".ttf")) {
             if (in == null) {
                 throw new IOException("Bundled font not found: " + name);
             }

@@ -1,5 +1,10 @@
 package com.editora.editor;
 
+import com.github.weisj.jsvg.SVGDocument;
+import com.github.weisj.jsvg.attributes.ViewBox;
+import com.github.weisj.jsvg.geometry.size.FloatSize;
+import com.github.weisj.jsvg.parser.LoaderContext;
+import com.github.weisj.jsvg.parser.SVGLoader;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -16,13 +21,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import com.github.weisj.jsvg.SVGDocument;
-import com.github.weisj.jsvg.attributes.ViewBox;
-import com.github.weisj.jsvg.geometry.size.FloatSize;
-import com.github.weisj.jsvg.parser.LoaderContext;
-import com.github.weisj.jsvg.parser.SVGLoader;
-
 import javafx.application.Platform;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -65,8 +63,9 @@ final class PreviewImageLoader {
     /** Cap on cached decoded images. Each holds a GPU texture, so the cache is bounded (LRU) instead
      *  of growing unbounded as more Markdown files with images/badges are previewed. */
     private static final int MAX_CACHED_IMAGES = 64;
-    private static final Map<String, Loaded> CACHE = java.util.Collections.synchronizedMap(
-            new java.util.LinkedHashMap<String, Loaded>(32, 0.75f, true) {
+
+    private static final Map<String, Loaded> CACHE =
+            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, Loaded>(32, 0.75f, true) {
                 @Override
                 protected boolean removeEldestEntry(java.util.Map.Entry<String, Loaded> eldest) {
                     return size() > MAX_CACHED_IMAGES;
@@ -80,10 +79,9 @@ final class PreviewImageLoader {
     });
 
     /** A decoded image plus its logical (CSS-pixel) width, used to size the {@link ImageView}. */
-    public record Loaded(Image image, double logicalWidth) { }
+    public record Loaded(Image image, double logicalWidth) {}
 
-    private PreviewImageLoader() {
-    }
+    private PreviewImageLoader() {}
 
     /** Loads {@code url} into {@code view} (cached), sizing it to its logical width capped at {@code maxWidth}. */
     static void loadInto(ImageView view, String url, double maxWidth) {
@@ -168,8 +166,8 @@ final class PreviewImageLoader {
     }
 
     private static Loaded rasterizeSvg(byte[] bytes, String url) {
-        SVGDocument doc = new SVGLoader().load(
-                new ByteArrayInputStream(bytes), uriOrNull(url), LoaderContext.createDefault());
+        SVGDocument doc =
+                new SVGLoader().load(new ByteArrayInputStream(bytes), uriOrNull(url), LoaderContext.createDefault());
         if (doc == null) {
             return null;
         }

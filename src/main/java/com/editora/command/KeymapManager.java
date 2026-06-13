@@ -1,13 +1,12 @@
 package com.editora.command;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
-
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Maps key-chord sequences (e.g. {@code "C-x C-s"}) to command ids. A named keymap is loaded from a
@@ -26,8 +25,7 @@ public class KeymapManager {
             if (in == null) {
                 throw new IllegalArgumentException("Keymap resource not found: " + resource);
             }
-            Map<String, String> loaded = MAPPER.readValue(in, new TypeReference<Map<String, String>>() {
-            });
+            Map<String, String> loaded = MAPPER.readValue(in, new TypeReference<Map<String, String>>() {});
             bindings.clear();
             bindings.putAll(loaded);
         } catch (IOException e) {

@@ -4,26 +4,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.List;
-
-import org.junit.jupiter.api.Test;
-
 import com.editora.diff.ConflictParser.Choice;
 import com.editora.diff.ConflictParser.Conflict;
 import com.editora.diff.ConflictParser.ConflictFile;
 import com.editora.diff.ConflictParser.ConflictSegment;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 class ConflictParserTest {
 
-    private static final List<String> SAMPLE = List.of(
-            "line 1",
-            "<<<<<<< HEAD",
-            "ours a",
-            "ours b",
-            "=======",
-            "theirs a",
-            ">>>>>>> feature",
-            "line 2");
+    private static final List<String> SAMPLE =
+            List.of("line 1", "<<<<<<< HEAD", "ours a", "ours b", "=======", "theirs a", ">>>>>>> feature", "line 2");
 
     @Test
     void detectsMarkers() {
@@ -47,11 +38,10 @@ class ConflictParserTest {
     @Test
     void resolveOursTheirsBothAndUnresolved() {
         ConflictFile f = ConflictParser.parse(SAMPLE);
-        assertEquals(List.of("line 1", "ours a", "ours b", "line 2"),
-                ConflictParser.resolve(f, List.of(Choice.OURS)));
-        assertEquals(List.of("line 1", "theirs a", "line 2"),
-                ConflictParser.resolve(f, List.of(Choice.THEIRS)));
-        assertEquals(List.of("line 1", "ours a", "ours b", "theirs a", "line 2"),
+        assertEquals(List.of("line 1", "ours a", "ours b", "line 2"), ConflictParser.resolve(f, List.of(Choice.OURS)));
+        assertEquals(List.of("line 1", "theirs a", "line 2"), ConflictParser.resolve(f, List.of(Choice.THEIRS)));
+        assertEquals(
+                List.of("line 1", "ours a", "ours b", "theirs a", "line 2"),
                 ConflictParser.resolve(f, List.of(Choice.BOTH)));
         // Unresolved → markers preserved (still valid conflict text).
         assertEquals(SAMPLE, ConflictParser.resolve(f, List.of(Choice.UNRESOLVED)));
@@ -60,14 +50,7 @@ class ConflictParserTest {
 
     @Test
     void skipsThreeWayBaseRegion() {
-        List<String> diff3 = List.of(
-                "<<<<<<< ours",
-                "x",
-                "||||||| base",
-                "original",
-                "=======",
-                "y",
-                ">>>>>>> theirs");
+        List<String> diff3 = List.of("<<<<<<< ours", "x", "||||||| base", "original", "=======", "y", ">>>>>>> theirs");
         Conflict c = ((ConflictSegment) ConflictParser.parse(diff3).segments().get(0)).conflict();
         assertEquals(List.of("x"), c.ours());
         assertEquals(List.of("y"), c.theirs()); // base ("original") is skipped

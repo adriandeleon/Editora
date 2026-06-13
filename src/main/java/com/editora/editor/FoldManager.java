@@ -1,5 +1,6 @@
 package com.editora.editor;
 
+import com.editora.editor.FoldRegions.Region;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -12,15 +13,6 @@ import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
-
-import org.fxmisc.richtext.CharacterHit;
-import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.model.TwoDimensional.Bias;
-import org.reactfx.collection.LiveList;
-import org.reactfx.value.Val;
-
-import com.editora.editor.FoldRegions.Region;
-
 import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -35,6 +27,11 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.SVGPath;
+import org.fxmisc.richtext.CharacterHit;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.TwoDimensional.Bias;
+import org.reactfx.collection.LiveList;
+import org.reactfx.value.Val;
 
 /**
  * Computes foldable regions for a {@link CodeArea}, drives folding/unfolding, and supplies the gutter
@@ -74,30 +71,28 @@ public final class FoldManager {
     static final String RUN_GLYPH_PATH = "M8 5v14l11-7z";
 
     /** Notified after a user-driven fold/unfold so callers can persist the new state. */
-    private Runnable onFoldStateChanged = () -> {
-    };
+    private Runnable onFoldStateChanged = () -> {};
     /** Notified after regions are recomputed (e.g. on text or language change). */
-    private Runnable onRegionsChanged = () -> {
-    };
+    private Runnable onRegionsChanged = () -> {};
     /** Suppresses change notifications while we programmatically restore saved folds. */
     private boolean restoring;
 
     /** Whether a line carries a bookmark (drawn as a gutter marker); default none. */
     private IntPredicate isBookmarked = i -> false;
     /** Invoked when the user clicks a line's gutter bookmark marker. */
-    private IntConsumer onBookmarkToggle = i -> { };
+    private IntConsumer onBookmarkToggle = i -> {};
 
     /** Whether a line carries a Personal Note (drawn as a gutter marker); default none. */
     private IntPredicate isNoted = i -> false;
     /** Invoked when the user clicks a line's gutter note marker. */
-    private IntConsumer onNoteClick = i -> { };
+    private IntConsumer onNoteClick = i -> {};
 
     /** Whether this is a compact source file (reserve the Run slot on every row while true). */
     private BooleanSupplier runEnabled = () -> false;
     /** Whether a line draws the clickable green Run glyph (a single {@code main}, or each .http request). */
     private IntPredicate isRunLine = i -> false;
     /** Invoked with the clicked line when the user clicks a gutter Run glyph. */
-    private IntConsumer onRun = i -> { };
+    private IntConsumer onRun = i -> {};
 
     /** Whether debugging is enabled for this buffer (reserve the leftmost breakpoint slot on every row). */
     private BooleanSupplier breakpointsEnabled = () -> false;
@@ -107,7 +102,7 @@ public final class FoldManager {
      *  or {@code null} for a plain breakpoint. */
     private IntFunction<String> breakpointClass = i -> null;
     /** Invoked when the user clicks the breakpoint strip on a line (toggles the breakpoint). */
-    private IntConsumer onBreakpointToggle = i -> { };
+    private IntConsumer onBreakpointToggle = i -> {};
 
     /** Whether Git change tracking is active for this buffer (reserve the change-bar slot). */
     private BooleanSupplier changeBarsEnabled = () -> false;
@@ -123,9 +118,7 @@ public final class FoldManager {
 
     public FoldManager(CodeArea area) {
         this.area = area;
-        area.multiPlainChanges()
-                .successionEnds(Duration.ofMillis(250))
-                .subscribe(ignore -> recompute());
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> recompute());
         installHoverPreview();
     }
 
@@ -147,8 +140,7 @@ public final class FoldManager {
      */
     public void setPreviewColors(Color background, Color foreground) {
         Color border = background.interpolate(foreground, 0.3);
-        linePreview.setStyle(
-                "-fx-background-color: " + hex(background) + ";"
+        linePreview.setStyle("-fx-background-color: " + hex(background) + ";"
                 + "-fx-text-fill: " + hex(foreground) + ";"
                 + "-fx-border-color: " + hex(border) + ";"
                 + "-fx-border-width: 1;"
@@ -159,10 +151,10 @@ public final class FoldManager {
     }
 
     private static String hex(Color c) {
-        return String.format("#%02x%02x%02x",
-                (int) Math.round(c.getRed() * 255),
-                (int) Math.round(c.getGreen() * 255),
-                (int) Math.round(c.getBlue() * 255));
+        return String.format(
+                "#%02x%02x%02x",
+                (int) Math.round(c.getRed() * 255), (int) Math.round(c.getGreen() * 255), (int)
+                        Math.round(c.getBlue() * 255));
     }
 
     private void updateHoverPreview(MouseEvent e) {
@@ -195,14 +187,12 @@ public final class FoldManager {
     }
 
     public void setOnFoldStateChanged(Runnable callback) {
-        this.onFoldStateChanged = callback == null ? () -> {
-        } : callback;
+        this.onFoldStateChanged = callback == null ? () -> {} : callback;
     }
 
     /** Sets a callback invoked whenever foldable regions are recomputed. */
     public void setOnRegionsChanged(Runnable callback) {
-        this.onRegionsChanged = callback == null ? () -> {
-        } : callback;
+        this.onRegionsChanged = callback == null ? () -> {} : callback;
     }
 
     /** Sets the language (see {@link LanguageRegistry}) and recomputes regions. */
@@ -243,14 +233,14 @@ public final class FoldManager {
     /** Wires the bookmark gutter marker: a predicate for which lines are bookmarked + a click handler. */
     public void setBookmarkHooks(IntPredicate isBookmarked, IntConsumer onToggle) {
         this.isBookmarked = isBookmarked == null ? i -> false : isBookmarked;
-        this.onBookmarkToggle = onToggle == null ? i -> { } : onToggle;
+        this.onBookmarkToggle = onToggle == null ? i -> {} : onToggle;
     }
 
     /** Wires the Personal-Notes gutter marker: a predicate for which lines carry a note + a click handler
      *  (clicking the marker opens/edits the note on that line). */
     public void setNoteHooks(IntPredicate isNoted, IntConsumer onClick) {
         this.isNoted = isNoted == null ? i -> false : isNoted;
-        this.onNoteClick = onClick == null ? i -> { } : onClick;
+        this.onNoteClick = onClick == null ? i -> {} : onClick;
     }
 
     /**
@@ -261,7 +251,7 @@ public final class FoldManager {
     public void setRunHooks(BooleanSupplier enabled, IntPredicate isRunLine, IntConsumer onRun) {
         this.runEnabled = enabled == null ? () -> false : enabled;
         this.isRunLine = isRunLine == null ? i -> false : isRunLine;
-        this.onRun = onRun == null ? i -> { } : onRun;
+        this.onRun = onRun == null ? i -> {} : onRun;
     }
 
     /**
@@ -270,12 +260,12 @@ public final class FoldManager {
      * extra glyph class (conditional/logpoint/disabled) or {@code null}, and {@code onToggle} fires when
      * the user clicks the strip on a line.
      */
-    public void setBreakpointHooks(BooleanSupplier enabled, IntPredicate isBreakpoint,
-            IntFunction<String> classFor, IntConsumer onToggle) {
+    public void setBreakpointHooks(
+            BooleanSupplier enabled, IntPredicate isBreakpoint, IntFunction<String> classFor, IntConsumer onToggle) {
         this.breakpointsEnabled = enabled == null ? () -> false : enabled;
         this.isBreakpoint = isBreakpoint == null ? i -> false : isBreakpoint;
         this.breakpointClass = classFor == null ? i -> null : classFor;
-        this.onBreakpointToggle = onToggle == null ? i -> { } : onToggle;
+        this.onBreakpointToggle = onToggle == null ? i -> {} : onToggle;
     }
 
     /**
@@ -283,8 +273,7 @@ public final class FoldManager {
      * reserved on every row, and {@code classFor} returns the CSS style class for a line's bar
      * (e.g. {@code git-modified}) or {@code null} when the line is unchanged.
      */
-    public void setChangeHook(BooleanSupplier enabled, IntFunction<String> classFor,
-            IntFunction<String> tooltipFor) {
+    public void setChangeHook(BooleanSupplier enabled, IntFunction<String> classFor, IntFunction<String> tooltipFor) {
         this.changeBarsEnabled = enabled == null ? () -> false : enabled;
         this.changeClass = classFor == null ? i -> null : classFor;
         this.changeTooltip = tooltipFor == null ? i -> null : tooltipFor;
@@ -309,10 +298,8 @@ public final class FoldManager {
         hidePreview();
         int topPar = firstVisiblePar();
         int caret = area.getCaretPosition();
-        int bodyStart = area.getAbsolutePosition(region.startLine(),
-                area.getParagraphLength(region.startLine()));
-        int bodyEnd = area.getAbsolutePosition(region.endLine(),
-                area.getParagraphLength(region.endLine()));
+        int bodyStart = area.getAbsolutePosition(region.startLine(), area.getParagraphLength(region.startLine()));
+        int bodyEnd = area.getAbsolutePosition(region.endLine(), area.getParagraphLength(region.endLine()));
 
         area.foldParagraphs(region.startLine(), region.endLine());
         shadeHeader(region.startLine(), true);
@@ -402,7 +389,9 @@ public final class FoldManager {
         int line = area.getCurrentParagraph();
         Region target = null; // innermost (largest startLine) containing, expanded region
         for (Region r : regions) {
-            if (r.startLine() <= line && line <= r.endLine() && !isCollapsed(r.startLine())
+            if (r.startLine() <= line
+                    && line <= r.endLine()
+                    && !isCollapsed(r.startLine())
                     && (target == null || r.startLine() > target.startLine())) {
                 target = r;
             }
@@ -422,7 +411,9 @@ public final class FoldManager {
         }
         Region target = null; // innermost containing, collapsed region
         for (Region r : regions) {
-            if (r.startLine() <= line && line <= r.endLine() && isCollapsed(r.startLine())
+            if (r.startLine() <= line
+                    && line <= r.endLine()
+                    && isCollapsed(r.startLine())
                     && (target == null || r.startLine() > target.startLine())) {
                 target = r;
             }

@@ -4,7 +4,6 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
-
 import javafx.scene.control.TextInputControl;
 import javafx.scene.input.KeyEvent;
 
@@ -27,8 +26,7 @@ public final class TextInputKeymap {
 
     private static final Map<String, Consumer<TextInputControl>> ACTIONS = actions();
 
-    private TextInputKeymap() {
-    }
+    private TextInputKeymap() {}
 
     /** Installs configured-keymap caret movement + basic editing on {@code control}. */
     public static void install(TextInputControl control, KeymapManager keymap) {

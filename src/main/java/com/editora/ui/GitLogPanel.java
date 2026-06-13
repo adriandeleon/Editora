@@ -2,11 +2,9 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
-import java.util.List;
-
 import com.editora.git.GitService.Commit;
 import com.editora.git.GitService.CommitFile;
-
+import java.util.List;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -35,14 +33,23 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     /** Operations the panel asks the controller to perform (all by full commit hash). */
     public interface Actions {
         void refresh();
+
         void showAll();
+
         void selected(String hash);
+
         void openFileDiff(String hash, String repoRelativePath);
+
         void copyHash(String hash);
+
         void checkout(String hash);
+
         void reset(String hash, String mode); // "soft" | "mixed" | "hard"
+
         void revert(String hash);
+
         void cherryPick(String hash);
+
         void newBranch(String hash);
     }
 
@@ -169,10 +176,11 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             MenuItem cherry = item(tr("gitlog.menu.cherryPick"), Icons.stageAll(), () -> actions.cherryPick(h));
             Menu reset = new Menu(tr("gitlog.menu.reset"));
             reset.setGraphic(Icons.refresh());
-            reset.getItems().setAll(
-                    item(tr("gitlog.menu.resetSoft"), null, () -> actions.reset(h, "soft")),
-                    item(tr("gitlog.menu.resetMixed"), null, () -> actions.reset(h, "mixed")),
-                    item(tr("gitlog.menu.resetHard"), null, () -> actions.reset(h, "hard")));
+            reset.getItems()
+                    .setAll(
+                            item(tr("gitlog.menu.resetSoft"), null, () -> actions.reset(h, "soft")),
+                            item(tr("gitlog.menu.resetMixed"), null, () -> actions.reset(h, "mixed")),
+                            item(tr("gitlog.menu.resetHard"), null, () -> actions.reset(h, "hard")));
             return new ContextMenu(copy, checkout, newBranch, revert, cherry, reset);
         }
     }

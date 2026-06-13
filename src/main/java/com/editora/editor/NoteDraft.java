@@ -8,5 +8,4 @@ import com.editora.config.TextAnchor;
  * {@link TextAnchor} (position + selected text + context) from the editor's current selection/caret.
  * The controller turns this into a {@link com.editora.config.PersonalNote} once it has the body/tags.
  */
-public record NoteDraft(NoteScope scope, TextAnchor anchor) {
-}
+public record NoteDraft(NoteScope scope, TextAnchor anchor) {}

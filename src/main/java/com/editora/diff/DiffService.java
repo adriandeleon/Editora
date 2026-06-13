@@ -1,13 +1,11 @@
 package com.editora.diff;
 
+import com.editora.diff.DiffModels.DiffModel;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
-
 import javafx.application.Platform;
-
-import com.editora.diff.DiffModels.DiffModel;
 
 /**
  * FX-facing façade that runs {@link DiffEngine} off the JavaFX thread (the {@code GitService}/
@@ -34,8 +32,8 @@ public final class DiffService {
         exec.submit(() -> {
             List<String> left = DiffEngine.lines(leftText);
             List<String> right = DiffEngine.lines(rightText);
-            DiffModel model = (left.size() > MAX_LINES || right.size() > MAX_LINES)
-                    ? null : DiffEngine.compute(left, right);
+            DiffModel model =
+                    (left.size() > MAX_LINES || right.size() > MAX_LINES) ? null : DiffEngine.compute(left, right);
             Platform.runLater(() -> onResult.accept(model));
         });
     }

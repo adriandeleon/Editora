@@ -13,15 +13,14 @@ import java.util.regex.PatternSyntaxException;
  */
 public final class SearchMatcher {
 
-    private SearchMatcher() {
-    }
+    private SearchMatcher() {}
 
     /**
      * All non-overlapping matches of {@code query} in {@code text} as {@code [start, end)} offset pairs.
      * Empty for a null/empty query or an invalid regex.
      */
-    public static List<int[]> matches(String text, String query, boolean caseSensitive, boolean regex,
-            boolean wholeWord) {
+    public static List<int[]> matches(
+            String text, String query, boolean caseSensitive, boolean regex, boolean wholeWord) {
         if (text == null || query == null || query.isEmpty()) {
             return List.of();
         }
@@ -75,12 +74,11 @@ public final class SearchMatcher {
         return -1;
     }
 
-    private static List<int[]> literalMatches(String text, String query, boolean caseSensitive,
-            boolean wholeWord) {
+    private static List<int[]> literalMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
         List<int[]> out = new ArrayList<>();
         int n = text.length();
         int m = query.length();
-        for (int i = 0; i + m <= n;) {
+        for (int i = 0; i + m <= n; ) {
             if (text.regionMatches(!caseSensitive, i, query, 0, m)) {
                 int end = i + m;
                 if (!wholeWord || isWordBounded(text, i, end)) {
@@ -94,8 +92,7 @@ public final class SearchMatcher {
         return out;
     }
 
-    private static List<int[]> regexMatches(String text, String query, boolean caseSensitive,
-            boolean wholeWord) {
+    private static List<int[]> regexMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
         String pattern = wholeWord ? "\\b(?:" + query + ")\\b" : query;
         Pattern p;
         try {

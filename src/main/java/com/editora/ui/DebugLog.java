@@ -41,8 +41,7 @@ public final class DebugLog {
     private static boolean installed;
     private static PrintWriter file; // optional mirror to <configDir>/editora-session.log
 
-    private DebugLog() {
-    }
+    private DebugLog() {}
 
     /** Attaches a root-logger handler + a default uncaught-exception handler. Idempotent. */
     public static void install() {
@@ -61,20 +60,18 @@ public final class DebugLog {
             }
 
             @Override
-            public void flush() {
-            }
+            public void flush() {}
 
             @Override
-            public void close() {
-            }
+            public void close() {}
         };
         handler.setLevel(Level.ALL); // capture everything the (already level-gated) loggers emit
         Logger.getLogger("").addHandler(handler);
 
-        Thread.setDefaultUncaughtExceptionHandler((thread, error) ->
-                append(line(Instant.now(), "SEVERE", "uncaught",
-                        "Uncaught exception in thread \"" + thread.getName() + "\"")
-                        + System.lineSeparator() + stackTrace(error)));
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> append(
+                line(Instant.now(), "SEVERE", "uncaught", "Uncaught exception in thread \"" + thread.getName() + "\"")
+                        + System.lineSeparator()
+                        + stackTrace(error)));
     }
 
     /**
@@ -136,8 +133,8 @@ public final class DebugLog {
 
     static String format(LogRecord record) {
         String message = formatMessage(record);
-        String base = line(record.getInstant(), record.getLevel().getName(),
-                shortName(record.getLoggerName()), message);
+        String base =
+                line(record.getInstant(), record.getLevel().getName(), shortName(record.getLoggerName()), message);
         return record.getThrown() == null ? base : base + System.lineSeparator() + stackTrace(record.getThrown());
     }
 

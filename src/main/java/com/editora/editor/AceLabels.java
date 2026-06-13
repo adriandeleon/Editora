@@ -13,8 +13,7 @@ public final class AceLabels {
     /** Home-row-first alphabet (fast to type, low finger travel). */
     public static final String DEFAULT_ALPHABET = "asdfghjklqwertyuiopzxcvbnm";
 
-    private AceLabels() {
-    }
+    private AceLabels() {}
 
     /** Up to {@code count} labels from {@code alphabet} (1-char while they fit, else uniform 2-char). */
     public static List<String> labels(int count, String alphabet) {

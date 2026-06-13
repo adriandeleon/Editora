@@ -17,8 +17,7 @@ public final class MarkdownLines {
     private static final Pattern QUOTE = Pattern.compile("^(\\s*)((?:>\\s?)+)(.*)$");
     private static final Pattern BULLET_PREFIX = Pattern.compile("^(\\s*)[-*+]\\s+");
 
-    private MarkdownLines() {
-    }
+    private MarkdownLines() {}
 
     /** The length of the leading list/quote marker on {@code line} (where content begins), or 0 if none. */
     public static int markerLength(String line) {

@@ -3,7 +3,6 @@ package com.editora.search;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
-
 import org.junit.jupiter.api.Test;
 
 class MultiFileSearchTest {
@@ -42,16 +41,14 @@ class MultiFileSearchTest {
 
     @Test
     void replaceAllSplicesEveryMatchAndCounts() {
-        MultiFileSearch.ReplaceResult r =
-                MultiFileSearch.replaceAll("foo bar foo", q("foo"), "X");
+        MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll("foo bar foo", q("foo"), "X");
         assertEquals("X bar X", r.text());
         assertEquals(2, r.count());
     }
 
     @Test
     void replaceAllAcrossLinesPreservesNewlines() {
-        MultiFileSearch.ReplaceResult r =
-                MultiFileSearch.replaceAll("a foo\nfoo b\n", q("foo"), "Z");
+        MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll("a foo\nfoo b\n", q("foo"), "Z");
         assertEquals("a Z\nZ b\n", r.text());
         assertEquals(2, r.count());
     }
@@ -65,8 +62,8 @@ class MultiFileSearchTest {
 
     @Test
     void regexAndWholeWordHonored() {
-        List<LineMatch> ms = MultiFileSearch.matchesInText("cat cats category cat",
-                new SearchQuery("cat", true, false, true));
+        List<LineMatch> ms =
+                MultiFileSearch.matchesInText("cat cats category cat", new SearchQuery("cat", true, false, true));
         assertEquals(2, ms.size()); // only the standalone "cat"s
     }
 }

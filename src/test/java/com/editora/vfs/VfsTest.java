@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -48,7 +47,7 @@ class VfsTest {
     void isRemoteUriRecognizesSchemes() {
         assertTrue(Vfs.isRemoteUri("sftp://h/x"));
         assertFalse(Vfs.isRemoteUri("file:/Users/ada/x"));
-        assertFalse(Vfs.isRemoteUri("/Users/ada/x"));     // a plain local path
+        assertFalse(Vfs.isRemoteUri("/Users/ada/x")); // a plain local path
         assertFalse(Vfs.isRemoteUri("C:\\Users\\ada\\x")); // a Windows local path
     }
 

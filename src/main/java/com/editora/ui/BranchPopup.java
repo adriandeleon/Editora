@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
-
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
@@ -36,18 +35,29 @@ import javafx.stage.Window;
 public final class BranchPopup {
 
     /** A non-branch action shown at the top (label + optional shortcut hint + handler). */
-    public record MenuAction(String label, String accel, Runnable run) { }
+    public record MenuAction(String label, String accel, Runnable run) {}
 
-    private sealed interface Row permits Header, ActionRow, BranchRow { }
-    private record Header(String title) implements Row { }
-    private record ActionRow(String label, String accel, Runnable run) implements Row { }
+    private sealed interface Row permits Header, ActionRow, BranchRow {}
+
+    private record Header(String title) implements Row {}
+
+    private record ActionRow(String label, String accel, Runnable run) implements Row {}
     /** A branch row: {@code upstream}/{@code ahead}/{@code behind} are the tracking info (locals only). */
-    private record BranchRow(String name, boolean remote, boolean current, String upstream,
-                             int ahead, int behind, boolean gone, Runnable run) implements Row { }
+    private record BranchRow(
+            String name,
+            boolean remote,
+            boolean current,
+            String upstream,
+            int ahead,
+            int behind,
+            boolean gone,
+            Runnable run)
+            implements Row {}
 
     private final Label titleLabel = new Label(tr("branchpopup.title"));
     /** Remote URL shown in the header (origin's), ellipsized; empty when there's no remote. */
     private final Label remoteUrlLabel = new Label();
+
     private final TextField search = new TextField();
     private final ListView<Row> list = new ListView<>();
     private final ObservableList<Row> items = FXCollections.observableArrayList();
@@ -55,6 +65,7 @@ public final class BranchPopup {
 
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
     private OverlayHost overlayHost;
+
     private VBox content;
     private boolean showing;
 
@@ -109,10 +120,16 @@ public final class BranchPopup {
      * @param onCheckoutLocal  invoked with a local branch name to switch to it
      * @param onCheckoutRemote invoked with a remote branch short-name (e.g. {@code origin/foo}) to check it out
      */
-    public void show(Window owner, Node anchor, String current,
-                     List<com.editora.git.GitService.BranchInfo> local, List<String> remote,
-                     String remoteUrl, List<MenuAction> actions, Consumer<String> onCheckoutLocal,
-                     Consumer<String> onCheckoutRemote) {
+    public void show(
+            Window owner,
+            Node anchor,
+            String current,
+            List<com.editora.git.GitService.BranchInfo> local,
+            List<String> remote,
+            String remoteUrl,
+            List<MenuAction> actions,
+            Consumer<String> onCheckoutLocal,
+            Consumer<String> onCheckoutRemote) {
         List<Row> rows = new ArrayList<>();
         for (MenuAction a : actions) {
             rows.add(new ActionRow(a.label(), a.accel(), a.run()));
@@ -130,7 +147,14 @@ public final class BranchPopup {
         });
         for (var b : locals) {
             boolean cur = b.name().equals(current);
-            rows.add(new BranchRow(b.name(), false, cur, b.upstream(), b.ahead(), b.behind(), b.gone(),
+            rows.add(new BranchRow(
+                    b.name(),
+                    false,
+                    cur,
+                    b.upstream(),
+                    b.ahead(),
+                    b.behind(),
+                    b.gone(),
                     cur ? this::hide : () -> onCheckoutLocal.accept(b.name())));
         }
         if (!remote.isEmpty()) {
@@ -231,14 +255,41 @@ public final class BranchPopup {
 
     private void onKey(KeyEvent e) {
         switch (e.getCode()) {
-            case ESCAPE -> { hide(); e.consume(); }
-            case ENTER -> { activate(list.getSelectionModel().getSelectedItem()); e.consume(); }
-            case DOWN -> { move(1); e.consume(); }
-            case UP -> { move(-1); e.consume(); }
-            case N -> { if (e.isControlDown()) { move(1); e.consume(); } }
-            case P -> { if (e.isControlDown()) { move(-1); e.consume(); } }
-            case G -> { if (e.isControlDown()) { hide(); e.consume(); } }
-            default -> { }
+            case ESCAPE -> {
+                hide();
+                e.consume();
+            }
+            case ENTER -> {
+                activate(list.getSelectionModel().getSelectedItem());
+                e.consume();
+            }
+            case DOWN -> {
+                move(1);
+                e.consume();
+            }
+            case UP -> {
+                move(-1);
+                e.consume();
+            }
+            case N -> {
+                if (e.isControlDown()) {
+                    move(1);
+                    e.consume();
+                }
+            }
+            case P -> {
+                if (e.isControlDown()) {
+                    move(-1);
+                    e.consume();
+                }
+            }
+            case G -> {
+                if (e.isControlDown()) {
+                    hide();
+                    e.consume();
+                }
+            }
+            default -> {}
         }
     }
 
@@ -325,7 +376,9 @@ public final class BranchPopup {
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
             // Right detail: the upstream (e.g. "origin/main"), or "remote" for a remote row.
-            String detail = br.remote() ? tr("branchpopup.remoteLabel") : (br.gone() ? tr("branchpopup.gone", br.upstream()) : br.upstream());
+            String detail = br.remote()
+                    ? tr("branchpopup.remoteLabel")
+                    : (br.gone() ? tr("branchpopup.gone", br.upstream()) : br.upstream());
             Label up = new Label(detail);
             up.getStyleClass().add("branch-upstream");
 
@@ -363,10 +416,16 @@ public final class BranchPopup {
                     sb.append(tr("branchpopup.tip.goneSuffix"));
                 }
                 if (br.behind() > 0) {
-                    sb.append("\n").append(tr(br.behind() == 1 ? "branchpopup.tip.incoming.one" : "branchpopup.tip.incoming.many", br.behind()));
+                    sb.append("\n")
+                            .append(tr(
+                                    br.behind() == 1 ? "branchpopup.tip.incoming.one" : "branchpopup.tip.incoming.many",
+                                    br.behind()));
                 }
                 if (br.ahead() > 0) {
-                    sb.append("\n").append(tr(br.ahead() == 1 ? "branchpopup.tip.outgoing.one" : "branchpopup.tip.outgoing.many", br.ahead()));
+                    sb.append("\n")
+                            .append(tr(
+                                    br.ahead() == 1 ? "branchpopup.tip.outgoing.one" : "branchpopup.tip.outgoing.many",
+                                    br.ahead()));
                 }
                 if (br.ahead() == 0 && br.behind() == 0 && !br.gone()) {
                     sb.append("\n").append(tr("branchpopup.tip.upToDate"));

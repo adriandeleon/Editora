@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.util.List;
 import java.util.Map;
-
 import javafx.scene.paint.Color;
 
 /**
@@ -102,8 +101,7 @@ public final class EditorThemes {
             "Islands Light", "#a6d2ff80",
             "Islands Dark", "#56a8f540");
 
-    private EditorThemes() {
-    }
+    private EditorThemes() {}
 
     /** Normalized name (returns {@link #DEFAULT} for unrecognized input). */
     public static String normalize(String name) {
@@ -124,7 +122,8 @@ public final class EditorThemes {
         if (base == null) {
             return null;
         }
-        return EditorThemes.class.getResource("/com/editora/styles/editor-themes/" + base + ".css")
+        return EditorThemes.class
+                .getResource("/com/editora/styles/editor-themes/" + base + ".css")
                 .toExternalForm();
     }
 

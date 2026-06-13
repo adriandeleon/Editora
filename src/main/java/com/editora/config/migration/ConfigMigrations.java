@@ -1,14 +1,13 @@
 package com.editora.config.migration;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * The config schema-migration engine. On load a file is parsed to a Jackson tree, its stored
@@ -19,8 +18,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public final class ConfigMigrations {
 
-    private ConfigMigrations() {
-    }
+    private ConfigMigrations() {}
 
     /**
      * The schema version of a parsed tree: a bare array ⇒ {@code 0} (the legacy {@code recent-files.json}
@@ -59,8 +57,7 @@ public final class ConfigMigrations {
     }
 
     /** Applies the {@code from → to} migration chain in order, one step per version. Pure. */
-    static JsonNode applySteps(JsonNode tree, int from, int to,
-            java.util.function.IntFunction<Migration> stepFor) {
+    static JsonNode applySteps(JsonNode tree, int from, int to, java.util.function.IntFunction<Migration> stepFor) {
         JsonNode node = tree;
         for (int v = from; v < to; v++) {
             Migration step = stepFor.apply(v);

@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Set;
-
 import org.junit.jupiter.api.Test;
 
 class DapServerRegistryTest {
@@ -70,9 +69,10 @@ class DapServerRegistryTest {
 
     @Test
     void interpreterArgvUsesConfiguredCommandTokenized() {
-        assertEquals(List.of("/opt/py3/bin/python"),
-                DapServerRegistry.interpreterArgv("python", "/opt/py3/bin/python"));
-        assertEquals(List.of("/path with space/python"),
+        assertEquals(
+                List.of("/opt/py3/bin/python"), DapServerRegistry.interpreterArgv("python", "/opt/py3/bin/python"));
+        assertEquals(
+                List.of("/path with space/python"),
                 DapServerRegistry.interpreterArgv("python", "\"/path with space/python\""));
     }
 

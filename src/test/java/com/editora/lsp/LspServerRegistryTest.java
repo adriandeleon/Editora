@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
-
 import org.junit.jupiter.api.Test;
 
 class LspServerRegistryTest {
@@ -50,7 +49,8 @@ class LspServerRegistryTest {
         assertTrue(spec.rootMarkers().contains("tsconfig.json"));
         assertTrue(spec.rootMarkers().contains("package.json"));
         // A .js file routes to the same TypeScript server.
-        assertEquals("typescript", LspServerRegistry.specFor("javascript", Map.of()).serverId());
+        assertEquals(
+                "typescript", LspServerRegistry.specFor("javascript", Map.of()).serverId());
     }
 
     @Test
@@ -73,10 +73,13 @@ class LspServerRegistryTest {
         // The Bash server's id is "bash" but it serves the "shell" language id.
         assertEquals("bash", LspServerRegistry.serverIdFor("shell"));
 
-        assertEquals(List.of("lemminx"), LspServerRegistry.specFor("xml", Map.of()).command());
-        assertEquals(List.of("vscode-json-language-server", "--stdio"),
+        assertEquals(
+                List.of("lemminx"), LspServerRegistry.specFor("xml", Map.of()).command());
+        assertEquals(
+                List.of("vscode-json-language-server", "--stdio"),
                 LspServerRegistry.specFor("json", Map.of()).command());
-        assertEquals(List.of("bash-language-server", "start"),
+        assertEquals(
+                List.of("bash-language-server", "start"),
                 LspServerRegistry.specFor("shell", Map.of()).command());
 
         assertTrue(LspServerRegistry.specFor("xml", Map.of()).rootMarkers().contains("pom.xml"));
@@ -91,13 +94,18 @@ class LspServerRegistryTest {
             // For these five the server id equals the language id.
             assertEquals(lang, LspServerRegistry.serverIdFor(lang), lang);
         }
-        assertEquals(List.of("yaml-language-server", "--stdio"),
+        assertEquals(
+                List.of("yaml-language-server", "--stdio"),
                 LspServerRegistry.specFor("yaml", Map.of()).command());
         assertEquals(List.of("gopls"), LspServerRegistry.specFor("go", Map.of()).command());
-        assertEquals(List.of("rust-analyzer"), LspServerRegistry.specFor("rust", Map.of()).command());
-        assertEquals(List.of("phpactor", "language-server"),
+        assertEquals(
+                List.of("rust-analyzer"),
+                LspServerRegistry.specFor("rust", Map.of()).command());
+        assertEquals(
+                List.of("phpactor", "language-server"),
                 LspServerRegistry.specFor("php", Map.of()).command());
-        assertEquals(List.of("ruby-lsp"), LspServerRegistry.specFor("ruby", Map.of()).command());
+        assertEquals(
+                List.of("ruby-lsp"), LspServerRegistry.specFor("ruby", Map.of()).command());
 
         assertTrue(LspServerRegistry.specFor("go", Map.of()).rootMarkers().contains("go.mod"));
         assertTrue(LspServerRegistry.specFor("rust", Map.of()).rootMarkers().contains("Cargo.toml"));
@@ -111,7 +119,8 @@ class LspServerRegistryTest {
         assertEquals("clangd", LspServerRegistry.serverIdFor("c"));
         assertEquals("clangd", LspServerRegistry.serverIdFor("cpp"));
         assertEquals(List.of("clangd"), LspServerRegistry.specFor("c", Map.of()).command());
-        assertEquals(List.of("clangd"), LspServerRegistry.specFor("cpp", Map.of()).command());
+        assertEquals(
+                List.of("clangd"), LspServerRegistry.specFor("cpp", Map.of()).command());
         assertTrue(LspServerRegistry.specFor("c", Map.of()).rootMarkers().contains("compile_commands.json"));
 
         // The remaining eight: server id == language id.
@@ -119,36 +128,47 @@ class LspServerRegistryTest {
             assertTrue(LspServerRegistry.isSupported(lang), lang);
             assertEquals(lang, LspServerRegistry.serverIdFor(lang), lang);
         }
-        assertEquals(List.of("vscode-html-language-server", "--stdio"),
+        assertEquals(
+                List.of("vscode-html-language-server", "--stdio"),
                 LspServerRegistry.specFor("html", Map.of()).command());
-        assertEquals(List.of("vscode-css-language-server", "--stdio"),
+        assertEquals(
+                List.of("vscode-css-language-server", "--stdio"),
                 LspServerRegistry.specFor("css", Map.of()).command());
-        assertEquals(List.of("kotlin-language-server"),
+        assertEquals(
+                List.of("kotlin-language-server"),
                 LspServerRegistry.specFor("kotlin", Map.of()).command());
-        assertEquals(List.of("lua-language-server"), LspServerRegistry.specFor("lua", Map.of()).command());
-        assertEquals(List.of("docker-langserver", "--stdio"),
+        assertEquals(
+                List.of("lua-language-server"),
+                LspServerRegistry.specFor("lua", Map.of()).command());
+        assertEquals(
+                List.of("docker-langserver", "--stdio"),
                 LspServerRegistry.specFor("dockerfile", Map.of()).command());
         assertEquals(List.of("sqls"), LspServerRegistry.specFor("sql", Map.of()).command());
-        assertEquals(List.of("terraform-ls", "serve"),
+        assertEquals(
+                List.of("terraform-ls", "serve"),
                 LspServerRegistry.specFor("terraform", Map.of()).command());
-        assertEquals(List.of("taplo", "lsp", "stdio"), LspServerRegistry.specFor("toml", Map.of()).command());
+        assertEquals(
+                List.of("taplo", "lsp", "stdio"),
+                LspServerRegistry.specFor("toml", Map.of()).command());
 
         assertTrue(LspServerRegistry.specFor("kotlin", Map.of()).rootMarkers().contains("build.gradle.kts"));
-        assertTrue(LspServerRegistry.specFor("terraform", Map.of()).rootMarkers().contains(".terraform"));
+        assertTrue(
+                LspServerRegistry.specFor("terraform", Map.of()).rootMarkers().contains(".terraform"));
     }
 
     @Test
     void csharpServerDefaultsAndMarkers() {
         assertTrue(LspServerRegistry.isSupported("csharp"));
         assertEquals("csharp", LspServerRegistry.serverIdFor("csharp"));
-        assertEquals(List.of("csharp-ls"), LspServerRegistry.specFor("csharp", Map.of()).command());
+        assertEquals(
+                List.of("csharp-ls"),
+                LspServerRegistry.specFor("csharp", Map.of()).command());
         assertTrue(LspServerRegistry.specFor("csharp", Map.of()).rootMarkers().contains(".git"));
     }
 
     @Test
     void configuredCommandIsTokenizedPerServer() {
-        var java = LspServerRegistry.specFor("java",
-                Map.of("java", "java -jar /opt/jdtls/launcher.jar -data ws"));
+        var java = LspServerRegistry.specFor("java", Map.of("java", "java -jar /opt/jdtls/launcher.jar -data ws"));
         assertEquals(List.of("java", "-jar", "/opt/jdtls/launcher.jar", "-data", "ws"), java.command());
 
         var ts = LspServerRegistry.specFor("typescript", Map.of("typescript", "vtsls --stdio"));
@@ -157,8 +177,8 @@ class LspServerRegistryTest {
 
     @Test
     void tokenizeHonorsQuotesAndCollapsesWhitespace() {
-        assertEquals(List.of("/opt/my server/jdtls", "-x"),
-                LspServerRegistry.tokenize("\"/opt/my server/jdtls\"   -x"));
+        assertEquals(
+                List.of("/opt/my server/jdtls", "-x"), LspServerRegistry.tokenize("\"/opt/my server/jdtls\"   -x"));
         assertEquals(List.of("a", "b"), LspServerRegistry.tokenize("  a    b  "));
         assertEquals(List.of(), LspServerRegistry.tokenize("   "));
         assertEquals(List.of(), LspServerRegistry.tokenize(null));

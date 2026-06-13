@@ -5,7 +5,6 @@ import static com.editora.i18n.Messages.tr;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -35,6 +34,7 @@ public final class HttpClientPanel extends VBox implements ToolWindowContent {
     private final Button clearButton = new Button();
     /** Receives the chosen environment name ({@code ""} = none) so the controller can persist it. */
     private Consumer<String> onEnvironmentChanged;
+
     private boolean updatingEnv;
 
     public HttpClientPanel(Runnable onSaveResponse) {

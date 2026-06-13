@@ -3,9 +3,8 @@ package com.editora.http;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.jupiter.api.Test;
-
 import com.editora.http.HttpFile.Parsed;
+import org.junit.jupiter.api.Test;
 
 /** Unit tests for parsing a single request block into method/URL/headers/body, env vars, and rendering. */
 class HttpRequestParseTest {
@@ -64,9 +63,14 @@ class HttpRequestParseTest {
 
     @Test
     void rendererPrettyPrintsJsonAndAddsStatusFooter() {
-        HttpResult r = new HttpResult(200,
-                java.util.List.<String[]>of(new String[]{"content-type", "application/json"}),
-                "{\"a\":1}", "application/json", 12, 7, null);
+        HttpResult r = new HttpResult(
+                200,
+                java.util.List.<String[]>of(new String[] {"content-type", "application/json"}),
+                "{\"a\":1}",
+                "application/json",
+                12,
+                7,
+                null);
         String out = HttpResponseFormat.render(r);
         assertTrue(out.startsWith("HTTP 200\n"));
         assertTrue(out.contains("\"a\" : 1")); // pretty-printed

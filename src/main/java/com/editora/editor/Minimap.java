@@ -1,9 +1,6 @@
 package com.editora.editor;
 
 import java.time.Duration;
-
-import org.fxmisc.richtext.CodeArea;
-
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -11,6 +8,7 @@ import javafx.scene.image.WritableImage;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
+import org.fxmisc.richtext.CodeArea;
 
 /**
  * A lightweight document overview ("minimap") drawn beside the editor. Each paragraph is rendered
@@ -33,6 +31,7 @@ final class Minimap extends Region {
 
     /** Block and viewport-overlay colors; theme-aware (see {@link #setColors}). */
     private Color textColor = Color.web("#9aa5b1");
+
     private Color viewportColor = Color.web("#0969da", 0.14);
 
     private final CodeArea area;
@@ -41,6 +40,7 @@ final class Minimap extends Region {
     /** Canvas logical dims at the last successful snapshot, so the {@link #contentImage} buffer can be
      *  reused (rather than reallocated each render) when the size is unchanged — see {@link #renderContent}. */
     private double lastSnapW = -1;
+
     private double lastSnapH = -1;
     /** False while this minimap's buffer is a background (non-selected) tab: rendering is skipped and
      *  the cached snapshot is dropped so its GPU texture can be reclaimed — keeps retained VRAM from
@@ -66,9 +66,7 @@ final class Minimap extends Region {
         setPrefWidth(WIDTH);
         setMaxWidth(WIDTH);
 
-        area.multiPlainChanges()
-                .successionEnds(Duration.ofMillis(200))
-                .subscribe(ignore -> renderContent());
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(200)).subscribe(ignore -> renderContent());
         area.estimatedScrollYProperty().addListener((o, a, b) -> redraw());
 
         canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, this::scrollToEvent);
@@ -263,9 +261,10 @@ final class Minimap extends Region {
         }
         double x = w - STRIPE_WIDTH;
         double markH = Math.max(2.0, rowHeight);
-        for (LspDiagnostic.Severity sev : new LspDiagnostic.Severity[]{
-                LspDiagnostic.Severity.HINT, LspDiagnostic.Severity.INFO,
-                LspDiagnostic.Severity.WARNING, LspDiagnostic.Severity.ERROR}) {
+        for (LspDiagnostic.Severity sev : new LspDiagnostic.Severity[] {
+            LspDiagnostic.Severity.HINT, LspDiagnostic.Severity.INFO,
+            LspDiagnostic.Severity.WARNING, LspDiagnostic.Severity.ERROR
+        }) {
             g.setFill(stripeColor(sev));
             for (LspDiagnostic d : diagnostics) {
                 if (d.severity() != sev) {

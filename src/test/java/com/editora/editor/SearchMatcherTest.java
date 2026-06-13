@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
-
 import org.junit.jupiter.api.Test;
 
 class SearchMatcherTest {
@@ -30,8 +29,7 @@ class SearchMatcherTest {
 
     @Test
     void literalCaseInsensitiveByDefault() {
-        assertRanges(SearchMatcher.matches("Foo FOO foo", "foo", false, false, false),
-                m(0, 3), m(4, 7), m(8, 11));
+        assertRanges(SearchMatcher.matches("Foo FOO foo", "foo", false, false, false), m(0, 3), m(4, 7), m(8, 11));
         // case-sensitive only matches the exact case
         assertRanges(SearchMatcher.matches("Foo FOO foo", "foo", true, false, false), m(8, 11));
     }
@@ -39,14 +37,12 @@ class SearchMatcherTest {
     @Test
     void wholeWordLiteralRejectsSubstrings() {
         // "cat" appears in "category" and "cat" — whole-word keeps only the standalone one.
-        assertRanges(SearchMatcher.matches("cat category cat", "cat", true, false, true),
-                m(0, 3), m(13, 16));
+        assertRanges(SearchMatcher.matches("cat category cat", "cat", true, false, true), m(0, 3), m(13, 16));
     }
 
     @Test
     void regexMatchesAndCaseFlag() {
-        assertRanges(SearchMatcher.matches("a1 b2 c3", "[a-z][0-9]", true, true, false),
-                m(0, 2), m(3, 5), m(6, 8));
+        assertRanges(SearchMatcher.matches("a1 b2 c3", "[a-z][0-9]", true, true, false), m(0, 2), m(3, 5), m(6, 8));
         assertRanges(SearchMatcher.matches("AB ab", "[a-z]+", true, true, false), m(3, 5));
     }
 
@@ -80,10 +76,10 @@ class SearchMatcherTest {
     @Test
     void nextIndexWrapsBothWays() {
         List<int[]> ms = List.of(m(2, 4), m(10, 12), m(20, 22));
-        assertEquals(1, SearchMatcher.nextIndex(ms, 5, true));   // first start >= 5
-        assertEquals(0, SearchMatcher.nextIndex(ms, 30, true));  // wrap forward
+        assertEquals(1, SearchMatcher.nextIndex(ms, 5, true)); // first start >= 5
+        assertEquals(0, SearchMatcher.nextIndex(ms, 30, true)); // wrap forward
         assertEquals(0, SearchMatcher.nextIndex(ms, 10, false)); // last start < 10
-        assertEquals(2, SearchMatcher.nextIndex(ms, 0, false));  // wrap backward
+        assertEquals(2, SearchMatcher.nextIndex(ms, 0, false)); // wrap backward
         assertEquals(-1, SearchMatcher.nextIndex(List.of(), 0, true));
     }
 

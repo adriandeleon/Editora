@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
@@ -15,7 +14,6 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
-
 import org.fxmisc.richtext.CodeArea;
 
 /**
@@ -28,8 +26,8 @@ import org.fxmisc.richtext.CodeArea;
  */
 final class AceJumpOverlay extends Region {
 
-    private static final Color PILL = Color.web("#ffe0b2");        // pastel peach/amber
-    private static final Color PILL_TEXT = Color.web("#5a3a00");   // dark brown for contrast
+    private static final Color PILL = Color.web("#ffe0b2"); // pastel peach/amber
+    private static final Color PILL_TEXT = Color.web("#5a3a00"); // dark brown for contrast
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);

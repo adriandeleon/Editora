@@ -1,5 +1,8 @@
 package com.editora.ui;
 
+import com.editora.command.KeymapManager;
+import com.editora.config.ConfigManager;
+import com.editora.config.WorkspaceState;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -8,11 +11,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import com.editora.command.KeymapManager;
-import com.editora.config.ConfigManager;
-import com.editora.config.WorkspaceState;
-
 import javafx.application.Platform;
 import javafx.css.PseudoClass;
 import javafx.geometry.Orientation;
@@ -57,8 +55,7 @@ public class ToolWindowManager {
     private final Map<ToolWindow, Region> panels = new HashMap<>();
     /** Tool windows hidden by context rather than user preference (e.g. the Commit window outside a Git
      *  repo). Transient — never persisted, so it doesn't clobber the user's show/hide setting. */
-    private final java.util.Set<ToolWindow> unavailable =
-            Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private final java.util.Set<ToolWindow> unavailable = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     /** When true (Zen mode), all side stripes are force-hidden regardless of their buttons. */
     private boolean zenHidesStripes;
@@ -360,7 +357,8 @@ public class ToolWindowManager {
     }
 
     private void setStripeShown(Pane stripe) {
-        boolean shown = stripesEnabled && !zenHidesStripes && !stripe.getChildren().isEmpty();
+        boolean shown =
+                stripesEnabled && !zenHidesStripes && !stripe.getChildren().isEmpty();
         stripe.setVisible(shown);
         stripe.setManaged(shown);
     }
@@ -472,20 +470,23 @@ public class ToolWindowManager {
             case LEFT -> {
                 int idx = hSplit.getItems().indexOf(panel);
                 if (idx >= 0 && idx < hSplit.getDividers().size()) {
-                    settings.setLeftDividerPosition(hSplit.getDividers().get(idx).getPosition());
+                    settings.setLeftDividerPosition(
+                            hSplit.getDividers().get(idx).getPosition());
                 }
                 hSplit.getItems().remove(panel);
             }
             case RIGHT -> {
                 int idx = hSplit.getItems().indexOf(panel);
                 if (idx > 0 && idx - 1 < hSplit.getDividers().size()) {
-                    settings.setRightDividerPosition(hSplit.getDividers().get(idx - 1).getPosition());
+                    settings.setRightDividerPosition(
+                            hSplit.getDividers().get(idx - 1).getPosition());
                 }
                 hSplit.getItems().remove(panel);
             }
             case BOTTOM -> {
                 if (!vSplit.getDividers().isEmpty()) {
-                    settings.setBottomDividerPosition(vSplit.getDividers().get(0).getPosition());
+                    settings.setBottomDividerPosition(
+                            vSplit.getDividers().get(0).getPosition());
                 }
                 vSplit.getItems().remove(panel);
             }

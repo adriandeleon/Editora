@@ -3,10 +3,9 @@ package com.editora.config;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.jupiter.api.Test;
-
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.RemoteConnection.AuthMethod;
+import org.junit.jupiter.api.Test;
 
 /** Unit tests for the saved-connections store (put de-dupes by id + moves to front; remove). */
 class ConnectionStoreTest {

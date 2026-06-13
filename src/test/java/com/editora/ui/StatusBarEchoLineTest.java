@@ -20,7 +20,8 @@ class StatusBarEchoLineTest {
 
     @Test
     void multiLineKeepsFirstLineWithEllipsis() {
-        assertEquals("Debug error: Compilation failed: …",
+        assertEquals(
+                "Debug error: Compilation failed: …",
                 StatusBar.echoLine("Debug error: Compilation failed: \n/x/DebugDemo.java:4: error\nmore"));
     }
 

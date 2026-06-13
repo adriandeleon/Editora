@@ -55,8 +55,7 @@ public final class OverlayHost {
         // their action keys: Enter, arrows, C-n/C-p). C-g reaches us because the card sets
         // editora.ownsKeys, so the global KeyDispatcher leaves edit.cancel to the focused overlay.
         overlayRoot.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == KeyCode.ESCAPE
-                    || (e.getCode() == KeyCode.G && (e.isControlDown() || e.isAltDown()))) {
+            if (e.getCode() == KeyCode.ESCAPE || (e.getCode() == KeyCode.G && (e.isControlDown() || e.isAltDown()))) {
                 hide();
                 e.consume();
             }
@@ -103,7 +102,9 @@ public final class OverlayHost {
         if (showing.get()) {
             runHidden();
         } else {
-            previousFocus = overlayRoot.getScene() == null ? null : overlayRoot.getScene().getFocusOwner();
+            previousFocus = overlayRoot.getScene() == null
+                    ? null
+                    : overlayRoot.getScene().getFocusOwner();
         }
         this.onHidden = onHidden;
         if (overlayRoot.getChildren().size() > 1) {

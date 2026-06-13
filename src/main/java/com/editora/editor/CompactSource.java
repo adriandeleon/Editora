@@ -20,8 +20,7 @@ public final class CompactSource {
     /** A {@code void main(} method header (any modifiers/return-type spacing), used to find the entry point. */
     private static final Pattern MAIN = Pattern.compile("\\bvoid\\s+main\\s*\\(");
 
-    private CompactSource() {
-    }
+    private CompactSource() {}
 
     /**
      * True if {@code fileName} is a {@code .java} file and {@code source} is a launchable compact source
@@ -114,8 +113,8 @@ public final class CompactSource {
             } else if (c == '"' && i + 2 < n && s.charAt(i + 1) == '"' && s.charAt(i + 2) == '"') {
                 out.append("   ");
                 i += 3;
-                while (i < n && !(s.charAt(i) == '"' && i + 2 < n
-                        && s.charAt(i + 1) == '"' && s.charAt(i + 2) == '"')) {
+                while (i < n
+                        && !(s.charAt(i) == '"' && i + 2 < n && s.charAt(i + 1) == '"' && s.charAt(i + 2) == '"')) {
                     out.append(s.charAt(i) == '\n' ? '\n' : ' ');
                     i++;
                 }

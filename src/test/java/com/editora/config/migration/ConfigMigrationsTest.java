@@ -5,14 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,7 +21,9 @@ class ConfigMigrationsTest {
 
     @Test
     void versionOfHandlesArrayPresentAndMissing() {
-        assertEquals(0, ConfigMigrations.versionOf(JsonNodeFactory.instance.arrayNode(), 1),
+        assertEquals(
+                0,
+                ConfigMigrations.versionOf(JsonNodeFactory.instance.arrayNode(), 1),
                 "a bare array is the legacy v0 form");
         ObjectNode withVersion = mapper.createObjectNode().put("schemaVersion", 5);
         assertEquals(5, ConfigMigrations.versionOf(withVersion, 1));
@@ -46,7 +47,8 @@ class ConfigMigrationsTest {
 
     @Test
     void applyStepsThrowsOnMissingStep() {
-        assertThrows(IllegalStateException.class,
+        assertThrows(
+                IllegalStateException.class,
                 () -> ConfigMigrations.applySteps(mapper.createObjectNode(), 1, 2, v -> null));
     }
 
@@ -65,7 +67,8 @@ class ConfigMigrationsTest {
     @Test
     void upgradeThrowsWhenFileIsNewerThanSupported() {
         ObjectNode tooNew = mapper.createObjectNode().put("schemaVersion", 99);
-        NewerThanSupportedException ex = assertThrows(NewerThanSupportedException.class,
+        NewerThanSupportedException ex = assertThrows(
+                NewerThanSupportedException.class,
                 () -> ConfigMigrations.upgrade(ConfigSchema.SETTINGS, tooNew, mapper));
         assertEquals(99, ex.storedVersion());
         assertEquals(ConfigSchema.SETTINGS, ex.schema());

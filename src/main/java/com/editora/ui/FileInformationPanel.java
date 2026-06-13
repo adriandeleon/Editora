@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.LanguageRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,10 +16,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
-
-import com.editora.editor.EditorBuffer;
-import com.editora.editor.LanguageRegistry;
-
 import javafx.beans.value.ChangeListener;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
@@ -105,7 +103,8 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     }
 
     private Region buildFileView() {
-        VBox box = new VBox(10,
+        VBox box = new VBox(
+                10,
                 section(tr("fileinfo.section.file"), buildFileGrid()),
                 section(tr("fileinfo.section.textSettings"), buildTextSettingsGrid()),
                 section(tr("fileinfo.section.count"), buildCountBox()),
@@ -221,7 +220,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         if (attached == null) {
             return;
         }
-        refreshCounts(attached);     // includes line / column / caret location
+        refreshCounts(attached); // includes line / column / caret location
         refreshCharacter(attached);
     }
 
@@ -238,13 +237,27 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     }
 
     private void clearAll() {
-        for (TextField l : new TextField[]{
-                createdValue, modifiedValue, sizeValue, tagsValue,
-                permissionsValue, ownerValue, fullPathValue,
-                encodingValue, lineEndingsValue, modeValue,
-                linesValue, charsValue, wordsValue,
-                locationValue, lineValue, columnValue,
-                codePointValue, charNameValue, charBlockValue, charCategoryValue
+        for (TextField l : new TextField[] {
+            createdValue,
+            modifiedValue,
+            sizeValue,
+            tagsValue,
+            permissionsValue,
+            ownerValue,
+            fullPathValue,
+            encodingValue,
+            lineEndingsValue,
+            modeValue,
+            linesValue,
+            charsValue,
+            wordsValue,
+            locationValue,
+            lineValue,
+            columnValue,
+            codePointValue,
+            charNameValue,
+            charBlockValue,
+            charCategoryValue
         }) {
             l.setText("–");
         }
@@ -265,9 +278,14 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         try {
             BasicFileAttributes basic = Files.readAttributes(path, BasicFileAttributes.class);
             // SFTP (and some filesystems) don't report a creation/modified time — guard the nulls.
-            createdValue.setText(basic.creationTime() != null ? formatTime(basic.creationTime().toInstant()) : "–");
+            createdValue.setText(
+                    basic.creationTime() != null
+                            ? formatTime(basic.creationTime().toInstant())
+                            : "–");
             modifiedValue.setText(
-                    basic.lastModifiedTime() != null ? formatTime(basic.lastModifiedTime().toInstant()) : "–");
+                    basic.lastModifiedTime() != null
+                            ? formatTime(basic.lastModifiedTime().toInstant())
+                            : "–");
             sizeValue.setText(formatSize(basic.size()));
         } catch (IOException e) {
             createdValue.setText("–");
@@ -319,10 +337,10 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
             selectedLines = 0;
         }
 
-        linesValue.setText(selectedLines > 0 ? formatNum(lineCount) + " (" + selectedLines + ")"
-                : formatNum(lineCount));
-        charsValue.setText(selectedChars > 0 ? formatNum(charCount) + " (" + selectedChars + ")"
-                : formatNum(charCount));
+        linesValue.setText(
+                selectedLines > 0 ? formatNum(lineCount) + " (" + selectedLines + ")" : formatNum(lineCount));
+        charsValue.setText(
+                selectedChars > 0 ? formatNum(charCount) + " (" + selectedChars + ")" : formatNum(charCount));
         wordsValue.setText(formatNum(wordCount));
 
         locationValue.setText(formatNum(area.getCaretPosition()));
@@ -376,14 +394,14 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
 
     private static String formatPermissions(Set<PosixFilePermission> perms) {
         int octal = 0;
-        if (perms.contains(PosixFilePermission.OWNER_READ))     octal |= 0400;
-        if (perms.contains(PosixFilePermission.OWNER_WRITE))    octal |= 0200;
-        if (perms.contains(PosixFilePermission.OWNER_EXECUTE))  octal |= 0100;
-        if (perms.contains(PosixFilePermission.GROUP_READ))     octal |= 040;
-        if (perms.contains(PosixFilePermission.GROUP_WRITE))    octal |= 020;
-        if (perms.contains(PosixFilePermission.GROUP_EXECUTE))  octal |= 010;
-        if (perms.contains(PosixFilePermission.OTHERS_READ))    octal |= 04;
-        if (perms.contains(PosixFilePermission.OTHERS_WRITE))   octal |= 02;
+        if (perms.contains(PosixFilePermission.OWNER_READ)) octal |= 0400;
+        if (perms.contains(PosixFilePermission.OWNER_WRITE)) octal |= 0200;
+        if (perms.contains(PosixFilePermission.OWNER_EXECUTE)) octal |= 0100;
+        if (perms.contains(PosixFilePermission.GROUP_READ)) octal |= 040;
+        if (perms.contains(PosixFilePermission.GROUP_WRITE)) octal |= 020;
+        if (perms.contains(PosixFilePermission.GROUP_EXECUTE)) octal |= 010;
+        if (perms.contains(PosixFilePermission.OTHERS_READ)) octal |= 04;
+        if (perms.contains(PosixFilePermission.OTHERS_WRITE)) octal |= 02;
         if (perms.contains(PosixFilePermission.OTHERS_EXECUTE)) octal |= 01;
         return String.format("%o (-%s)", octal, PosixFilePermissions.toString(perms));
     }

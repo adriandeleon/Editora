@@ -5,12 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.editora.ui.MainController.OpenTarget;
 import java.nio.file.Path;
 import java.util.List;
-
 import org.junit.jupiter.api.Test;
-
-import com.editora.ui.MainController.OpenTarget;
 
 /** Tests parsing the command-line program arguments (pure; no JavaFX launch). */
 class AppArgsTest {
@@ -65,8 +63,7 @@ class AppArgsTest {
 
     @Test
     void devIsNotTreatedAsAFileTarget() {
-        assertEquals(List.of(new OpenTarget(Path.of("a.txt"), 0, 0)),
-                App.fileTargets(List.of("--dev", "a.txt")));
+        assertEquals(List.of(new OpenTarget(Path.of("a.txt"), 0, 0)), App.fileTargets(List.of("--dev", "a.txt")));
     }
 
     @Test
@@ -85,8 +82,8 @@ class AppArgsTest {
 
     @Test
     void fileTargetsSkipsOptionsAndTheirValues() {
-        List<OpenTarget> targets = App.fileTargets(List.of(
-                "--config-dir", "/cfg", "--project", "/repo", "--zen", "a.txt", "b.txt:7:2"));
+        List<OpenTarget> targets =
+                App.fileTargets(List.of("--config-dir", "/cfg", "--project", "/repo", "--zen", "a.txt", "b.txt:7:2"));
         assertEquals(2, targets.size());
         assertEquals(Path.of("a.txt"), targets.get(0).file());
         assertEquals(new OpenTarget(Path.of("b.txt"), 7, 2), targets.get(1));

@@ -4,31 +4,30 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.editora.snippet.ParsedSnippet;
+import com.editora.snippet.TabStop;
+import com.editora.template.TemplateEngine.TemplateVar;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-
 import org.junit.jupiter.api.Test;
-
-import com.editora.snippet.ParsedSnippet;
-import com.editora.snippet.TabStop;
-import com.editora.template.TemplateEngine.TemplateVar;
 
 /** Unit tests for the pure template engine (discovery, substitution, path resolution). */
 class TemplateEngineTest {
 
     private TemplateVariableResolver vars(Map<String, String> answers) {
-        return new TemplateVariableResolver(answers, "Ada", "Proj", "", "Foo.java", "/d", "/d/Foo.java",
-                LocalDateTime.of(2026, 6, 10, 9, 30, 0));
+        return new TemplateVariableResolver(
+                answers, "Ada", "Proj", "", "Foo.java", "/d", "/d/Foo.java", LocalDateTime.of(2026, 6, 10, 9, 30, 0));
     }
 
     @Test
     void discoverVariablesExcludesBuiltinsAndKeepsDefaults() {
-        List<TemplateVar> v = TemplateEngine.discoverVariables(
-                "class ${className:Main} by ${author} on ${date} ${cursor} ${title}");
+        List<TemplateVar> v =
+                TemplateEngine.discoverVariables("class ${className:Main} by ${author} on ${date} ${cursor} ${title}");
         // author/date/cursor are built-in → excluded; className (with default) + title remain, in order.
-        assertEquals(List.of("className", "title"), v.stream().map(TemplateVar::name).toList());
+        assertEquals(
+                List.of("className", "title"), v.stream().map(TemplateVar::name).toList());
         assertEquals("Main", v.get(0).defaultValue());
         assertEquals("", v.get(1).defaultValue());
     }
@@ -59,8 +58,8 @@ class TemplateEngineTest {
 
     @Test
     void expandResolvesAFileNamePattern() {
-        assertEquals("Widget.java",
-                TemplateEngine.expand("${className:Main}.java", vars(Map.of("className", "Widget"))));
+        assertEquals(
+                "Widget.java", TemplateEngine.expand("${className:Main}.java", vars(Map.of("className", "Widget"))));
         // className is not built-in and not answered → its :default "Main" is used.
         assertEquals("Main.java", TemplateEngine.expand("${className:Main}.java", vars(Map.of())));
     }

@@ -3,13 +3,11 @@ package com.editora.diff;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.List;
-
-import org.junit.jupiter.api.Test;
-
 import com.editora.diff.DiffModels.DiffModel;
 import com.editora.diff.DiffModels.Row;
 import com.editora.diff.DiffModels.RowType;
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 class DiffEngineTest {
 

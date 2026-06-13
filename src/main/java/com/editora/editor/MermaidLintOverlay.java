@@ -1,18 +1,15 @@
 package com.editora.editor;
 
+import com.editora.mermaid.MaidOutput;
 import java.util.ArrayList;
 import java.util.List;
-
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
-
 import org.fxmisc.richtext.CodeArea;
-
-import com.editora.mermaid.MaidOutput;
 
 /**
  * Draws red wavy underlines beneath Mermaid (maid) diagnostics, on top of the editor without touching the
@@ -137,8 +134,8 @@ final class MermaidLintOverlay extends Region {
         int start = Math.max(0, Math.min(d.column() - 1, lineLen - 1));
         int end = Math.max(start + 1, Math.min(d.column() - 1 + Math.max(1, d.length()), lineLen));
         Bounds b = toLocal(area.getCharacterBoundsOnScreen(
-                area.getAbsolutePosition(paragraph, start),
-                area.getAbsolutePosition(paragraph, end)).orElse(null));
+                        area.getAbsolutePosition(paragraph, start), area.getAbsolutePosition(paragraph, end))
+                .orElse(null));
         if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
             return;
         }

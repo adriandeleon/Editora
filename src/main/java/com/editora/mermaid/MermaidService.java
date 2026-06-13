@@ -1,14 +1,12 @@
 package com.editora.mermaid;
 
+import com.editora.process.ProcessRunner;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
-
 import javafx.application.Platform;
-
-import com.editora.process.ProcessRunner;
 
 /**
  * UI-facing façade for the Mermaid CLIs, mirroring {@code GitService}: work runs on a single daemon
@@ -20,8 +18,7 @@ import com.editora.process.ProcessRunner;
 public final class MermaidService {
 
     /** Which CLIs are present (resolved from the configured paths or PATH). */
-    public record Availability(boolean mmdc, boolean maid) {
-    }
+    public record Availability(boolean mmdc, boolean maid) {}
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "mermaid-service");
@@ -31,6 +28,7 @@ public final class MermaidService {
 
     /** Default commands when the user leaves the path blank: mmdc as a bare binary, maid via npx. */
     public static final String DEFAULT_MMDC = "mmdc";
+
     public static final String DEFAULT_MAID = "npx -y @probelabs/maid";
 
     private final java.util.concurrent.atomic.AtomicLong validateGen = new java.util.concurrent.atomic.AtomicLong();

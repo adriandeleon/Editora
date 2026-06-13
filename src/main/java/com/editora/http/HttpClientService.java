@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
-
 import javafx.application.Platform;
 
 /**
@@ -46,8 +45,7 @@ public final class HttpClientService {
     }
 
     /** Runs {@code requests} sequentially off-thread, posting all results together on the FX thread. */
-    public void runAll(List<HttpFile.Parsed> requests, Map<String, String> vars,
-            Consumer<List<HttpResult>> onResult) {
+    public void runAll(List<HttpFile.Parsed> requests, Map<String, String> vars, Consumer<List<HttpResult>> onResult) {
         exec.submit(() -> {
             List<HttpResult> results = new ArrayList<>();
             for (HttpFile.Parsed req : requests) {
@@ -82,7 +80,7 @@ public final class HttpClientService {
             List<String[]> headers = new ArrayList<>();
             resp.headers().map().forEach((k, values) -> {
                 for (String v : values) {
-                    headers.add(new String[]{k, v});
+                    headers.add(new String[] {k, v});
                 }
             });
             String contentType = resp.headers().firstValue("content-type").orElse("");

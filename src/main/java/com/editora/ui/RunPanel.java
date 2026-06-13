@@ -2,8 +2,8 @@ package com.editora.ui;
 
 import static com.editora.i18n.Messages.tr;
 
+import com.editora.run.StackTraceLinks;
 import java.util.function.Consumer;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -14,8 +14,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-
-import com.editora.run.StackTraceLinks;
 
 /**
  * The "Run" tool window: a console that streams a launched program's stdout/stderr (see
@@ -97,8 +95,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     /** Double-clicking a console line that holds a stack-trace location jumps to it. Shared with the
      *  Debug console (see {@link DebugPanel}). */
-    static void installLinkClicks(TextArea console,
-            java.util.function.Supplier<Consumer<StackTraceLinks.Link>> handler) {
+    static void installLinkClicks(
+            TextArea console, java.util.function.Supplier<Consumer<StackTraceLinks.Link>> handler) {
         console.setOnMouseClicked(e -> {
             Consumer<StackTraceLinks.Link> h = handler.get();
             if (h == null || e.getClickCount() != 2) {
@@ -108,8 +106,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
             int caret = Math.min(console.getCaretPosition(), text.length());
             int start = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
             int end = text.indexOf('\n', caret);
-            StackTraceLinks.Link link = StackTraceLinks.parse(
-                    text.substring(start, end < 0 ? text.length() : end));
+            StackTraceLinks.Link link = StackTraceLinks.parse(text.substring(start, end < 0 ? text.length() : end));
             if (link != null) {
                 h.accept(link);
             }

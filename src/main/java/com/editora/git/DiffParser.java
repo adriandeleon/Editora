@@ -25,14 +25,12 @@ import java.util.regex.Pattern;
 public final class DiffParser {
 
     /** One contiguous change in the new file: {@code count} lines starting at 0-based {@code startLine}. */
-    public record LineChange(int startLine, int count, ChangeType type) { }
+    public record LineChange(int startLine, int count, ChangeType type) {}
 
     // @@ -a[,b] +c[,d] @@  — the b/d counts default to 1 when omitted (git's convention).
-    private static final Pattern HUNK =
-            Pattern.compile("^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@");
+    private static final Pattern HUNK = Pattern.compile("^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@");
 
-    private DiffParser() {
-    }
+    private DiffParser() {}
 
     /** Parses every hunk header in {@code diff} into new-file change ranges, in document order. */
     public static List<LineChange> parse(String diff) {

@@ -24,8 +24,7 @@ public final class ConfigExporter {
 
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss");
 
-    private ConfigExporter() {
-    }
+    private ConfigExporter() {}
 
     /**
      * Builds the export file name for {@code configDir} at {@code now}, embedding the app
@@ -44,8 +43,7 @@ public final class ConfigExporter {
         if (base.isBlank()) {
             base = "editora";
         }
-        return base + "-config-" + sanitize(version) + "-" + sanitize(userName)
-                + "-" + now.format(STAMP) + ".zip";
+        return base + "-config-" + sanitize(version) + "-" + sanitize(userName) + "-" + now.format(STAMP) + ".zip";
     }
 
     /**
@@ -68,14 +66,15 @@ public final class ConfigExporter {
      *
      * @throws IOException if the destination can't be written or a file can't be read
      */
-    public static Path export(Path configDir, Path destinationDir, String version, String userName,
-            LocalDateTime now) throws IOException {
+    public static Path export(Path configDir, Path destinationDir, String version, String userName, LocalDateTime now)
+            throws IOException {
         Path zip = destinationDir.resolve(zipName(configDir, version, userName, now));
         try (OutputStream out = Files.newOutputStream(zip);
-             ZipOutputStream zos = new ZipOutputStream(out)) {
+                ZipOutputStream zos = new ZipOutputStream(out)) {
             if (Files.isDirectory(configDir)) {
                 try (Stream<Path> walk = Files.walk(configDir)) {
-                    List<Path> files = walk.filter(Files::isRegularFile).sorted().toList();
+                    List<Path> files =
+                            walk.filter(Files::isRegularFile).sorted().toList();
                     for (Path file : files) {
                         String entry = configDir.relativize(file).toString().replace('\\', '/');
                         zos.putNextEntry(new ZipEntry(entry));

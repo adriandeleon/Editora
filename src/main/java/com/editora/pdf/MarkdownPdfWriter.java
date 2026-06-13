@@ -1,5 +1,7 @@
 package com.editora.pdf;
 
+import com.editora.editor.MarkdownRenderer;
+import com.editora.mermaid.Mermaid;
 import java.awt.Color;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,7 +13,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -19,10 +20,12 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.commonmark.ext.gfm.tables.TableBlock;
+import org.commonmark.ext.gfm.tables.TableCell;
+import org.commonmark.ext.gfm.tables.TableRow;
 import org.commonmark.node.BlockQuote;
 import org.commonmark.node.BulletList;
 import org.commonmark.node.Code;
-import org.commonmark.node.Document;
 import org.commonmark.node.Emphasis;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.HardLineBreak;
@@ -38,12 +41,6 @@ import org.commonmark.node.SoftLineBreak;
 import org.commonmark.node.StrongEmphasis;
 import org.commonmark.node.Text;
 import org.commonmark.node.ThematicBreak;
-import org.commonmark.ext.gfm.tables.TableBlock;
-import org.commonmark.ext.gfm.tables.TableCell;
-import org.commonmark.ext.gfm.tables.TableRow;
-
-import com.editora.editor.MarkdownRenderer;
-import com.editora.mermaid.Mermaid;
 
 /**
  * Renders Markdown to a <b>native vector</b> (searchable) PDF, mirroring the editor's preview coverage:
@@ -60,14 +57,13 @@ public final class MarkdownPdfWriter {
     private static final float LEADING = 15f;
     private static final float PARA_GAP = 8f;
 
-    private MarkdownPdfWriter() {
-    }
+    private MarkdownPdfWriter() {}
 
     /**
      * @param mmdcCommand the resolved mmdc command (for ```mermaid blocks), or null to render them as code.
      */
-    public static void write(String markdown, Path baseDir, String pageSizeKey, List<String> mmdcCommand,
-            Path out) throws IOException {
+    public static void write(String markdown, Path baseDir, String pageSizeKey, List<String> mmdcCommand, Path out)
+            throws IOException {
         Node ast = MarkdownRenderer.parseToDocument(markdown);
         try (PDDocument doc = new PDDocument()) {
             Cur c = new Cur(doc, CodePdfWriter.pageRectangle(pageSizeKey), baseDir, mmdcCommand);
@@ -80,8 +76,7 @@ public final class MarkdownPdfWriter {
     }
 
     /** A styled, space-separated word (or a forced line break) in an inline flow. */
-    private record Word(String text, PDFont font, float size, Color color, boolean underline, boolean brk) {
-    }
+    private record Word(String text, PDFont font, float size, Color color, boolean underline, boolean brk) {}
 
     /** Cursor: the document + current page/stream + the y baseline, with block/inline layout helpers. */
     private static final class Cur {
@@ -132,8 +127,8 @@ public final class MarkdownPdfWriter {
 
         /** Loads a bundled TTF as an embedded, subset {@link PDType0Font} (full Unicode, small output). */
         private static PDType0Font embed(PDDocument doc, String relPath) throws IOException {
-            try (InputStream in = MarkdownPdfWriter.class.getResourceAsStream(
-                    "/com/editora/fonts/" + relPath + ".ttf")) {
+            try (InputStream in =
+                    MarkdownPdfWriter.class.getResourceAsStream("/com/editora/fonts/" + relPath + ".ttf")) {
                 if (in == null) {
                     throw new IOException("Missing bundled font: " + relPath);
                 }
@@ -185,20 +180,24 @@ public final class MarkdownPdfWriter {
                 // HtmlBlock / unknown: render its textual content as a paragraph if any.
                 String text = plain(n);
                 if (!text.isBlank()) {
-                    flow(List.of(new Word(text.strip(), body, BODY, PdfTheme.DEFAULT_FG, false, false)),
-                            left, contentRight(), LEADING);
+                    flow(
+                            List.of(new Word(text.strip(), body, BODY, PdfTheme.DEFAULT_FG, false, false)),
+                            left,
+                            contentRight(),
+                            LEADING);
                     y -= PARA_GAP;
                 }
             }
         }
 
         void heading(Heading h, float left) throws IOException {
-            float size = switch (h.getLevel()) {
-                case 1 -> 20f;
-                case 2 -> 16f;
-                case 3 -> 14f;
-                default -> 12f;
-            };
+            float size =
+                    switch (h.getLevel()) {
+                        case 1 -> 20f;
+                        case 2 -> 16f;
+                        case 3 -> 14f;
+                        default -> 12f;
+                    };
             y -= 6f;
             float leading = size * 1.3f;
             List<Word> words = new ArrayList<>();
@@ -312,8 +311,17 @@ public final class MarkdownPdfWriter {
                 }
             }
             String alt = plain(node);
-            flow(List.of(new Word("[" + (alt.isBlank() ? "image" : alt) + "]", bodyItalic, BODY,
-                    PdfTheme.LINE_NUMBER, false, false)), left, contentRight(), LEADING);
+            flow(
+                    List.of(new Word(
+                            "[" + (alt.isBlank() ? "image" : alt) + "]",
+                            bodyItalic,
+                            BODY,
+                            PdfTheme.LINE_NUMBER,
+                            false,
+                            false)),
+                    left,
+                    contentRight(),
+                    LEADING);
             y -= PARA_GAP;
         }
 
@@ -414,8 +422,16 @@ public final class MarkdownPdfWriter {
 
         // --- inline flow --------------------------------------------------------------------------
 
-        void inline(Node parent, List<Word> out, PDFont reg, PDFont bold, PDFont italic, float size,
-                Color color, boolean underline) throws IOException {
+        void inline(
+                Node parent,
+                List<Word> out,
+                PDFont reg,
+                PDFont bold,
+                PDFont italic,
+                float size,
+                Color color,
+                boolean underline)
+                throws IOException {
             for (Node n = parent.getFirstChild(); n != null; n = n.getNext()) {
                 if (n instanceof Text t) {
                     for (String w : t.getLiteral().split(" ", -1)) {
@@ -518,8 +534,7 @@ public final class MarkdownPdfWriter {
                 }
                 if (url.startsWith("data:")) {
                     int comma = url.indexOf(',');
-                    return comma < 0 ? null
-                            : Base64.getMimeDecoder().decode(url.substring(comma + 1));
+                    return comma < 0 ? null : Base64.getMimeDecoder().decode(url.substring(comma + 1));
                 }
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     URLConnection con = URI.create(url).toURL().openConnection();
@@ -530,7 +545,8 @@ public final class MarkdownPdfWriter {
                         return in.readAllBytes();
                     }
                 }
-                Path p = url.startsWith("file:") ? Path.of(URI.create(url))
+                Path p = url.startsWith("file:")
+                        ? Path.of(URI.create(url))
                         : (baseDir == null ? Path.of(url) : baseDir.resolve(url));
                 return Files.isRegularFile(p) ? Files.readAllBytes(p) : null;
             } catch (Exception e) {
@@ -556,14 +572,31 @@ public final class MarkdownPdfWriter {
      * encodable falls back to {@code ?}.
      */
     private static final Map<Integer, String> FALLBACK = Map.ofEntries(
-            Map.entry(0x2192, "->"), Map.entry(0x2190, "<-"), Map.entry(0x2194, "<->"),
-            Map.entry(0x2191, "^"), Map.entry(0x2193, "v"),
-            Map.entry(0x21D2, "=>"), Map.entry(0x21D0, "<="), Map.entry(0x21D4, "<=>"),
-            Map.entry(0x2713, "v"), Map.entry(0x2714, "v"), Map.entry(0x2717, "x"), Map.entry(0x2718, "x"),
-            Map.entry(0x2026, "..."), Map.entry(0x2011, "-"), Map.entry(0x2012, "-"),
-            Map.entry(0x00A0, " "), Map.entry(0x202F, " "), Map.entry(0x2009, " "), Map.entry(0x200B, ""),
-            Map.entry(0x2261, "="), Map.entry(0x2260, "!="), Map.entry(0x2264, "<="), Map.entry(0x2265, ">="),
-            Map.entry(0x00D7, "x"), Map.entry(0x2022, "-"));
+            Map.entry(0x2192, "->"),
+            Map.entry(0x2190, "<-"),
+            Map.entry(0x2194, "<->"),
+            Map.entry(0x2191, "^"),
+            Map.entry(0x2193, "v"),
+            Map.entry(0x21D2, "=>"),
+            Map.entry(0x21D0, "<="),
+            Map.entry(0x21D4, "<=>"),
+            Map.entry(0x2713, "v"),
+            Map.entry(0x2714, "v"),
+            Map.entry(0x2717, "x"),
+            Map.entry(0x2718, "x"),
+            Map.entry(0x2026, "..."),
+            Map.entry(0x2011, "-"),
+            Map.entry(0x2012, "-"),
+            Map.entry(0x00A0, " "),
+            Map.entry(0x202F, " "),
+            Map.entry(0x2009, " "),
+            Map.entry(0x200B, ""),
+            Map.entry(0x2261, "="),
+            Map.entry(0x2260, "!="),
+            Map.entry(0x2264, "<="),
+            Map.entry(0x2265, ">="),
+            Map.entry(0x00D7, "x"),
+            Map.entry(0x2022, "-"));
 
     /**
      * Returns {@code text} with every character {@code font} cannot encode replaced by a readable ASCII

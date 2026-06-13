@@ -1,12 +1,11 @@
 package com.editora.mermaid;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Pure parser for <b>maid</b> ({@code probelabs/maid}) diagnostics. maid is invoked with
@@ -32,8 +31,7 @@ public final class MaidOutput {
             "error\\[(?<code>[^\\]]*)\\]:\\s*(?<msg>.*?)\\s+at\\s+\\S+?:(?<line>\\d+):(?<col>\\d+)",
             Pattern.CASE_INSENSITIVE);
 
-    private MaidOutput() {
-    }
+    private MaidOutput() {}
 
     /** Parses maid output (JSON preferred, text fallback) into diagnostics; never throws, never null. */
     public static List<Diagnostic> parse(String output) {

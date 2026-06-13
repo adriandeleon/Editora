@@ -1,5 +1,7 @@
 package com.editora.plugin;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,10 +23,6 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import javafx.application.Platform;
 
 /**
@@ -42,7 +40,7 @@ public final class PluginInstaller {
     private static final long MAX_DOWNLOAD_BYTES = 128L * 1024 * 1024;
 
     /** Outcome of an install: {@code ok} + the installed plugin {@code id} + {@code name}, else an error. */
-    public record Result(boolean ok, String id, String name, String error) { }
+    public record Result(boolean ok, String id, String name, String error) {}
 
     private final PluginManager manager;
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
@@ -54,8 +52,7 @@ public final class PluginInstaller {
             .connectTimeout(CONNECT_TIMEOUT)
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
-    private final ObjectMapper mapper = new ObjectMapper()
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     public PluginInstaller(PluginManager manager) {
         this.manager = manager;
@@ -98,9 +95,10 @@ public final class PluginInstaller {
         }
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(e.download.strip()))
-                    .timeout(REQUEST_TIMEOUT).GET().build();
-            HttpResponse<java.io.InputStream> resp =
-                    client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+                    .timeout(REQUEST_TIMEOUT)
+                    .GET()
+                    .build();
+            HttpResponse<java.io.InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() / 100 != 2) {
                 resp.body().close();
                 return new Result(false, "", "", "HTTP " + resp.statusCode());
@@ -116,8 +114,11 @@ public final class PluginInstaller {
             return installBytes(body);
         } catch (Exception ex) {
             LOG.log(Level.WARNING, "Plugin download failed: " + e.download, ex);
-            return new Result(false, "", "", ex.getClass().getSimpleName()
-                    + (ex.getMessage() == null ? "" : ": " + ex.getMessage()));
+            return new Result(
+                    false,
+                    "",
+                    "",
+                    ex.getClass().getSimpleName() + (ex.getMessage() == null ? "" : ": " + ex.getMessage()));
         }
     }
 
