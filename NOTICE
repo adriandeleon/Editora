@@ -189,10 +189,6 @@ Apache Commons Logging — commons-logging:commons-logging
     License: Apache License 2.0
     https://commons.apache.org/proper/commons-logging/
 
-================================================================================
-Spell checking
-================================================================================
-
 Apache Lucene (lucene-core, lucene-analysis-common)
     Pure-Java spell-check engine (the org.apache.lucene.analysis.hunspell
     package) and its in-memory store.
