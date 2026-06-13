@@ -10,7 +10,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
 import javafx.application.Platform;
+
 import org.apache.lucene.analysis.hunspell.Dictionary;
 import org.apache.lucene.analysis.hunspell.Hunspell;
 import org.apache.lucene.store.ByteBuffersDirectory;

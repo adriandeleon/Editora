@@ -1,13 +1,9 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.command.CommandRegistry;
-import com.editora.config.Settings;
-import com.editora.editor.EditorBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.function.Supplier;
+
 import javafx.beans.InvalidationListener;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -17,6 +13,12 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.stage.Window;
+
+import com.editora.command.CommandRegistry;
+import com.editora.config.Settings;
+import com.editora.editor.EditorBuffer;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The bottom status bar: a transient "echo area" message on the left (driven by

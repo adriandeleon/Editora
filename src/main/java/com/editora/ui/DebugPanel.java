@@ -1,11 +1,8 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.dap.DapManager;
-import com.editora.dap.DapModels;
 import java.util.List;
 import java.util.function.Consumer;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
@@ -30,6 +27,11 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.util.StringConverter;
+
+import com.editora.dap.DapManager;
+import com.editora.dap.DapModels;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The "Debug" tool window, styled after IntelliJ's debugger: an icon-only grouped control toolbar

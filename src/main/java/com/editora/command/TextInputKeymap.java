@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
+
 import javafx.scene.control.TextInputControl;
 import javafx.scene.input.KeyEvent;
 

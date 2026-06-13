@@ -1,13 +1,14 @@
 package com.editora.vfs;
 
+import java.nio.file.Path;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.nio.file.Path;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
 
 /** Unit tests for the pure VFS helpers (local branches; remote reconstruction tested via an injected resolver). */
 class VfsTest {

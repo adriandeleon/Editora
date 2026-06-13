@@ -1,11 +1,12 @@
 package com.editora.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
  * Identity of a file beyond its path, so a {@link PersonalNote} can re-attach to the same file even after

@@ -1,12 +1,14 @@
 package com.editora.editor;
 
 import java.util.List;
+
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
+
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
 

@@ -1,9 +1,9 @@
 package com.editora.vfs;
 
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-
-import org.junit.jupiter.api.Test;
 
 /** Unit tests for the pure sftp:// URI parser/formatter. */
 class SftpUriTest {

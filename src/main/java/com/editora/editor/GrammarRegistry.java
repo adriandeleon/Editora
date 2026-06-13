@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.registry.IGrammarSource;
 import org.eclipse.tm4e.core.registry.IRegistryOptions;

@@ -1,17 +1,18 @@
 package com.editora.template;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.editora.snippet.ParsedSnippet;
-import com.editora.snippet.TabStop;
-import com.editora.template.TemplateEngine.TemplateVar;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+
+import com.editora.snippet.ParsedSnippet;
+import com.editora.snippet.TabStop;
+import com.editora.template.TemplateEngine.TemplateVar;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure template engine (discovery, substitution, path resolution). */
 class TemplateEngineTest {

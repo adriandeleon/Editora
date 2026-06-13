@@ -1,15 +1,16 @@
 package com.editora.config;
 
-import com.editora.config.migration.ConfigMigrations;
-import com.editora.config.migration.ConfigSchema;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+
+import com.editora.config.migration.ConfigMigrations;
+import com.editora.config.migration.ConfigSchema;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
  * The <em>per-window</em> view of the configuration. Each window owns its own session state

@@ -1,6 +1,5 @@
 package com.editora.lsp;
 
-import com.editora.process.ProcessRunner;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,6 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import com.editora.process.ProcessRunner;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.CompletionCapabilities;
 import org.eclipse.lsp4j.CompletionItem;

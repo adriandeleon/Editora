@@ -2,10 +2,12 @@ package com.editora.snippet;
 
 import java.util.ArrayList;
 import java.util.List;
+
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
+
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.reactfx.Subscription;

@@ -1,9 +1,5 @@
 package com.editora.editor;
 
-import com.editora.config.NoteScope;
-import com.editora.config.NoteStatus;
-import com.editora.config.PersonalNote;
-import com.editora.config.TextAnchor;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -13,6 +9,11 @@ import java.util.NavigableSet;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Consumer;
+
+import com.editora.config.NoteScope;
+import com.editora.config.NoteStatus;
+import com.editora.config.PersonalNote;
+import com.editora.config.TextAnchor;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;

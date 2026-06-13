@@ -1,11 +1,12 @@
 package com.editora.editor;
 
-import com.editora.config.Bookmark;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.NavigableSet;
 import java.util.TreeMap;
+
+import com.editora.config.Bookmark;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;

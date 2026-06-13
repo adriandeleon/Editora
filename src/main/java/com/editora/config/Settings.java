@@ -1,8 +1,9 @@
 package com.editora.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.LinkedHashMap;
 import java.util.Map;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /** User preferences, (de)serialized to {@code settings.toml}. Session/state lives in {@link WorkspaceState}. */
 @JsonIgnoreProperties(ignoreUnknown = true)

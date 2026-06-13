@@ -1,6 +1,5 @@
 package com.editora.editor;
 
-import com.editora.editor.FoldRegions.Region;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,6 +12,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
+
 import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -27,6 +27,8 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.SVGPath;
+
+import com.editora.editor.FoldRegions.Region;
 import org.fxmisc.richtext.CharacterHit;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;

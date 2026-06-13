@@ -1,15 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.diff.DiffModels.DiffModel;
-import com.editora.diff.DiffModels.Row;
-import com.editora.diff.DiffModels.RowType;
-import com.editora.diff.DiffModels.UnifiedRow;
-import com.editora.diff.PatchWriter;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.TabContent;
-import com.editora.editor.TextMateHighlighter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -17,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.IntFunction;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -28,10 +19,21 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+
+import com.editora.diff.DiffModels.DiffModel;
+import com.editora.diff.DiffModels.Row;
+import com.editora.diff.DiffModels.RowType;
+import com.editora.diff.DiffModels.UnifiedRow;
+import com.editora.diff.PatchWriter;
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.TabContent;
+import com.editora.editor.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A diff viewer tab ({@link TabContent}) comparing two texts. The default is **side-by-side** — two

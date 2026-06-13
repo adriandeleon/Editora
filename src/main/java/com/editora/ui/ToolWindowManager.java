@@ -1,8 +1,5 @@
 package com.editora.ui;
 
-import com.editora.command.KeymapManager;
-import com.editora.config.ConfigManager;
-import com.editora.config.WorkspaceState;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -11,6 +8,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
 import javafx.application.Platform;
 import javafx.css.PseudoClass;
 import javafx.geometry.Orientation;
@@ -29,6 +27,10 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+
+import com.editora.command.KeymapManager;
+import com.editora.config.ConfigManager;
+import com.editora.config.WorkspaceState;
 
 /**
  * Lays out IntelliJ-style left/right/bottom stripes around the editor area, manages registered

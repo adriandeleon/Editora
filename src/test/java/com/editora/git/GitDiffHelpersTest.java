@@ -1,12 +1,13 @@
 package com.editora.git;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-
-import com.editora.git.GitService.Commit;
 import java.nio.file.Path;
 import java.util.List;
+
+import com.editora.git.GitService.Commit;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** Pure helpers behind the diff viewer's git plumbing. */
 class GitDiffHelpersTest {

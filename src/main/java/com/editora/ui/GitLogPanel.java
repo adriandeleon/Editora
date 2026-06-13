@@ -1,10 +1,7 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.git.GitService.Commit;
-import com.editora.git.GitService.CommitFile;
 import java.util.List;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -20,6 +17,11 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+
+import com.editora.git.GitService.Commit;
+import com.editora.git.GitService.CommitFile;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Git Log / History tool window: a commit list (whole-repo or filtered to one file) over the

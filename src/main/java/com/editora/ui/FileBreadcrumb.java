@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import atlantafx.base.controls.Breadcrumbs;
-import atlantafx.base.controls.Breadcrumbs.BreadCrumbItem;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+
 import javafx.application.Platform;
 import javafx.geometry.Side;
 import javafx.scene.Node;
@@ -20,6 +19,9 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.StackPane;
 import javafx.util.Callback;
+
+import atlantafx.base.controls.Breadcrumbs;
+import atlantafx.base.controls.Breadcrumbs.BreadCrumbItem;
 
 /**
  * IntelliJ-style file navigation bar: shows the active file's absolute path as clickable segments.

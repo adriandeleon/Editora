@@ -1,10 +1,5 @@
 package com.editora.dap;
 
-import com.editora.lsp.LspManager;
-import com.editora.process.ProcessRunner;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import java.io.File;
 import java.net.ServerSocket;
 import java.nio.file.Path;
@@ -18,7 +13,14 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
 import javafx.application.Platform;
+
+import com.editora.lsp.LspManager;
+import com.editora.process.ProcessRunner;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 /**
  * UI-facing facade for Java debugging over DAP (mirrors {@code LspManager} + {@code RunService}). Owns the

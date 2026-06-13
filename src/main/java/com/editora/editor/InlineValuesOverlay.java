@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import java.util.List;
 import java.util.Map;
+
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.geometry.VPos;
@@ -12,6 +13,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontPosture;
 import javafx.scene.text.TextAlignment;
+
 import org.fxmisc.richtext.CodeArea;
 
 /**

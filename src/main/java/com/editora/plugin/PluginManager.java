@@ -1,7 +1,5 @@
 package com.editora.plugin;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -14,6 +12,9 @@ import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
+
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Discovers and loads plugins from {@code <configDir>/plugins/<id>/plugin.json}. <b>Shared</b> across all

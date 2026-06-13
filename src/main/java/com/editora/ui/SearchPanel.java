@@ -1,14 +1,9 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.search.FileResult;
-import com.editora.search.LineMatch;
-import com.editora.search.SearchQuery;
-import com.editora.search.SearchService;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -25,6 +20,13 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+
+import com.editora.search.FileResult;
+import com.editora.search.LineMatch;
+import com.editora.search.SearchQuery;
+import com.editora.search.SearchService;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The "Find in Files" results tool window: a query + replace box with case/regex/word toggles, and a

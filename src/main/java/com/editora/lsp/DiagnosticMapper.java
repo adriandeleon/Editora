@@ -1,8 +1,9 @@
 package com.editora.lsp;
 
-import com.editora.editor.LspDiagnostic;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.editora.editor.LspDiagnostic;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Range;

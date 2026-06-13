@@ -1,10 +1,9 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -16,6 +15,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The "HTTP Client" tool window: shows the {@code ijhttp} response report for a run request, with an

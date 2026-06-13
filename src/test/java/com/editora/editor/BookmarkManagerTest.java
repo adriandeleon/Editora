@@ -1,13 +1,14 @@
 package com.editora.editor;
 
+import java.util.NavigableMap;
+import java.util.TreeMap;
+
+import com.editora.config.Bookmark;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.editora.config.Bookmark;
-import java.util.NavigableMap;
-import java.util.TreeMap;
-import org.junit.jupiter.api.Test;
 
 /** Unit tests for the pure line-shift arithmetic (no JavaFX toolkit needed). */
 class BookmarkManagerTest {

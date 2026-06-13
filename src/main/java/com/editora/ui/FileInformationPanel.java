@@ -1,9 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.editor.EditorBuffer;
-import com.editora.editor.LanguageRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,6 +12,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
+
 import javafx.beans.value.ChangeListener;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
@@ -28,6 +25,11 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.LanguageRegistry;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Tool window content showing live information about the active editor: file metadata,

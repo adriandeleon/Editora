@@ -1,10 +1,11 @@
 package com.editora.editor;
 
+import java.nio.charset.StandardCharsets;
+
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.nio.charset.StandardCharsets;
-import org.junit.jupiter.api.Test;
 
 /** Unit tests for the pure SVG content sniff used by the preview image loader. */
 class PreviewImageLoaderTest {

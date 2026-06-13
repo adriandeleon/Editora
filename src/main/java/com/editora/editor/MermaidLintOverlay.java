@@ -1,14 +1,16 @@
 package com.editora.editor;
 
-import com.editora.mermaid.MaidOutput;
 import java.util.ArrayList;
 import java.util.List;
+
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
+
+import com.editora.mermaid.MaidOutput;
 import org.fxmisc.richtext.CodeArea;
 
 /**

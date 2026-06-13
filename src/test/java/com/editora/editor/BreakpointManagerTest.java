@@ -1,14 +1,15 @@
 package com.editora.editor;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.editora.config.Breakpoint;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.TreeMap;
+
+import com.editora.config.Breakpoint;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BreakpointManagerTest {
 

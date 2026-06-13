@@ -1,16 +1,17 @@
 package com.editora.template;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import com.editora.config.ConfigManager;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.editora.config.ConfigManager;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 /** Tests loading bundled templates and user overrides/additions against a temp config dir. */
 class TemplateRegistryTest {

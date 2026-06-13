@@ -1,12 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.config.ConfigManager;
-import com.editora.config.Settings;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.SpellDictionaries;
-import com.editora.editor.TextMateHighlighter;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -18,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -47,9 +41,17 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.StringConverter;
+
+import com.editora.config.ConfigManager;
+import com.editora.config.Settings;
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.SpellDictionaries;
+import com.editora.editor.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Settings window: a left category sidebar + per-category pages, a search box, and a live

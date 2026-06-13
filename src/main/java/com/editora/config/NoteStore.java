@@ -1,10 +1,11 @@
 package com.editora.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
  * The Personal Notes store, serialized as JSON to {@code notes.json}. Mirrors {@link BookmarkStore}:

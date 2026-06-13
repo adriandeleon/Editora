@@ -1,9 +1,9 @@
 package com.editora.process;
 
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-
-import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link ProcessRunner}'s pure helpers (the login-shell PATH marker parse). */
 class ProcessRunnerTest {

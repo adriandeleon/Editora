@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.util.List;
+
 import atlantafx.base.theme.CupertinoDark;
 import atlantafx.base.theme.CupertinoLight;
 import atlantafx.base.theme.Dracula;
@@ -8,7 +10,6 @@ import atlantafx.base.theme.NordLight;
 import atlantafx.base.theme.PrimerDark;
 import atlantafx.base.theme.PrimerLight;
 import atlantafx.base.theme.Theme;
-import java.util.List;
 
 /** Catalog of AtlantaFX themes available in the Settings window. */
 public final class Themes {

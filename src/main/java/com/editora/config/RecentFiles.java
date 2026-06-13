@@ -1,17 +1,19 @@
 package com.editora.config;
 
-import com.editora.config.migration.ConfigMigrations;
-import com.editora.config.migration.ConfigSchema;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+
+import com.editora.config.migration.ConfigMigrations;
+import com.editora.config.migration.ConfigSchema;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
  * Persistent list of recently-opened files in {@code <configDir>/recent-files.json}. Most-recent

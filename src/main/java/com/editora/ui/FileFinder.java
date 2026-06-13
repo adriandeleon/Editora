@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -13,6 +11,7 @@ import java.util.Locale;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
@@ -26,6 +25,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Emacs {@code find-file}-style keyboard file opener: a path field with a live, prefix-autocompleted

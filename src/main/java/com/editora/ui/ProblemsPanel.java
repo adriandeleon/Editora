@@ -1,9 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.editor.LanguageRegistry;
-import com.editora.editor.LspDiagnostic;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
+
 import javafx.geometry.Insets;
 import javafx.scene.control.Label;
 import javafx.scene.control.TreeCell;
@@ -21,6 +18,11 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+
+import com.editora.editor.LanguageRegistry;
+import com.editora.editor.LspDiagnostic;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The "Problems" tool window: LSP diagnostics across open buffers, grouped <b>by programming language →

@@ -1,15 +1,16 @@
 package com.editora.ui;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 /** Unit tests for pure helpers in {@link MainController} (no toolkit needed). */
 class MainControllerTest {

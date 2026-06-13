@@ -1,8 +1,8 @@
 package com.editora.ui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** The status-bar echo shows a single line only — multi-line messages must not grow the status bar. */
 class StatusBarEchoLineTest {

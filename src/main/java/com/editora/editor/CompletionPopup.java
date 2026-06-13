@@ -1,8 +1,8 @@
 package com.editora.editor;
 
-import com.editora.completion.Completion;
 import java.util.List;
 import java.util.function.Consumer;
+
 import javafx.geometry.Bounds;
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
@@ -15,6 +15,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 import javafx.stage.Window;
+
+import com.editora.completion.Completion;
 
 /**
  * The autocomplete dropdown: a <b>focus-less</b> {@link Popup} holding a {@link ListView} of

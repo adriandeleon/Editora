@@ -1,15 +1,17 @@
 package com.editora.print;
 
-import com.editora.editor.MarkdownRenderer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+
 import javafx.print.PageLayout;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+
+import com.editora.editor.MarkdownRenderer;
 
 /**
  * Builds printable JavaFX page nodes for the rendered Markdown preview — the {@code javafx.print}

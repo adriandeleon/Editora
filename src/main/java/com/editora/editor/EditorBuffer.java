@@ -1,15 +1,5 @@
 package com.editora.editor;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.completion.Completion;
-import com.editora.completion.CompletionEngine;
-import com.editora.completion.CompletionProvider;
-import com.editora.snippet.ParsedSnippet;
-import com.editora.snippet.Snippet;
-import com.editora.snippet.SnippetParser;
-import com.editora.snippet.SnippetSession;
-import com.editora.snippet.VariableResolver;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -18,6 +8,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -45,6 +36,15 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
 import javafx.scene.text.Font;
+
+import com.editora.completion.Completion;
+import com.editora.completion.CompletionEngine;
+import com.editora.completion.CompletionProvider;
+import com.editora.snippet.ParsedSnippet;
+import com.editora.snippet.Snippet;
+import com.editora.snippet.SnippetParser;
+import com.editora.snippet.SnippetSession;
+import com.editora.snippet.VariableResolver;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
@@ -56,6 +56,8 @@ import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.fxmisc.undo.UndoManagerFactory;
 import org.reactfx.Subscription;
+
+import static com.editora.i18n.Messages.tr;
 
 /** A single open document: a RichTextFX {@link CodeArea} plus its backing file, language, and dirty state. */
 public class EditorBuffer implements TabContent {

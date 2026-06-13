@@ -1,6 +1,5 @@
 package com.editora.run;
 
-import com.editora.process.ProcessRunner;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -8,7 +7,10 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+
 import javafx.application.Platform;
+
+import com.editora.process.ProcessRunner;
 
 /**
  * Runs a single Java source file via the JDK's source-file launcher ({@code java <file.java>}) and streams

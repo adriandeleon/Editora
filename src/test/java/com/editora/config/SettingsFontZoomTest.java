@@ -1,9 +1,9 @@
 package com.editora.config;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** Verifies the persisted text-zoom factor round-trips through the TOML settings serialization. */
 class SettingsFontZoomTest {

@@ -1,11 +1,10 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
+
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
@@ -22,6 +21,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * IntelliJ-style branch dropdown: a search field over a sectioned list of <em>actions</em> (New Branch,

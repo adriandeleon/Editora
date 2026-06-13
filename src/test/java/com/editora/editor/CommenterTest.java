@@ -1,11 +1,11 @@
 package com.editora.editor;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-
 import com.editora.editor.Commenter.CommentStyle;
 import com.editora.editor.Commenter.Edit;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** Unit tests for the pure comment toggle engine. */
 class CommenterTest {

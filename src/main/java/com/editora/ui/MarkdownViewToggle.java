@@ -1,13 +1,14 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.editor.EditorBuffer;
-import com.editora.editor.EditorBuffer.MarkdownViewMode;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
+
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.EditorBuffer.MarkdownViewMode;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The IntelliJ-style floating control overlaid at the top-right of a Markdown editor: three segments —

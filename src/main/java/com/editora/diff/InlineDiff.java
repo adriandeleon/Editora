@@ -1,11 +1,12 @@
 package com.editora.diff;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import com.github.difflib.patch.DeltaType;
 import com.github.difflib.patch.Patch;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Intra-line word-level diff: given two lines that changed, returns the {@code [start,end)} character

@@ -1,12 +1,14 @@
 package com.editora.mermaid;
 
-import com.editora.process.ProcessRunner;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+
 import javafx.application.Platform;
+
+import com.editora.process.ProcessRunner;
 
 /**
  * UI-facing façade for the Mermaid CLIs, mirroring {@code GitService}: work runs on a single daemon

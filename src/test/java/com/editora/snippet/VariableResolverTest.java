@@ -1,10 +1,11 @@
 package com.editora.snippet;
 
+import java.time.LocalDateTime;
+
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-
-import java.time.LocalDateTime;
-import org.junit.jupiter.api.Test;
 
 /** Tests snippet variable resolution (fixed clock so date/time are deterministic). */
 class VariableResolverTest {

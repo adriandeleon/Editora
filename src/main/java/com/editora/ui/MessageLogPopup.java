@@ -1,11 +1,10 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.stream.Collectors;
+
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -22,6 +21,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A small popup listing the {@link MessageLog} (the status-bar echo messages from this session),

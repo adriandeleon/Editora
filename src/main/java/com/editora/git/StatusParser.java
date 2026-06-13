@@ -1,8 +1,9 @@
 package com.editora.git;
 
-import com.editora.git.GitStatus.FileEntry;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.editora.git.GitStatus.FileEntry;
 
 /**
  * Pure parser for {@code git status --porcelain=v2 --branch} output → a {@link GitStatus}.

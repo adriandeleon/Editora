@@ -2,6 +2,7 @@ package com.editora.command;
 
 import java.util.Locale;
 import java.util.function.Consumer;
+
 import javafx.event.EventTarget;
 import javafx.scene.Node;
 import javafx.scene.Scene;

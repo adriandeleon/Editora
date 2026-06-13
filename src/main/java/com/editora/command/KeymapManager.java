@@ -1,12 +1,13 @@
 package com.editora.command;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Maps key-chord sequences (e.g. {@code "C-x C-s"}) to command ids. A named keymap is loaded from a

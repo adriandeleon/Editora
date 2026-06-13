@@ -327,9 +327,18 @@
                 <version>${spotless.version}</version>
                 <configuration>
                     <java>
+                        <removeUnusedImports/>
                         <palantirJavaFormat>
                             <version>${palantir.version}</version>
                         </palantirJavaFormat>
+                        <!-- importOrder runs AFTER Palantir so it has the final say on import
+                             grouping (Palantir otherwise collapses everything into one alphabetical
+                             block). Groups (blank-line separated, longest-prefix wins so javafx is
+                             NOT swallowed by java): JDK (java/javax), then javafx, then everything
+                             else (third-party + com.editora), then static imports last. -->
+                        <importOrder>
+                            <order>java|javax,javafx,,\#</order>
+                        </importOrder>
                         <toggleOffOn/>
                     </java>
                 </configuration>

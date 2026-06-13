@@ -1,13 +1,14 @@
 package com.editora.config;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.List;
 
 import com.editora.ui.MainController;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.List;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Verifies read-only ("View mode") persistence and the open-read-only decision. */
 class WorkspaceStateReadOnlyTest {

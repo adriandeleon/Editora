@@ -1,12 +1,10 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.editor.EditorBuffer;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -16,6 +14,10 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.stage.Window;
+
+import com.editora.editor.EditorBuffer;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * IntelliJ-style Switcher popup over the open files, listed in <b>tab order</b>. Navigation uses

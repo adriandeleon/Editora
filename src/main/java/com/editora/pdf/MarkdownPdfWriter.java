@@ -1,7 +1,5 @@
 package com.editora.pdf;
 
-import com.editora.editor.MarkdownRenderer;
-import com.editora.mermaid.Mermaid;
 import java.awt.Color;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,6 +11,9 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+
+import com.editora.editor.MarkdownRenderer;
+import com.editora.mermaid.Mermaid;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;

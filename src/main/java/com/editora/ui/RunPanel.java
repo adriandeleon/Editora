@@ -1,9 +1,7 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.run.StackTraceLinks;
 import java.util.function.Consumer;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -14,6 +12,10 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+
+import com.editora.run.StackTraceLinks;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The "Run" tool window: a console that streams a launched program's stdout/stderr (see

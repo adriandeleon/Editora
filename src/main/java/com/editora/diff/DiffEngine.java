@@ -1,5 +1,8 @@
 package com.editora.diff;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.editora.diff.DiffModels.DiffModel;
 import com.editora.diff.DiffModels.Row;
 import com.editora.diff.DiffModels.RowType;
@@ -8,8 +11,6 @@ import com.editora.diff.DiffModels.UnifiedType;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import com.github.difflib.patch.Patch;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Computes an aligned diff between two texts using java-diff-utils' Myers line diff. Pure and

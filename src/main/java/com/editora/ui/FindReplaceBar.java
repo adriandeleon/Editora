@@ -1,14 +1,11 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.editor.EditorBuffer;
-import com.editora.editor.SearchMatcher;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
 import javafx.animation.PauseTransition;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -19,7 +16,12 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.util.Duration;
+
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.SearchMatcher;
 import org.fxmisc.richtext.CodeArea;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A non-modal find/replace bar operating on the currently active {@link EditorBuffer}. Searches

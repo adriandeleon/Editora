@@ -1,7 +1,5 @@
 package com.editora.completion;
 
-import com.editora.snippet.Snippet;
-import com.editora.snippet.SnippetManager;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,6 +7,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
+
+import com.editora.snippet.Snippet;
+import com.editora.snippet.SnippetManager;
 
 /**
  * Merges completion sources for the word being typed: <b>snippets</b> (prefix-matched for the buffer's

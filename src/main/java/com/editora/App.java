@@ -1,15 +1,17 @@
 package com.editora;
 
+import java.io.IOException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import javafx.application.Application;
+import javafx.stage.Stage;
+
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.ui.Themes;
-import java.io.IOException;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import javafx.application.Application;
-import javafx.stage.Stage;
 
 public class App extends Application {
 

@@ -1,10 +1,5 @@
 package com.editora.config;
 
-import com.editora.config.migration.ConfigMigrations;
-import com.editora.config.migration.ConfigSchema;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -12,6 +7,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+
+import com.editora.config.migration.ConfigMigrations;
+import com.editora.config.migration.ConfigSchema;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
  * Tracks the user's projects and the active one, persisted as JSON in {@code <configDir>/projects.json}.

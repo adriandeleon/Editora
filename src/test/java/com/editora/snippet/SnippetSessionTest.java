@@ -1,11 +1,12 @@
 package com.editora.snippet;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import java.util.ArrayList;
 import java.util.List;
+
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** Unit tests for the pure parts of the snippet session: offset shifting and re-indentation. */
 class SnippetSessionTest {

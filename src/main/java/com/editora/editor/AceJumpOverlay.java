@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
@@ -14,6 +15,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+
 import org.fxmisc.richtext.CodeArea;
 
 /**

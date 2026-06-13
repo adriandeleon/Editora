@@ -1,13 +1,14 @@
 package com.editora.command;
 
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
-import org.junit.jupiter.api.Test;
 
 class KeyDispatcherTest {
 

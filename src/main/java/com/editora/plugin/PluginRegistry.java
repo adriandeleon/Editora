@@ -1,7 +1,5 @@
 package com.editora.plugin;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -16,7 +14,11 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
 import javafx.application.Platform;
+
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Fetches a remote plugin registry's {@code index.json} (the {@code HttpClientService} idiom: one daemon

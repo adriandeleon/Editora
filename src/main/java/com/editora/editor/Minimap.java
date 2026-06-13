@@ -1,6 +1,7 @@
 package com.editora.editor;
 
 import java.time.Duration;
+
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -8,6 +9,7 @@ import javafx.scene.image.WritableImage;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
+
 import org.fxmisc.richtext.CodeArea;
 
 /**

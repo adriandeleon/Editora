@@ -1,7 +1,5 @@
 package com.editora.lsp;
 
-import com.editora.editor.LspDiagnostic;
-import com.editora.process.ProcessRunner;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,7 +11,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+
 import javafx.application.Platform;
+
+import com.editora.editor.LspDiagnostic;
+import com.editora.process.ProcessRunner;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;

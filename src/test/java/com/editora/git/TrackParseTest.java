@@ -1,8 +1,8 @@
 package com.editora.git;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 /** Unit tests for parsing git's {@code %(upstream:track)} field into ahead/behind counts. */
 class TrackParseTest {

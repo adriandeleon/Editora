@@ -1,7 +1,5 @@
 package com.editora.editor;
 
-import static com.editora.i18n.Messages.tr;
-
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -12,6 +10,8 @@ import javafx.scene.control.Separator;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.util.StringConverter;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The floating IntelliJ-style format bar shown above a non-empty selection in a Markdown buffer. It is a

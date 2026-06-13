@@ -1,15 +1,16 @@
 package com.editora.snippet;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import com.editora.config.ConfigManager;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.editora.config.ConfigManager;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 /** Tests loading bundled snippets, language + global scoping, and user overrides. */
 class SnippetManagerTest {

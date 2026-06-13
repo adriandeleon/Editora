@@ -1,5 +1,18 @@
 package com.editora.ui;
 
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+
+import javafx.application.HostServices;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Scene;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.StackPane;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
+
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
@@ -9,17 +22,6 @@ import com.editora.config.ProjectManager;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.config.WorkspaceState;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import javafx.application.HostServices;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Scene;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.StackPane;
-import javafx.stage.Screen;
-import javafx.stage.Stage;
 
 /**
  * Owns the set of top-level editor windows and the shared config behind them. In single-window terms

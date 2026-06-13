@@ -1,11 +1,9 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.config.Project;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
@@ -17,6 +15,10 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.util.StringConverter;
+
+import com.editora.config.Project;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A project switcher combobox shared by the toolbar and the Project tool window. The first entry is

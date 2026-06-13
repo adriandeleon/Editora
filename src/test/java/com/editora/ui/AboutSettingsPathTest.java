@@ -1,10 +1,11 @@
 package com.editora.ui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import java.io.File;
 import java.nio.file.Path;
+
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * The About dialog must show the <em>live</em> settings path (so {@code --dev}'s {@code ~/.editora-dev}

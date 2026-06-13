@@ -1,8 +1,9 @@
 package com.editora.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import java.util.UUID;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
  * A user-authored annotation attached to a file without modifying it. Identified by a stable {@link UUID},

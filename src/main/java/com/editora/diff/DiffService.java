@@ -1,11 +1,13 @@
 package com.editora.diff;
 
-import com.editora.diff.DiffModels.DiffModel;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+
 import javafx.application.Platform;
+
+import com.editora.diff.DiffModels.DiffModel;
 
 /**
  * FX-facing façade that runs {@link DiffEngine} off the JavaFX thread (the {@code GitService}/

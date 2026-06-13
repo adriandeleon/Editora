@@ -1,15 +1,9 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.AppInfo;
-import com.editora.command.CommandRegistry;
-import com.editora.command.KeymapManager;
-import com.editora.config.RecentFiles;
-import com.editora.editor.TabContent;
 import java.nio.file.Path;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -21,6 +15,14 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+
+import com.editora.AppInfo;
+import com.editora.command.CommandRegistry;
+import com.editora.command.KeymapManager;
+import com.editora.config.RecentFiles;
+import com.editora.editor.TabContent;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The VSCode-style empty state shown in the editor area when no file tabs are open (startup with no

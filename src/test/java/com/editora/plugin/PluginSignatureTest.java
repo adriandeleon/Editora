@@ -1,8 +1,5 @@
 package com.editora.plugin;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -10,7 +7,11 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.util.Base64;
+
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for Ed25519 registry-signature verification (pure, no network). */
 class PluginSignatureTest {

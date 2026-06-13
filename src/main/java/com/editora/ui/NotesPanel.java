@@ -1,12 +1,9 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.config.NoteStatus;
-import com.editora.config.PersonalNote;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+
 import javafx.geometry.Pos;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
@@ -22,6 +19,11 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+
+import com.editora.config.NoteStatus;
+import com.editora.config.PersonalNote;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Personal Notes tool window: every note in the active project, grouped by file in a tree. Enter /

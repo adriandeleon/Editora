@@ -1,11 +1,11 @@
 package com.editora.git;
 
+import com.editora.git.GitStatus.FileEntry;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.editora.git.GitStatus.FileEntry;
-import org.junit.jupiter.api.Test;
 
 /** Unit tests for the pure {@code git status --porcelain=v2 --branch} parser. */
 class StatusParserTest {

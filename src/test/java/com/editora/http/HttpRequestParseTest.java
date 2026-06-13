@@ -1,10 +1,10 @@
 package com.editora.http;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.editora.http.HttpFile.Parsed;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for parsing a single request block into method/URL/headers/body, env vars, and rendering. */
 class HttpRequestParseTest {

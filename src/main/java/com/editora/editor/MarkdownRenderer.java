@@ -3,6 +3,7 @@ package com.editora.editor;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.CheckBox;
@@ -19,6 +20,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
+
 import org.commonmark.ext.autolink.AutolinkExtension;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;

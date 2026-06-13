@@ -1,10 +1,11 @@
 package com.editora.run;
 
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-
-import java.util.List;
-import org.junit.jupiter.api.Test;
 
 /** Pure helpers behind the Run console: version parse, argv tokenizer, stack-trace links. */
 class RunToolsTest {

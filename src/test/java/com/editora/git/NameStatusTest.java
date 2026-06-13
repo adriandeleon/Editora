@@ -1,14 +1,15 @@
 package com.editora.git;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.List;
 
 import com.editora.git.GitService.CommitFile;
 import com.editora.git.RelativeTime.Span;
 import com.editora.git.RelativeTime.Unit;
-import java.util.List;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for {@code git diff-tree --name-status} parsing and relative-time bucketing. */
 class NameStatusTest {

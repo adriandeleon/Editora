@@ -1,9 +1,9 @@
 package com.editora.editor;
 
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-
-import org.junit.jupiter.api.Test;
 
 /** Unit tests for the pure matching-bracket finder. */
 class BraceMatcherTest {

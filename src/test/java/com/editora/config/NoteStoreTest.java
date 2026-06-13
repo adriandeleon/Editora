@@ -1,13 +1,14 @@
 package com.editora.config;
 
+import java.util.List;
+import java.util.UUID;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.List;
-import java.util.UUID;
-import org.junit.jupiter.api.Test;
 
 class NoteStoreTest {
 

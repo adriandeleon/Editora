@@ -1,11 +1,12 @@
 package com.editora.template;
 
-import com.editora.snippet.SnippetParser;
-import com.editora.snippet.VariableResolver;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Set;
+
+import com.editora.snippet.SnippetParser;
+import com.editora.snippet.VariableResolver;
 
 /**
  * Resolves template variables for {@link TemplateEngine}: the wizard's named answers first, then the

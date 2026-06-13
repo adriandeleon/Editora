@@ -1,6 +1,5 @@
 package com.editora.git;
 
-import com.editora.process.ProcessRunner;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -14,7 +13,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
 import javafx.application.Platform;
+
+import com.editora.process.ProcessRunner;
 
 /**
  * The native-{@code git} facade. Every Git command shells out via {@link ProcessRunner} on a single

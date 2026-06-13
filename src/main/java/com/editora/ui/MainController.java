@@ -1,21 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.command.Command;
-import com.editora.command.CommandRegistry;
-import com.editora.command.KeymapManager;
-import com.editora.config.ConfigManager;
-import com.editora.config.Project;
-import com.editora.config.ProjectManager;
-import com.editora.config.RecentFiles;
-import com.editora.config.Settings;
-import com.editora.config.WorkspaceState;
-import com.editora.editor.EditorBuffer;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LanguageRegistry;
-import com.editora.editor.SpellDictionaries;
-import com.editora.editor.TabContent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
@@ -75,8 +60,25 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+
+import com.editora.command.Command;
+import com.editora.command.CommandRegistry;
+import com.editora.command.KeymapManager;
+import com.editora.config.ConfigManager;
+import com.editora.config.Project;
+import com.editora.config.ProjectManager;
+import com.editora.config.RecentFiles;
+import com.editora.config.Settings;
+import com.editora.config.WorkspaceState;
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.LanguageRegistry;
+import com.editora.editor.SpellDictionaries;
+import com.editora.editor.TabContent;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+
+import static com.editora.i18n.Messages.tr;
 
 /** Controls the main window: tabbed editors, menu actions, palette/find overlays, and status bar. */
 public class MainController {

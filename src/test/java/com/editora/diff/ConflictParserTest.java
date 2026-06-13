@@ -1,15 +1,16 @@
 package com.editora.diff;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.List;
 
 import com.editora.diff.ConflictParser.Choice;
 import com.editora.diff.ConflictParser.Conflict;
 import com.editora.diff.ConflictParser.ConflictFile;
 import com.editora.diff.ConflictParser.ConflictSegment;
-import java.util.List;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConflictParserTest {
 

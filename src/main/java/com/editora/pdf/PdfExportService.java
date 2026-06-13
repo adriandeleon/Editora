@@ -1,13 +1,15 @@
 package com.editora.pdf;
 
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.TextMateHighlighter;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+
 import javafx.application.Platform;
+
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.TextMateHighlighter;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
 

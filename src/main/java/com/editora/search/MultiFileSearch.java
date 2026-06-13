@@ -1,8 +1,9 @@
 package com.editora.search;
 
-import com.editora.editor.SearchMatcher;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.editora.editor.SearchMatcher;
 
 /**
  * Pure helpers for multi-file search: find per-line matches in a text, and apply a replacement to every

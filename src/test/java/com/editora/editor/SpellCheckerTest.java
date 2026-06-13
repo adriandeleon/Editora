@@ -1,13 +1,14 @@
 package com.editora.editor;
 
+import java.util.List;
+import java.util.Set;
+
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
-
-import java.util.List;
-import java.util.Set;
-import org.junit.jupiter.api.Test;
 
 /**
  * Pure word-splitting / skip rules, plus spelling against the bundled en_US dictionary (built headless

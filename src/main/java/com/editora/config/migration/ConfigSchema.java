@@ -1,5 +1,7 @@
 package com.editora.config.migration;
 
+import java.util.Map;
+
 import com.editora.config.BookmarkStore;
 import com.editora.config.BreakpointStore;
 import com.editora.config.ConnectionStore;
@@ -9,7 +11,6 @@ import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
-import java.util.Map;
 
 /**
  * The versioned config files and their migration registries. Each entry knows its <b>current</b> schema

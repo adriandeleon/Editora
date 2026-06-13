@@ -1,7 +1,5 @@
 package com.editora.editor;
 
-import com.editora.i18n.Messages;
-import com.editora.mermaid.Mermaid;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
@@ -9,11 +7,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
+
+import com.editora.i18n.Messages;
+import com.editora.mermaid.Mermaid;
 
 /**
  * Renders Mermaid diagrams to JavaFX nodes for the preview, asynchronously. Mirrors

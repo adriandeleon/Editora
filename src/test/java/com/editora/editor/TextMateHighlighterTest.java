@@ -1,17 +1,18 @@
 package com.editora.editor;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TextMateHighlighterTest {
 

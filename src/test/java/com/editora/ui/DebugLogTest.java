@@ -1,12 +1,13 @@
 package com.editora.ui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for {@link DebugLog}'s pure helpers (logger-name shortening, bounded buffer, formatting). */
 class DebugLogTest {

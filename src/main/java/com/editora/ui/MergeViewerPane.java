@@ -1,18 +1,9 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.diff.ConflictParser;
-import com.editora.diff.ConflictParser.Choice;
-import com.editora.diff.ConflictParser.Conflict;
-import com.editora.diff.ConflictParser.ConflictFile;
-import com.editora.diff.ConflictParser.ConflictSegment;
-import com.editora.diff.ConflictParser.PlainSegment;
-import com.editora.diff.ConflictParser.Segment;
-import com.editora.editor.TabContent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -25,6 +16,17 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+
+import com.editora.diff.ConflictParser;
+import com.editora.diff.ConflictParser.Choice;
+import com.editora.diff.ConflictParser.Conflict;
+import com.editora.diff.ConflictParser.ConflictFile;
+import com.editora.diff.ConflictParser.ConflictSegment;
+import com.editora.diff.ConflictParser.PlainSegment;
+import com.editora.diff.ConflictParser.Segment;
+import com.editora.editor.TabContent;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A merge-conflict resolution tab ({@link TabContent}) for a file containing Git conflict markers. Each

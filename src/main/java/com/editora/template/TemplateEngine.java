@@ -1,7 +1,5 @@
 package com.editora.template;
 
-import com.editora.snippet.ParsedSnippet;
-import com.editora.snippet.SnippetParser;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -9,6 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import com.editora.snippet.ParsedSnippet;
+import com.editora.snippet.SnippetParser;
 
 /**
  * Pure template rendering, layered on {@link SnippetParser}: variable discovery (which named variables a

@@ -1,11 +1,10 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -20,6 +19,8 @@ import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A simple modeless window that displays {@link DebugLog}'s captured log (java.util.logging output +

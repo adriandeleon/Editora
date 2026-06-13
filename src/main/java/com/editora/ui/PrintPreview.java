@@ -1,10 +1,8 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.print.PrintService;
 import java.util.List;
 import java.util.function.Consumer;
+
 import javafx.beans.binding.Bindings;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -25,6 +23,10 @@ import javafx.scene.transform.Scale;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+
+import com.editora.print.PrintService;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A modal "Print Preview" window: shows the paginated output (scaled to fit, with page navigation)

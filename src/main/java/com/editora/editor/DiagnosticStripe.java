@@ -3,6 +3,7 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntConsumer;
+
 import javafx.application.Platform;
 import javafx.scene.Cursor;
 import javafx.scene.canvas.Canvas;
@@ -11,6 +12,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
+
 import org.fxmisc.richtext.CodeArea;
 
 /**

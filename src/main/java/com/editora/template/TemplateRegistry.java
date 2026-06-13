@@ -1,9 +1,5 @@
 package com.editora.template;
 
-import com.editora.config.ConfigManager;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -15,6 +11,11 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
+
+import com.editora.config.ConfigManager;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Loads and serves file templates. Bundled templates live at {@code /com/editora/templates/<id>.json}

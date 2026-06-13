@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.util.function.Supplier;
+
 import javafx.scene.Node;
 import javafx.scene.layout.Region;
 

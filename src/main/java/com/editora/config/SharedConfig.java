@@ -1,13 +1,5 @@
 package com.editora.config;
 
-import com.editora.config.migration.ConfigMigrations;
-import com.editora.config.migration.ConfigSchema;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -16,6 +8,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+
+import com.editora.config.migration.ConfigMigrations;
+import com.editora.config.migration.ConfigSchema;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 
 /**
  * The <em>shared</em>, app-wide half of the configuration: preferences ({@link Settings}) plus the

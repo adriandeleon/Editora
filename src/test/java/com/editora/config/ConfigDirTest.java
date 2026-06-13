@@ -1,9 +1,10 @@
 package com.editora.config;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import java.nio.file.Path;
+
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** Verifies the config-directory resolver honors EDITORA_CONFIG_DIR and falls back to ~/.editora. */
 class ConfigDirTest {

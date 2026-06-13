@@ -1,10 +1,5 @@
 package com.editora.editor;
 
-import com.github.weisj.jsvg.SVGDocument;
-import com.github.weisj.jsvg.attributes.ViewBox;
-import com.github.weisj.jsvg.geometry.size.FloatSize;
-import com.github.weisj.jsvg.parser.LoaderContext;
-import com.github.weisj.jsvg.parser.SVGLoader;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -21,11 +16,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
 import javafx.application.Platform;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.image.PixelFormat;
 import javafx.scene.image.WritableImage;
+
+import com.github.weisj.jsvg.SVGDocument;
+import com.github.weisj.jsvg.attributes.ViewBox;
+import com.github.weisj.jsvg.geometry.size.FloatSize;
+import com.github.weisj.jsvg.parser.LoaderContext;
+import com.github.weisj.jsvg.parser.SVGLoader;
 
 /**
  * Loads images for the Markdown preview off the FX thread, adding support JavaFX's own decoder lacks:

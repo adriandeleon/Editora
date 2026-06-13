@@ -1,15 +1,11 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.command.Command;
-import com.editora.command.CommandRegistry;
-import com.editora.command.KeymapManager;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
@@ -27,6 +23,12 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+
+import com.editora.command.Command;
+import com.editora.command.CommandRegistry;
+import com.editora.command.KeymapManager;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A fuzzy-filtered command palette (bound to {@code M-x}). Shown as an <em>in-scene</em> overlay in the

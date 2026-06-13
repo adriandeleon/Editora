@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -18,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
@@ -37,6 +36,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Project tool window: a filter box over a lazy file tree rooted at the active project's folder.

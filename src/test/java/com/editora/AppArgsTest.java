@@ -1,14 +1,15 @@
 package com.editora;
 
+import java.nio.file.Path;
+import java.util.List;
+
+import com.editora.ui.MainController.OpenTarget;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.editora.ui.MainController.OpenTarget;
-import java.nio.file.Path;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 
 /** Tests parsing the command-line program arguments (pure; no JavaFX launch). */
 class AppArgsTest {

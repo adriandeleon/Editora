@@ -1,10 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.editor.EditorBuffer;
-import com.editora.editor.FoldRegions.Region;
-import com.editora.editor.TextMateHighlighter.Symbol;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -14,6 +9,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.control.IndexedCell;
@@ -26,7 +22,13 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.TextMateHighlighter.Symbol;
 import org.fxmisc.richtext.CodeArea;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Tool window content showing the active editor's foldable-region hierarchy as a collapsible tree,

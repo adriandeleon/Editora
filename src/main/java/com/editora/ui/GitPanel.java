@@ -1,10 +1,7 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.git.GitStatus;
-import com.editora.git.GitStatus.FileEntry;
 import java.util.List;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -23,6 +20,11 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+
+import com.editora.git.GitStatus;
+import com.editora.git.GitStatus.FileEntry;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Git (Commit) tool window: the active repository's changes grouped into <em>Staged</em>,

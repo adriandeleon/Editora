@@ -1,9 +1,8 @@
 package com.editora.print;
 
-import com.editora.pdf.PdfText;
-import com.editora.pdf.PdfTheme;
 import java.util.ArrayList;
 import java.util.List;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.print.PageLayout;
@@ -16,6 +15,9 @@ import javafx.scene.text.FontPosture;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
+
+import com.editora.pdf.PdfText;
+import com.editora.pdf.PdfTheme;
 
 /**
  * Builds printable JavaFX page nodes for source code — the {@code javafx.print} analog of

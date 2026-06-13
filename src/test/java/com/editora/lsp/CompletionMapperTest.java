@@ -1,13 +1,14 @@
 package com.editora.lsp;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.List;
 
 import com.editora.completion.Completion;
-import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.InsertTextFormat;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CompletionMapperTest {
 

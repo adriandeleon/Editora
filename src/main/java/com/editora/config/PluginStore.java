@@ -1,8 +1,9 @@
 package com.editora.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.LinkedHashMap;
 import java.util.Map;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
  * The persisted plugin enable-state (in {@code plugins.json}). A plugin is <b>disabled by default</b>

@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import javafx.beans.value.ObservableValue;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -16,6 +14,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Renders a small modal-style input form as an in-scene card in the shared {@link OverlayHost} — the

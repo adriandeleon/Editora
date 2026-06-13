@@ -1,12 +1,10 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.config.Bookmark;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+
 import javafx.geometry.Pos;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
@@ -30,6 +28,10 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+
+import com.editora.config.Bookmark;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Bookmarks tool window: a list of every bookmark in the active project (across all its files, open

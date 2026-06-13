@@ -1,8 +1,9 @@
 package com.editora.lsp;
 
-import com.editora.completion.Completion;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.editora.completion.Completion;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.InsertTextFormat;
 

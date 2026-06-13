@@ -1,10 +1,5 @@
 package com.editora.print;
 
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.TextMateHighlighter;
-import com.editora.mermaid.Mermaid;
-import com.editora.pdf.PdfText;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -12,6 +7,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+
 import javafx.application.Platform;
 import javafx.print.PageLayout;
 import javafx.print.PrinterJob;
@@ -20,6 +16,12 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
+
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.TextMateHighlighter;
+import com.editora.mermaid.Mermaid;
+import com.editora.pdf.PdfText;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
 
