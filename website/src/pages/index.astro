@@ -17,6 +17,7 @@ const newsItems = (await getCollection("news")).sort(byDate).map((e) => ({
   title: e.data.title,
   description: e.data.description,
   date: e.data.date,
+  beta: e.data.beta,
 }));
 const blogItems = (await getCollection("blog")).sort(byDate).map((e) => ({
   kind: "Blog",
@@ -24,6 +25,7 @@ const blogItems = (await getCollection("blog")).sort(byDate).map((e) => ({
   title: e.data.title,
   description: e.data.description,
   date: e.data.date,
+  beta: e.data.beta,
 }));
 const latest = [...newsItems, ...blogItems].slice(0, 4);
 const fmtDate = (d: Date) =>
@@ -90,6 +92,7 @@ const featureGroups = [
       },
       {
         title: "Language servers (LSP)",
+        beta: true,
         body: "Go-to-definition, find references, hover docs, diagnostics, and completions via 20+ language servers (Java, TypeScript, Python, Go, Rust, C/C++, and more) — auto-detected, never bundled.",
       },
       {
@@ -107,10 +110,12 @@ const featureGroups = [
       },
       {
         title: "Debugging (DAP)",
+        beta: true,
         body: "Full debugging for Java, Python, and JavaScript: breakpoints, step in/over/out, watches, set-value, run-to-cursor, inline values, and an interactive console.",
       },
       {
         title: "HTTP client",
+        beta: true,
         body: "Run <code>.http</code> / <code>.rest</code> requests from a gutter ▶ — environments, variables, and a formatted response view. Built on the JDK HTTP client.",
       },
     ],
@@ -120,10 +125,12 @@ const featureGroups = [
     cards: [
       {
         title: "Git integration",
+        beta: true,
         body: "Native Git: status-bar branch, gutter change bars vs HEAD, a Commit tool window, fetch / pull / push + branches — plus a history/log view, inline blame, and stash.",
       },
       {
         title: "Diff & merge",
+        beta: true,
         body: "Side-by-side and unified diff (vs HEAD, a commit, or another file) with word-level highlights and apply-hunk arrows — plus a merge-conflict resolver.",
       },
     ],
@@ -162,6 +169,7 @@ const featureGroups = [
       },
       {
         title: "File templates",
+        beta: true,
         body: "New File From Template — single- or multi-file scaffolds with interactive placeholders (author, date, file name, …).",
       },
       {
@@ -170,6 +178,7 @@ const featureGroups = [
       },
       {
         title: "Remote files (SFTP)",
+        beta: true,
         body: "Browse, edit, search, and save files on a remote host over SSH/SFTP — the project tree, search, bookmarks, and notes all work over the wire.",
       },
     ],
@@ -292,7 +301,10 @@ const platforms = [
           <div class="latest-grid">
             {latest.map((p) => (
               <a class="latest-card" href={p.href}>
-                <span class={`latest-kind ${p.kind.toLowerCase()}`}>{p.kind}</span>
+                <span class="latest-tags">
+                  <span class={`latest-kind ${p.kind.toLowerCase()}`}>{p.kind}</span>
+                  {p.beta && <span class="beta-pill">Beta</span>}
+                </span>
                 <span class="latest-title">{p.title}</span>
                 {p.description && <span class="latest-desc">{p.description}</span>}
                 <span class="latest-date">{fmtDate(p.date)}</span>
@@ -337,7 +349,10 @@ const platforms = [
             <div class="grid">
               {g.cards.map((f) => (
                 <article class="card">
-                  <h4>{f.title}</h4>
+                  <h4>
+                    {f.title}
+                    {f.beta && <span class="beta-pill">Beta</span>}
+                  </h4>
                   <p set:html={f.body} />
                 </article>
               ))}
@@ -647,6 +662,14 @@ const platforms = [
   .latest-card:hover {
     border-color: var(--accent);
     text-decoration: none;
+  }
+  .latest-tags {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .latest-tags .beta-pill {
+    margin-left: 0;
   }
   .latest-kind {
     align-self: flex-start;

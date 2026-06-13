@@ -409,6 +409,22 @@ const isActive = (href: string) => {
     white-space: nowrap;
   }
 
+  /* "Beta" pill — used on feature cards and beta news/blog entries. */
+  .beta-pill {
+    display: inline-block;
+    margin-left: 0.5rem;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    vertical-align: middle;
+    color: var(--bookmark);
+    background: color-mix(in srgb, var(--bookmark) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--bookmark) 45%, transparent);
+    border-radius: 999px;
+    padding: 0.08rem 0.4rem;
+  }
+
   /* Syntax tokens for hand-highlighted code blocks (Primer Dark palette). */
   .tok-comment {
     color: var(--tok-comment);

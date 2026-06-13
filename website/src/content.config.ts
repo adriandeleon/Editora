@@ -20,6 +20,7 @@ const news = defineCollection({
     description: z.string().optional(),
     date: z.coerce.date(),
     version: z.string().optional(),
+    beta: z.boolean().default(false),
   }),
 });
 
@@ -32,6 +33,7 @@ const blog = defineCollection({
     date: z.coerce.date(),
     author: z.string().default("Adrian De Leon"),
     tags: z.array(z.string()).default([]),
+    beta: z.boolean().default(false),
   }),
 });
 

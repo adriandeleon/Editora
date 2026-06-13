@@ -23,7 +23,7 @@ const date = entry.data.date.toLocaleDateString("en-US", {
 >
   <article class="doc">
     <p class="back"><a href="/blog">← Blog</a></p>
-    <h1>{entry.data.title}</h1>
+    <h1>{entry.data.title}{entry.data.beta && <span class="beta-pill">Beta</span>}</h1>
     <p class="meta">
       {date} · {entry.data.author}
       {entry.data.tags.length > 0 && <span> · {entry.data.tags.join(", ")}</span>}

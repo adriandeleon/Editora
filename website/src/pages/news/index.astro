@@ -30,6 +30,7 @@ const fmt = (d: Date) =>
             <p class="post-meta">
               {fmt(p.data.date)}
               {p.data.version && <span> · {p.data.version}</span>}
+              {p.data.beta && <span class="beta-pill">Beta</span>}
             </p>
             {p.data.description && <p class="post-desc">{p.data.description}</p>}
           </li>
