@@ -1652,7 +1652,15 @@ public class EditorBuffer implements TabContent {
             // Keyboard scrolling in the preview: Space / PageDown page down, Backspace / PageUp page up
             // (C-v / M-v go through nav.pageDown/Up → pagePreview). Focus it on click so the keys land.
             previewPane.setFocusTraversable(true);
-            previewPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> previewPane.requestFocus());
+            previewPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> {
+                // A press in the preview dismisses an open preview context menu. The ScrollPane consumes
+                // the press before the popup's auto-hide can fire (same as the editor menu — see
+                // installContextMenu), so close it explicitly; the click still falls through to focus.
+                if (previewContextMenu != null && previewContextMenu.isShowing()) {
+                    previewContextMenu.hide();
+                }
+                previewPane.requestFocus();
+            });
             // Right-click menu: Select All / Copy (rendered plain text) + Export to PDF / Print.
             previewPane.setOnContextMenuRequested(e -> {
                 showPreviewContextMenu(e.getScreenX(), e.getScreenY());
