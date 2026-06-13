@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Keybinding themes (CUA, Sublime Text, VSCode, IntelliJ IDEA).** Beyond the default **Emacs** keymap,
+  Editora now bundles four familiar non-modal keymaps. Pick one in **Settings → Keymaps** (or the
+  **Keymap: Select…** command) — switching is **live, no restart**, across all open windows. Each keymap
+  ships a Ctrl-based (Windows/Linux) and a Cmd-based (macOS) variant, auto-selected per platform. User and
+  plugin keybinding overrides are re-applied on top of whichever keymap is active. (Modal **Vim** is
+  deferred — it needs a mode state machine the current resolver doesn't model.)
+
 - **Signed plugin registry (authenticity).** The registry `index.json` is verified against a **bundled
   Ed25519 public key** via a detached signature (`index.json.sig`) before Editora trusts it, and **"Require
   signed plugins"** (Settings → Plugins, default on) blocks installs from a registry that doesn't verify —

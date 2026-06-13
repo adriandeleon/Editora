@@ -232,6 +232,28 @@ public class WindowManager {
         }
     }
 
+    /**
+     * Rebuilds the shared keymap from scratch — base keymap ({@code Settings.keymap}, with the macOS
+     * {@code .mac} variant when present) → user overrides → enabled plugins' keymap overrides — mirroring
+     * the startup order in {@link MainController}'s {@code applyPlugins}. The {@code KeymapManager} is a
+     * single instance shared by every window's {@link KeyDispatcher}, so this switches the active keymap
+     * live across all windows with no restart; a broadcast refreshes keymap-derived UI. A stale mid-chord
+     * prefix in any dispatcher self-cancels on the next key, so no explicit reset is needed.
+     */
+    public void reloadSharedKeymap() {
+        Settings settings = shared.getSettings();
+        keymap.loadNamed(settings.getKeymap());
+        keymap.applyOverrides(settings.getKeybindings());
+        if (settings.isPluginSupport()) {
+            for (com.editora.plugin.PluginDescriptor d : pluginManager.descriptors()) {
+                if (d.enabled() && d.loadError() == null && d.manifest().keymap != null) {
+                    keymap.applyOverrides(d.manifest().keymap);
+                }
+            }
+        }
+        broadcastSettingsApplied();
+    }
+
     // --- window construction (extracted from App.start) ---
 
     private Stage buildWindow(

@@ -44,7 +44,8 @@ public class CommandPalette {
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
     private final CommandRegistry registry;
-    private final Map<String, String> commandToKey;
+    private final KeymapManager keymap;
+    private Map<String, String> commandToKey;
     /** Only commands matching this predicate are listed (e.g. project commands hidden when disabled). */
     private final java.util.function.Predicate<Command> visible;
 
@@ -66,9 +67,16 @@ public class CommandPalette {
     public CommandPalette(
             CommandRegistry registry, KeymapManager keymap, java.util.function.Predicate<Command> visible) {
         this.registry = registry;
+        this.keymap = keymap;
         this.commandToKey = invert(keymap.bindings());
         this.visible = visible;
         build();
+    }
+
+    /** Rebuilds the chord hints from the current keymap (after a live keymap switch). */
+    public void refreshBindings() {
+        this.commandToKey = invert(keymap.bindings());
+        list.refresh();
     }
 
     private static Map<String, String> invert(Map<String, String> bindings) {

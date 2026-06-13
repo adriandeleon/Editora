@@ -76,7 +76,7 @@ public class SettingsWindow {
         HTTP_CLIENT(tr("settings.cat.httpClient"), false),
         LSP(tr("settings.cat.lsp"), false),
         DEBUG(tr("settings.cat.debug"), false),
-        KEYMAPS(tr("settings.cat.keymaps"), true),
+        KEYMAPS(tr("settings.cat.keymaps"), false),
         PLUGINS(tr("settings.cat.plugins"), false),
         AI(tr("settings.cat.ai"), true),
         ADVANCED(tr("settings.cat.advanced"), false);
@@ -108,6 +108,7 @@ public class SettingsWindow {
 
     // --- controls (same set as before, regrouped into pages) ---
     private ComboBox<String> languageCombo;
+    private ComboBox<String> keymapCombo;
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
@@ -156,6 +157,7 @@ public class SettingsWindow {
     private VBox pluginListBox; // rebuilt on each load() from the shared PluginManager's descriptors
     private TextField pluginRegistryField;
     private Label pluginRegistryWarn; // shown when the registry URL isn't the trusted default
+    private Runnable onKeymapChanged; // → MainController: reload the shared keymap live
     private Runnable onBrowsePlugins; // → MainController.browsePlugins
     private Runnable onInstallPluginFromFile; // → MainController.installPluginFromDisk
     private Consumer<String> onUninstallPlugin; // id → MainController.uninstallPlugin
@@ -388,6 +390,31 @@ public class SettingsWindow {
             restart.setTitle(tr("dialog.language.title"));
             restart.setHeaderText(null);
             restart.showAndWait();
+        });
+
+        keymapCombo = new ComboBox<>();
+        keymapCombo.getItems().addAll(com.editora.command.KeymapManager.AVAILABLE.keySet());
+        keymapCombo.setPrefWidth(220);
+        keymapCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String id) {
+                return id == null ? "" : com.editora.command.KeymapManager.displayName(id);
+            }
+
+            @Override
+            public String fromString(String s) {
+                return s;
+            }
+        });
+        keymapCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setKeymap(now);
+            config.save();
+            if (onKeymapChanged != null) {
+                onKeymapChanged.run(); // reload the shared keymap live across all windows
+            }
         });
 
         fontFamily = new ComboBox<>();
@@ -725,6 +752,7 @@ public class SettingsWindow {
         pages.put(Category.HTTP_CLIENT, httpClientPage());
         pages.put(Category.LSP, lspPage());
         pages.put(Category.DEBUG, debugPage());
+        pages.put(Category.KEYMAPS, keymapsPage());
         pages.put(Category.PLUGINS, pluginsPage());
         pages.put(Category.ADVANCED, advancedPage());
         for (Category c : Category.values()) {
@@ -769,6 +797,19 @@ public class SettingsWindow {
                 "editor theme syntax colors highlighting");
         Label previewSection = section(p, tr("settings.livePreview"));
         row(p, Category.APPEARANCE, previewSection, preview, "preview sample code");
+        return p;
+    }
+
+    private VBox keymapsPage() {
+        VBox p = page(tr("settings.cat.keymaps"));
+        Label kmNote = note(tr("settings.keymap.note"));
+        VBox kmBox = new VBox(4, keymapCombo, kmNote);
+        row(
+                p,
+                Category.KEYMAPS,
+                null,
+                labeled(tr("settings.keymap"), kmBox),
+                "keymap keybindings shortcuts emacs vim cua sublime vscode intellij");
         return p;
     }
 
@@ -2080,6 +2121,7 @@ public class SettingsWindow {
                 fontFamily.getItems().add(0, settings.getFontFamily());
             }
             languageCombo.setValue(settings.getUiLanguage());
+            keymapCombo.setValue(settings.getKeymap());
             fontFamily.setValue(settings.getFontFamily());
             fontSize.getValueFactory().setValue(settings.getFontSize());
             String theme = Themes.normalize(settings.getTheme());
@@ -2321,6 +2363,25 @@ public class SettingsWindow {
         try {
             projectsCheck.setSelected(config.getSettings().isProjectSupport());
             updateProjectRowEnabled();
+        } finally {
+            loading = prev;
+        }
+    }
+
+    /** Injects the live-reload hook run when the keymap picker changes (→ MainController). */
+    public void setOnKeymapChanged(Runnable handler) {
+        this.onKeymapChanged = handler;
+    }
+
+    /** Re-selects the keymap combo to match the current setting (after the {@code keymap.select} command). */
+    public void syncKeymapCombo() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            keymapCombo.setValue(config.getSettings().getKeymap());
         } finally {
             loading = prev;
         }
