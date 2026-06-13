@@ -460,6 +460,7 @@ public class MainController {
                 this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
         this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk, this::uninstallPlugin);
+        this.settingsWindow.setOnKeymapChanged(this::reloadKeymap); // picker/combo → live keymap switch
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
@@ -1234,7 +1235,7 @@ public class MainController {
         recentFiles.getList().addListener((ListChangeListener<Path>) c -> rebuildRecentMenu());
         rebuildRecentMenu();
 
-        setupButton(clearRecentButton, Icons.trash(), tr("tooltip.clearRecent"));
+        setupButton(clearRecentButton, Icons.trash(), tr("tooltip.clearRecent"), "file.clearRecent");
     }
 
     /**
@@ -1306,6 +1307,18 @@ public class MainController {
     /** Re-applies preferences + the editor theme to this window after a Settings change in any window. */
     public void reapplyAfterSharedSettingsChange(Settings settings) {
         applyViewSettingsToAllBuffers(settings);
+        // The keymap may have switched (it's shared); refresh every chord hint so none stays frozen to the
+        // old keymap. Cheap (~25 tooltips + one palette/welcome relabel) and only on a settings/keymap apply.
+        refreshToolbarTooltips();
+        if (palette != null) {
+            palette.refreshBindings();
+        }
+        if (toolWindows != null) {
+            toolWindows.refreshTooltips();
+        }
+        if (welcomePane != null) {
+            welcomePane.refresh();
+        }
     }
 
     /**
@@ -5028,27 +5041,28 @@ public class MainController {
     }
 
     private void setupToolbar() {
-        setupButton(newButton, Icons.newFile(), tr("tooltip.new"));
-        setupButton(newFromTemplateButton, Icons.fileSheet(), tr("tooltip.newFromTemplate"));
-        setupButton(openButton, Icons.open(), tr("tooltip.open"));
-        setupButton(openFolderButton, Icons.openFolder(), tr("tooltip.openFolder"));
-        setupButton(saveButton, Icons.save(), tr("tooltip.save"));
-        setupButton(saveAsButton, Icons.saveAs(), tr("tooltip.saveAs"));
-        setupButton(undoButton, Icons.undo(), tr("tooltip.undo"));
-        setupButton(redoButton, Icons.redo(), tr("tooltip.redo"));
-        setupButton(cutButton, Icons.cut(), tr("tooltip.cut"));
-        setupButton(copyButton, Icons.copy(), tr("tooltip.copy"));
-        setupButton(pasteButton, Icons.paste(), tr("tooltip.paste"));
-        setupButton(findButton, Icons.find(), tr("tooltip.find"));
-        setupButton(findInFilesButton, Icons.findInFiles(), tr("tooltip.findInFiles"));
-        setupButton(splitVerticalButton, Icons.splitVertical(), tr("tooltip.splitVertical"));
-        setupButton(splitHorizontalButton, Icons.splitHorizontal(), tr("tooltip.splitHorizontal"));
-        setupButton(paletteButton, Icons.palette(), tr("tooltip.palette"));
-        setupButton(closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"));
-        setupButton(simpleModeButton, Icons.simpleMode(), tr("tooltip.simpleMode"));
-        setupButton(settingsButton, Icons.settings(), tr("tooltip.settings"));
-        setupButton(aboutButton, Icons.about(), tr("tooltip.about"));
-        setupButton(quitButton, Icons.quit(), tr("tooltip.quit"));
+        setupButton(newButton, Icons.newFile(), tr("tooltip.new"), "file.new");
+        setupButton(newFromTemplateButton, Icons.fileSheet(), tr("tooltip.newFromTemplate"), "template.new");
+        setupButton(openButton, Icons.open(), tr("tooltip.open"), "file.find");
+        setupButton(openFolderButton, Icons.openFolder(), tr("tooltip.openFolder"), "project.open");
+        setupButton(saveButton, Icons.save(), tr("tooltip.save"), "file.save");
+        setupButton(saveAsButton, Icons.saveAs(), tr("tooltip.saveAs"), "file.saveAs");
+        setupButton(undoButton, Icons.undo(), tr("tooltip.undo"), "edit.undo");
+        setupButton(redoButton, Icons.redo(), tr("tooltip.redo"), "edit.redo");
+        setupButton(cutButton, Icons.cut(), tr("tooltip.cut"), "edit.cut");
+        setupButton(copyButton, Icons.copy(), tr("tooltip.copy"), "edit.copy");
+        setupButton(pasteButton, Icons.paste(), tr("tooltip.paste"), "edit.paste");
+        setupButton(findButton, Icons.find(), tr("tooltip.find"), "find.show");
+        setupButton(findInFilesButton, Icons.findInFiles(), tr("tooltip.findInFiles"), "search.inFiles");
+        setupButton(splitVerticalButton, Icons.splitVertical(), tr("tooltip.splitVertical"), "view.splitVertical");
+        setupButton(
+                splitHorizontalButton, Icons.splitHorizontal(), tr("tooltip.splitHorizontal"), "view.splitHorizontal");
+        setupButton(paletteButton, Icons.palette(), tr("tooltip.palette"), "palette.show");
+        setupButton(closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"), "buffer.close");
+        setupButton(simpleModeButton, Icons.simpleMode(), tr("tooltip.simpleMode"), "view.toggleSimpleMode");
+        setupButton(settingsButton, Icons.settings(), tr("tooltip.settings"), "view.settings");
+        setupButton(aboutButton, Icons.about(), tr("tooltip.about"), "help.about");
+        setupButton(quitButton, Icons.quit(), tr("tooltip.quit"), "app.quit");
 
         // Reflect open/closed state of the palette and find bar in their toolbar buttons.
         palette.showingProperty().addListener((obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
@@ -5161,10 +5175,31 @@ public class MainController {
         splitHorizontalButton.pseudoClassStateChanged(OPEN, split == EditorBuffer.Split.STACKED);
     }
 
-    private void setupButton(Button button, Node icon, String tooltip) {
+    /** A toolbar button whose tooltip shows the live chord for {@code commandId} (refreshed on keymap switch). */
+    private record ToolbarTip(Button button, String base, String commandId) {}
+
+    private final java.util.List<ToolbarTip> toolbarTips = new java.util.ArrayList<>();
+
+    private void setupButton(Button button, Node icon, String tooltip, String commandId) {
         button.setGraphic(icon);
         button.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
-        button.setTooltip(new Tooltip(tooltip));
+        // Drop any chord baked into the i18n label (e.g. "Save (C-x C-s)"); the live chord is appended below
+        // so the hint tracks the active keymap instead of being frozen to the Emacs binding.
+        String base = tooltip.replaceAll("\\s*\\([^()]*\\)\\s*$", "");
+        toolbarTips.add(new ToolbarTip(button, base, commandId));
+        applyToolbarTip(button, base, commandId);
+    }
+
+    private void applyToolbarTip(Button button, String base, String commandId) {
+        String chord = commandId == null ? null : invertBindings().get(commandId);
+        button.setTooltip(new Tooltip(chord == null || chord.isEmpty() ? base : base + " (" + chord + ")"));
+    }
+
+    /** Re-applies every toolbar tooltip's chord from the current keymap (after a live keymap switch). */
+    private void refreshToolbarTooltips() {
+        for (ToolbarTip t : toolbarTips) {
+            applyToolbarTip(t.button(), t.base(), t.commandId());
+        }
     }
 
     /**
@@ -7098,6 +7133,41 @@ public class MainController {
             requestSave();
         }
         setStatus(tr("status.spellLanguage", langId));
+    }
+
+    /** Picker for the active keybinding theme (the same set as the Settings → Keymaps combo). */
+    private void chooseKeymap() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("command.keymap.select"),
+                tr("palette.keymap.prompt"),
+                () -> new java.util.ArrayList<>(com.editora.command.KeymapManager.AVAILABLE.keySet()),
+                com.editora.command.KeymapManager::displayName,
+                id -> "",
+                this::applyKeymap);
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Persists the chosen keymap, reloads it live across all windows, and reports it. */
+    private void applyKeymap(String id) {
+        if (id == null) {
+            return;
+        }
+        config.getSettings().setKeymap(id);
+        config.save();
+        reloadKeymap();
+        settingsWindow.syncKeymapCombo(); // keep the Settings window combo in step if it's open
+        setStatus(tr("status.keymap.changed", com.editora.command.KeymapManager.displayName(id)));
+    }
+
+    /** Rebuilds the shared keymap (base + user + plugin overrides) and re-applies it to every window. */
+    private void reloadKeymap() {
+        if (windowManager != null) {
+            windowManager.reloadSharedKeymap();
+        } else {
+            keymap.loadNamed(config.getSettings().getKeymap());
+            keymap.applyOverrides(config.getSettings().getKeybindings());
+        }
     }
 
     /** Picker for the app (chrome) theme — also switches the editor theme to match. */
@@ -9406,6 +9476,7 @@ public class MainController {
         registry.register(Command.of("app.quit", this::onQuit));
         registry.register(Command.of("palette.show", this::onPalette));
         registry.register(Command.of("view.settings", this::onSettings));
+        registry.register(Command.of("keymap.select", this::chooseKeymap));
         registry.register(Command.of("theme.setAppTheme", this::chooseAppTheme));
         registry.register(Command.of("theme.setEditorTheme", this::chooseEditorTheme));
         registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -17,11 +18,48 @@ public class KeymapManager {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /**
+     * The bundled keymaps, in display order, mapped to their (untranslated) product display names — like
+     * git verbs or detected language names, these are proper nouns left as-is across locales. The keys are
+     * the {@code <name>} passed to {@link #loadNamed(String)} and stored in {@code Settings.keymap}.
+     */
+    public static final Map<String, String> AVAILABLE;
+
+    static {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("emacs", "Emacs");
+        m.put("cua", "CUA");
+        m.put("sublime", "Sublime Text");
+        m.put("vscode", "Visual Studio Code");
+        m.put("intellij", "IntelliJ IDEA");
+        AVAILABLE = Map.copyOf(m);
+    }
+
+    /** Display name for a keymap id, or the id itself if unknown. */
+    public static String displayName(String id) {
+        return AVAILABLE.getOrDefault(id, id);
+    }
+
+    private static boolean isMac() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+    }
+
     private final Map<String, String> bindings = new LinkedHashMap<>();
 
-    /** Loads {@code /com/editora/keymaps/<name>.json} as the base keymap, replacing current bindings. */
+    /**
+     * Loads the named bundled keymap as the base, replacing current bindings. On macOS a
+     * {@code <name>.mac.json} variant (Cmd-based accelerators) is preferred when present, falling back to
+     * {@code <name>.json} (the Ctrl-based Win/Linux map).
+     */
     public void loadNamed(String name) {
-        String resource = "/com/editora/keymaps/" + name + ".json";
+        loadNamed(name, isMac());
+    }
+
+    /** Package-visible variant with an explicit platform flag so tests don't depend on the host OS. */
+    void loadNamed(String name, boolean mac) {
+        String macResource = "/com/editora/keymaps/" + name + ".mac.json";
+        String baseResource = "/com/editora/keymaps/" + name + ".json";
+        String resource = mac && KeymapManager.class.getResource(macResource) != null ? macResource : baseResource;
         try (InputStream in = KeymapManager.class.getResourceAsStream(resource)) {
             if (in == null) {
                 throw new IllegalArgumentException("Keymap resource not found: " + resource);

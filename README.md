@@ -44,7 +44,10 @@ Emacs-style keymap or a fuzzy command palette.
   folder + its own saved session (open files, layout, folds), shown as a filterable file tree in the
   Project tool window with a project switcher in the toolbar. Open (`C-x C-p`)/switch (`C-x p`)/close
   via the palette or toolbar; switching restores that project's files and layout.
-- **Emacs-style keymap** — multi-key chord sequences (e.g. `C-x C-s`), with user overrides.
+- **Keybinding themes** — choose **Emacs** (default), **CUA**, **Sublime Text**, **VSCode**, or
+  **IntelliJ IDEA** in Settings → Keymaps (or the `Keymap: Select…` command); switching is live, no
+  restart, and each theme adapts to macOS (Cmd) vs Windows/Linux (Ctrl). Emacs uses multi-key chord
+  sequences (e.g. `C-x C-s`); all themes support user overrides. (Modal Vim is on the roadmap.)
   (On macOS, the Option dead keys `Option`+`e`/`i`/`u`/`n`/`` ` `` are intercepted by the OS for
   accent composition, so a few `M-`-chords like `M-e` aren't reachable by keyboard there — the
   command palette still works.)

@@ -306,6 +306,13 @@ public class ToolWindowManager {
         return null;
     }
 
+    /** Re-applies every stripe button's tooltip from the current keymap (after a live keymap switch). */
+    public void refreshTooltips() {
+        for (Map.Entry<ToolWindow, Button> e : stripeButtons.entrySet()) {
+            e.getValue().setTooltip(new Tooltip(tooltipFor(e.getKey())));
+        }
+    }
+
     /** Tooltip text: title plus the chord for the tool window's command, if one is bound. */
     private String tooltipFor(ToolWindow tw) {
         String cmd = tw.getCommandId();
