@@ -1,0 +1,6 @@
+# Revisions to ignore in `git blame` (bulk, mechanical reformats).
+# Enable locally with:  git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub honors this file automatically.
+
+# style: apply Palantir Java Format to the entire tree
+9ca80ef427376b044028955715650174c0b7bf4d
