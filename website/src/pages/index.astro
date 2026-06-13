@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import { getCollection } from "astro:content";
 import { version, repo } from "../lib/editora";
 import { whatsNew } from "../lib/whatsnew";
 
@@ -7,6 +8,33 @@ const base = import.meta.env.BASE_URL;
 const url = (p: string) => `${base}/${p}`.replace(/\/{2,}/g, "/");
 const logo = url("editora-icon.svg");
 const changelogUrl = `${repo}/blob/master/CHANGELOG.md`;
+
+// Latest blog + news entries for the home-page teaser.
+const latest = [
+  ...(await getCollection("news")).map((e) => ({
+    kind: "News",
+    href: `/news/${e.id}`,
+    title: e.data.title,
+    description: e.data.description,
+    date: e.data.date,
+  })),
+  ...(await getCollection("blog")).map((e) => ({
+    kind: "Blog",
+    href: `/blog/${e.id}`,
+    title: e.data.title,
+    description: e.data.description,
+    date: e.data.date,
+  })),
+]
+  .sort((a, b) => b.date.valueOf() - a.date.valueOf())
+  .slice(0, 4);
+const fmtDate = (d: Date) =>
+  d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 
 const featureGroups = [
   {
@@ -311,6 +339,29 @@ const platforms = [
       )
     }
 
+    {
+      latest.length > 0 && (
+        <section id="latest" class="section">
+          <div class="latest-head">
+            <h2>From the blog &amp; news</h2>
+            <span class="latest-links">
+              <a href="/blog">All posts</a> · <a href="/news">All news</a>
+            </span>
+          </div>
+          <div class="latest-grid">
+            {latest.map((p) => (
+              <a class="latest-card" href={p.href}>
+                <span class={`latest-kind ${p.kind.toLowerCase()}`}>{p.kind}</span>
+                <span class="latest-title">{p.title}</span>
+                {p.description && <span class="latest-desc">{p.description}</span>}
+                <span class="latest-date">{fmtDate(p.date)}</span>
+              </a>
+            ))}
+          </div>
+        </section>
+      )
+    }
+
     <section id="download" class="section">
       <h2>Download</h2>
       <p class="section-lead">
@@ -560,6 +611,71 @@ const platforms = [
 
   .news-detail {
     color: var(--muted);
+  }
+
+  /* Latest blog & news teaser */
+  .latest-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .latest-links {
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .latest-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+  .latest-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.25rem;
+    color: var(--text);
+  }
+  .latest-card:hover {
+    border-color: var(--accent);
+    text-decoration: none;
+  }
+  .latest-kind {
+    align-self: flex-start;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .latest-kind.news {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .latest-kind.blog {
+    color: var(--bookmark);
+    border-color: color-mix(in srgb, var(--bookmark) 40%, transparent);
+  }
+  .latest-title {
+    font-weight: 600;
+    font-size: 1rem;
+  }
+  .latest-desc {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .latest-date {
+    color: var(--faint);
+    font-size: 0.8rem;
+    margin-top: auto;
   }
 
   .hero-logo {
