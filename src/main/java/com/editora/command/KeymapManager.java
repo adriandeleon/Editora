@@ -72,11 +72,25 @@ public class KeymapManager {
         }
     }
 
-    /** Layers user overrides on top of the loaded keymap (chord sequence -> command id). */
+    /** Sentinel override value meaning "unbind this chord" (suppress a base-keymap default). */
+    public static final String UNBIND = "";
+
+    /**
+     * Layers user overrides on top of the loaded keymap (chord sequence -> command id). A blank value
+     * ({@link #UNBIND}) <em>removes</em> the chord instead of binding it, so a user override can suppress a
+     * default from the base keymap (the keybinding editor's "clear"/rebind uses this).
+     */
     public void applyOverrides(Map<String, String> overrides) {
-        if (overrides != null) {
-            bindings.putAll(overrides);
+        if (overrides == null) {
+            return;
         }
+        overrides.forEach((sequence, id) -> {
+            if (id == null || id.isBlank()) {
+                bindings.remove(sequence);
+            } else {
+                bindings.put(sequence, id);
+            }
+        });
     }
 
     /** The command id bound exactly to the given chord sequence, or null. */

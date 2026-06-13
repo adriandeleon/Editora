@@ -140,13 +140,15 @@ A backlog of planned features and improvements. Unordered within each section.
 
 ## Keybindings
 - [ ] Complete emacs movement/text manipulation keybindings
-- [ ] Fully configurable shortcuts
+- [x] Fully configurable shortcuts — keybinding editor in Settings → Keymaps: searchable command list,
+      multi-key chord recorder, conflict warnings, per-command + global reset; live (no restart), persisted
+      as overrides on top of the active keymap theme
 - [x] Keybinding themes — switchable in Settings → Keymaps / `keymap.select`, live (no restart), per-OS
       (Ctrl vs Cmd): **Emacs** (default), **CUA**, **Sublime Text**, **VSCode**, **IntelliJ IDEA**
 - [ ] Vim keybindings (modal — needs a mode state machine: normal/insert/visual, operators, counts,
       registers, `:` command line; deferred as its own feature)
-- [ ] Commands for a few standard accelerators still missing (Select All, duplicate line,
-      move line up/down) so CUA/VSCode keymaps can bind them
+- [x] Standard accelerator commands — `edit.selectAll` / `edit.duplicateLine` / `edit.moveLineUp` /
+      `edit.moveLineDown`, bound in the CUA/Sublime/VSCode/IntelliJ keymaps
 
 ## UI / UX
 - [ ] UI final touches (fonts, colors, etc.)

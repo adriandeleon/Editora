@@ -42,5 +42,9 @@
   "Cmd-f8": "debug.toggleBreakpoint",
   "Cmd-f2": "debug.stop",
   "M-f9": "debug.runToCursor",
-  "Cmd-S-f8": "debug.editBreakpoint"
+  "Cmd-S-f8": "debug.editBreakpoint",
+  "Cmd-a": "edit.selectAll",
+  "Cmd-d": "edit.duplicateLine",
+  "M-S-up": "edit.moveLineUp",
+  "M-S-down": "edit.moveLineDown"
 }

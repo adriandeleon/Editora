@@ -42,5 +42,9 @@
   "C-f8": "debug.toggleBreakpoint",
   "C-f2": "debug.stop",
   "M-f9": "debug.runToCursor",
-  "C-S-f8": "debug.editBreakpoint"
+  "C-S-f8": "debug.editBreakpoint",
+  "C-a": "edit.selectAll",
+  "C-d": "edit.duplicateLine",
+  "M-S-up": "edit.moveLineUp",
+  "M-S-down": "edit.moveLineDown"
 }

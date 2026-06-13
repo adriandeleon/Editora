@@ -126,6 +126,17 @@ class KeymapsTest {
     }
 
     @Test
+    void applyOverridesBlankValueUnbinds() {
+        KeymapManager km = new KeymapManager();
+        km.loadNamed("emacs", false);
+        assertTrue(km.commandFor("C-x C-s") != null, "precondition: emacs binds C-x C-s");
+        km.applyOverrides(java.util.Map.of("C-x C-s", KeymapManager.UNBIND));
+        assertTrue(km.commandFor("C-x C-s") == null, "blank override should unbind the chord");
+        km.applyOverrides(java.util.Map.of("Cmd-s", "file.save"));
+        assertTrue("file.save".equals(km.commandFor("Cmd-s")), "non-blank override should bind");
+    }
+
+    @Test
     void availableRegistryResolvesToLoadableKeymaps() {
         // Every advertised keymap id must load on both platform paths (mac path falls back to the base file).
         for (String id : KeymapManager.AVAILABLE.keySet()) {
