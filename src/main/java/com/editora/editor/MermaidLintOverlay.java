@@ -116,28 +116,28 @@ final class MermaidLintOverlay extends Region {
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
             g.setStroke(SQUIGGLE);
             g.setLineWidth(1.0);
+            OverlayMetrics metrics = new OverlayMetrics(area, canvas);
             for (MaidOutput.Diagnostic d : diagnostics) {
                 int p = d.line() - 1;
                 if (p < first || p > last || p < 0 || p >= total || area.isFolded(p)) {
                     continue;
                 }
-                drawDiagnostic(g, p, d, w, h);
+                drawDiagnostic(g, p, d, w, h, metrics);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event will redraw.
         }
     }
 
-    private void drawDiagnostic(GraphicsContext g, int paragraph, MaidOutput.Diagnostic d, double w, double h) {
+    private void drawDiagnostic(GraphicsContext g, int paragraph, MaidOutput.Diagnostic d, double w, double h,
+                                OverlayMetrics metrics) {
         int lineLen = area.getParagraph(paragraph).getText().length();
         if (lineLen == 0) {
             return;
         }
         int start = Math.max(0, Math.min(d.column() - 1, lineLen - 1));
         int end = Math.max(start + 1, Math.min(d.column() - 1 + Math.max(1, d.length()), lineLen));
-        Bounds b = toLocal(area.getCharacterBoundsOnScreen(
-                        area.getAbsolutePosition(paragraph, start), area.getAbsolutePosition(paragraph, end))
-                .orElse(null));
+        Bounds b = metrics.rangeLocal(paragraph, start, end);
         if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
             return;
         }
@@ -168,9 +168,5 @@ final class MermaidLintOverlay extends Region {
             up = !up;
         }
         g.stroke();
-    }
-
-    private Bounds toLocal(Bounds screen) {
-        return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

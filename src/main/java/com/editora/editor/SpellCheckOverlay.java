@@ -142,18 +142,19 @@ final class SpellCheckOverlay extends Region {
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
             g.setStroke(SQUIGGLE);
             g.setLineWidth(1.0);
+            OverlayMetrics metrics = new OverlayMetrics(area, canvas);
             for (int p = first; p <= last; p++) {
                 if (area.isFolded(p)) {
                     continue;
                 }
-                drawParagraph(g, p, w, h);
+                drawParagraph(g, p, w, h, metrics);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event will redraw.
         }
     }
 
-    private void drawParagraph(GraphicsContext g, int paragraph, double w, double h) {
+    private void drawParagraph(GraphicsContext g, int paragraph, double w, double h, OverlayMetrics metrics) {
         String line = area.getParagraph(paragraph).getText();
         if (line.isEmpty()) {
             return;
@@ -170,8 +171,7 @@ final class SpellCheckOverlay extends Region {
             if (!spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)) {
                 continue;
             }
-            Bounds b = toLocal(area.getCharacterBoundsOnScreen(abs, area.getAbsolutePosition(paragraph, end))
-                    .orElse(null));
+            Bounds b = metrics.rangeLocal(paragraph, start, end);
             if (b == null) {
                 continue;
             }
@@ -200,9 +200,5 @@ final class SpellCheckOverlay extends Region {
             up = !up;
         }
         g.stroke();
-    }
-
-    private Bounds toLocal(Bounds screen) {
-        return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

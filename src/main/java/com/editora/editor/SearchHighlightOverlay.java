@@ -119,12 +119,15 @@ final class SearchHighlightOverlay extends Region {
             int firstOffset = area.getAbsolutePosition(first, 0);
             int lastOffset = area.getAbsolutePosition(
                     last, area.getParagraph(last).getText().length());
+            // Shared per-pulse geometry cache: a dense "find all" otherwise issues one bounds query per
+            // visible match; this amortizes it to ~one per visible line (arithmetic columns, monospace).
+            OverlayMetrics metrics = new OverlayMetrics(area, canvas);
             for (int i = 0; i < matches.size(); i++) {
                 int[] m = matches.get(i);
                 if (m[1] < firstOffset || m[0] > lastOffset) {
                     continue;
                 }
-                paintMatch(g, m, i == activeIndex, first, last, w, h);
+                paintMatch(g, m, i == activeIndex, first, last, w, h, metrics);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event will redraw.
@@ -132,7 +135,8 @@ final class SearchHighlightOverlay extends Region {
     }
 
     /** Paints one match's box, clipped to the visible paragraph range; multi-line matches paint per line. */
-    private void paintMatch(GraphicsContext g, int[] match, boolean isActive, int first, int last, double w, double h) {
+    private void paintMatch(GraphicsContext g, int[] match, boolean isActive, int first, int last, double w, double h,
+                            OverlayMetrics metrics) {
         var startPos = area.offsetToPosition(match[0], Bias.Forward);
         var endPos = area.offsetToPosition(Math.max(match[1], match[0]), Bias.Backward);
         int startLine = startPos.getMajor();
@@ -150,9 +154,7 @@ final class SearchHighlightOverlay extends Region {
             if (c1 <= c0) {
                 continue; // nothing visible on this line
             }
-            int absStart = area.getAbsolutePosition(line, c0);
-            int absEnd = area.getAbsolutePosition(line, c1);
-            Bounds b = toLocal(area.getCharacterBoundsOnScreen(absStart, absEnd).orElse(null));
+            Bounds b = metrics.rangeLocal(line, c0, c1);
             if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
                 continue;
             }
@@ -164,9 +166,5 @@ final class SearchHighlightOverlay extends Region {
                 g.strokeRect(b.getMinX() + 0.5, b.getMinY() + 0.5, b.getWidth() - 1, b.getHeight() - 1);
             }
         }
-    }
-
-    private Bounds toLocal(Bounds screen) {
-        return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

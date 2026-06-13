@@ -116,8 +116,9 @@ final class LspDiagnosticOverlay extends Region {
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
             g.setLineWidth(1.0);
+            OverlayMetrics metrics = new OverlayMetrics(area, canvas);
             for (LspDiagnostic d : diagnostics) {
-                drawDiagnostic(g, d, first, last, total, w, h);
+                drawDiagnostic(g, d, first, last, total, w, h, metrics);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event will redraw.
@@ -125,7 +126,8 @@ final class LspDiagnosticOverlay extends Region {
     }
 
     private void drawDiagnostic(
-            GraphicsContext g, LspDiagnostic d, int first, int last, int total, double w, double h) {
+            GraphicsContext g, LspDiagnostic d, int first, int last, int total, double w, double h,
+            OverlayMetrics metrics) {
         if (d.endLine() < first || d.startLine() > last) {
             return; // entirely off-screen — skip before touching the GraphicsContext state
         }
@@ -144,9 +146,7 @@ final class LspDiagnosticOverlay extends Region {
             int endCol = p == d.endLine() ? d.endCol() : lineLen;
             startCol = Math.max(0, Math.min(startCol, lineLen - 1));
             endCol = Math.max(startCol + 1, Math.min(endCol, lineLen));
-            Bounds b = toLocal(area.getCharacterBoundsOnScreen(
-                            area.getAbsolutePosition(p, startCol), area.getAbsolutePosition(p, endCol))
-                    .orElse(null));
+            Bounds b = metrics.rangeLocal(p, startCol, endCol);
             if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
                 continue;
             }
@@ -187,9 +187,5 @@ final class LspDiagnosticOverlay extends Region {
             up = !up;
         }
         g.stroke();
-    }
-
-    private Bounds toLocal(Bounds screen) {
-        return screen == null ? null : canvas.screenToLocal(screen);
     }
 }

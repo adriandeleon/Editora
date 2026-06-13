@@ -110,11 +110,12 @@ final class NoteHighlightOverlay extends Region {
             int lastVis = Math.min(total - 1, lastVisible);
             int lastOffset = area.getAbsolutePosition(
                     lastVis, area.getParagraph(lastVis).getText().length());
+            OverlayMetrics metrics = new OverlayMetrics(area, canvas);
             for (int[] span : spans.get()) {
                 if (span[1] < firstOffset || span[0] > lastOffset) {
                     continue;
                 }
-                paintSpan(g, span[0], span[1], firstVisible, lastVisible, w, h);
+                paintSpan(g, span[0], span[1], firstVisible, lastVisible, w, h, metrics);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — a later event will redraw.
@@ -127,7 +128,8 @@ final class NoteHighlightOverlay extends Region {
      * multi-line selection — rather than a single bounding rectangle over the whole range.
      */
     private void paintSpan(
-            GraphicsContext g, int start, int end, int firstVisible, int lastVisible, double w, double h) {
+            GraphicsContext g, int start, int end, int firstVisible, int lastVisible, double w, double h,
+            OverlayMetrics metrics) {
         int total = area.getLength();
         start = clamp(start, 0, total);
         end = clamp(end, 0, total);
@@ -143,11 +145,10 @@ final class NoteHighlightOverlay extends Region {
             boolean lastLine = line == endLine;
             int c0 = (line == startLine) ? startPos.getMinor() : 0;
             int c1 = lastLine ? endPos.getMinor() : paraLen;
-            int o0 = area.getAbsolutePosition(line, clamp(c0, 0, paraLen));
-            int o1 = area.getAbsolutePosition(line, clamp(c1, 0, paraLen));
+            int cc0 = clamp(c0, 0, paraLen);
+            int cc1 = clamp(c1, 0, paraLen);
             // Query a non-empty range so the bounds (left edge, baseline, height) are well-defined.
-            Bounds b = toLocal(
-                    area.getCharacterBoundsOnScreen(o0, Math.max(o1, o0 + 1)).orElse(null));
+            Bounds b = metrics.rangeLocal(line, cc0, Math.max(cc1, cc0 + 1));
             if (b == null) {
                 continue;
             }
@@ -166,9 +167,5 @@ final class NoteHighlightOverlay extends Region {
 
     private static int clamp(int v, int lo, int hi) {
         return Math.max(lo, Math.min(hi, v));
-    }
-
-    private Bounds toLocal(Bounds screen) {
-        return screen == null ? null : canvas.screenToLocal(screen);
     }
 }
