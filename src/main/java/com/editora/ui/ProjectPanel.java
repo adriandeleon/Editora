@@ -19,38 +19,34 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-import com.editora.config.Project;
-
 import javafx.application.Platform;
 import javafx.animation.PauseTransition;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
 /**
- * The Project tool window: a project switcher (combobox incl. "No Project", + close button) and a
- * filter box over a lazy file tree rooted at the active project's folder. Typing in the filter runs a
- * bounded, debounced project-wide name search (dot-dirs skipped, capped) and shows matches as a flat
- * list; clearing it restores the lazy tree. Emacs-style keyboard nav (C-n/C-p, C-f/C-b, Enter) like
- * the Structure panel; Enter/double-click opens a file; a right-click menu renames/deletes files.
+ * The Project tool window: a filter box over a lazy file tree rooted at the active project's folder.
+ * Typing in the filter runs a bounded, debounced project-wide name search (dot-dirs skipped, capped)
+ * and shows matches as a flat list; clearing it restores the lazy tree. Emacs-style keyboard nav
+ * (C-n/C-p, C-f/C-b, Enter) like the Structure panel; Enter/double-click opens a file; a right-click
+ * menu renames/deletes files. (Project switch/close/delete live on the toolbar project combo and the
+ * {@code project.*} palette commands — each window is one project, named in the window title.)
  */
 public class ProjectPanel extends VBox implements ToolWindowContent {
 
@@ -59,9 +55,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private static final int MAX_DEPTH = 25;
 
     private final Consumer<Path> onOpenFile;
-    private final Consumer<Project> onSwitchProject;
-    private final Runnable onCloseProject;
-    private final Runnable onDeleteProject;
     private final BiConsumer<Path, Path> onFileRenamed;
     private final Consumer<Path> onFileDeleted;
     private final java.util.function.Predicate<Path> isModified;
@@ -71,9 +64,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
     private OverlayInput.Prompt prompt;
 
-    private ProjectCombo projectCombo;
-    private final Button closeButton = new Button();
-    private final Button deleteButton = new Button();
     private final TextField filterField = new TextField();
     private final TreeView<Path> tree = new TreeView<>();
     private final StackPane placeholderPane;
@@ -91,14 +81,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private boolean filtering;
     private boolean loading;
 
-    public ProjectPanel(Consumer<Path> onOpenFile, Consumer<Project> onSwitchProject,
-                        Runnable onCloseProject, Runnable onDeleteProject,
+    public ProjectPanel(Consumer<Path> onOpenFile,
                         BiConsumer<Path, Path> onFileRenamed, Consumer<Path> onFileDeleted,
                         java.util.function.Predicate<Path> isModified) {
         this.onOpenFile = onOpenFile;
-        this.onSwitchProject = onSwitchProject;
-        this.onCloseProject = onCloseProject;
-        this.onDeleteProject = onDeleteProject;
         this.onFileRenamed = onFileRenamed;
         this.onFileDeleted = onFileDeleted;
         this.isModified = isModified;
@@ -106,7 +92,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
 
-        buildHeader();
         buildFilter();
 
         tree.setShowRoot(true);
@@ -129,29 +114,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         setRoot(null);
     }
 
-    private void buildHeader() {
-        // Every combo selection is a switch — including "No Project" (id "" = return to the global
-        // session without closing any project); the caller (switchToProject) handles the sentinel.
-        projectCombo = new ProjectCombo(onSwitchProject);
-        projectCombo.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(projectCombo, Priority.ALWAYS);
-
-        closeButton.setGraphic(Icons.closeSmall());
-        closeButton.getStyleClass().addAll("button-icon", "flat");
-        closeButton.setTooltip(new Tooltip(tr("project.closeTip")));
-        closeButton.setOnAction(e -> onCloseProject.run());
-
-        deleteButton.setGraphic(Icons.trash());
-        deleteButton.getStyleClass().addAll("button-icon", "flat");
-        deleteButton.setTooltip(new Tooltip(tr("project.deleteTip")));
-        deleteButton.setOnAction(e -> onDeleteProject.run());
-
-        HBox header = new HBox(4, projectCombo, deleteButton, closeButton);
-        header.getStyleClass().add("project-header");
-        header.setAlignment(Pos.CENTER_LEFT);
-        getChildren().add(header);
-    }
-
     private void buildFilter() {
         filterField.setPromptText(tr("project.filterPrompt"));
         filterField.getStyleClass().add("project-filter");
@@ -161,14 +123,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         });
         filterDebounce.setOnFinished(e -> rebuildBody());
-    }
-
-    /** Populates the project switcher; {@code activeId} selects the current project (or "" for none). */
-    public void setProjects(List<Project> all, String activeId) {
-        projectCombo.setProjects(all, activeId);
-        boolean noActive = activeId == null || activeId.isEmpty();
-        closeButton.setDisable(noActive);
-        deleteButton.setDisable(noActive);
     }
 
     /** Re-renders the visible tree cells so each file's modified marker/color reflects current state. */
@@ -252,7 +206,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private void rebuildBody() {
         long gen = searchGen.incrementAndGet(); // invalidate any in-flight search
         if (root == null || !Files.isDirectory(root)) {
-            getChildren().setAll(header(), placeholderPane);
+            getChildren().setAll(placeholderPane);
             return;
         }
         String q = filterField.getText().trim();
@@ -283,11 +237,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 });
             });
         }
-        getChildren().setAll(header(), filterField, tree);
-    }
-
-    private HBox header() {
-        return (HBox) getChildren().get(0);
+        getChildren().setAll(filterField, tree);
     }
 
     /** Bounded project-wide filename search: dot-dirs skipped, capped on entries visited and matches. */

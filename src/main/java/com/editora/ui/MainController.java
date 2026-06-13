@@ -1461,8 +1461,7 @@ public class MainController {
     }
 
     private void refreshProjectPanelList() {
-        // The combo shows THIS window's project as selected (each window is one project).
-        projectPanel.setProjects(projects.list(), projectKey);
+        // The toolbar combo shows THIS window's project as selected (each window is one project).
         if (toolbarProjectCombo != null) {
             toolbarProjectCombo.setProjects(projects.list(), projectKey);
         }
@@ -1808,9 +1807,8 @@ public class MainController {
 
     private void setupToolWindows() {
         toolWindows = new ToolWindowManager(workspace, tabPane, config, keymap);
-        projectPanel = new ProjectPanel(this::openPath, this::switchToProject, this::closeProject,
-                this::deleteProject, this::onProjectFileRenamed, this::onProjectFileDeleted,
-                this::isPathModified);
+        projectPanel = new ProjectPanel(this::openPath, this::onProjectFileRenamed,
+                this::onProjectFileDeleted, this::isPathModified);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
         projectToolWindow = new ToolWindow("project", tr("toolwindow.project"), ToolWindow.Side.RIGHT,
