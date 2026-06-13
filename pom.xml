@@ -324,6 +324,13 @@
                         <!-- Match the packaged app's Prism texture caps (see the dist profile). -->
                         <option>-Dprism.maxvram=2G</option>
                         <option>-Dprism.maxTextureSize=16384</option>
+                        <!-- Match the packaged app's heap/GC so dev and prod behave alike.
+                             SerialGC: a mostly-idle single-user editor on a small heap gets sub-ms
+                             pauses with no parallel GC-thread overhead (lower idle RSS than G1).
+                             -Xmx2g caps GC-driven RSS growth while staying safe for a 50 MB file
+                             (the huge-file read cap) with deep undo. See the dist profile. -->
+                        <option>-Xmx2g</option>
+                        <option>-XX:+UseSerialGC</option>
                     </options>
                     <launcher>editora</launcher>
                     <jlinkImageName>editora</jlinkImageName>
@@ -743,14 +750,16 @@
                         <artifactId>jpackage-maven-plugin</artifactId>
                         <version>${jpackage.plugin.version}</version>
                         <executions>
+                            <!-- PHASE 1: always build a jlink'd APP_IMAGE (the installer is wrapped
+                                 later, after AOT training, by the aot_build helper). -->
                             <execution>
-                                <id>jpackage</id>
+                                <id>jpackage-app-image</id>
                                 <phase>package</phase>
                                 <goals>
                                     <goal>jpackage</goal>
                                 </goals>
                                 <configuration>
-                                    <type>${jpackage.type}</type>
+                                    <type>APP_IMAGE</type>
                                     <name>Editora</name>
                                     <appVersion>${project.version}</appVersion>
                                     <vendor>Editora</vendor>
@@ -767,8 +776,95 @@
                                              are harmless ceilings, not reservations. -->
                                         <javaOption>-Dprism.maxvram=2G</javaOption>
                                         <javaOption>-Dprism.maxTextureSize=16384</javaOption>
+                                        <!-- Heap/GC footprint. With no -Xmx, jpackage inherits the
+                                             default ergonomic max heap (~1/4 of physical RAM), which on
+                                             a high-RAM machine balloons to many GB and lets GC-driven RSS
+                                             grow accordingly. A fixed 2g ceiling keeps RSS predictable
+                                             across the release matrix while staying safe for a 50 MB file
+                                             (the huge-file read cap) with deep undo history.
+                                             SerialGC: for a mostly-idle single-user editor on a small
+                                             heap, pauses are sub-millisecond and there's no parallel
+                                             GC-thread overhead (lower idle RSS than the default G1). -->
+                                        <javaOption>-Xmx2g</javaOption>
+                                        <javaOption>-XX:+UseSerialGC</javaOption>
+                                        <!-- AOT cache (JDK 25 Leyden) — ~28% faster cold start (measured:
+                                             first-frame ~1060ms -> ~760ms on macOS). The cache is TRAINED
+                                             after this image is built (see the aot_build exec step below):
+                                             a full-GUI training run writes $APPDIR/editora.aot, which this
+                                             option then maps at every launch. $APPDIR is expanded by the
+                                             jpackage launcher to the read-only install dir, so the cache
+                                             rides inside the image. GRACEFUL: if training failed (e.g. no
+                                             display on a runner) and editora.aot is absent/invalid, the
+                                             default AOTMode=auto logs to stderr (invisible in the packaged
+                                             app) and starts normally — a missing cache never breaks launch. -->
+                                        <javaOption>-XX:AOTCache=$APPDIR/editora.aot</javaOption>
+
+                                        <!-- ===== Opt-in tunings below: DEVICE-TEST per platform on the
+                                             release matrix before enabling. They touch correctness (heap
+                                             layout / the render backend), so they don't ship by default. =====
+
+                                        macOS Metal render pipeline (Apple deprecated the OpenGL/es2 backend
+                                        JavaFX otherwise uses on macOS). Lower overhead on Apple Silicon and
+                                        the forward path; this app is overlay-heavy (minimap, whitespace,
+                                        ruler, diagnostic/search canvases) so it should benefit. Newer code
+                                        path — verify rendering on a real Mac before shipping. macOS only:
+                                        <javaOption>-Dprism.order=mtl,es2,sw</javaOption>
+
+                                        Compact object headers (JDK 25, still experimental): shrinks every
+                                        object header 12 -> 8 bytes, ~10-20% live-heap reduction. An editor
+                                        holds millions of small objects (style spans, tokens, rope nodes),
+                                        so this pays off — but test for stability first (and note it changes
+                                        the AOT cache's recorded layout, so retrain after enabling):
+                                        <javaOption>-XX:+UnlockExperimentalVMOptions</javaOption>
+                                        <javaOption>-XX:+UseCompactObjectHeaders</javaOption> -->
                                     </javaOptions>
-                                    <destination>${project.build.directory}/dist</destination>
+                                    <!-- jlink image stripping: smaller runtime -> smaller DMG/MSI/DEB,
+                                         faster install, less mapped footprint. no-man-pages/no-header-files
+                                         drop docs/headers, strip-debug drops line tables, zip-6 recompresses
+                                         the modules. NOTE: strip-native-commands is deliberately NOT in this
+                                         list — the bin/java it would remove is needed for the AOT training
+                                         run; the aot_build helper deletes bin/ itself, after training,
+                                         reclaiming the same footprint. -->
+                                    <jLinkOptions>
+                                        <jLinkOption>--strip-debug</jLinkOption>
+                                        <jLinkOption>--no-man-pages</jLinkOption>
+                                        <jLinkOption>--no-header-files</jLinkOption>
+                                        <jLinkOption>--compress=zip-6</jLinkOption>
+                                    </jLinkOptions>
+                                    <destination>${project.build.directory}/aot-image</destination>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- After the APP_IMAGE is built (above), run the single-file aot_build helper with
+                         the BUILD JDK: it trains a full-GUI AOT cache against the image's own runtime
+                         (xvfb-run on a headless Linux runner), injects $APPDIR/editora.aot, strips the
+                         runtime bin/, then either copies the image (APP_IMAGE builds) or wraps it into
+                         the DMG/MSI/DEB via jpackage's app-image mode (installer builds) into target/dist.
+                         Declared after the jpackage plugin so it runs later in the `package` phase. -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>aot-train-and-deliver</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <arguments>
+                                        <argument>${project.basedir}/scripts/aot_build.java</argument>
+                                        <argument>${project.build.directory}/aot-image</argument>
+                                        <argument>Editora</argument>
+                                        <argument>${project.version}</argument>
+                                        <argument>${jpackage.type}</argument>
+                                        <argument>${jpackage.icon}</argument>
+                                        <argument>${project.build.directory}/dist</argument>
+                                        <argument>com.editora/com.editora.App</argument>
+                                    </arguments>
                                 </configuration>
                             </execution>
                         </executions>

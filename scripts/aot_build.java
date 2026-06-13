@@ -1,0 +1,204 @@
+// Build-time AOT-cache step for the `dist` profile (run by exec-maven-plugin with the build JDK).
+//
+// jpackage has already produced a jlink'd APP_IMAGE (phase 1). This helper:
+//   1. trains a full-GUI AOT cache against the image's own runtime (so classes match the shipped
+//      runtime exactly, path-independently) and drops it at $APPDIR/editora.aot — the launcher .cfg
+//      already references it via -XX:AOTCache=$APPDIR/editora.aot;
+//   2. strips the runtime's bin/ (the footprint we deferred from jLinkOptions so bin/java stayed
+//      available for training — the jpackage native launcher uses libjli, never bin/java);
+//   3. for an installer build, wraps the prepared image into the DMG/MSI/DEB via `jpackage
+//      --app-image`; for an APP_IMAGE build, just copies the image to the destination.
+//
+// FAILURE-TOLERANT: training/inject/strip are best-effort — if the runner has no usable display and
+// training fails, the build continues and the app simply ships without the cache (a missing
+// -XX:AOTCache file degrades gracefully to a normal, uncached start). Only the installer wrap, the
+// actual deliverable, fails the build on error.
+//
+// Args: <imageDir> <appName> <appVersion> <installerType> <iconPath|-> <destDir> <moduleMain>
+//   Run via:  java scripts/aot_build.java target/aot-image Editora 1.0.0 DMG branding/editora.icns target/dist com.editora/com.editora.App
+
+import java.io.IOException;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
+
+public class aot_build {
+
+    public static void main(String[] rawArgs) throws Exception {
+        if (rawArgs.length < 7) {
+            System.err.println("[aot] usage: imageDir appName appVersion installerType iconPath destDir moduleMain");
+            System.exit(2);
+        }
+        Path imageDir   = Path.of(rawArgs[0]);
+        String appName  = rawArgs[1];
+        String appVer   = rawArgs[2];
+        String type     = rawArgs[3];
+        String icon     = rawArgs[4];
+        Path destDir    = Path.of(rawArgs[5]);
+        String module   = rawArgs[6];
+
+        if (!Files.isDirectory(imageDir)) {
+            System.err.println("[aot] image dir not found: " + imageDir + " — skipping AOT step");
+            return; // nothing to do; let the build proceed
+        }
+
+        // --- locate the image's java + its $APPDIR (the dir holding <appName>.cfg) ---
+        boolean win = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        Path imageJava = find(imageDir, win ? "java.exe" : "java", p -> p.getParent() != null
+                && p.getParent().getFileName().toString().equals("bin"));
+        Path cfg = find(imageDir, appName + ".cfg", p -> true);
+
+        // --- 1) train the AOT cache (best-effort) ---
+        if (imageJava != null && cfg != null) {
+            Path appDir = cfg.getParent();
+            Path aot = appDir.resolve("editora.aot");
+            trainBestEffort(imageJava, aot, module);
+            if (Files.isRegularFile(aot)) {
+                System.out.println("[aot] cache present: " + aot + " (" + (Files.size(aot) / (1024 * 1024)) + " MB)");
+            } else {
+                System.out.println("[aot] no cache produced — app will start uncached (graceful)");
+            }
+        } else {
+            System.out.println("[aot] could not locate image java/cfg (java=" + imageJava + ", cfg=" + cfg
+                    + ") — skipping training; app will start uncached");
+        }
+
+        // --- 2) strip the runtime bin/ (reclaim the footprint; the jpackage launcher uses libjli,
+        //        never bin/java, so the whole dir can go) ---
+        if (imageJava != null) {
+            deleteRecursive(imageJava.getParent());
+            System.out.println("[aot] stripped runtime bin/: " + imageJava.getParent());
+        }
+
+        // --- 3) deliver: copy (APP_IMAGE) or wrap into an installer ---
+        Files.createDirectories(destDir);
+        Path imageRoot = imageRoot(imageDir, appName, win); // Editora.app (mac) or Editora dir
+        if ("APP_IMAGE".equalsIgnoreCase(type)) {
+            Path out = destDir.resolve(imageRoot.getFileName());
+            deleteRecursive(out);
+            copyRecursive(imageRoot, out);
+            System.out.println("[aot] app image -> " + out);
+        } else {
+            wrapInstaller(imageRoot, appName, appVer, type, icon, destDir); // fails the build on error
+        }
+    }
+
+    /** Run the GUI app against the image runtime with -XX:AOTCacheOutput; render one frame then exit. */
+    private static void trainBestEffort(Path imageJava, Path aot, String module) {
+        Path tmpCfg = null;
+        try {
+            tmpCfg = Files.createTempDirectory("editora-aot-train");
+            List<String> cmd = new ArrayList<>();
+            // On a headless Linux runner, a virtual X server is needed for JavaFX; wrap with xvfb-run.
+            String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+            boolean noDisplay = System.getenv("DISPLAY") == null || System.getenv("DISPLAY").isBlank();
+            if (os.contains("linux") && noDisplay && which("xvfb-run") != null) {
+                cmd.add("xvfb-run");
+                cmd.add("-a");
+            }
+            cmd.add(imageJava.toString());
+            cmd.addAll(List.of(
+                    "-Xmx2g", "-XX:+UseSerialGC",
+                    "--enable-native-access=javafx.graphics",
+                    "-Dprism.maxvram=2G", "-Dprism.maxTextureSize=16384",
+                    "-Deditora.aotTrainExit=true",
+                    "-XX:AOTCacheOutput=" + aot,
+                    "-m", module,
+                    "--config-dir", tmpCfg.toString(), "--new-file"));
+            System.out.println("[aot] training: " + String.join(" ", cmd));
+            Process p = new ProcessBuilder(cmd).redirectErrorStream(true).inheritIO().start();
+            if (!p.waitFor(180, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                System.out.println("[aot] training timed out — continuing without cache");
+            }
+        } catch (Exception e) {
+            System.out.println("[aot] training failed (" + e + ") — continuing without cache");
+        } finally {
+            if (tmpCfg != null) deleteRecursive(tmpCfg);
+        }
+    }
+
+    /** jpackage --app-image <image> --type <installer> ... (build JDK's jpackage). Fails on error. */
+    private static void wrapInstaller(Path imageRoot, String appName, String appVer, String type,
+                                      String icon, Path destDir) throws Exception {
+        boolean win = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        Path jpackage = Path.of(System.getProperty("java.home"), "bin", win ? "jpackage.exe" : "jpackage");
+        List<String> cmd = new ArrayList<>(List.of(
+                jpackage.toString(),
+                "--type", type,
+                "--name", appName,
+                "--app-version", appVer,
+                "--vendor", "Editora",
+                "--app-image", imageRoot.toString(),
+                "--dest", destDir.toString()));
+        if (icon != null && !icon.isBlank() && !"-".equals(icon) && Files.exists(Path.of(icon))) {
+            cmd.add("--icon");
+            cmd.add(icon);
+        }
+        System.out.println("[aot] wrapping installer: " + String.join(" ", cmd));
+        Process p = new ProcessBuilder(cmd).inheritIO().start();
+        int code = p.waitFor();
+        if (code != 0) {
+            System.err.println("[aot] jpackage installer wrap failed with exit " + code);
+            System.exit(code); // the installer is the real deliverable — fail the build
+        }
+        System.out.println("[aot] installer -> " + destDir);
+    }
+
+    // ---- helpers ----
+
+    private static Path imageRoot(Path imageDir, String appName, boolean win) throws IOException {
+        // macOS: <imageDir>/Editora.app ; Linux/Windows: <imageDir>/Editora
+        Path mac = imageDir.resolve(appName + ".app");
+        if (Files.isDirectory(mac)) return mac;
+        Path plain = imageDir.resolve(appName);
+        if (Files.isDirectory(plain)) return plain;
+        // fall back to the single child dir jpackage created
+        try (Stream<Path> s = Files.list(imageDir)) {
+            return s.filter(Files::isDirectory).findFirst().orElse(imageDir);
+        }
+    }
+
+    private static Path find(Path root, String name, java.util.function.Predicate<Path> extra) throws IOException {
+        try (Stream<Path> s = Files.walk(root)) {
+            return s.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().equals(name))
+                    .filter(extra)
+                    .findFirst().orElse(null);
+        }
+    }
+
+    private static String which(String exe) {
+        String path = System.getenv("PATH");
+        if (path == null) return null;
+        for (String dir : path.split(java.io.File.pathSeparator)) {
+            Path p = Path.of(dir, exe);
+            if (Files.isExecutable(p)) return p.toString();
+        }
+        return null;
+    }
+
+    private static void deleteRecursive(Path path) {
+        if (path == null || !Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return;
+        try (Stream<Path> s = Files.walk(path)) {
+            s.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try { Files.deleteIfExists(p); } catch (IOException ignored) { }
+            });
+        } catch (IOException ignored) { }
+    }
+
+    private static void copyRecursive(Path src, Path dst) throws IOException {
+        try (Stream<Path> s = Files.walk(src)) {
+            for (Path p : (Iterable<Path>) s::iterator) {
+                Path target = dst.resolve(src.relativize(p).toString());
+                if (Files.isDirectory(p)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.createDirectories(target.getParent());
+                    Files.copy(p, target, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+}

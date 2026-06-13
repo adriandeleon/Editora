@@ -32,6 +32,17 @@ jobs:
           java-version: '25'
           cache: maven
 
+      # The -Pdist build trains a full-GUI AOT cache (see scripts/aot_build.java + pom.xml). On a
+      # headless Linux runner that needs a virtual X display + JavaFX's GTK/GL runtime libs; the
+      # helper auto-wraps the training run in xvfb-run when DISPLAY is unset. If any of this is
+      # missing the training degrades gracefully (the app just ships without the cache), so this
+      # step is a best-effort enabler, not a hard dependency. macOS/Windows runners need nothing.
+      - name: Install virtual display for AOT training (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libgl1 libxxf86vm1
+
       - name: Build native installer (-Pdist)
         shell: bash
         run: ./mvnw -B --no-transfer-progress -Pdist -DskipTests package
