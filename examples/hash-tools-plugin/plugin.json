@@ -1,0 +1,6 @@
+{
+  "id": "hash-tools",
+  "name": "Hash Tools",
+  "version": "1.0.0",
+  "main": "com.example.editora.hash.HashToolsPlugin"
+}

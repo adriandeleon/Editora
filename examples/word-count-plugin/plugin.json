@@ -1,0 +1,6 @@
+{
+  "id": "word-count",
+  "name": "Word Count",
+  "version": "1.0.0",
+  "main": "com.example.editora.wordcount.WordCountPlugin"
+}

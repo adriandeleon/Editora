@@ -211,6 +211,38 @@ Emacs-style keymap or a fuzzy command palette.
   German**. Pick a language under Settings → Appearance → Language (default *Automatic* follows your
   system language, falling back to English); the change applies on the next restart.
 
+## Available plugins
+
+A curated registry of ready-to-install plugins lives at
+[adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) (the baked-in default).
+Enable plugins in *Settings → Plugins*, then **Browse plugins…** to install any of these (or *Install from
+file…* for a local `.zip`). Each plugin's full source is in that repo under `plugins/<id>/`.
+
+| Plugin | What it does |
+| --- | --- |
+| **Example Plugin** | Reference plugin exercising every extension point (command, keybinding, tool window, editor menu item, status-bar segment, snippet). |
+| **Lorem Ipsum** | Insert a lorem-ipsum paragraph, or replace the selection with one. |
+| **Text Tools** | Transform the selection/document: case convert, sort, unique, reverse, trim trailing, squeeze blank lines. |
+| **Encode Tools** | Encode/decode: Base64, URL, HTML entities, ROT13, hex. |
+| **Hash Tools** | Hash text to a hex digest — MD5 / SHA-1 / SHA-256. |
+| **JSON / XML Tools** | JSON pretty-print / minify and XML pretty-print. |
+| **Slug & Sequence** | Slugify text; number lines; fill a column with `1..N`. |
+| **Box Banner** | Wrap the selection in an ASCII box banner. |
+| **Insert Tools** | Insert a UUID or the current date/time at the caret. |
+| **Markdown TOC** | Insert a table of contents built from the document's headings. |
+| **Format Runner** | Format the active file with an external formatter (prettier/black/gofmt/rustfmt/clang-format). |
+| **Open on GitHub** | Open the active file at the caret line on its remote's web UI. |
+| **Reveal & Terminal** | Reveal the file in the OS file manager, or open a terminal at its folder. |
+| **Scratchpad** | A persistent scratchpad tool window (auto-saved). |
+| **Regex Tester** | A live regex tester tool window (pattern + flags + match spans/groups). |
+| **Color Picker** | Pick a color and insert it as HEX / `rgb()` / `rgba()`. |
+| **Word Count** | Live word/line/character count + reading time for the active buffer. |
+| **Calculator** | Evaluate arithmetic expressions and insert the result. |
+| **Task Runner** | Run a shell task (`npm`/`make`/…) in the file's directory and stream output. |
+
+> Plugins run with **full trust** (no sandbox) — only install ones you trust. To build your own, see
+> [`docs/plugins.md`](docs/plugins.md) and the worked examples under [`examples/`](examples/).
+
 ## Requirements
 
 - JDK 25+

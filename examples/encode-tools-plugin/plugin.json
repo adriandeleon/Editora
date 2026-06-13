@@ -1,0 +1,6 @@
+{
+  "id": "encode-tools",
+  "name": "Encode Tools",
+  "version": "1.0.0",
+  "main": "com.example.editora.encode.EncodeToolsPlugin"
+}

@@ -1,0 +1,6 @@
+{
+  "id": "json-tools",
+  "name": "JSON / XML Tools",
+  "version": "1.0.0",
+  "main": "com.example.editora.jsontools.JsonToolsPlugin"
+}

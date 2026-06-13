@@ -1,0 +1,6 @@
+{
+  "id": "markdown-toc",
+  "name": "Markdown TOC",
+  "version": "1.0.0",
+  "main": "com.example.editora.mdtoc.MarkdownTocPlugin"
+}

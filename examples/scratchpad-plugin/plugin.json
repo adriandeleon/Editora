@@ -1,0 +1,6 @@
+{
+  "id": "scratchpad",
+  "name": "Scratchpad",
+  "version": "1.0.0",
+  "main": "com.example.editora.scratchpad.ScratchpadPlugin"
+}

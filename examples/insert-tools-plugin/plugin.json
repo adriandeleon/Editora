@@ -1,0 +1,6 @@
+{
+  "id": "insert-tools",
+  "name": "Insert Tools",
+  "version": "1.0.0",
+  "main": "com.example.editora.insert.InsertToolsPlugin"
+}

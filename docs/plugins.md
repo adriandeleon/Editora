@@ -94,7 +94,7 @@ public class HelloPlugin implements Plugin {
 | `registerToolWindow(id, title, side, content, commandId)` | A dockable tool window (`LEFT`/`RIGHT`/`BOTTOM`). |
 | `addEditorMenuItem(label, action)` | An editor right-click item; the action gets an `ActiveEditor`. |
 | `addStatusBarSegment(label, commandId)` | A clickable status-bar segment. |
-| `activeEditor()` | The live active-buffer facade (`filePath`/`text`/`selectedText`/`replaceSelection`/`insertAtCaret`/`openPath`). |
+| `activeEditor()` | The live active-buffer facade (`filePath`/`text`/`selectedText`/`replaceSelection`/`insertAtCaret`/`setText`/`openPath`). `setText` replaces the whole buffer (undoable) — for whole-file transforms like formatting. |
 | `pluginDir()` / `dataDir()` / `configDir()` | Paths (a writable per-plugin `data/` is created on demand). |
 | `log(msg)` / `setStatus(msg)` | Debug log / status echo. |
 
@@ -115,7 +115,17 @@ delegation. There is **no `ServiceLoader`, no `ModuleLayer`** — compile your p
 
 See [`examples/example-plugin/`](../examples/example-plugin/) — a complete plugin exercising every
 extension point, with a `build.sh` that compiles against Editora's API + JavaFX, packages the jar, and
-produces a distributable `example.zip` (+ its SHA-256).
+produces a distributable `example.zip` (+ its SHA-256). More real, single-purpose examples:
+[`lorem-ipsum-plugin`](../examples/lorem-ipsum-plugin/) (text generator),
+[`text-tools-plugin`](../examples/text-tools-plugin/) (selection/document transforms),
+[`insert-tools-plugin`](../examples/insert-tools-plugin/) (UUID/timestamp inserters),
+[`scratchpad-plugin`](../examples/scratchpad-plugin/) (a persistent tool window),
+[`format-runner-plugin`](../examples/format-runner-plugin/) (run an external formatter — the
+external-command pattern),
+[`encode-tools-plugin`](../examples/encode-tools-plugin/) (Base64/URL/HTML/ROT13/hex),
+[`hash-tools-plugin`](../examples/hash-tools-plugin/) (MD5/SHA-1/SHA-256),
+[`markdown-toc-plugin`](../examples/markdown-toc-plugin/) (insert a TOC from headings), and
+[`regex-tester-plugin`](../examples/regex-tester-plugin/) (a live regex tester tool window).
 
 ## Installing plugins
 

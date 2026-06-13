@@ -1,0 +1,6 @@
+{
+  "id": "run-task",
+  "name": "Task Runner",
+  "version": "1.0.0",
+  "main": "com.example.editora.runtask.RunTaskPlugin"
+}

@@ -1,0 +1,6 @@
+{
+  "id": "calculator",
+  "name": "Calculator",
+  "version": "1.0.0",
+  "main": "com.example.editora.calc.CalculatorPlugin"
+}

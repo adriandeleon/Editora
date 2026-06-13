@@ -1,0 +1,6 @@
+{
+  "id": "color-picker",
+  "name": "Color Picker",
+  "version": "1.0.0",
+  "main": "com.example.editora.color.ColorPickerPlugin"
+}

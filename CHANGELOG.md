@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `examples/example-plugin/build.sh` now emits one (+ its SHA-256) and `examples/editora-plugins-registry/`
   is a ready-to-host sample index. All network/zip/disk work is off the FX thread; no new dependency
   (`java.net.http`). See `docs/plugins.md` → *Publishing & installing*.
+- **More example plugins + `ActiveEditor.setText`** — the plugin `ActiveEditor` facade gained `setText`
+  (whole-buffer, undoable replace) for whole-file transforms. New real example plugins under `examples/`:
+  **lorem-ipsum** (text generator), **text-tools** (case convert / sort / unique / reverse / trim, on the
+  selection or whole document), **insert-tools** (UUID / timestamp inserters), **scratchpad** (a persistent
+  tool window backed by the plugin's data dir), and **format-runner** (run an external formatter —
+  prettier/black/gofmt/rustfmt/clang-format — over stdin→stdout). Plus **encode-tools** (Base64/URL/HTML/
+  ROT13/hex), **hash-tools** (MD5/SHA-1/SHA-256), **markdown-toc** (insert a TOC from headings), and
+  **regex-tester** (a live regex tester tool window); Text Tools also gained *Squeeze Blank Lines* (v1.1.0).
+  All are published in the `adriandeleon/editora-plugins` registry, which carries each plugin's source.
 - **Git history, blame & stash** (IntelliJ/VSCode parity) — a **Git Log** tool window (`M-g h`, or *Show
   File History* on a tab) lists commits; select one to see its changed files, double-click a file for a
   read-only diff against its parent, and right-click a commit to Copy Hash / Checkout / Reset

@@ -1,0 +1,6 @@
+{
+  "id": "reveal",
+  "name": "Reveal & Terminal",
+  "version": "1.0.0",
+  "main": "com.example.editora.reveal.RevealPlugin"
+}

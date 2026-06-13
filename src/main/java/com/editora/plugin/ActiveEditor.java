@@ -18,11 +18,20 @@ public interface ActiveEditor {
     /** The active buffer's selected text, or {@code ""} when nothing is selected. */
     String selectedText();
 
+    /** The caret's 1-based line number, or {@code -1} when there is no buffer. */
+    int caretLine();
+
     /** Replaces the current selection (or inserts at the caret when empty) with {@code replacement}. */
     void replaceSelection(String replacement);
 
     /** Inserts {@code text} at the caret. */
     void insertAtCaret(String text);
+
+    /**
+     * Replaces the <em>entire</em> buffer content (undoable; marks the buffer dirty) — for whole-file
+     * transforms like formatting. A no-op when there is no editable buffer.
+     */
+    void setText(String text);
 
     /** Opens {@code path} in a tab (a no-op for a directory / unreadable file). */
     void openPath(Path path);

@@ -809,6 +809,12 @@ public class MainController {
         @Override public void setStatus(String message) {
             MainController.this.setStatus(message);
         }
+
+        @Override public void openUrl(String url) {
+            if (url != null && !url.isBlank()) {
+                MainController.this.openExternalUrl(url);
+            }
+        }
     }
 
     /** A {@link com.editora.plugin.ActiveEditor} over a fixed buffer, or the live active buffer when null. */
@@ -838,6 +844,11 @@ public class MainController {
             return b == null ? "" : b.getArea().getSelectedText();
         }
 
+        @Override public int caretLine() {
+            EditorBuffer b = buf();
+            return b == null ? -1 : b.getArea().getCurrentParagraph() + 1; // 1-based
+        }
+
         @Override public void replaceSelection(String replacement) {
             EditorBuffer b = buf();
             if (b != null && b.isEditable() && replacement != null) {
@@ -849,6 +860,13 @@ public class MainController {
             EditorBuffer b = buf();
             if (b != null && b.isEditable() && text != null) {
                 b.getArea().insertText(b.getArea().getCaretPosition(), text);
+            }
+        }
+
+        @Override public void setText(String text) {
+            EditorBuffer b = buf();
+            if (b != null && b.isEditable() && text != null) {
+                b.getArea().replaceText(text); // whole-document replace (undoable, marks dirty)
             }
         }
 

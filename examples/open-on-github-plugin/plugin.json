@@ -1,0 +1,6 @@
+{
+  "id": "open-on-github",
+  "name": "Open on GitHub",
+  "version": "1.0.0",
+  "main": "com.example.editora.ongithub.OpenOnGitHubPlugin"
+}

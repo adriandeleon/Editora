@@ -47,4 +47,7 @@ public interface PluginContext {
 
     /** Shows a transient message in the status-bar echo area. */
     void setStatus(String message);
+
+    /** Opens a web URL in the user's default browser (e.g. for an "open on GitHub" action). */
+    void openUrl(String url);
 }

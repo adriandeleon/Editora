@@ -1,0 +1,6 @@
+{
+  "id": "slug-tools",
+  "name": "Slug & Sequence",
+  "version": "1.0.0",
+  "main": "com.example.editora.slug.SlugToolsPlugin"
+}

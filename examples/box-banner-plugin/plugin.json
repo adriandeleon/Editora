@@ -1,0 +1,6 @@
+{
+  "id": "box-banner",
+  "name": "Box Banner",
+  "version": "1.0.0",
+  "main": "com.example.editora.banner.BoxBannerPlugin"
+}

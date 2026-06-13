@@ -1,0 +1,6 @@
+{
+  "id": "regex-tester",
+  "name": "Regex Tester",
+  "version": "1.0.0",
+  "main": "com.example.editora.regex.RegexTesterPlugin"
+}
