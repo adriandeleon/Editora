@@ -58,7 +58,20 @@ public final class LanguageRegistry {
             // TOML — its own grammar + the taplo LSP (was previously highlighted via the INI grammar).
             Map.entry("toml", "toml"), Map.entry("tml", "toml"),
             // HTTP request files (JetBrains/VS Code REST format).
-            Map.entry("http", "http"), Map.entry("rest", "http"));
+            Map.entry("http", "http"), Map.entry("rest", "http"),
+            // systemd unit files — INI-like; no delimiter folding (like ini).
+            Map.entry("service", "systemd"), Map.entry("socket", "systemd"),
+            Map.entry("device", "systemd"), Map.entry("mount", "systemd"),
+            Map.entry("automount", "systemd"), Map.entry("swap", "systemd"),
+            Map.entry("target", "systemd"), Map.entry("path", "systemd"),
+            Map.entry("timer", "systemd"), Map.entry("slice", "systemd"),
+            Map.entry("scope", "systemd"), Map.entry("network", "systemd"),
+            Map.entry("netdev", "systemd"), Map.entry("link", "systemd"),
+            Map.entry("nspawn", "systemd"),
+            // XDG desktop entries / KDE .directory files.
+            Map.entry("desktop", "desktop"), Map.entry("directory", "desktop"),
+            // Java/INI-style .properties (highlighted with the INI grammar; see GrammarRegistry).
+            Map.entry("properties", "properties"));
 
     private LanguageRegistry() {
     }
@@ -75,11 +88,10 @@ public final class LanguageRegistry {
         if (slash >= 0) {
             base = base.substring(slash + 1);
         }
-        String lower = base.toLowerCase(Locale.ROOT);
-        // Dockerfile / Containerfile are extension-less (or carry a tag suffix, e.g. Dockerfile.dev).
-        if (lower.equals("dockerfile") || lower.equals("containerfile")
-                || lower.startsWith("dockerfile.") || lower.startsWith("containerfile.")) {
-            return "dockerfile";
+        // Name/location-determined config files (Dockerfile, dotenv, ssh/git config, hosts, ...).
+        String special = ConfigFileType.resolve(fileName);
+        if (special != null) {
+            return special;
         }
         int dot = base.lastIndexOf('.');
         if (dot < 0 || dot == base.length() - 1) {

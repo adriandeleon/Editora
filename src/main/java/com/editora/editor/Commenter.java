@@ -36,7 +36,9 @@ public final class Commenter {
             case "sql" -> new CommentStyle("--", "/*", "*/");
             case "lua" -> new CommentStyle("--", "--[[", "]]");
             case "terraform" -> new CommentStyle("#", "/*", "*/");
-            case "python", "shell", "yaml", "ruby", "dockerfile", "toml", "http" ->
+            case "python", "shell", "yaml", "ruby", "dockerfile", "toml", "http", "systemd",
+                 "desktop", "dotenv", "ssh-config", "git-config", "crontab", "caddyfile",
+                 "hosts", "fstab", "properties", "deb822", "apt-sources", "interfaces" ->
                     new CommentStyle("#", null, null);
             case "powershell" -> new CommentStyle("#", "<#", "#>");
             case "ini" -> new CommentStyle(";", null, null);

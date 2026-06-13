@@ -1,0 +1,30 @@
+{
+  "name": "interfaces",
+  "scopeName": "source.interfaces",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.interfaces",
+      "match": "#.*$"
+    },
+    {
+      "name": "keyword.control.interfaces",
+      "match": "^\\s*(auto|allow-hotplug|allow-auto|iface|mapping|source-directory|source|no-auto-down|no-scripts)\\b"
+    },
+    {
+      "name": "storage.type.address-family.interfaces",
+      "match": "\\b(inet6|inet|ipx|can)\\b"
+    },
+    {
+      "name": "constant.language.method.interfaces",
+      "match": "\\b(static|manual|dhcp|loopback|ppp|bootp|tunnel|wvdial|ipv4ll|6to4|auto)\\b"
+    },
+    {
+      "name": "keyword.other.option.interfaces",
+      "match": "^\\s*(address|netmask|gateway|broadcast|network|metric|hwaddress|mtu|scope|dns-nameservers|dns-search|dns-domain|pre-up|post-up|up|pre-down|post-down|down|bridge_ports|bridge_stp|bridge_fd|bridge_maxwait|bridge_hello|bridge_waitport|vlan-raw-device|vlan_raw_device|wpa-ssid|wpa-psk|wpa-conf|wpa-driver|pointopoint|media|endpoint|local|ttl|provider)\\b"
+    },
+    {
+      "name": "constant.numeric.ipv4.interfaces",
+      "match": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b"
+    }
+  ]
+}

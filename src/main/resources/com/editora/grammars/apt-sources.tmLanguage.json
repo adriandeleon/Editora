@@ -1,0 +1,29 @@
+{
+  "name": "apt-sources",
+  "scopeName": "source.apt-sources",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.apt-sources",
+      "match": "#.*$"
+    },
+    {
+      "name": "keyword.other.type.apt-sources",
+      "match": "^\\s*(deb-src|deb)\\b"
+    },
+    {
+      "name": "meta.options.apt-sources",
+      "begin": "\\[",
+      "end": "\\]",
+      "patterns": [
+        {
+          "name": "variable.parameter.apt-sources",
+          "match": "[a-zA-Z][a-zA-Z0-9-]*(?==)"
+        }
+      ]
+    },
+    {
+      "name": "markup.underline.link.apt-sources",
+      "match": "\\b(?:https?|ftp|file|copy|cdrom|mirror\\+https?|mirror):[^\\s]+"
+    }
+  ]
+}

@@ -22,8 +22,13 @@ These are aggregated by shiki from their respective upstream projects, each
 under its original license (predominantly MIT, with some under other permissive
 licenses such as Apache-2.0 or BSD); see the upstream repository above for the
 per-grammar license and source attribution. This source includes the Lua,
-Dockerfile, Terraform (HCL), and TOML grammars (lua/dockerfile/terraform/toml
-.tmLanguage.json).
+Dockerfile, Terraform (HCL), TOML, systemd, desktop-entry, and dotenv grammars
+(lua/dockerfile/terraform/toml/systemd/desktop/dotenv .tmLanguage.json; systemd,
+desktop, and dotenv are under the MIT License). It also includes the SSH config
+grammar (ssh-config.tmLanguage.json), which shiki aggregates from
+textmate/ssh-config.tmbundle, distributed under that project's permissive
+license ("Permission to copy, use, modify, sell and distribute this software is
+granted ... provided 'as is' without warranty").
 
 The following grammars were instead obtained from the Eclipse tm4e
 "language_pack" (which curates grammars for the tm4e engine used here):
@@ -50,14 +55,42 @@ Code under the MIT License (converted there from KapitanOczywisty/language-php):
 
     License: MIT  (© Microsoft Corporation; © GitHub Inc. / language-php)
 
+The Caddyfile grammar (caddyfile.tmLanguage.json) was obtained from the official
+Caddy VS Code extension under the MIT License:
+
+    https://github.com/caddyserver/vscode-caddyfile
+    (syntaxes/caddyfile.tmLanguage.json)
+
+    License: MIT  (© 2023 Matthew Penner)
+
+The crontab and Git config grammars (crontab.tmLanguage.json,
+git-config.tmLanguage.json) were obtained from the TextMate bundles
+textmate/cron.tmbundle and textmate/git.tmbundle (converted here from the
+original plist .tmLanguage to JSON, otherwise unmodified). These bundles are
+distributed under TextMate's permissive license: "Permission to copy, use,
+modify, sell and distribute this software is granted ... provided 'as is'
+without warranty."
+
+    https://github.com/textmate/cron.tmbundle
+    https://github.com/textmate/git.tmbundle
+
+The fstab, hosts, and Debian/Ubuntu grammars (fstab.tmLanguage.json,
+hosts.tmLanguage.json, deb822.tmLanguage.json, apt-sources.tmLanguage.json,
+interfaces.tmLanguage.json, debian-changelog.tmLanguage.json) — like the HTTP
+grammar (http.tmLanguage.json) — were written for Editora and are covered by
+Editora's own MIT License (above). The .properties files reuse the INI grammar.
+
 These remain under their original upstream licenses (predominantly MIT). All
-grammars are redistributed unmodified except markdown.tmLanguage.json, which
-has three regular expressions minimally adjusted for compatibility with the
-Joni regex backend (the {,3} quantifier rewritten as {0,3}, and a variable-
-length look-behind removed from the strikethrough rule).
+grammars are redistributed unmodified except markdown.tmLanguage.json (three
+regular expressions minimally adjusted for the Joni regex backend — the {,3}
+quantifier rewritten as {0,3}, and a variable-length look-behind removed from
+the strikethrough rule) and the two plist-to-JSON conversions noted above.
 
 Languages bundled: Java, XML, shell, PowerShell, DOS batch, Python, Groovy,
-Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL.
+Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL,
+systemd, desktop entries, dotenv, SSH config, Git config, crontab, Caddyfile,
+fstab, hosts, .properties, deb822 (Debian control / APT sources), APT
+sources.list, network interfaces, Debian changelog.
 
 ================================================================================
 Bundled fonts

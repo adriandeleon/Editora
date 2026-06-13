@@ -1,0 +1,31 @@
+{
+  "name": "debian-changelog",
+  "scopeName": "source.debian-changelog",
+  "patterns": [
+    {
+      "match": "^(\\S+)\\s+\\(([^)]+)\\)\\s+([^;]+);\\s*(urgency=\\S+)",
+      "captures": {
+        "1": { "name": "entity.name.package.debian-changelog" },
+        "2": { "name": "constant.numeric.version.debian-changelog" },
+        "3": { "name": "keyword.other.distribution.debian-changelog" },
+        "4": { "name": "keyword.other.urgency.debian-changelog" }
+      }
+    },
+    {
+      "match": "^( -- )(.*?)\\s*(<[^>]+>)(  )(.*)$",
+      "captures": {
+        "2": { "name": "entity.name.maintainer.debian-changelog" },
+        "3": { "name": "markup.underline.link.email.debian-changelog" },
+        "5": { "name": "constant.other.date.debian-changelog" }
+      }
+    },
+    {
+      "name": "markup.list.bullet.debian-changelog",
+      "match": "^\\s+[*+-]\\s"
+    },
+    {
+      "name": "keyword.other.closes.debian-changelog",
+      "match": "\\b(Closes|LP):\\s*#?\\d+"
+    }
+  ]
+}

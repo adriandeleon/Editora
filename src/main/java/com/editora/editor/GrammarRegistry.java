@@ -49,6 +49,8 @@ public final class GrammarRegistry {
         // The resource base name doubles as the language name (see LanguageRegistry), so the
         // inverse of scopeToResource resolves a language name to its scope.
         scopeToResource.forEach((scope, resource) -> languageNameToScope.put(resource, scope));
+        // ".properties" files are highlighted with the INI grammar but are their own language name.
+        languageNameToScope.put("properties", "source.ini");
         registry = new Registry(new IRegistryOptions() {
             @Override
             public IGrammarSource getGrammarSource(String scopeName) {
@@ -131,11 +133,10 @@ public final class GrammarRegistry {
         if (slash >= 0) {
             base = base.substring(slash + 1);
         }
-        String lower = base.toLowerCase(Locale.ROOT);
-        // Dockerfile / Containerfile are extension-less (or carry a tag suffix, e.g. Dockerfile.dev).
-        if (lower.equals("dockerfile") || lower.equals("containerfile")
-                || lower.startsWith("dockerfile.") || lower.startsWith("containerfile.")) {
-            return "source.dockerfile";
+        // Name/location-determined config files (Dockerfile, dotenv, ssh/git config, hosts, ...).
+        String special = ConfigFileType.resolve(fileName);
+        if (special != null) {
+            return languageNameToScope.get(special);
         }
         int dot = base.lastIndexOf('.');
         if (dot < 0 || dot == base.length() - 1) {
@@ -177,6 +178,19 @@ public final class GrammarRegistry {
         scopeToResource.put("source.hcl.terraform", "terraform");
         scopeToResource.put("source.toml", "toml");
         scopeToResource.put("source.http", "http");
+        scopeToResource.put("source.systemd", "systemd");
+        scopeToResource.put("source.desktop", "desktop");
+        scopeToResource.put("source.dotenv", "dotenv");
+        scopeToResource.put("source.ssh-config", "ssh-config");
+        scopeToResource.put("source.git-config", "git-config");
+        scopeToResource.put("text.crontab", "crontab");
+        scopeToResource.put("source.Caddyfile", "caddyfile");
+        scopeToResource.put("source.hosts", "hosts");
+        scopeToResource.put("source.fstab", "fstab");
+        scopeToResource.put("source.deb822", "deb822");
+        scopeToResource.put("source.apt-sources", "apt-sources");
+        scopeToResource.put("source.interfaces", "interfaces");
+        scopeToResource.put("source.debian-changelog", "debian-changelog");
 
         // file extension -> scope name
         mapExtensions("source.java", "java");
@@ -212,6 +226,15 @@ public final class GrammarRegistry {
         mapExtensions("source.hcl.terraform", "tf", "tfvars", "hcl");
         mapExtensions("source.toml", "toml", "tml");
         mapExtensions("source.http", "http", "rest");
+        // systemd unit files — each unit type is its own extension (.service/.socket/.timer/…),
+        // plus systemd-networkd's .network/.netdev/.link and nspawn containers.
+        mapExtensions("source.systemd",
+                "service", "socket", "device", "mount", "automount", "swap", "target",
+                "path", "timer", "slice", "scope", "network", "netdev", "link", "nspawn");
+        // XDG desktop entries (.desktop) and KDE .directory files.
+        mapExtensions("source.desktop", "desktop", "directory");
+        // dotenv (.env / .env.*), Caddyfile, crontab (.cron), git/ssh config, fstab, hosts are all
+        // name/location-determined and handled by ConfigFileType (see scopeForFileName), not by extension.
     }
 
     private void mapExtensions(String scope, String... extensions) {

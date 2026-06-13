@@ -2699,17 +2699,20 @@ public class EditorBuffer implements TabContent {
     /** Associates this buffer with a file and selects the grammar and fold language from its extension. */
     public void setPath(Path path) {
         this.path = path;
-        String fileName = path == null ? null : path.getFileName().toString();
-        String name = fileName == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(fileName);
+        // The full path (not just the basename) so location-based rules resolve — e.g. ~/.ssh/config,
+        // /etc/hosts, .git/config (see ConfigFileType). The registries reduce it to the basename for
+        // ordinary extension lookups.
+        String lookup = path == null ? null : path.toString();
+        String name = lookup == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(lookup);
         GrammarRegistry reg = GrammarRegistry.shared();
-        if (fileName == null || !reg.hasGrammarFor(fileName)) {
+        if (lookup == null || !reg.hasGrammarFor(lookup)) {
             applyLanguage(name, null); // no bundled grammar for this type — nothing to load
         } else {
-            IGrammar cached = reg.cachedForFileName(fileName);
+            IGrammar cached = reg.cachedForFileName(lookup);
             if (cached != null) {
                 applyLanguage(name, cached); // already compiled this session — apply instantly (no flash)
             } else {
-                applyLanguageDeferred(name, fileName); // first file of this type: compile off the FX thread
+                applyLanguageDeferred(name, lookup); // first file of this type: compile off the FX thread
             }
         }
         recomputeRun(); // a Save-As to a runnable file type can show the gutter Run glyph

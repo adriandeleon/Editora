@@ -160,7 +160,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
     /** Friendly display name for a file's programming language (proper nouns, deliberately untranslated). */
     private static String languageOf(Path file) {
-        String name = LanguageRegistry.forFileName(file.getFileName().toString());
+        String name = LanguageRegistry.forFileName(file.toString());
         return switch (name) {
             case "java" -> "Java";
             case "javascript" -> "JavaScript";

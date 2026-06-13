@@ -3451,7 +3451,8 @@ public class MainController {
                     DiffViewerPane pane = new DiffViewerPane(title, headerLeft, headerRight, leftName,
                             rightName, leftText, rightText, model,
                             config.getSettings().getFontFamily(), config.getSettings().getFontSize(),
-                            config.getSettings().isShowLineNumbers());
+                            config.getSettings().isShowLineNumbers(),
+                            target == null ? null : target.toString());
                     pane.setOnExportPatch(this::exportPatch);
                     // "Apply change" arrows write the hunk into the local/editable file (via an undoable
                     // editor buffer), with Undo + Save acting on that buffer.
@@ -8210,7 +8211,7 @@ public class MainController {
         }
         Settings s = config.getSettings();
         setStatus(tr("status.pdf.exporting"));
-        pdfService.exportCode(b.getContent(), base, s.isPdfSyntaxHighlighting(), s.isPdfLineNumbers(),
+        pdfService.exportCode(b.getContent(), grammarKey(b), s.isPdfSyntaxHighlighting(), s.isPdfLineNumbers(),
                 s.getTabSize(), s.getPdfPageSize(), f.toPath(), r -> reportPdf(r, f));
     }
 
@@ -8252,6 +8253,15 @@ public class MainController {
         }
         String dn = b.getDisplayName();
         return dn == null || dn.isBlank() ? "document" : dn;
+    }
+
+    /**
+     * The key used to resolve a buffer's grammar for export/print — its <em>full path</em> (so
+     * location-based types like {@code ~/.ssh/config} or {@code /etc/hosts} resolve, matching the live
+     * editor), or its display base name for an unsaved buffer.
+     */
+    private String grammarKey(EditorBuffer b) {
+        return b.getPath() != null ? b.getPath().toString() : bufferBaseName(b);
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.pdf}. */
@@ -8297,7 +8307,7 @@ public class MainController {
         }
         Settings s = config.getSettings();
         setStatus(tr("status.print.preparing"));
-        printService.prepareCode(b.getContent(), bufferBaseName(b), s.isPdfSyntaxHighlighting(),
+        printService.prepareCode(b.getContent(), grammarKey(b), s.isPdfSyntaxHighlighting(),
                 s.isPdfLineNumbers(), s.getTabSize(), prepared -> openPrintPreview(job, prepared));
     }
 

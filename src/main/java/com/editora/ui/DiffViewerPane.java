@@ -95,7 +95,7 @@ public final class DiffViewerPane implements TabContent {
 
     public DiffViewerPane(String title, String headerLeft, String headerRight, String leftName,
             String rightName, String leftText, String rightText, DiffModel model, String fontFamily,
-            int fontSize, boolean showLineNumbers) {
+            int fontSize, boolean showLineNumbers, String grammarPath) {
         this.title = title;
         this.leftName = leftName;
         this.rightName = rightName;
@@ -106,8 +106,9 @@ public final class DiffViewerPane implements TabContent {
         this.model = model;
         this.showLineNumbers = showLineNumbers;
         this.fontStyle = "-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;";
-        // Syntax grammar from the "new" file's name (falls back to the old name's extension).
-        IGrammar g = grammarFor(rightName);
+        // Syntax grammar: prefer the local file's full path (so location-based types like ~/.ssh/config
+        // resolve), else the "new" file's name, falling back to the old name's extension.
+        IGrammar g = grammarFor(grammarPath != null && !grammarPath.isBlank() ? grammarPath : rightName);
         this.grammar = g != null ? g : grammarFor(leftName);
 
         root.getStyleClass().add("diff-viewer");

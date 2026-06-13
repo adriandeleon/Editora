@@ -1,0 +1,25 @@
+{
+  "name": "deb822",
+  "scopeName": "source.deb822",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.deb822",
+      "match": "^\\s*#.*$"
+    },
+    {
+      "match": "^([A-Za-z][A-Za-z0-9-]*)(:)",
+      "captures": {
+        "1": { "name": "keyword.other.field.deb822" },
+        "2": { "name": "punctuation.separator.key-value.deb822" }
+      }
+    },
+    {
+      "name": "markup.underline.link.deb822",
+      "match": "\\b(?:https?|ftp|file|copy|cdrom|mirror\\+https?|mirror)://[^\\s]+"
+    },
+    {
+      "name": "constant.language.boolean.deb822",
+      "match": "\\b(yes|no)\\b"
+    }
+  ]
+}

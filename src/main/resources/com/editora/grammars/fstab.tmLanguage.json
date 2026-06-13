@@ -1,0 +1,34 @@
+{
+  "name": "fstab",
+  "scopeName": "source.fstab",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.fstab",
+      "match": "#.*$"
+    },
+    {
+      "name": "keyword.other.device-tag.fstab",
+      "match": "\\b(UUID|PARTUUID|LABEL|PARTLABEL|ID)(?==)"
+    },
+    {
+      "name": "constant.other.device-path.fstab",
+      "match": "/dev/[^\\s]+"
+    },
+    {
+      "name": "storage.type.filesystem.fstab",
+      "match": "\\b(ext2|ext3|ext4|btrfs|xfs|f2fs|reiserfs|jfs|vfat|exfat|ntfs|ntfs3|fat|msdos|iso9660|udf|hfsplus|swap|proc|sysfs|tmpfs|ramfs|devpts|devtmpfs|securityfs|cgroup2?|overlay|squashfs|nfs4?|cifs|smbfs|9p|zfs|auto|none|bind|fuse(?:\\.[\\w.-]+)?)\\b"
+    },
+    {
+      "name": "keyword.other.option.fstab",
+      "match": "\\b(defaults|rw|ro|noatime|nodiratime|relatime|strictatime|nosuid|nodev|noexec|suid|dev|exec|auto|noauto|user|nouser|users|owner|group|async|sync|dirsync|remount|rbind|bind|nofail|errors|discard|barrier|data|umask|dmask|fmask|uid|gid|mode|compress|subvolid|subvol)\\b"
+    },
+    {
+      "name": "support.other.option-systemd.fstab",
+      "match": "\\bx-systemd\\.[\\w.=-]+|\\bx-gvfs[\\w.=-]*"
+    },
+    {
+      "name": "constant.numeric.passno.fstab",
+      "match": "\\b\\d+\\b"
+    }
+  ]
+}
