@@ -1,0 +1,160 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { loadPlugins, sourceUrl, REGISTRY_REPO } from "../lib/plugins";
+
+const plugins = await loadPlugins();
+---
+
+<Layout
+  title="Plugins — Editora"
+  description="Browse Editora plugins — extend the editor with commands, tool windows, and integrations, installed from the built-in registry."
+>
+  <main class="page">
+    <h1>Plugins</h1>
+    <p class="lead">
+      Editora is extensible. Plugins add commands, keybindings, tool windows,
+      editor-menu items, and status-bar segments — written in Java or declared
+      in a manifest. The {plugins.length} plugins below ship in the official
+      registry; you can also install one from a <code>.zip</code> on disk.
+    </p>
+
+    <div class="install">
+      <h2>Installing</h2>
+      <ol>
+        <li>
+          Enable plugins in <strong>Settings → Plugins</strong> (off by default).
+        </li>
+        <li>
+          Click <strong>Browse plugins…</strong> (or run the
+          <code>plugins.browse</code> command) to install from the registry — or
+          <strong>Install from file…</strong> for a local <code>.zip</code>.
+        </li>
+        <li>Restart Editora to load newly installed plugins.</li>
+      </ol>
+      <p class="trust">
+        Plugins run with full access and are not sandboxed — only install ones
+        you trust. See the
+        <a href="/docs/plugins">plugins documentation</a> to write your own.
+      </p>
+    </div>
+
+    <h2 class="catalog-h">Catalog</h2>
+    <div class="plugin-grid">
+      {
+        plugins.map((p) => (
+          <a class="plugin-card" href={sourceUrl(p.id)}>
+            <div class="plugin-top">
+              <span class="plugin-name">{p.name}</span>
+              {p.version && <span class="plugin-ver">v{p.version}</span>}
+            </div>
+            <p class="plugin-desc">{p.description}</p>
+            <span class="plugin-src">View source →</span>
+          </a>
+        ))
+      }
+    </div>
+
+    <p class="note">
+      The full registry lives at <a href={REGISTRY_REPO}>{REGISTRY_REPO}</a>.
+    </p>
+  </main>
+</Layout>
+
+<style>
+  .page {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 3rem 1.25rem 2rem;
+  }
+  h1 {
+    font-size: 2.4rem;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+  .lead {
+    color: var(--muted);
+    max-width: 46rem;
+    margin: 0 0 2rem;
+  }
+  .install {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+  .install h2 {
+    font-size: 1.1rem;
+    margin: 0 0 0.75rem;
+  }
+  .install ol {
+    margin: 0;
+    padding-left: 1.25rem;
+    color: var(--muted);
+  }
+  .install li {
+    margin: 0.35rem 0;
+  }
+  .trust {
+    margin: 1rem 0 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .catalog-h {
+    font-size: 1.4rem;
+    margin: 0 0 1rem;
+  }
+  .plugin-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  .plugin-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.25rem;
+    color: var(--text);
+  }
+  .plugin-card:hover {
+    border-color: var(--accent);
+    text-decoration: none;
+  }
+  .plugin-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .plugin-name {
+    font-weight: 700;
+    font-size: 1.05rem;
+  }
+  .plugin-ver {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+  }
+  .plugin-desc {
+    color: var(--muted);
+    font-size: 0.92rem;
+    margin: 0;
+    flex-grow: 1;
+  }
+  .plugin-src {
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .note {
+    margin-top: 2.5rem;
+    color: var(--faint);
+    font-size: 0.9rem;
+  }
+</style>
