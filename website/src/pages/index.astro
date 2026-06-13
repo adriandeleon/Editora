@@ -9,25 +9,23 @@ const url = (p: string) => `${base}/${p}`.replace(/\/{2,}/g, "/");
 const logo = url("editora-icon.svg");
 const changelogUrl = `${repo}/blob/master/CHANGELOG.md`;
 
-// Latest blog + news entries for the home-page teaser.
-const latest = [
-  ...(await getCollection("news")).map((e) => ({
-    kind: "News",
-    href: `/news/${e.id}`,
-    title: e.data.title,
-    description: e.data.description,
-    date: e.data.date,
-  })),
-  ...(await getCollection("blog")).map((e) => ({
-    kind: "Blog",
-    href: `/blog/${e.id}`,
-    title: e.data.title,
-    description: e.data.description,
-    date: e.data.date,
-  })),
-]
-  .sort((a, b) => b.date.valueOf() - a.date.valueOf())
-  .slice(0, 4);
+// Latest entries for the home-page teaser — News first, then Blog.
+const byDate = (a, b) => b.data.date.valueOf() - a.data.date.valueOf();
+const newsItems = (await getCollection("news")).sort(byDate).map((e) => ({
+  kind: "News",
+  href: `/news/${e.id}`,
+  title: e.data.title,
+  description: e.data.description,
+  date: e.data.date,
+}));
+const blogItems = (await getCollection("blog")).sort(byDate).map((e) => ({
+  kind: "Blog",
+  href: `/blog/${e.id}`,
+  title: e.data.title,
+  description: e.data.description,
+  date: e.data.date,
+}));
+const latest = [...newsItems, ...blogItems].slice(0, 4);
 const fmtDate = (d: Date) =>
   d.toLocaleDateString("en-US", {
     year: "numeric",
@@ -277,6 +275,29 @@ const platforms = [
       </p>
     </section>
 
+    {
+      latest.length > 0 && (
+        <section id="latest" class="section">
+          <div class="latest-head">
+            <h2>From the blog &amp; news</h2>
+            <span class="latest-links">
+              <a href="/news">All news</a> · <a href="/blog">All posts</a>
+            </span>
+          </div>
+          <div class="latest-grid">
+            {latest.map((p) => (
+              <a class="latest-card" href={p.href}>
+                <span class={`latest-kind ${p.kind.toLowerCase()}`}>{p.kind}</span>
+                <span class="latest-title">{p.title}</span>
+                {p.description && <span class="latest-desc">{p.description}</span>}
+                <span class="latest-date">{fmtDate(p.date)}</span>
+              </a>
+            ))}
+          </div>
+        </section>
+      )
+    }
+
     <section id="features" class="section">
       <h2>Features</h2>
       {
@@ -335,29 +356,6 @@ const platforms = [
               </li>
             ))}
           </ul>
-        </section>
-      )
-    }
-
-    {
-      latest.length > 0 && (
-        <section id="latest" class="section">
-          <div class="latest-head">
-            <h2>From the blog &amp; news</h2>
-            <span class="latest-links">
-              <a href="/blog">All posts</a> · <a href="/news">All news</a>
-            </span>
-          </div>
-          <div class="latest-grid">
-            {latest.map((p) => (
-              <a class="latest-card" href={p.href}>
-                <span class={`latest-kind ${p.kind.toLowerCase()}`}>{p.kind}</span>
-                <span class="latest-title">{p.title}</span>
-                {p.description && <span class="latest-desc">{p.description}</span>}
-                <span class="latest-date">{fmtDate(p.date)}</span>
-              </a>
-            ))}
-          </div>
         </section>
       )
     }

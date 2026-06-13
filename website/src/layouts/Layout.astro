@@ -19,10 +19,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
 const ogImage = new URL("/og-image.png", Astro.site).href;
 
 const nav = [
-  { href: url(""), label: "Home" },
-  { href: url("docs"), label: "Docs" },
-  { href: url("blog"), label: "Blog" },
   { href: url("news"), label: "News" },
+  { href: url("blog"), label: "Blog" },
+  { href: url("docs"), label: "Docs" },
+  { href: `${repo}/discussions`, label: "Discussions" },
   { href: url("roadmap"), label: "Roadmap" },
   { href: repo, label: "GitHub" },
 ];
