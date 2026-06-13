@@ -46,5 +46,9 @@
   "f11": "debug.stepInto",
   "S-f11": "debug.stepOut",
   "C-f5": "run.rerun",
-  "Cmd-S-b": "file.run"
+  "Cmd-S-b": "file.run",
+  "Cmd-a": "edit.selectAll",
+  "M-up": "edit.moveLineUp",
+  "M-down": "edit.moveLineDown",
+  "M-S-down": "edit.duplicateLine"
 }

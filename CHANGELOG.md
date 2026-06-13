@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Configurable shortcuts (keybinding editor).** Settings → Keymaps now lists every command with its
+  current shortcut and a filter box: **Record** a new chord (multi-key sequences like `C-x C-s` are
+  captured live), **Reset** one command to the keymap default, or **Reset all shortcuts**. Rebinding
+  replaces the keymap's default (with a conflict warning before stealing another command's chord) and
+  applies **live, no restart**, across all windows; overrides persist in `settings.toml` and layer on top
+  of whichever keymap theme is active.
+- **Select All, Duplicate Line, Move Line Up/Down** commands (`edit.selectAll` / `edit.duplicateLine` /
+  `edit.moveLineUp` / `edit.moveLineDown`), bound in the CUA/Sublime/VSCode/IntelliJ keymaps
+  (Ctrl/Cmd-A, Alt/Option-Up/Down, etc.) and available in the command palette + the new keybinding editor.
+
 - **Keybinding themes (CUA, Sublime Text, VSCode, IntelliJ IDEA).** Beyond the default **Emacs** keymap,
   Editora now bundles four familiar non-modal keymaps. Pick one in **Settings → Keymaps** (or the
   **Keymap: Select…** command) — switching is **live, no restart**, across all open windows. Each keymap

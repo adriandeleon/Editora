@@ -185,7 +185,7 @@ public class KeyDispatcher {
     }
 
     /** Builds a chord token like {@code C-x}, {@code M-w}, {@code C-S-p}; null for modifier-only events. */
-    static String chord(KeyEvent event) {
+    public static String chord(KeyEvent event) {
         KeyCode code = event.getCode();
         if (code == null || code == KeyCode.UNDEFINED || code.isModifierKey()) {
             return null;

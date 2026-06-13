@@ -109,6 +109,10 @@ public class SettingsWindow {
     // --- controls (same set as before, regrouped into pages) ---
     private ComboBox<String> languageCombo;
     private ComboBox<String> keymapCombo;
+    private ShortcutActions shortcutActions; // keybinding-editor backend (→ MainController)
+    private TextField shortcutFilter; // filters the shortcut list
+    private VBox shortcutListBox; // rebuilt from shortcutActions.rows() on each change/filter
+    private String recordingCommandId; // command id whose row is currently capturing a chord, or null
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
@@ -810,7 +814,146 @@ public class SettingsWindow {
                 null,
                 labeled(tr("settings.keymap"), kmBox),
                 "keymap keybindings shortcuts emacs vim cua sublime vscode intellij");
+
+        // --- Customize shortcuts: searchable list of every command + its current chord ---
+        Label sec = section(p, tr("settings.shortcuts.title"));
+        shortcutFilter = new TextField();
+        shortcutFilter.setPromptText(tr("settings.shortcuts.filter"));
+        shortcutFilter.textProperty().addListener((o, was, now) -> refreshShortcuts());
+        shortcutListBox = new VBox(2);
+        shortcutListBox.getStyleClass().add("shortcut-list");
+        ScrollPane scroll = new ScrollPane(shortcutListBox);
+        scroll.setFitToWidth(true);
+        scroll.setPrefHeight(320);
+        scroll.getStyleClass().add("shortcut-scroll");
+        Label note = note(tr("settings.shortcuts.note"));
+        Button resetAll = new Button(tr("settings.shortcuts.resetAll"));
+        resetAll.setOnAction(e -> {
+            if (shortcutActions != null) {
+                shortcutActions.resetAll();
+                refreshShortcuts();
+            }
+        });
+        VBox box = new VBox(6, note, shortcutFilter, scroll, resetAll);
+        row(
+                p,
+                Category.KEYMAPS,
+                sec,
+                box,
+                "shortcut keybinding customize rebind record reset clear key chord accelerator");
+        refreshShortcuts();
         return p;
+    }
+
+    /** Rebuilds the shortcut list from the backend, honoring the filter. No-op until the backend is set. */
+    private void refreshShortcuts() {
+        if (shortcutListBox == null || shortcutActions == null) {
+            return;
+        }
+        shortcutListBox.getChildren().clear();
+        String q = shortcutFilter == null ? "" : shortcutFilter.getText().trim().toLowerCase(Locale.ROOT);
+        for (Shortcut s : shortcutActions.rows()) {
+            boolean match = q.isEmpty()
+                    || s.title().toLowerCase(Locale.ROOT).contains(q)
+                    || s.id().toLowerCase(Locale.ROOT).contains(q)
+                    || (s.chord() != null && s.chord().toLowerCase(Locale.ROOT).contains(q));
+            if (match) {
+                shortcutListBox.getChildren().add(shortcutRow(s));
+            }
+        }
+    }
+
+    /** A single command row — either the static chord + Record/Reset buttons, or a live capture field. */
+    private HBox shortcutRow(Shortcut s) {
+        HBox row = new HBox(8);
+        row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        row.getStyleClass().add("shortcut-row");
+        Label title = new Label(s.title());
+        title.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(title, Priority.ALWAYS);
+
+        if (s.id().equals(recordingCommandId)) {
+            TextField capture = new TextField();
+            capture.setEditable(false);
+            capture.setPromptText(tr("settings.shortcuts.recording"));
+            capture.setPrefWidth(180);
+            StringBuilder seq = new StringBuilder();
+            capture.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+                e.consume();
+                if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
+                    recordingCommandId = null;
+                    refreshShortcuts();
+                    return;
+                }
+                String token = com.editora.command.KeyDispatcher.chord(e);
+                if (token == null) {
+                    return; // modifier-only press
+                }
+                if (seq.length() > 0) {
+                    seq.append(' ');
+                }
+                seq.append(token);
+                capture.setText(seq.toString());
+            });
+            Button save = new Button(tr("settings.shortcuts.save"));
+            save.setDefaultButton(false);
+            save.setOnAction(e -> commitRecording(s.id(), seq.toString()));
+            Button cancel = new Button(tr("settings.shortcuts.cancel"));
+            cancel.setOnAction(e -> {
+                recordingCommandId = null;
+                refreshShortcuts();
+            });
+            row.getChildren().addAll(title, capture, save, cancel);
+            javafx.application.Platform.runLater(capture::requestFocus);
+        } else {
+            Label chord = new Label(s.chord() == null ? tr("settings.shortcuts.unbound") : s.chord());
+            chord.getStyleClass().add(s.chord() == null ? "shortcut-unbound" : "shortcut-chord");
+            chord.setMinWidth(150);
+            Button record = new Button(tr("settings.shortcuts.record"));
+            record.setOnAction(e -> {
+                recordingCommandId = s.id();
+                refreshShortcuts();
+            });
+            Button reset = new Button(tr("settings.shortcuts.reset"));
+            reset.setOnAction(e -> {
+                shortcutActions.reset(s.id());
+                refreshShortcuts();
+            });
+            row.getChildren().addAll(title, chord, record, reset);
+        }
+        return row;
+    }
+
+    /** Commits a recorded chord sequence to a command, warning first if it steals another command's chord. */
+    private void commitRecording(String commandId, String sequence) {
+        recordingCommandId = null;
+        String seq = sequence.trim();
+        if (seq.isEmpty()) {
+            refreshShortcuts();
+            return;
+        }
+        String other = shortcutActions.commandUsing(seq);
+        if (other != null && !other.equals(commandId)) {
+            String otherTitle = shortcutActions.rows().stream()
+                    .filter(r -> r.id().equals(other))
+                    .map(Shortcut::title)
+                    .findFirst()
+                    .orElse(other);
+            Alert confirm = new Alert(
+                    Alert.AlertType.CONFIRMATION,
+                    tr("dialog.shortcut.conflict.body", seq, otherTitle),
+                    ButtonType.OK,
+                    ButtonType.CANCEL);
+            confirm.initOwner(stage);
+            confirm.setTitle(tr("dialog.shortcut.conflict.title"));
+            confirm.setHeaderText(null);
+            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                refreshShortcuts();
+                return;
+            }
+        }
+        shortcutActions.rebind(commandId, seq);
+        refreshShortcuts();
     }
 
     private VBox editorPage() {
@@ -2371,6 +2514,31 @@ public class SettingsWindow {
     /** Injects the live-reload hook run when the keymap picker changes (→ MainController). */
     public void setOnKeymapChanged(Runnable handler) {
         this.onKeymapChanged = handler;
+    }
+
+    /** One command row in the keybinding editor: id, localized title, and current effective chord (or null). */
+    public record Shortcut(String id, String title, String chord) {}
+
+    /** Backs the keybinding editor; all logic + persistence lives in {@code MainController}. */
+    public interface ShortcutActions {
+        java.util.List<Shortcut> rows();
+
+        /** The command currently bound to {@code chordSeq}, or null (for conflict warnings). */
+        String commandUsing(String chordSeq);
+
+        void rebind(String commandId, String chordSeq);
+
+        void reset(String commandId);
+
+        void resetAll();
+    }
+
+    /** Injects the keybinding-editor backend (→ MainController); enables the shortcuts list. */
+    public void setShortcutActions(ShortcutActions actions) {
+        this.shortcutActions = actions;
+        if (built) {
+            refreshShortcuts();
+        }
     }
 
     /** Re-selects the keymap combo to match the current setting (after the {@code keymap.select} command). */

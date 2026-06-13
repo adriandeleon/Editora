@@ -461,6 +461,32 @@ public class MainController {
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
         this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk, this::uninstallPlugin);
         this.settingsWindow.setOnKeymapChanged(this::reloadKeymap); // picker/combo → live keymap switch
+        this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
+            @Override
+            public java.util.List<SettingsWindow.Shortcut> rows() {
+                return shortcutRows();
+            }
+
+            @Override
+            public String commandUsing(String chordSeq) {
+                return keymap.commandFor(chordSeq);
+            }
+
+            @Override
+            public void rebind(String commandId, String chordSeq) {
+                rebindShortcut(commandId, chordSeq);
+            }
+
+            @Override
+            public void reset(String commandId) {
+                resetShortcut(commandId);
+            }
+
+            @Override
+            public void resetAll() {
+                resetAllShortcuts();
+            }
+        });
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
@@ -7170,6 +7196,60 @@ public class MainController {
         }
     }
 
+    // --- Keybinding editor backend (Settings → Keymaps); pure logic in command/KeybindingEdits ---
+
+    /** The active keymap's bindings <em>without</em> user overrides — the defaults to rebind/reset against. */
+    private java.util.Map<String, String> baseBindings() {
+        com.editora.command.KeymapManager base = new com.editora.command.KeymapManager();
+        base.loadNamed(config.getSettings().getKeymap());
+        return base.bindings();
+    }
+
+    /** All commands with their localized title + current effective chord, for the keybinding editor list. */
+    private java.util.List<SettingsWindow.Shortcut> shortcutRows() {
+        java.util.Map<String, String> byCommand = invertBindings();
+        java.util.List<SettingsWindow.Shortcut> rows = new java.util.ArrayList<>();
+        for (Command c : registry.all()) {
+            rows.add(new SettingsWindow.Shortcut(c.id(), c.title(), byCommand.get(c.id())));
+        }
+        rows.sort(java.util.Comparator.comparing(SettingsWindow.Shortcut::title, String.CASE_INSENSITIVE_ORDER));
+        return rows;
+    }
+
+    /** Persists a new user-overrides map, then reloads the shared keymap so the change is live. */
+    private void applyKeybindingOverrides(java.util.Map<String, String> overrides) {
+        config.getSettings().setKeybindings(overrides);
+        config.save();
+        reloadKeymap();
+    }
+
+    private void rebindShortcut(String commandId, String chordSeq) {
+        applyKeybindingOverrides(com.editora.command.KeybindingEdits.rebind(
+                baseBindings(), config.getSettings().getKeybindings(), commandId, chordSeq));
+        setStatus(tr("status.shortcut.bound", chordSeq, commandTitle(commandId)));
+    }
+
+    private void resetShortcut(String commandId) {
+        applyKeybindingOverrides(com.editora.command.KeybindingEdits.reset(
+                baseBindings(), config.getSettings().getKeybindings(), commandId));
+        setStatus(tr("status.shortcut.reset", commandTitle(commandId)));
+    }
+
+    private void resetAllShortcuts() {
+        applyKeybindingOverrides(new java.util.LinkedHashMap<>());
+        setStatus(tr("status.shortcut.resetAll"));
+    }
+
+    /** Localized title for a command id (for status messages / conflict dialogs); the id if unknown. */
+    private String commandTitle(String commandId) {
+        for (Command c : registry.all()) {
+            if (c.id().equals(commandId)) {
+                return c.title();
+            }
+        }
+        return commandId;
+    }
+
     /** Picker for the app (chrome) theme — also switches the editor theme to match. */
     private void chooseAppTheme() {
         QuickOpen<String> picker = new QuickOpen<>(
@@ -9288,6 +9368,34 @@ public class MainController {
         area.requestFocus();
     }
 
+    /** Applies a pure {@link com.editora.editor.LineOps} edit to the active area (duplicate / move line). */
+    private void lineOp(java.util.function.BiFunction<String, Integer, com.editora.editor.LineOps.Edit> op) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        com.editora.editor.LineOps.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        if (edit == null) {
+            return;
+        }
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        area.requestFocus();
+    }
+
+    /** Selects the whole document in the active area (no edit, so it works in read-only/view mode too). */
+    private void selectAll() {
+        CodeArea area = activeArea();
+        if (area != null) {
+            area.selectAll();
+            area.requestFocus();
+        }
+    }
+
     /** Emacs-style vertical caret move (C-n/C-p) preserving the goal column; see {@link EditorBuffer#moveLine}. */
     private void moveLine(int delta) {
         EditorBuffer buffer = activeBuffer();
@@ -9693,6 +9801,10 @@ public class MainController {
                 Command.of("edit.transposeWords", () -> transpose(com.editora.editor.Transposer::transposeWords)));
         registry.register(
                 Command.of("edit.transposeLines", () -> transpose(com.editora.editor.Transposer::transposeLines)));
+        registry.register(Command.of("edit.selectAll", this::selectAll));
+        registry.register(Command.of("edit.duplicateLine", () -> lineOp(com.editora.editor.LineOps::duplicateLine)));
+        registry.register(Command.of("edit.moveLineUp", () -> lineOp(com.editora.editor.LineOps::moveLineUp)));
+        registry.register(Command.of("edit.moveLineDown", () -> lineOp(com.editora.editor.LineOps::moveLineDown)));
         // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
         // a second press toggles to the true line start (column 0).
         registry.register(Command.of(

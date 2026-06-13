@@ -24,5 +24,9 @@
   "C-=": "view.textZoomIn",
   "C-S-=": "view.textZoomIn",
   "C--": "view.textZoomOut",
-  "C-0": "view.textZoomReset"
+  "C-0": "view.textZoomReset",
+  "C-a": "edit.selectAll",
+  "C-S-d": "edit.duplicateLine",
+  "M-up": "edit.moveLineUp",
+  "M-down": "edit.moveLineDown"
 }
