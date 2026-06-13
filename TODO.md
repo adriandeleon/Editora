@@ -3,6 +3,13 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Plugin support + a plugin registry — extend Editora via a Java SPI or a declarative `plugin.json`
+      (commands, keybindings, tool windows, editor menu items, status-bar segments; snippets/templates).
+      Off by default, full-trust, loaded via a child `URLClassLoader` so the same jar works in dev and the
+      packaged installers. **Browse & install** from a curated GitHub registry (SHA-256-verified) or a local
+      `.zip`; **19 plugins published** (text/encode/hash/json-xml/slug/box, UUID-timestamp inserters,
+      markdown-TOC, formatter, open-on-GitHub, reveal/terminal, scratchpad, regex-tester, color-picker,
+      word-count, calculator, task-runner, lorem-ipsum). See `docs/plugins.md`
 - [x] Git history, blame & stash (IntelliJ/VSCode parity) — a **Git Log** tool window (`M-g h` / *Show File
       History*): browse commits, see a commit's files, double-click for a read-only diff, right-click to
       Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame** (`M-g a`,
@@ -145,12 +152,16 @@ A backlog of planned features and improvements. Unordered within each section.
 ## Extensibility & integration
 - [x] Plugins/API support — Java SPI (`com.editora.plugin.Plugin`) + declarative `plugin.json`
   (keymap / external commands / snippet & template dirs); contributes commands, keybindings, tool windows,
-  editor right-click items, and status-bar segments. Off by default (Settings → Plugins). Loaded via a child
-  `URLClassLoader` so it works in the sealed jlink installers. **Registry + install:** browse a curated
-  GitHub-hosted `index.json`, install (download + SHA-256 verify + zip-slip-guarded unzip) or install from a
-  local `.zip`; per-plugin Remove. See `docs/plugins.md` + `examples/example-plugin/` +
-  `examples/editora-plugins-registry/`. *Deferred: sandboxing, hot reload, gutter-marker contributions,
-  GitHub-API/per-repo discovery, signing beyond SHA-256, auto-update.*
+  editor right-click items, and status-bar segments. The `ActiveEditor` facade does
+  `filePath`/`text`/`selectedText`/`caretLine`/`replaceSelection`/`insertAtCaret`/`setText`/`openPath`, and
+  `PluginContext` adds `openUrl`/`log`/`setStatus` + path accessors. Off by default (Settings → Plugins).
+  Loaded via a child `URLClassLoader` so it works in the sealed jlink installers. **Registry + install:**
+  browse a curated GitHub-hosted `index.json`, install (download + SHA-256 verify + zip-slip-guarded unzip)
+  or install from a local `.zip`; per-plugin Remove. **19 plugins published** in the
+  [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) registry (which also
+  carries each plugin's source), with 18 worked examples under `examples/`. See `docs/plugins.md`.
+  *Deferred: sandboxing, hot reload, gutter-marker contributions, GitHub-API/per-repo discovery, signing
+  beyond SHA-256, auto-update.*
 - [ ] External Tools support
 - [ ] MCP support
 - [ ] Headless support
