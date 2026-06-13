@@ -5,5 +5,4 @@ package com.editora.template;
  * target folder) and its {@code body} (which may contain {@code ${variable}}/{@code ${cursor}}). Pure
  * data, deserialized by {@link TemplateRegistry}.
  */
-public record TemplateFile(String path, String body) {
-}
+public record TemplateFile(String path, String body) {}

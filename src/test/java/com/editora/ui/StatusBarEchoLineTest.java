@@ -1,8 +1,8 @@
 package com.editora.ui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** The status-bar echo shows a single line only — multi-line messages must not grow the status bar. */
 class StatusBarEchoLineTest {
@@ -20,7 +20,8 @@ class StatusBarEchoLineTest {
 
     @Test
     void multiLineKeepsFirstLineWithEllipsis() {
-        assertEquals("Debug error: Compilation failed: …",
+        assertEquals(
+                "Debug error: Compilation failed: …",
                 StatusBar.echoLine("Debug error: Compilation failed: \n/x/DebugDemo.java:4: error\nmore"));
     }
 

@@ -34,8 +34,8 @@ public final class TemplateRegistry {
     private static final String DIR = "/com/editora/templates/";
 
     private final ConfigManager config;
-    private final ObjectMapper mapper = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    private final ObjectMapper mapper =
+            new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private List<Template> cache;
     /** Extra template source dirs (a plugin's {@code templates/}); their {@code *.json} win by id. */
     private final List<Path> extraDirs = new ArrayList<>();
@@ -91,17 +91,15 @@ public final class TemplateRegistry {
             return;
         }
         try (Stream<Path> s = Files.list(dir)) {
-            s.filter(p -> p.getFileName().toString().endsWith(".json"))
-                    .sorted()
-                    .forEach(p -> {
-                        String id = stem(p.getFileName().toString());
-                        if (!id.equals("index")) {
-                            Template t = readUser(p, id);
-                            if (t != null) {
-                                byId.put(id, t);
-                            }
-                        }
-                    });
+            s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().forEach(p -> {
+                String id = stem(p.getFileName().toString());
+                if (!id.equals("index")) {
+                    Template t = readUser(p, id);
+                    if (t != null) {
+                        byId.put(id, t);
+                    }
+                }
+            });
         } catch (IOException e) {
             LOG.log(Level.WARNING, "Failed to list templates in " + dir, e);
         }
@@ -110,7 +108,7 @@ public final class TemplateRegistry {
     private List<String> bundledIds() {
         try (InputStream in = TemplateRegistry.class.getResourceAsStream(DIR + "index.json")) {
             if (in != null) {
-                return mapper.readValue(in, new TypeReference<List<String>>() { });
+                return mapper.readValue(in, new TypeReference<List<String>>() {});
             }
         } catch (IOException e) {
             LOG.log(Level.WARNING, "Failed to read bundled template index", e);
@@ -179,11 +177,11 @@ public final class TemplateRegistry {
 
     /** Jackson DTO (public fields so no getter-opens are needed). */
     static final class Dto {
-        public Object name;        // String
+        public Object name; // String
         public Object description; // String or List<String>
-        public Object language;    // String
-        public Object fileName;    // String
-        public Object body;        // String or List<String>
+        public Object language; // String
+        public Object fileName; // String
+        public Object body; // String or List<String>
         public List<FileDto> files;
     }
 

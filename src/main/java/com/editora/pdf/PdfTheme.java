@@ -14,6 +14,7 @@ public final class PdfTheme {
 
     /** Default text / page-background / line-number-gutter colors (Primer Light). */
     public static final Color DEFAULT_FG = hex("#24292f");
+
     public static final Color BACKGROUND = hex("#ffffff");
     public static final Color LINE_NUMBER = hex("#8c959f");
     public static final Color CODE_BG = hex("#f6f8fa");
@@ -40,8 +41,7 @@ public final class PdfTheme {
             Map.entry("heading", hex("#0550ae")),
             Map.entry("link", hex("#0969da")));
 
-    private PdfTheme() {
-    }
+    private PdfTheme() {}
 
     /** The color for a token's style classes (first known class wins), or {@link #DEFAULT_FG}. */
     public static Color colorFor(Collection<String> styleClasses) {
@@ -59,14 +59,16 @@ public final class PdfTheme {
     /** Whether the token should render bold (keywords/headings/bold markup). */
     public static boolean bold(Collection<String> styleClasses) {
         return styleClasses != null
-                && (styleClasses.contains("keyword") || styleClasses.contains("heading")
+                && (styleClasses.contains("keyword")
+                        || styleClasses.contains("heading")
                         || styleClasses.contains("bold"));
     }
 
     /** Whether the token should render italic (comments/regex/italic markup). */
     public static boolean italic(Collection<String> styleClasses) {
         return styleClasses != null
-                && (styleClasses.contains("comment") || styleClasses.contains("regexp")
+                && (styleClasses.contains("comment")
+                        || styleClasses.contains("regexp")
                         || styleClasses.contains("italic"));
     }
 

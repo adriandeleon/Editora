@@ -12,8 +12,7 @@ import com.github.difflib.patch.Patch;
  */
 public final class PatchWriter {
 
-    private PatchWriter() {
-    }
+    private PatchWriter() {}
 
     private static final int CONTEXT = 3;
 
@@ -28,8 +27,7 @@ public final class PatchWriter {
         if (patch.getDeltas().isEmpty()) {
             return "";
         }
-        List<String> lines = UnifiedDiffUtils.generateUnifiedDiff(
-                leftLabel, rightLabel, left, patch, CONTEXT);
+        List<String> lines = UnifiedDiffUtils.generateUnifiedDiff(leftLabel, rightLabel, left, patch, CONTEXT);
         return String.join("\n", lines) + "\n";
     }
 }

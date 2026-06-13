@@ -124,8 +124,8 @@ final class LspDiagnosticOverlay extends Region {
         }
     }
 
-    private void drawDiagnostic(GraphicsContext g, LspDiagnostic d, int first, int last, int total,
-            double w, double h) {
+    private void drawDiagnostic(
+            GraphicsContext g, LspDiagnostic d, int first, int last, int total, double w, double h) {
         if (d.endLine() < first || d.startLine() > last) {
             return; // entirely off-screen — skip before touching the GraphicsContext state
         }
@@ -145,8 +145,8 @@ final class LspDiagnosticOverlay extends Region {
             startCol = Math.max(0, Math.min(startCol, lineLen - 1));
             endCol = Math.max(startCol + 1, Math.min(endCol, lineLen));
             Bounds b = toLocal(area.getCharacterBoundsOnScreen(
-                    area.getAbsolutePosition(p, startCol),
-                    area.getAbsolutePosition(p, endCol)).orElse(null));
+                            area.getAbsolutePosition(p, startCol), area.getAbsolutePosition(p, endCol))
+                    .orElse(null));
             if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
                 continue;
             }

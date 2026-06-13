@@ -1,9 +1,9 @@
 package com.editora.editor;
 
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import org.junit.jupiter.api.Test;
 
 class CompactSourceTest {
 
@@ -87,8 +87,8 @@ class CompactSourceTest {
 
     @Test
     void mainLineIsMinusOneForNormalClass() {
-        org.junit.jupiter.api.Assertions.assertEquals(-1,
-                CompactSource.mainLine("class A { public static void main(String[] a) {} }"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                -1, CompactSource.mainLine("class A { public static void main(String[] a) {} }"));
     }
 
     @Test

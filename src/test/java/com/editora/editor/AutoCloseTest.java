@@ -1,12 +1,11 @@
 package com.editora.editor;
 
+import com.editora.editor.AutoClose.Action;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import org.junit.jupiter.api.Test;
-
-import com.editora.editor.AutoClose.Action;
 
 /** Unit tests for the pure auto-close decision logic. */
 class AutoCloseTest {
@@ -50,10 +49,10 @@ class AutoCloseTest {
     void quotePairingHeuristics() {
         assertEquals(Action.INSERT_PAIR, act('"', ' ', ' ', false)); // open space → pair
         assertEquals(Action.INSERT_PAIR, act('"', '(', (char) 0, false));
-        assertEquals(Action.NONE, act('\'', 'n', ' ', false));       // don't  → no pair
-        assertEquals(Action.NONE, act('"', 'x', ' ', false));        // after a word char
-        assertEquals(Action.NONE, act('"', ' ', 'x', false));        // before a word char
-        assertEquals(Action.NONE, act('"', '"', ' ', false));        // after another quote
+        assertEquals(Action.NONE, act('\'', 'n', ' ', false)); // don't  → no pair
+        assertEquals(Action.NONE, act('"', 'x', ' ', false)); // after a word char
+        assertEquals(Action.NONE, act('"', ' ', 'x', false)); // before a word char
+        assertEquals(Action.NONE, act('"', '"', ' ', false)); // after another quote
     }
 
     @Test

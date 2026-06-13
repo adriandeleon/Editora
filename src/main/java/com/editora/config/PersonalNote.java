@@ -15,8 +15,16 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * bucketed per project, in {@link NoteStore} ({@code notes.json}).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record PersonalNote(UUID id, FileIdentity file, NoteScope scope, TextAnchor anchor, String body,
-        List<String> tags, NoteStatus status, long createdAt, long updatedAt) {
+public record PersonalNote(
+        UUID id,
+        FileIdentity file,
+        NoteScope scope,
+        TextAnchor anchor,
+        String body,
+        List<String> tags,
+        NoteStatus status,
+        long createdAt,
+        long updatedAt) {
 
     public PersonalNote {
         id = id == null ? UUID.randomUUID() : id;
@@ -28,8 +36,8 @@ public record PersonalNote(UUID id, FileIdentity file, NoteScope scope, TextAnch
     }
 
     /** A fresh note created now (timestamps set to {@code System.currentTimeMillis()}). */
-    public static PersonalNote create(FileIdentity file, NoteScope scope, TextAnchor anchor, String body,
-            List<String> tags) {
+    public static PersonalNote create(
+            FileIdentity file, NoteScope scope, TextAnchor anchor, String body, List<String> tags) {
         long now = System.currentTimeMillis();
         return new PersonalNote(UUID.randomUUID(), file, scope, anchor, body, tags, NoteStatus.ACTIVE, now, now);
     }

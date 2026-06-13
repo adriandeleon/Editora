@@ -7,5 +7,4 @@ import java.util.List;
  * default text in place and variables resolved) plus the {@link TabStop}s, ordered for navigation
  * (1, 2, 3, … then {@code $0} last). Pure data produced by {@link SnippetParser}.
  */
-public record ParsedSnippet(String text, List<TabStop> stops) {
-}
+public record ParsedSnippet(String text, List<TabStop> stops) {}

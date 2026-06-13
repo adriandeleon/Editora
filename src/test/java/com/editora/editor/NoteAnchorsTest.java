@@ -1,10 +1,10 @@
 package com.editora.editor;
 
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-
-import org.junit.jupiter.api.Test;
 
 class NoteAnchorsTest {
 
@@ -52,7 +52,8 @@ class NoteAnchorsTest {
 
     @Test
     void relocateOrphansWhenTextIsGone() {
-        assertNull(NoteAnchors.relocate("totally different content", 0, 4, "missing", "", ""),
+        assertNull(
+                NoteAnchors.relocate("totally different content", 0, 4, "missing", "", ""),
                 "no occurrence → orphan (null)");
     }
 

@@ -21,8 +21,7 @@ final class CanvasGuards {
     /** Upper bound for a canvas dimension — the common GPU maximum texture size. */
     static final double MAX_DIM = 16384;
 
-    private CanvasGuards() {
-    }
+    private CanvasGuards() {}
 
     /** Clamps a requested canvas dimension to a finite value in {@code [1, MAX_DIM]} ({@code NaN}/≤0 → 1). */
     static double clampDim(double v) {
@@ -37,7 +36,6 @@ final class CanvasGuards {
      * ({@code ≤0}), {@code NaN}/infinite, or over-{@link #MAX_DIM} sizes return {@code false}.
      */
     static boolean paintable(double w, double h) {
-        return Double.isFinite(w) && Double.isFinite(h)
-                && w >= 1 && h >= 1 && w <= MAX_DIM && h <= MAX_DIM;
+        return Double.isFinite(w) && Double.isFinite(h) && w >= 1 && h >= 1 && w <= MAX_DIM && h <= MAX_DIM;
     }
 }

@@ -28,8 +28,8 @@ import org.fxmisc.richtext.CodeArea;
  */
 final class AceJumpOverlay extends Region {
 
-    private static final Color PILL = Color.web("#ffe0b2");        // pastel peach/amber
-    private static final Color PILL_TEXT = Color.web("#5a3a00");   // dark brown for contrast
+    private static final Color PILL = Color.web("#ffe0b2"); // pastel peach/amber
+    private static final Color PILL_TEXT = Color.web("#5a3a00"); // dark brown for contrast
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);

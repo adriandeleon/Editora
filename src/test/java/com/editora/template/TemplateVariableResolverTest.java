@@ -1,14 +1,14 @@
 package com.editora.template;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.time.LocalDateTime;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure template variable resolver (fixed clock, no toolkit). */
 class TemplateVariableResolverTest {
@@ -16,8 +16,8 @@ class TemplateVariableResolverTest {
     private static final LocalDateTime CLOCK = LocalDateTime.of(2026, 6, 10, 9, 30, 0);
 
     private TemplateVariableResolver resolver(Map<String, String> answers) {
-        return new TemplateVariableResolver(answers, "Ada", "MyProj", "com.acme",
-                "Widget.java", "/src", "/src/Widget.java", CLOCK);
+        return new TemplateVariableResolver(
+                answers, "Ada", "MyProj", "com.acme", "Widget.java", "/src", "/src/Widget.java", CLOCK);
     }
 
     @Test

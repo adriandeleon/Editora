@@ -3,9 +3,6 @@ package com.editora.print;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.pdf.PdfText;
-import com.editora.pdf.PdfTheme;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.print.PageLayout;
@@ -18,6 +15,9 @@ import javafx.scene.text.FontPosture;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
+
+import com.editora.pdf.PdfText;
+import com.editora.pdf.PdfTheme;
 
 /**
  * Builds printable JavaFX page nodes for source code — the {@code javafx.print} analog of
@@ -39,8 +39,7 @@ public final class CodePrintLayout {
     /** Gap between the line-number gutter and the code, in px. */
     private static final double GUTTER_GAP = 8;
 
-    private CodePrintLayout() {
-    }
+    private CodePrintLayout() {}
 
     /** Monospace columns that fit in {@code printableWidth} at {@code charWidth} px/char (min 1). */
     public static int columns(double printableWidth, double charWidth) {
@@ -63,8 +62,8 @@ public final class CodePrintLayout {
      * {@code VBox} per printed page for {@code layout}, wrapping long lines to the printable width and
      * packing whole visual lines per page. {@code lineNumbers} adds a muted right-aligned gutter.
      */
-    public static List<Node> paginate(List<List<PdfText.Run>> lines, PageLayout layout,
-            boolean lineNumbers, Font mono) {
+    public static List<Node> paginate(
+            List<List<PdfText.Run>> lines, PageLayout layout, boolean lineNumbers, Font mono) {
         double charW = charWidth(mono);
         double lineH = Math.ceil(mono.getSize() * LINE_SPACING);
         int total = lines.size();
@@ -95,8 +94,8 @@ public final class CodePrintLayout {
         return pages;
     }
 
-    private static HBox row(List<PdfText.Run> runs, int lineNo, boolean lineNumbers, double gutterW,
-            Font mono, double lineH) {
+    private static HBox row(
+            List<PdfText.Run> runs, int lineNo, boolean lineNumbers, double gutterW, Font mono, double lineH) {
         HBox rowBox = new HBox();
         rowBox.setMinHeight(lineH);
         rowBox.setPrefHeight(lineH);
@@ -133,7 +132,8 @@ public final class CodePrintLayout {
     }
 
     private static Font variant(Font base, boolean bold, boolean italic) {
-        return Font.font(base.getFamily(),
+        return Font.font(
+                base.getFamily(),
                 bold ? FontWeight.BOLD : FontWeight.NORMAL,
                 italic ? FontPosture.ITALIC : FontPosture.REGULAR,
                 base.getSize());

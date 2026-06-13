@@ -1,7 +1,5 @@
 package com.editora.editor;
 
-import static com.editora.i18n.Messages.tr;
-
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -12,6 +10,8 @@ import javafx.scene.control.Separator;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.util.StringConverter;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The floating IntelliJ-style format bar shown above a non-empty selection in a Markdown buffer. It is a
@@ -32,15 +32,16 @@ final class MarkdownFormatBar {
         node.setPadding(new Insets(3));
         node.setAlignment(Pos.CENTER_LEFT);
 
-        node.getChildren().addAll(
-                button("B", "tooltip.markdown.bold", "md-fmt-bold", () -> buffer.formatInline("**")),
-                button("I", "tooltip.markdown.italic", "md-fmt-italic", () -> buffer.formatInline("*")),
-                button("S", "tooltip.markdown.strikethrough", "md-fmt-strike", () -> buffer.formatInline("~~")),
-                button("</>", "tooltip.markdown.code", null, () -> buffer.formatInline("`")),
-                button("Link", "tooltip.markdown.link", null, buffer::formatLinkFromClipboard),
-                button("List", "tooltip.markdown.bulletList", null, buffer::formatBulletList),
-                new Separator(javafx.geometry.Orientation.VERTICAL),
-                headingBox(buffer));
+        node.getChildren()
+                .addAll(
+                        button("B", "tooltip.markdown.bold", "md-fmt-bold", () -> buffer.formatInline("**")),
+                        button("I", "tooltip.markdown.italic", "md-fmt-italic", () -> buffer.formatInline("*")),
+                        button("S", "tooltip.markdown.strikethrough", "md-fmt-strike", () -> buffer.formatInline("~~")),
+                        button("</>", "tooltip.markdown.code", null, () -> buffer.formatInline("`")),
+                        button("Link", "tooltip.markdown.link", null, buffer::formatLinkFromClipboard),
+                        button("List", "tooltip.markdown.bulletList", null, buffer::formatBulletList),
+                        new Separator(javafx.geometry.Orientation.VERTICAL),
+                        headingBox(buffer));
     }
 
     Node node() {

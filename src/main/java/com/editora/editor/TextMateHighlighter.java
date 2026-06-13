@@ -26,16 +26,13 @@ public final class TextMateHighlighter {
     /** Zero means "no per-line timeout" to tm4e — we tokenize lazily/debounced anyway. */
     private static final Duration NO_TIMEOUT = Duration.ZERO;
 
-    private TextMateHighlighter() {
-    }
+    private TextMateHighlighter() {}
 
     /** A named definition found while tokenizing: the 0-based {@code line}, its {@code name}, and a coarse {@code kind}. */
-    public record Symbol(int line, String name, String kind) {
-    }
+    public record Symbol(int line, String name, String kind) {}
 
     /** The result of one tokenization pass: highlight {@code spans} plus the document's {@code symbols}. */
-    public record Analysis(StyleSpans<Collection<String>> spans, List<Symbol> symbols) {
-    }
+    public record Analysis(StyleSpans<Collection<String>> spans, List<Symbol> symbols) {}
 
     /**
      * The result of an incremental pass tokenizing lines {@code [fromLine … end]}:
@@ -48,9 +45,8 @@ public final class TextMateHighlighter {
      *   <li>{@code symbols} — definitions found on the tokenized lines (absolute line indices).</li>
      * </ul>
      */
-    public record IncrementalAnalysis(int fromOffset, StyleSpans<Collection<String>> spans,
-            List<IStateStack> endStates, List<Symbol> symbols) {
-    }
+    public record IncrementalAnalysis(
+            int fromOffset, StyleSpans<Collection<String>> spans, List<IStateStack> endStates, List<Symbol> symbols) {}
 
     /**
      * Style spans covering the whole text. Returns {@code null} for empty text or a null grammar
@@ -80,8 +76,7 @@ public final class TextMateHighlighter {
      * re-highlighting: the unchanged prefix before an edit is skipped. Returns {@code null} for a
      * null grammar/text.
      */
-    public static IncrementalAnalysis analyzeFrom(String text, IGrammar grammar, int fromLine,
-            IStateStack startState) {
+    public static IncrementalAnalysis analyzeFrom(String text, IGrammar grammar, int fromLine, IStateStack startState) {
         if (text == null || grammar == null) {
             return null;
         }
@@ -95,8 +90,8 @@ public final class TextMateHighlighter {
         }
     }
 
-    private static IncrementalAnalysis analyzeFromLocked(String text, IGrammar grammar, int fromLine,
-            IStateStack startState) {
+    private static IncrementalAnalysis analyzeFromLocked(
+            String text, IGrammar grammar, int fromLine, IStateStack startState) {
         // Adjacent runs with the same style are merged before they reach the builder: we collapse
         // many TextMate scopes onto a few coarse classes, so a single line yields long stretches of
         // identical (or empty) styling. RichTextFX materializes one Text node per span, so emitting
@@ -235,7 +230,7 @@ public final class TextMateHighlighter {
     private static final class SpanMerger {
         private final StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
         private String current; // style class of the open run, or null for unstyled
-        private int length;     // accumulated length of the open run
+        private int length; // accumulated length of the open run
 
         /** Append {@code len} characters styled with {@code style} (null = unstyled). */
         void add(String style, int len) {
@@ -305,7 +300,9 @@ public final class TextMateHighlighter {
             return "string";
         }
         // Annotations/decorators before generic storage/keyword rules.
-        if (scope.contains("annotation") || scope.startsWith("meta.decorator") || scope.startsWith("entity.name.function.decorator")) {
+        if (scope.contains("annotation")
+                || scope.startsWith("meta.decorator")
+                || scope.startsWith("entity.name.function.decorator")) {
             return "annotation";
         }
         if (scope.startsWith("keyword.operator")) {
@@ -317,7 +314,8 @@ public final class TextMateHighlighter {
         if (scope.startsWith("storage")) {
             return "keyword";
         }
-        if (scope.startsWith("entity.name.function") || scope.startsWith("support.function")
+        if (scope.startsWith("entity.name.function")
+                || scope.startsWith("support.function")
                 || scope.startsWith("meta.function-call")) {
             return "function";
         }
@@ -330,9 +328,12 @@ public final class TextMateHighlighter {
         if (scope.startsWith("entity.name.section") || scope.startsWith("markup.heading")) {
             return "heading";
         }
-        if (scope.startsWith("entity.name.type") || scope.startsWith("entity.name.class")
-                || scope.startsWith("entity.name.namespace") || scope.startsWith("entity.other.inherited-class")
-                || scope.startsWith("support.type") || scope.startsWith("support.class")) {
+        if (scope.startsWith("entity.name.type")
+                || scope.startsWith("entity.name.class")
+                || scope.startsWith("entity.name.namespace")
+                || scope.startsWith("entity.other.inherited-class")
+                || scope.startsWith("support.type")
+                || scope.startsWith("support.class")) {
             return "type";
         }
         if (scope.startsWith("variable.language")) {
@@ -353,11 +354,13 @@ public final class TextMateHighlighter {
         if (scope.startsWith("markup.italic")) {
             return "italic";
         }
-        if (scope.startsWith("markup.underline.link") || scope.startsWith("markup.link")
+        if (scope.startsWith("markup.underline.link")
+                || scope.startsWith("markup.link")
                 || scope.startsWith("string.other.link")) {
             return "link";
         }
-        if (scope.startsWith("markup.inline.raw") || scope.startsWith("markup.raw")
+        if (scope.startsWith("markup.inline.raw")
+                || scope.startsWith("markup.raw")
                 || scope.startsWith("markup.fenced_code")) {
             return "code";
         }

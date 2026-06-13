@@ -1,11 +1,7 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.util.List;
 import java.util.function.Consumer;
-
-import com.editora.print.PrintService;
 
 import javafx.beans.binding.Bindings;
 import javafx.geometry.Insets;
@@ -27,6 +23,10 @@ import javafx.scene.transform.Scale;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+
+import com.editora.print.PrintService;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A modal "Print Preview" window: shows the paginated output (scaled to fit, with page navigation)
@@ -53,8 +53,13 @@ final class PrintPreview {
     private final Button next = new Button("▶");
     private int index;
 
-    PrintPreview(Window owner, PrinterJob job, PrintService.Paginator paginator,
-            Consumer<PrintService.Result> onResult, Runnable onPrinting, Runnable onCancel) {
+    PrintPreview(
+            Window owner,
+            PrinterJob job,
+            PrintService.Paginator paginator,
+            Consumer<PrintService.Result> onResult,
+            Runnable onPrinting,
+            Runnable onCancel) {
         this.job = job;
         this.paginator = paginator;
         this.onResult = onResult;
@@ -131,10 +136,13 @@ final class PrintPreview {
 
         // Scale the page to fit the viewport width (capped at 100%), anchored top-left.
         Scale scale = new Scale(1, 1, 0, 0);
-        scale.xProperty().bind(Bindings.createDoubleBinding(() -> {
-            double avail = scroll.getViewportBounds().getWidth() - 32;
-            return avail <= 0 || pw <= 0 ? 1 : Math.min(1.0, avail / pw);
-        }, scroll.viewportBoundsProperty()));
+        scale.xProperty()
+                .bind(Bindings.createDoubleBinding(
+                        () -> {
+                            double avail = scroll.getViewportBounds().getWidth() - 32;
+                            return avail <= 0 || pw <= 0 ? 1 : Math.min(1.0, avail / pw);
+                        },
+                        scroll.viewportBoundsProperty()));
         scale.yProperty().bind(scale.xProperty());
         paper.getTransforms().add(scale);
 

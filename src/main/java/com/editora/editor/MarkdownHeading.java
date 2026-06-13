@@ -9,8 +9,7 @@ public final class MarkdownHeading {
 
     private static final int MAX_LEVEL = 6;
 
-    private MarkdownHeading() {
-    }
+    private MarkdownHeading() {}
 
     /** Promote ({@code delta < 0}, fewer #) or demote ({@code delta > 0}, more #) each line in range. */
     public static MarkdownEdit apply(String text, int selStart, int selEnd, int delta) {

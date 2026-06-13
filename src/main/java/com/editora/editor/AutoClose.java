@@ -14,10 +14,14 @@ package com.editora.editor;
  */
 public final class AutoClose {
 
-    private AutoClose() {
-    }
+    private AutoClose() {}
 
-    public enum Action { NONE, INSERT_PAIR, SKIP_OVER, WRAP_SELECTION }
+    public enum Action {
+        NONE,
+        INSERT_PAIR,
+        SKIP_OVER,
+        WRAP_SELECTION
+    }
 
     /** What to do for a typed char, plus the closer to use (0 when not applicable). */
     public record Decision(Action action, char closer) {

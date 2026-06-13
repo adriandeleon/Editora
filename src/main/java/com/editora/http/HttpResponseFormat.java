@@ -11,8 +11,7 @@ public final class HttpResponseFormat {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private HttpResponseFormat() {
-    }
+    private HttpResponseFormat() {}
 
     public static String render(HttpResult r) {
         if (r.failed()) {
@@ -24,7 +23,11 @@ public final class HttpResponseFormat {
             sb.append(h[0]).append(": ").append(h[1]).append('\n');
         }
         sb.append('\n').append(prettyBody(r.body(), r.contentType()));
-        sb.append("\n\n— ").append(r.status()).append("  ·  ").append(r.elapsedMs()).append(" ms  ·  ")
+        sb.append("\n\n— ")
+                .append(r.status())
+                .append("  ·  ")
+                .append(r.elapsedMs())
+                .append(" ms  ·  ")
                 .append(humanSize(r.sizeBytes()));
         return sb.toString();
     }
@@ -34,7 +37,8 @@ public final class HttpResponseFormat {
         if (body == null) {
             return "";
         }
-        if (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).contains("json")
+        if (contentType != null
+                && contentType.toLowerCase(java.util.Locale.ROOT).contains("json")
                 && !body.isBlank()) {
             try {
                 Object tree = MAPPER.readValue(body, Object.class);
@@ -51,7 +55,8 @@ public final class HttpResponseFormat {
             return bytes + " B";
         }
         double kb = bytes / 1024.0;
-        return kb < 1024 ? String.format(java.util.Locale.ROOT, "%.1f KB", kb)
+        return kb < 1024
+                ? String.format(java.util.Locale.ROOT, "%.1f KB", kb)
                 : String.format(java.util.Locale.ROOT, "%.1f MB", kb / 1024);
     }
 }

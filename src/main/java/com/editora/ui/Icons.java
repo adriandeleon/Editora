@@ -17,8 +17,7 @@ final class Icons {
     /** Scale applied to every toolbar/stripe icon. */
     private static final double ICON_SCALE = 0.8;
 
-    private Icons() {
-    }
+    private Icons() {}
 
     private static Node of(String content) {
         SVGPath svg = new SVGPath();
@@ -90,9 +89,10 @@ final class Icons {
 
     /** Puzzle-piece "extension/plugin" glyph (Material "extension"). */
     static Node plugin() {
-        return of("M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 "
-                + "2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V19c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 "
-                + "2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V21H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z");
+        return of(
+                "M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 "
+                        + "2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V19c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 "
+                        + "2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V21H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z");
     }
 
     /** Inbox/archive "stash" glyph (Material "inbox"). */
@@ -175,10 +175,11 @@ final class Icons {
 
     /** Debug: Material "bug_report" — for the Debug tool window + status segment. */
     static Node debug() {
-        return of("M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 "
-                + "5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05"
-                + ".33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 "
-                + "5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z");
+        return of(
+                "M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 "
+                        + "5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05"
+                        + ".33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 "
+                        + "5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z");
     }
 
     /** Debug "stop" — a filled square (Material "stop"). */
@@ -322,8 +323,8 @@ final class Icons {
 
     /** Double chevron right (Material "keyboard_double_arrow_right") — diff "apply whole hunk" toward right. */
     static Node doubleChevronRight() {
-        return of("M6.41 6 5 7.41 9.58 12 5 16.59 6.41 18l6-6-6-6zm6 0L11 7.41 15.58 12 11 "
-                + "16.59 12.41 18l6-6-6-6z");
+        return of(
+                "M6.41 6 5 7.41 9.58 12 5 16.59 6.41 18l6-6-6-6zm6 0L11 7.41 15.58 12 11 " + "16.59 12.41 18l6-6-6-6z");
     }
 
     static Node outline() {

@@ -46,22 +46,30 @@ module com.editora {
     requires org.apache.sshd.osgi;
     requires org.apache.sshd.sftp;
 
-    opens com.editora to javafx.fxml;
-    opens com.editora.ui to javafx.fxml;
-    opens com.editora.config to com.fasterxml.jackson.databind;
-    opens com.editora.vfs to com.fasterxml.jackson.databind; // RemoteConnection record in connections.json
+    opens com.editora to
+            javafx.fxml;
+    opens com.editora.ui to
+            javafx.fxml;
+    opens com.editora.config to
+            com.fasterxml.jackson.databind;
+    opens com.editora.vfs to
+            com.fasterxml.jackson.databind; // RemoteConnection record in connections.json
     // Jackson reflects on the snippet JSON DTO (SnippetManager.Dto). The bundled snippet *resources*
     // need no opens — our own SnippetManager reads them via Class.getResourceAsStream.
-    opens com.editora.snippet to com.fasterxml.jackson.databind;
+    opens com.editora.snippet to
+            com.fasterxml.jackson.databind;
     // Jackson reflects on the template JSON DTOs (TemplateRegistry.Dto/FileDto); bundled template
     // resources are read via Class.getResourceAsStream and need no opens.
-    opens com.editora.template to com.fasterxml.jackson.databind;
+    opens com.editora.template to
+            com.fasterxml.jackson.databind;
     // Jackson reflects on the plugin manifest DTO (PluginManifest); the public plugin API also lives here.
-    opens com.editora.plugin to com.fasterxml.jackson.databind;
+    opens com.editora.plugin to
+            com.fasterxml.jackson.databind;
     // tm4e (a separate module) reads these grammar resources via Class.getResourceAsStream;
     // without opening the package, JPMS encapsulates the .tmLanguage.json files and grammar
     // loading silently fails, falling back to the legacy regex highlighter.
-    opens com.editora.grammars to org.eclipse.tm4e.core;
+    opens com.editora.grammars to
+            org.eclipse.tm4e.core;
     // LSP4J dispatches notifications/requests to our LanguageClient via reflection, and Gson (used by
     // jsonrpc) reflectively reads our custom @JsonNotification param DTO (language/status →
     // LanguageStatus). Gson runs in the unnamed module on the classpath under `mvn javafx:run` (and as

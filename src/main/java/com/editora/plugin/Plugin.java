@@ -15,6 +15,5 @@ public interface Plugin {
     void start(PluginContext context);
 
     /** Called when a window the plugin was started in closes. Default: no-op. */
-    default void stop() {
-    }
+    default void stop() {}
 }

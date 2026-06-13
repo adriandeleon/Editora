@@ -14,6 +14,8 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import com.editora.editor.LspDiagnostic;
+import com.editora.process.ProcessRunner;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
@@ -21,9 +23,6 @@ import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.MarkedString;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
-
-import com.editora.editor.LspDiagnostic;
-import com.editora.process.ProcessRunner;
 
 /**
  * UI-facing facade over the LSP layer (mirrors {@code MermaidService}): owns one
@@ -36,12 +35,12 @@ import com.editora.process.ProcessRunner;
 public final class LspManager {
 
     /** A resolved navigation target (definition/reference): a file + 0-based line/character. */
-    public record Target(Path file, int line, int character) {
-    }
+    public record Target(Path file, int line, int character) {}
 
     private final BiConsumer<Path, List<LspDiagnostic>> onDiagnostics;
     /** Server status: {@code accept(type, message)} (e.g. "ServiceReady"/"Ready"), posted to the FX thread. */
     private final BiConsumer<String, String> onStatus;
+
     private final ExecutorService detectExec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "lsp-detect");
         t.setDaemon(true);
@@ -60,10 +59,9 @@ public final class LspManager {
     /** serverId → last availability probe (invalidated when that server's command changes). */
     private final Map<String, Boolean> availableCache = new ConcurrentHashMap<>();
 
-    public LspManager(BiConsumer<Path, List<LspDiagnostic>> onDiagnostics,
-            BiConsumer<String, String> onStatus) {
-        this.onDiagnostics = onDiagnostics == null ? (p, d) -> { } : onDiagnostics;
-        this.onStatus = onStatus == null ? (t, m) -> { } : onStatus;
+    public LspManager(BiConsumer<Path, List<LspDiagnostic>> onDiagnostics, BiConsumer<String, String> onStatus) {
+        this.onDiagnostics = onDiagnostics == null ? (p, d) -> {} : onDiagnostics;
+        this.onStatus = onStatus == null ? (t, m) -> {} : onStatus;
         // Warm the augmented PATH off-thread now (it spawns a login shell to recover nvm/fnm/asdf dirs):
         // server detection and the FX-thread session start both read it, and this caches the result
         // before either needs it so neither blocks.
@@ -107,8 +105,7 @@ public final class LspManager {
      * DAP layer to drive jdtls's debug commands. The result (or error) is delivered on the FX thread; a
      * 30 s timeout guards against a server that never answers.
      */
-    public void executeCommand(Path file, String command, List<Object> args,
-            BiConsumer<Object, Throwable> cb) {
+    public void executeCommand(Path file, String command, List<Object> args, BiConsumer<Object, Throwable> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(null, new IllegalStateException("no language server for file")));
@@ -214,11 +211,14 @@ public final class LspManager {
             }
             // jdtls gets the java-debug plugin via initializationOptions.bundles when debugging is on, so
             // it registers the vscode.java.* debug commands. Other servers get no init options.
-            Object initOptions = "java".equals(serverId) && !debugBundles.isEmpty()
-                    ? Map.of("bundles", debugBundles) : null;
-            LanguageServerSession session = new LanguageServerSession(spec, root,
+            Object initOptions =
+                    "java".equals(serverId) && !debugBundles.isEmpty() ? Map.of("bundles", debugBundles) : null;
+            LanguageServerSession session = new LanguageServerSession(
+                    spec,
+                    root,
                     this::onPublishDiagnostics,
-                    (type, msg) -> Platform.runLater(() -> onStatus.accept(type, msg)), initOptions);
+                    (type, msg) -> Platform.runLater(() -> onStatus.accept(type, msg)),
+                    initOptions);
             return session.start() ? session : null;
         });
     }
@@ -253,8 +253,7 @@ public final class LspManager {
      * edits a completion implies, e.g. a TypeScript auto-import's {@code import} line — to {@code cb} on
      * the FX thread (empty list if none or unresolved).
      */
-    public void resolveCompletion(Path file, CompletionItem item,
-            Consumer<List<com.editora.editor.LspTextEdit>> cb) {
+    public void resolveCompletion(Path file, CompletionItem item, Consumer<List<com.editora.editor.LspTextEdit>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || item == null) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -267,8 +266,10 @@ public final class LspManager {
                 for (org.eclipse.lsp4j.TextEdit e : use.getAdditionalTextEdits()) {
                     if (e != null && e.getRange() != null) {
                         edits.add(new com.editora.editor.LspTextEdit(
-                                e.getRange().getStart().getLine(), e.getRange().getStart().getCharacter(),
-                                e.getRange().getEnd().getLine(), e.getRange().getEnd().getCharacter(),
+                                e.getRange().getStart().getLine(),
+                                e.getRange().getStart().getCharacter(),
+                                e.getRange().getEnd().getLine(),
+                                e.getRange().getEnd().getCharacter(),
                                 e.getNewText() == null ? "" : e.getNewText()));
                     }
                 }
@@ -305,7 +306,8 @@ public final class LspManager {
                 } else if (result.getRight() != null) {
                     for (LocationLink ll : result.getRight()) {
                         var range = ll.getTargetSelectionRange() != null
-                                ? ll.getTargetSelectionRange() : ll.getTargetRange();
+                                ? ll.getTargetSelectionRange()
+                                : ll.getTargetRange();
                         addTarget(targets, ll.getTargetUri(), range.getStart());
                     }
                 }

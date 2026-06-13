@@ -12,13 +12,11 @@ import java.util.regex.Pattern;
 public final class MarkdownInline {
 
     /** Inline link {@code [text](url "title")} — captures the URL (group 1), title optional, ignored. */
-    private static final Pattern INLINE_LINK =
-            Pattern.compile("\\[[^\\]]*\\]\\(\\s*([^)\\s]+)(?:\\s+[^)]*)?\\)");
+    private static final Pattern INLINE_LINK = Pattern.compile("\\[[^\\]]*\\]\\(\\s*([^)\\s]+)(?:\\s+[^)]*)?\\)");
     /** A bare http(s) URL. */
     private static final Pattern BARE_URL = Pattern.compile("https?://[^\\s)<>\"']+");
 
-    private MarkdownInline() {
-    }
+    private MarkdownInline() {}
 
     /**
      * Toggles {@code marker} around {@code [selStart, selEnd)}. If the markers already sit just outside
@@ -28,11 +26,13 @@ public final class MarkdownInline {
     public static MarkdownEdit toggle(String text, int selStart, int selEnd, String marker) {
         int len = marker.length();
         // Markers immediately OUTSIDE the selection -> unwrap them.
-        if (selStart >= len && selEnd + len <= text.length()
-                && text.startsWith(marker, selStart - len) && text.startsWith(marker, selEnd)) {
+        if (selStart >= len
+                && selEnd + len <= text.length()
+                && text.startsWith(marker, selStart - len)
+                && text.startsWith(marker, selEnd)) {
             String inner = text.substring(selStart, selEnd);
-            return new MarkdownEdit(selStart - len, selEnd + len, inner,
-                    selStart - len, selStart - len + inner.length());
+            return new MarkdownEdit(
+                    selStart - len, selEnd + len, inner, selStart - len, selStart - len + inner.length());
         }
         String sel = text.substring(selStart, selEnd);
         // Markers INSIDE the selection -> strip them.

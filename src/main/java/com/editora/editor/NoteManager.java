@@ -10,14 +10,13 @@ import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.model.PlainTextChange;
-import org.fxmisc.richtext.model.TwoDimensional.Bias;
-
 import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.PlainTextChange;
+import org.fxmisc.richtext.model.TwoDimensional.Bias;
 
 /**
  * Tracks the {@link PersonalNote}s of a single {@link CodeArea}: their live character-offset ranges follow
@@ -35,8 +34,9 @@ public final class NoteManager {
     private final CodeArea area;
     /** id -> live tracking; insertion order preserved for the panel/snapshot. */
     private final Map<UUID, Tracked> tracked = new LinkedHashMap<>();
-    private Runnable onChanged = () -> { };
-    private Consumer<Collection<Integer>> onLinesRepaint = c -> { };
+
+    private Runnable onChanged = () -> {};
+    private Consumer<Collection<Integer>> onLinesRepaint = c -> {};
     private boolean restoring;
 
     /** A note plus its current offset range ({@code start==end==-1} for file-scope / orphaned notes). */
@@ -62,11 +62,11 @@ public final class NoteManager {
     }
 
     public void setOnChanged(Runnable onChanged) {
-        this.onChanged = onChanged == null ? () -> { } : onChanged;
+        this.onChanged = onChanged == null ? () -> {} : onChanged;
     }
 
     public void setOnLinesRepaint(Consumer<Collection<Integer>> cb) {
-        this.onLinesRepaint = cb == null ? c -> { } : cb;
+        this.onLinesRepaint = cb == null ? c -> {} : cb;
     }
 
     // ---- queries (for the gutter, hover, navigation) ----
@@ -249,8 +249,7 @@ public final class NoteManager {
         TextAnchor a = note.anchor();
         int savedStart = absOffset(a.line(), a.column());
         int savedEnd = absOffset(a.endLine(), a.endColumn());
-        int[] r = NoteAnchors.relocate(area.getText(), savedStart, savedEnd,
-                a.selectedText(), a.prefix(), a.suffix());
+        int[] r = NoteAnchors.relocate(area.getText(), savedStart, savedEnd, a.selectedText(), a.prefix(), a.suffix());
         if (r == null) {
             PersonalNote orphan = note.status() == NoteStatus.ORPHANED ? note : note.withStatus(NoteStatus.ORPHANED);
             return new Tracked(orphan, -1, -1);
@@ -277,7 +276,8 @@ public final class NoteManager {
     }
 
     private int lineOf(int offset) {
-        return area.offsetToPosition(clamp(offset, 0, area.getLength()), Bias.Forward).getMajor();
+        return area.offsetToPosition(clamp(offset, 0, area.getLength()), Bias.Forward)
+                .getMajor();
     }
 
     private void onTextChange(PlainTextChange change) {

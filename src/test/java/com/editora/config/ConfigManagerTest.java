@@ -1,9 +1,5 @@
 package com.editora.config;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,6 +7,10 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConfigManagerTest {
 
@@ -73,7 +73,8 @@ class ConfigManagerTest {
         assertTrue(Files.exists(dir.resolve("workspace-state.json")));
         ConfigManager reloaded = new ConfigManager(dir);
         reloaded.load();
-        assertEquals(List.of(3, 9), reloaded.getWorkspaceState().getFoldedRegions().get("/tmp/a/Main.java"));
+        assertEquals(
+                List.of(3, 9), reloaded.getWorkspaceState().getFoldedRegions().get("/tmp/a/Main.java"));
         assertEquals("project", reloaded.getWorkspaceState().getOpenLeftToolWindow());
     }
 
@@ -90,7 +91,8 @@ class ConfigManagerTest {
         ConfigManager rc = new ConfigManager(dir);
         rc.load();
         assertEquals(2, rc.getWorkspaceState().getOpenFiles().size());
-        assertEquals("/tmp/a/Main.java", rc.getWorkspaceState().getOpenFiles().get(0).getPath());
+        assertEquals(
+                "/tmp/a/Main.java", rc.getWorkspaceState().getOpenFiles().get(0).getPath());
         assertEquals(150, rc.getWorkspaceState().getOpenFiles().get(0).getCaret());
         assertTrue(rc.getWorkspaceState().getOpenFiles().get(0).isPinned());
         assertFalse(rc.getWorkspaceState().getOpenFiles().get(1).isPinned());

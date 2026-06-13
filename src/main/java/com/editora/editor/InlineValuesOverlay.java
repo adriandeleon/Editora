@@ -34,6 +34,7 @@ final class InlineValuesOverlay extends Region {
     private final Canvas canvas = new Canvas(1, 1);
     /** Variable name → rendered value for the suspended frame; null = inactive. */
     private Map<String, String> values;
+
     private boolean redrawPending;
     private Font font = Font.font("monospace", FontPosture.ITALIC, 14);
 
@@ -135,7 +136,8 @@ final class InlineValuesOverlay extends Region {
                 int lastChar = line.length() - 1;
                 int abs = area.getAbsolutePosition(p, lastChar);
                 Bounds b = area.getCharacterBoundsOnScreen(abs, abs + 1)
-                        .map(canvas::screenToLocal).orElse(null);
+                        .map(canvas::screenToLocal)
+                        .orElse(null);
                 if (b == null) {
                     continue;
                 }

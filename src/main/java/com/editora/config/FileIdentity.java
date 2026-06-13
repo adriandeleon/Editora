@@ -25,7 +25,12 @@ public record FileIdentity(String path, String canonicalPath, long size, long la
     public static final long MAX_HASH_BYTES = 5L * 1024 * 1024;
 
     /** Strength of a match between two identities; higher ordinals win. */
-    public enum Match { NONE, SIMILAR_PATH, CONTENT_HASH, CANONICAL_PATH }
+    public enum Match {
+        NONE,
+        SIMILAR_PATH,
+        CONTENT_HASH,
+        CANONICAL_PATH
+    }
 
     public FileIdentity {
         path = path == null ? "" : path;

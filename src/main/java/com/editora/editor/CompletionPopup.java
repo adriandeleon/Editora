@@ -3,8 +3,6 @@ package com.editora.editor;
 import java.util.List;
 import java.util.function.Consumer;
 
-import com.editora.completion.Completion;
-
 import javafx.geometry.Bounds;
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
@@ -17,6 +15,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 import javafx.stage.Window;
+
+import com.editora.completion.Completion;
 
 /**
  * The autocomplete dropdown: a <b>focus-less</b> {@link Popup} holding a {@link ListView} of
@@ -33,7 +33,7 @@ public final class CompletionPopup {
 
     private final Popup popup = new Popup();
     private final ListView<Completion> list = new ListView<>();
-    private Consumer<Completion> onAccept = c -> { };
+    private Consumer<Completion> onAccept = c -> {};
     /** Index of the top visible row; we manage scrolling so the list only scrolls at the window edges. */
     private int firstVisible;
 
@@ -61,7 +61,7 @@ public final class CompletionPopup {
 
     /** Sets the callback invoked when a row is clicked (keyboard accept is handled by the editor). */
     public void setOnAccept(Consumer<Completion> onAccept) {
-        this.onAccept = onAccept == null ? c -> { } : onAccept;
+        this.onAccept = onAccept == null ? c -> {} : onAccept;
     }
 
     public boolean isShowing() {
@@ -102,11 +102,11 @@ public final class CompletionPopup {
             return;
         }
         if (index < firstVisible) {
-            firstVisible = index;                       // moved above the window → it becomes the top row
+            firstVisible = index; // moved above the window → it becomes the top row
         } else if (index > firstVisible + VISIBLE_ROWS - 1) {
-            firstVisible = index - VISIBLE_ROWS + 1;     // moved below → it becomes the bottom row
+            firstVisible = index - VISIBLE_ROWS + 1; // moved below → it becomes the bottom row
         } else {
-            return;                                      // already visible → no scroll
+            return; // already visible → no scroll
         }
         firstVisible = Math.max(0, Math.min(firstVisible, n - VISIBLE_ROWS));
         list.scrollTo(firstVisible);
@@ -175,8 +175,8 @@ public final class CompletionPopup {
             label.setText(item.label());
             detail.setText(item.detail() == null ? "" : item.detail());
             getStyleClass().removeAll("completion-kind-snippet", "completion-kind-word");
-            getStyleClass().add(item.kind() == Completion.Kind.SNIPPET
-                    ? "completion-kind-snippet" : "completion-kind-word");
+            getStyleClass()
+                    .add(item.kind() == Completion.Kind.SNIPPET ? "completion-kind-snippet" : "completion-kind-word");
             setGraphic(row);
         }
     }

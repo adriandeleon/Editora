@@ -26,21 +26,19 @@ import java.util.Set;
 public final class LspServerRegistry {
 
     /** A resolved server launch spec: which server, the argv to launch, and its root markers. */
-    public record ServerSpec(String serverId, List<String> command, List<String> rootMarkers) {
-    }
+    public record ServerSpec(String serverId, List<String> command, List<String> rootMarkers) {}
 
     /** Build files (and {@code .git}) that mark a Java project root, nearest-first when walking up. */
-    public static final List<String> JAVA_ROOT_MARKERS = List.of(
-            "pom.xml", "build.gradle", "build.gradle.kts",
-            "settings.gradle", "settings.gradle.kts", ".git");
+    public static final List<String> JAVA_ROOT_MARKERS =
+            List.of("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", ".git");
 
     /** Markers for a JS/TS project root (a tsconfig/jsconfig wins, else package.json, else the repo). */
-    public static final List<String> TS_ROOT_MARKERS = List.of(
-            "tsconfig.json", "jsconfig.json", "package.json", ".git");
+    public static final List<String> TS_ROOT_MARKERS =
+            List.of("tsconfig.json", "jsconfig.json", "package.json", ".git");
 
     /** Markers for a Python project root (pyproject/setup/requirements/Pipfile, else the repo). */
-    public static final List<String> PYTHON_ROOT_MARKERS = List.of(
-            "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile", ".git");
+    public static final List<String> PYTHON_ROOT_MARKERS =
+            List.of("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile", ".git");
 
     /** Markers for an XML project root (a build file that often carries the schema, else the repo). */
     public static final List<String> XML_ROOT_MARKERS = List.of("pom.xml", "build.xml", ".git");
@@ -67,28 +65,28 @@ public final class LspServerRegistry {
     public static final List<String> RUBY_ROOT_MARKERS = List.of("Gemfile", ".ruby-version", ".git");
 
     /** Markers for a C/C++ project root (a compile DB or build file, else the repo). */
-    public static final List<String> C_ROOT_MARKERS = List.of(
-            "compile_commands.json", ".clangd", "CMakeLists.txt", "Makefile", ".git");
+    public static final List<String> C_ROOT_MARKERS =
+            List.of("compile_commands.json", ".clangd", "CMakeLists.txt", "Makefile", ".git");
 
     /** Markers for an HTML/CSS web project root (package.json, else the repo). */
     public static final List<String> WEB_ROOT_MARKERS = List.of("package.json", ".git");
 
     /** Markers for a Kotlin project root (Gradle/Maven build files, else the repo). */
-    public static final List<String> KOTLIN_ROOT_MARKERS = List.of(
-            "build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle", "pom.xml", ".git");
+    public static final List<String> KOTLIN_ROOT_MARKERS =
+            List.of("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle", "pom.xml", ".git");
 
     /** Markers for a Lua project root (a LuaLS config, else the repo). */
     public static final List<String> LUA_ROOT_MARKERS = List.of(".luarc.json", ".luarc.jsonc", ".git");
 
     /** Markers for a Terraform module root (a .terraform dir / lock file, else the repo). */
-    public static final List<String> TERRAFORM_ROOT_MARKERS = List.of(
-            ".terraform", ".terraform.lock.hcl", ".git");
+    public static final List<String> TERRAFORM_ROOT_MARKERS = List.of(".terraform", ".terraform.lock.hcl", ".git");
 
     /** Markers for a C# project root (a global.json, else the repo; csharp-ls finds the .sln/.csproj). */
     public static final List<String> CSHARP_ROOT_MARKERS = List.of("global.json", ".git");
 
     /** Default server commands when the user leaves the Settings field blank. */
     public static final String DEFAULT_JAVA_COMMAND = "jdtls";
+
     public static final String DEFAULT_TYPESCRIPT_COMMAND = "typescript-language-server --stdio";
     public static final String DEFAULT_PYTHON_COMMAND = "pyright-langserver --stdio";
     public static final String DEFAULT_XML_COMMAND = "lemminx";
@@ -113,7 +111,10 @@ public final class LspServerRegistry {
     /** A known language server: its id, default command, root markers, and the language ids it serves. */
     private enum ServerDef {
         JAVA("java", DEFAULT_JAVA_COMMAND, JAVA_ROOT_MARKERS, Set.of("java")),
-        TYPESCRIPT("typescript", DEFAULT_TYPESCRIPT_COMMAND, TS_ROOT_MARKERS,
+        TYPESCRIPT(
+                "typescript",
+                DEFAULT_TYPESCRIPT_COMMAND,
+                TS_ROOT_MARKERS,
                 Set.of("javascript", "javascriptreact", "typescript", "typescriptreact")),
         PYTHON("python", DEFAULT_PYTHON_COMMAND, PYTHON_ROOT_MARKERS, Set.of("python")),
         XML("xml", DEFAULT_XML_COMMAND, XML_ROOT_MARKERS, Set.of("xml")),
@@ -149,8 +150,7 @@ public final class LspServerRegistry {
         }
     }
 
-    private LspServerRegistry() {
-    }
+    private LspServerRegistry() {}
 
     private static ServerDef defFor(String languageId) {
         for (ServerDef d : ServerDef.values()) {

@@ -6,15 +6,14 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 
 import com.editora.config.migration.ConfigMigrations;
 import com.editora.config.migration.ConfigSchema;
-
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
  * Persistent list of recently-opened files in {@code <configDir>/recent-files.json}. Most-recent
@@ -29,6 +28,7 @@ public class RecentFiles {
     public static final int MAX_ENTRIES = 20;
     /** Current on-disk schema version of {@code recent-files.json} (v0 = the legacy bare JSON array). */
     public static final int SCHEMA_VERSION = 1;
+
     static final String FILE_NAME = "recent-files.json";
 
     /** Serialized form of {@code recent-files.json}: a version stamp plus the file paths. */
@@ -99,7 +99,8 @@ public class RecentFiles {
         try {
             Files.createDirectories(file.getParent());
             Stored stored = new Stored();
-            stored.files = recents.stream().map(com.editora.vfs.Vfs::toStorableString).toList();
+            stored.files =
+                    recents.stream().map(com.editora.vfs.Vfs::toStorableString).toList();
             mapper.writeValue(file.toFile(), stored);
         } catch (IOException e) {
             // Best effort.

@@ -10,12 +10,10 @@ import java.util.List;
  * <p>{@link #NOT_A_REPO} is the sentinel returned when the active file isn't inside a Git work tree
  * (or Git isn't installed); callers check {@link #isRepo()} before showing any Git UI.
  */
-public record GitStatus(boolean repo, String branch, String upstream, int ahead, int behind,
-                        List<FileEntry> files) {
+public record GitStatus(boolean repo, String branch, String upstream, int ahead, int behind, List<FileEntry> files) {
 
     /** Sentinel for "no repository here" — all Git UI stays hidden. */
-    public static final GitStatus NOT_A_REPO =
-            new GitStatus(false, "", "", 0, 0, List.of());
+    public static final GitStatus NOT_A_REPO = new GitStatus(false, "", "", 0, 0, List.of());
 
     public boolean isRepo() {
         return repo;

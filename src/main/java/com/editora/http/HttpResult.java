@@ -7,8 +7,14 @@ import java.util.List;
  * ({@code [name, value]}), the {@code body} text, the {@code contentType}, timing/size, and an
  * {@code error} message (non-null only when the request failed to complete — DNS/connect/timeout).
  */
-public record HttpResult(int status, List<String[]> headers, String body, String contentType,
-        long elapsedMs, long sizeBytes, String error) {
+public record HttpResult(
+        int status,
+        List<String[]> headers,
+        String body,
+        String contentType,
+        long elapsedMs,
+        long sizeBytes,
+        String error) {
 
     public boolean failed() {
         return error != null;

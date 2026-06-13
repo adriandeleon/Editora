@@ -3,8 +3,8 @@ package com.editora.config.migration;
 import java.util.Map;
 
 import com.editora.config.BookmarkStore;
-import com.editora.config.ConnectionStore;
 import com.editora.config.BreakpointStore;
+import com.editora.config.ConnectionStore;
 import com.editora.config.NoteStore;
 import com.editora.config.PluginStore;
 import com.editora.config.ProjectManager;
@@ -33,30 +33,34 @@ public enum ConfigSchema {
     // debugSupport + javaDebugPluginPath; v15 → v16 added pythonDebug/jsDebug enable+command;
     // v16 → v17 added multiCaret; v17 → v18 added authorName (file templates); v18 → v19 added
     // httpClientSupport + ijhttpCommand — all additive, so identity.
-    SETTINGS(Settings.SCHEMA_VERSION, 1, Map.<Integer, Migration>ofEntries(
-            Map.entry(1, (Migration) ConfigMigrations::identity),
-            Map.entry(2, (Migration) ConfigMigrations::identity),
-            Map.entry(3, (Migration) ConfigMigrations::identity),
-            Map.entry(4, (Migration) ConfigMigrations::identity),
-            Map.entry(5, (Migration) ConfigMigrations::identity),
-            Map.entry(6, (Migration) ConfigMigrations::identity),
-            Map.entry(7, (Migration) ConfigMigrations::identity),
-            Map.entry(8, (Migration) ConfigMigrations::identity),
-            Map.entry(9, (Migration) ConfigMigrations::identity),
-            Map.entry(10, (Migration) ConfigMigrations::identity),
-            Map.entry(11, (Migration) ConfigMigrations::identity),
-            Map.entry(12, (Migration) ConfigMigrations::identity),
-            Map.entry(13, (Migration) ConfigMigrations::identity),
-            Map.entry(14, (Migration) ConfigMigrations::identity),
-            Map.entry(15, (Migration) ConfigMigrations::identity),
-            Map.entry(16, (Migration) ConfigMigrations::identity),
-            Map.entry(17, (Migration) ConfigMigrations::identity),
-            Map.entry(18, (Migration) ConfigMigrations::identity),
-            Map.entry(19, (Migration) ConfigMigrations::identity), // v19→20: + simpleMode (additive)
-            Map.entry(20, (Migration) ConfigMigrations::identity), // v20→21: + gitBlameInline (additive)
-            Map.entry(21, (Migration) ConfigMigrations::identity), // v21→22: + pluginSupport (additive)
-            Map.entry(22, (Migration) ConfigMigrations::identity), // v22→23: + pluginRegistryUrl (additive)
-            Map.entry(23, (Migration) ConfigMigrations::identity))), // v23→24: + pluginRequireSignature (additive)
+    SETTINGS(
+            Settings.SCHEMA_VERSION,
+            1,
+            Map.<Integer, Migration>ofEntries(
+                    Map.entry(1, (Migration) ConfigMigrations::identity),
+                    Map.entry(2, (Migration) ConfigMigrations::identity),
+                    Map.entry(3, (Migration) ConfigMigrations::identity),
+                    Map.entry(4, (Migration) ConfigMigrations::identity),
+                    Map.entry(5, (Migration) ConfigMigrations::identity),
+                    Map.entry(6, (Migration) ConfigMigrations::identity),
+                    Map.entry(7, (Migration) ConfigMigrations::identity),
+                    Map.entry(8, (Migration) ConfigMigrations::identity),
+                    Map.entry(9, (Migration) ConfigMigrations::identity),
+                    Map.entry(10, (Migration) ConfigMigrations::identity),
+                    Map.entry(11, (Migration) ConfigMigrations::identity),
+                    Map.entry(12, (Migration) ConfigMigrations::identity),
+                    Map.entry(13, (Migration) ConfigMigrations::identity),
+                    Map.entry(14, (Migration) ConfigMigrations::identity),
+                    Map.entry(15, (Migration) ConfigMigrations::identity),
+                    Map.entry(16, (Migration) ConfigMigrations::identity),
+                    Map.entry(17, (Migration) ConfigMigrations::identity),
+                    Map.entry(18, (Migration) ConfigMigrations::identity),
+                    Map.entry(19, (Migration) ConfigMigrations::identity), // v19→20: + simpleMode (additive)
+                    Map.entry(20, (Migration) ConfigMigrations::identity), // v20→21: + gitBlameInline (additive)
+                    Map.entry(21, (Migration) ConfigMigrations::identity), // v21→22: + pluginSupport (additive)
+                    Map.entry(22, (Migration) ConfigMigrations::identity), // v22→23: + pluginRegistryUrl (additive)
+                    Map.entry(23, (Migration)
+                            ConfigMigrations::identity))), // v23→24: + pluginRequireSignature (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

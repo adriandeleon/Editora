@@ -108,7 +108,8 @@ final class NoteHighlightOverlay extends Region {
             // conversions in paintSpan (which would otherwise run for every note on each redraw).
             int firstOffset = area.getAbsolutePosition(Math.max(0, firstVisible), 0);
             int lastVis = Math.min(total - 1, lastVisible);
-            int lastOffset = area.getAbsolutePosition(lastVis, area.getParagraph(lastVis).getText().length());
+            int lastOffset = area.getAbsolutePosition(
+                    lastVis, area.getParagraph(lastVis).getText().length());
             for (int[] span : spans.get()) {
                 if (span[1] < firstOffset || span[0] > lastOffset) {
                     continue;
@@ -125,8 +126,8 @@ final class NoteHighlightOverlay extends Region {
      * rounded box <b>per line</b> (clamped to the visible paragraphs), mirroring how the editor renders a
      * multi-line selection — rather than a single bounding rectangle over the whole range.
      */
-    private void paintSpan(GraphicsContext g, int start, int end, int firstVisible, int lastVisible,
-            double w, double h) {
+    private void paintSpan(
+            GraphicsContext g, int start, int end, int firstVisible, int lastVisible, double w, double h) {
         int total = area.getLength();
         start = clamp(start, 0, total);
         end = clamp(end, 0, total);
@@ -145,7 +146,8 @@ final class NoteHighlightOverlay extends Region {
             int o0 = area.getAbsolutePosition(line, clamp(c0, 0, paraLen));
             int o1 = area.getAbsolutePosition(line, clamp(c1, 0, paraLen));
             // Query a non-empty range so the bounds (left edge, baseline, height) are well-defined.
-            Bounds b = toLocal(area.getCharacterBoundsOnScreen(o0, Math.max(o1, o0 + 1)).orElse(null));
+            Bounds b = toLocal(
+                    area.getCharacterBoundsOnScreen(o0, Math.max(o1, o0 + 1)).orElse(null));
             if (b == null) {
                 continue;
             }

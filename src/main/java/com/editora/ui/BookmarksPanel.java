@@ -1,14 +1,12 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
-import com.editora.config.Bookmark;
-
+import javafx.geometry.Pos;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
@@ -20,18 +18,20 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
-import javafx.scene.SnapshotParameters;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.TransferMode;
-import javafx.scene.paint.Color;
-import javafx.geometry.Pos;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+
+import com.editora.config.Bookmark;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Bookmarks tool window: a list of every bookmark in the active project (across all its files, open
@@ -48,8 +48,11 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     /** Mutations the panel asks the controller to perform (it knows which files are open). */
     public interface Actions {
         void openAndJump(Path file, int line);
+
         void setNote(Path file, int line, String note);
+
         void delete(Path file, int line);
+
         void deleteAll(Path file);
         /** Reorder a bookmark within its file (indices into that file's stored list). */
         void moveBookmark(Path file, int fromIndex, int toIndex);
@@ -58,12 +61,13 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     }
 
     /** Tree row: a file header or a single bookmark under it. */
-    private sealed interface Row permits FileRow, MarkRow { }
-    private record FileRow(Path file) implements Row { }
-    private record MarkRow(Path file, Bookmark bm) implements Row { }
+    private sealed interface Row permits FileRow, MarkRow {}
 
-    private static final String SCOPE_HINT =
-            tr("bookmarks.scopeTip");
+    private record FileRow(Path file) implements Row {}
+
+    private record MarkRow(Path file, Bookmark bm) implements Row {}
+
+    private static final String SCOPE_HINT = tr("bookmarks.scopeTip");
 
     private final Supplier<Map<String, List<Bookmark>>> source;
     private final Actions actions;
@@ -77,6 +81,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     /** The row to reselect after the next {@link #refresh()} (set just before a reorder). */
     private Path reselectFile;
+
     private Integer reselectLine; // null = reselect the file header row
     /** The tree item currently being dragged (for drag-and-drop reordering). */
     private TreeItem<Row> draggedItem;
@@ -130,7 +135,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
      * and the {@code M-g b} jump picker always agree.
      */
     public void refresh() {
-        String query = filterField.getText() == null ? "" : filterField.getText().strip().toLowerCase();
+        String query = filterField.getText() == null
+                ? ""
+                : filterField.getText().strip().toLowerCase();
         Map<String, List<Bookmark>> map = source.get();
         TreeItem<Row> root = new TreeItem<>();
         for (Map.Entry<String, List<Bookmark>> e : map.entrySet()) {
@@ -142,7 +149,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             TreeItem<Row> fileNode = new TreeItem<>(new FileRow(file));
             fileNode.setExpanded(true);
             for (Bookmark bm : e.getValue()) {
-                if (query.isEmpty() || fileMatches || markLabel(bm).toLowerCase().contains(query)) {
+                if (query.isEmpty()
+                        || fileMatches
+                        || markLabel(bm).toLowerCase().contains(query)) {
                     fileNode.getChildren().add(new TreeItem<>(new MarkRow(file, bm)));
                 }
             }
@@ -212,20 +221,52 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     private void onKey(KeyEvent e) {
         switch (e.getCode()) {
-            case ENTER -> { activateSelected(); e.consume(); }
-            case DOWN -> { if (e.isAltDown()) { moveSelected(1); } else { move(1); } e.consume(); }
-            case UP -> { if (e.isAltDown()) { moveSelected(-1); } else { move(-1); } e.consume(); }
+            case ENTER -> {
+                activateSelected();
+                e.consume();
+            }
+            case DOWN -> {
+                if (e.isAltDown()) {
+                    moveSelected(1);
+                } else {
+                    move(1);
+                }
+                e.consume();
+            }
+            case UP -> {
+                if (e.isAltDown()) {
+                    moveSelected(-1);
+                } else {
+                    move(-1);
+                }
+                e.consume();
+            }
             default -> {
                 if (!e.isControlDown()) {
                     return;
                 }
                 switch (e.getCode()) {
-                    case N -> { move(1); e.consume(); }
-                    case P -> { move(-1); e.consume(); }
-                    case F -> { expandOrDescend(); e.consume(); }
-                    case B -> { collapseOrAscend(); e.consume(); }
-                    case M -> { activateSelected(); e.consume(); }
-                    default -> { }
+                    case N -> {
+                        move(1);
+                        e.consume();
+                    }
+                    case P -> {
+                        move(-1);
+                        e.consume();
+                    }
+                    case F -> {
+                        expandOrDescend();
+                        e.consume();
+                    }
+                    case B -> {
+                        collapseOrAscend();
+                        e.consume();
+                    }
+                    case M -> {
+                        activateSelected();
+                        e.consume();
+                    }
+                    default -> {}
                 }
             }
         }
@@ -293,10 +334,16 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         if (item.getValue() instanceof MarkRow m) {
             TreeItem<Row> parent = item.getParent();
             int from = parent.getChildren().indexOf(item);
-            moveMark(m.file(), m.bm().line(), from, from + delta, parent.getChildren().size());
+            moveMark(
+                    m.file(),
+                    m.bm().line(),
+                    from,
+                    from + delta,
+                    parent.getChildren().size());
         } else if (item.getValue() instanceof FileRow f) {
             int from = tree.getRoot().getChildren().indexOf(item);
-            moveFileGroup(f.file(), from, from + delta, tree.getRoot().getChildren().size());
+            moveFileGroup(
+                    f.file(), from, from + delta, tree.getRoot().getChildren().size());
         }
     }
 
@@ -336,7 +383,11 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         if (src.getValue() instanceof MarkRow sm) {
             var siblings = src.getParent().getChildren();
             int from = siblings.indexOf(src);
-            moveMark(sm.file(), sm.bm().line(), from, insertIndex(from, siblings.indexOf(target), after),
+            moveMark(
+                    sm.file(),
+                    sm.bm().line(),
+                    from,
+                    insertIndex(from, siblings.indexOf(target), after),
                     siblings.size());
         } else if (src.getValue() instanceof FileRow sf) {
             var roots = tree.getRoot().getChildren();
@@ -364,7 +415,10 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         if (prompt == null) {
             return;
         }
-        prompt.show(tr("dialog.bookmarkNote.title"), tr("dialog.bookmarkNote.content"), m.bm().note(),
+        prompt.show(
+                tr("dialog.bookmarkNote.title"),
+                tr("dialog.bookmarkNote.content"),
+                m.bm().note(),
                 note -> actions.setNote(m.file(), m.bm().line(), note.strip()));
     }
 
@@ -378,9 +432,11 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     }
 
     private void deleteFile(FileRow f) {
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
                 tr("bookmarks.deleteFileBody", fileName(f.file())),
-                ButtonType.OK, ButtonType.CANCEL);
+                ButtonType.OK,
+                ButtonType.CANCEL);
         confirm.initOwner(getScene() == null ? null : getScene().getWindow());
         confirm.setTitle(tr("bookmarks.deleteFileTitle"));
         confirm.setHeaderText(null);
@@ -457,10 +513,16 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         private void addMoveItems(ContextMenu menu) {
             MenuItem up = new MenuItem(tr("bookmarks.moveUp"));
             up.setGraphic(Icons.arrowUp());
-            up.setOnAction(e -> { tree.getSelectionModel().select(getTreeItem()); moveSelected(-1); });
+            up.setOnAction(e -> {
+                tree.getSelectionModel().select(getTreeItem());
+                moveSelected(-1);
+            });
             MenuItem down = new MenuItem(tr("bookmarks.moveDown"));
             down.setGraphic(Icons.arrowDown());
-            down.setOnAction(e -> { tree.getSelectionModel().select(getTreeItem()); moveSelected(1); });
+            down.setOnAction(e -> {
+                tree.getSelectionModel().select(getTreeItem());
+                moveSelected(1);
+            });
             up.setDisable(!reorderEnabled());
             down.setDisable(!reorderEnabled());
             menu.getItems().addAll(new SeparatorMenuItem(), up, down);

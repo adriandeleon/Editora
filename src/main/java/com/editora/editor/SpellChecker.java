@@ -17,7 +17,7 @@ import org.apache.lucene.analysis.hunspell.Hunspell;
  */
 public final class SpellChecker {
 
-    private final Set<String> userWords;          // shared, persisted (ConfigManager)
+    private final Set<String> userWords; // shared, persisted (ConfigManager)
     private final Set<String> ignored = new HashSet<>(); // per-session "Ignore" choices
     private volatile String langId;
 

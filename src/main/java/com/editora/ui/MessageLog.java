@@ -22,7 +22,7 @@ public final class MessageLog {
     public static final int MAX_ENTRIES = 200;
 
     /** One logged message: its wall-clock time (epoch millis) and text. */
-    public record Entry(long epochMillis, String text) { }
+    public record Entry(long epochMillis, String text) {}
 
     // Insertion order (oldest first); we evict from the head and append at the tail.
     private final Deque<Entry> entries = new ArrayDeque<>();

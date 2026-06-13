@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import javafx.css.PseudoClass;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -12,6 +10,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+
+import static com.editora.i18n.Messages.tr;
 
 /** Wraps a {@link ToolWindow}'s content with an IntelliJ-style header (title + close button). */
 final class ToolWindowPanel extends BorderPane {

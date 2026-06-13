@@ -4,14 +4,14 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.editor.MarkdownRenderer;
-
 import javafx.print.PageLayout;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+
+import com.editora.editor.MarkdownRenderer;
 
 /**
  * Builds printable JavaFX page nodes for the rendered Markdown preview — the {@code javafx.print}
@@ -28,8 +28,7 @@ import javafx.scene.layout.VBox;
  */
 public final class MarkdownPrintLayout {
 
-    private MarkdownPrintLayout() {
-    }
+    private MarkdownPrintLayout() {}
 
     /**
      * Greedily packs block {@code heights} into pages no taller than {@code pageHeight}, never

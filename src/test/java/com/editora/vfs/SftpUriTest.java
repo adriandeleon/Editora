@@ -1,9 +1,9 @@
 package com.editora.vfs;
 
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-
-import org.junit.jupiter.api.Test;
 
 /** Unit tests for the pure sftp:// URI parser/formatter. */
 class SftpUriTest {
@@ -35,7 +35,9 @@ class SftpUriTest {
     @Test
     void formatRoundTripsAndOmitsDefaultPort() {
         assertEquals("sftp://ada@host/x", SftpUri.parse("sftp://ada@host:22/x").format());
-        assertEquals("sftp://ada@host:2222/x", SftpUri.parse("sftp://ada@host:2222/x").format());
+        assertEquals(
+                "sftp://ada@host:2222/x",
+                SftpUri.parse("sftp://ada@host:2222/x").format());
         String s = "sftp://ada@host:2222/srv/app.js";
         assertEquals(s, SftpUri.parse(s).format());
     }
@@ -51,7 +53,7 @@ class SftpUriTest {
         assertNull(SftpUri.parse(null));
         assertNull(SftpUri.parse("file:/x"));
         assertNull(SftpUri.parse("https://h/x"));
-        assertNull(SftpUri.parse("sftp://"));            // no host
+        assertNull(SftpUri.parse("sftp://")); // no host
         assertNull(SftpUri.parse("sftp://h:notaport/x")); // bad port
     }
 }

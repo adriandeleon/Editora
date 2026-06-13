@@ -27,8 +27,7 @@ public final class TextInputKeymap {
 
     private static final Map<String, Consumer<TextInputControl>> ACTIONS = actions();
 
-    private TextInputKeymap() {
-    }
+    private TextInputKeymap() {}
 
     /** Installs configured-keymap caret movement + basic editing on {@code control}. */
     public static void install(TextInputControl control, KeymapManager keymap) {

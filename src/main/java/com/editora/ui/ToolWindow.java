@@ -9,7 +9,9 @@ import javafx.scene.layout.Region;
 public final class ToolWindow {
 
     public enum Side {
-        LEFT, RIGHT, BOTTOM
+        LEFT,
+        RIGHT,
+        BOTTOM
     }
 
     private final String id;
@@ -19,8 +21,8 @@ public final class ToolWindow {
     private final Region content;
     private final String commandId;
 
-    public ToolWindow(String id, String title, Side side, Supplier<Node> iconSupplier, Region content,
-                      String commandId) {
+    public ToolWindow(
+            String id, String title, Side side, Supplier<Node> iconSupplier, Region content, String commandId) {
         this.id = id;
         this.title = title;
         this.side = side;

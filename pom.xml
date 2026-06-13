@@ -44,6 +44,8 @@
         <sshd.version>2.15.0</sshd.version>
         <slf4j.version>2.0.17</slf4j.version>
         <moditect.version>1.2.2.Final</moditect.version>
+        <spotless.version>3.6.0</spotless.version>
+        <palantir.version>2.92.0</palantir.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
         <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
@@ -312,6 +314,43 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+            </plugin>
+            <!-- Code style: Palantir Java Format (a lambda-friendly, 120-col fork of
+                 google-java-format) enforced via Spotless. `mvn spotless:apply` formats the tree;
+                 `mvn spotless:check` verifies it. The check is bound to the `verify` phase, so the
+                 dev run loop (`mvn javafx:run`, `mvn compile`) is unaffected, but `mvn verify` /
+                 `mvn package` / CI fail on unformatted code. Palantir 2.72.0+ supports JDK 25.
+                 Escape hatch: wrap hand-aligned code in `// spotless:off` / `// spotless:on`. -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <removeUnusedImports/>
+                        <palantirJavaFormat>
+                            <version>${palantir.version}</version>
+                        </palantirJavaFormat>
+                        <!-- importOrder runs AFTER Palantir so it has the final say on import
+                             grouping (Palantir otherwise collapses everything into one alphabetical
+                             block). Groups (blank-line separated, longest-prefix wins so javafx is
+                             NOT swallowed by java): JDK (java/javax), then javafx, then everything
+                             else (third-party + com.editora), then static imports last. -->
+                        <importOrder>
+                            <order>java|javax,javafx,,\#</order>
+                        </importOrder>
+                        <toggleOffOn/>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.openjfx</groupId>

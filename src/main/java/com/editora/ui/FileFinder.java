@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -21,13 +19,14 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Emacs {@code find-file}-style keyboard file opener: a path field with a live, prefix-autocompleted
@@ -45,6 +44,7 @@ public class FileFinder {
     private final Consumer<Path> onChoose;
     /** When true, only directories are listed and Enter chooses a folder (instead of opening a file). */
     private final boolean pickDirectory;
+
     private final String title;
 
     private final TextField input = new TextField();
@@ -53,19 +53,20 @@ public class FileFinder {
 
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
     private OverlayHost overlayHost;
+
     private VBox content;
     private boolean showing;
 
     /** Cached listing of {@link #currentDir}; re-read only when the directory part of the path changes. */
     private Path currentDir;
+
     private List<Path> dirEntries = List.of();
 
     public FileFinder(Supplier<Path> startDir, Consumer<Path> onChoose) {
         this(startDir, onChoose, false, tr("filefinder.title"));
     }
 
-    public FileFinder(Supplier<Path> startDir, Consumer<Path> onChoose, boolean pickDirectory,
-                      String title) {
+    public FileFinder(Supplier<Path> startDir, Consumer<Path> onChoose, boolean pickDirectory, String title) {
         this.startDir = startDir;
         this.onChoose = onChoose;
         this.pickDirectory = pickDirectory;
@@ -121,10 +122,13 @@ public class FileFinder {
         input.positionCaret(input.getText().length());
         refresh(input.getText());
         showing = true;
-        overlayHost.show(content, () -> {
-            input.requestFocus();
-            input.positionCaret(input.getText().length());
-        }, () -> showing = false);
+        overlayHost.show(
+                content,
+                () -> {
+                    input.requestFocus();
+                    input.positionCaret(input.getText().length());
+                },
+                () -> showing = false);
     }
 
     public void hide() {
@@ -193,8 +197,7 @@ public class FileFinder {
         } catch (IOException | RuntimeException ex) {
             return List.of();
         }
-        Comparator<Path> byName =
-                Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
+        Comparator<Path> byName = Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
         dirs.sort(byName);
         files.sort(byName);
         List<Path> all = new ArrayList<>(dirs.size() + files.size());
@@ -243,8 +246,7 @@ public class FileFinder {
                     e.consume();
                 }
             }
-            default -> {
-            }
+            default -> {}
         }
     }
 

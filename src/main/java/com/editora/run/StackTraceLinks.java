@@ -13,16 +13,14 @@ public final class StackTraceLinks {
 
     /** A source location found in one console line. {@code file} may be a bare name (Java) or a path;
      *  {@code line} is 1-based as printed. */
-    public record Link(String file, int line) {
-    }
+    public record Link(String file, int line) {}
 
     private static final Pattern JAVA = Pattern.compile("\\(([A-Za-z0-9_$]+\\.java):(\\d+)\\)");
     private static final Pattern PYTHON = Pattern.compile("File \"([^\"]+\\.py[a-z]?)\", line (\\d+)");
-    private static final Pattern NODE = Pattern.compile(
-            "((?:[A-Za-z]:)?[^\\s():]+\\.(?:js|mjs|cjs|ts)):(\\d+)(?::\\d+)?");
+    private static final Pattern NODE =
+            Pattern.compile("((?:[A-Za-z]:)?[^\\s():]+\\.(?:js|mjs|cjs|ts)):(\\d+)(?::\\d+)?");
 
-    private StackTraceLinks() {
-    }
+    private StackTraceLinks() {}
 
     /** The first source location in {@code line}, or null when the line holds none. */
     public static Link parse(String line) {

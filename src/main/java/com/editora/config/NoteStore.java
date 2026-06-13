@@ -20,6 +20,7 @@ public class NoteStore {
 
     /** Current on-disk schema version of {@code notes.json}. */
     public static final int SCHEMA_VERSION = 1;
+
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Project key ({@code ""} = no project) -> (canonical file path -> notes). */
@@ -51,8 +52,8 @@ public class NoteStore {
      * in {@code previousOrder} come first (using the up-to-date snapshot instance), then any new notes in
      * their natural order. Pure + unit-testable; keeps list order stable across re-anchoring/saves.
      */
-    public static List<PersonalNote> mergePreservingOrder(List<PersonalNote> previousOrder,
-            List<PersonalNote> current) {
+    public static List<PersonalNote> mergePreservingOrder(
+            List<PersonalNote> previousOrder, List<PersonalNote> current) {
         if (previousOrder == null || previousOrder.isEmpty()) {
             return new ArrayList<>(current == null ? List.of() : current);
         }

@@ -19,8 +19,7 @@ import java.util.Locale;
  */
 public final class ConfigFileType {
 
-    private ConfigFileType() {
-    }
+    private ConfigFileType() {}
 
     /** The language id for a name/location-determined config file, or {@code null} if not special. */
     public static String resolve(String fileNameOrPath) {
@@ -33,8 +32,10 @@ public final class ConfigFileType {
         String lower = base.toLowerCase(Locale.ROOT);
 
         // Dockerfile / Containerfile — extension-less, or a tag suffix (e.g. Dockerfile.dev).
-        if (lower.equals("dockerfile") || lower.equals("containerfile")
-                || lower.startsWith("dockerfile.") || lower.startsWith("containerfile.")) {
+        if (lower.equals("dockerfile")
+                || lower.equals("containerfile")
+                || lower.startsWith("dockerfile.")
+                || lower.startsWith("containerfile.")) {
             return "dockerfile";
         }
         // dotenv — ".env", "<name>.env", ".env.local" / ".env.production", ...
@@ -44,19 +45,25 @@ public final class ConfigFileType {
         // SSH client/daemon config — explicit names anywhere, "config" under a .ssh dir, or any file in
         // a drop-in dir (ssh_config.d / sshd_config.d, or .ssh/config.d). A bare "config" is matched only
         // via the .ssh ancestor (too generic otherwise).
-        if (lower.equals("ssh_config") || lower.equals("sshd_config")
+        if (lower.equals("ssh_config")
+                || lower.equals("sshd_config")
                 || (lower.equals("config") && hasAncestor(norm, ".ssh"))
-                || hasAncestor(norm, "ssh_config.d") || hasAncestor(norm, "sshd_config.d")
+                || hasAncestor(norm, "ssh_config.d")
+                || hasAncestor(norm, "sshd_config.d")
                 || (hasAncestor(norm, ".ssh") && hasAncestor(norm, "config.d"))) {
             return "ssh-config";
         }
         // Git config — ".gitconfig", "/etc/gitconfig", "<name>.gitconfig", or ".git/config".
-        if (lower.equals(".gitconfig") || lower.equals("gitconfig") || lower.endsWith(".gitconfig")
+        if (lower.equals(".gitconfig")
+                || lower.equals("gitconfig")
+                || lower.endsWith(".gitconfig")
                 || (lower.equals("config") && hasAncestor(norm, ".git"))) {
             return "git-config";
         }
         // crontab — literal "crontab", a *.cron / *.crontab file, or any file in a cron.d drop-in dir.
-        if (lower.equals("crontab") || lower.endsWith(".cron") || lower.endsWith(".crontab")
+        if (lower.equals("crontab")
+                || lower.endsWith(".cron")
+                || lower.endsWith(".crontab")
                 || hasAncestor(norm, "cron.d")) {
             return "crontab";
         }
@@ -74,7 +81,8 @@ public final class ConfigFileType {
         }
         // Debian/Ubuntu deb822 (RFC822 paragraphs): APT *.sources, *.dsc source control,
         // debian/control, debian/copyright, and /etc/apt/preferences{,.d}.
-        if (lower.endsWith(".sources") || lower.endsWith(".dsc")
+        if (lower.endsWith(".sources")
+                || lower.endsWith(".dsc")
                 || ((lower.equals("control") || lower.equals("copyright")) && hasAncestor(norm, "debian"))
                 || (lower.equals("preferences") && hasAncestor(norm, "apt"))
                 || hasAncestor(norm, "preferences.d")) {

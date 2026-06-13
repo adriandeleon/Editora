@@ -20,8 +20,7 @@ import com.editora.process.ProcessRunner;
 public final class MermaidService {
 
     /** Which CLIs are present (resolved from the configured paths or PATH). */
-    public record Availability(boolean mmdc, boolean maid) {
-    }
+    public record Availability(boolean mmdc, boolean maid) {}
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "mermaid-service");
@@ -31,6 +30,7 @@ public final class MermaidService {
 
     /** Default commands when the user leaves the path blank: mmdc as a bare binary, maid via npx. */
     public static final String DEFAULT_MMDC = "mmdc";
+
     public static final String DEFAULT_MAID = "npx -y @probelabs/maid";
 
     private final java.util.concurrent.atomic.AtomicLong validateGen = new java.util.concurrent.atomic.AtomicLong();

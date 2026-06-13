@@ -17,19 +17,24 @@ public final class Indenter {
     /** Bounds line/back-scans so Enter stays cheap on huge files. */
     private static final int MAX_SCAN = 8000;
 
-    private Indenter() {
-    }
+    private Indenter() {}
 
-    public enum Style { BRACES, XML, PY, SHELL, RUBY, LUA, PLAIN }
+    public enum Style {
+        BRACES,
+        XML,
+        PY,
+        SHELL,
+        RUBY,
+        LUA,
+        PLAIN
+    }
 
     /** The text to insert for a newline and the caret offset within it (relative to the insert start). */
-    public record EnterEdit(String insert, int caretOffset) {
-    }
+    public record EnterEdit(String insert, int caretOffset) {}
 
     /** A smart-Tab edit: replace {@code [from,to)} with {@code replacement}, then select
      *  {@code [selStart,selEnd)} (a collapsed caret when equal). */
-    public record TabEdit(int from, int to, String replacement, int selStart, int selEnd) {
-    }
+    public record TabEdit(int from, int to, String replacement, int selStart, int selEnd) {}
 
     /**
      * Smart Tab / Shift-Tab for a code buffer (returns {@code null} for {@link Style#PLAIN}, so prose keeps
@@ -42,8 +47,7 @@ public final class Indenter {
      *   <li><b>Caret after content</b> → insert one unit at the caret ({@code shift} dedents the line).</li>
      * </ul>
      */
-    public static TabEdit smartTab(String text, int selStart, int selEnd, String language, int tabSize,
-            boolean shift) {
+    public static TabEdit smartTab(String text, int selStart, int selEnd, String language, int tabSize, boolean shift) {
         Style style = styleFor(language);
         if (style == Style.PLAIN) {
             return null;
@@ -128,15 +132,30 @@ public final class Indenter {
     }
 
     private static final Set<String> SHELL_CLOSERS = Set.of("fi", "done", "esac", "else", "elif", ";;");
-    private static final Set<String> RUBY_CLOSERS =
-            Set.of("end", "else", "elsif", "when", "rescue", "ensure");
+    private static final Set<String> RUBY_CLOSERS = Set.of("end", "else", "elsif", "when", "rescue", "ensure");
     private static final Set<String> LUA_CLOSERS = Set.of("end", "else", "elseif", "until");
 
     public static Style styleFor(String language) {
         return switch (language == null ? "" : language) {
-            case "java", "c", "cpp", "csharp", "rust", "go", "kotlin", "groovy", "css", "json", "php",
-                 "powershell", "sql", "batchfile", "terraform",
-                 "javascript", "typescript", "javascriptreact", "typescriptreact" -> Style.BRACES;
+            case "java",
+                    "c",
+                    "cpp",
+                    "csharp",
+                    "rust",
+                    "go",
+                    "kotlin",
+                    "groovy",
+                    "css",
+                    "json",
+                    "php",
+                    "powershell",
+                    "sql",
+                    "batchfile",
+                    "terraform",
+                    "javascript",
+                    "typescript",
+                    "javascriptreact",
+                    "typescriptreact" -> Style.BRACES;
             case "xml", "html" -> Style.XML;
             case "python", "yaml" -> Style.PY;
             case "shell" -> Style.SHELL;
@@ -204,13 +223,14 @@ public final class Indenter {
      * completed a standalone closer. {@code ;;} (shell) is also matched.
      */
     public static boolean completesCloserKeyword(Style style, String lineUpToCaretPlusChar) {
-        Set<String> closers = style == Style.SHELL ? SHELL_CLOSERS
-                : style == Style.RUBY ? RUBY_CLOSERS
-                : style == Style.LUA ? LUA_CLOSERS : Set.of();
+        Set<String> closers = style == Style.SHELL
+                ? SHELL_CLOSERS
+                : style == Style.RUBY ? RUBY_CLOSERS : style == Style.LUA ? LUA_CLOSERS : Set.of();
         if (closers.isEmpty()) {
             return false;
         }
-        String word = lineUpToCaretPlusChar.substring(leadingWhitespace(lineUpToCaretPlusChar).length());
+        String word = lineUpToCaretPlusChar.substring(
+                leadingWhitespace(lineUpToCaretPlusChar).length());
         return closers.contains(word);
     }
 
@@ -258,10 +278,16 @@ public final class Indenter {
             case BRACES -> last == '{' || last == '(' || last == '[';
             case PY -> last == ':' || last == '{' || last == '(' || last == '[';
             case XML -> endsWithOpenTag(code);
-            case SHELL -> last == '{' || last == '(' || endsWithWord(code, "do", "then", "in")
-                    || startsWithWord(code, "else", "elif");
-            case RUBY -> last == '{' || endsWithDoBlock(code) || rubyOpener(code)
-                    || startsWithWord(code, "else", "elsif", "when", "rescue", "ensure", "begin");
+            case SHELL ->
+                last == '{'
+                        || last == '('
+                        || endsWithWord(code, "do", "then", "in")
+                        || startsWithWord(code, "else", "elif");
+            case RUBY ->
+                last == '{'
+                        || endsWithDoBlock(code)
+                        || rubyOpener(code)
+                        || startsWithWord(code, "else", "elsif", "when", "rescue", "ensure", "begin");
             case LUA -> last == '{' || luaOpener(code);
             case PLAIN -> false;
         };
@@ -277,7 +303,8 @@ public final class Indenter {
         if (code.matches(".*\\bend\\b.*")) {
             return false; // opener and its `end` on one line — net zero indent
         }
-        if (endsWithWord(code, "do", "then") || code.strip().equals("repeat")
+        if (endsWithWord(code, "do", "then")
+                || code.strip().equals("repeat")
                 || startsWithWord(code, "else", "elseif")) {
             return true;
         }
@@ -291,8 +318,8 @@ public final class Indenter {
     }
 
     private static boolean rubyOpener(String code) {
-        return startsWithWord(code, "def", "class", "module", "if", "unless", "while", "until",
-                "case", "for") && !code.strip().contains(" end");
+        return startsWithWord(code, "def", "class", "module", "if", "unless", "while", "until", "case", "for")
+                && !code.strip().contains(" end");
     }
 
     private static boolean startsWithWord(String code, String... words) {
@@ -320,8 +347,7 @@ public final class Indenter {
             return false;
         }
         String tag = code.substring(lt);
-        return !tag.startsWith("</") && !tag.endsWith("/>") && !tag.startsWith("<!")
-                && !tag.startsWith("<?");
+        return !tag.startsWith("</") && !tag.endsWith("/>") && !tag.startsWith("<!") && !tag.startsWith("<?");
     }
 
     // --- pair split (Enter between an opener and its closer) --------------------------------------
@@ -340,8 +366,7 @@ public final class Indenter {
         }
         char open = b.charAt(b.length() - 1);
         char close = a.charAt(0);
-        return (open == '{' && close == '}') || (open == '(' && close == ')')
-                || (open == '[' && close == ']');
+        return (open == '{' && close == '}') || (open == '(' && close == ')') || (open == '[' && close == ']');
     }
 
     // --- helpers ----------------------------------------------------------------------------------

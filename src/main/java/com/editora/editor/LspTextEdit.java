@@ -6,5 +6,4 @@ package com.editora.editor;
  * package depending on lsp4j. Used for completion {@code additionalTextEdits} — e.g. the {@code import}
  * line a TypeScript auto-import completion adds.
  */
-public record LspTextEdit(int startLine, int startCol, int endLine, int endCol, String newText) {
-}
+public record LspTextEdit(int startLine, int startCol, int endLine, int endCol, String newText) {}

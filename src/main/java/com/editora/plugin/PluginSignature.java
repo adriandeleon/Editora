@@ -29,8 +29,7 @@ public final class PluginSignature {
     private static volatile PublicKey cached;
     private static volatile boolean loaded;
 
-    private PluginSignature() {
-    }
+    private PluginSignature() {}
 
     /** The bundled registry public key, or {@code null} when absent/unreadable. Cached. */
     public static PublicKey bundledPublicKey() {

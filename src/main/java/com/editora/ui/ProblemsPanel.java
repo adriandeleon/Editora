@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -10,9 +8,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
-
-import com.editora.editor.LanguageRegistry;
-import com.editora.editor.LspDiagnostic;
 
 import javafx.geometry.Insets;
 import javafx.scene.control.Label;
@@ -23,6 +18,11 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+
+import com.editora.editor.LanguageRegistry;
+import com.editora.editor.LspDiagnostic;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The "Problems" tool window: LSP diagnostics across open buffers, grouped <b>by programming language →
@@ -41,8 +41,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
      * A tree row, one of three kinds: a <b>language header</b> ({@code language != null}, no file/diag),
      * a <b>file header</b> ({@code file != null}, no diag), or a <b>diagnostic</b> ({@code diag != null}).
      */
-    private record Row(String language, Path file, LspDiagnostic diag) {
-    }
+    private record Row(String language, Path file, LspDiagnostic diag) {}
 
     private final Actions actions;
     private final Label summary = new Label();
@@ -75,18 +74,36 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
     private void onKey(KeyEvent e) {
         switch (e.getCode()) {
-            case ENTER -> { activateSelected(); e.consume(); }
-            case DOWN -> { moveSelection(1); e.consume(); }
-            case UP -> { moveSelection(-1); e.consume(); }
+            case ENTER -> {
+                activateSelected();
+                e.consume();
+            }
+            case DOWN -> {
+                moveSelection(1);
+                e.consume();
+            }
+            case UP -> {
+                moveSelection(-1);
+                e.consume();
+            }
             default -> {
                 if (!e.isControlDown()) {
                     return;
                 }
                 switch (e.getCode()) {
-                    case N -> { moveSelection(1); e.consume(); }
-                    case P -> { moveSelection(-1); e.consume(); }
-                    case M -> { activateSelected(); e.consume(); }
-                    default -> { }
+                    case N -> {
+                        moveSelection(1);
+                        e.consume();
+                    }
+                    case P -> {
+                        moveSelection(-1);
+                        e.consume();
+                    }
+                    case M -> {
+                        activateSelected();
+                        e.consume();
+                    }
+                    default -> {}
                 }
             }
         }
@@ -131,7 +148,8 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
             files++;
             total += diags.size();
             kept.put(entry.getKey(), diags);
-            byLanguage.computeIfAbsent(languageOf(entry.getKey()), k -> new ArrayList<>())
+            byLanguage
+                    .computeIfAbsent(languageOf(entry.getKey()), k -> new ArrayList<>())
                     .add(entry.getKey());
         }
         TreeItem<Row> root = new TreeItem<>();
@@ -167,9 +185,8 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
             case "javascriptreact" -> "JavaScript (JSX)";
             case "typescript" -> "TypeScript";
             case "typescriptreact" -> "TypeScript (TSX)";
-            default -> name == null || name.isEmpty()
-                    ? "Other"
-                    : Character.toUpperCase(name.charAt(0)) + name.substring(1);
+            default ->
+                name == null || name.isEmpty() ? "Other" : Character.toUpperCase(name.charAt(0)) + name.substring(1);
         };
     }
 
@@ -186,8 +203,9 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         @Override
         protected void updateItem(Row row, boolean empty) {
             super.updateItem(row, empty);
-            getStyleClass().removeAll("search-file-row", "problem-lang-row", "problem-error",
-                    "problem-warning", "problem-info");
+            getStyleClass()
+                    .removeAll(
+                            "search-file-row", "problem-lang-row", "problem-error", "problem-warning", "problem-info");
             if (empty || row == null) {
                 setText(null);
                 return;
@@ -199,13 +217,16 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
                     msg = msg.substring(0, 200) + "…";
                 }
                 setText(glyph(d.severity()) + "  " + (d.startLine() + 1) + ":  " + msg);
-                getStyleClass().add(switch (d.severity()) {
-                    case ERROR -> "problem-error";
-                    case WARNING -> "problem-warning";
-                    default -> "problem-info";
-                });
+                getStyleClass()
+                        .add(
+                                switch (d.severity()) {
+                                    case ERROR -> "problem-error";
+                                    case WARNING -> "problem-warning";
+                                    default -> "problem-info";
+                                });
             } else if (row.file() != null) {
-                int count = getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
+                int count =
+                        getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
                 setText(row.file().getFileName() + "  (" + count + ")");
                 getStyleClass().add("search-file-row");
             } else {
@@ -227,9 +248,9 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
         private static String glyph(LspDiagnostic.Severity s) {
             return switch (s) {
-                case ERROR -> "✖";   // ✖
+                case ERROR -> "✖"; // ✖
                 case WARNING -> "⚠"; // ⚠
-                default -> "ℹ";      // ℹ
+                default -> "ℹ"; // ℹ
             };
         }
     }

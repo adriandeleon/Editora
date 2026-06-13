@@ -12,27 +12,53 @@ public final class MermaidKeywords {
 
     // Kept sorted (case-insensitive) for stable, alphabetical completion order.
     private static final List<String> KEYWORDS = List.of(
-            "activate", "actor", "alt", "and", "autonumber",
-            "class", "classDef", "classDiagram", "click",
-            "deactivate", "direction",
-            "else", "end", "erDiagram",
+            "activate",
+            "actor",
+            "alt",
+            "and",
+            "autonumber",
+            "class",
+            "classDef",
+            "classDiagram",
+            "click",
+            "deactivate",
+            "direction",
+            "else",
+            "end",
+            "erDiagram",
             "flowchart",
-            "gantt", "gitGraph", "graph",
+            "gantt",
+            "gitGraph",
+            "graph",
             "journey",
-            "link", "loop",
+            "link",
+            "loop",
             "mindmap",
             "note",
-            "opt", "over",
-            "par", "participant", "pie",
+            "opt",
+            "over",
+            "par",
+            "participant",
+            "pie",
             "quadrantChart",
             "requirementDiagram",
-            "section", "sequenceDiagram", "state", "stateDiagram", "stateDiagram-v2", "style", "subgraph",
-            "timeline", "title",
+            "section",
+            "sequenceDiagram",
+            "state",
+            "stateDiagram",
+            "stateDiagram-v2",
+            "style",
+            "subgraph",
+            "timeline",
+            "title",
             // Directions
-            "BT", "LR", "RL", "TB", "TD");
+            "BT",
+            "LR",
+            "RL",
+            "TB",
+            "TD");
 
-    private MermaidKeywords() {
-    }
+    private MermaidKeywords() {}
 
     /** Keywords starting with {@code prefix} (case-insensitive), excluding an exact match, capped at {@code max}. */
     public static List<String> startingWith(String prefix, int max) {

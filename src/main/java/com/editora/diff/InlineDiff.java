@@ -19,12 +19,10 @@ import com.github.difflib.patch.Patch;
  */
 public final class InlineDiff {
 
-    private InlineDiff() {
-    }
+    private InlineDiff() {}
 
     /** Differing char ranges on the {@code left} and {@code right} line (each {@code [start,end)}). */
-    public record Spans(int[][] left, int[][] right) {
-    }
+    public record Spans(int[][] left, int[][] right) {}
 
     public static Spans compute(String left, String right) {
         if (left == null) {
@@ -43,10 +41,18 @@ public final class InlineDiff {
         for (AbstractDelta<String> d : patch.getDeltas()) {
             DeltaType t = d.getType();
             if (t == DeltaType.DELETE || t == DeltaType.CHANGE) {
-                addRange(leftRanges, aStarts, d.getSource().getPosition(), d.getSource().getLines().size());
+                addRange(
+                        leftRanges,
+                        aStarts,
+                        d.getSource().getPosition(),
+                        d.getSource().getLines().size());
             }
             if (t == DeltaType.INSERT || t == DeltaType.CHANGE) {
-                addRange(rightRanges, bStarts, d.getTarget().getPosition(), d.getTarget().getLines().size());
+                addRange(
+                        rightRanges,
+                        bStarts,
+                        d.getTarget().getPosition(),
+                        d.getTarget().getLines().size());
             }
         }
         return new Spans(merge(leftRanges), merge(rightRanges));
@@ -99,7 +105,7 @@ public final class InlineDiff {
         int start = starts[pos];
         int end = starts[pos + count];
         if (end > start) {
-            ranges.add(new int[]{start, end});
+            ranges.add(new int[] {start, end});
         }
     }
 

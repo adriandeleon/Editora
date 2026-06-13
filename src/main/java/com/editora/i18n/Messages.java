@@ -40,8 +40,7 @@ public final class Messages {
     private static Map<String, String> active = Map.of();
     private static String currentLang = "en";
 
-    private Messages() {
-    }
+    private Messages() {}
 
     /** Loads the English base + the chosen language overlay (falling back to English for an unknown code). */
     public static synchronized void init(String lang) {

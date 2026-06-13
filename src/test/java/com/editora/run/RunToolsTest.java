@@ -1,11 +1,11 @@
 package com.editora.run;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** Pure helpers behind the Run console: version parse, argv tokenizer, stack-trace links. */
 class RunToolsTest {
@@ -36,8 +36,7 @@ class RunToolsTest {
 
     @Test
     void parseFindsJavaFrames() {
-        StackTraceLinks.Link l = StackTraceLinks.parse(
-                "\tat com.example.Main.run(Main.java:42)");
+        StackTraceLinks.Link l = StackTraceLinks.parse("\tat com.example.Main.run(Main.java:42)");
         assertEquals("Main.java", l.file());
         assertEquals(42, l.line());
         // The synthetic compact-source frame shape works too.
@@ -46,12 +45,10 @@ class RunToolsTest {
 
     @Test
     void parseFindsPythonAndNodeFrames() {
-        StackTraceLinks.Link py = StackTraceLinks.parse(
-                "  File \"/tmp/app/main.py\", line 13, in <module>");
+        StackTraceLinks.Link py = StackTraceLinks.parse("  File \"/tmp/app/main.py\", line 13, in <module>");
         assertEquals("/tmp/app/main.py", py.file());
         assertEquals(13, py.line());
-        StackTraceLinks.Link js = StackTraceLinks.parse(
-                "    at doIt (/tmp/app/index.js:9:15)");
+        StackTraceLinks.Link js = StackTraceLinks.parse("    at doIt (/tmp/app/index.js:9:15)");
         assertEquals("/tmp/app/index.js", js.file());
         assertEquals(9, js.line());
         StackTraceLinks.Link bare = StackTraceLinks.parse("/tmp/app/index.js:3:1");

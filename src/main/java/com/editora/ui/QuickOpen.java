@@ -14,7 +14,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -42,6 +41,7 @@ public class QuickOpen<T> {
     private final Function<T, String> detail;
     /** Text the typed query is matched against; defaults to {@link #label} (the displayed text). */
     private final Function<T, String> searchKey;
+
     private final Consumer<T> onChoose;
     /** Optional per-item CSS class applied to the row's title label (e.g. "dirty-name"); null = none. */
     private Function<T, String> itemStyleClass;
@@ -55,6 +55,7 @@ public class QuickOpen<T> {
 
     /** Card width + the minimum number of result rows reserved (so a sparse list doesn't collapse). */
     private double cardWidth = DEFAULT_WIDTH;
+
     private int minRows = 1;
 
     private final TextField input = new TextField();
@@ -64,11 +65,17 @@ public class QuickOpen<T> {
 
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
     private OverlayHost overlayHost;
+
     private VBox content;
     private boolean showing;
 
-    public QuickOpen(String title, String prompt, Supplier<List<T>> itemsSupplier,
-                     Function<T, String> label, Function<T, String> detail, Consumer<T> onChoose) {
+    public QuickOpen(
+            String title,
+            String prompt,
+            Supplier<List<T>> itemsSupplier,
+            Function<T, String> label,
+            Function<T, String> detail,
+            Consumer<T> onChoose) {
         this(title, prompt, itemsSupplier, label, detail, label, onChoose);
     }
 
@@ -76,9 +83,14 @@ public class QuickOpen<T> {
      * As above but with an explicit {@code searchKey} the typed query matches against (instead of the
      * displayed {@code label}) — e.g. to search a note's full body/tags/file while showing a short label.
      */
-    public QuickOpen(String title, String prompt, Supplier<List<T>> itemsSupplier,
-                     Function<T, String> label, Function<T, String> detail,
-                     Function<T, String> searchKey, Consumer<T> onChoose) {
+    public QuickOpen(
+            String title,
+            String prompt,
+            Supplier<List<T>> itemsSupplier,
+            Function<T, String> label,
+            Function<T, String> detail,
+            Function<T, String> searchKey,
+            Consumer<T> onChoose) {
         this.itemsSupplier = itemsSupplier;
         this.label = label;
         this.detail = detail;
@@ -192,8 +204,7 @@ public class QuickOpen<T> {
                     e.consume();
                 }
             }
-            default -> {
-            }
+            default -> {}
         }
     }
 
@@ -219,7 +230,8 @@ public class QuickOpen<T> {
         String q = query.toLowerCase(Locale.ROOT).trim();
         List<T> matches = new ArrayList<>();
         for (T item : all) {
-            if (q.isEmpty() || CommandPalette.isSubsequence(q, searchKey.apply(item).toLowerCase(Locale.ROOT))) {
+            if (q.isEmpty()
+                    || CommandPalette.isSubsequence(q, searchKey.apply(item).toLowerCase(Locale.ROOT))) {
                 matches.add(item);
             }
         }

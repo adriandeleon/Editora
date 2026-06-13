@@ -32,8 +32,7 @@ public final class MaidOutput {
             "error\\[(?<code>[^\\]]*)\\]:\\s*(?<msg>.*?)\\s+at\\s+\\S+?:(?<line>\\d+):(?<col>\\d+)",
             Pattern.CASE_INSENSITIVE);
 
-    private MaidOutput() {
-    }
+    private MaidOutput() {}
 
     /** Parses maid output (JSON preferred, text fallback) into diagnostics; never throws, never null. */
     public static List<Diagnostic> parse(String output) {

@@ -1,15 +1,14 @@
 package com.editora.editor;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
+import com.editora.config.Bookmark;
 import org.junit.jupiter.api.Test;
 
-import com.editora.config.Bookmark;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure line-shift arithmetic (no JavaFX toolkit needed). */
 class BookmarkManagerTest {
@@ -60,8 +59,8 @@ class BookmarkManagerTest {
         // Select from start of line 12 through start of line 16 and delete (removedNL=4, atLineStart):
         // lines 12..15 are removed (bookmark at 12 dropped), and a bookmark at 16 moves up to 12.
         NavigableMap<Integer, Bookmark> out = BookmarkManager.shift(map(12, 16), 12, true, 4, 0, 100);
-        assertEquals(1, out.size());          // the line-12 bookmark was deleted
-        assertTrue(out.containsKey(12));       // the line-16 bookmark shifted up by 4
+        assertEquals(1, out.size()); // the line-12 bookmark was deleted
+        assertTrue(out.containsKey(12)); // the line-16 bookmark shifted up by 4
         assertEquals("text16", out.get(12).lineText());
     }
 

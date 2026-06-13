@@ -1,10 +1,5 @@
 package com.editora.editor;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -13,6 +8,11 @@ import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TextMateHighlighterTest {
 
@@ -29,16 +29,14 @@ class TextMateHighlighterTest {
 
     @Test
     void mostSpecificScopeWins() {
-        assertEquals("keyword",
-                TextMateHighlighter.styleForScopes(List.of("source.java", "keyword.control.java")));
-        assertEquals("comment",
+        assertEquals("keyword", TextMateHighlighter.styleForScopes(List.of("source.java", "keyword.control.java")));
+        assertEquals(
+                "comment",
                 TextMateHighlighter.styleForScopes(List.of("source.java", "comment.line.double-slash.java")));
-        assertEquals("number",
-                TextMateHighlighter.styleForScopes(List.of("source.java", "constant.numeric.java")));
-        assertEquals("string",
-                TextMateHighlighter.styleForScopes(List.of("source.java", "string.quoted.double.java")));
-        assertEquals("function",
-                TextMateHighlighter.styleForScopes(List.of("source.java", "entity.name.function.java")));
+        assertEquals("number", TextMateHighlighter.styleForScopes(List.of("source.java", "constant.numeric.java")));
+        assertEquals("string", TextMateHighlighter.styleForScopes(List.of("source.java", "string.quoted.double.java")));
+        assertEquals(
+                "function", TextMateHighlighter.styleForScopes(List.of("source.java", "entity.name.function.java")));
     }
 
     @Test
@@ -87,7 +85,7 @@ class TextMateHighlighterTest {
     void newlyBundledGrammarsLoadAndTokenize() {
         // Lua, Dockerfile, Terraform, and TOML grammars were bundled for their LSP support — verify each
         // loads through tm4e and produces spans (a malformed grammar would yield null from forFileName).
-        record Case(String file, String text, String expectStyle) { }
+        record Case(String file, String text, String expectStyle) {}
         for (Case c : List.of(
                 new Case("init.lua", "local x = 1\nfunction f() return x end\n", "keyword"),
                 new Case("Dockerfile", "FROM alpine:3\nRUN echo hi\n", "keyword"),
@@ -98,8 +96,7 @@ class TextMateHighlighterTest {
             StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(c.text(), g);
             assertNotNull(spans, c.file() + " should tokenize");
             assertEquals(c.text().length(), spans.length());
-            assertTrue(hasStyle(spans, c.expectStyle()),
-                    c.file() + " expected a " + c.expectStyle() + " span");
+            assertTrue(hasStyle(spans, c.expectStyle()), c.file() + " expected a " + c.expectStyle() + " span");
         }
     }
 
@@ -145,13 +142,15 @@ class TextMateHighlighterTest {
 
         // Resume from line 2 using the stored end-state of line 1; the suffix styling must match.
         int fromLine = 2;
-        TextMateHighlighter.IncrementalAnalysis inc =
-                TextMateHighlighter.analyzeFrom(text, java, fromLine, full.endStates().get(fromLine - 1));
+        TextMateHighlighter.IncrementalAnalysis inc = TextMateHighlighter.analyzeFrom(
+                text, java, fromLine, full.endStates().get(fromLine - 1));
         assertTrue(inc.fromOffset() > 0);
         assertEquals(text.length() - inc.fromOffset(), inc.spans().length());
         List<Collection<String>> incFlat = flatten(inc.spans());
         for (int i = 0; i < incFlat.size(); i++) {
-            assertEquals(fullFlat.get(inc.fromOffset() + i), incFlat.get(i),
+            assertEquals(
+                    fullFlat.get(inc.fromOffset() + i),
+                    incFlat.get(i),
                     "style mismatch at offset " + (inc.fromOffset() + i));
         }
     }
@@ -194,21 +193,22 @@ class TextMateHighlighterTest {
         List<TextMateHighlighter.Symbol> symbols = symbolsOf("Foo.java", text);
         assertTrue(hasSymbol(symbols, "Foo", "type"), "expected the class as a type symbol");
         assertTrue(hasSymbol(symbols, "bar", "function"), "expected the method as a function symbol");
-        assertTrue(symbols.stream().noneMatch(s -> s.name().equals("baz")),
+        assertTrue(
+                symbols.stream().noneMatch(s -> s.name().equals("baz")),
                 "a function call must not appear as a definition");
     }
 
     @Test
     void analyzeExtractsMarkdownSections() {
         List<TextMateHighlighter.Symbol> symbols = symbolsOf("a.md", "# Title\n\nbody text\n");
-        assertTrue(symbols.stream().anyMatch(s -> s.kind().equals("section")),
+        assertTrue(
+                symbols.stream().anyMatch(s -> s.kind().equals("section")),
                 "expected a markdown heading as a section symbol");
     }
 
     @Test
     void analyzeExtractsXmlTags() {
         List<TextMateHighlighter.Symbol> symbols = symbolsOf("a.xml", "<root>\n  <child/>\n</root>\n");
-        assertTrue(symbols.stream().anyMatch(s -> s.kind().equals("tag")),
-                "expected xml elements as tag symbols");
+        assertTrue(symbols.stream().anyMatch(s -> s.kind().equals("tag")), "expected xml elements as tag symbols");
     }
 }

@@ -8,10 +8,12 @@ import com.editora.snippet.Snippet;
  * description or the word source). For a {@link Kind#SNIPPET} completion, {@code snippet} is non-null so
  * the editor can start a full snippet session (with tab stops) instead of inserting literal text.
  */
-public record Completion(String label, String insert, Kind kind, String detail, Snippet snippet,
-        Runnable onAccept) {
+public record Completion(String label, String insert, Kind kind, String detail, Snippet snippet, Runnable onAccept) {
 
-    public enum Kind { SNIPPET, WORD }
+    public enum Kind {
+        SNIPPET,
+        WORD
+    }
 
     /** A plain word completion (dictionary or user word). */
     public static Completion word(String w, String detail) {

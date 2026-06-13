@@ -1,20 +1,20 @@
 package com.editora.dap;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 class LaunchConfigTest {
 
     @Test
     void launchEmitsRequiredFieldsAndOmitsBlankOptionals() {
-        Map<String, Object> m = LaunchConfig.launch("com.example.Main", "", List.of(), List.of(),
-                "", "", List.of(), false);
+        Map<String, Object> m =
+                LaunchConfig.launch("com.example.Main", "", List.of(), List.of(), "", "", List.of(), false);
         assertEquals("java", m.get("type"));
         assertEquals("launch", m.get("request"));
         assertEquals("com.example.Main", m.get("mainClass"));
@@ -31,9 +31,15 @@ class LaunchConfigTest {
 
     @Test
     void launchIncludesProvidedOptionals() {
-        Map<String, Object> m = LaunchConfig.launch("p.Main", "proj",
-                List.of("/cp/a.jar", "/cp/b.jar"), List.of("/mp/m.jar"), "/usr/bin/java",
-                "/work", List.of("--flag", "x"), true);
+        Map<String, Object> m = LaunchConfig.launch(
+                "p.Main",
+                "proj",
+                List.of("/cp/a.jar", "/cp/b.jar"),
+                List.of("/mp/m.jar"),
+                "/usr/bin/java",
+                "/work",
+                List.of("--flag", "x"),
+                true);
         assertEquals("proj", m.get("projectName"));
         assertEquals(List.of("/cp/a.jar", "/cp/b.jar"), m.get("classPaths"));
         assertEquals(List.of("/mp/m.jar"), m.get("modulePaths"));
@@ -62,8 +68,7 @@ class LaunchConfigTest {
 
     @Test
     void programForPythonEmitsInterpreterAsPython() {
-        Map<String, Object> m = LaunchConfig.program("python", "/work/app.py", "/work",
-                "/usr/bin/python3", true);
+        Map<String, Object> m = LaunchConfig.program("python", "/work/app.py", "/work", "/usr/bin/python3", true);
         assertEquals("python", m.get("type"));
         assertEquals("launch", m.get("request"));
         assertEquals("/work/app.py", m.get("program"));
@@ -76,8 +81,7 @@ class LaunchConfigTest {
 
     @Test
     void programForNodeEmitsRuntimeExecutable() {
-        Map<String, Object> m = LaunchConfig.program("pwa-node", "/work/app.js", "/work",
-                "/usr/local/bin/node", false);
+        Map<String, Object> m = LaunchConfig.program("pwa-node", "/work/app.js", "/work", "/usr/local/bin/node", false);
         assertEquals("pwa-node", m.get("type"));
         assertEquals("/work/app.js", m.get("program"));
         assertEquals("/usr/local/bin/node", m.get("runtimeExecutable")); // node under "runtimeExecutable"

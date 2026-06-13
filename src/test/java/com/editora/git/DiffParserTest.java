@@ -1,14 +1,13 @@
 package com.editora.git;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.List;
 import java.util.Map;
 
+import com.editora.git.DiffParser.LineChange;
 import org.junit.jupiter.api.Test;
 
-import com.editora.git.DiffParser.LineChange;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure unified-diff hunk parser (no toolkit, no repo). */
 class DiffParserTest {

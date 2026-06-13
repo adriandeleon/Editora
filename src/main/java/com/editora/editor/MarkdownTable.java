@@ -15,12 +15,17 @@ public final class MarkdownTable {
 
     /** A delimiter cell: optional leading/trailing colon around one-or-more dashes. */
     private static final Pattern DELIM_CELL = Pattern.compile("\\s*:?-+:?\\s*");
+
     private static final int MIN_WIDTH = 3; // room for "---" / ":-:"
 
-    private enum Align { NONE, LEFT, CENTER, RIGHT }
-
-    private MarkdownTable() {
+    private enum Align {
+        NONE,
+        LEFT,
+        CENTER,
+        RIGHT
     }
+
+    private MarkdownTable() {}
 
     /** True if {@code line} looks like a table row (contains a pipe and is not blank). */
     private static boolean isRow(String line) {
@@ -170,12 +175,13 @@ public final class MarkdownTable {
         StringBuilder sb = new StringBuilder("|");
         for (int c = 0; c < width.length; c++) {
             int w = width[c];
-            String dashes = switch (align[c]) {
-                case LEFT -> ":" + "-".repeat(w - 1);
-                case RIGHT -> "-".repeat(w - 1) + ":";
-                case CENTER -> ":" + "-".repeat(w - 2) + ":";
-                case NONE -> "-".repeat(w);
-            };
+            String dashes =
+                    switch (align[c]) {
+                        case LEFT -> ":" + "-".repeat(w - 1);
+                        case RIGHT -> "-".repeat(w - 1) + ":";
+                        case CENTER -> ":" + "-".repeat(w - 2) + ":";
+                        case NONE -> "-".repeat(w);
+                    };
             sb.append(' ').append(dashes).append(" |");
         }
         return sb.toString();

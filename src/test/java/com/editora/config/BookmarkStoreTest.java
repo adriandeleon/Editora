@@ -1,18 +1,17 @@
 package com.editora.config;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Bookmarks live in their own {@code bookmarks.json} (a {@link BookmarkStore}), bucketed per project so
@@ -32,7 +31,8 @@ class BookmarkStoreTest {
 
         BookmarkStore back = mapper.readValue(mapper.writeValueAsString(store), BookmarkStore.class);
 
-        assertEquals(new Bookmark(3, "todo", "x"), back.bucket("").get("/tmp/a.txt").get(0));
+        assertEquals(
+                new Bookmark(3, "todo", "x"), back.bucket("").get("/tmp/a.txt").get(0));
         assertEquals(7, back.bucket("proj-1").get("/tmp/b.txt").get(0).line());
         assertTrue(back.bucket("missing").isEmpty());
     }
@@ -42,7 +42,8 @@ class BookmarkStoreTest {
         // The brief pre-release bookmarks.json format: a single flat "bookmarks" map, no projects.
         String legacy = "{\"bookmarks\":{\"/tmp/a.txt\":[{\"line\":3,\"note\":\"todo\",\"lineText\":\"x\"}]}}";
         BookmarkStore back = mapper.readValue(legacy, BookmarkStore.class);
-        assertEquals(new Bookmark(3, "todo", "x"), back.bucket("").get("/tmp/a.txt").get(0));
+        assertEquals(
+                new Bookmark(3, "todo", "x"), back.bucket("").get("/tmp/a.txt").get(0));
     }
 
     @Test
@@ -92,12 +93,14 @@ class BookmarkStoreTest {
 
     @Test
     void migrationIsOneTime(@TempDir Path dir) throws Exception {
-        Files.writeString(dir.resolve("workspace-state.json"),
+        Files.writeString(
+                dir.resolve("workspace-state.json"),
                 "{\"bookmarks\":{\"/tmp/a.txt\":[{\"line\":3,\"note\":\"\",\"lineText\":\"x\"}]}}");
         new ConfigManager(dir).load(); // migrates + creates bookmarks.json
 
         // New legacy bookmarks written afterward are ignored (migration already done).
-        Files.writeString(dir.resolve("workspace-state.json"),
+        Files.writeString(
+                dir.resolve("workspace-state.json"),
                 "{\"bookmarks\":{\"/tmp/zzz.txt\":[{\"line\":0,\"note\":\"\",\"lineText\":\"q\"}]}}");
         ConfigManager second = new ConfigManager(dir);
         second.load();
@@ -135,8 +138,8 @@ class BookmarkStoreTest {
     void mergeKeepsCustomOrderAndAppendsNewBookmarks() {
         List<Bookmark> previous = List.of(new Bookmark(42, "fixme", "b"), new Bookmark(10, "todo", "a"));
         // snapshot is line-ordered and has a new bookmark at line 20:
-        List<Bookmark> snapshot = List.of(
-                new Bookmark(10, "todo", "a"), new Bookmark(20, "", "c"), new Bookmark(42, "fixme", "b"));
+        List<Bookmark> snapshot =
+                List.of(new Bookmark(10, "todo", "a"), new Bookmark(20, "", "c"), new Bookmark(42, "fixme", "b"));
 
         List<Bookmark> merged = BookmarkStore.mergePreservingOrder(previous, snapshot);
 
@@ -152,7 +155,8 @@ class BookmarkStoreTest {
         List<Bookmark> merged = BookmarkStore.mergePreservingOrder(previous, shifted);
 
         // The "fixme" bookmark (now line 43) stays first; "todo" (now 11) second — order preserved.
-        assertEquals(List.of("fixme", "todo"), merged.stream().map(Bookmark::note).toList());
+        assertEquals(
+                List.of("fixme", "todo"), merged.stream().map(Bookmark::note).toList());
         assertEquals(List.of(43, 11), merged.stream().map(Bookmark::line).toList());
     }
 

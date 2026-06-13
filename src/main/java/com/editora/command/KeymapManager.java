@@ -26,8 +26,7 @@ public class KeymapManager {
             if (in == null) {
                 throw new IllegalArgumentException("Keymap resource not found: " + resource);
             }
-            Map<String, String> loaded = MAPPER.readValue(in, new TypeReference<Map<String, String>>() {
-            });
+            Map<String, String> loaded = MAPPER.readValue(in, new TypeReference<Map<String, String>>() {});
             bindings.clear();
             bindings.putAll(loaded);
         } catch (IOException e) {

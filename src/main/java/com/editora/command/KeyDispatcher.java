@@ -33,8 +33,7 @@ public class KeyDispatcher {
     public KeyDispatcher(CommandRegistry registry, KeymapManager keymap, Consumer<String> statusListener) {
         this.registry = registry;
         this.keymap = keymap;
-        this.statusListener = statusListener != null ? statusListener : s -> {
-        };
+        this.statusListener = statusListener != null ? statusListener : s -> {};
     }
 
     /** Installs a first-look hook (see {@link #preDispatch}); may be null to clear. */
@@ -92,8 +91,7 @@ public class KeyDispatcher {
         consumedPress = false;
         // Bare Alt: consume so Windows can't enter menu mode (which freezes the keyboard). Plain Alt
         // only — AltGr (Ctrl+Alt) is left alone (see plainAltActive).
-        if (event.getCode() == KeyCode.ALT
-                && plainAltActive(IS_MAC, event.isAltDown(), event.isControlDown())) {
+        if (event.getCode() == KeyCode.ALT && plainAltActive(IS_MAC, event.isAltDown(), event.isControlDown())) {
             event.consume();
             return;
         }

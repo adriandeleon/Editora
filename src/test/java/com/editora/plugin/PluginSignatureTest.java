@@ -1,8 +1,5 @@
 package com.editora.plugin;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -12,6 +9,9 @@ import java.security.Signature;
 import java.util.Base64;
 
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for Ed25519 registry-signature verification (pure, no network). */
 class PluginSignatureTest {
@@ -30,7 +30,8 @@ class PluginSignatureTest {
         String sig = Base64.getEncoder().encodeToString(sign(kp.getPrivate(), data));
 
         assertTrue(PluginSignature.verify(data, sig, kp.getPublic()), "valid signature");
-        assertFalse(PluginSignature.verify("tampered".getBytes(StandardCharsets.UTF_8), sig, kp.getPublic()),
+        assertFalse(
+                PluginSignature.verify("tampered".getBytes(StandardCharsets.UTF_8), sig, kp.getPublic()),
                 "tampered data must fail");
 
         KeyPair other = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();

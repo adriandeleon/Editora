@@ -1,17 +1,10 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.fxmisc.richtext.CodeArea;
-
-import com.editora.editor.EditorBuffer;
-import com.editora.editor.SearchMatcher;
 
 import javafx.animation.PauseTransition;
 import javafx.geometry.Pos;
@@ -23,6 +16,12 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.util.Duration;
+
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.SearchMatcher;
+import org.fxmisc.richtext.CodeArea;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A non-modal find/replace bar operating on the currently active {@link EditorBuffer}. Searches
@@ -87,9 +86,21 @@ public class FindReplaceBar extends HBox {
         wholeWord.selectedProperty().addListener((o, a, b) -> recompute());
         debounce.setOnFinished(e -> recompute());
 
-        getChildren().addAll(new Label(tr("find.label")), findField, countLabel, prev, next,
-                new Label(tr("find.replaceLabel")), replaceField, replace, replaceAll,
-                caseSensitive, regex, wholeWord, close);
+        getChildren()
+                .addAll(
+                        new Label(tr("find.label")),
+                        findField,
+                        countLabel,
+                        prev,
+                        next,
+                        new Label(tr("find.replaceLabel")),
+                        replaceField,
+                        replace,
+                        replaceAll,
+                        caseSensitive,
+                        regex,
+                        wholeWord,
+                        close);
     }
 
     public void show(boolean backward) {
@@ -151,8 +162,8 @@ public class FindReplaceBar extends HBox {
                 return;
             }
         }
-        matches = SearchMatcher.matches(area.getText(), query,
-                caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
+        matches = SearchMatcher.matches(
+                area.getText(), query, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
         if (matches.isEmpty()) {
             activeIndex = -1;
             buffer.clearSearchMatches();
@@ -249,8 +260,8 @@ public class FindReplaceBar extends HBox {
             m.appendTail(sb);
             result = sb.toString();
         } else {
-            List<int[]> all = SearchMatcher.matches(text, query, caseSensitive.isSelected(), false,
-                    wholeWord.isSelected());
+            List<int[]> all =
+                    SearchMatcher.matches(text, query, caseSensitive.isSelected(), false, wholeWord.isSelected());
             count = all.size();
             StringBuilder sb = new StringBuilder();
             int i = 0;

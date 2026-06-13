@@ -10,36 +10,62 @@ package com.editora.editor;
  */
 public final class Commenter {
 
-    private Commenter() {
-    }
+    private Commenter() {}
 
     /** A language's comment tokens; any field may be null when that form is unsupported. */
     public record CommentStyle(String line, String blockStart, String blockEnd) {
         public boolean hasLine() {
             return line != null && !line.isEmpty();
         }
+
         public boolean hasBlock() {
             return blockStart != null && blockEnd != null;
         }
     }
 
     /** Replace {@code [from, to)} with {@code replacement}, then select {@code [selStart, selEnd]}. */
-    public record Edit(int from, int to, String replacement, int selStart, int selEnd) {
-    }
+    public record Edit(int from, int to, String replacement, int selStart, int selEnd) {}
 
     public static CommentStyle styleFor(String language) {
         return switch (language == null ? "" : language) {
-            case "java", "c", "cpp", "csharp", "rust", "go", "kotlin", "groovy", "json", "php",
-                 "javascript", "typescript", "javascriptreact", "typescriptreact" ->
-                    new CommentStyle("//", "/*", "*/");
+            case "java",
+                    "c",
+                    "cpp",
+                    "csharp",
+                    "rust",
+                    "go",
+                    "kotlin",
+                    "groovy",
+                    "json",
+                    "php",
+                    "javascript",
+                    "typescript",
+                    "javascriptreact",
+                    "typescriptreact" -> new CommentStyle("//", "/*", "*/");
             case "css" -> new CommentStyle(null, "/*", "*/");
             case "sql" -> new CommentStyle("--", "/*", "*/");
             case "lua" -> new CommentStyle("--", "--[[", "]]");
             case "terraform" -> new CommentStyle("#", "/*", "*/");
-            case "python", "shell", "yaml", "ruby", "dockerfile", "toml", "http", "systemd",
-                 "desktop", "dotenv", "ssh-config", "git-config", "crontab", "caddyfile",
-                 "hosts", "fstab", "properties", "deb822", "apt-sources", "interfaces" ->
-                    new CommentStyle("#", null, null);
+            case "python",
+                    "shell",
+                    "yaml",
+                    "ruby",
+                    "dockerfile",
+                    "toml",
+                    "http",
+                    "systemd",
+                    "desktop",
+                    "dotenv",
+                    "ssh-config",
+                    "git-config",
+                    "crontab",
+                    "caddyfile",
+                    "hosts",
+                    "fstab",
+                    "properties",
+                    "deb822",
+                    "apt-sources",
+                    "interfaces" -> new CommentStyle("#", null, null);
             case "powershell" -> new CommentStyle("#", "<#", "#>");
             case "ini" -> new CommentStyle(";", null, null);
             case "batchfile" -> new CommentStyle("REM", null, null);
@@ -59,8 +85,7 @@ public final class Commenter {
         }
         // Multi-line prefers a block/region comment; a single line prefers a line comment.
         boolean useBlock = multi ? style.hasBlock() : !style.hasLine();
-        return useBlock ? toggleBlock(text, selStart, selEnd, style)
-                : toggleLines(text, selStart, effEnd, style);
+        return useBlock ? toggleBlock(text, selStart, selEnd, style) : toggleLines(text, selStart, effEnd, style);
     }
 
     // --- line comments ----------------------------------------------------------------------------

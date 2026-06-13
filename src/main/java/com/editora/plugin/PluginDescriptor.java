@@ -16,8 +16,8 @@ public final class PluginDescriptor {
     private final ClassLoader classLoader;
     private final String loadError;
 
-    public PluginDescriptor(PluginManifest manifest, Path dir, boolean enabled,
-            ClassLoader classLoader, String loadError) {
+    public PluginDescriptor(
+            PluginManifest manifest, Path dir, boolean enabled, ClassLoader classLoader, String loadError) {
         this.manifest = manifest;
         this.dir = dir;
         this.enabled = enabled;

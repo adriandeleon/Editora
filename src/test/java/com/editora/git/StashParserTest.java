@@ -1,13 +1,12 @@
 package com.editora.git;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.List;
 
+import com.editora.git.StashParser.StashEntry;
 import org.junit.jupiter.api.Test;
 
-import com.editora.git.StashParser.StashEntry;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure {@code git stash list} parser. */
 class StashParserTest {

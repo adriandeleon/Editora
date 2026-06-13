@@ -13,14 +13,12 @@ import java.util.regex.Pattern;
 public final class StashParser {
 
     /** One stash entry: its list index, the {@code stash@{N}} ref, the branch it was made on, and the subject. */
-    public record StashEntry(int index, String ref, String branch, String subject) { }
+    public record StashEntry(int index, String ref, String branch, String subject) {}
 
-    private static final Pattern LINE =
-            Pattern.compile("^stash@\\{(\\d+)\\}:\\s*(?:WIP on|On)\\s+([^:]+):\\s*(.*)$");
+    private static final Pattern LINE = Pattern.compile("^stash@\\{(\\d+)\\}:\\s*(?:WIP on|On)\\s+([^:]+):\\s*(.*)$");
     private static final Pattern REF = Pattern.compile("stash@\\{(\\d+)\\}");
 
-    private StashParser() {
-    }
+    private StashParser() {}
 
     public static List<StashEntry> parse(String out) {
         List<StashEntry> list = new ArrayList<>();
@@ -35,7 +33,11 @@ public final class StashParser {
             Matcher m = LINE.matcher(line);
             if (m.matches()) {
                 int idx = Integer.parseInt(m.group(1));
-                list.add(new StashEntry(idx, "stash@{" + idx + "}", m.group(2).strip(), m.group(3).strip()));
+                list.add(new StashEntry(
+                        idx,
+                        "stash@{" + idx + "}",
+                        m.group(2).strip(),
+                        m.group(3).strip()));
                 continue;
             }
             // Fallback for any unexpected shape: split on the first ": " into ref + subject.

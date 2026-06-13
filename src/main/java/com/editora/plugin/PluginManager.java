@@ -34,8 +34,7 @@ public final class PluginManager {
 
     private final Path pluginsDir;
     private final Predicate<String> isEnabled;
-    private final ObjectMapper mapper = new ObjectMapper()
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     private volatile List<PluginDescriptor> descriptors = List.of();
 
@@ -101,8 +100,10 @@ public final class PluginManager {
         List<URL> urls = new ArrayList<>();
         collectJars(dir, urls);
         collectJars(dir.resolve("lib"), urls);
-        return new URLClassLoader("plugin:" + dir.getFileName(),
-                urls.toArray(new URL[0]), getClass().getClassLoader());
+        return new URLClassLoader(
+                "plugin:" + dir.getFileName(),
+                urls.toArray(new URL[0]),
+                getClass().getClassLoader());
     }
 
     private static void collectJars(Path dir, List<URL> out) {

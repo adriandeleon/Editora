@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.editora.process.ProcessRunner;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.CompletionCapabilities;
 import org.eclipse.lsp4j.CompletionItem;
@@ -33,6 +34,7 @@ import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
+import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsCapabilities;
@@ -46,18 +48,15 @@ import org.eclipse.lsp4j.SynchronizationCapabilities;
 import org.eclipse.lsp4j.TextDocumentClientCapabilities;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
-import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.TextDocumentItem;
+import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceFolder;
-import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.launch.LSPLauncher;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageServer;
-
-import com.editora.process.ProcessRunner;
 
 /**
  * One external language-server process for a single workspace {@code root}, driven over stdio via LSP4J.
@@ -98,19 +97,24 @@ final class LanguageServerSession implements LanguageClient {
     private volatile boolean disposed;
     private ServerCapabilities capabilities;
 
-    LanguageServerSession(LspServerRegistry.ServerSpec spec, Path root,
+    LanguageServerSession(
+            LspServerRegistry.ServerSpec spec,
+            Path root,
             Consumer<PublishDiagnosticsParams> onDiagnostics,
             java.util.function.BiConsumer<String, String> onStatus) {
         this(spec, root, onDiagnostics, onStatus, null);
     }
 
-    LanguageServerSession(LspServerRegistry.ServerSpec spec, Path root,
+    LanguageServerSession(
+            LspServerRegistry.ServerSpec spec,
+            Path root,
             Consumer<PublishDiagnosticsParams> onDiagnostics,
-            java.util.function.BiConsumer<String, String> onStatus, Object initializationOptions) {
+            java.util.function.BiConsumer<String, String> onStatus,
+            Object initializationOptions) {
         this.command = spec.command();
         this.root = root;
         this.onDiagnostics = onDiagnostics;
-        this.onStatus = onStatus == null ? (t, m) -> { } : onStatus;
+        this.onStatus = onStatus == null ? (t, m) -> {} : onStatus;
         this.initializationOptions = initializationOptions;
     }
 
@@ -144,32 +148,35 @@ final class LanguageServerSession implements LanguageClient {
         ip.setProcessId((int) ProcessHandle.current().pid());
         String uri = root.toUri().toString();
         ip.setRootUri(uri);
-        ip.setWorkspaceFolders(List.of(new WorkspaceFolder(uri, root.getFileName().toString())));
+        ip.setWorkspaceFolders(
+                List.of(new WorkspaceFolder(uri, root.getFileName().toString())));
         ip.setCapabilities(clientCapabilities());
         if (initializationOptions != null) {
             ip.setInitializationOptions(initializationOptions); // jdtls: {"bundles":[<java-debug jar>]}
         }
-        server.initialize(ip).thenAccept(result -> {
-            capabilities = result.getCapabilities();
-            server.initialized(new InitializedParams());
-            pushConfiguration(); // proactively enable Pyright auto-imports (also answered via configuration())
-            List<Runnable> toRun;
-            synchronized (this) {
-                initialized = true;
-                toRun = new ArrayList<>(pending);
-                pending.clear();
-            }
-            toRun.forEach(Runnable::run);
-            // Signal the UI that the handshake completed so the status-bar loading bar stops. The
-            // jdtls-specific language/status notification (handled below) only fires for JDT LS and only
-            // once a project is ready; this universal signal covers every server — and a clean file that
-            // never publishes a diagnostic — with a null message so it doesn't write to the echo area.
-            onStatus.accept("ServiceReady", null);
-        }).exceptionally(t -> {
-            LOG.log(Level.WARNING, "initialize failed", t);
-            onStatus.accept("Error", null); // also stop the loading bar on a failed handshake
-            return null;
-        });
+        server.initialize(ip)
+                .thenAccept(result -> {
+                    capabilities = result.getCapabilities();
+                    server.initialized(new InitializedParams());
+                    pushConfiguration(); // proactively enable Pyright auto-imports (also answered via configuration())
+                    List<Runnable> toRun;
+                    synchronized (this) {
+                        initialized = true;
+                        toRun = new ArrayList<>(pending);
+                        pending.clear();
+                    }
+                    toRun.forEach(Runnable::run);
+                    // Signal the UI that the handshake completed so the status-bar loading bar stops. The
+                    // jdtls-specific language/status notification (handled below) only fires for JDT LS and only
+                    // once a project is ready; this universal signal covers every server — and a clean file that
+                    // never publishes a diagnostic — with a null message so it doesn't write to the echo area.
+                    onStatus.accept("ServiceReady", null);
+                })
+                .exceptionally(t -> {
+                    LOG.log(Level.WARNING, "initialize failed", t);
+                    onStatus.accept("Error", null); // also stop the loading bar on a failed handshake
+                    return null;
+                });
     }
 
     private static ClientCapabilities clientCapabilities() {
@@ -206,8 +213,8 @@ final class LanguageServerSession implements LanguageClient {
             python.put("analysis", analysis);
             java.util.Map<String, Object> settings = new java.util.HashMap<>();
             settings.put("python", python);
-            server.getWorkspaceService().didChangeConfiguration(
-                    new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
+            server.getWorkspaceService()
+                    .didChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "didChangeConfiguration failed", e);
         }
@@ -243,8 +250,8 @@ final class LanguageServerSession implements LanguageClient {
 
     void didOpen(String uri, String languageId, String text) {
         versions.put(uri, 1);
-        whenReady(() -> server.getTextDocumentService().didOpen(
-                new DidOpenTextDocumentParams(new TextDocumentItem(uri, languageId, 1, text))));
+        whenReady(() -> server.getTextDocumentService()
+                .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, languageId, 1, text))));
     }
 
     void didChange(String uri, String text) {
@@ -252,9 +259,10 @@ final class LanguageServerSession implements LanguageClient {
             return; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
         }
         int version = versions.merge(uri, 1, Integer::sum);
-        whenReady(() -> server.getTextDocumentService().didChange(new DidChangeTextDocumentParams(
-                new VersionedTextDocumentIdentifier(uri, version),
-                List.of(new TextDocumentContentChangeEvent(text)))));
+        whenReady(() -> server.getTextDocumentService()
+                .didChange(new DidChangeTextDocumentParams(
+                        new VersionedTextDocumentIdentifier(uri, version),
+                        List.of(new TextDocumentContentChangeEvent(text)))));
     }
 
     /**
@@ -279,14 +287,14 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     void didSave(String uri) {
-        whenReady(() -> server.getTextDocumentService().didSave(
-                new DidSaveTextDocumentParams(new TextDocumentIdentifier(uri))));
+        whenReady(() -> server.getTextDocumentService()
+                .didSave(new DidSaveTextDocumentParams(new TextDocumentIdentifier(uri))));
     }
 
     void didClose(String uri) {
         versions.remove(uri);
-        whenReady(() -> server.getTextDocumentService().didClose(
-                new DidCloseTextDocumentParams(new TextDocumentIdentifier(uri))));
+        whenReady(() -> server.getTextDocumentService()
+                .didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(uri))));
     }
 
     boolean isOpen(String uri) {
@@ -328,8 +336,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
-        return server.getTextDocumentService()
-                .completion(new CompletionParams(new TextDocumentIdentifier(uri), pos));
+        return server.getTextDocumentService().completion(new CompletionParams(new TextDocumentIdentifier(uri), pos));
     }
 
     /** Resolves a completion item ({@code completionItem/resolve}) to fill in its {@code additionalTextEdits}
@@ -338,16 +345,14 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready() || item == null) {
             return CompletableFuture.completedFuture(item);
         }
-        return server.getTextDocumentService().resolveCompletionItem(item)
-                .exceptionally(t -> item);
+        return server.getTextDocumentService().resolveCompletionItem(item).exceptionally(t -> item);
     }
 
     CompletableFuture<Hover> hover(String uri, Position pos) {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        return server.getTextDocumentService()
-                .hover(new HoverParams(new TextDocumentIdentifier(uri), pos));
+        return server.getTextDocumentService().hover(new HoverParams(new TextDocumentIdentifier(uri), pos));
     }
 
     CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
@@ -355,16 +360,14 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
-        return server.getTextDocumentService()
-                .definition(new DefinitionParams(new TextDocumentIdentifier(uri), pos));
+        return server.getTextDocumentService().definition(new DefinitionParams(new TextDocumentIdentifier(uri), pos));
     }
 
     CompletableFuture<List<? extends Location>> references(String uri, Position pos) {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        ReferenceParams params = new ReferenceParams(new TextDocumentIdentifier(uri), pos,
-                new ReferenceContext(true));
+        ReferenceParams params = new ReferenceParams(new TextDocumentIdentifier(uri), pos, new ReferenceContext(true));
         return server.getTextDocumentService().references(params);
     }
 

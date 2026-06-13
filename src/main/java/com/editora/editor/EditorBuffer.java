@@ -1,11 +1,7 @@
 package com.editora.editor;
 
-import static com.editora.i18n.Messages.tr;
-
-import com.editora.completion.Completion;
-import com.editora.completion.CompletionEngine;
-import com.editora.completion.CompletionProvider;
-
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
@@ -13,45 +9,21 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.eclipse.tm4e.core.grammar.IGrammar;
-import org.fxmisc.flowless.VirtualizedScrollPane;
-import org.reactfx.Subscription;
-import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.LineNumberFactory;
-import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
-import org.fxmisc.richtext.multi.MultiCaretController;
-import org.fxmisc.richtext.model.StyleSpans;
-import org.fxmisc.richtext.model.StyleSpansBuilder;
-
-import com.editora.snippet.ParsedSnippet;
-import com.editora.snippet.Snippet;
-import com.editora.snippet.SnippetParser;
-import com.editora.snippet.SnippetSession;
-import com.editora.snippet.VariableResolver;
-import org.fxmisc.richtext.util.UndoUtils;
-import org.fxmisc.undo.UndoManager;
-import org.fxmisc.undo.UndoManagerFactory;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import javafx.application.Platform;
-
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.SplitPane;
-import javafx.scene.text.Font;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -63,6 +35,29 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
+import javafx.scene.text.Font;
+
+import com.editora.completion.Completion;
+import com.editora.completion.CompletionEngine;
+import com.editora.completion.CompletionProvider;
+import com.editora.snippet.ParsedSnippet;
+import com.editora.snippet.Snippet;
+import com.editora.snippet.SnippetParser;
+import com.editora.snippet.SnippetSession;
+import com.editora.snippet.VariableResolver;
+import org.eclipse.tm4e.core.grammar.IGrammar;
+import org.fxmisc.flowless.VirtualizedScrollPane;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.LineNumberFactory;
+import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.fxmisc.richtext.multi.MultiCaretController;
+import org.fxmisc.richtext.util.UndoUtils;
+import org.fxmisc.undo.UndoManager;
+import org.fxmisc.undo.UndoManagerFactory;
+import org.reactfx.Subscription;
+
+import static com.editora.i18n.Messages.tr;
 
 /** A single open document: a RichTextFX {@link CodeArea} plus its backing file, language, and dirty state. */
 public class EditorBuffer implements TabContent {
@@ -74,7 +69,11 @@ public class EditorBuffer implements TabContent {
     private String cleanText = "";
 
     /** Orientation of an optional second, synced view of this document. */
-    public enum Split { NONE, SIDE_BY_SIDE, STACKED }
+    public enum Split {
+        NONE,
+        SIDE_BY_SIDE,
+        STACKED
+    }
 
     /** Wraps the scroll pane so we can overlay the column-80 ruler line and dock the minimap. */
     private final AnchorPane root = new AnchorPane();
@@ -84,26 +83,35 @@ public class EditorBuffer implements TabContent {
     private final javafx.scene.layout.BorderPane outer = new javafx.scene.layout.BorderPane(viewHost);
     /** The MS-Word-style read-only banner (lazy); its "Enable Editing" runs {@link #onEnableEditing}. */
     private HBox viewModeBar;
+
     private Button enableEditingButton;
     private Label viewModeNote;
     /** Invoked by the banner's "Enable Editing" button; the controller persists + refreshes indicators. */
     private Runnable onEnableEditing = () -> setViewMode(false);
     /** A second editable view sharing this document (created lazily on first split). */
     private CodeArea area2;
+
     private VirtualizedScrollPane<CodeArea> scrollPane2;
     /** The secondary view's container (scroll pane + its own minimap), mounted in the SplitPane. */
     private AnchorPane root2;
+
     private Minimap minimap2;
     private Split split = Split.NONE;
 
     /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork add-on). Installed on {@link #area}
      *  (and {@link #area2} when split) while {@link #multiCaretEnabled}; transparent with one caret. */
     private boolean multiCaretEnabled;
+
     private MultiCaretController<?, ?, ?> multiCaret;
     private MultiCaretController<?, ?, ?> multiCaret2;
 
     /** IntelliJ-style Markdown preview modes (only meaningful for Markdown files). */
-    public enum MarkdownViewMode { EDITOR, SPLIT, PREVIEW }
+    public enum MarkdownViewMode {
+        EDITOR,
+        SPLIT,
+        PREVIEW
+    }
+
     private MarkdownViewMode markdownViewMode = MarkdownViewMode.EDITOR;
     /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
     private ScrollPane previewPane;
@@ -118,7 +126,7 @@ public class EditorBuffer implements TabContent {
     /** Whether the app/editor theme is dark (used to resolve "follow app" + the toggle glyph). */
     private boolean previewAppDark;
     /** Runs the controller's global preview-theme toggle (injected, like the snippet/completion providers). */
-    private Runnable previewThemeToggle = () -> { };
+    private Runnable previewThemeToggle = () -> {};
     /** Preview text zoom factor (1.0 = 100%); scales the rendered preview's base font size. */
     private double previewFontScale = 1.0;
     /** Base preview font size in px (matches {@code .markdown-preview-wrap} in app.css); headings use em. */
@@ -141,6 +149,7 @@ public class EditorBuffer implements TabContent {
      */
     private static final ExecutorService PREVIEW_POOL =
             Executors.newFixedThreadPool(2, daemonFactory("markdown-preview"));
+
     private static final ExecutorService HIGHLIGHT_POOL = Executors.newFixedThreadPool(
             Math.min(4, Math.max(2, Runtime.getRuntime().availableProcessors() / 2)),
             daemonFactory("editor-highlighter"));
@@ -154,7 +163,8 @@ public class EditorBuffer implements TabContent {
             return t;
         };
     }
-    private Runnable onViewModeChanged = () -> { };
+
+    private Runnable onViewModeChanged = () -> {};
     /** Files at/above this size skip syntax highlighting and the minimap to stay responsive. */
     public static final long LARGE_FILE_BYTES = 5L * 1024 * 1024;
     /** Files at/above this size are opened read-only (and truncated by the loader). */
@@ -171,13 +181,15 @@ public class EditorBuffer implements TabContent {
     private CodeArea focusedArea = area;
     /** Floating Markdown format bar (lazily created), shown on a non-empty selection in a Markdown buffer. */
     private MarkdownFormatBar formatBar;
+
     private boolean formatBarEnabled = true;
     private boolean formatBarUpdatePending;
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
-    private java.util.function.Consumer<String> openUrlHandler = u -> { };
+    private java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Preview right-click menu actions (injected from the controller's export/print commands). */
-    private Runnable previewExportPdfHandler = () -> { };
-    private Runnable previewPrintHandler = () -> { };
+    private Runnable previewExportPdfHandler = () -> {};
+
+    private Runnable previewPrintHandler = () -> {};
     private javafx.scene.control.ContextMenu previewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private SnippetSession snippetSession;
@@ -189,13 +201,15 @@ public class EditorBuffer implements TabContent {
     private boolean autocompleteEnabled = true;
     /** Per-source autocomplete toggles (gated by {@link #autocompleteEnabled}). */
     private boolean autocompleteProse = true;
+
     private boolean autocompleteSnippets = true;
     private boolean autocompleteMermaid = true;
     /** The caret-anchored completion dropdown (lazily created). */
     private CompletionPopup completionPopup;
     /** Injected async LSP completion source (code buffers); generation guard for stale async results. */
-    private java.util.function.BiConsumer<int[],
-            java.util.function.Consumer<java.util.List<Completion>>> lspCompletionProvider;
+    private java.util.function.BiConsumer<int[], java.util.function.Consumer<java.util.List<Completion>>>
+            lspCompletionProvider;
+
     private long completionGen;
     /** The view the completion popup is currently driven by (for click-accept routing). */
     private CodeArea completionArea;
@@ -203,6 +217,7 @@ public class EditorBuffer implements TabContent {
     private boolean suppressCompletion;
     /** Inline "ghost text" suggestion (prose buffers): a single muted suffix drawn after the caret. */
     private Label ghostLabel;
+
     private String ghostSuffix;
     private CodeArea ghostArea;
     /** The two document offsets currently carrying the {@code brace-match} style, or null. */
@@ -217,6 +232,7 @@ public class EditorBuffer implements TabContent {
     private int goalColumn = -1;
     /** True only while {@link #moveLine} is updating the caret, so its own move doesn't reset the goal. */
     private boolean movingByLine;
+
     private final Line columnRuler = new Line();
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
@@ -225,6 +241,7 @@ public class EditorBuffer implements TabContent {
     private final BlameOverlay blameOverlay = new BlameOverlay(area);
     /** Per-line blame (for {@link #blameHashAtCaret}); null = blame off. Mirrors what the overlay paints. */
     private java.util.List<BlameInfo> blameLines;
+
     private final MermaidLintOverlay lintOverlay = new MermaidLintOverlay(area);
     private final LspDiagnosticOverlay lspOverlay = new LspDiagnosticOverlay(area);
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable. */
@@ -242,7 +259,7 @@ public class EditorBuffer implements TabContent {
     /** The 0-based start lines of each request in a {@code .http} buffer (each gets a Run glyph). */
     private java.util.List<Integer> httpRequestLines = java.util.List.of();
     /** Fired with the clicked request's start line when a {@code .http} Run glyph is clicked. */
-    private java.util.function.IntConsumer httpRunHandler = i -> { };
+    private java.util.function.IntConsumer httpRunHandler = i -> {};
     /** Whether this file is runnable (a Java 25 compact source file, a Python script, or — when the Bash
      *  LSP is enabled — a shell script) — drives the gutter Run glyph + the Run tool window. */
     private boolean runnable;
@@ -250,22 +267,27 @@ public class EditorBuffer implements TabContent {
      *  guard, else the first line), or -1 when not runnable. */
     private int runLine = -1;
     /** Fired (FX thread) when the runnable status flips, so the controller refreshes the Run button. */
-    private Runnable onRunnableChanged = () -> { };
+    private Runnable onRunnableChanged = () -> {};
+
     private final SearchHighlightOverlay searchOverlay = new SearchHighlightOverlay(area);
     private final AceJumpOverlay aceJump = new AceJumpOverlay(area);
     /** Async maid validator (text, callback) injected by the controller; null = no linting. */
-    private java.util.function.BiConsumer<String,
-            java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>> mermaidValidator;
+    private java.util.function.BiConsumer<
+                    String, java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>>
+            mermaidValidator;
+
     private boolean mermaidLintEnabled;
     private javafx.scene.control.Tooltip lintTooltip;
     /** Message currently shown by {@link #lintTooltip} — skips a re-{@code show()} (flicker) on each move. */
     private String lintTooltipText;
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     private boolean lspActive;
+
     private java.util.function.Consumer<String> lspChangeListener;
     private javafx.scene.control.Tooltip lspTooltip;
     /** Message currently shown by {@link #lspTooltip} — skips a re-{@code show()} (flicker) on each move. */
     private String lspTooltipText;
+
     private final FoldManager folds = new FoldManager(area);
     private final BookmarkManager bookmarks = new BookmarkManager(area);
     /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
@@ -280,6 +302,7 @@ public class EditorBuffer implements TabContent {
             (buffer, line) -> buffer.toggleBreakpoint(line);
     /** Personal Notes for this buffer (gutter marker + highlight + hover). */
     private final NoteManager notes = new NoteManager(area);
+
     private final NoteHighlightOverlay noteOverlay = new NoteHighlightOverlay(area);
     /** When false, the Personal Notes feature is disabled for this buffer (no "Add Note" menu items). */
     private boolean notesEnabled = false;
@@ -287,17 +310,19 @@ public class EditorBuffer implements TabContent {
     private boolean noteIndicators = true;
     /** Reused hover tooltip + the id of the note it's currently showing (so we only update on change). */
     private final javafx.scene.control.Tooltip noteTip = new javafx.scene.control.Tooltip();
+
     private java.util.UUID hoverNoteId;
     /** Handles a gutter note-marker click (the controller opens/edits that line's note). Default: no-op. */
-    private java.util.function.BiConsumer<EditorBuffer, Integer> gutterNoteClick = (buffer, line) -> { };
+    private java.util.function.BiConsumer<EditorBuffer, Integer> gutterNoteClick = (buffer, line) -> {};
     /** Invoked by the "Add Personal Note" context-menu item (the controller prompts + creates). */
-    private java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> { };
+    private java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> {};
     /** "Run File" context-menu handler (compact source files); null hides the item. */
     private Runnable runHandler;
     /** LSP navigation actions (controller-supplied); shown in the context menu only while LSP is active. */
-    private Runnable lspGotoDefinitionAction = () -> { };
-    private Runnable lspFindReferencesAction = () -> { };
-    private Runnable lspHoverAction = () -> { };
+    private Runnable lspGotoDefinitionAction = () -> {};
+
+    private Runnable lspFindReferencesAction = () -> {};
+    private Runnable lspHoverAction = () -> {};
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
     private static final int CONTEXT_CHARS = 40;
     /** Git gutter change bars: 0-based line → CSS class ({@code git-added}/{@code git-modified}/
@@ -312,6 +337,7 @@ public class EditorBuffer implements TabContent {
     private String displayName;
     /** Last-known on-disk modified time (epoch millis) and size, to detect external changes; -1 = unknown. */
     private long diskModifiedMillis = -1;
+
     private long diskSize = -1;
     /** Language name for the current file (drives fold strategy); see {@link LanguageRegistry}. */
     private String language = LanguageRegistry.plaintext();
@@ -322,7 +348,7 @@ public class EditorBuffer implements TabContent {
     private boolean spellCheckOn;
     private String spellLanguage = "en_US";
     private java.util.Set<String> spellUserWords = new java.util.HashSet<>();
-    private java.util.function.Consumer<String> onAddToDictionary = w -> { };
+    private java.util.function.Consumer<String> onAddToDictionary = w -> {};
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
     private long highlightGen;
     /** Bumped on every language/grammar change (FX thread only); drops a stale deferred grammar load. */
@@ -336,19 +362,22 @@ public class EditorBuffer implements TabContent {
     /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
     private List<TextMateHighlighter.Symbol> symbols = List.of();
     /** Notified (on the FX thread) after {@link #symbols} is refreshed. */
-    private Runnable onSymbolsChanged = () -> { };
+    private Runnable onSymbolsChanged = () -> {};
+
     private String fontFamily = "monospace";
     private int fontSize = 14;
     /** Current-line highlight fill; varies per editor theme (see {@link #setLineHighlightColor}). */
     private Color lineHighlightColor = Color.web("#dfe7f0");
     /** Minimap block + viewport colors; vary per editor theme (see {@link #setMinimapColors}). */
     private Color minimapText = Color.web("#9aa5b1");
+
     private Color minimapViewport = Color.web("#0969da", 0.14);
     /** Visual tab width (columns); applied to the minimap and persisted via Settings. */
     private int tabSize = 4;
     /** Whether the user enabled the 80-column ruler. The line is only actually shown when a visible
      *  line reaches column 80 (see {@link #measureAndPlaceRuler}). */
     private boolean rulerVisible;
+
     private boolean lineNumbersVisible = true;
     /** When false (Simple UI mode), the entire gutter is removed (null paragraph-graphic factory) — no
      *  line numbers, fold chevrons, bookmark/note/run/breakpoint slots, or git change bars. */
@@ -364,19 +393,22 @@ public class EditorBuffer implements TabContent {
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
-        folds.setNoteHooks(line -> noteIndicators && notes.isNoted(line),
-                line -> gutterNoteClick.accept(this, line));
+        folds.setNoteHooks(line -> noteIndicators && notes.isNoted(line), line -> gutterNoteClick.accept(this, line));
         notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         // Git change bars: the slot is reserved only while tracking is on (changeBars != null); the
         // per-line hunk text feeds a hover tooltip on the bar.
-        folds.setChangeHook(() -> changeBars != null,
+        folds.setChangeHook(
+                () -> changeBars != null,
                 line -> changeBars == null ? null : changeBars.get(line),
                 line -> changeHunks == null ? null : changeHunks.get(line));
         // Gutter Run glyph: reserved for a runnable file — one entry line for a script, or one per
         // request for a .http file.
         folds.setRunHooks(() -> runnable, this::isRunGlyphLine, this::onRunGlyph);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
-        folds.setBreakpointHooks(() -> debugEnabled, breakpoints::isBreakpoint, this::breakpointStyleClass,
+        folds.setBreakpointHooks(
+                () -> debugEnabled,
+                breakpoints::isBreakpoint,
+                this::breakpointStyleClass,
                 line -> gutterBreakpointClick.accept(this, line));
         breakpoints.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
@@ -396,34 +428,30 @@ public class EditorBuffer implements TabContent {
         // emissions, so the dirty start must be accumulated here), then re-highlight after a pause.
         area.multiPlainChanges().subscribe(changes -> {
             for (var change : changes) {
-                int line = area.offsetToPosition(change.getPosition(),
-                        org.fxmisc.richtext.model.TwoDimensional.Bias.Backward).getMajor();
+                int line = area.offsetToPosition(
+                                change.getPosition(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                        .getMajor();
                 dirtyFromLine = Math.min(dirtyFromLine, line);
             }
         });
-        area.multiPlainChanges()
-                .successionEnds(Duration.ofMillis(150))
-                .subscribe(ignore -> {
-                    applyHighlighting();
-                    recomputeRun(); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
-                });
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(150)).subscribe(ignore -> {
+            applyHighlighting();
+            recomputeRun(); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
+        });
         // Live Mermaid linting: debounced maid run for .mmd buffers (only while enabled + maid detected).
-        area.multiPlainChanges()
-                .successionEnds(Duration.ofMillis(450))
-                .subscribe(ignore -> scheduleMermaidLint());
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(450)).subscribe(ignore -> scheduleMermaidLint());
         // LSP document sync: debounced didChange notification (only while the buffer is LSP-managed).
-        area.multiPlainChanges()
-                .successionEnds(Duration.ofMillis(300))
-                .subscribe(ignore -> {
-                    if (lspActive && lspChangeListener != null) {
-                        lspChangeListener.accept(area.getText());
-                    }
-                });
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> {
+            if (lspActive && lspChangeListener != null) {
+                lspChangeListener.accept(area.getText());
+            }
+        });
         // Dirty only when the content differs from the last saved/loaded text, so reverting an edit
         // (undo or manual) clears the marker. The length check short-circuits the O(n) compare —
         // it runs only when the length matches the saved length (i.e. near the original state).
-        area.textProperty().addListener((obs, old, now) ->
-                dirty.set(now.length() != cleanText.length() || !now.equals(cleanText)));
+        area.textProperty()
+                .addListener(
+                        (obs, old, now) -> dirty.set(now.length() != cleanText.length() || !now.equals(cleanText)));
         area.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
             scheduleBraceMatch();
@@ -449,7 +477,7 @@ public class EditorBuffer implements TabContent {
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (e.getCode() == KeyCode.ESCAPE) {
@@ -475,7 +503,7 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the external-URL opener (controller's HostServices) used by Ctrl/Cmd-click + open-link. */
     public void setOpenUrlHandler(java.util.function.Consumer<String> handler) {
-        this.openUrlHandler = handler == null ? u -> { } : handler;
+        this.openUrlHandler = handler == null ? u -> {} : handler;
     }
 
     /** Opens the link under the caret externally; returns false when the caret is not on a link. */
@@ -515,7 +543,10 @@ public class EditorBuffer implements TabContent {
     private void updateFormatBar() {
         formatBarUpdatePending = false;
         CodeArea a = focusedArea != null ? focusedArea : area;
-        boolean show = formatBarEnabled && isMarkdown() && isEditable() && !hugeFile
+        boolean show = formatBarEnabled
+                && isMarkdown()
+                && isEditable()
+                && !hugeFile
                 && markdownViewMode != MarkdownViewMode.PREVIEW
                 && a.getSelection().getLength() > 0;
         if (!show) {
@@ -671,7 +702,21 @@ public class EditorBuffer implements TabContent {
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
-        root.getChildren().addAll(scrollPane, noteOverlay, searchOverlay, whitespace, spellOverlay, lintOverlay, lspOverlay, inlineValues, blameOverlay, aceJump, minimap, diagnosticStripe, columnRuler);
+        root.getChildren()
+                .addAll(
+                        scrollPane,
+                        noteOverlay,
+                        searchOverlay,
+                        whitespace,
+                        spellOverlay,
+                        lintOverlay,
+                        lspOverlay,
+                        inlineValues,
+                        blameOverlay,
+                        aceJump,
+                        minimap,
+                        diagnosticStripe,
+                        columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -749,8 +794,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** A misspelled word under the cursor: its text and absolute [start, end) offsets. */
-    private record SpellHit(String word, int start, int end) {
-    }
+    private record SpellHit(String word, int start, int end) {}
 
     private final ContextMenu contextMenu = new ContextMenu();
     /** Supplies extra right-click items (plugin contributions), injected by the controller; null = none. */
@@ -834,13 +878,22 @@ public class EditorBuffer implements TabContent {
     private List<MenuItem> lspMenuItems(int offset) {
         MenuItem def = new MenuItem(tr("command.lsp.gotoDefinition"));
         def.setGraphic(MenuIcons.gotoDefinition());
-        def.setOnAction(e -> { area.moveTo(offset); lspGotoDefinitionAction.run(); });
+        def.setOnAction(e -> {
+            area.moveTo(offset);
+            lspGotoDefinitionAction.run();
+        });
         MenuItem refs = new MenuItem(tr("command.lsp.findReferences"));
         refs.setGraphic(MenuIcons.find());
-        refs.setOnAction(e -> { area.moveTo(offset); lspFindReferencesAction.run(); });
+        refs.setOnAction(e -> {
+            area.moveTo(offset);
+            lspFindReferencesAction.run();
+        });
         MenuItem hover = new MenuItem(tr("command.lsp.hover"));
         hover.setGraphic(MenuIcons.about());
-        hover.setOnAction(e -> { area.moveTo(offset); lspHoverAction.run(); });
+        hover.setOnAction(e -> {
+            area.moveTo(offset);
+            lspHoverAction.run();
+        });
         return List.of(def, refs, hover);
     }
 
@@ -891,8 +944,7 @@ public class EditorBuffer implements TabContent {
         MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
         selectAll.setGraphic(MenuIcons.selectAll());
         selectAll.setOnAction(e -> area.selectAll());
-        return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo,
-                new SeparatorMenuItem(), selectAll);
+        return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo, new SeparatorMenuItem(), selectAll);
     }
 
     /** Suggestion items (replace the word) plus "Add to Dictionary"/"Ignore" for a misspelled word. */
@@ -1072,8 +1124,11 @@ public class EditorBuffer implements TabContent {
     // --- Live Mermaid linting (maid) ----------------------------------------------------------------
 
     /** Injects the async maid validator: {@code accept(text, diagnostics->…)}; null disables linting. */
-    public void setMermaidValidator(java.util.function.BiConsumer<String,
-            java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>> validator) {
+    public void setMermaidValidator(
+            java.util.function.BiConsumer<
+                            String,
+                            java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>>
+                    validator) {
         this.mermaidValidator = validator;
     }
 
@@ -1104,8 +1159,8 @@ public class EditorBuffer implements TabContent {
             }
             try {
                 var hit = a.hit(e.getX(), e.getY());
-                var pos = a.offsetToPosition(hit.getInsertionIndex(),
-                        org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+                var pos = a.offsetToPosition(
+                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
                 var hits = lintOverlay.at(pos.getMajor(), pos.getMinor());
                 if (hits.isEmpty()) {
                     if (lintTooltip != null) {
@@ -1152,9 +1207,30 @@ public class EditorBuffer implements TabContent {
      *  so {@code editor} need not depend on the {@code lsp} package (kept in sync with
      *  {@code LspServerRegistry}). */
     private static final java.util.Set<String> LSP_LANGUAGES = java.util.Set.of(
-            "java", "javascript", "javascriptreact", "typescript", "typescriptreact", "python",
-            "xml", "json", "shell", "yaml", "go", "rust", "php", "ruby",
-            "c", "cpp", "html", "css", "kotlin", "lua", "dockerfile", "sql", "terraform", "toml",
+            "java",
+            "javascript",
+            "javascriptreact",
+            "typescript",
+            "typescriptreact",
+            "python",
+            "xml",
+            "json",
+            "shell",
+            "yaml",
+            "go",
+            "rust",
+            "php",
+            "ruby",
+            "c",
+            "cpp",
+            "html",
+            "css",
+            "kotlin",
+            "lua",
+            "dockerfile",
+            "sql",
+            "terraform",
+            "toml",
             "csharp");
 
     /** Whether this buffer's language has a language server. */
@@ -1185,7 +1261,7 @@ public class EditorBuffer implements TabContent {
 
     /** Sets the callback fired when {@link #isRunnable()} flips (so the controller refreshes the Run button). */
     public void setOnRunnableChanged(Runnable callback) {
-        this.onRunnableChanged = callback == null ? () -> { } : callback;
+        this.onRunnableChanged = callback == null ? () -> {} : callback;
     }
 
     /** Enables/disables the Run affordance (gated by the LSP feature). When off, the gutter Run glyph,
@@ -1222,7 +1298,7 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the handler run with a request's start line when its {@code .http} gutter ▶ is clicked. */
     public void setHttpRunHandler(java.util.function.IntConsumer handler) {
-        this.httpRunHandler = handler == null ? i -> { } : handler;
+        this.httpRunHandler = handler == null ? i -> {} : handler;
     }
 
     /** Whether {@code line} draws a Run glyph: every request line for an enabled {@code .http} buffer,
@@ -1251,8 +1327,8 @@ public class EditorBuffer implements TabContent {
     private void recomputeRun() {
         String name = path != null ? path.getFileName().toString() : displayName;
         boolean eligible = runFeatureEnabled && !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
-        boolean httpEligible = httpFeatureEnabled && !largeFile && isHttpFile()
-                && area.getLength() <= COMPACT_SCAN_LIMIT;
+        boolean httpEligible =
+                httpFeatureEnabled && !largeFile && isHttpFile() && area.getLength() <= COMPACT_SCAN_LIMIT;
         // Only materialize the whole document when we actually scan it (compact-source / .http detection).
         // Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on every
         // 150 ms edit pulse just to discard it as run-ineligible.
@@ -1262,7 +1338,8 @@ public class EditorBuffer implements TabContent {
         java.util.List<Integer> nowHttpLines = java.util.List.of();
         if (httpEligible) {
             nowHttpLines = com.editora.http.HttpFile.parse(text).stream()
-                    .map(com.editora.http.HttpFile.Request::startLine).toList();
+                    .map(com.editora.http.HttpFile.Request::startLine)
+                    .toList();
             nowRunnable = !nowHttpLines.isEmpty();
             nowLine = -1; // .http uses the line set, not a single entry line
         } else if (eligible && "python".equals(language)) {
@@ -1300,8 +1377,8 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    private static final java.util.regex.Pattern PYTHON_MAIN_GUARD = java.util.regex.Pattern.compile(
-            "^\\s*if\\s+__name__\\s*==\\s*['\"]__main__['\"]\\s*:");
+    private static final java.util.regex.Pattern PYTHON_MAIN_GUARD =
+            java.util.regex.Pattern.compile("^\\s*if\\s+__name__\\s*==\\s*['\"]__main__['\"]\\s*:");
 
     /** The gutter Run line for a Python script: the {@code if __name__ == "__main__":} guard, else line 0. */
     private static int pythonRunLine(String text) {
@@ -1351,9 +1428,9 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the LSP navigation actions surfaced in the right-click menu while {@link #isLspActive()}. */
     public void setLspNavActions(Runnable gotoDefinition, Runnable findReferences, Runnable hover) {
-        this.lspGotoDefinitionAction = gotoDefinition == null ? () -> { } : gotoDefinition;
-        this.lspFindReferencesAction = findReferences == null ? () -> { } : findReferences;
-        this.lspHoverAction = hover == null ? () -> { } : hover;
+        this.lspGotoDefinitionAction = gotoDefinition == null ? () -> {} : gotoDefinition;
+        this.lspFindReferencesAction = findReferences == null ? () -> {} : findReferences;
+        this.lspHoverAction = hover == null ? () -> {} : hover;
     }
 
     /** Current document text (for an initial didOpen). */
@@ -1372,8 +1449,8 @@ public class EditorBuffer implements TabContent {
             }
             try {
                 var hit = a.hit(e.getX(), e.getY());
-                var pos = a.offsetToPosition(hit.getInsertionIndex(),
-                        org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+                var pos = a.offsetToPosition(
+                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
                 var hits = lspOverlay.at(pos.getMajor(), pos.getMinor());
                 if (hits.isEmpty()) {
                     if (lspTooltip != null) {
@@ -1451,6 +1528,7 @@ public class EditorBuffer implements TabContent {
     /** Async evaluator injected by the controller (DAP {@code evaluate} with context "hover"):
      *  given the hovered identifier, deliver its rendered value (null/blank = show nothing). */
     private java.util.function.BiConsumer<String, java.util.function.Consumer<String>> debugHoverEvaluator;
+
     private boolean debugHoverActive;
     private javafx.scene.control.Tooltip debugTooltip;
     private String debugHoverWord;
@@ -1477,8 +1555,8 @@ public class EditorBuffer implements TabContent {
             }
             try {
                 var hit = a.hit(e.getX(), e.getY());
-                var pos = a.offsetToPosition(hit.getInsertionIndex(),
-                        org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+                var pos = a.offsetToPosition(
+                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
                 String line = a.getParagraph(pos.getMajor()).getText();
                 String word = DebugIdentifiers.wordAt(line, pos.getMinor());
                 if (word == null) {
@@ -1492,8 +1570,7 @@ public class EditorBuffer implements TabContent {
                 double sx = e.getScreenX();
                 double sy = e.getScreenY();
                 debugHoverEvaluator.accept(word, value -> {
-                    if (!debugHoverActive || value == null || value.isBlank()
-                            || !word.equals(debugHoverWord)) {
+                    if (!debugHoverActive || value == null || value.isBlank() || !word.equals(debugHoverWord)) {
                         return; // evaluation failed / mouse moved on — show nothing
                     }
                     if (debugTooltip == null) {
@@ -1524,7 +1601,7 @@ public class EditorBuffer implements TabContent {
     }
 
     public void setOnViewModeChanged(Runnable callback) {
-        this.onViewModeChanged = callback == null ? () -> { } : callback;
+        this.onViewModeChanged = callback == null ? () -> {} : callback;
     }
 
     /** Overlays the Editor/Split/Preview control top-right of this buffer's view; {@code null} removes it. */
@@ -1599,11 +1676,11 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the preview right-click "Export to PDF" / "Print" actions (controller commands). */
     public void setPreviewExportPdfHandler(Runnable handler) {
-        this.previewExportPdfHandler = handler == null ? () -> { } : handler;
+        this.previewExportPdfHandler = handler == null ? () -> {} : handler;
     }
 
     public void setPreviewPrintHandler(Runnable handler) {
-        this.previewPrintHandler = handler == null ? () -> { } : handler;
+        this.previewPrintHandler = handler == null ? () -> {} : handler;
     }
 
     /** Copies the preview text to the clipboard — rendered plain text for Markdown, the source for a diagram. */
@@ -1628,8 +1705,8 @@ public class EditorBuffer implements TabContent {
             MenuItem print = new MenuItem(tr("command.preview.print"));
             print.setGraphic(MenuIcons.print());
             print.setOnAction(ev -> previewPrintHandler.run());
-            previewContextMenu = new javafx.scene.control.ContextMenu(
-                    selectAll, copy, new SeparatorMenuItem(), pdf, print);
+            previewContextMenu =
+                    new javafx.scene.control.ContextMenu(selectAll, copy, new SeparatorMenuItem(), pdf, print);
             previewContextMenu.getStyleClass().add("editor-context-menu");
         }
         previewContextMenu.show(previewPane, screenX, screenY);
@@ -1658,8 +1735,8 @@ public class EditorBuffer implements TabContent {
      * instead of the hidden/unfocused editor. Returns whether it handled the request.
      */
     public boolean pagePreview(boolean down) {
-        boolean previewActive = markdownViewMode == MarkdownViewMode.PREVIEW
-                || (previewPane != null && previewPane.isFocusWithin());
+        boolean previewActive =
+                markdownViewMode == MarkdownViewMode.PREVIEW || (previewPane != null && previewPane.isFocusWithin());
         if (!previewActive || previewPane == null) {
             return false;
         }
@@ -1695,9 +1772,9 @@ public class EditorBuffer implements TabContent {
     public void dispose() {
         unsubscribePreview();
         disposeMultiCaret();
-        previewGen++;   // discard any in-flight preview result for this (now closed) buffer
+        previewGen++; // discard any in-flight preview result for this (now closed) buffer
         highlightGen++; // discard any in-flight highlight result
-        languageGen++;  // discard any in-flight deferred grammar load
+        languageGen++; // discard any in-flight deferred grammar load
     }
 
     // --- Multiple cursors + column/box selection (RichTextFX fork) -------------------------------
@@ -1844,8 +1921,8 @@ public class EditorBuffer implements TabContent {
             // applyPreviewScale() here — it re-enters this branch for diagrams (would recurse).
             double v = previewPane().getVvalue();
             double scale = previewFontScale;
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
-                    MermaidImages.node(area.getText(), lw -> lw * scale));
+            javafx.scene.layout.VBox box =
+                    new javafx.scene.layout.VBox(MermaidImages.node(area.getText(), lw -> lw * scale));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
@@ -2223,8 +2300,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** As {@link #setChangeBars(java.util.Map)} plus a per-line hunk-text map for the change-bar tooltip. */
-    public void setChangeBars(java.util.Map<Integer, String> lineClasses,
-            java.util.Map<Integer, String> hunkText) {
+    public void setChangeBars(java.util.Map<Integer, String> lineClasses, java.util.Map<Integer, String> hunkText) {
         if (largeFile && lineClasses != null) {
             lineClasses = null; // never track in large/huge-file mode
             hunkText = null;
@@ -2438,11 +2514,12 @@ public class EditorBuffer implements TabContent {
             var sp = area.offsetToPosition(start, fwd);
             var ep = area.offsetToPosition(end, fwd);
             com.editora.config.NoteScope scope = sp.getMajor() == ep.getMajor()
-                    ? com.editora.config.NoteScope.WORD : com.editora.config.NoteScope.RANGE;
+                    ? com.editora.config.NoteScope.WORD
+                    : com.editora.config.NoteScope.RANGE;
             String prefix = doc.substring(Math.max(0, start - CONTEXT_CHARS), start);
             String suffix = doc.substring(end, Math.min(doc.length(), end + CONTEXT_CHARS));
-            var anchor = new com.editora.config.TextAnchor(sp.getMajor(), sp.getMinor(),
-                    ep.getMajor(), ep.getMinor(), area.getSelectedText(), prefix, suffix);
+            var anchor = new com.editora.config.TextAnchor(
+                    sp.getMajor(), sp.getMinor(), ep.getMajor(), ep.getMinor(), area.getSelectedText(), prefix, suffix);
             return new NoteDraft(scope, anchor);
         }
         int line = area.getCurrentParagraph();
@@ -2513,8 +2590,8 @@ public class EditorBuffer implements TabContent {
     private javafx.scene.Node renderNoteTooltip(String body) {
         javafx.scene.Node node;
         try {
-            node = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(body),
-                    path != null ? path.getParent() : null);
+            node = MarkdownRenderer.renderDocument(
+                    MarkdownRenderer.parseToDocument(body), path != null ? path.getParent() : null);
         } catch (RuntimeException ex) {
             javafx.scene.control.Label fallback = new javafx.scene.control.Label(body);
             fallback.setWrapText(true);
@@ -2863,7 +2940,7 @@ public class EditorBuffer implements TabContent {
 
     /** Called when the user picks "Add to Dictionary"; the controller persists the word. */
     public void setOnAddToDictionary(java.util.function.Consumer<String> callback) {
-        this.onAddToDictionary = callback == null ? w -> { } : callback;
+        this.onAddToDictionary = callback == null ? w -> {} : callback;
     }
 
     /** The overlay is active only when enabled and not in large-file mode (highlighting is off there). */
@@ -2992,7 +3069,7 @@ public class EditorBuffer implements TabContent {
      */
     private void addViewModePaging(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (!viewMode || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
@@ -3028,7 +3105,7 @@ public class EditorBuffer implements TabContent {
      */
     private void addSnippetKeys(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (hasActiveSnippet()) {
@@ -3045,7 +3122,10 @@ public class EditorBuffer implements TabContent {
                 }
                 return;
             }
-            if (e.getCode() == KeyCode.TAB && !e.isControlDown() && !e.isAltDown() && !e.isMetaDown()
+            if (e.getCode() == KeyCode.TAB
+                    && !e.isControlDown()
+                    && !e.isAltDown()
+                    && !e.isMetaDown()
                     && !completionShowing()) {
                 // Plain Tab first tries to expand a snippet prefix; otherwise smart-indent (Shift-Tab
                 // always dedents). Only code buffers get smart Tab — prose keeps the default. Skipped
@@ -3069,8 +3149,8 @@ public class EditorBuffer implements TabContent {
         if (!isEditable() || hugeFile) {
             return false;
         }
-        Indenter.TabEdit edit = Indenter.smartTab(a.getText(), a.getSelection().getStart(),
-                a.getSelection().getEnd(), language, tabSize, shift);
+        Indenter.TabEdit edit = Indenter.smartTab(
+                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), language, tabSize, shift);
         if (edit == null) {
             return false; // PLAIN (prose/plaintext): keep the editor's default Tab behavior
         }
@@ -3090,11 +3170,14 @@ public class EditorBuffer implements TabContent {
      */
     private void addAutoIndent(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (e.getCode() != KeyCode.ENTER || e.isShiftDown() || e.isControlDown()
-                    || e.isAltDown() || e.isMetaDown()) {
+            if (e.getCode() != KeyCode.ENTER
+                    || e.isShiftDown()
+                    || e.isControlDown()
+                    || e.isAltDown()
+                    || e.isMetaDown()) {
                 return;
             }
             if (!isEditable() || hasActiveSnippet()) {
@@ -3140,11 +3223,17 @@ public class EditorBuffer implements TabContent {
         // Only consumes when it removes more than one char, so a normal single-char Backspace still runs
         // everywhere else (and the auto-close empty-pair handler, registered earlier, gets first dibs).
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (e.getCode() != KeyCode.BACK_SPACE || viewMode || !isEditable() || hasActiveSnippet()
-                    || e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShiftDown()
+            if (e.getCode() != KeyCode.BACK_SPACE
+                    || viewMode
+                    || !isEditable()
+                    || hasActiveSnippet()
+                    || e.isControlDown()
+                    || e.isAltDown()
+                    || e.isMetaDown()
+                    || e.isShiftDown()
                     || a.getSelection().getLength() > 0) {
                 return;
             }
@@ -3163,11 +3252,15 @@ public class EditorBuffer implements TabContent {
             }
         });
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (!isEditable() || hasActiveSnippet() || e.getCharacter().length() != 1
-                    || e.isControlDown() || e.isAltDown() || e.isMetaDown()
+            if (!isEditable()
+                    || hasActiveSnippet()
+                    || e.getCharacter().length() != 1
+                    || e.isControlDown()
+                    || e.isAltDown()
+                    || e.isMetaDown()
                     || a.getSelection().getLength() > 0) {
                 return;
             }
@@ -3199,11 +3292,15 @@ public class EditorBuffer implements TabContent {
      */
     private void addAutoClose(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (!isEditable() || hasActiveSnippet() || e.getCharacter().length() != 1
-                    || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+            if (!isEditable()
+                    || hasActiveSnippet()
+                    || e.getCharacter().length() != 1
+                    || e.isControlDown()
+                    || e.isAltDown()
+                    || e.isMetaDown()) {
                 return;
             }
             char c = e.getCharacter().charAt(0);
@@ -3233,15 +3330,21 @@ public class EditorBuffer implements TabContent {
                     a.selectRange(s + 1, s + 1 + sel.length());
                     e.consume();
                 }
-                case NONE -> { } // normal typing (and the auto-indent closer-dedent may run)
+                case NONE -> {} // normal typing (and the auto-indent closer-dedent may run)
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (e.getCode() != KeyCode.BACK_SPACE || viewMode || !isEditable() || hasActiveSnippet()
-                    || e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShiftDown()
+            if (e.getCode() != KeyCode.BACK_SPACE
+                    || viewMode
+                    || !isEditable()
+                    || hasActiveSnippet()
+                    || e.isControlDown()
+                    || e.isAltDown()
+                    || e.isMetaDown()
+                    || e.isShiftDown()
                     || a.getSelection().getLength() > 0) {
                 return;
             }
@@ -3286,7 +3389,7 @@ public class EditorBuffer implements TabContent {
         if (m != null) {
             addBraceClass(m[0] + winStart);
             addBraceClass(m[1] + winStart);
-            braceMatch = new int[]{m[0] + winStart, m[1] + winStart};
+            braceMatch = new int[] {m[0] + winStart, m[1] + winStart};
         }
     }
 
@@ -3363,14 +3466,17 @@ public class EditorBuffer implements TabContent {
         }
         String fileName = path == null ? "" : path.getFileName().toString();
         String directory = path == null || path.toAbsolutePath().getParent() == null
-                ? "" : path.toAbsolutePath().getParent().toString();
+                ? ""
+                : path.toAbsolutePath().getParent().toString();
         String filePath = path == null ? "" : path.toAbsolutePath().toString();
         String clip = javafx.scene.input.Clipboard.getSystemClipboard().hasString()
-                ? javafx.scene.input.Clipboard.getSystemClipboard().getString() : "";
-        int line = a.offsetToPosition(from, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward).getMajor();
+                ? javafx.scene.input.Clipboard.getSystemClipboard().getString()
+                : "";
+        int line = a.offsetToPosition(from, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
         String currentLine = a.getParagraph(line).getText();
-        VariableResolver vars = new VariableResolver(fileName, directory, filePath,
-                a.getSelectedText(), clip, line, currentLine);
+        VariableResolver vars =
+                new VariableResolver(fileName, directory, filePath, a.getSelectedText(), clip, line, currentLine);
         ParsedSnippet parsed = SnippetParser.parse(snippet.body(), vars);
         String indent = leadingIndent(currentLine);
         SnippetSession session = new SnippetSession(a, parsed, from, to, indent);
@@ -3455,7 +3561,7 @@ public class EditorBuffer implements TabContent {
      */
     private void addCompletionKeys(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) {  // suspend single-caret assists while multiple carets exist
+            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             // Inline ghost text (prose): Tab accepts, Esc dismisses; anything else lets the caret move
@@ -3470,8 +3576,11 @@ public class EditorBuffer implements TabContent {
                             e.consume();
                         }
                     }
-                    case ESCAPE -> { hideGhost(); e.consume(); }
-                    default -> { } // typing/Backspace/arrows fall through
+                    case ESCAPE -> {
+                        hideGhost();
+                        e.consume();
+                    }
+                    default -> {} // typing/Backspace/arrows fall through
                 }
                 return;
             }
@@ -3498,8 +3607,14 @@ public class EditorBuffer implements TabContent {
                 }
             }
             switch (e.getCode()) {
-                case DOWN -> { completionPopup.moveDown(); e.consume(); }
-                case UP -> { completionPopup.moveUp(); e.consume(); }
+                case DOWN -> {
+                    completionPopup.moveDown();
+                    e.consume();
+                }
+                case UP -> {
+                    completionPopup.moveUp();
+                    e.consume();
+                }
                 case ENTER, TAB -> {
                     if (e.isShiftDown() || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
                         hideCompletion();
@@ -3513,9 +3628,12 @@ public class EditorBuffer implements TabContent {
                         hideCompletion();
                     }
                 }
-                case ESCAPE -> { hideCompletion(); e.consume(); }
+                case ESCAPE -> {
+                    hideCompletion();
+                    e.consume();
+                }
                 case LEFT, RIGHT, HOME, END, PAGE_UP, PAGE_DOWN -> hideCompletion(); // let the caret move
-                default -> { } // letters/Backspace fall through; the debounced trigger refreshes the list
+                default -> {} // letters/Backspace fall through; the debounced trigger refreshes the list
             }
         });
         a.focusedProperty().addListener((obs, was, now) -> {
@@ -3528,13 +3646,11 @@ public class EditorBuffer implements TabContent {
     /** Debounced auto-trigger: completion only appears after typing pauses (~280 ms), so it never
      *  flickers while the user is typing continuously. */
     private void installCompletionTrigger(CodeArea a) {
-        a.multiPlainChanges()
-                .successionEnds(Duration.ofMillis(280))
-                .subscribe(ignored -> {
-                    if (a.isFocused()) {
-                        updateCompletion(a, false);
-                    }
-                });
+        a.multiPlainChanges().successionEnds(Duration.ofMillis(280)).subscribe(ignored -> {
+            if (a.isFocused()) {
+                updateCompletion(a, false);
+            }
+        });
         // Any caret move or scroll invalidates the inline ghost's position; clear it (the debounce
         // re-shows it after the next pause in typing). The popup manages its own key/caret handling.
         a.caretPositionProperty().addListener((o, ov, nv) -> hideGhost());
@@ -3560,8 +3676,12 @@ public class EditorBuffer implements TabContent {
     /** Recomputes the word at the caret and shows/refreshes/hides the popup. {@code manual} lowers the
      *  minimum prefix length so an explicit invoke works on a single character. */
     private void updateCompletion(CodeArea a, boolean manual) {
-        if (!autocompleteEnabled || hugeFile || !isEditable() || hasActiveSnippet()
-                || (suppressCompletion && !manual) || a.getSelection().getLength() > 0) {
+        if (!autocompleteEnabled
+                || hugeFile
+                || !isEditable()
+                || hasActiveSnippet()
+                || (suppressCompletion && !manual)
+                || a.getSelection().getLength() > 0) {
             hideCompletion();
             return;
         }
@@ -3575,8 +3695,7 @@ public class EditorBuffer implements TabContent {
         int min = manual ? 1 : CompletionEngine.MIN_PREFIX;
         // LSP "trigger character" (e.g. Java's '.'): fire member completion with no prefix, and keep an
         // open LSP popup updating as the member name is typed (IntelliJ-style) — bypassing the min-prefix.
-        boolean lspTrigger = lspActive && !isProse()
-                && (endsWithLspTrigger(text, caret) || completionPopupShowing());
+        boolean lspTrigger = lspActive && !isProse() && (endsWithLspTrigger(text, caret) || completionPopupShowing());
         if (prefix.length() < min && !lspTrigger) {
             hideCompletion();
             return;
@@ -3642,7 +3761,8 @@ public class EditorBuffer implements TabContent {
     /** The suffix of the best word completion that continues {@code prefix}, or null if none qualifies. */
     private static String bestGhostSuffix(List<Completion> items, String prefix) {
         for (Completion c : items) {
-            if (c.kind() == Completion.Kind.WORD && c.insert().length() > prefix.length()
+            if (c.kind() == Completion.Kind.WORD
+                    && c.insert().length() > prefix.length()
                     && c.insert().regionMatches(true, 0, prefix, 0, prefix.length())) {
                 return c.insert().substring(prefix.length());
             }
@@ -3674,8 +3794,9 @@ public class EditorBuffer implements TabContent {
         // right edge as the start x (getCharacterBoundsOnScreen(caret, caret) would be empty there).
         boolean usePrev = caret > 0;
         Bounds screen = (usePrev
-                ? a.getCharacterBoundsOnScreen(caret - 1, caret)
-                : a.getCharacterBoundsOnScreen(caret, caret + 1)).orElse(null);
+                        ? a.getCharacterBoundsOnScreen(caret - 1, caret)
+                        : a.getCharacterBoundsOnScreen(caret, caret + 1))
+                .orElse(null);
         if (screen == null) {
             return;
         }
@@ -3742,15 +3863,14 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Injected async LSP completion source: {@code accept({line,char}, items->…)}; null = none. */
-    public void setLspCompletionProvider(java.util.function.BiConsumer<int[],
-            java.util.function.Consumer<java.util.List<Completion>>> provider) {
+    public void setLspCompletionProvider(
+            java.util.function.BiConsumer<int[], java.util.function.Consumer<java.util.List<Completion>>> provider) {
         this.lspCompletionProvider = provider;
     }
 
     /** Requests LSP completions async, filters them by the typed {@code prefix} (the server returns the
      *  whole scope and leaves filtering to the client), then shows them merged with the local snippets. */
-    private void requestLspCompletion(CodeArea a, int caret, String prefix,
-            java.util.List<Completion> localItems) {
+    private void requestLspCompletion(CodeArea a, int caret, String prefix, java.util.List<Completion> localItems) {
         long gen = ++completionGen;
         // Flush the current text to the server FIRST: the completion auto-trigger (≈120ms) fires before
         // the debounced didChange (≈300ms), so without this the server still has stale text and member
@@ -3759,9 +3879,8 @@ public class EditorBuffer implements TabContent {
         if (lspChangeListener != null) {
             lspChangeListener.accept(a.getText());
         }
-        lspCompletionProvider.accept(new int[]{a.getCurrentParagraph(), a.getCaretColumn()}, lspItems -> {
-            if (gen != completionGen || a.getScene() == null || a.getCaretPosition() != caret
-                    || hasActiveSnippet()) {
+        lspCompletionProvider.accept(new int[] {a.getCurrentParagraph(), a.getCaretColumn()}, lspItems -> {
+            if (gen != completionGen || a.getScene() == null || a.getCaretPosition() != caret || hasActiveSnippet()) {
                 return;
             }
             java.util.List<Completion> merged = mergeCompletions(filterByPrefix(lspItems, prefix), localItems);
@@ -3826,8 +3945,8 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Merges LSP completions (first) with local snippet items, de-duped by insert text, capped. */
-    private static java.util.List<Completion> mergeCompletions(java.util.List<Completion> lsp,
-            java.util.List<Completion> local) {
+    private static java.util.List<Completion> mergeCompletions(
+            java.util.List<Completion> lsp, java.util.List<Completion> local) {
         java.util.LinkedHashMap<String, Completion> byInsert = new java.util.LinkedHashMap<>();
         if (lsp != null) {
             for (Completion c : lsp) {
@@ -4020,7 +4139,7 @@ public class EditorBuffer implements TabContent {
 
     /** Sets a callback invoked (on the FX thread) whenever {@link #symbols()} changes. */
     public void setOnSymbolsChanged(Runnable callback) {
-        this.onSymbolsChanged = callback == null ? () -> { } : callback;
+        this.onSymbolsChanged = callback == null ? () -> {} : callback;
     }
 
     /** Forces the next {@link #applyHighlighting()} to re-tokenize the whole document (e.g. after a
@@ -4045,9 +4164,11 @@ public class EditorBuffer implements TabContent {
             // This is cheap (a single span), so do it inline on the FX thread.
             int length = area.getLength();
             if (length > 0) {
-                area.setStyleSpans(0, new StyleSpansBuilder<Collection<String>>()
-                        .add(Collections.emptyList(), length)
-                        .create());
+                area.setStyleSpans(
+                        0,
+                        new StyleSpansBuilder<Collection<String>>()
+                                .add(Collections.emptyList(), length)
+                                .create());
             }
             lineStates.clear();
             if (!symbols.isEmpty()) {

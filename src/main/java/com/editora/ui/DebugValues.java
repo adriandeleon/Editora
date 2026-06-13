@@ -11,14 +11,19 @@ import java.util.regex.Pattern;
 final class DebugValues {
 
     /** Value categories, each mapped to a CSS class via {@link #cssClass}. */
-    enum ValueKind { STRING, NUMBER, BOOLEAN, NULL, OTHER }
+    enum ValueKind {
+        STRING,
+        NUMBER,
+        BOOLEAN,
+        NULL,
+        OTHER
+    }
 
     /** Integers, decimals, scientific notation, and hex — with an optional sign. */
-    private static final Pattern NUMBER = Pattern.compile(
-            "[+-]?(\\d[\\d_]*(\\.\\d+)?([eE][+-]?\\d+)?|0[xX][0-9a-fA-F]+)[LlFfDd]?");
+    private static final Pattern NUMBER =
+            Pattern.compile("[+-]?(\\d[\\d_]*(\\.\\d+)?([eE][+-]?\\d+)?|0[xX][0-9a-fA-F]+)[LlFfDd]?");
 
-    private DebugValues() {
-    }
+    private DebugValues() {}
 
     static ValueKind kind(String value) {
         if (value == null || value.isEmpty()) {

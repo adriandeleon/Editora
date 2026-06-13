@@ -13,8 +13,7 @@ import java.util.Set;
  */
 final class DebugIdentifiers {
 
-    private DebugIdentifiers() {
-    }
+    private DebugIdentifiers() {}
 
     static boolean isIdentStart(char c) {
         return Character.isLetter(c) || c == '_' || c == '$';

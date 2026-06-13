@@ -1,14 +1,14 @@
 package com.editora.command;
 
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import org.junit.jupiter.api.Test;
-
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
 
 class KeyDispatcherTest {
 
@@ -79,6 +79,6 @@ class KeyDispatcherTest {
     @Test
     void noAltIsNotGuarded() {
         assertFalse(KeyDispatcher.plainAltActive(false, false, false)); // plain key
-        assertFalse(KeyDispatcher.plainAltActive(false, false, true));  // Ctrl-only chord
+        assertFalse(KeyDispatcher.plainAltActive(false, false, true)); // Ctrl-only chord
     }
 }

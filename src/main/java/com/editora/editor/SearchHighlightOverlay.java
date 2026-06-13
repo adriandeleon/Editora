@@ -24,8 +24,8 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  */
 final class SearchHighlightOverlay extends Region {
 
-    private static final Color MATCH = Color.web("#ffd54f", 0.40);     // amber wash, all matches
-    private static final Color ACTIVE = Color.web("#ff9800", 0.55);    // deeper accent, current match
+    private static final Color MATCH = Color.web("#ffd54f", 0.40); // amber wash, all matches
+    private static final Color ACTIVE = Color.web("#ff9800", 0.55); // deeper accent, current match
     private static final Color ACTIVE_BORDER = Color.web("#ff9800");
 
     private final CodeArea area;
@@ -117,7 +117,8 @@ final class SearchHighlightOverlay extends Region {
             // offsetToPosition conversions in paintMatch — a "find all" can have hundreds of matches but
             // only a handful are visible, and this runs on every scroll/edit pulse.
             int firstOffset = area.getAbsolutePosition(first, 0);
-            int lastOffset = area.getAbsolutePosition(last, area.getParagraph(last).getText().length());
+            int lastOffset = area.getAbsolutePosition(
+                    last, area.getParagraph(last).getText().length());
             for (int i = 0; i < matches.size(); i++) {
                 int[] m = matches.get(i);
                 if (m[1] < firstOffset || m[0] > lastOffset) {
@@ -131,8 +132,7 @@ final class SearchHighlightOverlay extends Region {
     }
 
     /** Paints one match's box, clipped to the visible paragraph range; multi-line matches paint per line. */
-    private void paintMatch(GraphicsContext g, int[] match, boolean isActive, int first, int last,
-            double w, double h) {
+    private void paintMatch(GraphicsContext g, int[] match, boolean isActive, int first, int last, double w, double h) {
         var startPos = area.offsetToPosition(match[0], Bias.Forward);
         var endPos = area.offsetToPosition(Math.max(match[1], match[0]), Bias.Backward);
         int startLine = startPos.getMajor();

@@ -1,14 +1,13 @@
 package com.editora.git;
 
+import java.util.List;
+
+import com.editora.git.BlameParser.BlameLine;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.List;
-
-import org.junit.jupiter.api.Test;
-
-import com.editora.git.BlameParser.BlameLine;
 
 /** Unit tests for the pure {@code git blame --line-porcelain} parser. */
 class BlameParserTest {

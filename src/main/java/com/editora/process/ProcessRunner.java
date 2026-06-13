@@ -41,8 +41,7 @@ public final class ProcessRunner {
         }
     }
 
-    private ProcessRunner() {
-    }
+    private ProcessRunner() {}
 
     /**
      * Runs {@code command} in {@code workingDir} (may be {@code null} for the JVM's cwd), waiting at
@@ -56,8 +55,7 @@ public final class ProcessRunner {
      * As {@link #run(Path, Duration, List)} but with {@code extraEnv} merged into the child process's
      * environment (on top of the inherited environment + {@code LC_ALL=C}).
      */
-    public static Result run(Path workingDir, Duration timeout, List<String> command,
-            Map<String, String> extraEnv) {
+    public static Result run(Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
         // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
         // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
         // child env we set below — so without this, mmdc/npx still wouldn't be found.
@@ -93,9 +91,8 @@ public final class ProcessRunner {
             process.destroyForcibly();
             return new Result(-1, "", "interrupted");
         }
-        return new Result(process.exitValue(),
-                outBuf.toString(StandardCharsets.UTF_8),
-                errBuf.toString(StandardCharsets.UTF_8));
+        return new Result(
+                process.exitValue(), outBuf.toString(StandardCharsets.UTF_8), errBuf.toString(StandardCharsets.UTF_8));
     }
 
     /**
@@ -111,16 +108,18 @@ public final class ProcessRunner {
 
     /** Common bin dirs a GUI-launched app's PATH usually lacks (Homebrew, Node installers, user-local). */
     private static final List<String> EXTRA_PATH_DIRS = List.of(
-            "/opt/homebrew/bin", "/opt/homebrew/sbin",   // Apple Silicon Homebrew
-            "/usr/local/bin", "/usr/local/sbin",          // Intel Homebrew / general
-            "/opt/local/bin",                             // MacPorts
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin", // Apple Silicon Homebrew
+            "/usr/local/bin",
+            "/usr/local/sbin", // Intel Homebrew / general
+            "/opt/local/bin", // MacPorts
             System.getProperty("user.home") + "/.local/bin",
             System.getProperty("user.home") + "/bin",
             System.getProperty("user.home") + "/.volta/bin",
             System.getProperty("user.home") + "/.npm-global/bin",
-            System.getProperty("user.home") + "/go/bin",        // Go (gopls and other `go install` bins)
-            System.getProperty("user.home") + "/.cargo/bin",    // Rust (rust-analyzer, cargo-installed bins)
-            System.getProperty("user.home") + "/.dotnet/tools",  // .NET global tools (csharp-ls, etc.)
+            System.getProperty("user.home") + "/go/bin", // Go (gopls and other `go install` bins)
+            System.getProperty("user.home") + "/.cargo/bin", // Rust (rust-analyzer, cargo-installed bins)
+            System.getProperty("user.home") + "/.dotnet/tools", // .NET global tools (csharp-ls, etc.)
             // Editora-managed language servers dropped by scripts/install-*.sh (e.g. jdtls -> bin/jdtls).
             System.getProperty("user.home") + "/.editora/plugins/lsp/java/bin",
             System.getProperty("user.home") + "/.editora-dev/plugins/lsp/java/bin");
@@ -207,8 +206,8 @@ public final class ProcessRunner {
         // fence the PATH off from any banner/prompt an interactive rc may print. printf is a shell
         // builtin, so it works even if PATH is empty. stderr is discarded and stdin is /dev/null so a
         // chatty or input-waiting rc can't block or hang us.
-        List<String> cmd = List.of(shell, "-l", "-i", "-c",
-                "printf '%s%s%s' '" + PATH_MARK_BEGIN + "' \"$PATH\" '" + PATH_MARK_END + "'");
+        List<String> cmd = List.of(
+                shell, "-l", "-i", "-c", "printf '%s%s%s' '" + PATH_MARK_BEGIN + "' \"$PATH\" '" + PATH_MARK_END + "'");
         Process p = null;
         try {
             ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -217,13 +216,15 @@ public final class ProcessRunner {
             p = pb.start();
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             Process proc = p;
-            Thread reader = new Thread(() -> {
-                try (InputStream in = proc.getInputStream()) {
-                    in.transferTo(out);
-                } catch (IOException ignored) {
-                    // process killed / pipe closed — partial output is handled by the marker parse
-                }
-            }, "login-shell-path-reader");
+            Thread reader = new Thread(
+                    () -> {
+                        try (InputStream in = proc.getInputStream()) {
+                            in.transferTo(out);
+                        } catch (IOException ignored) {
+                            // process killed / pipe closed — partial output is handled by the marker parse
+                        }
+                    },
+                    "login-shell-path-reader");
             reader.setDaemon(true);
             reader.start();
             if (!p.waitFor(5, TimeUnit.SECONDS)) {
@@ -274,7 +275,9 @@ public final class ProcessRunner {
         if (exe.isEmpty() || exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0) {
             return command; // already an absolute/relative path
         }
-        boolean windows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+        boolean windows = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
         for (String dir : augmentedPath().split(File.pathSeparator)) {
             if (dir.isBlank()) {
                 continue;

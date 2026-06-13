@@ -1,8 +1,8 @@
 package com.editora.command;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class TextInputKeymapTest {
 
@@ -11,10 +11,10 @@ class TextInputKeymapTest {
 
     @Test
     void lineStartAndEnd() {
-        assertEquals(0, TextInputKeymap.lineStart(TEXT, 2));   // within "abc"
-        assertEquals(3, TextInputKeymap.lineEnd(TEXT, 1));     // end of "abc" (before \n)
-        assertEquals(4, TextInputKeymap.lineStart(TEXT, 8));   // within "  hello"
-        assertEquals(11, TextInputKeymap.lineEnd(TEXT, 8));    // end of "  hello"
+        assertEquals(0, TextInputKeymap.lineStart(TEXT, 2)); // within "abc"
+        assertEquals(3, TextInputKeymap.lineEnd(TEXT, 1)); // end of "abc" (before \n)
+        assertEquals(4, TextInputKeymap.lineStart(TEXT, 8)); // within "  hello"
+        assertEquals(11, TextInputKeymap.lineEnd(TEXT, 8)); // end of "  hello"
     }
 
     @Test
@@ -26,7 +26,7 @@ class TextInputKeymapTest {
     @Test
     void backToIndentationSkipsLeadingWhitespace() {
         assertEquals(6, TextInputKeymap.backToIndentation(TEXT, 11)); // "  hello" → first non-space 'h'
-        assertEquals(0, TextInputKeymap.backToIndentation(TEXT, 2));  // "abc" has no indent
+        assertEquals(0, TextInputKeymap.backToIndentation(TEXT, 2)); // "abc" has no indent
     }
 
     @Test

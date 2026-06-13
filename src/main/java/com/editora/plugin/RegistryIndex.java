@@ -18,6 +18,7 @@ public class RegistryIndex {
 
     /** Index format version (currently 1); reserved for future migrations. */
     public int schemaVersion = 1;
+
     public List<RegistryEntry> plugins = new ArrayList<>();
 
     /** Parses an {@code index.json} stream. Pure (no I/O beyond the stream) — unit-tested. */

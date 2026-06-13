@@ -14,8 +14,7 @@ import org.eclipse.lsp4j.Position;
  */
 public final class LspPositions {
 
-    private LspPositions() {
-    }
+    private LspPositions() {}
 
     /** An LSP position for a 0-based line + character (both clamped to {@code >= 0}). */
     public static Position position(int line, int character) {
@@ -29,7 +28,7 @@ public final class LspPositions {
      */
     public static int[] lineChar(String text, int offset) {
         if (text == null) {
-            return new int[]{0, 0};
+            return new int[] {0, 0};
         }
         int clamped = Math.max(0, Math.min(offset, text.length()));
         int line = 0;
@@ -40,7 +39,7 @@ public final class LspPositions {
                 lineStart = i + 1;
             }
         }
-        return new int[]{line, clamped - lineStart};
+        return new int[] {line, clamped - lineStart};
     }
 
     /** An LSP {@link Position} for a flat {@code offset} into {@code text}. */

@@ -19,8 +19,7 @@ public final class AppInfo {
     /** Short license name; full terms are in the bundled {@code LICENSE} file. */
     public static final String LICENSE = "MIT License";
 
-    private AppInfo() {
-    }
+    private AppInfo() {}
 
     /** The Maven-filtered build timestamp; falls back gracefully for unfiltered/dev runs. */
     public static String buildTime() {

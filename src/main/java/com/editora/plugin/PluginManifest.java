@@ -18,6 +18,7 @@ public class PluginManifest {
 
     /** Stable plugin id (folder name when omitted). */
     public String id = "";
+
     public String name = "";
     public String version = "";
     /** Fully-qualified class implementing {@link Plugin}; blank = declarative-only plugin. */

@@ -44,7 +44,8 @@ public final class GrammarRegistry {
         // regex using Oniguruma-specific syntax (e.g. an unescaped ']'), and the rule parser logs
         // each unparseable rule/capture. Silence these to keep the console usable.
         Logger.getLogger("org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp").setLevel(Level.OFF);
-        Logger.getLogger("org.eclipse.tm4e.core.internal.grammar.raw.RawCaptures").setLevel(Level.OFF);
+        Logger.getLogger("org.eclipse.tm4e.core.internal.grammar.raw.RawCaptures")
+                .setLevel(Level.OFF);
         registerGrammars();
         // The resource base name doubles as the language name (see LanguageRegistry), so the
         // inverse of scopeToResource resolves a language name to its scope.
@@ -58,8 +59,7 @@ public final class GrammarRegistry {
                 if (resource == null) {
                     return null;
                 }
-                return IGrammarSource.fromResource(GrammarRegistry.class,
-                        RESOURCE_DIR + resource + ".tmLanguage.json");
+                return IGrammarSource.fromResource(GrammarRegistry.class, RESOURCE_DIR + resource + ".tmLanguage.json");
             }
         });
     }
@@ -228,9 +228,23 @@ public final class GrammarRegistry {
         mapExtensions("source.http", "http", "rest");
         // systemd unit files — each unit type is its own extension (.service/.socket/.timer/…),
         // plus systemd-networkd's .network/.netdev/.link and nspawn containers.
-        mapExtensions("source.systemd",
-                "service", "socket", "device", "mount", "automount", "swap", "target",
-                "path", "timer", "slice", "scope", "network", "netdev", "link", "nspawn");
+        mapExtensions(
+                "source.systemd",
+                "service",
+                "socket",
+                "device",
+                "mount",
+                "automount",
+                "swap",
+                "target",
+                "path",
+                "timer",
+                "slice",
+                "scope",
+                "network",
+                "netdev",
+                "link",
+                "nspawn");
         // XDG desktop entries (.desktop) and KDE .directory files.
         mapExtensions("source.desktop", "desktop", "directory");
         // dotenv (.env / .env.*), Caddyfile, crontab (.cron), git/ssh config, fstab, hosts are all

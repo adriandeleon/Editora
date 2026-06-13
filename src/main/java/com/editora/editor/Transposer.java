@@ -9,10 +9,9 @@ package com.editora.editor;
 public final class Transposer {
 
     /** Replace {@code [from, to)} with {@code replacement}, then place the caret at {@code caret}. */
-    public record Edit(int from, int to, String replacement, int caret) { }
+    public record Edit(int from, int to, String replacement, int caret) {}
 
-    private Transposer() {
-    }
+    private Transposer() {}
 
     private static boolean isWord(char c) {
         return Character.isLetterOrDigit(c) || c == '_';

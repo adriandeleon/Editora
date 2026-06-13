@@ -1,17 +1,17 @@
 package com.editora.config;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProjectManagerTest {
 
@@ -85,9 +85,9 @@ class ProjectManagerTest {
     void openWindowSetTracksAndPersists(@TempDir Path dir) {
         ProjectManager pm = new ProjectManager(dir);
         Project a = pm.createOrGet("A", dir.resolve("a"));
-        pm.markOpen("");        // the global window
-        pm.markOpen(a.id());    // a project window
-        pm.markOpen(a.id());    // idempotent
+        pm.markOpen(""); // the global window
+        pm.markOpen(a.id()); // a project window
+        pm.markOpen(a.id()); // idempotent
         assertEquals(List.of("", a.id()), pm.openProjectIds());
         assertTrue(pm.isOpen(a.id()));
         pm.save();

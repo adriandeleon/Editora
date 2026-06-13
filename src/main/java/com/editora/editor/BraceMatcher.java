@@ -13,8 +13,7 @@ public final class BraceMatcher {
     /** Default cap on how far to scan for a match (keeps caret moves cheap on huge files). */
     public static final int DEFAULT_MAX_SCAN = 50_000;
 
-    private BraceMatcher() {
-    }
+    private BraceMatcher() {}
 
     /** The two matching bracket offsets (ascending) to highlight, or {@code null} if none is adjacent. */
     public static int[] match(String text, int caret, int maxScan) {
@@ -38,7 +37,7 @@ public final class BraceMatcher {
             if (ch == c) {
                 depth++;
             } else if (ch == mate && --depth == 0) {
-                return i < pos ? new int[]{i, pos} : new int[]{pos, i};
+                return i < pos ? new int[] {i, pos} : new int[] {pos, i};
             }
         }
         return null;

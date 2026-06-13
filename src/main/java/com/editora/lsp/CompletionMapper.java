@@ -3,10 +3,9 @@ package com.editora.lsp;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.editora.completion.Completion;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.InsertTextFormat;
-
-import com.editora.completion.Completion;
 
 /**
  * Pure mapping from LSP {@link CompletionItem}s to the editor's {@link Completion} popup entries. The
@@ -16,8 +15,7 @@ import com.editora.completion.Completion;
  */
 public final class CompletionMapper {
 
-    private CompletionMapper() {
-    }
+    private CompletionMapper() {}
 
     public static List<Completion> map(List<CompletionItem> items) {
         return map(items, null);
@@ -27,8 +25,8 @@ public final class CompletionMapper {
      * Maps items, attaching {@code onAcceptFor.apply(item)} as each completion's accept hook (e.g. to
      * resolve + apply a TypeScript auto-import's {@code additionalTextEdits}). A null factory ⇒ no hook.
      */
-    public static List<Completion> map(List<CompletionItem> items,
-            java.util.function.Function<CompletionItem, Runnable> onAcceptFor) {
+    public static List<Completion> map(
+            List<CompletionItem> items, java.util.function.Function<CompletionItem, Runnable> onAcceptFor) {
         List<Completion> out = new ArrayList<>();
         if (items == null) {
             return out;
@@ -48,8 +46,10 @@ public final class CompletionMapper {
 
     /** Whether {@code item} may carry deferred edits (auto-import) — has resolve data or additional edits. */
     public static boolean mayHaveAdditionalEdits(CompletionItem item) {
-        return item != null && (item.getData() != null
-                || (item.getAdditionalTextEdits() != null && !item.getAdditionalTextEdits().isEmpty()));
+        return item != null
+                && (item.getData() != null
+                        || (item.getAdditionalTextEdits() != null
+                                && !item.getAdditionalTextEdits().isEmpty()));
     }
 
     /**
@@ -76,8 +76,8 @@ public final class CompletionMapper {
             return "";
         }
         String out = s.replaceAll("\\$\\{\\d+:([^}]*)\\}", "$1") // ${1:default} -> default
-                .replaceAll("\\$\\{\\d+\\}", "")                   // ${1} -> (removed)
-                .replaceAll("\\$\\d+", "");                         // $1 / $0 -> (removed)
+                .replaceAll("\\$\\{\\d+\\}", "") // ${1} -> (removed)
+                .replaceAll("\\$\\d+", ""); // $1 / $0 -> (removed)
         return out.replace("\\$", "$").replace("\\}", "}").replace("\\\\", "\\");
     }
 
@@ -100,6 +100,8 @@ public final class CompletionMapper {
         if (item.getTextEdit().isLeft()) {
             return item.getTextEdit().getLeft().getNewText();
         }
-        return item.getTextEdit().getRight() == null ? null : item.getTextEdit().getRight().getNewText();
+        return item.getTextEdit().getRight() == null
+                ? null
+                : item.getTextEdit().getRight().getNewText();
     }
 }

@@ -1,12 +1,12 @@
 package com.editora.editor;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-
 import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class DebugIdentifiersTest {
 
@@ -22,8 +22,8 @@ class DebugIdentifiersTest {
     @Test
     void wordAtNullOffIdentifiersAndOutOfRange() {
         String line = "a = b + 10;";
-        assertNull(DebugIdentifiers.wordAt(line, 2));  // '='
-        assertNull(DebugIdentifiers.wordAt(line, 8));  // '1' — a number literal, not a name
+        assertNull(DebugIdentifiers.wordAt(line, 2)); // '='
+        assertNull(DebugIdentifiers.wordAt(line, 8)); // '1' — a number literal, not a name
         assertNull(DebugIdentifiers.wordAt(line, -1));
         assertNull(DebugIdentifiers.wordAt(line, 99));
         assertNull(DebugIdentifiers.wordAt(null, 0));
@@ -37,8 +37,8 @@ class DebugIdentifiersTest {
 
     @Test
     void matchesInFirstOccurrenceOrderDeduped() {
-        List<String> m = DebugIdentifiers.matchesIn("sum = sum + value * count",
-                Set.of("sum", "count", "value", "absent"));
+        List<String> m =
+                DebugIdentifiers.matchesIn("sum = sum + value * count", Set.of("sum", "count", "value", "absent"));
         assertEquals(List.of("sum", "value", "count"), m);
     }
 

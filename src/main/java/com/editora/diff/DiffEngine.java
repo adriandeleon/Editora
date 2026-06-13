@@ -3,15 +3,14 @@ package com.editora.diff;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.github.difflib.DiffUtils;
-import com.github.difflib.patch.AbstractDelta;
-import com.github.difflib.patch.Patch;
-
 import com.editora.diff.DiffModels.DiffModel;
 import com.editora.diff.DiffModels.Row;
 import com.editora.diff.DiffModels.RowType;
 import com.editora.diff.DiffModels.UnifiedRow;
 import com.editora.diff.DiffModels.UnifiedType;
+import com.github.difflib.DiffUtils;
+import com.github.difflib.patch.AbstractDelta;
+import com.github.difflib.patch.Patch;
 
 /**
  * Computes an aligned diff between two texts using java-diff-utils' Myers line diff. Pure and
@@ -21,8 +20,7 @@ import com.editora.diff.DiffModels.UnifiedType;
  */
 public final class DiffEngine {
 
-    private DiffEngine() {
-    }
+    private DiffEngine() {}
 
     /**
      * Splits {@code text} into lines for diffing: CRLF/CR are normalized to LF, and a single trailing
@@ -128,8 +126,7 @@ public final class DiffEngine {
                     unified.add(new UnifiedRow(UnifiedType.REMOVE, r.left(), r.leftLine(), -1));
                     unified.add(new UnifiedRow(UnifiedType.ADD, r.right(), -1, r.rightLine()));
                 }
-                default -> {
-                }
+                default -> {}
             }
         }
         return new DiffModel(rows, unified, added, removed, changeStarts);

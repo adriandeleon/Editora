@@ -11,8 +11,7 @@ import java.util.List;
  */
 public final class ProgramArgs {
 
-    private ProgramArgs() {
-    }
+    private ProgramArgs() {}
 
     /** Splits {@code text} into argv tokens; blank/null input yields an empty list. */
     public static List<String> tokenize(String text) {

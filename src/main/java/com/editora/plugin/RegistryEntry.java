@@ -14,6 +14,7 @@ public class RegistryEntry {
 
     /** Stable plugin id (matches the installed folder name / the manifest id). */
     public String id = "";
+
     public String name = "";
     public String version = "";
     public String description = "";

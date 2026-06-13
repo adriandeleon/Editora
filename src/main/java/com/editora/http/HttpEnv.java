@@ -18,8 +18,7 @@ public final class HttpEnv {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private HttpEnv() {
-    }
+    private HttpEnv() {}
 
     /** The variables of one environment ({@code name → value}) from {@code json}, or empty if absent. */
     public static java.util.Map<String, String> variables(String json, String environment) {

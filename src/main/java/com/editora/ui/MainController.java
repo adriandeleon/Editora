@@ -1,29 +1,8 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
-import com.editora.command.Command;
-import com.editora.command.CommandRegistry;
-import com.editora.command.KeymapManager;
-import com.editora.config.ConfigManager;
-import com.editora.config.Project;
-import com.editora.config.ProjectManager;
-import com.editora.config.RecentFiles;
-import com.editora.config.Settings;
-import com.editora.config.WorkspaceState;
-import com.editora.editor.EditorBuffer;
-import com.editora.editor.TabContent;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LanguageRegistry;
-import com.editora.editor.SpellDictionaries;
-
-import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -36,46 +15,43 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import javafx.collections.ListChangeListener;
-import javafx.collections.ObservableList;
-
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
 import javafx.css.PseudoClass;
-import javafx.util.Duration;
 import javafx.fxml.FXML;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.PasswordField;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.PasswordField;
 import javafx.scene.control.Separator;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
-import javafx.scene.control.ToolBar;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToolBar;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -83,6 +59,26 @@ import javafx.scene.paint.Color;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.util.Duration;
+
+import com.editora.command.Command;
+import com.editora.command.CommandRegistry;
+import com.editora.command.KeymapManager;
+import com.editora.config.ConfigManager;
+import com.editora.config.Project;
+import com.editora.config.ProjectManager;
+import com.editora.config.RecentFiles;
+import com.editora.config.Settings;
+import com.editora.config.WorkspaceState;
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.LanguageRegistry;
+import com.editora.editor.SpellDictionaries;
+import com.editora.editor.TabContent;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+
+import static com.editora.i18n.Messages.tr;
 
 /** Controls the main window: tabbed editors, menu actions, palette/find overlays, and status bar. */
 public class MainController {
@@ -93,60 +89,88 @@ public class MainController {
 
     @FXML
     private BorderPane root;
+
     @FXML
     private BorderPane workspace;
+
     @FXML
     private TabPane tabPane;
+
     @FXML
     private VBox topBox;
+
     @FXML
     private VBox bottomBox;
+
     @FXML
     private ToolBar toolBar;
+
     @FXML
     private Button newButton;
+
     @FXML
     private Button newFromTemplateButton;
+
     @FXML
     private Button openButton;
+
     @FXML
     private Button openFolderButton;
+
     @FXML
     private Button saveButton;
+
     @FXML
     private Button saveAsButton;
+
     @FXML
     private Button undoButton;
+
     @FXML
     private Button redoButton;
+
     @FXML
     private Button cutButton;
+
     @FXML
     private Button copyButton;
+
     @FXML
     private Button pasteButton;
+
     @FXML
     private Button findButton;
+
     @FXML
     private Button findInFilesButton;
+
     @FXML
     private Button splitVerticalButton;
+
     @FXML
     private Button splitHorizontalButton;
+
     @FXML
     private Button paletteButton;
+
     @FXML
     private Button closeTabButton;
+
     @FXML
     private Button simpleModeButton;
+
     @FXML
     private Button settingsButton;
+
     @FXML
     private Button aboutButton;
+
     @FXML
     private Button quitButton;
+
     @FXML
     private MenuButton recentButton;
+
     @FXML
     private Button clearRecentButton;
 
@@ -162,6 +186,7 @@ public class MainController {
     private final DebugLogWindow debugLogWindow = new DebugLogWindow();
     /** Shared in-scene overlay host for the command palette + pickers (replaces focus-stealing Popups). */
     private final OverlayHost overlayHost = new OverlayHost();
+
     private QuickOpen<Path> recentPalette;
     private QuickOpen<StructurePanel.Outline> structurePalette;
     private QuickOpen<Tab> openFilesPalette;
@@ -188,8 +213,9 @@ public class MainController {
     private boolean browseSigned;
 
     /** A plugin-contributed editor menu item: a label + an action over the {@link com.editora.plugin.ActiveEditor}. */
-    private record EditorMenuContribution(String label,
-            java.util.function.Consumer<com.editora.plugin.ActiveEditor> action) { }
+    private record EditorMenuContribution(
+            String label, java.util.function.Consumer<com.editora.plugin.ActiveEditor> action) {}
+
     private com.editora.completion.CompletionEngine completion;
     private FileFinder fileFinder;
     private FileFinder folderFinder;
@@ -201,6 +227,7 @@ public class MainController {
     private Project windowProject;
     /** This window's project key ({@code ""} = global), kept in sync with {@link #windowProject}. */
     private String projectKey = "";
+
     private QuickOpen<Project> projectPicker;
     private ProjectCombo toolbarProjectCombo;
     private Label projectToolbarLabel;
@@ -241,7 +268,7 @@ public class MainController {
     private boolean cliSimpleOverride;
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) ---
     private com.editora.vfs.RemoteFileSystems remoteFs; // lazily created on first remote use
-    private String activeRemoteAuthority;               // the connection backing the mounted remote root
+    private String activeRemoteAuthority; // the connection backing the mounted remote root
     // --- Git (native-CLI integration; off-thread via GitService) ---
     private final com.editora.git.GitService gitService = new com.editora.git.GitService();
     private final com.editora.mermaid.MermaidService mermaidService = new com.editora.mermaid.MermaidService();
@@ -253,6 +280,7 @@ public class MainController {
             new com.editora.mermaid.MermaidService.Availability(false, false);
     /** HTTP Client: the ijhttp façade, the response tool window, and whether ijhttp was detected. */
     private final com.editora.http.HttpClientService httpService = new com.editora.http.HttpClientService();
+
     private HttpClientPanel httpPanel;
     private ToolWindow httpToolWindow;
     /** LSP: manager (one server per workspace root), the Problems window, and the latest diagnostics. */
@@ -261,19 +289,40 @@ public class MainController {
     /** serverId → whether that server's command was found on this machine (per-server availability). */
     private final java.util.Map<String, Boolean> lspServerAvailable = new java.util.HashMap<>();
     /** Known LSP server ids (probe/shutdown loops iterate these). */
-    private static final String[] LSP_SERVER_IDS =
-            {"java", "typescript", "python", "xml", "json", "bash",
-             "yaml", "go", "rust", "php", "ruby",
-             "clangd", "html", "css", "kotlin", "lua", "dockerfile", "sql", "terraform", "toml",
-             "csharp"};
+    private static final String[] LSP_SERVER_IDS = {
+        "java",
+        "typescript",
+        "python",
+        "xml",
+        "json",
+        "bash",
+        "yaml",
+        "go",
+        "rust",
+        "php",
+        "ruby",
+        "clangd",
+        "html",
+        "css",
+        "kotlin",
+        "lua",
+        "dockerfile",
+        "sql",
+        "terraform",
+        "toml",
+        "csharp"
+    };
+
     private ProblemsPanel problemsPanel;
     private ToolWindow problemsToolWindow;
     /** Run: streams a Java 25 compact source file's output into the Run tool window. */
     private final com.editora.run.RunService runService = new com.editora.run.RunService();
+
     private RunPanel runPanel;
     private ToolWindow runToolWindow;
     /** Debug (DAP): drives Java debugging layered on the jdtls LSP session. */
     private final com.editora.dap.DapManager dapManager = new com.editora.dap.DapManager(lspManager);
+
     private DebugPanel debugPanel;
     private ToolWindow debugToolWindow;
     /** The buffer currently showing the debugger's execution-line highlight, or null. */
@@ -282,10 +331,12 @@ public class MainController {
     private final java.util.Set<String> exceptionFilters = new java.util.LinkedHashSet<>();
     /** The java-debug bundle jars last pushed to the LSP layer — restart jdtls only when this changes. */
     private List<String> appliedDebugBundles = List.of();
+
     private final java.util.Map<Path, java.util.List<com.editora.editor.LspDiagnostic>> lspProblems =
             new java.util.LinkedHashMap<>();
     /** The currently-showing LSP hover popup (dismissable), or null. */
     private javafx.stage.Popup lspHoverPopup;
+
     private GitPanel gitPanel;
     private ToolWindow commitToolWindow;
     private GitLogPanel gitLogPanel;
@@ -300,6 +351,7 @@ public class MainController {
     private String currentBranchName = "";
     /** Current branch's upstream (e.g. {@code origin/main}), or empty when none — drives push. */
     private String currentUpstream = "";
+
     private Switcher switcher;
     /** Most-recently-used tab order, head = most recent. */
     private final LinkedList<Tab> mru = new LinkedList<>();
@@ -319,6 +371,7 @@ public class MainController {
     private boolean markActive;
     /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
     private boolean checkingExternalChanges;
+
     private RecentFiles recentFiles;
     /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
     private WelcomePane welcomePane;
@@ -370,20 +423,20 @@ public class MainController {
         // Project commands (incl. the Project tool window) are hidden from the palette unless project
         // support is enabled.
         // Project + Git commands are hidden from the palette unless their feature is enabled.
-        this.palette = new CommandPalette(registry, keymap,
+        this.palette = new CommandPalette(
+                registry,
+                keymap,
                 c -> (config.getSettings().isProjectSupport()
-                        || (!c.id().startsWith("project.") && !c.id().equals("tool.project")))
+                                || (!c.id().startsWith("project.") && !c.id().equals("tool.project")))
                         && (gitEnabled()
-                        || (!c.id().startsWith("git.") && !c.id().equals("tool.commit")
-                            && !c.id().equals("tool.gitLog")))
+                                || (!c.id().startsWith("git.")
+                                        && !c.id().equals("tool.commit")
+                                        && !c.id().equals("tool.gitLog")))
                         && (config.getSettings().isNotesSupport()
-                        || (!c.id().startsWith("notes.") && !c.id().equals("tool.notes")))
-                        && (config.getSettings().isMermaidSupport()
-                        || !c.id().startsWith("mermaid."))
-                        && (lspEnabled()
-                        || (!c.id().startsWith("lsp.") && !c.id().equals("tool.problems")))
-                        && (httpEnabled()
-                        || (!c.id().startsWith("http.") && !c.id().equals("tool.http")))
+                                || (!c.id().startsWith("notes.") && !c.id().equals("tool.notes")))
+                        && (config.getSettings().isMermaidSupport() || !c.id().startsWith("mermaid."))
+                        && (lspEnabled() || (!c.id().startsWith("lsp.") && !c.id().equals("tool.problems")))
+                        && (httpEnabled() || (!c.id().startsWith("http.") && !c.id().equals("tool.http")))
                         && (pluginsEnabled() || !c.id().startsWith("plugins.")));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
@@ -393,12 +446,20 @@ public class MainController {
         // Breadcrumb sits just above the status bar at the bottom (IntelliJ-style).
         bottomBox.getChildren().setAll(breadcrumb, statusBar);
         setupToolWindows();
-        this.settingsWindow = new SettingsWindow(config, toolWindows, gitService, mermaidService,
-                lspManager, dapManager, this::onSettingsApplied, this::setZenMode,
-                this::openPath, this::exportConfig, this::showDebugLog);
+        this.settingsWindow = new SettingsWindow(
+                config,
+                toolWindows,
+                gitService,
+                mermaidService,
+                lspManager,
+                dapManager,
+                this::onSettingsApplied,
+                this::setZenMode,
+                this::openPath,
+                this::exportConfig,
+                this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
-        this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk,
-                this::uninstallPlugin);
+        this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk, this::uninstallPlugin);
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
@@ -563,8 +624,8 @@ public class MainController {
     /** The picker label: "Name  version — Installed/Update available/Install/Requires Editora ≥ x". */
     private String browseEntryLabel(com.editora.plugin.RegistryEntry e) {
         String ver = e.version == null ? "" : e.version;
-        return (e.name == null || e.name.isBlank() ? e.id : e.name)
-                + (ver.isBlank() ? "" : "  " + ver) + " — " + browseEntryStatus(e);
+        return (e.name == null || e.name.isBlank() ? e.id : e.name) + (ver.isBlank() ? "" : "  " + ver) + " — "
+                + browseEntryStatus(e);
     }
 
     /** Installed / Update available / Install / Requires-newer, comparing to the installed descriptor. */
@@ -611,7 +672,8 @@ public class MainController {
             setStatus(tr("plugins.status.requiresNewer", e.minEditoraVersion));
             return;
         }
-        String body = tr("dialog.plugins.installBody",
+        String body = tr(
+                "dialog.plugins.installBody",
                 (e.name == null || e.name.isBlank() ? e.id : e.name),
                 (e.version == null ? "" : e.version),
                 (e.author == null ? "" : e.author),
@@ -619,8 +681,7 @@ public class MainController {
         if (!browseSigned) {
             body = tr("dialog.plugins.unsignedWarn") + "\n\n" + body; // reached only when the gate is off
         }
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                body, ButtonType.OK, ButtonType.CANCEL);
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.plugins.installTitle"));
         confirm.setHeaderText(tr("dialog.plugins.installHeader"));
@@ -651,8 +712,7 @@ public class MainController {
     /** Common post-install handling: disclose capabilities + confirm enable, persist, refresh, report. */
     private void onPluginInstalled(com.editora.plugin.PluginInstaller.Result r) {
         if (!r.ok()) {
-            gitError(tr("status.plugins.installFailed", r.error() == null ? "" : r.error()),
-                    r.error());
+            gitError(tr("status.plugins.installFailed", r.error() == null ? "" : r.error()), r.error());
             return;
         }
         pluginRegistry.invalidate(); // status labels (Installed/Update) may change
@@ -687,7 +747,9 @@ public class MainController {
             return true;
         }
         String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
-        String body = tr("dialog.plugins.enableBody", name,
+        String body = tr(
+                "dialog.plugins.enableBody",
+                name,
                 d.manifest().version == null ? "" : d.manifest().version,
                 pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
@@ -717,7 +779,8 @@ public class MainController {
         }
         if (m.keymap != null && !m.keymap.isEmpty()) {
             sb.append(tr("plugins.cap.keymap")).append('\n');
-            m.keymap.forEach((chord, cmd) -> sb.append("    ").append(chord).append(" → ").append(cmd).append('\n'));
+            m.keymap.forEach((chord, cmd) ->
+                    sb.append("    ").append(chord).append(" → ").append(cmd).append('\n'));
         }
         if (sb.length() == 0) {
             sb.append(tr("plugins.cap.assetsOnly"));
@@ -730,8 +793,8 @@ public class MainController {
         if (pluginManager == null || id == null || id.isBlank()) {
             return;
         }
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                tr("dialog.plugins.uninstallBody", id), ButtonType.OK, ButtonType.CANCEL);
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION, tr("dialog.plugins.uninstallBody", id), ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.plugins.uninstallTitle"));
         confirm.setHeaderText(null);
@@ -759,31 +822,39 @@ public class MainController {
     }
 
     /** Runs a plugin's declared external command via the subprocess runner; reports the result. */
-    private void runDeclaredCommand(com.editora.plugin.PluginDescriptor d,
-            com.editora.plugin.PluginManifest.DeclaredCommand c) {
+    private void runDeclaredCommand(
+            com.editora.plugin.PluginDescriptor d, com.editora.plugin.PluginManifest.DeclaredCommand c) {
         if (c.run == null || c.run.isEmpty()) {
             return;
         }
         java.nio.file.Path cwd = (c.dir == null || c.dir.isBlank())
-                ? d.dir() : d.dir().resolve(c.dir).normalize();
+                ? d.dir()
+                : d.dir().resolve(c.dir).normalize();
         setStatus(tr("status.plugins.running", c.title == null || c.title.isBlank() ? c.id : c.title));
-        new Thread(() -> {
-            com.editora.process.ProcessRunner.Result r;
-            try {
-                r = com.editora.process.ProcessRunner.run(cwd, java.time.Duration.ofSeconds(120),
-                        new java.util.ArrayList<>(c.run), java.util.Map.of());
-            } catch (RuntimeException e) {
-                Platform.runLater(() -> setStatus(tr("status.plugins.cmdFailed", e.getMessage())));
-                return;
-            }
-            String out = (r.out() + "\n" + r.err()).strip();
-            if (!out.isBlank()) {
-                LOG.info("[plugin " + d.id() + "] " + out);
-            }
-            Platform.runLater(() -> setStatus(r.ok()
-                    ? tr("status.plugins.cmdDone", c.id)
-                    : tr("status.plugins.cmdFailed", "exit " + r.exit())));
-        }, "plugin-cmd-" + d.id()).start();
+        new Thread(
+                        () -> {
+                            com.editora.process.ProcessRunner.Result r;
+                            try {
+                                r = com.editora.process.ProcessRunner.run(
+                                        cwd,
+                                        java.time.Duration.ofSeconds(120),
+                                        new java.util.ArrayList<>(c.run),
+                                        java.util.Map.of());
+                            } catch (RuntimeException e) {
+                                Platform.runLater(() -> setStatus(tr("status.plugins.cmdFailed", e.getMessage())));
+                                return;
+                            }
+                            String out = (r.out() + "\n" + r.err()).strip();
+                            if (!out.isBlank()) {
+                                LOG.info("[plugin " + d.id() + "] " + out);
+                            }
+                            Platform.runLater(() -> setStatus(
+                                    r.ok()
+                                            ? tr("status.plugins.cmdDone", c.id)
+                                            : tr("status.plugins.cmdFailed", "exit " + r.exit())));
+                        },
+                        "plugin-cmd-" + d.id())
+                .start();
     }
 
     /** Builds the plugin-contributed right-click items for {@code buffer} (empty when no plugin added any). */
@@ -820,53 +891,66 @@ public class MainController {
             return id != null && id.indexOf('.') < 0 ? "plugin." + desc.id() + "." + id : id;
         }
 
-        @Override public void registerCommand(String id, String title, Runnable action) {
+        @Override
+        public void registerCommand(String id, String title, Runnable action) {
             String cid = fullId(id);
-            registry.register(com.editora.command.Command.of(cid,
-                    title == null || title.isBlank() ? cid : title, action));
+            registry.register(
+                    com.editora.command.Command.of(cid, title == null || title.isBlank() ? cid : title, action));
         }
 
-        @Override public void bindKey(String chord, String commandId) {
+        @Override
+        public void bindKey(String chord, String commandId) {
             if (chord != null && !chord.isBlank() && commandId != null) {
                 keymap.applyOverrides(java.util.Map.of(chord, fullId(commandId)));
             }
         }
 
-        @Override public void registerToolWindow(String id, String title,
-                com.editora.plugin.ToolWindowSide side, javafx.scene.layout.Region content, String commandId) {
+        @Override
+        public void registerToolWindow(
+                String id,
+                String title,
+                com.editora.plugin.ToolWindowSide side,
+                javafx.scene.layout.Region content,
+                String commandId) {
             String twId = fullId(id);
             String cmd = commandId == null || commandId.isBlank() ? twId : fullId(commandId);
-            ToolWindow.Side s = switch (side == null ? com.editora.plugin.ToolWindowSide.BOTTOM : side) {
-                case LEFT -> ToolWindow.Side.LEFT;
-                case RIGHT -> ToolWindow.Side.RIGHT;
-                case BOTTOM -> ToolWindow.Side.BOTTOM;
-            };
+            ToolWindow.Side s =
+                    switch (side == null ? com.editora.plugin.ToolWindowSide.BOTTOM : side) {
+                        case LEFT -> ToolWindow.Side.LEFT;
+                        case RIGHT -> ToolWindow.Side.RIGHT;
+                        case BOTTOM -> ToolWindow.Side.BOTTOM;
+                    };
             ToolWindow tw = new ToolWindow(twId, title == null ? twId : title, s, Icons::plugin, content, cmd);
             toolWindows.register(tw);
-            registry.register(com.editora.command.Command.of(cmd,
-                    title == null ? twId : title, () -> toolWindows.toggle(tw)));
+            registry.register(
+                    com.editora.command.Command.of(cmd, title == null ? twId : title, () -> toolWindows.toggle(tw)));
         }
 
-        @Override public void addEditorMenuItem(String label,
-                java.util.function.Consumer<com.editora.plugin.ActiveEditor> action) {
+        @Override
+        public void addEditorMenuItem(
+                String label, java.util.function.Consumer<com.editora.plugin.ActiveEditor> action) {
             if (label != null && action != null) {
                 pluginMenuItems.add(new EditorMenuContribution(label, action));
             }
         }
 
-        @Override public void addStatusBarSegment(String label, String commandId) {
+        @Override
+        public void addStatusBarSegment(String label, String commandId) {
             statusBar.addPluginSegment(label, commandId == null ? null : fullId(commandId));
         }
 
-        @Override public com.editora.plugin.ActiveEditor activeEditor() {
+        @Override
+        public com.editora.plugin.ActiveEditor activeEditor() {
             return new ActiveEditorImpl(null); // tracks the live active buffer
         }
 
-        @Override public java.nio.file.Path pluginDir() {
+        @Override
+        public java.nio.file.Path pluginDir() {
             return desc.dir();
         }
 
-        @Override public java.nio.file.Path dataDir() {
+        @Override
+        public java.nio.file.Path dataDir() {
             java.nio.file.Path data = desc.dir().resolve("data");
             try {
                 java.nio.file.Files.createDirectories(data);
@@ -876,19 +960,23 @@ public class MainController {
             return data;
         }
 
-        @Override public java.nio.file.Path configDir() {
+        @Override
+        public java.nio.file.Path configDir() {
             return config.getConfigDir();
         }
 
-        @Override public void log(String message) {
+        @Override
+        public void log(String message) {
             LOG.info("[plugin " + desc.id() + "] " + message);
         }
 
-        @Override public void setStatus(String message) {
+        @Override
+        public void setStatus(String message) {
             MainController.this.setStatus(message);
         }
 
-        @Override public void openUrl(String url) {
+        @Override
+        public void openUrl(String url) {
             if (url != null && !url.isBlank()) {
                 MainController.this.openExternalUrl(url);
             }
@@ -907,48 +995,56 @@ public class MainController {
             return fixed != null ? fixed : activeBuffer();
         }
 
-        @Override public java.nio.file.Path filePath() {
+        @Override
+        public java.nio.file.Path filePath() {
             EditorBuffer b = buf();
             return b == null ? null : b.getPath();
         }
 
-        @Override public String text() {
+        @Override
+        public String text() {
             EditorBuffer b = buf();
             return b == null ? "" : b.getContent();
         }
 
-        @Override public String selectedText() {
+        @Override
+        public String selectedText() {
             EditorBuffer b = buf();
             return b == null ? "" : b.getArea().getSelectedText();
         }
 
-        @Override public int caretLine() {
+        @Override
+        public int caretLine() {
             EditorBuffer b = buf();
             return b == null ? -1 : b.getArea().getCurrentParagraph() + 1; // 1-based
         }
 
-        @Override public void replaceSelection(String replacement) {
+        @Override
+        public void replaceSelection(String replacement) {
             EditorBuffer b = buf();
             if (b != null && b.isEditable() && replacement != null) {
                 b.getArea().replaceSelection(replacement);
             }
         }
 
-        @Override public void insertAtCaret(String text) {
+        @Override
+        public void insertAtCaret(String text) {
             EditorBuffer b = buf();
             if (b != null && b.isEditable() && text != null) {
                 b.getArea().insertText(b.getArea().getCaretPosition(), text);
             }
         }
 
-        @Override public void setText(String text) {
+        @Override
+        public void setText(String text) {
             EditorBuffer b = buf();
             if (b != null && b.isEditable() && text != null) {
                 b.getArea().replaceText(text); // whole-document replace (undoable, marks dirty)
             }
         }
 
-        @Override public void openPath(java.nio.file.Path path) {
+        @Override
+        public void openPath(java.nio.file.Path path) {
             if (path != null) {
                 MainController.this.openPath(path);
             }
@@ -995,8 +1091,9 @@ public class MainController {
         // Curated toolbar buttons hidden in Simple mode (project trio + openFolder are gated in
         // applyProjectSupport so its later pass doesn't re-show them). The Open icon is deliberately
         // KEPT so opening a file stays one click away in Simple mode.
-        for (Button b : new Button[]{newFromTemplateButton, clearRecentButton,
-                findInFilesButton, splitVerticalButton, splitHorizontalButton}) {
+        for (Button b : new Button[] {
+            newFromTemplateButton, clearRecentButton, findInFilesButton, splitVerticalButton, splitHorizontalButton
+        }) {
             b.setVisible(!simple);
             b.setManaged(!simple);
         }
@@ -1012,7 +1109,7 @@ public class MainController {
      * Self-correcting — when nothing is hidden, every separator is shown.
      */
     private void collapseToolbarSeparators() {
-        Separator pending = null;       // a separator with a visible item before it, awaiting one after
+        Separator pending = null; // a separator with a visible item before it, awaiting one after
         boolean visibleSincePending = false;
         for (javafx.scene.Node item : toolBar.getItems()) {
             if (item instanceof Separator sep) {
@@ -1146,8 +1243,14 @@ public class MainController {
      * there is no overlay or visibility juggling.
      */
     private void setupWelcome() {
-        welcomePane = new WelcomePane(registry, keymap, recentFiles, this::openRecent,
-                this::openExternalUrl, this::projectsEnabled, this::gitEnabled,
+        welcomePane = new WelcomePane(
+                registry,
+                keymap,
+                recentFiles,
+                this::openRecent,
+                this::openExternalUrl,
+                this::projectsEnabled,
+                this::gitEnabled,
                 config.isDev() ? com.editora.AppInfo.gitCommit() : ""); // build commit shown only in --dev
     }
 
@@ -1240,7 +1343,7 @@ public class MainController {
             }
         }
         lspManager.shutdownAll(); // don't orphan this window's external language servers
-        dapManager.stop();        // end any debug session
+        dapManager.stop(); // end any debug session
         gitService.shutdown();
         searchService.shutdown();
         mermaidService.shutdown();
@@ -1293,17 +1396,23 @@ public class MainController {
 
     /** Builds the keyboard "Jump to…" pickers (recent files, structure) — command-palette-style popups. */
     private void setupJumpPickers() {
-        recentPalette = new QuickOpen<>("Jump to Recent File", "Type to filter recent files…",
+        recentPalette = new QuickOpen<>(
+                "Jump to Recent File",
+                "Type to filter recent files…",
                 () -> List.copyOf(recentFiles.getList()),
                 p -> p.getFileName() == null ? p.toString() : p.getFileName().toString(),
                 p -> p.getParent() == null ? "" : p.getParent().toString(),
                 this::openRecent);
-        structurePalette = new QuickOpen<>("Jump to Structure", "Type to filter symbols…",
+        structurePalette = new QuickOpen<>(
+                "Jump to Structure",
+                "Type to filter symbols…",
                 () -> structurePanel.outline(),
                 StructurePanel.Outline::label,
                 StructurePanel.Outline::kind,
                 entry -> navigateToLine(entry.line()));
-        openFilesPalette = new QuickOpen<>("Jump to Open File", "Type to filter open files…",
+        openFilesPalette = new QuickOpen<>(
+                "Jump to Open File",
+                "Type to filter open files…",
                 this::openTabsForSwitcher,
                 tab -> (isTabDirty(tab) ? "• " : "") + bufferTitle(tab), // dirty marker, like the tab
                 tab -> bufferParentDir(tab),
@@ -1315,8 +1424,11 @@ public class MainController {
                         b.getArea().requestFocus();
                     }
                 });
-        openFilesPalette.setItemStyleClass(tab -> isTabDirty(tab) ? "dirty-name" : null); // amber/italic, like a dirty tab
-        toolWindowPalette = new QuickOpen<>("Jump to Tool Window", "Type to filter tool windows…",
+        openFilesPalette.setItemStyleClass(
+                tab -> isTabDirty(tab) ? "dirty-name" : null); // amber/italic, like a dirty tab
+        toolWindowPalette = new QuickOpen<>(
+                "Jump to Tool Window",
+                "Type to filter tool windows…",
                 () -> toolWindows.getRegisteredToolWindows().stream()
                         .filter(tw -> gitEnabled() || !"tool.commit".equals(tw.getCommandId()))
                         .filter(tw -> projectsEnabled() || !"tool.project".equals(tw.getCommandId()))
@@ -1324,33 +1436,45 @@ public class MainController {
                 ToolWindow::getTitle,
                 tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
                 toolWindows::open);
-        bookmarkPalette = new QuickOpen<>("Jump to Bookmark", "Type to filter bookmarks…",
+        bookmarkPalette = new QuickOpen<>(
+                "Jump to Bookmark",
+                "Type to filter bookmarks…",
                 this::allBookmarkEntries,
                 e -> bookmarkLabel(e.bm()),
                 e -> e.file().getFileName() + ":" + (e.bm().line() + 1),
                 e -> bookmarkActivate(e.file(), e.bm().line()));
-        browsePalette = new QuickOpen<>(tr("plugins.browseTitle"), tr("plugins.browsePrompt"),
+        browsePalette = new QuickOpen<>(
+                tr("plugins.browseTitle"),
+                tr("plugins.browsePrompt"),
                 () -> browseEntries,
                 this::browseEntryLabel,
                 e -> e.description == null ? "" : e.description,
-                e -> (e.name == null ? "" : e.name) + " " + e.id
-                        + " " + (e.description == null ? "" : e.description), // search name+id+desc
+                e -> (e.name == null ? "" : e.name) + " " + e.id + " "
+                        + (e.description == null ? "" : e.description), // search name+id+desc
                 this::confirmAndInstall);
         browsePalette.setPreferredSize(960, 10); // wide — registry rows carry a name + a long description
-        notesPalette = new QuickOpen<>(tr("notes.jumpTitle"), tr("notes.jumpPrompt"),
+        notesPalette = new QuickOpen<>(
+                tr("notes.jumpTitle"),
+                tr("notes.jumpPrompt"),
                 this::allNoteEntries,
                 e -> noteEntryLabel(e.note()),
-                e -> Path.of(e.fileKey()).getFileName() + ":" + (e.note().anchor().line() + 1),
+                e -> Path.of(e.fileKey()).getFileName() + ":"
+                        + (e.note().anchor().line() + 1),
                 e -> noteActivate(e.fileKey(), e.note()));
         // Search Notes: same picker, but the query matches the full body + tags + file (not just the
         // first line) so you can find a note by any word in it.
-        notesSearchPalette = new QuickOpen<>(tr("notes.searchTitle"), tr("notes.searchPrompt"),
+        notesSearchPalette = new QuickOpen<>(
+                tr("notes.searchTitle"),
+                tr("notes.searchPrompt"),
                 this::allNoteEntries,
                 e -> noteEntryLabel(e.note()),
-                e -> Path.of(e.fileKey()).getFileName() + ":" + (e.note().anchor().line() + 1),
+                e -> Path.of(e.fileKey()).getFileName() + ":"
+                        + (e.note().anchor().line() + 1),
                 e -> noteSearchText(e),
                 e -> noteActivate(e.fileKey(), e.note()));
-        snippetPalette = new QuickOpen<>("Insert Snippet", "Type to filter snippets…",
+        snippetPalette = new QuickOpen<>(
+                "Insert Snippet",
+                "Type to filter snippets…",
                 () -> {
                     EditorBuffer b = activeBuffer();
                     return new ArrayList<>(snippets.forLanguage(b == null ? "global" : b.getLanguage()));
@@ -1429,14 +1553,15 @@ public class MainController {
     private void setupProjects() {
         // The projects index is shared across all windows (one source of truth), so use the shared one.
         projects = config.projects();
-        projectPicker = new QuickOpen<>("Switch Project", "Type to filter projects…",
+        projectPicker = new QuickOpen<>(
+                "Switch Project",
+                "Type to filter projects…",
                 this::projectsWithNoProject,
                 Project::name,
                 p -> p.id().isEmpty() ? "global session" : p.root(),
                 this::switchToProject);
         // Keyboard "Open Project Folder" — mirrors the file finder, but picks a directory.
-        folderFinder = new FileFinder(this::finderStartDir, this::openProjectRoot,
-                true, "Open Project Folder");
+        folderFinder = new FileFinder(this::finderStartDir, this::openProjectRoot, true, "Open Project Folder");
         // Which project this window edits (and its session file) is set by WindowManager via
         // setWindowContext(); the global window just keeps the default workspace-state.json.
         refreshProjectPanelList();
@@ -1456,7 +1581,9 @@ public class MainController {
 
     /** Creates/reuses a project for {@code root} and switches to it. */
     private void openProjectRoot(Path root) {
-        String name = root.getFileName() == null ? root.toString() : root.getFileName().toString();
+        String name = root.getFileName() == null
+                ? root.toString()
+                : root.getFileName().toString();
         switchToProject(projects.createOrGet(name, root));
     }
 
@@ -1533,8 +1660,11 @@ public class MainController {
             setStatus(tr("status.noProjectOpen"));
             return;
         }
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                tr("dialog.closeProject.body", windowProject.name()), ButtonType.OK, ButtonType.CANCEL);
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("dialog.closeProject.body", windowProject.name()),
+                ButtonType.OK,
+                ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.closeProject.title"));
         confirm.setHeaderText(null);
@@ -1562,9 +1692,11 @@ public class MainController {
             setStatus(tr("status.noProjectToDelete"));
             return;
         }
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
                 tr("dialog.deleteProject.body", p.name()),
-                ButtonType.OK, ButtonType.CANCEL);
+                ButtonType.OK,
+                ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.deleteProject.title"));
         confirm.setHeaderText(null);
@@ -1579,7 +1711,7 @@ public class MainController {
         projects.delete(p.id()); // drops it from the index + open set + deletes its state file
         projects.save();
         config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
-        config.deleteNotesForProject(p.id());     // ...its personal notes
+        config.deleteNotesForProject(p.id()); // ...its personal notes
         config.deleteBreakpointsForProject(p.id()); // ...and its breakpoints
         refreshProjectPanelList();
         setStatus(tr("status.deletedProject", p.name()));
@@ -1738,8 +1870,8 @@ public class MainController {
                 autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
             }
             refreshSplitButtons();
-            refreshEditState();   // save/undo/redo/cut/copy enablement for the new tab
-            refreshPasteState();  // clipboard read off the keystroke path
+            refreshEditState(); // save/undo/redo/cut/copy enablement for the new tab
+            refreshPasteState(); // clipboard read off the keystroke path
             updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
             checkExternalChanges(); // prompt if the file we just switched to changed on disk
             refreshGit(); // update branch/status + this file's gutter change bars
@@ -1807,123 +1939,191 @@ public class MainController {
 
     private void setupToolWindows() {
         toolWindows = new ToolWindowManager(workspace, tabPane, config, keymap);
-        projectPanel = new ProjectPanel(this::openPath, this::onProjectFileRenamed,
-                this::onProjectFileDeleted, this::isPathModified);
+        projectPanel = new ProjectPanel(
+                this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
-        projectToolWindow = new ToolWindow("project", tr("toolwindow.project"), ToolWindow.Side.RIGHT,
-                Icons::project, projectPanel, "tool.project");
+        projectToolWindow = new ToolWindow(
+                "project",
+                tr("toolwindow.project"),
+                ToolWindow.Side.RIGHT,
+                Icons::project,
+                projectPanel,
+                "tool.project");
         structurePanel = new StructurePanel();
-        structureToolWindow = new ToolWindow("structure", tr("toolwindow.structure"), ToolWindow.Side.RIGHT,
-                Icons::structure, structurePanel, "tool.structure");
-        bookmarksPanel = new BookmarksPanel(config::getBookmarks,
-                new BookmarksPanel.Actions() {
-                    @Override public void openAndJump(java.nio.file.Path file, int line) {
-                        bookmarkActivate(file, line);
-                    }
-                    @Override public void setNote(java.nio.file.Path file, int line, String note) {
-                        bookmarkSetNote(file, line, note);
-                    }
-                    @Override public void delete(java.nio.file.Path file, int line) {
-                        bookmarkDelete(file, line);
-                    }
-                    @Override public void deleteAll(java.nio.file.Path file) {
-                        bookmarkDeleteAll(file);
-                    }
-                    @Override public void moveBookmark(java.nio.file.Path file, int from, int to) {
-                        MainController.this.moveBookmark(file, from, to);
-                    }
-                    @Override public void moveFile(int from, int to) {
-                        moveBookmarkFile(from, to);
-                    }
-                });
+        structureToolWindow = new ToolWindow(
+                "structure",
+                tr("toolwindow.structure"),
+                ToolWindow.Side.RIGHT,
+                Icons::structure,
+                structurePanel,
+                "tool.structure");
+        bookmarksPanel = new BookmarksPanel(config::getBookmarks, new BookmarksPanel.Actions() {
+            @Override
+            public void openAndJump(java.nio.file.Path file, int line) {
+                bookmarkActivate(file, line);
+            }
+
+            @Override
+            public void setNote(java.nio.file.Path file, int line, String note) {
+                bookmarkSetNote(file, line, note);
+            }
+
+            @Override
+            public void delete(java.nio.file.Path file, int line) {
+                bookmarkDelete(file, line);
+            }
+
+            @Override
+            public void deleteAll(java.nio.file.Path file) {
+                bookmarkDeleteAll(file);
+            }
+
+            @Override
+            public void moveBookmark(java.nio.file.Path file, int from, int to) {
+                MainController.this.moveBookmark(file, from, to);
+            }
+
+            @Override
+            public void moveFile(int from, int to) {
+                moveBookmarkFile(from, to);
+            }
+        });
         bookmarksPanel.setPrompt(this::promptText); // in-scene bookmark-note prompt
-        bookmarksToolWindow = new ToolWindow("bookmarks", tr("toolwindow.bookmarks"), ToolWindow.Side.RIGHT,
-                Icons::bookmark, bookmarksPanel, "tool.bookmarks");
+        bookmarksToolWindow = new ToolWindow(
+                "bookmarks",
+                tr("toolwindow.bookmarks"),
+                ToolWindow.Side.RIGHT,
+                Icons::bookmark,
+                bookmarksPanel,
+                "tool.bookmarks");
         notesPanel = new NotesPanel(config::getNotes, new NotesPanel.Actions() {
-            @Override public void openAndJump(String fileKey, com.editora.config.PersonalNote note) {
+            @Override
+            public void openAndJump(String fileKey, com.editora.config.PersonalNote note) {
                 noteActivate(fileKey, note);
             }
-            @Override public void editBody(String fileKey, com.editora.config.PersonalNote note) {
+
+            @Override
+            public void editBody(String fileKey, com.editora.config.PersonalNote note) {
                 noteEditBody(fileKey, note);
             }
-            @Override public void setStatus(String fileKey, com.editora.config.PersonalNote note,
-                    com.editora.config.NoteStatus status) {
+
+            @Override
+            public void setStatus(
+                    String fileKey, com.editora.config.PersonalNote note, com.editora.config.NoteStatus status) {
                 noteSetStatus(fileKey, note, status);
             }
-            @Override public void delete(String fileKey, com.editora.config.PersonalNote note) {
+
+            @Override
+            public void delete(String fileKey, com.editora.config.PersonalNote note) {
                 noteDelete(fileKey, note);
             }
-            @Override public void deleteAll(String fileKey) {
+
+            @Override
+            public void deleteAll(String fileKey) {
                 noteDeleteAll(fileKey);
             }
         });
-        notesToolWindow = new ToolWindow("notes", tr("toolwindow.notes"), ToolWindow.Side.RIGHT,
-                Icons::notes, notesPanel, "tool.notes");
+        notesToolWindow = new ToolWindow(
+                "notes", tr("toolwindow.notes"), ToolWindow.Side.RIGHT, Icons::notes, notesPanel, "tool.notes");
         fileInfoPanel = new FileInformationPanel();
-        fileInfoToolWindow = new ToolWindow("file-information", tr("toolwindow.file-information"), ToolWindow.Side.RIGHT,
-                Icons::about, fileInfoPanel, "tool.fileInformation");
+        fileInfoToolWindow = new ToolWindow(
+                "file-information",
+                tr("toolwindow.file-information"),
+                ToolWindow.Side.RIGHT,
+                Icons::about,
+                fileInfoPanel,
+                "tool.fileInformation");
         gitPanel = new GitPanel(new GitPanel.Actions() {
-            @Override public void open(String path) {
+            @Override
+            public void open(String path) {
                 if (currentRepoRoot != null) {
                     openPath(currentRepoRoot.resolve(path));
                 }
             }
-            @Override public void stage(String path) {
+
+            @Override
+            public void stage(String path) {
                 gitOp("Staged " + path, "add", "--", path);
             }
-            @Override public void unstage(String path) {
+
+            @Override
+            public void unstage(String path) {
                 gitOp("Unstaged " + path, "reset", "-q", "HEAD", "--", path);
             }
-            @Override public void discard(String path, boolean untracked) {
+
+            @Override
+            public void discard(String path, boolean untracked) {
                 discardChanges(path, untracked);
             }
-            @Override public void stageAll() {
+
+            @Override
+            public void stageAll() {
                 gitOp("Staged all changes", "add", "-A");
             }
-            @Override public void commit(String message) {
+
+            @Override
+            public void commit(String message) {
                 gitCommit(message);
             }
-            @Override public void push() {
+
+            @Override
+            public void push() {
                 gitPush();
             }
-            @Override public void refresh() {
+
+            @Override
+            public void refresh() {
                 gitService.invalidateCaches();
                 afterGitMutation();
             }
-            @Override public void diff(String path, boolean staged) {
+
+            @Override
+            public void diff(String path, boolean staged) {
                 diffGitPanelFile(path, staged);
             }
         });
         gitPanel.setOnClone(this::gitClone);
-        commitToolWindow = new ToolWindow("commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT,
-                Icons::git, gitPanel, "tool.commit");
+        commitToolWindow = new ToolWindow(
+                "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
         gitLogPanel = new GitLogPanel(gitLogActions());
-        gitLogToolWindow = new ToolWindow("gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM,
-                Icons::gitLog, gitLogPanel, "tool.gitLog");
+        gitLogToolWindow = new ToolWindow(
+                "gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM, Icons::gitLog, gitLogPanel, "tool.gitLog");
         searchPanel = new SearchPanel(new SearchPanel.Actions() {
-            @Override public void search(com.editora.search.SearchQuery query) {
+            @Override
+            public void search(com.editora.search.SearchQuery query) {
                 runFileSearch(query);
             }
-            @Override public void openMatch(java.nio.file.Path file, int line, int col) {
+
+            @Override
+            public void openMatch(java.nio.file.Path file, int line, int col) {
                 openPath(file);
                 Platform.runLater(() -> gotoInFile(file, line, col));
             }
-            @Override public void replaceAll(com.editora.search.SearchQuery query, String replacement,
+
+            @Override
+            public void replaceAll(
+                    com.editora.search.SearchQuery query,
+                    String replacement,
                     java.util.List<java.nio.file.Path> files) {
                 replaceInFiles(query, replacement, files);
             }
         });
-        searchToolWindow = new ToolWindow("search", tr("toolwindow.search"), ToolWindow.Side.BOTTOM,
-                Icons::find, searchPanel, "tool.search");
+        searchToolWindow = new ToolWindow(
+                "search", tr("toolwindow.search"), ToolWindow.Side.BOTTOM, Icons::find, searchPanel, "tool.search");
         problemsPanel = new ProblemsPanel(this::openAndGoto);
-        problemsToolWindow = new ToolWindow("problems", tr("toolwindow.problems"), ToolWindow.Side.BOTTOM,
-                Icons::problems, problemsPanel, "tool.problems");
+        problemsToolWindow = new ToolWindow(
+                "problems",
+                tr("toolwindow.problems"),
+                ToolWindow.Side.BOTTOM,
+                Icons::problems,
+                problemsPanel,
+                "tool.problems");
         runPanel = new RunPanel(this::stopRun);
         runPanel.setOnInput(runService::sendInput); // stdin field → the running process
-        runPanel.setOnLink(this::openRunLink);      // double-clicked stack-trace line → jump
-        runToolWindow = new ToolWindow("run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM,
-                Icons::run, runPanel, "tool.run");
+        runPanel.setOnLink(this::openRunLink); // double-clicked stack-trace line → jump
+        runToolWindow =
+                new ToolWindow("run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runPanel, "tool.run");
         debugPanel = new DebugPanel(debugActions());
         debugPanel.setPrompt(this::promptText);
         debugPanel.setOnLink(this::openRunLink); // double-clicked stack-trace line → jump
@@ -1932,15 +2132,15 @@ public class MainController {
             config.getWorkspaceState().setDebugWatches(new java.util.ArrayList<>(debugPanel.getWatches()));
             config.save();
         });
-        debugToolWindow = new ToolWindow("debug", tr("toolwindow.debug"), ToolWindow.Side.BOTTOM,
-                Icons::debug, debugPanel, "tool.debug");
+        debugToolWindow = new ToolWindow(
+                "debug", tr("toolwindow.debug"), ToolWindow.Side.BOTTOM, Icons::debug, debugPanel, "tool.debug");
         httpPanel = new HttpClientPanel(this::saveHttpResponse);
         httpPanel.setOnEnvironmentChanged(env -> {
             config.getWorkspaceState().setHttpEnvironment(env);
             config.save();
         });
-        httpToolWindow = new ToolWindow("http", tr("toolwindow.http"), ToolWindow.Side.BOTTOM,
-                Icons::httpClient, httpPanel, "tool.http");
+        httpToolWindow = new ToolWindow(
+                "http", tr("toolwindow.http"), ToolWindow.Side.BOTTOM, Icons::httpClient, httpPanel, "tool.http");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
@@ -1978,9 +2178,10 @@ public class MainController {
         setStatus(tr("search.searching"));
         searchService.search(query, root, open, outcome -> {
             searchPanel.setResults(outcome);
-            setStatus(outcome.totalMatches() == 0
-                    ? tr("search.none")
-                    : tr("search.summary", outcome.totalMatches(), outcome.fileCount()));
+            setStatus(
+                    outcome.totalMatches() == 0
+                            ? tr("search.none")
+                            : tr("search.summary", outcome.totalMatches(), outcome.fileCount()));
         });
     }
 
@@ -2004,14 +2205,16 @@ public class MainController {
      * are edited in-memory (undoable); closed files are rewritten on disk (UTF-8, line endings kept as
      * they live in the text). Asks for confirmation, then re-runs the search to refresh the panel.
      */
-    private void replaceInFiles(com.editora.search.SearchQuery query, String replacement,
-            java.util.List<java.nio.file.Path> files) {
+    private void replaceInFiles(
+            com.editora.search.SearchQuery query, String replacement, java.util.List<java.nio.file.Path> files) {
         if (query == null || query.text() == null || query.text().isEmpty() || files.isEmpty()) {
             return;
         }
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
                 tr("search.replaceConfirm", files.size()),
-                javafx.scene.control.ButtonType.OK, javafx.scene.control.ButtonType.CANCEL);
+                javafx.scene.control.ButtonType.OK,
+                javafx.scene.control.ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setHeaderText(null);
         if (confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
@@ -2077,7 +2280,8 @@ public class MainController {
      */
     /** Whether the Git integration is enabled in Settings (default off). Off in Simple UI mode. */
     private boolean gitEnabled() {
-        // Simple UI mode disables Git (status-bar VCS segment, gutter change bars, Commit window); saved setting unchanged.
+        // Simple UI mode disables Git (status-bar VCS segment, gutter change bars, Commit window); saved setting
+        // unchanged.
         return config.getSettings().isGitSupport() && !simpleModeActive();
     }
 
@@ -2136,8 +2340,8 @@ public class MainController {
         Settings s = config.getSettings();
         boolean on = s.isMermaidSupport();
         mermaidService.setPaths(s.getMmdcPath(), s.getMaidPath());
-        com.editora.editor.MermaidImages.configure(on, mermaidService.mmdcCommand(),
-                mermaidService.maidCommand(), appThemeDark());
+        com.editora.editor.MermaidImages.configure(
+                on, mermaidService.mmdcCommand(), mermaidService.maidCommand(), appThemeDark());
         // (Un)wire the preview toggle on open .mmd buffers as the feature flips, restore their saved mode
         // when enabling, and re-render every preview so ```mermaid blocks switch between diagram and code
         // (and re-theme on an app-theme change, which also routes through here).
@@ -2244,7 +2448,8 @@ public class MainController {
             setStatus(tr("status.http.noRequest"));
             return;
         }
-        com.editora.http.HttpFile.Request req = com.editora.http.HttpFile.parse(text).get(index);
+        com.editora.http.HttpFile.Request req =
+                com.editora.http.HttpFile.parse(text).get(index);
         com.editora.http.HttpFile.Parsed parsed = com.editora.http.HttpFile.parseRequest(req.block());
         String label = parsed.method() + " " + parsed.url();
         startHttpRun(label);
@@ -2268,7 +2473,8 @@ public class MainController {
         }
         String text = b.getContent();
         java.util.List<com.editora.http.HttpFile.Parsed> reqs = com.editora.http.HttpFile.parse(text).stream()
-                .map(r -> com.editora.http.HttpFile.parseRequest(r.block())).toList();
+                .map(r -> com.editora.http.HttpFile.parseRequest(r.block()))
+                .toList();
         if (reqs.isEmpty()) {
             setStatus(tr("status.http.noRequest"));
             return;
@@ -2309,8 +2515,8 @@ public class MainController {
         java.util.Map<String, String> envVars = new java.util.LinkedHashMap<>();
         envVars.putAll(httpEnvVars(dir == null ? null : dir.resolve("http-client.env.json"), env));
         envVars.putAll(httpEnvVars(dir == null ? null : dir.resolve("http-client.private.env.json"), env));
-        return com.editora.http.HttpVars.resolve(envVars,
-                com.editora.http.HttpFile.fileVariablePairs(text), java.time.LocalDateTime.now());
+        return com.editora.http.HttpVars.resolve(
+                envVars, com.editora.http.HttpFile.fileVariablePairs(text), java.time.LocalDateTime.now());
     }
 
     private java.util.Map<String, String> httpEnvVars(java.nio.file.Path file, String env) {
@@ -2386,9 +2592,11 @@ public class MainController {
         }
         Settings s = config.getSettings();
         return switch (language) {
-            case "java" -> lspEnabled() && serverEnabled("java")
-                    && lspServerAvailable.getOrDefault("java", Boolean.FALSE)
-                    && dapManager.isAdapterAvailable();
+            case "java" ->
+                lspEnabled()
+                        && serverEnabled("java")
+                        && lspServerAvailable.getOrDefault("java", Boolean.FALSE)
+                        && dapManager.isAdapterAvailable();
             case "python" -> s.isPythonDebugEnabled() && dapManager.isLanguageAvailable("python");
             case "javascript" -> s.isJsDebugEnabled() && dapManager.isLanguageAvailable("javascript");
             default -> false;
@@ -2419,9 +2627,13 @@ public class MainController {
         // Configure all three adapters: java (jdtls plugin, located synchronously) + the standalone
         // python (debugpy) / javascript (vscode-js-debug) adapters (paths resolved synchronously; their
         // availability needs a subprocess probe, run async below).
-        dapManager.configure(on, s.getJavaDebugPluginPath(),
-                s.isPythonDebugEnabled(), s.getPythonDebugCommand(),
-                s.isJsDebugEnabled(), s.getJsDebugPath());
+        dapManager.configure(
+                on,
+                s.getJavaDebugPluginPath(),
+                s.isPythonDebugEnabled(),
+                s.getPythonDebugCommand(),
+                s.isJsDebugEnabled(),
+                s.getJsDebugPath());
         List<String> bundles = on ? dapManager.bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
@@ -2459,7 +2671,8 @@ public class MainController {
 
     /** Whether a buffer's language has a registered debug adapter (java/python/javascript). */
     private boolean isDebuggableBuffer(EditorBuffer b) {
-        return b != null && com.editora.vfs.Vfs.isLocal(b.getPath())
+        return b != null
+                && com.editora.vfs.Vfs.isLocal(b.getPath())
                 && com.editora.dap.DapServerRegistry.isDebuggable(b.getLanguage());
     }
 
@@ -2487,7 +2700,8 @@ public class MainController {
         if (bps.isEmpty()) {
             map.remove(file.toString());
         } else {
-            map.put(file.toString(),
+            map.put(
+                    file.toString(),
                     com.editora.config.BreakpointStore.mergePreservingOrder(map.get(file.toString()), bps));
         }
         config.saveBreakpoints();
@@ -2508,8 +2722,7 @@ public class MainController {
         List<com.editora.dap.DapModels.LineBreakpoint> lines = new ArrayList<>();
         for (com.editora.config.Breakpoint bp : buffer.getBreakpointManager().snapshot()) {
             if (bp.enabled()) {
-                lines.add(new com.editora.dap.DapModels.LineBreakpoint(
-                        bp.line(), bp.condition(), bp.logMessage()));
+                lines.add(new com.editora.dap.DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage()));
             }
         }
         return new com.editora.dap.DapModels.FileBreakpoints(buffer.getPath(), lines);
@@ -2535,7 +2748,8 @@ public class MainController {
 
     private com.editora.dap.DapManager.Listener dapListener() {
         return new com.editora.dap.DapManager.Listener() {
-            @Override public void onState(com.editora.dap.DapManager.State state) {
+            @Override
+            public void onState(com.editora.dap.DapManager.State state) {
                 debugPanel.setState(state);
                 updateDebugStatus(state);
                 if (state != com.editora.dap.DapManager.State.SUSPENDED) {
@@ -2549,17 +2763,19 @@ public class MainController {
                 }
             }
 
-            @Override public void onStopped(int threadId, String reason,
-                    List<com.editora.dap.DapModels.StackFrameInfo> frames) {
+            @Override
+            public void onStopped(int threadId, String reason, List<com.editora.dap.DapModels.StackFrameInfo> frames) {
                 debugPanel.setCallStack(frames); // auto-selects the top frame → selectFrame highlights + loads vars
                 dapManager.threads(list -> debugPanel.setThreads(list, dapManager.currentThreadId()));
             }
 
-            @Override public void onOutput(String text, String category) {
+            @Override
+            public void onOutput(String text, String category) {
                 debugPanel.appendOutput(text, category);
             }
 
-            @Override public void onError(String message) {
+            @Override
+            public void onError(String message) {
                 setStatus(tr("status.debug.error", message));
             }
         };
@@ -2576,43 +2792,53 @@ public class MainController {
 
     private DebugPanel.Actions debugActions() {
         return new DebugPanel.Actions() {
-            @Override public void start() {
+            @Override
+            public void start() {
                 debugStart(); // start a session when idle, or continue when suspended
             }
 
-            @Override public void pause() {
+            @Override
+            public void pause() {
                 dapManager.pause();
             }
 
-            @Override public void runToCursor() {
+            @Override
+            public void runToCursor() {
                 debugRunToCursor();
             }
 
-            @Override public void selectThread(int threadId) {
+            @Override
+            public void selectThread(int threadId) {
                 dapManager.selectThread(threadId, frames -> debugPanel.setCallStack(frames));
             }
 
-            @Override public void stepOver() {
+            @Override
+            public void stepOver() {
                 dapManager.stepOver();
             }
 
-            @Override public void stepInto() {
+            @Override
+            public void stepInto() {
                 dapManager.stepInto();
             }
 
-            @Override public void stepOut() {
+            @Override
+            public void stepOut() {
                 dapManager.stepOut();
             }
 
-            @Override public void stop() {
+            @Override
+            public void stop() {
                 dapManager.stop();
             }
 
-            @Override public void restart() {
+            @Override
+            public void restart() {
                 dapManager.restart();
             }
 
-            @Override public void selectFrame(com.editora.dap.DapModels.StackFrameInfo frame) {
+            @Override
+            public void selectFrame(com.editora.dap.DapModels.StackFrameInfo frame) {
                 debugFrameId = frame.id(); // the hover evaluator's frame context
                 highlightFrame(frame);
                 dapManager.scopes(frame.id(), scopes -> {
@@ -2621,22 +2847,25 @@ public class MainController {
                 });
             }
 
-            @Override public void loadChildren(int ref,
-                    java.util.function.Consumer<List<com.editora.dap.DapModels.VariableInfo>> cb) {
+            @Override
+            public void loadChildren(
+                    int ref, java.util.function.Consumer<List<com.editora.dap.DapModels.VariableInfo>> cb) {
                 dapManager.variables(ref, cb);
             }
 
-            @Override public void evaluate(String expr, int frameId, java.util.function.Consumer<String> cb) {
+            @Override
+            public void evaluate(String expr, int frameId, java.util.function.Consumer<String> cb) {
                 dapManager.evaluate(expr, frameId, "repl", cb);
             }
 
-            @Override public void evaluateWatch(String expr, int frameId,
-                    java.util.function.Consumer<com.editora.dap.DapModels.EvalResult> cb) {
+            @Override
+            public void evaluateWatch(
+                    String expr, int frameId, java.util.function.Consumer<com.editora.dap.DapModels.EvalResult> cb) {
                 dapManager.evaluateFull(expr, frameId, "watch", cb);
             }
 
-            @Override public void setVariable(int parentRef, String name, String value,
-                    java.util.function.Consumer<String> cb) {
+            @Override
+            public void setVariable(int parentRef, String name, String value, java.util.function.Consumer<String> cb) {
                 dapManager.setVariable(parentRef, name, value, cb);
             }
         };
@@ -2651,13 +2880,13 @@ public class MainController {
 
     /** Fetches the selected frame's local variables and paints them as inline values in the frame's
      *  file buffer; also arms the hover value tooltip there (IntelliJ's editor surfaces). */
-    private void applyInlineValues(com.editora.dap.DapModels.StackFrameInfo frame,
-            List<com.editora.dap.DapModels.ScopeInfo> scopes) {
+    private void applyInlineValues(
+            com.editora.dap.DapModels.StackFrameInfo frame, List<com.editora.dap.DapModels.ScopeInfo> scopes) {
         if (frame == null || frame.file() == null || scopes.isEmpty()) {
             return;
         }
-        com.editora.dap.DapModels.ScopeInfo locals = scopes.stream()
-                .filter(s -> !s.expensive()).findFirst().orElse(null);
+        com.editora.dap.DapModels.ScopeInfo locals =
+                scopes.stream().filter(s -> !s.expensive()).findFirst().orElse(null);
         if (locals == null) {
             return;
         }
@@ -2726,10 +2955,10 @@ public class MainController {
             // session is merely running (not paused mid-step), retarget: stop it and launch the new
             // file — otherwise the Debug window stays silently bound to the old file. While SUSPENDED
             // the green button keeps its Continue semantics (never yank a paused session).
-            boolean differentFile = b != null && b.getPath() != null
-                    && !samePath(b.getPath(), dapManager.debugFile());
+            boolean differentFile = b != null && b.getPath() != null && !samePath(b.getPath(), dapManager.debugFile());
             if (dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED
-                    || !differentFile || !debugEffectiveFor(b.getLanguage())) {
+                    || !differentFile
+                    || !debugEffectiveFor(b.getLanguage())) {
                 dapManager.resume(); // F5-style continue (no-op unless suspended)
                 return;
             }
@@ -2769,8 +2998,7 @@ public class MainController {
     /** Resumes and stops at the active buffer's caret line via a one-shot temporary breakpoint. */
     private void debugRunToCursor() {
         EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null
-                || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
+        if (b == null || b.getPath() == null || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
             return;
         }
         dapManager.runToCursor(b.getPath(), b.getArea().getCurrentParagraph());
@@ -2780,16 +3008,17 @@ public class MainController {
      *  Capability-gated — debugpy supports it; java-debug/js-debug report "not supported". */
     private void debugJumpToLine() {
         EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null
-                || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
+        if (b == null || b.getPath() == null || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
             return;
         }
         if (!dapManager.supportsJumpToLine()) {
             setStatus(tr("status.debug.jumpUnsupported"));
             return;
         }
-        dapManager.jumpToLine(b.getPath(), b.getArea().getCurrentParagraph(), err ->
-                setStatus(err.isEmpty() ? tr("status.debug.jumpNoTarget") : err));
+        dapManager.jumpToLine(
+                b.getPath(),
+                b.getArea().getCurrentParagraph(),
+                err -> setStatus(err.isEmpty() ? tr("status.debug.jumpNoTarget") : err));
     }
 
     /** Attaches to a running JVM (asks for {@code host:port}). */
@@ -2824,12 +3053,16 @@ public class MainController {
     }
 
     /** Main-class chooser (QuickOpen) when jdtls finds several. */
-    private void pickMainClass(List<com.editora.dap.DapManager.MainClassOption> options,
+    private void pickMainClass(
+            List<com.editora.dap.DapManager.MainClassOption> options,
             java.util.function.Consumer<com.editora.dap.DapManager.MainClassOption> chosen) {
         QuickOpen<com.editora.dap.DapManager.MainClassOption> picker = new QuickOpen<>(
-                tr("debug.pickMainTitle"), tr("debug.pickMainPrompt"), () -> options,
+                tr("debug.pickMainTitle"),
+                tr("debug.pickMainPrompt"),
+                () -> options,
                 com.editora.dap.DapManager.MainClassOption::mainClass,
-                o -> o.projectName() == null ? "" : o.projectName(), chosen);
+                o -> o.projectName() == null ? "" : o.projectName(),
+                chosen);
         picker.setOverlayHost(overlayHost);
         picker.show(stage);
     }
@@ -2855,7 +3088,10 @@ public class MainController {
         }
         com.editora.config.Breakpoint bp = mgr.get(line);
         String initial = bp == null ? "" : bp.condition();
-        promptText(tr("dialog.debug.conditionTitle"), tr("dialog.debug.conditionContent"), initial,
+        promptText(
+                tr("dialog.debug.conditionTitle"),
+                tr("dialog.debug.conditionContent"),
+                initial,
                 cond -> mgr.setCondition(line, cond == null ? "" : cond.trim()));
     }
 
@@ -2867,8 +3103,8 @@ public class MainController {
             exceptionFilters.add("uncaught");
         }
         dapManager.setExceptionFilters(new ArrayList<>(exceptionFilters));
-        setStatus(tr(exceptionFilters.contains("uncaught")
-                ? "status.debug.exceptionsOn" : "status.debug.exceptionsOff"));
+        setStatus(
+                tr(exceptionFilters.contains("uncaught") ? "status.debug.exceptionsOn" : "status.debug.exceptionsOff"));
     }
 
     // --- LSP (Language Server Protocol) integration --------------------------------------------
@@ -2886,28 +3122,30 @@ public class MainController {
     private void applyLspSupport() {
         Settings s = config.getSettings();
         boolean on = lspEnabled(); // effective: off in Simple UI mode
-        lspManager.configure(on, java.util.Map.ofEntries(
-                java.util.Map.entry("java", s.getJavaLspCommand()),
-                java.util.Map.entry("typescript", s.getTypescriptLspCommand()),
-                java.util.Map.entry("python", s.getPythonLspCommand()),
-                java.util.Map.entry("xml", s.getXmlLspCommand()),
-                java.util.Map.entry("json", s.getJsonLspCommand()),
-                java.util.Map.entry("bash", s.getBashLspCommand()),
-                java.util.Map.entry("yaml", s.getYamlLspCommand()),
-                java.util.Map.entry("go", s.getGoLspCommand()),
-                java.util.Map.entry("rust", s.getRustLspCommand()),
-                java.util.Map.entry("php", s.getPhpLspCommand()),
-                java.util.Map.entry("ruby", s.getRubyLspCommand()),
-                java.util.Map.entry("clangd", s.getClangdLspCommand()),
-                java.util.Map.entry("html", s.getHtmlLspCommand()),
-                java.util.Map.entry("css", s.getCssLspCommand()),
-                java.util.Map.entry("kotlin", s.getKotlinLspCommand()),
-                java.util.Map.entry("lua", s.getLuaLspCommand()),
-                java.util.Map.entry("dockerfile", s.getDockerfileLspCommand()),
-                java.util.Map.entry("sql", s.getSqlLspCommand()),
-                java.util.Map.entry("terraform", s.getTerraformLspCommand()),
-                java.util.Map.entry("toml", s.getTomlLspCommand()),
-                java.util.Map.entry("csharp", s.getCsharpLspCommand())));
+        lspManager.configure(
+                on,
+                java.util.Map.ofEntries(
+                        java.util.Map.entry("java", s.getJavaLspCommand()),
+                        java.util.Map.entry("typescript", s.getTypescriptLspCommand()),
+                        java.util.Map.entry("python", s.getPythonLspCommand()),
+                        java.util.Map.entry("xml", s.getXmlLspCommand()),
+                        java.util.Map.entry("json", s.getJsonLspCommand()),
+                        java.util.Map.entry("bash", s.getBashLspCommand()),
+                        java.util.Map.entry("yaml", s.getYamlLspCommand()),
+                        java.util.Map.entry("go", s.getGoLspCommand()),
+                        java.util.Map.entry("rust", s.getRustLspCommand()),
+                        java.util.Map.entry("php", s.getPhpLspCommand()),
+                        java.util.Map.entry("ruby", s.getRubyLspCommand()),
+                        java.util.Map.entry("clangd", s.getClangdLspCommand()),
+                        java.util.Map.entry("html", s.getHtmlLspCommand()),
+                        java.util.Map.entry("css", s.getCssLspCommand()),
+                        java.util.Map.entry("kotlin", s.getKotlinLspCommand()),
+                        java.util.Map.entry("lua", s.getLuaLspCommand()),
+                        java.util.Map.entry("dockerfile", s.getDockerfileLspCommand()),
+                        java.util.Map.entry("sql", s.getSqlLspCommand()),
+                        java.util.Map.entry("terraform", s.getTerraformLspCommand()),
+                        java.util.Map.entry("toml", s.getTomlLspCommand()),
+                        java.util.Map.entry("csharp", s.getCsharpLspCommand())));
         if (problemsToolWindow != null) {
             toolWindows.setAvailable(problemsToolWindow, on);
         }
@@ -3021,8 +3259,11 @@ public class MainController {
         Path path = buffer.getPath();
         String lang = buffer.getLanguage();
         String serverId = com.editora.lsp.LspServerRegistry.serverIdFor(lang);
-        boolean eligible = lspEnabled() && path != null && com.editora.vfs.Vfs.isLocal(path)
-                && serverId != null && serverEnabled(serverId)
+        boolean eligible = lspEnabled()
+                && path != null
+                && com.editora.vfs.Vfs.isLocal(path)
+                && serverId != null
+                && serverEnabled(serverId)
                 && Boolean.TRUE.equals(lspServerAvailable.get(serverId));
         if (eligible) {
             if (!lspManager.isManaged(path)) {
@@ -3043,11 +3284,10 @@ public class MainController {
 
     /** Workspace root for a buffer: active project (if Projects on), else nearest build file, else dir. */
     private Path lspRootFor(EditorBuffer buffer) {
-        Project active = (projects != null && config.getSettings().isProjectSupport())
-                ? projects.active() : null;
+        Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
         Path projectRoot = active == null ? null : Path.of(active.root());
-        return com.editora.lsp.RootResolver.resolve(projectRoot, buffer.getPath(),
-                com.editora.lsp.LspServerRegistry.rootMarkersFor(buffer.getLanguage()));
+        return com.editora.lsp.RootResolver.resolve(
+                projectRoot, buffer.getPath(), com.editora.lsp.LspServerRegistry.rootMarkersFor(buffer.getLanguage()));
     }
 
     /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
@@ -3079,7 +3319,8 @@ public class MainController {
         // those complaints (real errors in the file still surface).
         if (buffer != null && "java".equals(buffer.getLanguage()) && buffer.isRunnable()) {
             diagnostics = diagnostics.stream()
-                    .filter(d -> !isCompactSourceNoise(d.message())).toList();
+                    .filter(d -> !isCompactSourceNoise(d.message()))
+                    .toList();
         }
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
@@ -3099,9 +3340,9 @@ public class MainController {
             return false;
         }
         String m = message.toLowerCase(java.util.Locale.ROOT);
-        return m.contains("implicitly declared class")  // JDK 23+ JDT wording (incl. preview gating)
-                || m.contains("unnamed class")           // the JDK 21/22 preview-era wording
-                || m.contains("instance main method");   // "...Instance Main Methods is a preview feature"
+        return m.contains("implicitly declared class") // JDK 23+ JDT wording (incl. preview gating)
+                || m.contains("unnamed class") // the JDK 21/22 preview-era wording
+                || m.contains("instance main method"); // "...Instance Main Methods is a preview feature"
     }
 
     private void refreshProblems() {
@@ -3123,7 +3364,8 @@ public class MainController {
     private String serverLabel(String serverId) {
         String configured = serverCommand(serverId);
         String cmd = configured == null || configured.isBlank()
-                ? com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId) : configured;
+                ? com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId)
+                : configured;
         java.util.List<String> toks = com.editora.lsp.LspServerRegistry.tokenize(cmd);
         String exe = toks.isEmpty() ? serverId : toks.get(0);
         try {
@@ -3215,7 +3457,8 @@ public class MainController {
             String name = p.getFileName().toString();
             for (Tab t : tabPane.getTabs()) { // an open tab with that file name wins
                 EditorBuffer b = bufferOf(t);
-                if (b != null && b.getPath() != null
+                if (b != null
+                        && b.getPath() != null
                         && b.getPath().getFileName().toString().equals(name)) {
                     return b.getPath();
                 }
@@ -3279,7 +3522,8 @@ public class MainController {
                 return;
             }
             QuickOpen<com.editora.lsp.LspManager.Target> picker = new QuickOpen<>(
-                    tr("lsp.references.title"), tr("lsp.references.prompt"),
+                    tr("lsp.references.title"),
+                    tr("lsp.references.prompt"),
                     () -> targets,
                     t -> t.file().getFileName() + ":" + (t.line() + 1),
                     t -> t.file().toString(),
@@ -3324,9 +3568,10 @@ public class MainController {
         javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(content);
         box.getStyleClass().add("lsp-hover-popup");
         box.setMaxWidth(560);
-        box.getStylesheets().addAll(
-                getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
-                getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
+        box.getStylesheets()
+                .addAll(
+                        getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
+                        getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
 
         javafx.stage.Popup popup = new javafx.stage.Popup();
         popup.setAutoHide(true); // click outside / focus loss dismisses it
@@ -3515,44 +3760,61 @@ public class MainController {
      * the clean {@code leftName}/{@code rightName} (real file names) drive grammar + patch labels. The
      * pane's refresher re-fetches both sides and re-renders only when the content changed.
      */
-    private void openDiff(String title, String headerLeft, String headerRight, String leftName,
-            String rightName, DiffSide leftSide, DiffSide rightSide,
-            DiffViewerPane.EditableSide editableSide, Path target) {
-        leftSide.fetch(leftText -> rightSide.fetch(rightText ->
-                diffService.compute(leftText, rightText, model -> {
-                    if (model == null) {
-                        setStatus(tr("status.diff.tooLarge"));
-                        return;
+    private void openDiff(
+            String title,
+            String headerLeft,
+            String headerRight,
+            String leftName,
+            String rightName,
+            DiffSide leftSide,
+            DiffSide rightSide,
+            DiffViewerPane.EditableSide editableSide,
+            Path target) {
+        leftSide.fetch(leftText -> rightSide.fetch(rightText -> diffService.compute(leftText, rightText, model -> {
+            if (model == null) {
+                setStatus(tr("status.diff.tooLarge"));
+                return;
+            }
+            DiffViewerPane pane = new DiffViewerPane(
+                    title,
+                    headerLeft,
+                    headerRight,
+                    leftName,
+                    rightName,
+                    leftText,
+                    rightText,
+                    model,
+                    config.getSettings().getFontFamily(),
+                    config.getSettings().getFontSize(),
+                    config.getSettings().isShowLineNumbers(),
+                    target == null ? null : target.toString());
+            pane.setOnExportPatch(this::exportPatch);
+            // "Apply change" arrows write the hunk into the local/editable file (via an undoable
+            // editor buffer), with Undo + Save acting on that buffer.
+            if (editableSide != DiffViewerPane.EditableSide.NONE && target != null) {
+                pane.setEditable(
+                        editableSide,
+                        newText -> applyToLocal(target, newText),
+                        () -> undoLocal(target),
+                        () -> saveLocal(target));
+            }
+            // Refresh: re-fetch both sides; re-render only if the content actually changed
+            // (so a focus-regain with no change keeps the view + scroll position).
+            pane.setRefresher(() -> leftSide.fetch(l -> rightSide.fetch(r -> {
+                if (pane.matches(l, r)) {
+                    return;
+                }
+                diffService.compute(l, r, m -> {
+                    if (m != null) {
+                        pane.updateContent(l, r, m);
                     }
-                    DiffViewerPane pane = new DiffViewerPane(title, headerLeft, headerRight, leftName,
-                            rightName, leftText, rightText, model,
-                            config.getSettings().getFontFamily(), config.getSettings().getFontSize(),
-                            config.getSettings().isShowLineNumbers(),
-                            target == null ? null : target.toString());
-                    pane.setOnExportPatch(this::exportPatch);
-                    // "Apply change" arrows write the hunk into the local/editable file (via an undoable
-                    // editor buffer), with Undo + Save acting on that buffer.
-                    if (editableSide != DiffViewerPane.EditableSide.NONE && target != null) {
-                        pane.setEditable(editableSide, newText -> applyToLocal(target, newText),
-                                () -> undoLocal(target), () -> saveLocal(target));
-                    }
-                    // Refresh: re-fetch both sides; re-render only if the content actually changed
-                    // (so a focus-regain with no change keeps the view + scroll position).
-                    pane.setRefresher(() -> leftSide.fetch(l -> rightSide.fetch(r -> {
-                        if (pane.matches(l, r)) {
-                            return;
-                        }
-                        diffService.compute(l, r, m -> {
-                            if (m != null) {
-                                pane.updateContent(l, r, m);
-                            }
-                        });
-                    })));
-                    addContentTab(pane, true);
-                    if (model.isEmpty()) {
-                        setStatus(tr("status.diff.identical"));
-                    }
-                })));
+                });
+            })));
+            addContentTab(pane, true);
+            if (model.isEmpty()) {
+                setStatus(tr("status.diff.identical"));
+            }
+        })));
     }
 
     /** Re-fetches every open diff tab's sides (run on window focus-regain + after a git mutation), so a
@@ -3647,10 +3909,16 @@ public class MainController {
         }
         Path path = b.getPath();
         String name = path.getFileName().toString();
-        openDiff(tr("diff.title.vsHead", name), tr("diff.side.head"), tr("diff.side.working"), name, name,
+        openDiff(
+                tr("diff.title.vsHead", name),
+                tr("diff.side.head"),
+                tr("diff.side.working"),
+                name,
+                name,
                 cb -> gitService.show(currentRepoRoot, "HEAD:" + rel, cb),
                 cb -> cb.accept(worktreeText(path)),
-                DiffViewerPane.EditableSide.RIGHT, path);
+                DiffViewerPane.EditableSide.RIGHT,
+                path);
     }
 
     /** Pick a second file and diff it against the active file. */
@@ -3662,15 +3930,25 @@ public class MainController {
         }
         Path basePath = b.getPath();
         String leftName = basePath.getFileName().toString();
-        FileFinder picker = new FileFinder(this::finderStartDir, chosen -> {
-            String rightName = chosen.getFileName().toString();
-            // Both sides re-fetch via worktreeText (open buffer's live text if open, else disk), so the
-            // diff tracks either file changing on disk.
-            openDiff(tr("diff.title.compare", leftName, rightName), leftName, rightName, leftName, rightName,
-                    cb -> cb.accept(worktreeText(basePath)),
-                    cb -> cb.accept(worktreeText(chosen)),
-                    DiffViewerPane.EditableSide.LEFT, basePath);
-        }, false, tr("diff.compareTitle"));
+        FileFinder picker = new FileFinder(
+                this::finderStartDir,
+                chosen -> {
+                    String rightName = chosen.getFileName().toString();
+                    // Both sides re-fetch via worktreeText (open buffer's live text if open, else disk), so the
+                    // diff tracks either file changing on disk.
+                    openDiff(
+                            tr("diff.title.compare", leftName, rightName),
+                            leftName,
+                            rightName,
+                            leftName,
+                            rightName,
+                            cb -> cb.accept(worktreeText(basePath)),
+                            cb -> cb.accept(worktreeText(chosen)),
+                            DiffViewerPane.EditableSide.LEFT,
+                            basePath);
+                },
+                false,
+                tr("diff.compareTitle"));
         picker.setOverlayHost(overlayHost);
         picker.show(stage);
     }
@@ -3699,16 +3977,22 @@ public class MainController {
                 return;
             }
             QuickOpen<com.editora.git.GitService.Commit> picker = new QuickOpen<>(
-                    tr("diff.commitPickerTitle"), tr("diff.commitPickerPrompt"),
+                    tr("diff.commitPickerTitle"),
+                    tr("diff.commitPickerPrompt"),
                     () -> commits,
                     c -> c.shortHash() + "  " + c.subject(),
                     c -> c.date() + " · " + c.author(),
                     c -> c.shortHash() + " " + c.subject() + " " + c.author() + " " + c.date(),
-                    chosen -> openDiff(tr("diff.title.vsCommit", name, chosen.shortHash()),
-                            chosen.shortHash(), tr("diff.side.working"), name, name,
+                    chosen -> openDiff(
+                            tr("diff.title.vsCommit", name, chosen.shortHash()),
+                            chosen.shortHash(),
+                            tr("diff.side.working"),
+                            name,
+                            name,
                             cb -> gitService.show(currentRepoRoot, chosen.hash() + ":" + rel, cb),
                             cb -> cb.accept(worktreeText(path)),
-                            DiffViewerPane.EditableSide.RIGHT, path));
+                            DiffViewerPane.EditableSide.RIGHT,
+                            path));
             picker.setOverlayHost(overlayHost);
             picker.show(stage);
         });
@@ -3723,17 +4007,27 @@ public class MainController {
         String name = abs.getFileName().toString();
         if (staged) {
             // index↔HEAD: neither side is the working file, so no "apply" (read-only diff).
-            openDiff(tr("diff.title.staged", name), tr("diff.side.head"), tr("diff.side.staged"),
-                    name, name,
+            openDiff(
+                    tr("diff.title.staged", name),
+                    tr("diff.side.head"),
+                    tr("diff.side.staged"),
+                    name,
+                    name,
                     cb -> gitService.show(currentRepoRoot, "HEAD:" + repoRel, cb),
                     cb -> gitService.show(currentRepoRoot, ":" + repoRel, cb),
-                    DiffViewerPane.EditableSide.NONE, null);
+                    DiffViewerPane.EditableSide.NONE,
+                    null);
         } else {
-            openDiff(tr("diff.title.unstaged", name), tr("diff.side.staged"), tr("diff.side.working"),
-                    name, name,
+            openDiff(
+                    tr("diff.title.unstaged", name),
+                    tr("diff.side.staged"),
+                    tr("diff.side.working"),
+                    name,
+                    name,
                     cb -> gitService.show(currentRepoRoot, ":" + repoRel, cb),
                     cb -> cb.accept(worktreeText(abs)),
-                    DiffViewerPane.EditableSide.RIGHT, abs);
+                    DiffViewerPane.EditableSide.RIGHT,
+                    abs);
         }
     }
 
@@ -3787,11 +4081,16 @@ public class MainController {
             setStatus(tr("status.merge.noConflicts"));
             return;
         }
-        java.util.List<String> raw = java.util.List.of(text.replace("\r\n", "\n").split("\n", -1));
+        java.util.List<String> raw =
+                java.util.List.of(text.replace("\r\n", "\n").split("\n", -1));
         com.editora.diff.ConflictParser.ConflictFile cf = com.editora.diff.ConflictParser.parse(raw);
-        String name = b.getPath() == null ? b.getTitle() : b.getPath().getFileName().toString();
-        MergeViewerPane pane = new MergeViewerPane(tr("merge.title", name), cf,
-                config.getSettings().getFontFamily(), config.getSettings().getFontSize(),
+        String name =
+                b.getPath() == null ? b.getTitle() : b.getPath().getFileName().toString();
+        MergeViewerPane pane = new MergeViewerPane(
+                tr("merge.title", name),
+                cf,
+                config.getSettings().getFontFamily(),
+                config.getSettings().getFontSize(),
                 resolvedLines -> {
                     b.getArea().replaceText(String.join("\n", resolvedLines));
                     setStatus(tr("status.merge.applied"));
@@ -3804,14 +4103,17 @@ public class MainController {
             setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
             return;
         }
-        gitService.run(currentRepoRoot, r -> {
-            if (r.ok()) {
-                setStatus(successMessage);
-            } else {
-                gitError("Git command failed", r.message());
-            }
-            afterGitMutation();
-        }, args);
+        gitService.run(
+                currentRepoRoot,
+                r -> {
+                    if (r.ok()) {
+                        setStatus(successMessage);
+                    } else {
+                        gitError("Git command failed", r.message());
+                    }
+                    afterGitMutation();
+                },
+                args);
     }
 
     /** Confirms then discards a file's changes (or deletes an untracked file) — destructive. */
@@ -3819,10 +4121,11 @@ public class MainController {
         if (currentRepoRoot == null) {
             return;
         }
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                untracked ? tr("dialog.discard.untracked", path)
-                        : tr("dialog.discard.tracked", path),
-                ButtonType.OK, ButtonType.CANCEL);
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                untracked ? tr("dialog.discard.untracked", path) : tr("dialog.discard.tracked", path),
+                ButtonType.OK,
+                ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.discard.title"));
         confirm.setHeaderText(null);
@@ -3842,30 +4145,39 @@ public class MainController {
         if (currentRepoRoot == null) {
             return;
         }
-        gitService.run(currentRepoRoot, r -> {
-            if (r.ok()) {
-                gitPanel.clearMessage();
-                setStatus(tr("status.committed"));
-            } else {
-                gitError("Commit failed", r.message());
-            }
-            afterGitMutation();
-        }, "commit", "-m", message);
+        gitService.run(
+                currentRepoRoot,
+                r -> {
+                    if (r.ok()) {
+                        gitPanel.clearMessage();
+                        setStatus(tr("status.committed"));
+                    } else {
+                        gitError("Commit failed", r.message());
+                    }
+                    afterGitMutation();
+                },
+                "commit",
+                "-m",
+                message);
     }
 
     private void checkoutBranch(String name) {
         if (currentRepoRoot == null || name == null || name.isBlank()) {
             return;
         }
-        gitService.run(currentRepoRoot, r -> {
-            if (r.ok()) {
-                setStatus(tr("status.switchedBranch", name));
-            } else {
-                gitError("Couldn't switch to " + name, r.message());
-            }
-            afterGitMutation();
-            reloadAllFromDiskSilently();
-        }, "checkout", name);
+        gitService.run(
+                currentRepoRoot,
+                r -> {
+                    if (r.ok()) {
+                        setStatus(tr("status.switchedBranch", name));
+                    } else {
+                        gitError("Couldn't switch to " + name, r.message());
+                    }
+                    afterGitMutation();
+                    reloadAllFromDiskSilently();
+                },
+                "checkout",
+                name);
     }
 
     /** Checks out a remote branch (e.g. {@code origin/foo}), creating a local tracking branch. */
@@ -3873,15 +4185,20 @@ public class MainController {
         if (currentRepoRoot == null || remote == null || remote.isBlank()) {
             return;
         }
-        gitService.run(currentRepoRoot, r -> {
-            if (r.ok()) {
-                setStatus(tr("status.checkedOut", remote));
-            } else {
-                gitError("Couldn't check out " + remote, r.message());
-            }
-            afterGitMutation();
-            reloadAllFromDiskSilently();
-        }, "checkout", "--track", remote);
+        gitService.run(
+                currentRepoRoot,
+                r -> {
+                    if (r.ok()) {
+                        setStatus(tr("status.checkedOut", remote));
+                    } else {
+                        gitError("Couldn't check out " + remote, r.message());
+                    }
+                    afterGitMutation();
+                    reloadAllFromDiskSilently();
+                },
+                "checkout",
+                "--track",
+                remote);
     }
 
     /** Toggles the IntelliJ-style branch dropdown, fetching local + remote branches off-thread first. */
@@ -3903,15 +4220,24 @@ public class MainController {
         gitService.branches(currentRepoRoot, branches -> {
             List<BranchPopup.MenuAction> actions = List.of(
                     new BranchPopup.MenuAction(tr("branch.newBranch"), "", this::newBranch),
-                    new BranchPopup.MenuAction(tr("branch.pull"), "", () -> gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
-                    new BranchPopup.MenuAction(tr("branch.fetch"), "", () -> gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
+                    new BranchPopup.MenuAction(
+                            tr("branch.pull"), "", () -> gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
+                    new BranchPopup.MenuAction(
+                            tr("branch.fetch"), "", () -> gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
                     new BranchPopup.MenuAction(tr("branch.push"), "", this::gitPush),
                     new BranchPopup.MenuAction(tr("branch.stash"), "", this::gitStash),
                     new BranchPopup.MenuAction(tr("branch.unstash"), "", this::gitUnstash),
                     new BranchPopup.MenuAction(tr("branch.commit"), "C-x g", this::gitCommitFocus));
-            branchPopup.show(stage, statusBar.gitSegmentNode(), currentBranchName,
-                    branches.local(), branches.remote(), branches.remoteUrl(), actions,
-                    this::checkoutBranch, this::checkoutRemoteBranch);
+            branchPopup.show(
+                    stage,
+                    statusBar.gitSegmentNode(),
+                    currentBranchName,
+                    branches.local(),
+                    branches.remote(),
+                    branches.remoteUrl(),
+                    actions,
+                    this::checkoutBranch,
+                    this::checkoutRemoteBranch);
         });
     }
 
@@ -3925,14 +4251,19 @@ public class MainController {
             if (name.isEmpty()) {
                 return;
             }
-            gitService.run(currentRepoRoot, r -> {
-                if (r.ok()) {
-                    setStatus(tr("status.createdBranch", name));
-                } else {
-                    gitError("Couldn't create branch " + name, r.message());
-                }
-                afterGitMutation();
-            }, "checkout", "-b", name);
+            gitService.run(
+                    currentRepoRoot,
+                    r -> {
+                        if (r.ok()) {
+                            setStatus(tr("status.createdBranch", name));
+                        } else {
+                            gitError("Couldn't create branch " + name, r.message());
+                        }
+                        afterGitMutation();
+                    },
+                    "checkout",
+                    "-b",
+                    name);
         });
     }
 
@@ -3942,15 +4273,18 @@ public class MainController {
             return;
         }
         setStatus(tr("status.gitRunning", label));
-        gitService.runNetwork(currentRepoRoot, r -> {
-            if (r.ok()) {
-                setStatus(tr("status.gitDone", label));
-                reloadAllFromDiskSilently();
-            } else {
-                gitError(label + " failed", r.message());
-            }
-            afterGitMutation();
-        }, args);
+        gitService.runNetwork(
+                currentRepoRoot,
+                r -> {
+                    if (r.ok()) {
+                        setStatus(tr("status.gitDone", label));
+                        reloadAllFromDiskSilently();
+                    } else {
+                        gitError(label + " failed", r.message());
+                    }
+                    afterGitMutation();
+                },
+                args);
     }
 
     /**
@@ -3975,40 +4309,59 @@ public class MainController {
     /** The {@link GitLogPanel.Actions} the Git Log tool window routes user actions through. */
     private GitLogPanel.Actions gitLogActions() {
         return new GitLogPanel.Actions() {
-            @Override public void refresh() {
+            @Override
+            public void refresh() {
                 loadGitLog(gitLogFilter);
             }
-            @Override public void showAll() {
+
+            @Override
+            public void showAll() {
                 loadGitLog(null);
             }
-            @Override public void selected(String hash) {
+
+            @Override
+            public void selected(String hash) {
                 if (currentRepoRoot != null) {
                     gitService.commitFiles(currentRepoRoot, hash, gitLogPanel::setCommitFiles);
                 }
             }
-            @Override public void openFileDiff(String hash, String repoRel) {
+
+            @Override
+            public void openFileDiff(String hash, String repoRel) {
                 diffCommitFile(hash, repoRel);
             }
-            @Override public void copyHash(String hash) {
+
+            @Override
+            public void copyHash(String hash) {
                 ClipboardContent content = new ClipboardContent();
                 content.putString(hash);
                 Clipboard.getSystemClipboard().setContent(content);
                 setStatus(tr("status.git.copiedHash", shortHash(hash)));
             }
-            @Override public void checkout(String hash) {
+
+            @Override
+            public void checkout(String hash) {
                 gitMutate(tr("status.git.checkedOut", shortHash(hash)), "checkout", hash);
             }
-            @Override public void reset(String hash, String mode) {
+
+            @Override
+            public void reset(String hash, String mode) {
                 gitMutate(tr("status.git.reset", mode, shortHash(hash)), "reset", "--" + mode, hash);
                 Platform.runLater(MainController.this::checkExternalChanges);
             }
-            @Override public void revert(String hash) {
+
+            @Override
+            public void revert(String hash) {
                 gitMutate(tr("status.git.reverted", shortHash(hash)), "revert", "--no-edit", hash);
             }
-            @Override public void cherryPick(String hash) {
+
+            @Override
+            public void cherryPick(String hash) {
                 gitMutate(tr("status.git.cherryPicked", shortHash(hash)), "cherry-pick", hash);
             }
-            @Override public void newBranch(String hash) {
+
+            @Override
+            public void newBranch(String hash) {
                 promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
                     String name = input.strip();
                     if (!name.isEmpty()) {
@@ -4060,11 +4413,16 @@ public class MainController {
             return;
         }
         String name = repoRel.substring(repoRel.lastIndexOf('/') + 1);
-        openDiff(tr("diff.title.commitFile", name, shortHash(hash)),
-                tr("diff.side.parent"), tr("diff.title.vsCommitShort", shortHash(hash)), name, name,
+        openDiff(
+                tr("diff.title.commitFile", name, shortHash(hash)),
+                tr("diff.side.parent"),
+                tr("diff.title.vsCommitShort", shortHash(hash)),
+                name,
+                name,
                 cb -> gitService.show(currentRepoRoot, hash + "~1:" + repoRel, cb),
                 cb -> gitService.show(currentRepoRoot, hash + ":" + repoRel, cb),
-                DiffViewerPane.EditableSide.NONE, null);
+                DiffViewerPane.EditableSide.NONE,
+                null);
     }
 
     /** A history mutation (checkout/reset/revert/cherry-pick/branch): run, report, refresh + reload log. */
@@ -4073,15 +4431,18 @@ public class MainController {
             setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
             return;
         }
-        gitService.run(currentRepoRoot, r -> {
-            if (r.ok()) {
-                setStatus(successMessage);
-            } else {
-                gitError(tr("status.git.opFailed"), r.message());
-            }
-            afterGitMutation();
-            loadGitLog(gitLogFilter); // HEAD/refs moved → refresh the log
-        }, args);
+        gitService.run(
+                currentRepoRoot,
+                r -> {
+                    if (r.ok()) {
+                        setStatus(successMessage);
+                    } else {
+                        gitError(tr("status.git.opFailed"), r.message());
+                    }
+                    afterGitMutation();
+                    loadGitLog(gitLogFilter); // HEAD/refs moved → refresh the log
+                },
+                args);
     }
 
     // --- Inline blame ----------------------------------------------------------------------------
@@ -4109,8 +4470,11 @@ public class MainController {
         if (b == null) {
             return;
         }
-        if (!gitBlameEnabled() || b.getPath() == null || b.isLargeFile()
-                || !isLocalBuffer(b) || currentRepoRoot == null) {
+        if (!gitBlameEnabled()
+                || b.getPath() == null
+                || b.isLargeFile()
+                || !isLocalBuffer(b)
+                || currentRepoRoot == null) {
             b.setBlame(null);
             return;
         }
@@ -4127,7 +4491,8 @@ public class MainController {
         long now = System.currentTimeMillis() / 1000L;
         List<com.editora.editor.BlameInfo> out = new java.util.ArrayList<>(lines.size());
         for (com.editora.git.BlameParser.BlameLine bl : lines) {
-            String text = bl.uncommitted() ? tr("blame.uncommitted")
+            String text = bl.uncommitted()
+                    ? tr("blame.uncommitted")
                     : tr("blame.annotation", bl.author(), relativeTimeLabel(bl.epochSeconds(), now), bl.summary());
             out.add(new com.editora.editor.BlameInfo(text, bl.uncommitted() ? "" : bl.hash()));
         }
@@ -4188,18 +4553,19 @@ public class MainController {
         }
         promptText(tr("stash.prompt.title"), tr("stash.prompt.label"), "", msg -> {
             String m = msg.strip();
-            String[] args = m.isEmpty()
-                    ? new String[]{"stash", "push"}
-                    : new String[]{"stash", "push", "-m", m};
-            gitService.run(currentRepoRoot, r -> {
-                if (r.ok()) {
-                    setStatus(tr("stash.pushed"));
-                } else {
-                    gitError(tr("status.git.opFailed"), r.message());
-                }
-                afterGitMutation();
-                Platform.runLater(this::checkExternalChanges);
-            }, args);
+            String[] args = m.isEmpty() ? new String[] {"stash", "push"} : new String[] {"stash", "push", "-m", m};
+            gitService.run(
+                    currentRepoRoot,
+                    r -> {
+                        if (r.ok()) {
+                            setStatus(tr("stash.pushed"));
+                        } else {
+                            gitError(tr("status.git.opFailed"), r.message());
+                        }
+                        afterGitMutation();
+                        Platform.runLater(this::checkExternalChanges);
+                    },
+                    args);
         });
     }
 
@@ -4210,18 +4576,19 @@ public class MainController {
 
     /** Opens a picker over the stash list to apply / pop / drop a chosen entry. */
     private void gitUnstash() {
-        chooseStash(tr("stash.picker.applyTitle"), entry ->
-                gitMutateStash(tr("stash.applied"), "stash", "apply", entry.ref()));
+        chooseStash(
+                tr("stash.picker.applyTitle"),
+                entry -> gitMutateStash(tr("stash.applied"), "stash", "apply", entry.ref()));
     }
 
     /** Opens a picker over the stash list to drop a chosen entry. */
     private void gitStashDrop() {
-        chooseStash(tr("stash.picker.dropTitle"), entry ->
-                gitMutateStash(tr("stash.dropped"), "stash", "drop", entry.ref()));
+        chooseStash(
+                tr("stash.picker.dropTitle"),
+                entry -> gitMutateStash(tr("stash.dropped"), "stash", "drop", entry.ref()));
     }
 
-    private void chooseStash(String title,
-            java.util.function.Consumer<com.editora.git.StashParser.StashEntry> onPick) {
+    private void chooseStash(String title, java.util.function.Consumer<com.editora.git.StashParser.StashEntry> onPick) {
         if (currentRepoRoot == null) {
             setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
             return;
@@ -4232,7 +4599,8 @@ public class MainController {
                 return;
             }
             QuickOpen<com.editora.git.StashParser.StashEntry> picker = new QuickOpen<>(
-                    title, tr("stash.picker.prompt"),
+                    title,
+                    tr("stash.picker.prompt"),
                     () -> stashes,
                     e -> e.ref() + "  " + e.subject(),
                     e -> e.branch(),
@@ -4248,15 +4616,18 @@ public class MainController {
             setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
             return;
         }
-        gitService.run(currentRepoRoot, r -> {
-            if (r.ok()) {
-                setStatus(successMessage);
-            } else {
-                gitError(tr("status.git.opFailed"), r.message());
-            }
-            afterGitMutation();
-            Platform.runLater(this::checkExternalChanges);
-        }, args);
+        gitService.run(
+                currentRepoRoot,
+                r -> {
+                    if (r.ok()) {
+                        setStatus(successMessage);
+                    } else {
+                        gitError(tr("status.git.opFailed"), r.message());
+                    }
+                    afterGitMutation();
+                    Platform.runLater(this::checkExternalChanges);
+                },
+                args);
     }
 
     /**
@@ -4307,7 +4678,10 @@ public class MainController {
             if (!dirEdited[0]) {
                 String name = repoNameFromUrl(b);
                 autoFilling[0] = true;
-                dirField.setText(name.isEmpty() ? "" : Path.of(defaultParent).resolve(name).toString());
+                dirField.setText(
+                        name.isEmpty()
+                                ? ""
+                                : Path.of(defaultParent).resolve(name).toString());
                 autoFilling[0] = false;
             }
         });
@@ -4322,7 +4696,9 @@ public class MainController {
             java.io.File parent = chooser.showDialog(stage);
             if (parent != null) {
                 String name = repoNameFromUrl(urlField.getText());
-                dirField.setText(parent.toPath().resolve(name.isEmpty() ? "repository" : name).toString());
+                dirField.setText(parent.toPath()
+                        .resolve(name.isEmpty() ? "repository" : name)
+                        .toString());
             }
         });
 
@@ -4339,13 +4715,20 @@ public class MainController {
 
         // Enable Clone only when both fields are filled (mirrors the old dialog's validation).
         javafx.beans.property.BooleanProperty valid = new javafx.beans.property.SimpleBooleanProperty(false);
-        Runnable revalidate = () -> valid.set(!urlField.getText().isBlank() && !dirField.getText().isBlank());
+        Runnable revalidate = () ->
+                valid.set(!urlField.getText().isBlank() && !dirField.getText().isBlank());
         urlField.textProperty().addListener((o, a, b) -> revalidate.run());
         dirField.textProperty().addListener((o, a, b) -> revalidate.run());
         revalidate.run();
 
-        OverlayInput.show(overlayHost, tr("dialog.clone.title"), grid, urlField, tr("dialog.clone.button"),
-                valid, () -> {
+        OverlayInput.show(
+                overlayHost,
+                tr("dialog.clone.title"),
+                grid,
+                urlField,
+                tr("dialog.clone.button"),
+                valid,
+                () -> {
                     String url = urlField.getText().strip();
                     Path destination = Path.of(dirField.getText().strip());
                     if (Files.exists(destination)) {
@@ -4361,7 +4744,9 @@ public class MainController {
                             gitError("Clone failed", r.message());
                         }
                     });
-                }, null, false);
+                },
+                null,
+                false);
     }
 
     // ===== Remote files (SFTP) =====
@@ -4399,11 +4784,13 @@ public class MainController {
         authCombo.setConverter(new javafx.util.StringConverter<com.editora.vfs.RemoteConnection.AuthMethod>() {
             @Override
             public String toString(com.editora.vfs.RemoteConnection.AuthMethod m) {
-                return m == null ? "" : switch (m) {
-                    case DEFAULT_KEYS -> tr("remote.auth.defaultKeys");
-                    case KEY -> tr("remote.auth.key");
-                    case PASSWORD -> tr("remote.auth.password");
-                };
+                return m == null
+                        ? ""
+                        : switch (m) {
+                            case DEFAULT_KEYS -> tr("remote.auth.defaultKeys");
+                            case KEY -> tr("remote.auth.key");
+                            case PASSWORD -> tr("remote.auth.password");
+                        };
             }
 
             @Override
@@ -4468,13 +4855,20 @@ public class MainController {
         GridPane.setHgrow(hostField, Priority.ALWAYS);
 
         javafx.beans.property.BooleanProperty valid = new javafx.beans.property.SimpleBooleanProperty(false);
-        Runnable revalidate = () -> valid.set(!hostField.getText().isBlank() && !userField.getText().isBlank());
+        Runnable revalidate = () ->
+                valid.set(!hostField.getText().isBlank() && !userField.getText().isBlank());
         hostField.textProperty().addListener((o, a, b) -> revalidate.run());
         userField.textProperty().addListener((o, a, b) -> revalidate.run());
         revalidate.run();
 
-        OverlayInput.show(overlayHost, tr("remote.connect.title"), grid, hostField, tr("remote.connect.button"),
-                valid, () -> {
+        OverlayInput.show(
+                overlayHost,
+                tr("remote.connect.title"),
+                grid,
+                hostField,
+                tr("remote.connect.button"),
+                valid,
+                () -> {
                     int port = 22;
                     try {
                         port = Integer.parseInt(portField.getText().strip());
@@ -4483,10 +4877,16 @@ public class MainController {
                     }
                     String path = pathField.getText().strip();
                     com.editora.vfs.RemoteConnection conn = new com.editora.vfs.RemoteConnection(
-                            hostField.getText().strip(), port, userField.getText().strip(),
-                            authCombo.getValue(), keyField.getText().strip(), null,
+                            hostField.getText().strip(),
+                            port,
+                            userField.getText().strip(),
+                            authCombo.getValue(),
+                            keyField.getText().strip(),
+                            null,
                             path.isEmpty() ? null : path);
-                    char[] secret = secretField.getText().isEmpty() ? null : secretField.getText().toCharArray();
+                    char[] secret = secretField.getText().isEmpty()
+                            ? null
+                            : secretField.getText().toCharArray();
                     setStatus(tr("status.remote.connecting", conn.displayLabel()));
                     remoteFs().connect(conn, secret, r -> {
                         if (r.ok()) {
@@ -4495,7 +4895,9 @@ public class MainController {
                             gitError(tr("status.remote.failed", conn.displayLabel()), r.error());
                         }
                     });
-                }, null, false);
+                },
+                null,
+                false);
     }
 
     /** Mounts a connected remote folder as the Project tree root + opens the Project tool window. */
@@ -4515,7 +4917,8 @@ public class MainController {
             return;
         }
         QuickOpen<com.editora.vfs.RemoteConnection> picker = new QuickOpen<>(
-                tr("remote.manage.title"), tr("remote.manage.prompt"),
+                tr("remote.manage.title"),
+                tr("remote.manage.prompt"),
                 () -> List.copyOf(config.getConnections()),
                 com.editora.vfs.RemoteConnection::displayLabel,
                 com.editora.vfs.RemoteConnection::id,
@@ -4557,8 +4960,7 @@ public class MainController {
      * user can open files from it (File: Open / Find File).
      */
     private void openClonedEntry(Path dir) {
-        for (String candidate : new String[]{"README.md", "README.markdown", "README.rst",
-                "README.txt", "README"}) {
+        for (String candidate : new String[] {"README.md", "README.markdown", "README.rst", "README.txt", "README"}) {
             Path file = dir.resolve(candidate);
             if (Files.isRegularFile(file)) {
                 openPath(file);
@@ -4598,7 +5000,10 @@ public class MainController {
             setStatus(tr("status.noGitFile"));
             return;
         }
-        gitOp("Staged " + file.getFileName(), "add", "--",
+        gitOp(
+                "Staged " + file.getFileName(),
+                "add",
+                "--",
                 currentRepoRoot.relativize(file.toAbsolutePath()).toString());
     }
 
@@ -4646,25 +5051,23 @@ public class MainController {
         setupButton(quitButton, Icons.quit(), tr("tooltip.quit"));
 
         // Reflect open/closed state of the palette and find bar in their toolbar buttons.
-        palette.showingProperty().addListener(
-                (obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
-        findBar.visibleProperty().addListener(
-                (obs, was, now) -> findButton.pseudoClassStateChanged(OPEN, now));
+        palette.showingProperty().addListener((obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
+        findBar.visibleProperty().addListener((obs, was, now) -> findButton.pseudoClassStateChanged(OPEN, now));
         // Project switcher (placed right of the Settings icon by arrangeToolbarTail); shown when enabled.
         toolbarProjectCombo = new ProjectCombo(this::switchToProject);
         toolbarProjectCombo.setPrefWidth(184); // 15% longer than the previous 160
         projectToolbarLabel = new Label(tr("toolbar.projectLabel"));
         projectToolbarLabel.getStyleClass().add("toolbar-hint");
-        projectToolbarLabel.setTooltip(new Tooltip(
-                "Projects are single-folder workspaces, each remembering its own open files and layout. "
-                + "Pick one to switch; \"No Project\" returns to the global session."));
+        projectToolbarLabel.setTooltip(
+                new Tooltip("Projects are single-folder workspaces, each remembering its own open files and layout. "
+                        + "Pick one to switch; \"No Project\" returns to the global session."));
         toolbarProjectCombo.setOnDeleteProject(this::deleteProject); // per-item delete in the dropdown
         projectToolbarGap = new Region();
         projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between Settings and the combo
         projectToolbarGap.setPrefWidth(78);
         arrangeToolbarTail();
         refreshSplitButtons();
-        refreshEditState();  // start disabled (no buffer yet)
+        refreshEditState(); // start disabled (no buffer yet)
         refreshPasteState();
     }
 
@@ -4698,7 +5101,8 @@ public class MainController {
         if (config.isDev()) {
             Label devBadge = new Label(tr("badge.devMode"));
             devBadge.getStyleClass().add("dev-mode-badge");
-            devBadge.setTooltip(new Tooltip(tr("badge.devMode.tip", config.getConfigDir().toString())));
+            devBadge.setTooltip(
+                    new Tooltip(tr("badge.devMode.tip", config.getConfigDir().toString())));
             items.addAll(toolbarGap(), devBadge);
         }
 
@@ -4854,8 +5258,8 @@ public class MainController {
     }
 
     /** Fills one restored buffer per pulse (in {@code order}), keeping the UI responsive between files. */
-    private void fillSessionFiles(List<WorkspaceState.OpenFile> files, List<EditorBuffer> buffers,
-            List<Integer> order, int k) {
+    private void fillSessionFiles(
+            List<WorkspaceState.OpenFile> files, List<EditorBuffer> buffers, List<Integer> order, int k) {
         if (k >= order.size()) {
             runPendingAfterRestore(); // session fully restored — now safe to apply CLI targets
             return;
@@ -4868,7 +5272,7 @@ public class MainController {
     }
 
     /** A startup file to open, with an optional 1-based line/column ({@code 0} = unspecified). */
-    public record OpenTarget(Path file, int line, int column) { }
+    public record OpenTarget(Path file, int line, int column) {}
 
     /** A one-shot action run after {@link #openInitialBuffer()} finishes restoring the session. */
     private Runnable pendingAfterRestore;
@@ -4879,8 +5283,7 @@ public class MainController {
      * (jumping to line:column) and enters Zen, all additive on top of the restored session. With no
      * arguments it's exactly the old {@code openInitialBuffer()}.
      */
-    public void startup(Path projectDir, List<OpenTarget> targets, boolean zen, String newFile,
-            boolean simple) {
+    public void startup(Path projectDir, List<OpenTarget> targets, boolean zen, String newFile, boolean simple) {
         if (projectDir != null && projectsEnabled()) {
             activateStartupProject(projectDir); // swap to the project's session before it's restored
         }
@@ -4939,7 +5342,9 @@ public class MainController {
     /** Activates {@code dir} as the active project (startup-safe; no open buffers to confirm). */
     private void activateStartupProject(Path dir) {
         Path root = dir.toAbsolutePath().normalize();
-        String name = root.getFileName() == null ? root.toString() : root.getFileName().toString();
+        String name = root.getFileName() == null
+                ? root.toString()
+                : root.getFileName().toString();
         Project p = projects.createOrGet(name, root);
         projects.setActive(p.id());
         projects.save();
@@ -5074,9 +5479,13 @@ public class MainController {
         buffer.setCompletionProvider(completion::complete);
         buffer.setMenuContributor(() -> pluginEditorMenuItems(buffer)); // plugin-contributed right-click items
         Settings acs = config.getSettings();
-        buffer.setAutocomplete(acs.isAutocomplete(), acs.isAutocompleteProse(),
-                acs.isAutocompleteSnippets(), effectiveMermaidAutocomplete());
-        buffer.setMultiCaretEnabled(multiCaretEnabled()); // multiple cursors + Alt+drag column selection (off in Simple UI mode)
+        buffer.setAutocomplete(
+                acs.isAutocomplete(),
+                acs.isAutocompleteProse(),
+                acs.isAutocompleteSnippets(),
+                effectiveMermaidAutocomplete());
+        buffer.setMultiCaretEnabled(
+                multiCaretEnabled()); // multiple cursors + Alt+drag column selection (off in Simple UI mode)
         buffer.setMermaidValidator((text, cb) -> mermaidService.validate(text, cb));
         buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
@@ -5089,9 +5498,12 @@ public class MainController {
         });
         buffer.setLspCompletionProvider((pos, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
-                lspManager.completion(buffer.getPath(), pos[0], pos[1],
-                        items -> cb.accept(com.editora.lsp.CompletionMapper.map(items,
-                                item -> autoImportAccept(buffer, item))));
+                lspManager.completion(
+                        buffer.getPath(),
+                        pos[0],
+                        pos[1],
+                        items -> cb.accept(
+                                com.editora.lsp.CompletionMapper.map(items, item -> autoImportAccept(buffer, item))));
             } else {
                 cb.accept(java.util.List.of());
             }
@@ -5198,8 +5610,12 @@ public class MainController {
         toggleClass(tab, "pinned", isPinned);
         toggleClass(tab, "read-only", !buffer.isEditable());
         toggleClass(tab, "remote", remote);
-        tab.setTooltip(new Tooltip(p == null ? "untitled"
-                : remote ? com.editora.vfs.Vfs.displayLabel(p) : p.toAbsolutePath().toString()));
+        tab.setTooltip(new Tooltip(
+                p == null
+                        ? "untitled"
+                        : remote
+                                ? com.editora.vfs.Vfs.displayLabel(p)
+                                : p.toAbsolutePath().toString()));
     }
 
     /** Wires drag-and-drop on a tab's header so the user can reorder the strip with the mouse. */
@@ -5336,7 +5752,8 @@ public class MainController {
         Project best = null;
         for (Project p : projects.list()) {
             Path root = Path.of(p.root()).toAbsolutePath().normalize();
-            if (abs.startsWith(root) && (best == null || p.root().length() > best.root().length())) {
+            if (abs.startsWith(root)
+                    && (best == null || p.root().length() > best.root().length())) {
                 best = p; // prefer the deepest (most specific) matching project root
             }
         }
@@ -5502,11 +5919,10 @@ public class MainController {
         alert.initOwner(stage);
         alert.setTitle(tr("dialog.externalChange.title"));
         alert.setHeaderText(tr("dialog.externalChange.header", name));
-        alert.setContentText(buffer.isDirty()
-                ? tr("dialog.externalChange.dirty")
-                : tr("dialog.externalChange.clean"));
+        alert.setContentText(buffer.isDirty() ? tr("dialog.externalChange.dirty") : tr("dialog.externalChange.clean"));
         ButtonType reload = new ButtonType(tr("dialog.externalChange.reload"));
-        ButtonType keep = new ButtonType(buffer.isDirty() ? tr("dialog.externalChange.keepMine") : tr("dialog.externalChange.keep"),
+        ButtonType keep = new ButtonType(
+                buffer.isDirty() ? tr("dialog.externalChange.keepMine") : tr("dialog.externalChange.keep"),
                 ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(reload, keep);
         if (alert.showAndWait().filter(b -> b == reload).isPresent()) {
@@ -5633,7 +6049,8 @@ public class MainController {
 
     /** Applies the auto-save setting: refreshes the idle-timer delay and stops it unless in delay mode. */
     private void applyAutoSave() {
-        autoSaveIdleTimer.setDuration(Duration.millis(Math.max(100, config.getSettings().getAutoSaveDelayMillis())));
+        autoSaveIdleTimer.setDuration(
+                Duration.millis(Math.max(100, config.getSettings().getAutoSaveDelayMillis())));
         if (!AUTOSAVE_DELAY.equals(autoSaveMode())) {
             autoSaveIdleTimer.stop();
         }
@@ -5675,11 +6092,12 @@ public class MainController {
     }
 
     private void toggleAutoSave() {
-        String next = switch (autoSaveMode()) {
-            case AUTOSAVE_OFF -> AUTOSAVE_DELAY;
-            case AUTOSAVE_DELAY -> AUTOSAVE_FOCUS;
-            default -> AUTOSAVE_OFF;
-        };
+        String next =
+                switch (autoSaveMode()) {
+                    case AUTOSAVE_OFF -> AUTOSAVE_DELAY;
+                    case AUTOSAVE_DELAY -> AUTOSAVE_FOCUS;
+                    default -> AUTOSAVE_OFF;
+                };
         config.getSettings().setAutoSave(next);
         requestSave();
         applyAutoSave();
@@ -5862,53 +6280,56 @@ public class MainController {
             return;
         }
         Path old = buffer.getPath();
-        promptText(tr("dialog.renameFile.title"), tr("dialog.renameFile.content"),
-                old.getFileName().toString(), name -> {
-            String trimmed = name.trim();
-            if (trimmed.isEmpty()) {
-                return;
-            }
-            Path target = old.resolveSibling(trimmed);
-            if (target.equals(old)) {
-                return;
-            }
-            if (Files.exists(target)) {
-                setStatus(tr("status.renameFailedExists", target.getFileName()));
-                return;
-            }
-            // Capture the per-file storage keys while the old file still exists (the note key is the
-            // canonical/real path, which can't be recomputed once the file has moved away).
-            String oldBookmarkKey = old.toString();
-            String oldNoteKey = noteKey(buffer);
-            try {
-                Files.move(old, target);
-            } catch (IOException e) {
-                setStatus(tr("status.renameFailed", e.getMessage()));
-                return;
-            }
-            buffer.setPath(target); // re-detects language/grammar
-            ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
-            // Migrate state keyed by the absolute path string.
-            var folded = config.getWorkspaceState().getFoldedRegions();
-            List<Integer> folds = folded.remove(old.toString());
-            if (folds != null) {
-                folded.put(target.toString(), folds);
-            }
-            if (recentFiles != null) {
-                recentFiles.remove(old);
-                recentFiles.add(target);
-            }
-            requestSave();
-            // Carry bookmarks + personal notes over to the new path so an in-app rename never strands them.
-            migrateBookmarksKey(oldBookmarkKey, target.toString());
-            migrateNotesKey(oldNoteKey, noteKey(buffer));
-            updateTabMeta(tab, buffer);
-            statusBar.refresh();
-            if (buffer == activeBuffer()) {
-                breadcrumb.setActiveFile(buffer.getPath());
-            }
-            setStatus(tr("status.renamedTo", target.getFileName()));
-        });
+        promptText(
+                tr("dialog.renameFile.title"),
+                tr("dialog.renameFile.content"),
+                old.getFileName().toString(),
+                name -> {
+                    String trimmed = name.trim();
+                    if (trimmed.isEmpty()) {
+                        return;
+                    }
+                    Path target = old.resolveSibling(trimmed);
+                    if (target.equals(old)) {
+                        return;
+                    }
+                    if (Files.exists(target)) {
+                        setStatus(tr("status.renameFailedExists", target.getFileName()));
+                        return;
+                    }
+                    // Capture the per-file storage keys while the old file still exists (the note key is the
+                    // canonical/real path, which can't be recomputed once the file has moved away).
+                    String oldBookmarkKey = old.toString();
+                    String oldNoteKey = noteKey(buffer);
+                    try {
+                        Files.move(old, target);
+                    } catch (IOException e) {
+                        setStatus(tr("status.renameFailed", e.getMessage()));
+                        return;
+                    }
+                    buffer.setPath(target); // re-detects language/grammar
+                    ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
+                    // Migrate state keyed by the absolute path string.
+                    var folded = config.getWorkspaceState().getFoldedRegions();
+                    List<Integer> folds = folded.remove(old.toString());
+                    if (folds != null) {
+                        folded.put(target.toString(), folds);
+                    }
+                    if (recentFiles != null) {
+                        recentFiles.remove(old);
+                        recentFiles.add(target);
+                    }
+                    requestSave();
+                    // Carry bookmarks + personal notes over to the new path so an in-app rename never strands them.
+                    migrateBookmarksKey(oldBookmarkKey, target.toString());
+                    migrateNotesKey(oldNoteKey, noteKey(buffer));
+                    updateTabMeta(tab, buffer);
+                    statusBar.refresh();
+                    if (buffer == activeBuffer()) {
+                        breadcrumb.setActiveFile(buffer.getPath());
+                    }
+                    setStatus(tr("status.renamedTo", target.getFileName()));
+                });
     }
 
     /** Builds and attaches the right-click context menu for a tab. */
@@ -5957,15 +6378,24 @@ public class MainController {
         history.setOnAction(e -> ifGit(this::showFileHistory));
 
         ContextMenu menu = new ContextMenu(
-                save, saveAs,
+                save,
+                saveAs,
                 new SeparatorMenuItem(),
-                close, closeOthers, closeAll, closeUnmodified,
+                close,
+                closeOthers,
+                closeAll,
+                closeUnmodified,
                 new SeparatorMenuItem(),
-                closeLeft, closeRight,
+                closeLeft,
+                closeRight,
                 new SeparatorMenuItem(),
-                diffHead, compareWith, history,
+                diffHead,
+                compareWith,
+                history,
                 new SeparatorMenuItem(),
-                copyPath, pin, rename);
+                copyPath,
+                pin,
+                rename);
         menu.setOnShowing(e -> {
             closeLeft.setDisable(eligibleToLeft(tab).isEmpty());
             closeRight.setDisable(eligibleToRight(tab).isEmpty());
@@ -6164,8 +6594,10 @@ public class MainController {
         WorkspaceState state = config.getWorkspaceState();
         state.setOpenFiles(files);
         EditorBuffer active = activeBuffer();
-        state.setActiveFile(active != null && active.getPath() != null
-                ? active.getPath().toAbsolutePath().toString() : "");
+        state.setActiveFile(
+                active != null && active.getPath() != null
+                        ? active.getPath().toAbsolutePath().toString()
+                        : "");
         persistWindowBounds(state);
         config.save(); // durable flush on quit — not coalesced
     }
@@ -6324,8 +6756,8 @@ public class MainController {
         }
         if (httpActive && buffer.getPath() != null) {
             java.nio.file.Path dir = buffer.getPath().toAbsolutePath().getParent();
-            httpPanel.setEnvironments(httpEnvironmentNames(dir),
-                    config.getWorkspaceState().getHttpEnvironment());
+            httpPanel.setEnvironments(
+                    httpEnvironmentNames(dir), config.getWorkspaceState().getHttpEnvironment());
         }
     }
 
@@ -6360,6 +6792,7 @@ public class MainController {
 
     /** The most recent launch, for {@code run.rerun}. */
     private Path lastRunFile;
+
     private java.util.List<String> lastRunCommand;
 
     private void runActiveFile(boolean promptArgs) {
@@ -6384,8 +6817,7 @@ public class MainController {
             String stored = programArgsFor(path);
             if (promptArgs) {
                 promptText(tr("dialog.runArgs.title"), tr("dialog.runArgs.label"), stored, args -> {
-                    config.getWorkspaceState().getProgramArgs().put(path.toString(),
-                            args == null ? "" : args.strip());
+                    config.getWorkspaceState().getProgramArgs().put(path.toString(), args == null ? "" : args.strip());
                     config.save();
                     launchRun(path, buildRunCommand(buffer, path));
                 });
@@ -6485,7 +6917,11 @@ public class MainController {
 
     @FXML
     private void onAbout() {
-        SettingsWindow.showAbout(stage, config.getSettingsFile(), this::openPath, this::openExternalUrl,
+        SettingsWindow.showAbout(
+                stage,
+                config.getSettingsFile(),
+                this::openPath,
+                this::openExternalUrl,
                 config.isDev() ? com.editora.AppInfo.gitCommit() : ""); // build commit shown only in --dev
     }
 
@@ -6600,7 +7036,8 @@ public class MainController {
         requestSave();
         applyAutocomplete();
         settingsWindow.syncAutocompleteChecks();
-        setStatus(tr("status.toggle.autocompleteSnippets", tr(s.isAutocompleteSnippets() ? "common.on" : "common.off")));
+        setStatus(
+                tr("status.toggle.autocompleteSnippets", tr(s.isAutocompleteSnippets() ? "common.on" : "common.off")));
     }
 
     private void toggleAutocompleteMermaid() {
@@ -6643,7 +7080,8 @@ public class MainController {
             return;
         }
         QuickOpen<String> picker = new QuickOpen<>(
-                "Set Spell Check Language", "Type to filter languages…",
+                "Set Spell Check Language",
+                "Type to filter languages…",
                 SpellDictionaries::available,
                 id -> id,
                 id -> "",
@@ -6665,7 +7103,8 @@ public class MainController {
     /** Picker for the app (chrome) theme — also switches the editor theme to match. */
     private void chooseAppTheme() {
         QuickOpen<String> picker = new QuickOpen<>(
-                "Set App Theme", "Type to filter themes…",
+                "Set App Theme",
+                "Type to filter themes…",
                 () -> Themes.NAMES,
                 name -> name,
                 name -> "",
@@ -6677,7 +7116,8 @@ public class MainController {
     /** Picker for the editor color theme only (leaves the chrome theme untouched). */
     private void chooseEditorTheme() {
         QuickOpen<String> picker = new QuickOpen<>(
-                "Set Editor Theme", "Type to filter themes…",
+                "Set Editor Theme",
+                "Type to filter themes…",
                 () -> EditorThemes.NAMES,
                 name -> name,
                 name -> "",
@@ -6924,9 +7364,17 @@ public class MainController {
         note.getStyleClass().add("overlay-note");
         note.setWrapText(true);
         VBox body = new VBox(6, promptLabel, field, note);
-        OverlayInput.show(overlayHost, tr("dialog.goToLine.title"), body, field,
-                tr("dialog.goToLine.button"), null,
-                () -> handleGoToLine(field.getText(), area, total), null, false, true);
+        OverlayInput.show(
+                overlayHost,
+                tr("dialog.goToLine.title"),
+                body,
+                field,
+                tr("dialog.goToLine.button"),
+                null,
+                () -> handleGoToLine(field.getText(), area, total),
+                null,
+                false,
+                true);
     }
 
     /** Parses {@code input} as {@code line} or {@code line:column} and moves the caret there. */
@@ -6981,8 +7429,8 @@ public class MainController {
     private void chooseTabSize() {
         Settings s = config.getSettings();
         List<Integer> options = List.of(2, 4, 8);
-        ChoiceDialog<Integer> dialog = new ChoiceDialog<>(
-                options.contains(s.getTabSize()) ? s.getTabSize() : 4, options);
+        ChoiceDialog<Integer> dialog =
+                new ChoiceDialog<>(options.contains(s.getTabSize()) ? s.getTabSize() : 4, options);
         dialog.initOwner(stage);
         dialog.setTitle(tr("dialog.tabSize.title"));
         dialog.setHeaderText(null);
@@ -7056,7 +7504,8 @@ public class MainController {
             map.remove(file.toString());
         } else {
             // Keep any custom order the user set in the Bookmarks tool window (the snapshot is line-order).
-            map.put(file.toString(),
+            map.put(
+                    file.toString(),
                     com.editora.config.BookmarkStore.mergePreservingOrder(map.get(file.toString()), marks));
         }
         config.saveBookmarks();
@@ -7071,8 +7520,7 @@ public class MainController {
         if (file == null) {
             return;
         }
-        boolean reanchored =
-                buffer.applyBookmarks(config.getBookmarks().get(file.toString()));
+        boolean reanchored = buffer.applyBookmarks(config.getBookmarks().get(file.toString()));
         // The file changed outside the editor and a bookmark followed its content to a new line —
         // write the corrected indices back so the session self-heals (once; later opens match exactly).
         if (reanchored) {
@@ -7385,7 +7833,7 @@ public class MainController {
     // --- Bookmark commands + panel actions ---------------------------------------------------------
 
     /** A flattened (file, bookmark) pair for the cross-file "Jump to Bookmark" picker. */
-    private record BookmarkEntry(Path file, com.editora.config.Bookmark bm) { }
+    private record BookmarkEntry(Path file, com.editora.config.Bookmark bm) {}
 
     /**
      * Handles a click in the gutter: adds a bookmark on an unbookmarked line, or asks for confirmation
@@ -7393,8 +7841,11 @@ public class MainController {
      */
     private void onGutterBookmarkClick(EditorBuffer buffer, int line) {
         if (buffer.getBookmarkManager().isBookmarked(line)) {
-            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                    tr("dialog.removeBookmark.body", line + 1), ButtonType.OK, ButtonType.CANCEL);
+            Alert confirm = new Alert(
+                    Alert.AlertType.CONFIRMATION,
+                    tr("dialog.removeBookmark.body", line + 1),
+                    ButtonType.OK,
+                    ButtonType.CANCEL);
             confirm.initOwner(stage);
             confirm.setTitle(tr("dialog.removeBookmark.title"));
             confirm.setHeaderText(null);
@@ -7448,7 +7899,9 @@ public class MainController {
             return;
         }
         int from = b.getArea().getCurrentParagraph();
-        Integer target = forward ? b.getBookmarkManager().next(from) : b.getBookmarkManager().previous(from);
+        Integer target = forward
+                ? b.getBookmarkManager().next(from)
+                : b.getBookmarkManager().previous(from);
         if (target != null) {
             navigateToLine(target);
         } else {
@@ -7510,7 +7963,8 @@ public class MainController {
             return;
         }
         QuickOpen<com.editora.template.Template> picker = new QuickOpen<>(
-                tr("template.picker.title"), tr("template.picker.prompt"),
+                tr("template.picker.title"),
+                tr("template.picker.prompt"),
                 () -> new ArrayList<>(all),
                 com.editora.template.Template::name,
                 com.editora.template.Template::description,
@@ -7545,19 +7999,25 @@ public class MainController {
             fields.put(v.name(), field);
             body.getChildren().addAll(new Label(v.name()), field);
         }
-        OverlayInput.show(overlayHost, tr("template.wizard.title"), body, fields.values().iterator().next(),
-                tr("dialog.template.create"), null,
+        OverlayInput.show(
+                overlayHost,
+                tr("template.wizard.title"),
+                body,
+                fields.values().iterator().next(),
+                tr("dialog.template.create"),
+                null,
                 () -> {
                     java.util.LinkedHashMap<String, String> answers = new java.util.LinkedHashMap<>();
                     fields.forEach((name, f) -> answers.put(name, f.getText()));
                     applyTemplate(t, targetDir, answers);
                 },
-                null, false);
+                null,
+                false);
     }
 
     /** Renders {@code t} with {@code answers} and creates the file(s) (untitled buffer or written to disk). */
-    private void applyTemplate(com.editora.template.Template t, java.nio.file.Path targetDir,
-            java.util.Map<String, String> answers) {
+    private void applyTemplate(
+            com.editora.template.Template t, java.nio.file.Path targetDir, java.util.Map<String, String> answers) {
         Settings s = config.getSettings();
         String author = s.getAuthorName();
         String projectName = activeProjectName();
@@ -7565,23 +8025,27 @@ public class MainController {
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
 
         if (t.isMultiFile()) {
-            applyMultiFileTemplate(t, targetDir != null ? targetDir : defaultNewDir(), answers,
-                    author, projectName, packageName, now);
+            applyMultiFileTemplate(
+                    t, targetDir != null ? targetDir : defaultNewDir(), answers, author, projectName, packageName, now);
             return;
         }
         // Resolve the file name first (so the body's ${fileName}/${baseName}/${extension} are correct).
         com.editora.template.TemplateVariableResolver pre = new com.editora.template.TemplateVariableResolver(
-                answers, author, projectName, packageName, "",
-                targetDir == null ? "" : targetDir.toString(), "", now);
+                answers, author, projectName, packageName, "", targetDir == null ? "" : targetDir.toString(), "", now);
         String fileName = com.editora.template.TemplateEngine.expand(t.fileName(), pre);
         if (fileName.isBlank()) {
             fileName = "untitled";
         }
         java.nio.file.Path target = targetDir == null ? null : targetDir.resolve(fileName);
         com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
-                answers, author, projectName, packageName, fileName,
+                answers,
+                author,
+                projectName,
+                packageName,
+                fileName,
                 targetDir == null ? "" : targetDir.toString(),
-                target == null ? "" : target.toString(), now);
+                target == null ? "" : target.toString(),
+                now);
         com.editora.snippet.ParsedSnippet parsed = com.editora.template.TemplateEngine.substitute(t.body(), vars);
 
         if (targetDir == null) {
@@ -7599,8 +8063,13 @@ public class MainController {
         }
     }
 
-    private void applyMultiFileTemplate(com.editora.template.Template t, java.nio.file.Path dir,
-            java.util.Map<String, String> answers, String author, String projectName, String packageName,
+    private void applyMultiFileTemplate(
+            com.editora.template.Template t,
+            java.nio.file.Path dir,
+            java.util.Map<String, String> answers,
+            String author,
+            String projectName,
+            String packageName,
             java.time.LocalDateTime now) {
         com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
                 answers, author, projectName, packageName, "", dir.toString(), "", now);
@@ -7612,8 +8081,7 @@ public class MainController {
                 setStatus(tr("status.templatePathEscape"));
                 continue;
             }
-            com.editora.snippet.ParsedSnippet parsed =
-                    com.editora.template.TemplateEngine.substitute(f.body(), vars);
+            com.editora.snippet.ParsedSnippet parsed = com.editora.template.TemplateEngine.substitute(f.body(), vars);
             if (writeTemplateFile(target, parsed) && primary == null) {
                 primary = target;
                 primaryCaret = finalCaret(parsed);
@@ -7795,8 +8263,8 @@ public class MainController {
         if (open != null) {
             open.getBookmarkManager().setNote(line, note);
         } else {
-            updateClosedFileBookmarks(file, marks -> marks.replaceAll(
-                    bm -> bm.line() == line ? bm.withNote(note) : bm));
+            updateClosedFileBookmarks(
+                    file, marks -> marks.replaceAll(bm -> bm.line() == line ? bm.withNote(note) : bm));
         }
     }
 
@@ -7825,8 +8293,8 @@ public class MainController {
     }
 
     /** Applies a mutation to a closed file's bookmark list in the persisted map, then saves + refreshes. */
-    private void updateClosedFileBookmarks(Path file,
-            java.util.function.Consumer<List<com.editora.config.Bookmark>> mutator) {
+    private void updateClosedFileBookmarks(
+            Path file, java.util.function.Consumer<List<com.editora.config.Bookmark>> mutator) {
         var map = config.getBookmarks();
         List<com.editora.config.Bookmark> marks = map.get(file.toString());
         if (marks == null) {
@@ -7845,7 +8313,7 @@ public class MainController {
 
     // ---- Personal Notes ----
 
-    private record NoteEntry(String fileKey, com.editora.config.PersonalNote note) { }
+    private record NoteEntry(String fileKey, com.editora.config.PersonalNote note) {}
 
     /** Canonical-path key for a buffer's notes in the store (cheap; no content hashing). */
     private static String noteKey(EditorBuffer buffer) {
@@ -7947,8 +8415,8 @@ public class MainController {
         }
     }
 
-    private static String findNoteKeyByIdentity(Map<String, List<com.editora.config.PersonalNote>> map,
-            com.editora.config.FileIdentity id) {
+    private static String findNoteKeyByIdentity(
+            Map<String, List<com.editora.config.PersonalNote>> map, com.editora.config.FileIdentity id) {
         if (id == null) {
             return null;
         }
@@ -7972,8 +8440,9 @@ public class MainController {
         }
         com.editora.editor.NoteDraft draft = buffer.captureNoteDraft();
         promptNoteBody("", body -> {
-            buffer.getNoteManager().add(com.editora.config.PersonalNote.create(
-                    buffer.fileIdentity(), draft.scope(), draft.anchor(), body, List.of()));
+            buffer.getNoteManager()
+                    .add(com.editora.config.PersonalNote.create(
+                            buffer.fileIdentity(), draft.scope(), draft.anchor(), body, List.of()));
             buffer.refreshGutter();
         });
     }
@@ -7992,16 +8461,23 @@ public class MainController {
      * field text; the caller trims/validates. Cancelling does nothing. Also the {@link OverlayInput.Prompt}
      * the tool-window panels call (so they don't need the overlay host / keymap directly).
      */
-    void promptText(String title, String label, String initial,
-                    java.util.function.Consumer<String> onAccept) {
+    void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
         Label promptLabel = new Label(label);
         TextField field = new TextField(initial == null ? "" : initial);
         field.setPrefColumnCount(32);
         // Honor the user's configured keybindings (Emacs caret movement + basic editing) in the field.
         com.editora.command.TextInputKeymap.install(field, keymap);
         VBox body = new VBox(6, promptLabel, field);
-        OverlayInput.show(overlayHost, title, body, field, tr("dialog.ok"), null,
-                () -> onAccept.accept(field.getText()), null, false);
+        OverlayInput.show(
+                overlayHost,
+                title,
+                body,
+                field,
+                tr("dialog.ok"),
+                null,
+                () -> onAccept.accept(field.getText()),
+                null,
+                false);
     }
 
     /**
@@ -8018,15 +8494,22 @@ public class MainController {
         com.editora.command.TextInputKeymap.install(editor, keymap);
         Label prompt = new Label(tr("dialog.note.content"));
         VBox body = new VBox(6, prompt, editor);
-        OverlayInput.Extra extra = onDelete == null ? null
-                : new OverlayInput.Extra(tr("notes.delete"), onDelete);
-        OverlayInput.show(overlayHost, tr("dialog.note.title"), body, editor, tr("dialog.save"), null,
+        OverlayInput.Extra extra = onDelete == null ? null : new OverlayInput.Extra(tr("notes.delete"), onDelete);
+        OverlayInput.show(
+                overlayHost,
+                tr("dialog.note.title"),
+                body,
+                editor,
+                tr("dialog.save"),
+                null,
                 () -> {
                     String text = editor.getText().strip();
                     if (!text.isBlank()) {
                         onAccept.accept(text);
                     }
-                }, extra, true);
+                },
+                extra,
+                true);
     }
 
     private void onGutterNoteClick(EditorBuffer buffer, int line) {
@@ -8037,12 +8520,10 @@ public class MainController {
     }
 
     private void editOpenBufferNote(EditorBuffer buffer, com.editora.config.PersonalNote note) {
-        showNoteDialog(note.body(),
-                body -> buffer.getNoteManager().update(note.withBody(body)),
-                () -> {
-                    buffer.getNoteManager().remove(note.id());
-                    buffer.refreshGutter();
-                });
+        showNoteDialog(note.body(), body -> buffer.getNoteManager().update(note.withBody(body)), () -> {
+            buffer.getNoteManager().remove(note.id());
+            buffer.refreshGutter();
+        });
     }
 
     /** Deletes the (first) personal note on the active buffer's caret line. */
@@ -8066,7 +8547,8 @@ public class MainController {
             return;
         }
         int from = b.getArea().getCurrentParagraph();
-        Integer target = forward ? b.getNoteManager().next(from) : b.getNoteManager().previous(from);
+        Integer target =
+                forward ? b.getNoteManager().next(from) : b.getNoteManager().previous(from);
         if (target != null) {
             navigateToLine(target);
         } else {
@@ -8084,7 +8566,6 @@ public class MainController {
         com.editora.config.PersonalNote n = e.note();
         return n.body() + " " + String.join(" ", n.tags()) + " " + e.fileKey();
     }
-
 
     private List<NoteEntry> allNoteEntries() {
         List<NoteEntry> out = new ArrayList<>();
@@ -8105,7 +8586,9 @@ public class MainController {
     // --- NotesPanel.Actions (open buffer if loaded, else mutate the persisted closed-file list) ---
 
     private void noteActivate(String fileKey, com.editora.config.PersonalNote note) {
-        String path = note.file() != null && !note.file().path().isBlank() ? note.file().path() : fileKey;
+        String path = note.file() != null && !note.file().path().isBlank()
+                ? note.file().path()
+                : fileKey;
         openPath(Path.of(path));
         int line = note.anchor().line();
         Platform.runLater(() -> navigateToLine(line));
@@ -8116,21 +8599,22 @@ public class MainController {
         if (open != null) {
             editOpenBufferNote(open, note);
         } else {
-            showNoteDialog(note.body(),
-                    body -> updateClosedFileNotes(fileKey,
-                            list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withBody(body) : n)),
+            showNoteDialog(
+                    note.body(),
+                    body -> updateClosedFileNotes(
+                            fileKey, list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withBody(body) : n)),
                     () -> updateClosedFileNotes(fileKey, list -> list.removeIf(n -> n.id().equals(note.id()))));
         }
     }
 
-    private void noteSetStatus(String fileKey, com.editora.config.PersonalNote note,
-            com.editora.config.NoteStatus status) {
+    private void noteSetStatus(
+            String fileKey, com.editora.config.PersonalNote note, com.editora.config.NoteStatus status) {
         EditorBuffer open = bufferOf(tabForKey(fileKey));
         if (open != null) {
             open.getNoteManager().setStatus(note.id(), status);
         } else {
-            updateClosedFileNotes(fileKey,
-                    list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withStatus(status) : n));
+            updateClosedFileNotes(
+                    fileKey, list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withStatus(status) : n));
         }
     }
 
@@ -8158,8 +8642,8 @@ public class MainController {
         }
     }
 
-    private void updateClosedFileNotes(String fileKey,
-            java.util.function.Consumer<List<com.editora.config.PersonalNote>> mutator) {
+    private void updateClosedFileNotes(
+            String fileKey, java.util.function.Consumer<List<com.editora.config.PersonalNote>> mutator) {
         var map = config.getNotes();
         List<com.editora.config.PersonalNote> list = map.get(fileKey);
         if (list == null) {
@@ -8175,7 +8659,6 @@ public class MainController {
         config.saveNotes();
         notesPanel.refresh();
     }
-
 
     private void exportNotes() {
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
@@ -8245,10 +8728,11 @@ public class MainController {
         String base = bufferBaseName(b);
         int dot = base.lastIndexOf('.');
         chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : base) + ".svg");
-        chooser.getExtensionFilters().addAll(
-                new javafx.stage.FileChooser.ExtensionFilter("SVG", "*.svg"),
-                new javafx.stage.FileChooser.ExtensionFilter("PNG", "*.png"),
-                new javafx.stage.FileChooser.ExtensionFilter("PDF", "*.pdf"));
+        chooser.getExtensionFilters()
+                .addAll(
+                        new javafx.stage.FileChooser.ExtensionFilter("SVG", "*.svg"),
+                        new javafx.stage.FileChooser.ExtensionFilter("PNG", "*.png"),
+                        new javafx.stage.FileChooser.ExtensionFilter("PDF", "*.pdf"));
         java.io.File f = chooser.showSaveDialog(stage);
         if (f == null) {
             return;
@@ -8287,8 +8771,15 @@ public class MainController {
         }
         Settings s = config.getSettings();
         setStatus(tr("status.pdf.exporting"));
-        pdfService.exportCode(b.getContent(), grammarKey(b), s.isPdfSyntaxHighlighting(), s.isPdfLineNumbers(),
-                s.getTabSize(), s.getPdfPageSize(), f.toPath(), r -> reportPdf(r, f));
+        pdfService.exportCode(
+                b.getContent(),
+                grammarKey(b),
+                s.isPdfSyntaxHighlighting(),
+                s.isPdfLineNumbers(),
+                s.getTabSize(),
+                s.getPdfPageSize(),
+                f.toPath(),
+                r -> reportPdf(r, f));
     }
 
     /**
@@ -8308,13 +8799,22 @@ public class MainController {
         }
         setStatus(tr("status.pdf.exporting"));
         if (b.isDiagram()) {
-            mermaidService.export(b.getContent(), f.toPath(), appThemeDark(),
+            mermaidService.export(
+                    b.getContent(),
+                    f.toPath(),
+                    appThemeDark(),
                     r -> reportPdf(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message()), f));
         } else {
-            java.nio.file.Path baseDir = b.getPath() == null ? null : b.getPath().getParent();
+            java.nio.file.Path baseDir =
+                    b.getPath() == null ? null : b.getPath().getParent();
             java.util.List<String> mmdc = mermaidEnabled() ? mermaidService.mmdcCommand() : null;
-            pdfService.exportMarkdown(b.getContent(), baseDir, config.getSettings().getPdfPageSize(),
-                    mmdc, f.toPath(), r -> reportPdf(r, f));
+            pdfService.exportMarkdown(
+                    b.getContent(),
+                    baseDir,
+                    config.getSettings().getPdfPageSize(),
+                    mmdc,
+                    f.toPath(),
+                    r -> reportPdf(r, f));
         }
     }
 
@@ -8383,8 +8883,13 @@ public class MainController {
         }
         Settings s = config.getSettings();
         setStatus(tr("status.print.preparing"));
-        printService.prepareCode(b.getContent(), grammarKey(b), s.isPdfSyntaxHighlighting(),
-                s.isPdfLineNumbers(), s.getTabSize(), prepared -> openPrintPreview(job, prepared));
+        printService.prepareCode(
+                b.getContent(),
+                grammarKey(b),
+                s.isPdfSyntaxHighlighting(),
+                s.isPdfLineNumbers(),
+                s.getTabSize(),
+                prepared -> openPrintPreview(job, prepared));
     }
 
     /**
@@ -8405,10 +8910,11 @@ public class MainController {
         setStatus(tr("status.print.preparing"));
         if (b.isDiagram()) {
             java.util.List<String> mmdc = mermaidEnabled() ? mermaidService.mmdcCommand() : null;
-            printService.prepareMermaid(b.getContent(), mmdc, appThemeDark(),
-                    prepared -> openPrintPreview(job, prepared));
+            printService.prepareMermaid(
+                    b.getContent(), mmdc, appThemeDark(), prepared -> openPrintPreview(job, prepared));
         } else {
-            java.nio.file.Path baseDir = b.getPath() == null ? null : b.getPath().getParent();
+            java.nio.file.Path baseDir =
+                    b.getPath() == null ? null : b.getPath().getParent();
             printService.prepareMarkdown(b.getContent(), baseDir, prepared -> openPrintPreview(job, prepared));
         }
     }
@@ -8419,9 +8925,14 @@ public class MainController {
             reportPrint(new com.editora.print.PrintService.Result(false, prepared.error()));
             return;
         }
-        new PrintPreview(stage, job, prepared.paginator(), this::reportPrint,
-                () -> setStatus(tr("status.print.printing")),
-                () -> setStatus(tr("status.print.cancelled"))).show();
+        new PrintPreview(
+                        stage,
+                        job,
+                        prepared.paginator(),
+                        this::reportPrint,
+                        () -> setStatus(tr("status.print.printing")),
+                        () -> setStatus(tr("status.print.cancelled")))
+                .show();
     }
 
     /** Reports a print result: status + (on failure) an error dialog. */
@@ -8457,9 +8968,10 @@ public class MainController {
         buffer.setWhitespaceVisible(s.isShowWhitespace());
         buffer.setTabSize(s.getTabSize());
         buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
-        buffer.setMinimapColors(EditorThemes.minimapTextFor(s.getEditorTheme()),
-                EditorThemes.minimapViewportFor(s.getEditorTheme()));
-        buffer.setFoldPreviewColors(EditorThemes.editorBackgroundFor(s.getEditorTheme()),
+        buffer.setMinimapColors(
+                EditorThemes.minimapTextFor(s.getEditorTheme()), EditorThemes.minimapViewportFor(s.getEditorTheme()));
+        buffer.setFoldPreviewColors(
+                EditorThemes.editorBackgroundFor(s.getEditorTheme()),
                 EditorThemes.editorForegroundFor(s.getEditorTheme()));
         buffer.setSpellLanguage(spellLanguageFor(buffer)); // per-file override, else the global default
         buffer.setSpellCheckEnabled(s.isSpellCheck());
@@ -8528,8 +9040,8 @@ public class MainController {
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
-                buffer.setAutocomplete(s.isAutocomplete(), s.isAutocompleteProse(),
-                        s.isAutocompleteSnippets(), mermaidAc);
+                buffer.setAutocomplete(
+                        s.isAutocomplete(), s.isAutocompleteProse(), s.isAutocompleteSnippets(), mermaidAc);
             }
         }
     }
@@ -8672,10 +9184,12 @@ public class MainController {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editor.Commenter.CommentStyle style =
-                com.editora.editor.Commenter.styleFor(buffer.getLanguage());
+        com.editora.editor.Commenter.CommentStyle style = com.editora.editor.Commenter.styleFor(buffer.getLanguage());
         com.editora.editor.Commenter.Edit edit = com.editora.editor.Commenter.toggle(
-                area.getText(), area.getSelection().getStart(), area.getSelection().getEnd(), style);
+                area.getText(),
+                area.getSelection().getStart(),
+                area.getSelection().getEnd(),
+                style);
         if (edit == null) {
             setStatus(tr("status.noCommentSyntax"));
             return;
@@ -8686,8 +9200,7 @@ public class MainController {
     }
 
     /** Applies an Emacs transpose (chars/words/lines) to the active editable buffer at the caret. */
-    private void transpose(java.util.function.BiFunction<String, Integer,
-            com.editora.editor.Transposer.Edit> op) {
+    private void transpose(java.util.function.BiFunction<String, Integer, com.editora.editor.Transposer.Edit> op) {
         if (!activeEditable()) {
             return;
         }
@@ -8741,8 +9254,7 @@ public class MainController {
      */
     static int smartLineStartColumn(String lineText, int caretCol) {
         int indent = 0;
-        while (indent < lineText.length()
-                && (lineText.charAt(indent) == ' ' || lineText.charAt(indent) == '\t')) {
+        while (indent < lineText.length() && (lineText.charAt(indent) == ' ' || lineText.charAt(indent) == '\t')) {
             indent++;
         }
         return caretCol == indent ? 0 : indent;
@@ -8787,8 +9299,11 @@ public class MainController {
         while (i < n) {
             char c = text.charAt(i++);
             if (isSentenceEnd(c)) {
-                while (i < n && (text.charAt(i) == '"' || text.charAt(i) == '\''
-                        || text.charAt(i) == ')' || text.charAt(i) == ']')) {
+                while (i < n
+                        && (text.charAt(i) == '"'
+                                || text.charAt(i) == '\''
+                                || text.charAt(i) == ')'
+                                || text.charAt(i) == ']')) {
                     i++; // closing quotes/brackets stay with the sentence
                 }
                 if (i >= n || Character.isWhitespace(text.charAt(i))) {
@@ -8856,44 +9371,45 @@ public class MainController {
         registry.register(Command.of("file.open", this::onOpen));
         registry.register(Command.of("file.find", () -> fileFinder.show(stage)));
         // Project commands no-op when project support is disabled (fully gated).
-        registry.register(Command.of("project.open",
-                () -> { if (projectsEnabled()) { folderFinder.show(stage); } }));
-        registry.register(Command.of("project.switch",
-                () -> { if (projectsEnabled()) { projectPicker.show(stage); } }));
-        registry.register(Command.of("project.close",
-                () -> { if (projectsEnabled()) { closeProject(); } }));
-        registry.register(Command.of("project.delete",
-                () -> { if (projectsEnabled()) { deleteProject(); } }));
+        registry.register(Command.of("project.open", () -> {
+            if (projectsEnabled()) {
+                folderFinder.show(stage);
+            }
+        }));
+        registry.register(Command.of("project.switch", () -> {
+            if (projectsEnabled()) {
+                projectPicker.show(stage);
+            }
+        }));
+        registry.register(Command.of("project.close", () -> {
+            if (projectsEnabled()) {
+                closeProject();
+            }
+        }));
+        registry.register(Command.of("project.delete", () -> {
+            if (projectsEnabled()) {
+                deleteProject();
+            }
+        }));
         registry.register(Command.of("file.save", this::onSave));
         registry.register(Command.of("file.saveAs", this::onSaveAs));
         registry.register(Command.of("buffer.close", this::onCloseTab));
-        registry.register(Command.of("buffer.closeOthers",
-                () -> closeOtherTabs(activeTab())));
+        registry.register(Command.of("buffer.closeOthers", () -> closeOtherTabs(activeTab())));
         registry.register(Command.of("buffer.closeAll", this::closeAllTabs));
-        registry.register(Command.of("buffer.closeUnmodified",
-                this::closeUnmodifiedTabs));
-        registry.register(Command.of("buffer.closeLeft",
-                () -> closeTabsToLeft(activeTab())));
-        registry.register(Command.of("buffer.closeRight",
-                () -> closeTabsToRight(activeTab())));
-        registry.register(Command.of("buffer.copyPath",
-                () -> copyPath(activeBuffer())));
-        registry.register(Command.of("buffer.togglePin",
-                () -> togglePin(activeTab())));
-        registry.register(Command.of("buffer.rename",
-                () -> renameFile(activeBuffer(), activeTab())));
+        registry.register(Command.of("buffer.closeUnmodified", this::closeUnmodifiedTabs));
+        registry.register(Command.of("buffer.closeLeft", () -> closeTabsToLeft(activeTab())));
+        registry.register(Command.of("buffer.closeRight", () -> closeTabsToRight(activeTab())));
+        registry.register(Command.of("buffer.copyPath", () -> copyPath(activeBuffer())));
+        registry.register(Command.of("buffer.togglePin", () -> togglePin(activeTab())));
+        registry.register(Command.of("buffer.rename", () -> renameFile(activeBuffer(), activeTab())));
         registry.register(Command.of("buffer.next", this::nextBuffer));
         registry.register(Command.of("app.quit", this::onQuit));
         registry.register(Command.of("palette.show", this::onPalette));
         registry.register(Command.of("view.settings", this::onSettings));
-        registry.register(Command.of("theme.setAppTheme",
-                this::chooseAppTheme));
-        registry.register(Command.of("theme.setEditorTheme",
-                this::chooseEditorTheme));
-        registry.register(Command.of("view.toggleColumnRuler",
-                this::toggleColumnRuler));
-        registry.register(Command.of("view.toggleToolStripe",
-                this::toggleToolStripe));
+        registry.register(Command.of("theme.setAppTheme", this::chooseAppTheme));
+        registry.register(Command.of("theme.setEditorTheme", this::chooseEditorTheme));
+        registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
+        registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));
         registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
         registry.register(Command.of("view.togglePlugins", this::togglePluginSupport));
         registry.register(Command.of("plugins.browse", this::browsePlugins));
@@ -8904,23 +9420,18 @@ public class MainController {
         registry.register(Command.of("editor.print", this::printCode));
         registry.register(Command.of("preview.print", this::printPreview));
         registry.register(Command.of("mermaid.export", () -> ifMermaid(this::exportMermaid)));
-        registry.register(Command.of("view.toggleLineHighlight",
-                this::toggleLineHighlight));
-        registry.register(Command.of("view.toggleLineNumbers",
-                this::toggleLineNumbers));
-        registry.register(Command.of("view.toggleMinimap",
-                this::toggleMinimap));
-        registry.register(Command.of("view.toggleWhitespace",
-                this::toggleWhitespace));
-        registry.register(Command.of("view.toggleSpellCheck",
-                this::toggleSpellCheck));
+        registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
+        registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
+        registry.register(Command.of("view.toggleMinimap", this::toggleMinimap));
+        registry.register(Command.of("view.toggleWhitespace", this::toggleWhitespace));
+        registry.register(Command.of("view.toggleSpellCheck", this::toggleSpellCheck));
         registry.register(Command.of("view.toggleAutocomplete", this::toggleAutocomplete));
         registry.register(Command.of("view.toggleAutocompleteProse", this::toggleAutocompleteProse));
         registry.register(Command.of("view.toggleAutocompleteSnippets", this::toggleAutocompleteSnippets));
         registry.register(Command.of("view.toggleAutocompleteMermaid", this::toggleAutocompleteMermaid));
         registry.register(Command.of("view.toggleMultiCaret", this::toggleMultiCaret));
-        registry.register(Command.of("edit.addCaretNextOccurrence",
-                () -> withMultiCaret(EditorBuffer::addCaretNextOccurrence)));
+        registry.register(
+                Command.of("edit.addCaretNextOccurrence", () -> withMultiCaret(EditorBuffer::addCaretNextOccurrence)));
         registry.register(Command.of("edit.addCaretAbove", () -> withMultiCaret(EditorBuffer::addCaretAbove)));
         registry.register(Command.of("edit.addCaretBelow", () -> withMultiCaret(EditorBuffer::addCaretBelow)));
         registry.register(Command.of("edit.collapseCarets", () -> withMultiCaret(EditorBuffer::collapseCarets)));
@@ -8931,38 +9442,24 @@ public class MainController {
             setStatus(tr("status.templatesReloaded"));
         }));
         registry.register(Command.of("template.editUser", this::editUserTemplates));
-        registry.register(Command.of("spell.setLanguage",
-                this::chooseSpellLanguage));
+        registry.register(Command.of("spell.setLanguage", this::chooseSpellLanguage));
         registry.register(Command.of("view.toggleToolbar", this::toggleToolbar));
-        registry.register(Command.of("view.toggleStatusBar",
-                this::toggleStatusBar));
+        registry.register(Command.of("view.toggleStatusBar", this::toggleStatusBar));
         registry.register(Command.of("view.toggleTabBar", this::toggleTabBar));
-        registry.register(Command.of("view.toggleBreadcrumb",
-                this::toggleBreadcrumb));
+        registry.register(Command.of("view.toggleBreadcrumb", this::toggleBreadcrumb));
         registry.register(Command.of("view.toggleZen", this::toggleZen));
-        registry.register(Command.of("view.toggleReadOnly",
-                this::toggleReadOnly));
+        registry.register(Command.of("view.toggleReadOnly", this::toggleReadOnly));
         registry.register(Command.of("file.toggleAutoSave", this::toggleAutoSave));
-        registry.register(Command.of("recent.jump",
-                () -> recentPalette.show(stage)));
-        registry.register(Command.of("structure.jump",
-                () -> structurePalette.show(stage)));
-        registry.register(Command.of("buffer.jump",
-                () -> openFilesPalette.show(stage)));
-        registry.register(Command.of("tool.jump",
-                () -> toolWindowPalette.show(stage)));
-        registry.register(Command.of("bookmarks.toggle",
-                this::toggleBookmarkAtCaret));
-        registry.register(Command.of("bookmarks.editNote",
-                this::editBookmarkNoteAtCaret));
-        registry.register(Command.of("bookmarks.next",
-                () -> jumpBookmark(true)));
-        registry.register(Command.of("bookmarks.previous",
-                () -> jumpBookmark(false)));
-        registry.register(Command.of("bookmarks.jump",
-                () -> bookmarkPalette.show(stage)));
-        registry.register(Command.of("bookmarks.clearFile",
-                this::clearBookmarksInFile));
+        registry.register(Command.of("recent.jump", () -> recentPalette.show(stage)));
+        registry.register(Command.of("structure.jump", () -> structurePalette.show(stage)));
+        registry.register(Command.of("buffer.jump", () -> openFilesPalette.show(stage)));
+        registry.register(Command.of("tool.jump", () -> toolWindowPalette.show(stage)));
+        registry.register(Command.of("bookmarks.toggle", this::toggleBookmarkAtCaret));
+        registry.register(Command.of("bookmarks.editNote", this::editBookmarkNoteAtCaret));
+        registry.register(Command.of("bookmarks.next", () -> jumpBookmark(true)));
+        registry.register(Command.of("bookmarks.previous", () -> jumpBookmark(false)));
+        registry.register(Command.of("bookmarks.jump", () -> bookmarkPalette.show(stage)));
+        registry.register(Command.of("bookmarks.clearFile", this::clearBookmarksInFile));
         registry.register(Command.of("notes.add", () -> ifNotes(this::addNoteAtCaret)));
         registry.register(Command.of("notes.next", () -> ifNotes(() -> jumpNote(true))));
         registry.register(Command.of("notes.previous", () -> ifNotes(() -> jumpNote(false))));
@@ -8975,27 +9472,20 @@ public class MainController {
             snippets.reload();
             setStatus(tr("status.snippetsReloaded"));
         }));
-        registry.register(Command.of("snippets.editUser",
-                this::editUserSnippets));
-        registry.register(Command.of("view.splitVertical",
-                this::onSplitVertical));
-        registry.register(Command.of("view.splitHorizontal",
-                this::onSplitHorizontal));
+        registry.register(Command.of("snippets.editUser", this::editUserSnippets));
+        registry.register(Command.of("view.splitVertical", this::onSplitVertical));
+        registry.register(Command.of("view.splitHorizontal", this::onSplitHorizontal));
         registry.register(Command.of("view.unsplit", this::unsplit));
-        registry.register(Command.of("view.markdownEditor",
-                () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.EDITOR)));
-        registry.register(Command.of("view.markdownSplit",
-                () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.SPLIT)));
-        registry.register(Command.of("view.markdownPreview",
-                () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.PREVIEW)));
-        registry.register(Command.of("view.markdownZoomIn",
-                () -> markdownZoom(1)));
-        registry.register(Command.of("view.markdownZoomOut",
-                () -> markdownZoom(-1)));
-        registry.register(Command.of("view.markdownZoomReset",
-                () -> markdownZoom(0)));
-        registry.register(Command.of("view.toggleMarkdownPreviewTheme",
-                this::toggleMarkdownPreviewTheme));
+        registry.register(
+                Command.of("view.markdownEditor", () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.EDITOR)));
+        registry.register(
+                Command.of("view.markdownSplit", () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.SPLIT)));
+        registry.register(
+                Command.of("view.markdownPreview", () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.PREVIEW)));
+        registry.register(Command.of("view.markdownZoomIn", () -> markdownZoom(1)));
+        registry.register(Command.of("view.markdownZoomOut", () -> markdownZoom(-1)));
+        registry.register(Command.of("view.markdownZoomReset", () -> markdownZoom(0)));
+        registry.register(Command.of("view.toggleMarkdownPreviewTheme", this::toggleMarkdownPreviewTheme));
         // Markdown editing (markdown buffers only; no-op with a status elsewhere).
         registry.register(Command.of("markdown.bold", () -> markdownInline("**")));
         registry.register(Command.of("markdown.italic", () -> markdownInline("*")));
@@ -9019,30 +9509,25 @@ public class MainController {
         registry.register(Command.of("nav.goToLine", this::goToLine));
         registry.register(Command.of("buffer.setLanguage", this::chooseLanguage));
         registry.register(Command.of("buffer.setTabSize", this::chooseTabSize));
-        registry.register(Command.of("buffer.convertLineEndings",
-                this::chooseLineEndings));
-        registry.register(Command.of("window.other",
-                this::otherWindow));
+        registry.register(Command.of("buffer.convertLineEndings", this::chooseLineEndings));
+        registry.register(Command.of("window.other", this::otherWindow));
         // Cross-platform via JavaFX Stage (handles the per-OS window manager specifics on macOS/Linux/Windows).
-        registry.register(Command.of("window.maximize",
-                () -> stage.setMaximized(!stage.isMaximized())));
-        registry.register(Command.of("window.fullScreen",
-                () -> stage.setFullScreen(!stage.isFullScreen())));
+        registry.register(Command.of("window.maximize", () -> stage.setMaximized(!stage.isMaximized())));
+        registry.register(Command.of("window.fullScreen", () -> stage.setFullScreen(!stage.isFullScreen())));
         registry.register(Command.of("file.clearRecent", this::onClearRecent));
         registry.register(Command.of("help.about", this::onAbout));
         registry.register(Command.of("view.welcome", this::showWelcome));
         registry.register(Command.of("view.messageLog", statusBar::showMessageLog));
         registry.register(Command.of("view.debugLog", this::showDebugLog));
-        registry.register(Command.of("tool.project",
-                () -> { if (projectsEnabled()) { toolWindows.toggle(projectToolWindow); } }));
-        registry.register(Command.of("tool.structure",
-                () -> toolWindows.toggle(structureToolWindow)));
-        registry.register(Command.of("tool.bookmarks",
-                () -> toolWindows.toggle(bookmarksToolWindow)));
-        registry.register(Command.of("tool.notes",
-                () -> ifNotes(() -> toolWindows.toggle(notesToolWindow))));
-        registry.register(Command.of("tool.fileInformation",
-                () -> toolWindows.toggle(fileInfoToolWindow)));
+        registry.register(Command.of("tool.project", () -> {
+            if (projectsEnabled()) {
+                toolWindows.toggle(projectToolWindow);
+            }
+        }));
+        registry.register(Command.of("tool.structure", () -> toolWindows.toggle(structureToolWindow)));
+        registry.register(Command.of("tool.bookmarks", () -> toolWindows.toggle(bookmarksToolWindow)));
+        registry.register(Command.of("tool.notes", () -> ifNotes(() -> toolWindows.toggle(notesToolWindow))));
+        registry.register(Command.of("tool.fileInformation", () -> toolWindows.toggle(fileInfoToolWindow)));
         registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
         registry.register(Command.of("search.inFiles", this::openSearchInFiles));
         registry.register(Command.of("nav.aceJump", this::startAceJump));
@@ -9055,8 +9540,8 @@ public class MainController {
         // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
         registry.register(Command.of("http.runRequest", () -> ifHttp(this::runHttpRequestAtCaret)));
         registry.register(Command.of("http.runFile", () -> ifHttp(this::runHttpFile)));
-        registry.register(Command.of("http.selectEnvironment",
-                () -> ifHttp(() -> toolWindows.open(httpToolWindow, true))));
+        registry.register(
+                Command.of("http.selectEnvironment", () -> ifHttp(() -> toolWindows.open(httpToolWindow, true))));
         registry.register(Command.of("tool.http", () -> ifHttp(() -> toolWindows.toggle(httpToolWindow))));
         // Debugging (DAP). Gated by the "Enable Java debugging" setting (default off).
         registry.register(Command.of("debug.start", () -> ifDebug(this::debugStart)));
@@ -9072,19 +9557,17 @@ public class MainController {
         registry.register(Command.of("debug.stepOut", () -> ifDebug(dapManager::stepOut)));
         registry.register(Command.of("debug.toggleBreakpoint", () -> ifDebug(this::toggleBreakpointAtCaret)));
         registry.register(Command.of("debug.editBreakpoint", () -> ifDebug(this::editBreakpointAtCaret)));
-        registry.register(Command.of("debug.toggleExceptionBreakpoints",
-                () -> ifDebug(this::toggleExceptionBreakpoints)));
+        registry.register(
+                Command.of("debug.toggleExceptionBreakpoints", () -> ifDebug(this::toggleExceptionBreakpoints)));
         registry.register(Command.of("tool.debug", () -> ifDebug(() -> toolWindows.toggle(debugToolWindow))));
         // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
-        registry.register(Command.of("tool.problems",
-                () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
+        registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
         registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(this::lspGotoDefinition)));
         registry.register(Command.of("lsp.findReferences", () -> ifLsp(this::lspFindReferences)));
         registry.register(Command.of("lsp.hover", () -> ifLsp(this::lspShowHover)));
         registry.register(Command.of("lsp.restartServers", () -> ifLsp(this::restartLspServers)));
         registry.register(Command.of("view.toggleLsp", this::toggleLsp));
-        registry.register(Command.of("tool.commit",
-                () -> ifGit(() -> toolWindows.toggle(commitToolWindow))));
+        registry.register(Command.of("tool.commit", () -> ifGit(() -> toolWindows.toggle(commitToolWindow))));
         // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
         // absent / not in a repo. The ifGit wrapper disables the commands + keybindings when Git is off.
         registry.register(Command.of("remote.connect", this::connectRemote));
@@ -9093,19 +9576,18 @@ public class MainController {
         registry.register(Command.of("remote.disconnect", this::disconnectRemote));
         registry.register(Command.of("git.clone", () -> ifGit(this::gitClone)));
         registry.register(Command.of("git.commit", () -> ifGit(this::gitCommitFocus)));
-        registry.register(Command.of("git.stageFile",
-                () -> ifGit(this::gitStageActiveFile)));
+        registry.register(Command.of("git.stageFile", () -> ifGit(this::gitStageActiveFile)));
         registry.register(Command.of("git.switchBranch", () -> ifGit(this::chooseBranch)));
         registry.register(Command.of("git.newBranch", () -> ifGit(this::newBranch)));
-        registry.register(Command.of("git.fetch",
-                () -> ifGit(() -> gitSync("Fetch", "fetch", "--all"))));
-        registry.register(Command.of("git.pull",
-                () -> ifGit(() -> gitSync("Pull", "pull", "--ff-only"))));
+        registry.register(Command.of("git.fetch", () -> ifGit(() -> gitSync("Fetch", "fetch", "--all"))));
+        registry.register(Command.of("git.pull", () -> ifGit(() -> gitSync("Pull", "pull", "--ff-only"))));
         registry.register(Command.of("git.push", () -> ifGit(this::gitPush)));
-        registry.register(Command.of("git.refresh", () -> ifGit(() -> {
-            gitService.invalidateCaches();
-            afterGitMutation();
-        })));
+        registry.register(Command.of(
+                "git.refresh",
+                () -> ifGit(() -> {
+                    gitService.invalidateCaches();
+                    afterGitMutation();
+                })));
         // History / Log, blame, and stash (Core-trio parity with IntelliJ/VSCode).
         registry.register(Command.of("tool.gitLog", () -> ifGit(this::showGitLog)));
         registry.register(Command.of("git.fileHistory", () -> ifGit(this::showFileHistory)));
@@ -9121,10 +9603,8 @@ public class MainController {
         registry.register(Command.of("diff.compareWith", this::compareActiveWithFile));
         registry.register(Command.of("diff.vsCommit", () -> ifGit(this::diffActiveVsCommit)));
         registry.register(Command.of("merge.resolve", this::resolveConflicts));
-        registry.register(Command.of("switcher.show",
-                () -> switcher.show(stage, false)));
-        registry.register(Command.of("switcher.showReverse",
-                () -> switcher.show(stage, true)));
+        registry.register(Command.of("switcher.show", () -> switcher.show(stage, false)));
+        registry.register(Command.of("switcher.showReverse", () -> switcher.show(stage, true)));
         registry.register(Command.of("find.show", this::findShowOrNext));
         registry.register(Command.of("find.showBackward", this::findShowOrPrevious));
         registry.register(Command.of("find.replace", this::showReplace));
@@ -9136,59 +9616,66 @@ public class MainController {
         registry.register(Command.of("edit.cancel", this::cancel));
         registry.register(Command.of("edit.completion", this::triggerCompletion));
         registry.register(Command.of("edit.toggleComment", this::toggleComment));
-        registry.register(Command.of("edit.transposeChars",
-                () -> transpose(com.editora.editor.Transposer::transposeChars)));
-        registry.register(Command.of("edit.transposeWords",
-                () -> transpose(com.editora.editor.Transposer::transposeWords)));
-        registry.register(Command.of("edit.transposeLines",
-                () -> transpose(com.editora.editor.Transposer::transposeLines)));
+        registry.register(
+                Command.of("edit.transposeChars", () -> transpose(com.editora.editor.Transposer::transposeChars)));
+        registry.register(
+                Command.of("edit.transposeWords", () -> transpose(com.editora.editor.Transposer::transposeWords)));
+        registry.register(
+                Command.of("edit.transposeLines", () -> transpose(com.editora.editor.Transposer::transposeLines)));
         // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
         // a second press toggles to the true line start (column 0).
-        registry.register(Command.of("nav.lineStart",
-                () -> moveAndFollow(a -> a.moveTo(smartLineStart(a), selPolicy()))));
-        registry.register(Command.of("nav.lineEnd",
-                () -> moveAndFollow(a -> a.lineEnd(selPolicy()))));
-        registry.register(Command.of("nav.docStart",
-                () -> moveAndFollow(a -> a.start(selPolicy()))));
-        registry.register(Command.of("nav.docEnd",
-                () -> moveAndFollow(a -> a.end(selPolicy()))));
-        registry.register(Command.of("nav.charForward",
+        registry.register(Command.of(
+                "nav.lineStart", () -> moveAndFollow(a -> a.moveTo(smartLineStart(a), selPolicy()))));
+        registry.register(Command.of("nav.lineEnd", () -> moveAndFollow(a -> a.lineEnd(selPolicy()))));
+        registry.register(Command.of("nav.docStart", () -> moveAndFollow(a -> a.start(selPolicy()))));
+        registry.register(Command.of("nav.docEnd", () -> moveAndFollow(a -> a.end(selPolicy()))));
+        registry.register(Command.of(
+                "nav.charForward",
                 () -> moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1), selPolicy()))));
-        registry.register(Command.of("nav.charBackward",
+        registry.register(Command.of(
+                "nav.charBackward",
                 () -> moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1), selPolicy()))));
         registry.register(Command.of("nav.lineDown", () -> moveLine(1)));
         registry.register(Command.of("nav.lineUp", () -> moveLine(-1)));
-        registry.register(Command.of("nav.wordForward",
+        registry.register(Command.of(
+                "nav.wordForward",
                 () -> moveAndFollow(a -> a.moveTo(nextWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of("nav.wordBackward",
+        registry.register(Command.of(
+                "nav.wordBackward",
                 () -> moveAndFollow(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of("nav.pageDown",
-                () -> { if (!pageActivePreview(true)) { moveAndFollow(a -> a.nextPage(selPolicy())); } }));
-        registry.register(Command.of("nav.pageUp",
-                () -> { if (!pageActivePreview(false)) { moveAndFollow(a -> a.prevPage(selPolicy())); } }));
-        registry.register(Command.of("nav.backToIndentation",
-                () -> moveAndFollow(a -> a.moveTo(backToIndentation(a), selPolicy()))));
-        registry.register(Command.of("nav.paragraphForward",
-                () -> moveAndFollow(a -> a.moveTo(forwardParagraph(a), selPolicy()))));
-        registry.register(Command.of("nav.paragraphBackward",
-                () -> moveAndFollow(a -> a.moveTo(backwardParagraph(a), selPolicy()))));
-        registry.register(Command.of("nav.sentenceForward",
+        registry.register(Command.of("nav.pageDown", () -> {
+            if (!pageActivePreview(true)) {
+                moveAndFollow(a -> a.nextPage(selPolicy()));
+            }
+        }));
+        registry.register(Command.of("nav.pageUp", () -> {
+            if (!pageActivePreview(false)) {
+                moveAndFollow(a -> a.prevPage(selPolicy()));
+            }
+        }));
+        registry.register(Command.of(
+                "nav.backToIndentation", () -> moveAndFollow(a -> a.moveTo(backToIndentation(a), selPolicy()))));
+        registry.register(Command.of(
+                "nav.paragraphForward", () -> moveAndFollow(a -> a.moveTo(forwardParagraph(a), selPolicy()))));
+        registry.register(Command.of(
+                "nav.paragraphBackward", () -> moveAndFollow(a -> a.moveTo(backwardParagraph(a), selPolicy()))));
+        registry.register(Command.of(
+                "nav.sentenceForward",
                 () -> moveAndFollow(a -> a.moveTo(forwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of("nav.sentenceBackward",
+        registry.register(Command.of(
+                "nav.sentenceBackward",
                 () -> moveAndFollow(a -> a.moveTo(backwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of("nav.recenter", this::recenterCaret));
         registry.register(Command.of("edit.setMark", this::setMark));
-        registry.register(Command.of("edit.exchangePointAndMark",
-                this::exchangePointAndMark));
-        registry.register(Command.of("edit.deleteChar",
-                () -> withArea(CodeArea::deleteNextChar)));
-        registry.register(Command.of("edit.killWord",
+        registry.register(Command.of("edit.exchangePointAndMark", this::exchangePointAndMark));
+        registry.register(Command.of("edit.deleteChar", () -> withArea(CodeArea::deleteNextChar)));
+        registry.register(Command.of(
+                "edit.killWord",
                 () -> withArea(a -> {
                     int caret = a.getCaretPosition();
                     a.deleteText(caret, nextWordBoundary(a.getText(), caret));
                 })));
-        registry.register(Command.of("edit.killLine",
-                () -> withArea(this::killLine)));
+        registry.register(Command.of("edit.killLine", () -> withArea(this::killLine)));
     }
 
     private void killLine(CodeArea a) {

@@ -21,6 +21,7 @@ public class BreakpointStore {
 
     /** Current on-disk schema version of {@code breakpoints.json}. */
     public static final int SCHEMA_VERSION = 1;
+
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Project key ({@code ""} = no project) -> (absolute file path -> breakpoints). */
@@ -54,8 +55,7 @@ public class BreakpointStore {
      * Breakpoints in {@code previousOrder} are emitted first (using the up-to-date snapshot entry), then
      * any new snapshot breakpoints are appended in their natural order. Pure + unit-tested.
      */
-    public static List<Breakpoint> mergePreservingOrder(List<Breakpoint> previousOrder,
-            List<Breakpoint> current) {
+    public static List<Breakpoint> mergePreservingOrder(List<Breakpoint> previousOrder, List<Breakpoint> current) {
         if (previousOrder == null || previousOrder.isEmpty()) {
             return new ArrayList<>(current == null ? List.of() : current);
         }

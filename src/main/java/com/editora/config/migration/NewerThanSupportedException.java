@@ -12,8 +12,7 @@ public class NewerThanSupportedException extends RuntimeException {
     private final int currentVersion;
 
     public NewerThanSupportedException(ConfigSchema schema, int storedVersion, int currentVersion) {
-        super(schema + " on disk is schema v" + storedVersion
-                + " but this build supports up to v" + currentVersion);
+        super(schema + " on disk is schema v" + storedVersion + " but this build supports up to v" + currentVersion);
         this.schema = schema;
         this.storedVersion = storedVersion;
         this.currentVersion = currentVersion;

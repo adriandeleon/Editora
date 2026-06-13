@@ -1,15 +1,8 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-
-import com.editora.search.FileResult;
-import com.editora.search.LineMatch;
-import com.editora.search.SearchQuery;
-import com.editora.search.SearchService;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -17,17 +10,23 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputControl;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
-import javafx.scene.control.TextInputControl;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+
+import com.editora.search.FileResult;
+import com.editora.search.LineMatch;
+import com.editora.search.SearchQuery;
+import com.editora.search.SearchService;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The "Find in Files" results tool window: a query + replace box with case/regex/word toggles, and a
@@ -46,8 +45,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
     }
 
     /** A tree row: a file header ({@code match == null}) or a single match under it. */
-    private record Row(Path file, LineMatch match) {
-    }
+    private record Row(Path file, LineMatch match) {}
 
     private final Actions actions;
     private final TextField queryField = new TextField();
@@ -112,20 +110,44 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
             return; // typing in the query/replace fields
         }
         switch (e.getCode()) {
-            case ENTER -> { activateSelected(); e.consume(); }
-            case DOWN -> { moveSelection(1); e.consume(); }
-            case UP -> { moveSelection(-1); e.consume(); }
+            case ENTER -> {
+                activateSelected();
+                e.consume();
+            }
+            case DOWN -> {
+                moveSelection(1);
+                e.consume();
+            }
+            case UP -> {
+                moveSelection(-1);
+                e.consume();
+            }
             default -> {
                 if (!e.isControlDown()) {
                     return;
                 }
                 switch (e.getCode()) {
-                    case N -> { moveSelection(1); e.consume(); }
-                    case P -> { moveSelection(-1); e.consume(); }
-                    case F -> { expandSelection(true); e.consume(); }
-                    case B -> { expandSelection(false); e.consume(); }
-                    case M -> { activateSelected(); e.consume(); }
-                    default -> { }
+                    case N -> {
+                        moveSelection(1);
+                        e.consume();
+                    }
+                    case P -> {
+                        moveSelection(-1);
+                        e.consume();
+                    }
+                    case F -> {
+                        expandSelection(true);
+                        e.consume();
+                    }
+                    case B -> {
+                        expandSelection(false);
+                        e.consume();
+                    }
+                    case M -> {
+                        activateSelected();
+                        e.consume();
+                    }
+                    default -> {}
                 }
             }
         }
@@ -150,8 +172,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
     }
 
     private SearchQuery currentQuery() {
-        return new SearchQuery(queryField.getText(), caseBox.isSelected(), regexBox.isSelected(),
-                wordBox.isSelected());
+        return new SearchQuery(queryField.getText(), caseBox.isSelected(), regexBox.isSelected(), wordBox.isSelected());
     }
 
     private void runSearch() {
@@ -194,10 +215,13 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         }
         this.lastFiles = files;
         tree.setRoot(root);
-        summary.setText(outcome.totalMatches() == 0
-                ? tr("search.none")
-                : tr(outcome.truncated() ? "search.summaryTruncated" : "search.summary",
-                        outcome.totalMatches(), outcome.fileCount()));
+        summary.setText(
+                outcome.totalMatches() == 0
+                        ? tr("search.none")
+                        : tr(
+                                outcome.truncated() ? "search.summaryTruncated" : "search.summary",
+                                outcome.totalMatches(),
+                                outcome.fileCount()));
     }
 
     /** Re-runs the current search (e.g. after a replace) if there is a query. */
@@ -222,7 +246,8 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
                 return;
             }
             if (row.match() == null) {
-                int count = getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
+                int count =
+                        getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
                 setText(row.file().getFileName() + "  (" + count + ")");
                 if (!getStyleClass().contains("search-file-row")) {
                     getStyleClass().add("search-file-row");

@@ -7,10 +7,18 @@ package com.editora.git;
  */
 public final class RelativeTime {
 
-    public enum Unit { NOW, MINUTES, HOURS, DAYS, WEEKS, MONTHS, YEARS }
+    public enum Unit {
+        NOW,
+        MINUTES,
+        HOURS,
+        DAYS,
+        WEEKS,
+        MONTHS,
+        YEARS
+    }
 
     /** A coarse age: e.g. {@code (DAYS, 3)} → "3 days ago". {@code NOW} carries {@code value = 0}. */
-    public record Span(Unit unit, long value) { }
+    public record Span(Unit unit, long value) {}
 
     private static final long MINUTE = 60;
     private static final long HOUR = 60 * MINUTE;
@@ -19,8 +27,7 @@ public final class RelativeTime {
     private static final long MONTH = 30 * DAY;
     private static final long YEAR = 365 * DAY;
 
-    private RelativeTime() {
-    }
+    private RelativeTime() {}
 
     /** Buckets {@code nowSeconds - epochSeconds} (clamped at 0) into the largest fitting unit. */
     public static Span of(long epochSeconds, long nowSeconds) {

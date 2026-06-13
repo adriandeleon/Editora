@@ -16,12 +16,8 @@ import javafx.scene.text.Font;
 public final class Fonts {
 
     /** Bundled font families, in picker order; the first is the default for new configs. */
-    public static final List<String> BUNDLED = List.of(
-            "JetBrains Mono",
-            "Cascadia Code",
-            "Fira Code",
-            "IBM Plex Mono",
-            "Source Code Pro");
+    public static final List<String> BUNDLED =
+            List.of("JetBrains Mono", "Cascadia Code", "Fira Code", "IBM Plex Mono", "Source Code Pro");
 
     public static final String DEFAULT = "JetBrains Mono";
 
@@ -55,8 +51,7 @@ public final class Fonts {
         "inter/Inter-BoldItalic.ttf",
     };
 
-    private Fonts() {
-    }
+    private Fonts() {}
 
     /** Registers every bundled font with the JavaFX toolkit. Failures are skipped silently. */
     public static void load() {

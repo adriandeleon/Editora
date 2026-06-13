@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -19,8 +17,8 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-import javafx.application.Platform;
 import javafx.animation.PauseTransition;
+import javafx.application.Platform;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
@@ -32,13 +30,14 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
-import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Project tool window: a filter box over a lazy file tree rooted at the active project's folder.
@@ -81,9 +80,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private boolean filtering;
     private boolean loading;
 
-    public ProjectPanel(Consumer<Path> onOpenFile,
-                        BiConsumer<Path, Path> onFileRenamed, Consumer<Path> onFileDeleted,
-                        java.util.function.Predicate<Path> isModified) {
+    public ProjectPanel(
+            Consumer<Path> onOpenFile,
+            BiConsumer<Path, Path> onFileRenamed,
+            Consumer<Path> onFileDeleted,
+            java.util.function.Predicate<Path> isModified) {
         this.onOpenFile = onOpenFile;
         this.onFileRenamed = onFileRenamed;
         this.onFileDeleted = onFileDeleted;
@@ -246,11 +247,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         List<Path> matches = new ArrayList<>();
         int[] visited = {0};
         try {
-            Files.walkFileTree(root, java.util.EnumSet.noneOf(java.nio.file.FileVisitOption.class),
-                    MAX_DEPTH, new SimpleFileVisitor<>() {
+            Files.walkFileTree(
+                    root,
+                    java.util.EnumSet.noneOf(java.nio.file.FileVisitOption.class),
+                    MAX_DEPTH,
+                    new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) {
-                            if (!dir.equals(root) && dir.getFileName().toString().startsWith(".")) {
+                            if (!dir.equals(root)
+                                    && dir.getFileName().toString().startsWith(".")) {
                                 return FileVisitResult.SKIP_SUBTREE; // skip .git, etc.
                             }
                             return cap();
@@ -259,7 +264,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes a) {
                             String name = file.getFileName().toString();
-                            if (!name.startsWith(".") && name.toLowerCase(Locale.ROOT).contains(q)) {
+                            if (!name.startsWith(".")
+                                    && name.toLowerCase(Locale.ROOT).contains(q)) {
                                 matches.add(file);
                             }
                             return cap();
@@ -272,7 +278,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
                         private FileVisitResult cap() {
                             return ++visited[0] > MAX_VISIT || matches.size() >= MAX_MATCHES
-                                    ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
+                                    ? FileVisitResult.TERMINATE
+                                    : FileVisitResult.CONTINUE;
                         }
                     });
         } catch (IOException | RuntimeException ex) {
@@ -303,12 +310,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     return;
                 }
                 switch (e.getCode()) {
-                    case N -> { move(1); e.consume(); }
-                    case P -> { move(-1); e.consume(); }
-                    case F -> { expandOrDescend(); e.consume(); }
-                    case B -> { collapseOrAscend(); e.consume(); }
-                    case M -> { openSelected(); e.consume(); }
-                    default -> { }
+                    case N -> {
+                        move(1);
+                        e.consume();
+                    }
+                    case P -> {
+                        move(-1);
+                        e.consume();
+                    }
+                    case F -> {
+                        expandOrDescend();
+                        e.consume();
+                    }
+                    case B -> {
+                        collapseOrAscend();
+                        e.consume();
+                    }
+                    case M -> {
+                        openSelected();
+                        e.consume();
+                    }
+                    default -> {}
                 }
             }
         }
@@ -390,32 +412,37 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         Path path = item.getValue();
-        prompt.show(tr("project.renameTitle"), tr("project.renameContent"),
-                path.getFileName().toString(), input -> {
-            String name = input.trim();
-            if (name.isEmpty()) {
-                return;
-            }
-            Path target = path.resolveSibling(name);
-            if (target.equals(path) || Files.exists(target)) {
-                return;
-            }
-            try {
-                Files.move(path, target);
-            } catch (IOException ex) {
-                showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
-                return;
-            }
-            refreshAfterChange(item);
-            onFileRenamed.accept(path, target);
-        });
+        prompt.show(
+                tr("project.renameTitle"),
+                tr("project.renameContent"),
+                path.getFileName().toString(),
+                input -> {
+                    String name = input.trim();
+                    if (name.isEmpty()) {
+                        return;
+                    }
+                    Path target = path.resolveSibling(name);
+                    if (target.equals(path) || Files.exists(target)) {
+                        return;
+                    }
+                    try {
+                        Files.move(path, target);
+                    } catch (IOException ex) {
+                        showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
+                        return;
+                    }
+                    refreshAfterChange(item);
+                    onFileRenamed.accept(path, target);
+                });
     }
 
     private void deleteItem(TreeItem<Path> item) {
         Path path = item.getValue();
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
                 tr("project.deleteFileBody", path.getFileName()),
-                ButtonType.OK, ButtonType.CANCEL);
+                ButtonType.OK,
+                ButtonType.CANCEL);
         confirm.initOwner(getScene() == null ? null : getScene().getWindow());
         confirm.setTitle(tr("project.deleteFileTitle"));
         confirm.setHeaderText(null);
@@ -505,8 +532,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         } catch (IOException | RuntimeException ex) {
             return List.of();
         }
-        Comparator<Path> byName =
-                Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
+        Comparator<Path> byName = Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
         dirs.sort(byName);
         files.sort(byName);
         List<Path> all = new ArrayList<>(dirs.size() + files.size());

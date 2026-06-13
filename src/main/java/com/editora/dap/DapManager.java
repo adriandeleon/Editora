@@ -5,7 +5,6 @@ import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -15,14 +14,13 @@ import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-
 import javafx.application.Platform;
 
 import com.editora.lsp.LspManager;
 import com.editora.process.ProcessRunner;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 /**
  * UI-facing facade for Java debugging over DAP (mirrors {@code LspManager} + {@code RunService}). Owns the
@@ -38,11 +36,16 @@ public final class DapManager implements DapClient.Host {
     private static final Logger LOG = Logger.getLogger(DapManager.class.getName());
 
     /** Session lifecycle states. */
-    public enum State { INACTIVE, STARTING, RUNNING, SUSPENDED, TERMINATED }
+    public enum State {
+        INACTIVE,
+        STARTING,
+        RUNNING,
+        SUSPENDED,
+        TERMINATED
+    }
 
     /** A candidate main class returned by jdtls's {@code vscode.java.resolveMainClass}. */
-    public record MainClassOption(String mainClass, String projectName, String filePath) {
-    }
+    public record MainClassOption(String mainClass, String projectName, String filePath) {}
 
     /** Lets the controller present a chooser when several main classes are found (QuickOpen). */
     public interface MainClassPicker {
@@ -76,12 +79,12 @@ public final class DapManager implements DapClient.Host {
 
     // Python (debugpy, stdio) + JavaScript (vscode-js-debug, socket) — the standalone adapters.
     private boolean pythonEnabled;
-    private String pythonCommand = "";   // interpreter exe (blank ⇒ python3 on PATH)
-    private Path debugpyDir;             // resolved PYTHONPATH dir for debugpy (null ⇒ rely on interpreter)
+    private String pythonCommand = ""; // interpreter exe (blank ⇒ python3 on PATH)
+    private Path debugpyDir; // resolved PYTHONPATH dir for debugpy (null ⇒ rely on interpreter)
     private boolean pythonAvailable;
     private boolean jsEnabled;
-    private String jsPath = "";          // configured dapDebugServer.js path/dir (blank ⇒ auto-detect)
-    private Path jsServer;              // resolved dapDebugServer.js (null ⇒ not found)
+    private String jsPath = ""; // configured dapDebugServer.js path/dir (blank ⇒ auto-detect)
+    private Path jsServer; // resolved dapDebugServer.js (null ⇒ not found)
     private boolean jsAvailable;
 
     private DapClient client;
@@ -122,8 +125,13 @@ public final class DapManager implements DapClient.Host {
      * jar(s) and the python/js adapter locations (filesystem, cheap — like the existing java {@code locate}).
      * Availability (which needs a subprocess probe) is set later by {@link #detectPython}/{@link #detectJs}.
      */
-    public void configure(boolean enabled, String javaPluginPath, boolean pythonEnabled,
-            String pythonCommand, boolean jsEnabled, String jsPath) {
+    public void configure(
+            boolean enabled,
+            String javaPluginPath,
+            boolean pythonEnabled,
+            String pythonCommand,
+            boolean jsEnabled,
+            String jsPath) {
         this.enabled = enabled;
         this.pluginPath = javaPluginPath == null ? "" : javaPluginPath;
         this.bundlePaths = enabled ? locate() : List.of();
@@ -132,9 +140,11 @@ public final class DapManager implements DapClient.Host {
         this.jsEnabled = jsEnabled;
         this.jsPath = jsPath == null ? "" : jsPath;
         this.debugpyDir = enabled && pythonEnabled
-                ? DebugAdapterLocator.locateDebugpy("", home()).orElse(null) : null;
+                ? DebugAdapterLocator.locateDebugpy("", home()).orElse(null)
+                : null;
         this.jsServer = enabled && jsEnabled
-                ? DebugAdapterLocator.locateJsDebugServer(this.jsPath, home()).orElse(null) : null;
+                ? DebugAdapterLocator.locateJsDebugServer(this.jsPath, home()).orElse(null)
+                : null;
         if (!enabled || !pythonEnabled) {
             this.pythonAvailable = false;
         }
@@ -198,7 +208,8 @@ public final class DapManager implements DapClient.Host {
      */
     public void detectJs(Consumer<Boolean> onResult) {
         io.submit(() -> {
-            Path server = DebugAdapterLocator.locateJsDebugServer(jsPath, home()).orElse(null);
+            Path server =
+                    DebugAdapterLocator.locateJsDebugServer(jsPath, home()).orElse(null);
             boolean ok = enabled && jsEnabled && server != null && probeNode();
             Platform.runLater(() -> {
                 this.jsServer = server;
@@ -210,7 +221,8 @@ public final class DapManager implements DapClient.Host {
 
     private List<String> locate() {
         return DebugAdapterLocator.locate(pluginPath, home())
-                .map(p -> List.of(p.toString())).orElse(List.of());
+                .map(p -> List.of(p.toString()))
+                .orElse(List.of());
     }
 
     private static Path home() {
@@ -259,8 +271,7 @@ public final class DapManager implements DapClient.Host {
 
     private static void prependPythonPath(ProcessBuilder pb, Path dir) {
         String existing = pb.environment().getOrDefault("PYTHONPATH", "");
-        pb.environment().put("PYTHONPATH",
-                existing.isEmpty() ? dir.toString() : dir + File.pathSeparator + existing);
+        pb.environment().put("PYTHONPATH", existing.isEmpty() ? dir.toString() : dir + File.pathSeparator + existing);
     }
 
     public State state() {
@@ -338,7 +349,9 @@ public final class DapManager implements DapClient.Host {
                 return;
             }
             MainClassOption match = options.stream()
-                    .filter(o -> sameFile(o.filePath(), file)).findFirst().orElse(null);
+                    .filter(o -> sameFile(o.filePath(), file))
+                    .findFirst()
+                    .orElse(null);
             if (match != null) {
                 resolveAndLaunch(file, match);
             } else if (options.size() == 1) {
@@ -383,8 +396,7 @@ public final class DapManager implements DapClient.Host {
 
     private void resolveAndLaunch(Path file, MainClassOption opt) {
         String proj = opt.projectName() == null ? "" : opt.projectName();
-        lsp.executeCommand(file, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj),
-                (res, err) -> {
+        lsp.executeCommand(file, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj), (res, err) -> {
             if (err != null) {
                 fail("Could not resolve the classpath: " + msg(err));
                 return;
@@ -398,12 +410,14 @@ public final class DapManager implements DapClient.Host {
                         + "then try again.");
                 return;
             }
-            lsp.executeCommand(file, "vscode.java.resolveJavaExecutable", List.of(opt.mainClass(), proj),
-                    (jx, e2) -> {
+            lsp.executeCommand(file, "vscode.java.resolveJavaExecutable", List.of(opt.mainClass(), proj), (jx, e2) -> {
                 String javaExec = asString(jx);
                 String cwd = file.getParent() == null ? null : file.getParent().toString();
-                startDebugSessionAndConnect(file, LaunchConfig.launch(opt.mainClass(), proj,
-                        classpaths, modulepaths, javaExec, cwd, programArgs, false), false);
+                startDebugSessionAndConnect(
+                        file,
+                        LaunchConfig.launch(
+                                opt.mainClass(), proj, classpaths, modulepaths, javaExec, cwd, programArgs, false),
+                        false);
             });
         });
     }
@@ -420,22 +434,23 @@ public final class DapManager implements DapClient.Host {
             try {
                 Path out = java.nio.file.Files.createTempDirectory("editora-dap-");
                 out.toFile().deleteOnExit();
-                List<String> cmd = ProcessRunner.resolveExecutable(
-                        List.of("javac", "-g", "-d", out.toString(), file.toString()));
+                List<String> cmd =
+                        ProcessRunner.resolveExecutable(List.of("javac", "-g", "-d", out.toString(), file.toString()));
                 ProcessBuilder pb = new ProcessBuilder(cmd);
                 ProcessRunner.applyStandardEnv(pb);
                 pb.redirectErrorStream(true);
                 Process p = pb.start();
-                String log = new String(p.getInputStream().readAllBytes(),
-                        java.nio.charset.StandardCharsets.UTF_8);
+                String log = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
                 if (p.waitFor() != 0) {
                     fail("Compilation failed:\n" + log.strip());
                     return;
                 }
                 String javaExec = firstOrNull(ProcessRunner.resolveExecutable(List.of("java")));
                 String cwd = file.getParent() == null ? null : file.getParent().toString();
-                Platform.runLater(() -> startDebugSessionAndConnect(file, LaunchConfig.launch(
-                        fqn, null, List.of(out.toString()), List.of(), javaExec, cwd, programArgs, false),
+                Platform.runLater(() -> startDebugSessionAndConnect(
+                        file,
+                        LaunchConfig.launch(
+                                fqn, null, List.of(out.toString()), List.of(), javaExec, cwd, programArgs, false),
                         false));
             } catch (Exception e) {
                 fail("Could not compile/launch " + fqn + ": " + msg(e));
@@ -448,8 +463,8 @@ public final class DapManager implements DapClient.Host {
     }
 
     /** Matches a top-level type declaration, capturing its name (e.g. {@code public final class Foo}). */
-    private static final java.util.regex.Pattern TYPE_DECL = java.util.regex.Pattern.compile(
-            "\\b(?:public\\s+)?(?:final\\s+|abstract\\s+|sealed\\s+|non-sealed\\s+)*"
+    private static final java.util.regex.Pattern TYPE_DECL =
+            java.util.regex.Pattern.compile("\\b(?:public\\s+)?(?:final\\s+|abstract\\s+|sealed\\s+|non-sealed\\s+)*"
                     + "(?:class|record|enum|interface)\\s+(\\w+)");
 
     /**
@@ -580,9 +595,10 @@ public final class DapManager implements DapClient.Host {
             return false;
         }
         if (!isLanguageAvailable(language)) {
-            listener.onError("python".equals(language)
-                    ? "Python debugging is not available (enable it and install debugpy)."
-                    : "JavaScript debugging is not available (enable it and install vscode-js-debug).");
+            listener.onError(
+                    "python".equals(language)
+                            ? "Python debugging is not available (enable it and install debugpy)."
+                            : "JavaScript debugging is not available (enable it and install vscode-js-debug).");
             return false;
         }
         if (client != null) {
@@ -592,8 +608,9 @@ public final class DapManager implements DapClient.Host {
     }
 
     /** debugpy over stdio: spawn {@code <python> -m debugpy.adapter}, wire DAP to its streams, launch. */
-    private void startStdio(Path file, DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps, List<String> filters) throws Exception {
+    private void startStdio(
+            Path file, DapServerRegistry.DapServerSpec spec, List<DapModels.FileBreakpoints> bps, List<String> filters)
+            throws Exception {
         List<String> argv = new ArrayList<>(DapServerRegistry.interpreterArgv("python", pythonCommand));
         argv.addAll(spec.adapterArgs()); // -m debugpy.adapter
         List<String> cmd = ProcessRunner.resolveExecutable(argv);
@@ -614,7 +631,8 @@ public final class DapManager implements DapClient.Host {
                 fail("Could not connect to debugpy: " + msg(e));
                 return;
             }
-            c.launch(LaunchConfig.program(spec.launchType(), file.toString(), cwdOf(file), interpExe, programArgs, false))
+            c.launch(LaunchConfig.program(
+                            spec.launchType(), file.toString(), cwdOf(file), interpExe, programArgs, false))
                     .whenComplete((v, le) -> {
                         if (le != null) {
                             fail("launch failed: " + msg(le));
@@ -625,8 +643,9 @@ public final class DapManager implements DapClient.Host {
     }
 
     /** vscode-js-debug over a socket: spawn {@code node dapDebugServer.js <port>}, connect, launch. */
-    private void startSocket(Path file, DapServerRegistry.DapServerSpec spec,
-            List<DapModels.FileBreakpoints> bps, List<String> filters) throws Exception {
+    private void startSocket(
+            Path file, DapServerRegistry.DapServerSpec spec, List<DapModels.FileBreakpoints> bps, List<String> filters)
+            throws Exception {
         if (jsServer == null) {
             fail("The vscode-js-debug adapter was not found.");
             return;
@@ -707,8 +726,7 @@ public final class DapManager implements DapClient.Host {
             cb.accept(List.of());
             return;
         }
-        client.threads().whenComplete((list, e) ->
-                Platform.runLater(() -> cb.accept(list == null ? List.of() : list)));
+        client.threads().whenComplete((list, e) -> Platform.runLater(() -> cb.accept(list == null ? List.of() : list)));
     }
 
     /** Switches the inspected thread and loads its call stack (callback on the FX thread). */
@@ -751,21 +769,22 @@ public final class DapManager implements DapClient.Host {
             return;
         }
         int threadId = currentThreadId;
-        c.gotoTargets(file, line).whenComplete((ids, e) -> Platform.runLater(() -> {
-            if (e != null) {
-                onError.accept(msg(e));
-                return;
-            }
-            if (ids == null || ids.isEmpty()) {
-                onError.accept(""); // no jump target on that line
-                return;
-            }
-            c.gotoTarget(threadId, ids.get(0)).whenComplete((v, e2) -> {
-                if (e2 != null) {
-                    Platform.runLater(() -> onError.accept(msg(e2)));
-                }
-            });
-        }));
+        c.gotoTargets(file, line)
+                .whenComplete((ids, e) -> Platform.runLater(() -> {
+                    if (e != null) {
+                        onError.accept(msg(e));
+                        return;
+                    }
+                    if (ids == null || ids.isEmpty()) {
+                        onError.accept(""); // no jump target on that line
+                        return;
+                    }
+                    c.gotoTarget(threadId, ids.get(0)).whenComplete((v, e2) -> {
+                        if (e2 != null) {
+                            Platform.runLater(() -> onError.accept(msg(e2)));
+                        }
+                    });
+                }));
     }
 
     /** The file's existing breakpoints plus a temporary plain one at {@code line} (no duplicate when a
@@ -849,8 +868,8 @@ public final class DapManager implements DapClient.Host {
             cb.accept(List.of());
             return;
         }
-        client.stackTrace(threadId).whenComplete((frames, e) ->
-                Platform.runLater(() -> cb.accept(frames == null ? List.of() : frames)));
+        client.stackTrace(threadId)
+                .whenComplete((frames, e) -> Platform.runLater(() -> cb.accept(frames == null ? List.of() : frames)));
     }
 
     public void scopes(int frameId, Consumer<List<DapModels.ScopeInfo>> cb) {
@@ -858,8 +877,8 @@ public final class DapManager implements DapClient.Host {
             cb.accept(List.of());
             return;
         }
-        client.scopes(frameId).whenComplete((scopes, e) ->
-                Platform.runLater(() -> cb.accept(scopes == null ? List.of() : scopes)));
+        client.scopes(frameId)
+                .whenComplete((scopes, e) -> Platform.runLater(() -> cb.accept(scopes == null ? List.of() : scopes)));
     }
 
     public void variables(int ref, Consumer<List<DapModels.VariableInfo>> cb) {
@@ -867,8 +886,8 @@ public final class DapManager implements DapClient.Host {
             cb.accept(List.of());
             return;
         }
-        client.variables(ref).whenComplete((vars, e) ->
-                Platform.runLater(() -> cb.accept(vars == null ? List.of() : vars)));
+        client.variables(ref)
+                .whenComplete((vars, e) -> Platform.runLater(() -> cb.accept(vars == null ? List.of() : vars)));
     }
 
     public void evaluate(String expression, int frameId, String context, Consumer<String> cb) {
@@ -876,22 +895,23 @@ public final class DapManager implements DapClient.Host {
             cb.accept("");
             return;
         }
-        client.evaluate(expression, frameId, context).whenComplete((r, e) ->
-                Platform.runLater(() -> cb.accept(e != null ? "error: " + msg(e) : (r == null ? "" : r))));
+        client.evaluate(expression, frameId, context)
+                .whenComplete((r, e) ->
+                        Platform.runLater(() -> cb.accept(e != null ? "error: " + msg(e) : (r == null ? "" : r))));
     }
 
     /** Full evaluate (result + expandable reference + type) for watches and the hover value popup.
      *  Failures deliver an {@code EvalResult} with the error text and no children. */
-    public void evaluateFull(String expression, int frameId, String context,
-            Consumer<DapModels.EvalResult> cb) {
+    public void evaluateFull(String expression, int frameId, String context, Consumer<DapModels.EvalResult> cb) {
         if (client == null) {
             cb.accept(new DapModels.EvalResult("", 0, null));
             return;
         }
-        client.evaluateFull(expression, frameId, context).whenComplete((r, e) ->
-                Platform.runLater(() -> cb.accept(e != null
-                        ? new DapModels.EvalResult(msg(e), 0, null)
-                        : (r == null ? new DapModels.EvalResult("", 0, null) : r))));
+        client.evaluateFull(expression, frameId, context)
+                .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(
+                        e != null
+                                ? new DapModels.EvalResult(msg(e), 0, null)
+                                : (r == null ? new DapModels.EvalResult("", 0, null) : r))));
     }
 
     /** Hover evaluate (context "hover"): failures deliver {@code null} — hovering a non-variable
@@ -902,8 +922,8 @@ public final class DapManager implements DapClient.Host {
             cb.accept(null);
             return;
         }
-        c.evaluateFull(expression, frameId, "hover").whenComplete((r, e) ->
-                Platform.runLater(() -> cb.accept(e != null || r == null ? null : r.result())));
+        c.evaluateFull(expression, frameId, "hover")
+                .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e != null || r == null ? null : r.result())));
     }
 
     public void setVariable(int ref, String name, String value, Consumer<String> cb) {
@@ -911,8 +931,8 @@ public final class DapManager implements DapClient.Host {
             cb.accept(value);
             return;
         }
-        client.setVariable(ref, name, value).whenComplete((r, e) ->
-                Platform.runLater(() -> cb.accept(r == null ? value : r)));
+        client.setVariable(ref, name, value)
+                .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(r == null ? value : r)));
     }
 
     /** (Re)sends a file's breakpoints to the live adapter (after the user toggled one while running). */
@@ -930,12 +950,13 @@ public final class DapManager implements DapClient.Host {
         if (client == null) {
             return;
         }
-        client.stackTrace(threadId).whenComplete((frames, e) -> Platform.runLater(() -> {
-            clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
-            state = State.SUSPENDED;
-            listener.onState(State.SUSPENDED);
-            listener.onStopped(threadId, reason, frames == null ? List.of() : frames);
-        }));
+        client.stackTrace(threadId)
+                .whenComplete((frames, e) -> Platform.runLater(() -> {
+                    clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
+                    state = State.SUSPENDED;
+                    listener.onState(State.SUSPENDED);
+                    listener.onStopped(threadId, reason, frames == null ? List.of() : frames);
+                }));
     }
 
     @Override
@@ -989,7 +1010,8 @@ public final class DapManager implements DapClient.Host {
             return false;
         }
         try {
-            return Objects.equals(Path.of(a).toAbsolutePath().normalize(), b.toAbsolutePath().normalize());
+            return Objects.equals(
+                    Path.of(a).toAbsolutePath().normalize(), b.toAbsolutePath().normalize());
         } catch (RuntimeException e) {
             return false;
         }
@@ -1081,17 +1103,17 @@ public final class DapManager implements DapClient.Host {
 
     private static Listener noopListener() {
         return new Listener() {
-            @Override public void onState(State state) {
-            }
+            @Override
+            public void onState(State state) {}
 
-            @Override public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> frames) {
-            }
+            @Override
+            public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> frames) {}
 
-            @Override public void onOutput(String text, String category) {
-            }
+            @Override
+            public void onOutput(String text, String category) {}
 
-            @Override public void onError(String message) {
-            }
+            @Override
+            public void onError(String message) {}
         };
     }
 }

@@ -32,8 +32,8 @@ public final class SnippetManager {
 
     private final ConfigManager config;
     // Lenient: real-world VS Code snippet files (e.g. friendly-snippets) carry extra fields like "scope".
-    private final ObjectMapper mapper = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    private final ObjectMapper mapper =
+            new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     /** language → its own snippets (bundled+user merged), loaded lazily. */
     private final Map<String, List<Snippet>> cache = new LinkedHashMap<>();
     /** Extra source dirs (e.g. plugin {@code snippets/} folders), each holding {@code <lang>.json} files. */
@@ -97,8 +97,8 @@ public final class SnippetManager {
 
     private List<Snippet> loadLanguage(String language) {
         Map<String, Snippet> byPrefix = new LinkedHashMap<>();
-        try (InputStream bundled = SnippetManager.class.getResourceAsStream(
-                "/com/editora/snippets/" + language + ".json")) {
+        try (InputStream bundled =
+                SnippetManager.class.getResourceAsStream("/com/editora/snippets/" + language + ".json")) {
             if (bundled != null) {
                 readInto(byPrefix, bundled, language);
             }
@@ -128,7 +128,7 @@ public final class SnippetManager {
 
     private void readInto(Map<String, Snippet> byPrefix, InputStream in, String language) {
         try {
-            Map<String, Dto> map = mapper.readValue(in, new TypeReference<Map<String, Dto>>() { });
+            Map<String, Dto> map = mapper.readValue(in, new TypeReference<Map<String, Dto>>() {});
             map.forEach((name, dto) -> {
                 if (dto == null) {
                     return;
@@ -177,8 +177,8 @@ public final class SnippetManager {
 
     /** Jackson DTO for one snippet entry (public fields so no module-open of getters is needed). */
     static final class Dto {
-        public Object prefix;      // String or List<String>
-        public Object body;        // String or List<String>
+        public Object prefix; // String or List<String>
+        public Object body; // String or List<String>
         public Object description; // String or List<String>
     }
 }

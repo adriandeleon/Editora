@@ -1,11 +1,5 @@
 package com.editora.plugin;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,9 +9,14 @@ import java.util.Set;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for plugin manifest parsing + discovery (pure / temp-dir, no UI). */
 class PluginManagerTest {
@@ -26,8 +25,7 @@ class PluginManagerTest {
             new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     private static PluginManifest parse(String json) throws Exception {
-        return PluginManager.parseManifest(MAPPER,
-                new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        return PluginManager.parseManifest(MAPPER, new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test
@@ -70,8 +68,7 @@ class PluginManagerTest {
     void discoverFindsManifestsAndAppliesEnabledState(@TempDir Path pluginsDir) throws Exception {
         // enabled Java plugin (no jar → loader empty but built)
         Path a = Files.createDirectories(pluginsDir.resolve("alpha"));
-        Files.writeString(a.resolve("plugin.json"),
-                "{ \"id\": \"alpha\", \"name\": \"Alpha\", \"main\": \"x.Y\" }");
+        Files.writeString(a.resolve("plugin.json"), "{ \"id\": \"alpha\", \"name\": \"Alpha\", \"main\": \"x.Y\" }");
         // disabled plugin
         Path b = Files.createDirectories(pluginsDir.resolve("beta"));
         Files.writeString(b.resolve("plugin.json"), "{ \"id\": \"beta\", \"name\": \"Beta\" }");
@@ -87,13 +84,15 @@ class PluginManagerTest {
         List<PluginDescriptor> d = pm.descriptors();
 
         assertEquals(3, d.size()); // alpha, beta, gamma (not-a-plugin skipped); folder order
-        PluginDescriptor alpha = d.stream().filter(x -> x.id().equals("alpha")).findFirst().orElseThrow();
+        PluginDescriptor alpha =
+                d.stream().filter(x -> x.id().equals("alpha")).findFirst().orElseThrow();
         assertTrue(alpha.enabled());
         assertTrue(alpha.hasJavaEntry());
         assertNotNull(alpha.classLoader()); // enabled + has main → loader built
         assertNull(alpha.loadError());
 
-        PluginDescriptor beta = d.stream().filter(x -> x.id().equals("beta")).findFirst().orElseThrow();
+        PluginDescriptor beta =
+                d.stream().filter(x -> x.id().equals("beta")).findFirst().orElseThrow();
         assertFalse(beta.enabled());
         assertNull(beta.classLoader()); // disabled → no loader
 

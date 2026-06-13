@@ -8,15 +8,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
-import org.eclipse.tm4e.core.grammar.IGrammar;
-import org.fxmisc.richtext.model.StyleSpans;
-
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.TextMateHighlighter;
-import com.editora.mermaid.Mermaid;
-import com.editora.pdf.PdfText;
-
 import javafx.application.Platform;
 import javafx.print.PageLayout;
 import javafx.print.PrinterJob;
@@ -25,6 +16,14 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
+
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.TextMateHighlighter;
+import com.editora.mermaid.Mermaid;
+import com.editora.pdf.PdfText;
+import org.eclipse.tm4e.core.grammar.IGrammar;
+import org.fxmisc.richtext.model.StyleSpans;
 
 /**
  * Prepares a document for printing via {@code javafx.print} (the {@code PdfExportService} idiom): the
@@ -40,8 +39,7 @@ import javafx.scene.text.Font;
 public final class PrintService {
 
     /** Outcome of a print: {@code ok} plus an error {@code message} on failure. */
-    public record Result(boolean ok, String message) {
-    }
+    public record Result(boolean ok, String message) {}
 
     /** Builds the printable page nodes for a given page layout. Runs on the FX thread. */
     @FunctionalInterface
@@ -66,8 +64,13 @@ public final class PrintService {
     });
 
     /** Prepares {@code text} as code. Highlighting (when {@code highlight}) uses the grammar for {@code fileName}. */
-    public void prepareCode(String text, String fileName, boolean highlight, boolean lineNumbers,
-            int tabSize, Consumer<Prepared> onReady) {
+    public void prepareCode(
+            String text,
+            String fileName,
+            boolean highlight,
+            boolean lineNumbers,
+            int tabSize,
+            Consumer<Prepared> onReady) {
         exec.submit(() -> {
             try {
                 StyleSpans<Collection<String>> spans = null;
@@ -77,12 +80,13 @@ public final class PrintService {
                         spans = TextMateHighlighter.compute(text, grammar);
                     }
                 }
-                List<List<PdfText.Run>> lines =
-                        PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize));
-                deliver(onReady, new Prepared(
-                        layout -> CodePrintLayout.paginate(lines, layout, lineNumbers,
-                                Font.font(MONO_FAMILY, CodePrintLayout.FONT_SIZE)),
-                        null));
+                List<List<PdfText.Run>> lines = PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize));
+                deliver(
+                        onReady,
+                        new Prepared(
+                                layout -> CodePrintLayout.paginate(
+                                        lines, layout, lineNumbers, Font.font(MONO_FAMILY, CodePrintLayout.FONT_SIZE)),
+                                null));
             } catch (Exception e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }

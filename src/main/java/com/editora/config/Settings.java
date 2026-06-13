@@ -11,6 +11,7 @@ public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
     public static final int SCHEMA_VERSION = 24;
+
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Default plugin-registry index URL (a curated {@code index.json} on GitHub); user-overridable. */
@@ -25,15 +26,18 @@ public class Settings {
     /** Text zoom factor applied on top of {@link #fontSize} (1.0 = 100%). A quick, persisted zoom that
      *  is intentionally NOT shown in the Settings window; effective size = round(fontSize * fontZoom). */
     private double fontZoom = 1.0;
+
     private String theme = "Primer Light";
     /** Editor color theme (syntax + surface). Follows {@link #theme} until the user picks one. */
     private String editorTheme = "Primer Light";
     /** True once the user explicitly picks an editor theme; stops it auto-following the app theme. */
     private boolean editorThemeUserSet;
+
     private int tabSize = 4;
     private String keymap = "emacs";
     /** UI language code (e.g. {@code "es"}); empty = auto (system language if bundled, else English). */
     private String uiLanguage = "";
+
     private boolean showColumnRuler = true;
     private boolean highlightCurrentLine = true;
     private boolean showLineNumbers = true;
@@ -52,6 +56,7 @@ public class Settings {
     private boolean markdownFormatBar = true;
     /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork). Transparent with one caret. */
     private boolean multiCaret = true;
+
     private boolean spellCheck = true;
     /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
     private String spellLanguage = "en_US";
@@ -59,10 +64,12 @@ public class Settings {
     private boolean autocomplete = true;
     /** Per-source autocomplete toggles (gated by {@link #autocomplete}); on by default. */
     private boolean autocompleteProse = true;
+
     private boolean autocompleteSnippets = true;
     /** Mermaid keyword + snippet autocomplete in .mmd buffers; on by default but only effective when
      *  Mermaid support is enabled and the tools are detected. */
     private boolean autocompleteMermaid = true;
+
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
@@ -76,6 +83,7 @@ public class Settings {
     private boolean simpleMode = false;
     /** Auto-save mode: "off" | "afterDelay" | "onFocusChange" (parsed leniently; unknown ⇒ off). */
     private String autoSave = "off";
+
     private int autoSaveDelayMillis = 1000;
     /** Projects feature: off by default — hides all project UI/commands until enabled. */
     private boolean projectSupport = false;
@@ -128,6 +136,7 @@ public class Settings {
     private boolean lspSupport = false;
     /** Command to launch the Java language server (JDT LS); blank = resolve "jdtls" on PATH. */
     private String javaLspCommand = "";
+
     private String typescriptLspCommand = "";
     private String pythonLspCommand = "";
     private String xmlLspCommand = "";
@@ -261,8 +270,7 @@ public class Settings {
 
     /** The configured author name, or the OS user name when blank (used by template {@code ${author}}). */
     public String getAuthorName() {
-        return authorName == null || authorName.isBlank()
-                ? System.getProperty("user.name", "") : authorName;
+        return authorName == null || authorName.isBlank() ? System.getProperty("user.name", "") : authorName;
     }
 
     /** The raw configured author name (may be blank, meaning "follow the OS user"). */
@@ -517,8 +525,7 @@ public class Settings {
 
     /** The plugin-registry index URL; falls back to {@link #DEFAULT_PLUGIN_REGISTRY} when blank. */
     public String getPluginRegistryUrl() {
-        return pluginRegistryUrl == null || pluginRegistryUrl.isBlank()
-                ? DEFAULT_PLUGIN_REGISTRY : pluginRegistryUrl;
+        return pluginRegistryUrl == null || pluginRegistryUrl.isBlank() ? DEFAULT_PLUGIN_REGISTRY : pluginRegistryUrl;
     }
 
     public void setPluginRegistryUrl(String pluginRegistryUrl) {

@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -21,6 +19,8 @@ import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A simple modeless window that displays {@link DebugLog}'s captured log (java.util.logging output +
@@ -100,9 +100,14 @@ public final class DebugLogWindow {
         VBox.setVgrow(area, Priority.ALWAYS);
 
         Scene scene = new Scene(root, 900, 600);
-        scene.getStylesheets().addAll(
-                DebugLogWindow.class.getResource("/com/editora/styles/app.css").toExternalForm(),
-                DebugLogWindow.class.getResource("/com/editora/styles/syntax.css").toExternalForm());
+        scene.getStylesheets()
+                .addAll(
+                        DebugLogWindow.class
+                                .getResource("/com/editora/styles/app.css")
+                                .toExternalForm(),
+                        DebugLogWindow.class
+                                .getResource("/com/editora/styles/syntax.css")
+                                .toExternalForm());
         stage.setScene(scene);
     }
 
@@ -117,8 +122,7 @@ public final class DebugLogWindow {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("debuglog.export"));
         chooser.setInitialFileName("editora-log.txt");
-        chooser.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("Log/Text", "*.log", "*.txt"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Log/Text", "*.log", "*.txt"));
         java.io.File target = chooser.showSaveDialog(stage);
         if (target != null) {
             try {

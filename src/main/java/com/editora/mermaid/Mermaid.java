@@ -43,8 +43,7 @@ public final class Mermaid {
         }
     }
 
-    private Mermaid() {
-    }
+    private Mermaid() {}
 
     /**
      * The command to invoke: the user-configured value if set, else {@code defaultCommand}; either may be

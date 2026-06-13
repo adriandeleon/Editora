@@ -1,14 +1,14 @@
 package com.editora.dap;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class DapManagerTest {
 
@@ -51,8 +51,8 @@ class DapManagerTest {
     @Test
     void withTempLineAddsTempToExistingFileBreakpoints() {
         Path f = Path.of("/x/A.java");
-        var existing = java.util.List.of(new DapModels.FileBreakpoints(f,
-                java.util.List.of(new DapModels.LineBreakpoint(3, null, null))));
+        var existing = java.util.List.of(
+                new DapModels.FileBreakpoints(f, java.util.List.of(new DapModels.LineBreakpoint(3, null, null))));
         DapModels.FileBreakpoints merged = DapManager.withTempLine(existing, f, 10);
         assertEquals(f, merged.file());
         assertEquals(2, merged.breakpoints().size());
@@ -62,8 +62,8 @@ class DapManagerTest {
     @Test
     void withTempLineDoesNotDuplicateAnExistingLine() {
         Path f = Path.of("/x/A.java");
-        var existing = java.util.List.of(new DapModels.FileBreakpoints(f,
-                java.util.List.of(new DapModels.LineBreakpoint(10, "i > 3", null))));
+        var existing = java.util.List.of(
+                new DapModels.FileBreakpoints(f, java.util.List.of(new DapModels.LineBreakpoint(10, "i > 3", null))));
         DapModels.FileBreakpoints merged = DapManager.withTempLine(existing, f, 10);
         assertEquals(1, merged.breakpoints().size());
         assertEquals("i > 3", merged.breakpoints().get(0).condition()); // the real one survives
@@ -72,8 +72,8 @@ class DapManagerTest {
     @Test
     void withTempLineIgnoresOtherFilesAndHandlesEmpty() {
         Path f = Path.of("/x/A.java");
-        var other = java.util.List.of(new DapModels.FileBreakpoints(Path.of("/x/B.java"),
-                java.util.List.of(new DapModels.LineBreakpoint(1, null, null))));
+        var other = java.util.List.of(new DapModels.FileBreakpoints(
+                Path.of("/x/B.java"), java.util.List.of(new DapModels.LineBreakpoint(1, null, null))));
         DapModels.FileBreakpoints merged = DapManager.withTempLine(other, f, 5);
         assertEquals(1, merged.breakpoints().size());
         assertEquals(5, merged.breakpoints().get(0).line());

@@ -1,13 +1,12 @@
 package com.editora.editor;
 
+import com.editora.editor.Indenter.Style;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import org.junit.jupiter.api.Test;
-
-import com.editora.editor.Indenter.Style;
 
 /** Unit tests for the pure indentation engine (no toolkit). */
 class IndenterTest {
@@ -63,13 +62,13 @@ class IndenterTest {
     @Test
     void inheritsIndentByDefault() {
         assertEquals("\n", enterAtEnd("foo();", "java"));
-        assertEquals("\n    ", enterAtEnd("    foo();", "java"));   // 4-space file → inherit 4 spaces
-        assertEquals("\n\t", enterAtEnd("\tfoo();", "java"));        // tab file → inherit tab
+        assertEquals("\n    ", enterAtEnd("    foo();", "java")); // 4-space file → inherit 4 spaces
+        assertEquals("\n\t", enterAtEnd("\tfoo();", "java")); // tab file → inherit tab
     }
 
     @Test
     void bracesOpenerAddsLevel() {
-        assertEquals("\n\t", enterAtEnd("if (x) {", "java"));        // no indent yet → tab unit
+        assertEquals("\n\t", enterAtEnd("if (x) {", "java")); // no indent yet → tab unit
         assertEquals("\n        ", enterAtEnd("    if (x) {", "java")); // 4-space → 8 spaces
         assertEquals("\n\t\t", enterAtEnd("\twhile (true) {", "java"));
     }
@@ -107,8 +106,8 @@ class IndenterTest {
     @Test
     void xmlOpenTagAndSplit() {
         assertEquals("\n\t", enterAtEnd("<div>", "xml"));
-        assertEquals("\n", enterAtEnd("<br/>", "xml"));      // self-closing
-        assertEquals("\n", enterAtEnd("</div>", "xml"));     // closing
+        assertEquals("\n", enterAtEnd("<br/>", "xml")); // self-closing
+        assertEquals("\n", enterAtEnd("</div>", "xml")); // closing
         Indenter.EnterEdit e = Indenter.enterEdit("<a></a>", 3, "xml", 4); // caret between > and </a>
         assertEquals("\n\t\n", e.insert());
     }
@@ -164,9 +163,9 @@ class IndenterTest {
 
     @Test
     void rubyMidKeywordsReopen() {
-        assertEquals("\n\t", enterAtEnd("else", "ruby"));   // else body indents
+        assertEquals("\n\t", enterAtEnd("else", "ruby")); // else body indents
         assertEquals("\n\t", enterAtEnd("rescue", "ruby"));
-        assertEquals("\n", enterAtEnd("end", "ruby"));      // end does not open
+        assertEquals("\n", enterAtEnd("end", "ruby")); // end does not open
     }
 
     @Test
@@ -175,7 +174,7 @@ class IndenterTest {
         // Enter was pressed) → count is the leading whitespace length plus one.
         assertEquals(9, Indenter.smartBackspaceCount("        ", "", true)); // 8 spaces + newline
         assertEquals(5, Indenter.smartBackspaceCount("    ", "", true));
-        assertEquals(3, Indenter.smartBackspaceCount("\t\t", "", true));     // two tabs + newline
+        assertEquals(3, Indenter.smartBackspaceCount("\t\t", "", true)); // two tabs + newline
         // Whitespace after the caret still counts the line as blank; only the indent before the caret
         // (plus the newline) is removed, so the count is 4 + 1.
         assertEquals(5, Indenter.smartBackspaceCount("    ", "  ", true));
@@ -192,9 +191,9 @@ class IndenterTest {
 
     @Test
     void smartBackspaceNoOpOutsideLeadingWhitespace() {
-        assertEquals(0, Indenter.smartBackspaceCount("", "", true));           // column 0
-        assertEquals(0, Indenter.smartBackspaceCount("    foo", "", true));    // caret after code
-        assertEquals(0, Indenter.smartBackspaceCount("foo", "", true));        // no leading whitespace
+        assertEquals(0, Indenter.smartBackspaceCount("", "", true)); // column 0
+        assertEquals(0, Indenter.smartBackspaceCount("    foo", "", true)); // caret after code
+        assertEquals(0, Indenter.smartBackspaceCount("foo", "", true)); // no leading whitespace
     }
 
     // --- smart Tab -------------------------------------------------------------------------------

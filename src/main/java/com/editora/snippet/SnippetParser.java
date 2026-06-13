@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.UnaryOperator;
 
 /**
  * Parses a TextMate/VS Code snippet body into a {@link ParsedSnippet}: the literal text to insert plus
@@ -25,8 +24,7 @@ import java.util.function.UnaryOperator;
  */
 public final class SnippetParser {
 
-    private SnippetParser() {
-    }
+    private SnippetParser() {}
 
     /** Resolves a snippet variable name to its value, or {@code null} when unknown. */
     @FunctionalInterface
@@ -44,18 +42,23 @@ public final class SnippetParser {
 
         List<TabStop> stops = new ArrayList<>();
         ranges.keySet().stream()
-                .sorted((a, b) -> Integer.compare(a == 0 ? Integer.MAX_VALUE : a,
-                                                  b == 0 ? Integer.MAX_VALUE : b))
-                .forEach(n -> stops.add(new TabStop(n, ranges.get(n), firstText.getOrDefault(n, ""),
-                        choices.getOrDefault(n, List.of()))));
+                .sorted((a, b) -> Integer.compare(a == 0 ? Integer.MAX_VALUE : a, b == 0 ? Integer.MAX_VALUE : b))
+                .forEach(n -> stops.add(new TabStop(
+                        n, ranges.get(n), firstText.getOrDefault(n, ""), choices.getOrDefault(n, List.of()))));
         return new ParsedSnippet(out.toString(), stops);
     }
 
     /** Scans {@code s} from {@code pos[0]}, appending literal text to {@code out}, until end or
      *  (when {@code stopAtBrace}) an unescaped '}' (left unconsumed). */
-    private static void parseSeq(String s, int[] pos, StringBuilder out,
-            Map<Integer, List<int[]>> ranges, Map<Integer, String> firstText,
-            Map<Integer, List<String>> choices, Variables vars, boolean stopAtBrace) {
+    private static void parseSeq(
+            String s,
+            int[] pos,
+            StringBuilder out,
+            Map<Integer, List<int[]>> ranges,
+            Map<Integer, String> firstText,
+            Map<Integer, List<String>> choices,
+            Variables vars,
+            boolean stopAtBrace) {
         while (pos[0] < s.length()) {
             char c = s.charAt(pos[0]);
             if (c == '\\' && pos[0] + 1 < s.length()) {
@@ -82,9 +85,14 @@ public final class SnippetParser {
 
     /** Tries to consume a {@code $…} construct at {@code pos[0]}; returns false (and consumes nothing)
      *  if the '$' is just a literal. */
-    private static boolean tryDollar(String s, int[] pos, StringBuilder out,
-            Map<Integer, List<int[]>> ranges, Map<Integer, String> firstText,
-            Map<Integer, List<String>> choices, Variables vars) {
+    private static boolean tryDollar(
+            String s,
+            int[] pos,
+            StringBuilder out,
+            Map<Integer, List<int[]>> ranges,
+            Map<Integer, String> firstText,
+            Map<Integer, List<String>> choices,
+            Variables vars) {
         int n = pos[0] + 1;
         if (n >= s.length()) {
             return false;
@@ -117,9 +125,14 @@ public final class SnippetParser {
     }
 
     /** Parses a {@code ${…}} construct beginning at {@code pos[0]} (the '$'). */
-    private static boolean parseBrace(String s, int[] pos, StringBuilder out,
-            Map<Integer, List<int[]>> ranges, Map<Integer, String> firstText,
-            Map<Integer, List<String>> choices, Variables vars) {
+    private static boolean parseBrace(
+            String s,
+            int[] pos,
+            StringBuilder out,
+            Map<Integer, List<int[]>> ranges,
+            Map<Integer, String> firstText,
+            Map<Integer, List<String>> choices,
+            Variables vars) {
         int i = pos[0] + 2; // past "${"
         if (Character.isDigit(s.charAt(i))) {
             int j = i;
@@ -195,8 +208,12 @@ public final class SnippetParser {
 
     /** Emits a stop's primary or mirror text and records its range. {@code defaultText} is the literal
      *  default for a first plain occurrence ({@code null} = empty); later occurrences mirror the first. */
-    private static void emitStop(int num, String defaultText, StringBuilder out,
-            Map<Integer, List<int[]>> ranges, Map<Integer, String> firstText) {
+    private static void emitStop(
+            int num,
+            String defaultText,
+            StringBuilder out,
+            Map<Integer, List<int[]>> ranges,
+            Map<Integer, String> firstText) {
         int start = out.length();
         if (firstText.containsKey(num)) {
             out.append(firstText.get(num)); // mirror the first occurrence
@@ -209,14 +226,27 @@ public final class SnippetParser {
     }
 
     /** Emits a {@code ${n:default}} where the default can contain nested constructs. */
-    private static void emitStopWithDefault(int num, String s, int[] pos, StringBuilder out,
-            Map<Integer, List<int[]>> ranges, Map<Integer, String> firstText,
-            Map<Integer, List<String>> choices, Variables vars) {
+    private static void emitStopWithDefault(
+            int num,
+            String s,
+            int[] pos,
+            StringBuilder out,
+            Map<Integer, List<int[]>> ranges,
+            Map<Integer, String> firstText,
+            Map<Integer, List<String>> choices,
+            Variables vars) {
         int start = out.length();
         if (firstText.containsKey(num)) {
             // Mirror: discard this default's text (into throwaway buffers) and emit the remembered text.
-            parseSeq(s, pos, new StringBuilder(), new LinkedHashMap<>(), new LinkedHashMap<>(),
-                    new LinkedHashMap<>(), vars, true);
+            parseSeq(
+                    s,
+                    pos,
+                    new StringBuilder(),
+                    new LinkedHashMap<>(),
+                    new LinkedHashMap<>(),
+                    new LinkedHashMap<>(),
+                    vars,
+                    true);
             out.append(firstText.get(num));
         } else {
             firstText.put(num, ""); // reserve so nested same-number mirrors resolve
@@ -227,7 +257,7 @@ public final class SnippetParser {
     }
 
     private static void record(int num, int start, int end, Map<Integer, List<int[]>> ranges) {
-        ranges.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[]{start, end});
+        ranges.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[] {start, end});
     }
 
     /** Index of the '}' that closes the brace whose '{' is at-or-after {@code from}, honoring nesting

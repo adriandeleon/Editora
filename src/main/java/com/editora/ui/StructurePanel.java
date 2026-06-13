@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,14 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import org.fxmisc.richtext.CodeArea;
-
-import com.editora.editor.EditorBuffer;
-import com.editora.editor.FoldRegions.Region;
-import com.editora.editor.TextMateHighlighter.Symbol;
-
 import javafx.application.Platform;
-
 import javafx.scene.Node;
 import javafx.scene.control.IndexedCell;
 import javafx.scene.control.TextField;
@@ -31,6 +22,13 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.TextMateHighlighter.Symbol;
+import org.fxmisc.richtext.CodeArea;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Tool window content showing the active editor's foldable-region hierarchy as a collapsible tree,
@@ -89,8 +87,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** A flat structure entry for the keyboard "Jump to Structure" picker. */
-    public record Outline(String label, String kind, int line) {
-    }
+    public record Outline(String label, String kind, int line) {}
 
     /** The current structure as a flat, document-order list (for the Jump-to-Structure picker). */
     public List<Outline> outline() {
@@ -196,8 +193,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                         clearOrFocusEditor();
                         e.consume();
                     }
-                    default -> {
-                    }
+                    default -> {}
                 }
             }
         }
@@ -331,7 +327,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     private List<StructureNode> buildNodes() {
         CodeArea area = buffer.getArea();
         int paras = area.getParagraphs().size();
-        List<Region> regions = new ArrayList<>(new LinkedHashSet<>(buffer.getFoldManager().regions()));
+        List<Region> regions =
+                new ArrayList<>(new LinkedHashSet<>(buffer.getFoldManager().regions()));
         // Sort so each region precedes the regions it contains: by start asc, then by end desc.
         regions.sort(Comparator.comparingInt(Region::startLine)
                 .thenComparing(Comparator.comparingInt(Region::endLine).reversed()));
@@ -374,8 +371,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      * {@code null} when no symbol is found and a grammar is active (declutter). Without symbols (no
      * grammar) it falls back to the header-line text, keeping every region.
      */
-    private StructureNode nodeFor(CodeArea area, Region r, Map<Integer, Symbol> symbolByLine,
-            boolean haveSymbols, boolean brace) {
+    private StructureNode nodeFor(
+            CodeArea area, Region r, Map<Integer, Symbol> symbolByLine, boolean haveSymbols, boolean brace) {
         int start = r.startLine();
         if (haveSymbols) {
             Symbol symbol = symbolByLine.get(start);
@@ -429,7 +426,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
         }
         if (root.getChildren().isEmpty()) {
-            String message = buffer == null ? tr("structure.noFileOpen") : (q.isEmpty() ? tr("structure.noStructure") : tr("structure.noMatches"));
+            String message = buffer == null
+                    ? tr("structure.noFileOpen")
+                    : (q.isEmpty() ? tr("structure.noStructure") : tr("structure.noMatches"));
             root.getChildren().add(new TreeItem<>(new StructureNode(null, message, null, -1)));
             tree.setRoot(root);
         } else {
@@ -447,8 +446,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 childItems.add(ci);
             }
         }
-        boolean self = q.isEmpty()
-                || CommandPalette.isSubsequence(q, node.label().toLowerCase(Locale.ROOT));
+        boolean self =
+                q.isEmpty() || CommandPalette.isSubsequence(q, node.label().toLowerCase(Locale.ROOT));
         if (!self && childItems.isEmpty()) {
             return null;
         }

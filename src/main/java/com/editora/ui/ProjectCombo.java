@@ -1,12 +1,8 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-
-import com.editora.config.Project;
 
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -19,6 +15,10 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.util.StringConverter;
+
+import com.editora.config.Project;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * A project switcher combobox shared by the toolbar and the Project tool window. The first entry is
@@ -39,16 +39,20 @@ public class ProjectCombo extends ComboBox<Project> {
     public ProjectCombo(Consumer<Project> onSwitch) {
         getStyleClass().add("project-combo");
         setConverter(new StringConverter<>() {
-            @Override public String toString(Project p) {
+            @Override
+            public String toString(Project p) {
                 return p == null ? "" : p.name();
             }
-            @Override public Project fromString(String s) {
+
+            @Override
+            public Project fromString(String s) {
                 return null;
             }
         });
         // The closed combo shows just the active project's name (never a delete icon).
         setButtonCell(new ListCell<>() {
-            @Override protected void updateItem(Project p, boolean empty) {
+            @Override
+            protected void updateItem(Project p, boolean empty) {
                 super.updateItem(p, empty);
                 setText(empty || p == null ? "" : p.name());
                 setGraphic(null);
@@ -76,7 +80,10 @@ public class ProjectCombo extends ComboBox<Project> {
             items.add(NO_PROJECT);
             items.addAll(all);
             getItems().setAll(items);
-            setValue(all.stream().filter(p -> p.id().equals(activeId)).findFirst().orElse(NO_PROJECT));
+            setValue(all.stream()
+                    .filter(p -> p.id().equals(activeId))
+                    .findFirst()
+                    .orElse(NO_PROJECT));
         } finally {
             loading = false;
         }

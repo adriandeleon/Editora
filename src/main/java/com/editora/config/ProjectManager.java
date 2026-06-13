@@ -8,12 +8,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import com.editora.config.migration.ConfigMigrations;
+import com.editora.config.migration.ConfigSchema;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-
-import com.editora.config.migration.ConfigMigrations;
-import com.editora.config.migration.ConfigSchema;
 
 /**
  * Tracks the user's projects and the active one, persisted as JSON in {@code <configDir>/projects.json}.
@@ -31,6 +30,7 @@ public class ProjectManager {
     public static class Index {
         /** Current on-disk schema version of {@code projects.json}. v1→v2 added {@code openProjectIds}. */
         public static final int SCHEMA_VERSION = 2;
+
         private int schemaVersion = SCHEMA_VERSION;
         private List<Project> projects = new ArrayList<>();
         /** The last-focused project ("" = the no-project/global window). Drives focus on restore. */
@@ -104,7 +104,10 @@ public class ProjectManager {
         if (id.isEmpty()) {
             return null;
         }
-        return index.getProjects().stream().filter(p -> p.id().equals(id)).findFirst().orElse(null);
+        return index.getProjects().stream()
+                .filter(p -> p.id().equals(id))
+                .findFirst()
+                .orElse(null);
     }
 
     public void setActive(String projectId) {
@@ -179,8 +182,8 @@ public class ProjectManager {
 
     /** A filesystem-safe, reasonably-unique id: a name slug plus a short hash of the root path. */
     private static String idFor(String name, String absRoot) {
-        String slug = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-")
-                .replaceAll("(^-|-$)", "");
+        String slug =
+                name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
         if (slug.isEmpty()) {
             slug = "project";
         }

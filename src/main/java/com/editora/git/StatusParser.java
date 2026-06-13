@@ -15,8 +15,7 @@ import com.editora.git.GitStatus.FileEntry;
  */
 public final class StatusParser {
 
-    private StatusParser() {
-    }
+    private StatusParser() {}
 
     public static GitStatus parse(String porcelain) {
         String branch = "";
@@ -40,7 +39,8 @@ public final class StatusParser {
                     } else if (line.startsWith("# branch.upstream ")) {
                         upstream = line.substring("# branch.upstream ".length()).trim();
                     } else if (line.startsWith("# branch.ab ")) {
-                        for (String tok : line.substring("# branch.ab ".length()).trim().split("\\s+")) {
+                        for (String tok :
+                                line.substring("# branch.ab ".length()).trim().split("\\s+")) {
                             if (tok.startsWith("+")) {
                                 ahead = parseInt(tok.substring(1));
                             } else if (tok.startsWith("-")) {

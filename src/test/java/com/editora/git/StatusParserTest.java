@@ -1,12 +1,11 @@
 package com.editora.git;
 
+import com.editora.git.GitStatus.FileEntry;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import org.junit.jupiter.api.Test;
-
-import com.editora.git.GitStatus.FileEntry;
 
 /** Unit tests for the pure {@code git status --porcelain=v2 --branch} parser. */
 class StatusParserTest {
@@ -75,8 +74,8 @@ class StatusParserTest {
     @Test
     void renameEntryCapturesOriginalPath() {
         // 2 R. <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>\t<origPath>
-        String out = "# branch.head main\n"
-                + "2 R. N... 100644 100644 100644 aaa bbb R100 new/name.txt\told/name.txt\n";
+        String out =
+                "# branch.head main\n" + "2 R. N... 100644 100644 100644 aaa bbb R100 new/name.txt\told/name.txt\n";
         GitStatus s = StatusParser.parse(out);
         FileEntry e = s.files().get(0);
         assertEquals("new/name.txt", e.path());
@@ -92,8 +91,7 @@ class StatusParserTest {
 
     @Test
     void pathWithSpacesPreserved() {
-        String out = "# branch.head main\n"
-                + "1 .M N... 100644 100644 100644 ccc ddd my file with spaces.txt\n";
+        String out = "# branch.head main\n" + "1 .M N... 100644 100644 100644 ccc ddd my file with spaces.txt\n";
         GitStatus s = StatusParser.parse(out);
         assertEquals("my file with spaces.txt", s.files().get(0).path());
     }

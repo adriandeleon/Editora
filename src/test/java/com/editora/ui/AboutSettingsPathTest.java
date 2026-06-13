@@ -1,11 +1,11 @@
 package com.editora.ui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import java.io.File;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * The About dialog must show the <em>live</em> settings path (so {@code --dev}'s {@code ~/.editora-dev}
@@ -18,9 +18,11 @@ class AboutSettingsPathTest {
     @Test
     void abbreviatesHomeDirToTilde() {
         String home = System.getProperty("user.home");
-        assertEquals("~" + SEP + ".editora-dev" + SEP + "settings.toml",
+        assertEquals(
+                "~" + SEP + ".editora-dev" + SEP + "settings.toml",
                 SettingsWindow.displaySettingsPath(Path.of(home, ".editora-dev", "settings.toml")));
-        assertEquals("~" + SEP + ".editora" + SEP + "settings.toml",
+        assertEquals(
+                "~" + SEP + ".editora" + SEP + "settings.toml",
                 SettingsWindow.displaySettingsPath(Path.of(home, ".editora", "settings.toml")));
     }
 

@@ -33,10 +33,8 @@ public final class GitService {
 
     /** Combined refresh payload: the repo root, its status, the active file's gutter change map, and a
      *  per-line hunk-text map (for the change-bar hover tooltip). */
-    public record RepoState(Path root, GitStatus status, Map<Integer, ChangeType> changes,
-            Map<Integer, String> hunks) {
-        public static final RepoState NONE =
-                new RepoState(null, GitStatus.NOT_A_REPO, Map.of(), Map.of());
+    public record RepoState(Path root, GitStatus status, Map<Integer, ChangeType> changes, Map<Integer, String> hunks) {
+        public static final RepoState NONE = new RepoState(null, GitStatus.NOT_A_REPO, Map.of(), Map.of());
 
         public boolean isRepo() {
             return root != null && status.isRepo();
@@ -61,6 +59,7 @@ public final class GitService {
     private volatile Boolean gitAvailable;
     /** Directory (absolute string) → repo root, or {@code null} sentinel cached as the NO_ROOT marker. */
     private final Map<String, Path> rootCache = new ConcurrentHashMap<>();
+
     private static final Path NO_ROOT = Path.of("");
     /** Bumped per {@link #refresh}; a stale background result is dropped instead of posted to the UI. */
     private final AtomicLong refreshGen = new AtomicLong();
@@ -144,7 +143,14 @@ public final class GitService {
 
     private GitDiff diffHead(Path root, Path file) {
         // -U0: no context lines, so hunk headers map cleanly to changed line ranges + tooltip bodies.
-        ProcessRunner.Result r = git(root, QUICK, "diff", "--no-color", "-U0", "HEAD", "--",
+        ProcessRunner.Result r = git(
+                root,
+                QUICK,
+                "diff",
+                "--no-color",
+                "-U0",
+                "HEAD",
+                "--",
                 file.toAbsolutePath().toString());
         if (!r.ok()) {
             return GitDiff.EMPTY; // untracked / unmerged / new repo with no HEAD: no bars
@@ -155,8 +161,7 @@ public final class GitService {
     /** Diffs a single file against {@code HEAD} for the gutter; posts the change + hunk maps on the FX thread. */
     public void diff(Path root, Path file, Consumer<GitDiff> onResult) {
         exec.submit(() -> {
-            GitDiff diff = gitAvailable() && root != null && file != null
-                    ? diffHead(root, file) : GitDiff.EMPTY;
+            GitDiff diff = gitAvailable() && root != null && file != null ? diffHead(root, file) : GitDiff.EMPTY;
             Platform.runLater(() -> onResult.accept(diff));
         });
     }
@@ -184,7 +189,7 @@ public final class GitService {
     }
 
     /** One commit from the log, for the "diff against commit" picker. */
-    public record Commit(String hash, String shortHash, String subject, String author, String date) { }
+    public record Commit(String hash, String shortHash, String subject, String author, String date) {}
 
     /**
      * Lists up to {@code max} commits touching {@code file} (most recent first) via one {@code git log},
@@ -194,8 +199,13 @@ public final class GitService {
         exec.submit(() -> {
             List<Commit> commits = List.of();
             if (gitAvailable() && root != null) {
-                List<String> args = new ArrayList<>(List.of("log", "--no-color",
-                        "--pretty=format:%H%x09%h%x09%an%x09%ad%x09%s", "--date=short", "-n", String.valueOf(max)));
+                List<String> args = new ArrayList<>(List.of(
+                        "log",
+                        "--no-color",
+                        "--pretty=format:%H%x09%h%x09%an%x09%ad%x09%s",
+                        "--date=short",
+                        "-n",
+                        String.valueOf(max)));
                 if (file != null) {
                     args.add("--");
                     args.add(file.toAbsolutePath().toString());
@@ -236,7 +246,12 @@ public final class GitService {
         exec.submit(() -> {
             List<BlameParser.BlameLine> lines = List.of();
             if (gitAvailable() && root != null && file != null) {
-                ProcessRunner.Result r = git(root, QUICK, "blame", "--line-porcelain", "--",
+                ProcessRunner.Result r = git(
+                        root,
+                        QUICK,
+                        "blame",
+                        "--line-porcelain",
+                        "--",
                         file.toAbsolutePath().toString());
                 if (r.ok()) {
                     lines = BlameParser.parse(r.out());
@@ -248,7 +263,7 @@ public final class GitService {
     }
 
     /** One file changed by a commit: its name-status letter, path, and (for rename/copy) the original path. */
-    public record CommitFile(char status, String path, String origPath) { }
+    public record CommitFile(char status, String path, String origPath) {}
 
     /**
      * Lists the files a commit changed (vs its first parent) via {@code git diff-tree --name-status -r -M},
@@ -258,8 +273,8 @@ public final class GitService {
         exec.submit(() -> {
             List<CommitFile> files = List.of();
             if (gitAvailable() && root != null && hash != null && !hash.isBlank()) {
-                ProcessRunner.Result r = git(root, QUICK, "diff-tree", "--no-commit-id",
-                        "--name-status", "-r", "-M", hash);
+                ProcessRunner.Result r =
+                        git(root, QUICK, "diff-tree", "--no-commit-id", "--name-status", "-r", "-M", hash);
                 if (r.ok()) {
                     files = parseNameStatus(r.out());
                 }
@@ -329,7 +344,7 @@ public final class GitService {
      * none), {@code ahead}/{@code behind} commit counts vs the upstream, and {@code gone} when the
      * upstream ref no longer exists.
      */
-    public record BranchInfo(String name, String upstream, int ahead, int behind, boolean gone) { }
+    public record BranchInfo(String name, String upstream, int ahead, int behind, boolean gone) {}
 
     /** Local branches (with tracking info), remote branch short-names, and the remote URL (origin's, or
      *  the first remote's; empty when there's no remote) — for the branch popup. */
@@ -373,8 +388,12 @@ public final class GitService {
     /** Local branches with upstream + ahead/behind, from one {@code for-each-ref} (tab-separated fields). */
     private List<BranchInfo> localBranches(Path root) {
         List<BranchInfo> out = new ArrayList<>();
-        ProcessRunner.Result r = git(root, QUICK, "for-each-ref",
-                "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads");
+        ProcessRunner.Result r = git(
+                root,
+                QUICK,
+                "for-each-ref",
+                "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)",
+                "refs/heads");
         if (r.ok()) {
             for (String line : r.out().split("\n")) {
                 if (line.isBlank()) {
@@ -428,7 +447,7 @@ public final class GitService {
                 behind = Integer.parseInt(b.group(1));
             }
         }
-        return new int[]{ahead, behind};
+        return new int[] {ahead, behind};
     }
 
     // --- clone -----------------------------------------------------------------------------------
@@ -445,7 +464,12 @@ public final class GitService {
                 r = new ProcessRunner.Result(-1, "", "Git is not installed");
             } else {
                 Path parent = destination.toAbsolutePath().getParent();
-                r = git(parent, NETWORK, "clone", url, destination.toAbsolutePath().toString());
+                r = git(
+                        parent,
+                        NETWORK,
+                        "clone",
+                        url,
+                        destination.toAbsolutePath().toString());
             }
             Platform.runLater(() -> onResult.accept(r));
         });

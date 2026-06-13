@@ -79,6 +79,7 @@ public final class DapClient implements IDebugProtocolClient {
     private Socket socket;
     /** The adapter subprocess for stdio transports (debugpy); null for socket transports. Killed on dispose. */
     private Process adapterProcess;
+
     private IDebugProtocolServer server;
     private volatile boolean disposed;
     /** The breakpoints to install when the adapter signals {@code initialized} (snapshot taken on the FX
@@ -125,7 +126,10 @@ public final class DapClient implements IDebugProtocolClient {
                     this, socket.getInputStream(), socket.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
             launcher.startListening();
-            return server.initialize(initArgs(adapterId)).thenApply(c -> { this.capabilities = c; return c; });
+            return server.initialize(initArgs(adapterId)).thenApply(c -> {
+                this.capabilities = c;
+                return c;
+            });
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to connect to debug adapter on port " + port, e);
             return CompletableFuture.failedFuture(e);
@@ -145,7 +149,10 @@ public final class DapClient implements IDebugProtocolClient {
                     this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
             launcher.startListening();
-            return server.initialize(initArgs(adapterId)).thenApply(c -> { this.capabilities = c; return c; });
+            return server.initialize(initArgs(adapterId)).thenApply(c -> {
+                this.capabilities = c;
+                return c;
+            });
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to wire stdio debug adapter", e);
             return CompletableFuture.failedFuture(e);
@@ -296,8 +303,8 @@ public final class DapClient implements IDebugProtocolClient {
                 for (StackFrame f : r.getStackFrames()) {
                     Source src = f.getSource();
                     Path path = src != null && src.getPath() != null ? Path.of(src.getPath()) : null;
-                    out.add(new DapModels.StackFrameInfo(f.getId(), f.getName(), path,
-                            f.getLine() - 1, f.getColumn())); // back to 0-based line
+                    out.add(new DapModels.StackFrameInfo(
+                            f.getId(), f.getName(), path, f.getLine() - 1, f.getColumn())); // back to 0-based line
                 }
             }
             return out;
@@ -311,8 +318,7 @@ public final class DapClient implements IDebugProtocolClient {
             List<DapModels.ScopeInfo> out = new ArrayList<>();
             if (r != null && r.getScopes() != null) {
                 for (Scope s : r.getScopes()) {
-                    out.add(new DapModels.ScopeInfo(s.getName(), s.getVariablesReference(),
-                            s.isExpensive()));
+                    out.add(new DapModels.ScopeInfo(s.getName(), s.getVariablesReference(), s.isExpensive()));
                 }
             }
             return out;
@@ -326,8 +332,8 @@ public final class DapClient implements IDebugProtocolClient {
             List<DapModels.VariableInfo> out = new ArrayList<>();
             if (r != null && r.getVariables() != null) {
                 for (Variable v : r.getVariables()) {
-                    out.add(new DapModels.VariableInfo(v.getName(), v.getValue(), v.getType(),
-                            v.getVariablesReference()));
+                    out.add(new DapModels.VariableInfo(
+                            v.getName(), v.getValue(), v.getType(), v.getVariablesReference()));
                 }
             }
             return out;
@@ -350,8 +356,10 @@ public final class DapClient implements IDebugProtocolClient {
         a.setExpression(expression);
         a.setFrameId(frameId);
         a.setContext(context);
-        return server.evaluate(a).thenApply(r -> r == null ? null
-                : new DapModels.EvalResult(r.getResult(), r.getVariablesReference(), r.getType()));
+        return server.evaluate(a)
+                .thenApply(r -> r == null
+                        ? null
+                        : new DapModels.EvalResult(r.getResult(), r.getVariablesReference(), r.getType()));
     }
 
     public CompletableFuture<String> setVariable(int variablesReference, String name, String value) {

@@ -23,15 +23,37 @@ public final class TemplateVariableResolver implements SnippetParser.Variables {
 
     /** Template-specific built-ins (plus {@code cursor}, handled as {@code $0} by the engine). */
     private static final Set<String> TEMPLATE_BUILTINS = Set.of(
-            "cursor", "author", "projectName", "packageName", "fileName", "baseName", "extension",
-            "date", "year", "time");
+            "cursor",
+            "author",
+            "projectName",
+            "packageName",
+            "fileName",
+            "baseName",
+            "extension",
+            "date",
+            "year",
+            "time");
 
     /** The names {@link VariableResolver} resolves — also never asked of the user. */
     private static final Set<String> SNIPPET_BUILTINS = Set.of(
-            "TM_FILENAME", "TM_FILENAME_BASE", "TM_DIRECTORY", "TM_FILEPATH", "TM_SELECTED_TEXT",
-            "SELECTION", "CLIPBOARD", "TM_LINE_INDEX", "TM_LINE_NUMBER", "TM_CURRENT_LINE",
-            "CURRENT_YEAR", "CURRENT_YEAR_SHORT", "CURRENT_MONTH", "CURRENT_MONTH_NAME", "CURRENT_DATE",
-            "CURRENT_HOUR", "CURRENT_MINUTE", "CURRENT_SECOND");
+            "TM_FILENAME",
+            "TM_FILENAME_BASE",
+            "TM_DIRECTORY",
+            "TM_FILEPATH",
+            "TM_SELECTED_TEXT",
+            "SELECTION",
+            "CLIPBOARD",
+            "TM_LINE_INDEX",
+            "TM_LINE_NUMBER",
+            "TM_CURRENT_LINE",
+            "CURRENT_YEAR",
+            "CURRENT_YEAR_SHORT",
+            "CURRENT_MONTH",
+            "CURRENT_MONTH_NAME",
+            "CURRENT_DATE",
+            "CURRENT_HOUR",
+            "CURRENT_MINUTE",
+            "CURRENT_SECOND");
 
     private final Map<String, String> answers;
     private final String author;
@@ -41,16 +63,23 @@ public final class TemplateVariableResolver implements SnippetParser.Variables {
     private final LocalDateTime now;
     private final VariableResolver delegate;
 
-    public TemplateVariableResolver(Map<String, String> answers, String author, String projectName,
-            String packageName, String fileName, String directory, String filePath, LocalDateTime now) {
+    public TemplateVariableResolver(
+            Map<String, String> answers,
+            String author,
+            String projectName,
+            String packageName,
+            String fileName,
+            String directory,
+            String filePath,
+            LocalDateTime now) {
         this.answers = answers == null ? Map.of() : answers;
         this.author = author == null ? "" : author;
         this.projectName = projectName == null ? "" : projectName;
         this.packageName = packageName == null ? "" : packageName;
         this.fileName = fileName == null ? "" : fileName;
         this.now = now == null ? LocalDateTime.now() : now;
-        this.delegate = new VariableResolver(this.fileName, directory == null ? "" : directory,
-                filePath == null ? "" : filePath, "", "", 0, "");
+        this.delegate = new VariableResolver(
+                this.fileName, directory == null ? "" : directory, filePath == null ? "" : filePath, "", "", 0, "");
     }
 
     /** Whether {@code name} is auto-resolved (so the variable wizard must not prompt for it). */

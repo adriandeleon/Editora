@@ -6,11 +6,10 @@ import java.util.NavigableMap;
 import java.util.NavigableSet;
 import java.util.TreeMap;
 
+import com.editora.config.Breakpoint;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
-
-import com.editora.config.Breakpoint;
 
 /**
  * Tracks the breakpoints of a single {@link CodeArea}, keyed by 0-based line. Mirrors
@@ -28,8 +27,9 @@ public final class BreakpointManager {
     private final CodeArea area;
     /** line -> breakpoint, sorted; at most one breakpoint per line. */
     private NavigableMap<Integer, Breakpoint> byLine = new TreeMap<>();
-    private Runnable onChanged = () -> { };
-    private java.util.function.Consumer<java.util.Collection<Integer>> onLinesRepaint = c -> { };
+
+    private Runnable onChanged = () -> {};
+    private java.util.function.Consumer<java.util.Collection<Integer>> onLinesRepaint = c -> {};
     private boolean restoring;
 
     public BreakpointManager(CodeArea area) {
@@ -39,12 +39,12 @@ public final class BreakpointManager {
 
     /** Notified after any change (toggle/edit-driven shift) for persistence + live re-send to a session. */
     public void setOnChanged(Runnable onChanged) {
-        this.onChanged = onChanged == null ? () -> { } : onChanged;
+        this.onChanged = onChanged == null ? () -> {} : onChanged;
     }
 
     /** Notified when an <em>edit</em> moves breakpoints, with the lines (old ∪ new) to repaint. */
     public void setOnLinesRepaint(java.util.function.Consumer<java.util.Collection<Integer>> cb) {
-        this.onLinesRepaint = cb == null ? c -> { } : cb;
+        this.onLinesRepaint = cb == null ? c -> {} : cb;
     }
 
     public boolean isBreakpoint(int line) {
@@ -132,8 +132,11 @@ public final class BreakpointManager {
     public boolean restore(List<Breakpoint> saved) {
         restoring = true;
         try {
-            byLine = reanchor(saved, area.getParagraphs().size(),
-                    line -> area.getParagraph(line).getText(), MAX_REANCHOR_SCAN);
+            byLine = reanchor(
+                    saved,
+                    area.getParagraphs().size(),
+                    line -> area.getParagraph(line).getText(),
+                    MAX_REANCHOR_SCAN);
             return anyMoved(saved, byLine);
         } finally {
             restoring = false;
@@ -166,8 +169,11 @@ public final class BreakpointManager {
      * whose stored line already matches stays put; one whose content has drifted is re-found within
      * {@code maxScan} lines; one whose {@code lineText} is empty or gone is kept at its clamped stored line.
      */
-    public static NavigableMap<Integer, Breakpoint> reanchor(List<Breakpoint> saved, int paragraphCount,
-            java.util.function.IntFunction<String> lineTextAt, int maxScan) {
+    public static NavigableMap<Integer, Breakpoint> reanchor(
+            List<Breakpoint> saved,
+            int paragraphCount,
+            java.util.function.IntFunction<String> lineTextAt,
+            int maxScan) {
         NavigableMap<Integer, Breakpoint> out = new TreeMap<>();
         if (saved == null || paragraphCount <= 0) {
             return out;
@@ -184,8 +190,8 @@ public final class BreakpointManager {
         return out;
     }
 
-    private static int resolveLine(int stored, String wanted, int maxLine,
-            java.util.function.IntFunction<String> lineTextAt, int maxScan) {
+    private static int resolveLine(
+            int stored, String wanted, int maxLine, java.util.function.IntFunction<String> lineTextAt, int maxScan) {
         if (wanted == null || wanted.isEmpty()) {
             return stored;
         }
@@ -227,8 +233,13 @@ public final class BreakpointManager {
         if (removedNL == 0 && insertedNL == 0) {
             return; // intra-line edit
         }
-        NavigableMap<Integer, Breakpoint> shifted =
-                shift(byLine, startLine, atLineStart, removedNL, insertedNL, area.getParagraphs().size());
+        NavigableMap<Integer, Breakpoint> shifted = shift(
+                byLine,
+                startLine,
+                atLineStart,
+                removedNL,
+                insertedNL,
+                area.getParagraphs().size());
         if (!shifted.equals(byLine)) {
             java.util.Set<Integer> affected = new java.util.HashSet<>(byLine.keySet());
             affected.addAll(shifted.keySet());
@@ -244,8 +255,13 @@ public final class BreakpointManager {
      * delta, a breakpoint on the edited line moves when the edit is at the line start, and breakpoints in
      * a deleted line span are dropped. Mirrors {@link BookmarkManager#shift}.
      */
-    public static NavigableMap<Integer, Breakpoint> shift(NavigableMap<Integer, Breakpoint> current,
-            int startLine, boolean atLineStart, int removedNL, int insertedNL, int paragraphCount) {
+    public static NavigableMap<Integer, Breakpoint> shift(
+            NavigableMap<Integer, Breakpoint> current,
+            int startLine,
+            boolean atLineStart,
+            int removedNL,
+            int insertedNL,
+            int paragraphCount) {
         int delta = insertedNL - removedNL;
         int pivot = atLineStart ? startLine - 1 : startLine;
         int removedEndLine = pivot + removedNL;

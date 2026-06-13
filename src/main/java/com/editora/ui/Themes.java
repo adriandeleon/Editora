@@ -17,16 +17,9 @@ public final class Themes {
     public static final String DEFAULT = "Primer Light";
 
     public static final List<String> NAMES = List.of(
-            "Primer Light",
-            "Primer Dark",
-            "Nord Light",
-            "Nord Dark",
-            "Cupertino Light",
-            "Cupertino Dark",
-            "Dracula");
+            "Primer Light", "Primer Dark", "Nord Light", "Nord Dark", "Cupertino Light", "Cupertino Dark", "Dracula");
 
-    private Themes() {
-    }
+    private Themes() {}
 
     /** Theme instance for a display name, falling back to Primer Light for unknowns. */
     public static Theme themeFor(String name) {
@@ -66,8 +59,12 @@ public final class Themes {
     }
 
     private static boolean hasUrlScheme(String s) {
-        return s.startsWith("jar:") || s.startsWith("file:") || s.startsWith("http:")
-                || s.startsWith("https:") || s.startsWith("data:") || s.startsWith("jrt:");
+        return s.startsWith("jar:")
+                || s.startsWith("file:")
+                || s.startsWith("http:")
+                || s.startsWith("https:")
+                || s.startsWith("data:")
+                || s.startsWith("jrt:");
     }
 
     /**
@@ -76,15 +73,16 @@ public final class Themes {
      * light→dark flash on startup with a dark theme).
      */
     public static javafx.scene.paint.Color backgroundFor(String name) {
-        String hex = switch (normalize(name)) {
-            case "Primer Dark" -> "#1c2128";
-            case "Nord Light" -> "#eceff4";
-            case "Nord Dark" -> "#2e3440";
-            case "Cupertino Light" -> "#ffffff";
-            case "Cupertino Dark" -> "#1e1e1e";
-            case "Dracula" -> "#282a36";
-            default -> "#ffffff"; // Primer Light
-        };
+        String hex =
+                switch (normalize(name)) {
+                    case "Primer Dark" -> "#1c2128";
+                    case "Nord Light" -> "#eceff4";
+                    case "Nord Dark" -> "#2e3440";
+                    case "Cupertino Light" -> "#ffffff";
+                    case "Cupertino Dark" -> "#1e1e1e";
+                    case "Dracula" -> "#282a36";
+                    default -> "#ffffff"; // Primer Light
+                };
         return javafx.scene.paint.Color.web(hex);
     }
 }

@@ -12,16 +12,22 @@ import java.util.Map;
  */
 public final class LaunchConfig {
 
-    private LaunchConfig() {
-    }
+    private LaunchConfig() {}
 
     /**
      * A {@code launch} request body. {@code mainClass} is required; {@code projectName}/{@code classPaths}/
      * {@code modulePaths}/{@code javaExec}/{@code cwd}/{@code args} are optional (omitted when blank/empty).
      * Program args are joined into a single string (the adapter accepts a string or array).
      */
-    public static Map<String, Object> launch(String mainClass, String projectName, List<String> classPaths,
-            List<String> modulePaths, String javaExec, String cwd, List<String> args, boolean stopOnEntry) {
+    public static Map<String, Object> launch(
+            String mainClass,
+            String projectName,
+            List<String> classPaths,
+            List<String> modulePaths,
+            String javaExec,
+            String cwd,
+            List<String> args,
+            boolean stopOnEntry) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "java");
         m.put("name", "Editora (Launch)");
@@ -58,15 +64,15 @@ public final class LaunchConfig {
      * is emitted as {@code "runtimeExecutable"} (the node binary) — both omitted when blank so the adapter
      * uses its default. Pure shaping (unit-tested).
      */
-    public static Map<String, Object> program(String type, String program, String cwd,
-            String runtimeExecutable, boolean stopOnEntry) {
+    public static Map<String, Object> program(
+            String type, String program, String cwd, String runtimeExecutable, boolean stopOnEntry) {
         return program(type, program, cwd, runtimeExecutable, List.of(), stopOnEntry);
     }
 
     /** As {@link #program(String, String, String, String, boolean)} with program {@code args}
      *  (debugpy and js-debug both take an argv array; omitted when empty). */
-    public static Map<String, Object> program(String type, String program, String cwd,
-            String runtimeExecutable, List<String> args, boolean stopOnEntry) {
+    public static Map<String, Object> program(
+            String type, String program, String cwd, String runtimeExecutable, List<String> args, boolean stopOnEntry) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", type == null ? "" : type);
         m.put("name", "Editora (Launch)");

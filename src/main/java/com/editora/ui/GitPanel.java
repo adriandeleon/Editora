@@ -1,11 +1,6 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.util.List;
-
-import com.editora.git.GitStatus;
-import com.editora.git.GitStatus.FileEntry;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -23,9 +18,13 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+
+import com.editora.git.GitStatus;
+import com.editora.git.GitStatus.FileEntry;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Git (Commit) tool window: the active repository's changes grouped into <em>Staged</em>,
@@ -42,12 +41,19 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     /** Mutations the panel asks the controller to perform (all by repo-relative path). */
     public interface Actions {
         void open(String repoRelativePath);
+
         void stage(String path);
+
         void unstage(String path);
+
         void discard(String path, boolean untracked);
+
         void stageAll();
+
         void commit(String message);
+
         void push();
+
         void refresh();
         /** Show a diff for the row: {@code staged} → index↔HEAD, else worktree↔index. */
         void diff(String repoRelativePath, boolean staged);
@@ -55,16 +61,21 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     /** Which group a file row sits under. */
     private enum Group {
-        STAGED("gitpanel.group.staged"), MODIFIED("gitpanel.group.modified"), UNTRACKED("gitpanel.group.untracked");
+        STAGED("gitpanel.group.staged"),
+        MODIFIED("gitpanel.group.modified"),
+        UNTRACKED("gitpanel.group.untracked");
         final String key;
+
         Group(String key) {
             this.key = key;
         }
     }
 
-    private sealed interface Row permits GroupRow, FileRow { }
-    private record GroupRow(Group group, int count) implements Row { }
-    private record FileRow(Group group, FileEntry entry) implements Row { }
+    private sealed interface Row permits GroupRow, FileRow {}
+
+    private record GroupRow(Group group, int count) implements Row {}
+
+    private record FileRow(Group group, FileEntry entry) implements Row {}
 
     private final Actions actions;
     private final TreeView<Row> tree = new TreeView<>();
@@ -73,11 +84,12 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private final Label branchLabel = new Label();
     /** Push indicator: "↑N" (commits to push), "↑ publish" (no upstream), or "✓ pushed". */
     private final Label aheadLabel = new Label();
+
     private Button pushButton;
     private final StackPane placeholderPane;
     private final Label placeholder = new Label(tr("gitpanel.placeholder"));
     private final Button cloneButton = new Button(tr("gitpanel.clone"));
-    private Runnable onClone = () -> { };
+    private Runnable onClone = () -> {};
 
     public GitPanel(Actions actions) {
         this.actions = actions;
@@ -162,7 +174,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     /** Sets the action run by the "Clone Repository…" button shown when there's no repo. */
     public void setOnClone(Runnable onClone) {
-        this.onClone = onClone == null ? () -> { } : onClone;
+        this.onClone = onClone == null ? () -> {} : onClone;
     }
 
     /**
@@ -179,9 +191,18 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         updatePushIndicator(status);
 
         TreeItem<Row> root = new TreeItem<>();
-        addGroup(root, Group.STAGED, status.files().stream().filter(FileEntry::staged).toList());
-        addGroup(root, Group.MODIFIED, status.files().stream().filter(FileEntry::unstaged).toList());
-        addGroup(root, Group.UNTRACKED, status.files().stream().filter(FileEntry::untracked).toList());
+        addGroup(
+                root,
+                Group.STAGED,
+                status.files().stream().filter(FileEntry::staged).toList());
+        addGroup(
+                root,
+                Group.MODIFIED,
+                status.files().stream().filter(FileEntry::unstaged).toList());
+        addGroup(
+                root,
+                Group.UNTRACKED,
+                status.files().stream().filter(FileEntry::untracked).toList());
         tree.setRoot(root);
 
         commitButton.setDisable(status.files().stream().noneMatch(FileEntry::staged));
@@ -344,7 +365,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 menu.getItems().add(stage);
             }
             if (f.group() != Group.STAGED) {
-                MenuItem discard = new MenuItem(e.untracked() ? tr("gitpanel.menu.deleteUntracked") : tr("gitpanel.menu.discard"));
+                MenuItem discard =
+                        new MenuItem(e.untracked() ? tr("gitpanel.menu.deleteUntracked") : tr("gitpanel.menu.discard"));
                 discard.setGraphic(Icons.trash());
                 discard.setOnAction(a -> actions.discard(e.path(), e.untracked()));
                 menu.getItems().add(discard);

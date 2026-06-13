@@ -1,9 +1,5 @@
 package com.editora.dap;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,6 +8,10 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DebugAdapterLocatorTest {
 
@@ -44,8 +44,7 @@ class DebugAdapterLocatorTest {
 
     @Test
     void selectNewestPicksHighestVersionAndIgnoresNonMatches() {
-        String newest = DebugAdapterLocator.selectNewest(List.of(
-                "/x/" + J0, "/y/" + J2, "/z/" + J1, "/q/random.jar"));
+        String newest = DebugAdapterLocator.selectNewest(List.of("/x/" + J0, "/y/" + J2, "/z/" + J1, "/q/random.jar"));
         assertEquals("/y/" + J2, newest);
         assertEquals(null, DebugAdapterLocator.selectNewest(List.of("random.jar")));
     }
@@ -93,7 +92,8 @@ class DebugAdapterLocatorTest {
     @Test
     void locateReturnsEmptyWhenNothingFound(@TempDir Path home) {
         assertTrue(DebugAdapterLocator.locate("", home).isEmpty());
-        assertTrue(DebugAdapterLocator.locate(home.resolve("nope.jar").toString(), home).isEmpty());
+        assertTrue(DebugAdapterLocator.locate(home.resolve("nope.jar").toString(), home)
+                .isEmpty());
     }
 
     // --- vscode-js-debug -----------------------------------------------------------------------
@@ -109,8 +109,7 @@ class DebugAdapterLocatorTest {
     void locateJsDebugUsesConfiguredEntryDirectly(@TempDir Path dir) throws IOException {
         Path entry = dir.resolve("dapDebugServer.js");
         Files.createFile(entry);
-        assertEquals(Optional.of(entry),
-                DebugAdapterLocator.locateJsDebugServer(entry.toString(), dir));
+        assertEquals(Optional.of(entry), DebugAdapterLocator.locateJsDebugServer(entry.toString(), dir));
     }
 
     @Test

@@ -1,16 +1,16 @@
 package com.editora.ui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Unit tests for pure helpers in {@link MainController} (no toolkit needed). */
 class MainControllerTest {
@@ -61,7 +61,7 @@ class MainControllerTest {
     @Test
     void smartLineStartTogglesToColumnZero() {
         // Caret at the first non-whitespace char → toggle to the true line start.
-        assertEquals(0, MainController.smartLineStartColumn("\tbar", 1));   // indent is 1 (one tab)
+        assertEquals(0, MainController.smartLineStartColumn("\tbar", 1)); // indent is 1 (one tab)
         // Caret inside the leading whitespace → still go to the text start.
         assertEquals(2, MainController.smartLineStartColumn("  baz", 1));
         assertEquals(2, MainController.smartLineStartColumn("  baz", 0));
@@ -106,13 +106,12 @@ class MainControllerTest {
     @Test
     void compactSourceNoiseMatchesImplicitClassComplaintsOnly() {
         // JDK 23+ JDT wording, the preview-gating message, and the JDK 21/22 preview-era name…
-        assertTrue(MainController.isCompactSourceNoise(
-                "Implicitly declared class must have a candidate main method"));
+        assertTrue(MainController.isCompactSourceNoise("Implicitly declared class must have a candidate main method"));
         assertTrue(MainController.isCompactSourceNoise(
                 "Implicitly Declared Classes and Instance Main Methods is a preview feature and"
                         + " disabled by default. Use --enable-preview to enable"));
-        assertTrue(MainController.isCompactSourceNoise(
-                "Unnamed Classes and Instance Main Methods is a preview feature"));
+        assertTrue(
+                MainController.isCompactSourceNoise("Unnamed Classes and Instance Main Methods is a preview feature"));
         // …but real errors in the file still surface.
         assertFalse(MainController.isCompactSourceNoise("The method foo() is undefined"));
         assertFalse(MainController.isCompactSourceNoise("Syntax error on token \";\""));

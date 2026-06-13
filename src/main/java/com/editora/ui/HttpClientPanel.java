@@ -1,7 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -17,6 +15,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The "HTTP Client" tool window: shows the {@code ijhttp} response report for a run request, with an
@@ -35,6 +35,7 @@ public final class HttpClientPanel extends VBox implements ToolWindowContent {
     private final Button clearButton = new Button();
     /** Receives the chosen environment name ({@code ""} = none) so the controller can persist it. */
     private Consumer<String> onEnvironmentChanged;
+
     private boolean updatingEnv;
 
     public HttpClientPanel(Runnable onSaveResponse) {

@@ -31,19 +31,17 @@ import java.util.regex.Pattern;
 public final class FoldRegions {
 
     /** A foldable span of lines, inclusive, with {@code startLine < endLine}. */
-    public record Region(int startLine, int endLine) {
-    }
+    public record Region(int startLine, int endLine) {}
 
     private static final Pattern XML_TOKEN = Pattern.compile(
-            "<!--.*?-->"                                   // comment
-            + "|<!\\[CDATA\\[.*?\\]\\]>"                    // CDATA
-            + "|<!DOCTYPE[^>]*>"                            // doctype
-            + "|<\\?.*?\\?>"                                // processing instruction
-            + "|<(/?)([\\w:.-]+)((?:\"[^\"]*\"|'[^']*'|[^>\"'])*?)(/?)>", // open/close/self-closing tag
+            "<!--.*?-->" // comment
+                    + "|<!\\[CDATA\\[.*?\\]\\]>" // CDATA
+                    + "|<!DOCTYPE[^>]*>" // doctype
+                    + "|<\\?.*?\\?>" // processing instruction
+                    + "|<(/?)([\\w:.-]+)((?:\"[^\"]*\"|'[^']*'|[^>\"'])*?)(/?)>", // open/close/self-closing tag
             Pattern.DOTALL);
 
-    private FoldRegions() {
-    }
+    private FoldRegions() {}
 
     /** Detects foldable regions for the given text and language name (see {@link LanguageRegistry}). */
     public static List<Region> detect(String text, String language) {
@@ -54,10 +52,23 @@ public final class FoldRegions {
             case "markdown" -> markdown(text);
             case "xml", "html" -> xml(text);
             // Brace-delimited languages fold on matched {} / [].
-            case "java", "json", "c", "cpp", "rust", "go", "kotlin", "groovy", "csharp", "css", "php",
-                    "terraform", "caddyfile",
-                    "javascript", "typescript", "javascriptreact", "typescriptreact" ->
-                    braces(text);
+            case "java",
+                    "json",
+                    "c",
+                    "cpp",
+                    "rust",
+                    "go",
+                    "kotlin",
+                    "groovy",
+                    "csharp",
+                    "css",
+                    "php",
+                    "terraform",
+                    "caddyfile",
+                    "javascript",
+                    "typescript",
+                    "javascriptreact",
+                    "typescriptreact" -> braces(text);
             // plaintext and line/indentation-based languages have no delimiter folding.
             default -> List.of();
         };

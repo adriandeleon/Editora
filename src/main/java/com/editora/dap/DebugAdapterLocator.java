@@ -22,14 +22,16 @@ public final class DebugAdapterLocator {
 
     /** A java-debug plugin jar is named {@code com.microsoft.java.debug.plugin-<version>.jar}. */
     private static final String PREFIX = "com.microsoft.java.debug.plugin-";
+
     private static final String SUFFIX = ".jar";
 
-    private DebugAdapterLocator() {
-    }
+    private DebugAdapterLocator() {}
 
     /** True if {@code fileName} looks like a java-debug plugin jar. Pure. */
     public static boolean matches(String fileName) {
-        return fileName != null && fileName.startsWith(PREFIX) && fileName.endsWith(SUFFIX)
+        return fileName != null
+                && fileName.startsWith(PREFIX)
+                && fileName.endsWith(SUFFIX)
                 && fileName.length() > PREFIX.length() + SUFFIX.length();
     }
 
@@ -153,8 +155,14 @@ public final class DebugAdapterLocator {
             addExtensionServers(dirs, ext, "redhat.java-"); // fallback (some packs nest it here)
         }
         // nvim mason: java-debug-adapter/extension/server/
-        dirs.add(home.resolve(".local").resolve("share").resolve("nvim").resolve("mason")
-                .resolve("packages").resolve("java-debug-adapter").resolve("extension").resolve("server"));
+        dirs.add(home.resolve(".local")
+                .resolve("share")
+                .resolve("nvim")
+                .resolve("mason")
+                .resolve("packages")
+                .resolve("java-debug-adapter")
+                .resolve("extension")
+                .resolve("server"));
         // Editora's own plugin dir, where scripts/install-java-debug.sh drops the jar (prod + --dev).
         dirs.add(home.resolve(".editora").resolve("plugins").resolve("dap").resolve("java"));
         dirs.add(home.resolve(".editora-dev").resolve("plugins").resolve("dap").resolve("java"));
@@ -208,8 +216,12 @@ public final class DebugAdapterLocator {
         List<Path> roots = new ArrayList<>();
         roots.add(home.resolve(".editora").resolve("plugins").resolve("dap").resolve("javascript"));
         roots.add(home.resolve(".editora-dev").resolve("plugins").resolve("dap").resolve("javascript"));
-        roots.add(home.resolve(".local").resolve("share").resolve("nvim").resolve("mason")
-                .resolve("packages").resolve("js-debug-adapter"));
+        roots.add(home.resolve(".local")
+                .resolve("share")
+                .resolve("nvim")
+                .resolve("mason")
+                .resolve("packages")
+                .resolve("js-debug-adapter"));
         for (Path ext : List.of(
                 home.resolve(".vscode").resolve("extensions"),
                 home.resolve(".vscode-server").resolve("extensions"),
@@ -260,8 +272,8 @@ public final class DebugAdapterLocator {
         if (path == null) {
             return "";
         }
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("v?(\\d+\\.\\d+(?:\\.\\d+)?)").matcher(path);
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("v?(\\d+\\.\\d+(?:\\.\\d+)?)").matcher(path);
         return m.find() ? m.group(1) : "";
     }
 

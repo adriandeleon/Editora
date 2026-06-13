@@ -1,12 +1,11 @@
 package com.editora.editor;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-
-import org.junit.jupiter.api.Test;
-
 import com.editora.editor.Commenter.CommentStyle;
 import com.editora.editor.Commenter.Edit;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** Unit tests for the pure comment toggle engine. */
 class CommenterTest {
@@ -31,8 +30,8 @@ class CommenterTest {
 
     @Test
     void singleLineUsesLineComment() {
-        assertEquals("// foo", apply("foo", 0, 0, "java"));            // comment
-        assertEquals("foo", apply("// foo", 0, 0, "java"));            // uncomment (round-trip)
+        assertEquals("// foo", apply("foo", 0, 0, "java")); // comment
+        assertEquals("foo", apply("// foo", 0, 0, "java")); // uncomment (round-trip)
         assertEquals("    // x = 1", apply("    x = 1", 0, 0, "java")); // keeps indentation
     }
 

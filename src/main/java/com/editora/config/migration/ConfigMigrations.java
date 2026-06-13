@@ -19,8 +19,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public final class ConfigMigrations {
 
-    private ConfigMigrations() {
-    }
+    private ConfigMigrations() {}
 
     /**
      * The schema version of a parsed tree: a bare array ⇒ {@code 0} (the legacy {@code recent-files.json}
@@ -59,8 +58,7 @@ public final class ConfigMigrations {
     }
 
     /** Applies the {@code from → to} migration chain in order, one step per version. Pure. */
-    static JsonNode applySteps(JsonNode tree, int from, int to,
-            java.util.function.IntFunction<Migration> stepFor) {
+    static JsonNode applySteps(JsonNode tree, int from, int to, java.util.function.IntFunction<Migration> stepFor) {
         JsonNode node = tree;
         for (int v = from; v < to; v++) {
             Migration step = stepFor.apply(v);

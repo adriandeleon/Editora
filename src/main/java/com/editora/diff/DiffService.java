@@ -34,8 +34,8 @@ public final class DiffService {
         exec.submit(() -> {
             List<String> left = DiffEngine.lines(leftText);
             List<String> right = DiffEngine.lines(rightText);
-            DiffModel model = (left.size() > MAX_LINES || right.size() > MAX_LINES)
-                    ? null : DiffEngine.compute(left, right);
+            DiffModel model =
+                    (left.size() > MAX_LINES || right.size() > MAX_LINES) ? null : DiffEngine.compute(left, right);
             Platform.runLater(() -> onResult.accept(model));
         });
     }

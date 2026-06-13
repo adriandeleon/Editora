@@ -6,11 +6,10 @@ import java.util.NavigableMap;
 import java.util.NavigableSet;
 import java.util.TreeMap;
 
+import com.editora.config.Bookmark;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
-
-import com.editora.config.Bookmark;
 
 /**
  * Tracks the bookmarks of a single {@link CodeArea}, keyed by 0-based line. Analogous to
@@ -29,9 +28,10 @@ public final class BookmarkManager {
     private final CodeArea area;
     /** line -> bookmark, sorted; at most one bookmark per line. */
     private NavigableMap<Integer, Bookmark> byLine = new TreeMap<>();
-    private Runnable onChanged = () -> { };
+
+    private Runnable onChanged = () -> {};
     /** Notified with the lines to repaint when an <em>edit</em> shifts bookmarks (old ∪ new lines). */
-    private java.util.function.Consumer<java.util.Collection<Integer>> onLinesRepaint = c -> { };
+    private java.util.function.Consumer<java.util.Collection<Integer>> onLinesRepaint = c -> {};
     /** Suppresses {@link #onChanged} while we programmatically restore saved bookmarks. */
     private boolean restoring;
 
@@ -42,7 +42,7 @@ public final class BookmarkManager {
 
     /** Notified after any change (toggle/note/remove or an edit-driven line shift) for persistence. */
     public void setOnChanged(Runnable onChanged) {
-        this.onChanged = onChanged == null ? () -> { } : onChanged;
+        this.onChanged = onChanged == null ? () -> {} : onChanged;
     }
 
     /**
@@ -52,7 +52,7 @@ public final class BookmarkManager {
      * rebuilds the gutter graphics with a possibly-stale bookmark set.)
      */
     public void setOnLinesRepaint(java.util.function.Consumer<java.util.Collection<Integer>> cb) {
-        this.onLinesRepaint = cb == null ? c -> { } : cb;
+        this.onLinesRepaint = cb == null ? c -> {} : cb;
     }
 
     public boolean isBookmarked(int line) {
@@ -138,8 +138,11 @@ public final class BookmarkManager {
     public boolean restore(List<Bookmark> saved) {
         restoring = true;
         try {
-            byLine = reanchor(saved, area.getParagraphs().size(),
-                    line -> area.getParagraph(line).getText(), MAX_REANCHOR_SCAN);
+            byLine = reanchor(
+                    saved,
+                    area.getParagraphs().size(),
+                    line -> area.getParagraph(line).getText(),
+                    MAX_REANCHOR_SCAN);
             return anyMoved(saved, byLine);
         } finally {
             restoring = false;
@@ -179,8 +182,8 @@ public final class BookmarkManager {
      * @param lineTextAt returns the <em>raw</em> text of a 0-based line; it is stripped here for the
      *                   comparison (matching how {@link #captureLineText} stores it).
      */
-    public static NavigableMap<Integer, Bookmark> reanchor(List<Bookmark> saved, int paragraphCount,
-            java.util.function.IntFunction<String> lineTextAt, int maxScan) {
+    public static NavigableMap<Integer, Bookmark> reanchor(
+            List<Bookmark> saved, int paragraphCount, java.util.function.IntFunction<String> lineTextAt, int maxScan) {
         NavigableMap<Integer, Bookmark> out = new TreeMap<>();
         if (saved == null || paragraphCount <= 0) {
             return out;
@@ -197,8 +200,8 @@ public final class BookmarkManager {
         return out;
     }
 
-    private static int resolveLine(int stored, String wanted, int maxLine,
-            java.util.function.IntFunction<String> lineTextAt, int maxScan) {
+    private static int resolveLine(
+            int stored, String wanted, int maxLine, java.util.function.IntFunction<String> lineTextAt, int maxScan) {
         if (wanted == null || wanted.isEmpty()) {
             return stored; // nothing to match against (e.g. a blank-line bookmark)
         }
@@ -240,8 +243,13 @@ public final class BookmarkManager {
         if (removedNL == 0 && insertedNL == 0) {
             return; // intra-line edit: no line moved
         }
-        NavigableMap<Integer, Bookmark> shifted =
-                shift(byLine, startLine, atLineStart, removedNL, insertedNL, area.getParagraphs().size());
+        NavigableMap<Integer, Bookmark> shifted = shift(
+                byLine,
+                startLine,
+                atLineStart,
+                removedNL,
+                insertedNL,
+                area.getParagraphs().size());
         if (!shifted.equals(byLine)) {
             // Both the vacated and the new lines need their gutter markers repainted: the document edit
             // already rebuilds those graphics, but with the pre-shift bookmark set, so the moved marker
@@ -265,8 +273,13 @@ public final class BookmarkManager {
      * <p>This is the standard "sticky marker" behavior: the edit pivots between line {@code pivot} and
      * {@code pivot+1}, where {@code pivot = atLineStart ? startLine-1 : startLine}.
      */
-    public static NavigableMap<Integer, Bookmark> shift(NavigableMap<Integer, Bookmark> current,
-            int startLine, boolean atLineStart, int removedNL, int insertedNL, int paragraphCount) {
+    public static NavigableMap<Integer, Bookmark> shift(
+            NavigableMap<Integer, Bookmark> current,
+            int startLine,
+            boolean atLineStart,
+            int removedNL,
+            int insertedNL,
+            int paragraphCount) {
         int delta = insertedNL - removedNL;
         int pivot = atLineStart ? startLine - 1 : startLine;
         int removedEndLine = pivot + removedNL;

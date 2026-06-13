@@ -22,6 +22,7 @@ public class BookmarkStore {
 
     /** Current on-disk schema version of {@code bookmarks.json}. */
     public static final int SCHEMA_VERSION = 1;
+
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Project key ({@code ""} = no project) -> (absolute file path -> bookmarks). */

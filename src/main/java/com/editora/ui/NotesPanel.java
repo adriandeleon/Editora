@@ -1,25 +1,15 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Supplier;
 
-import com.editora.config.NoteStatus;
-import com.editora.config.PersonalNote;
-
 import javafx.geometry.Pos;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
-import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -29,6 +19,11 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+
+import com.editora.config.NoteStatus;
+import com.editora.config.PersonalNote;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The Personal Notes tool window: every note in the active project, grouped by file in a tree. Enter /
@@ -41,15 +36,21 @@ public class NotesPanel extends VBox implements ToolWindowContent {
     /** Mutations the panel asks the controller to perform (file key = canonical path in the notes map). */
     public interface Actions {
         void openAndJump(String fileKey, PersonalNote note);
+
         void editBody(String fileKey, PersonalNote note);
+
         void setStatus(String fileKey, PersonalNote note, NoteStatus status);
+
         void delete(String fileKey, PersonalNote note);
+
         void deleteAll(String fileKey);
     }
 
-    private sealed interface Row permits FileRow, NoteRow { }
-    private record FileRow(String fileKey) implements Row { }
-    private record NoteRow(String fileKey, PersonalNote note) implements Row { }
+    private sealed interface Row permits FileRow, NoteRow {}
+
+    private record FileRow(String fileKey) implements Row {}
+
+    private record NoteRow(String fileKey, PersonalNote note) implements Row {}
 
     private final Supplier<Map<String, List<PersonalNote>>> source;
     private final Actions actions;
@@ -107,7 +108,9 @@ public class NotesPanel extends VBox implements ToolWindowContent {
 
     /** Rebuilds the tree from the persisted notes map, applying the filter. */
     public void refresh() {
-        String filter = filterField.getText() == null ? "" : filterField.getText().strip().toLowerCase();
+        String filter = filterField.getText() == null
+                ? ""
+                : filterField.getText().strip().toLowerCase();
         TreeItem<Row> root = new TreeItem<>();
         Map<String, List<PersonalNote>> map = source.get();
         map.forEach((fileKey, notes) -> {
@@ -208,8 +211,8 @@ public class NotesPanel extends VBox implements ToolWindowContent {
             boolean resolved = n.note().status() == NoteStatus.RESOLVED;
             MenuItem toggle = new MenuItem(resolved ? tr("notes.reopen") : tr("notes.resolve"));
             toggle.setGraphic(resolved ? Icons.refresh() : Icons.check());
-            toggle.setOnAction(e -> actions.setStatus(n.fileKey(), n.note(),
-                    resolved ? NoteStatus.ACTIVE : NoteStatus.RESOLVED));
+            toggle.setOnAction(
+                    e -> actions.setStatus(n.fileKey(), n.note(), resolved ? NoteStatus.ACTIVE : NoteStatus.RESOLVED));
             MenuItem delete = new MenuItem(tr("notes.delete"));
             delete.setGraphic(Icons.trash());
             delete.setOnAction(e -> actions.delete(n.fileKey(), n.note()));

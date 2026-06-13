@@ -1,26 +1,27 @@
 package com.editora.completion;
 
+import java.util.List;
+import java.util.Set;
+
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.List;
-import java.util.Set;
-import org.junit.jupiter.api.Test;
 
 class DictionaryWordsTest {
 
     @Test
     void parseDicStripsCountFlagsAndMorphologyAndJunk() {
         List<String> lines = List.of(
-                "6",                 // count header — dropped
-                "apple/MNS",         // flags stripped -> apple
-                "banana",            // plain
-                "0th/pt",            // has digit -> dropped
-                "a",                 // too short -> dropped
-                "co-op",             // hyphen kept
-                "don't/S",           // apostrophe kept, flags stripped
-                "word\tpo:noun");    // morphology after tab stripped
+                "6", // count header — dropped
+                "apple/MNS", // flags stripped -> apple
+                "banana", // plain
+                "0th/pt", // has digit -> dropped
+                "a", // too short -> dropped
+                "co-op", // hyphen kept
+                "don't/S", // apostrophe kept, flags stripped
+                "word\tpo:noun"); // morphology after tab stripped
         List<String> words = DictionaryWords.parseDic(lines);
         assertEquals(List.of("apple", "banana", "co-op", "don't", "word"), words);
     }
@@ -34,8 +35,7 @@ class DictionaryWordsTest {
 
     @Test
     void matchPrefixIsCaseInsensitiveExcludesExactAndRespectsLimit() {
-        String[] sorted = DictionaryWords.sortedUnique(
-                List.of("Apple", "apply", "apt", "banana", "app"));
+        String[] sorted = DictionaryWords.sortedUnique(List.of("Apple", "apply", "apt", "banana", "app"));
         // "app" prefix: Apple, apply match; "app" itself excluded; "apt" (only "ap") and banana out of range.
         List<String> m = DictionaryWords.matchPrefix(sorted, "app", 10);
         assertTrue(m.contains("Apple"), m.toString());
