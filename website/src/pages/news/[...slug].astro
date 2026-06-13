@@ -1,0 +1,45 @@
+---
+import { getCollection, render } from "astro:content";
+import Layout from "../../layouts/Layout.astro";
+
+export async function getStaticPaths() {
+  const items = await getCollection("news");
+  return items.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+const date = entry.data.date.toLocaleDateString("en-US", {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  timeZone: "UTC",
+});
+---
+
+<Layout
+  title={`${entry.data.title} — Editora News`}
+  description={entry.data.description ?? entry.data.title}
+>
+  <article class="doc">
+    <p class="back"><a href="/news">← News</a></p>
+    <h1>{entry.data.title}</h1>
+    <p class="meta">
+      {date}
+      {entry.data.version && <span> · {entry.data.version}</span>}
+    </p>
+    <Content />
+  </article>
+</Layout>
+
+<style>
+  .back {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+  }
+  .meta {
+    color: var(--faint);
+    font-size: 0.9rem;
+    margin: 0 0 2rem;
+  }
+</style>

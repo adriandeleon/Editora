@@ -20,9 +20,9 @@ const ogImage = new URL("/og-image.png", Astro.site).href;
 
 const nav = [
   { href: url(""), label: "Home" },
-  { href: url("commands"), label: "Commands" },
-  { href: url("keybindings"), label: "Keybindings" },
-  { href: url("screenshots"), label: "Screenshots" },
+  { href: url("docs"), label: "Docs" },
+  { href: url("blog"), label: "Blog" },
+  { href: url("news"), label: "News" },
   { href: url("roadmap"), label: "Roadmap" },
   { href: repo, label: "GitHub" },
 ];
@@ -31,29 +31,30 @@ const footerCols = [
   {
     title: "Documentation",
     links: [
-      { href: url("getting-started"), label: "Getting Started" },
-      { href: url("configuration"), label: "Configuration" },
+      { href: url("docs/getting-started"), label: "Getting Started" },
+      { href: url("docs/configuration"), label: "Configuration" },
+      { href: url("docs/faq"), label: "FAQ" },
       { href: url("commands"), label: "Commands" },
       { href: url("keybindings"), label: "Keybindings" },
-      { href: url("faq"), label: "FAQ" },
     ],
   },
   {
     title: "Project",
     links: [
+      { href: url("blog"), label: "Blog" },
+      { href: url("news"), label: "News" },
       { href: url("roadmap"), label: "Roadmap" },
       { href: url("screenshots"), label: "Screenshots" },
       { href: `${repo}/blob/master/CHANGELOG.md`, label: "Changelog" },
-      { href: `${repo}/releases`, label: "Releases" },
-      { href: `${repo}/issues`, label: "Report an issue" },
     ],
   },
   {
     title: "Open source",
     links: [
       { href: repo, label: "GitHub" },
+      { href: `${repo}/releases`, label: "Releases" },
       { href: `${repo}/blob/master/LICENSE`, label: "MIT License" },
-      { href: `${repo}/blob/master/NOTICE`, label: "Third-party notices" },
+      { href: `${repo}/issues`, label: "Report an issue" },
     ],
   },
 ];
@@ -100,6 +101,18 @@ const isActive = (href: string) => {
     <meta name="twitter:image" content={ogImage} />
     <link rel="icon" type="image/png" href={url("favicon.png")} />
     <link rel="apple-touch-icon" href={url("apple-touch-icon.png")} />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title="Editora Blog"
+      href={url("blog/rss.xml")}
+    />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title="Editora News"
+      href={url("news/rss.xml")}
+    />
     <script
       type="application/ld+json"
       set:html={JSON.stringify(jsonLd)}

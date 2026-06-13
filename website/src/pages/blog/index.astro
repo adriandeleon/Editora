@@ -1,0 +1,90 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "../../layouts/Layout.astro";
+
+const posts = (await getCollection("blog")).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+);
+const fmt = (d: Date) =>
+  d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+---
+
+<Layout
+  title="Blog — Editora"
+  description="Articles and deep-dives about Editora — design notes, how-tos, and more."
+>
+  <main class="doc">
+    <div class="head">
+      <h1>Blog</h1>
+      <a class="feed" href="/blog/rss.xml">RSS</a>
+    </div>
+    <p class="lead">Design notes, how-tos, and the occasional deep-dive.</p>
+
+    <ul class="posts">
+      {
+        posts.map((p) => (
+          <li>
+            <a href={`/blog/${p.id}`} class="post-title">
+              {p.data.title}
+            </a>
+            <p class="post-meta">
+              {fmt(p.data.date)} · {p.data.author}
+            </p>
+            {p.data.description && <p class="post-desc">{p.data.description}</p>}
+          </li>
+        ))
+      }
+    </ul>
+  </main>
+</Layout>
+
+<style>
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .head h1 {
+    margin-bottom: 0;
+  }
+  .feed {
+    font-size: 0.8rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.2rem 0.7rem;
+  }
+  .feed:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    text-decoration: none;
+  }
+  .lead {
+    color: var(--muted);
+    margin: 0.5rem 0 2.5rem;
+  }
+  .posts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .posts li {
+    padding: 1.25rem 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .post-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .post-meta {
+    color: var(--faint);
+    font-size: 0.85rem;
+    margin: 0.25rem 0 0;
+  }
+  .post-desc {
+    color: var(--muted);
+    margin: 0.5rem 0 0;
+  }
+</style>
