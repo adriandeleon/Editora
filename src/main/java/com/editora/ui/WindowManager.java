@@ -38,6 +38,8 @@ public class WindowManager {
     private final SharedConfig shared;
     private final KeymapManager keymap;   // shared, read-only across windows
     private final HostServices hostServices;
+    /** Shared plugin manager: classes load once here; each window builds its own plugin instances/nodes. */
+    private final com.editora.plugin.PluginManager pluginManager;
     private final List<Holder> windows = new ArrayList<>();
     /** The JavaFX primary stage, reused for the first window built (then null — others get a new Stage). */
     private Stage primaryStage;
@@ -49,6 +51,16 @@ public class WindowManager {
         this.shared = shared;
         this.keymap = keymap;
         this.hostServices = hostServices;
+        // Discover plugins once (startup I/O + class loaders). The predicate factors the master gate, so
+        // no untrusted code loads unless plugins are enabled; the Settings page still lists all of them.
+        this.pluginManager = new com.editora.plugin.PluginManager(shared.getPluginsDir(),
+                id -> shared.getSettings().isPluginSupport() && shared.getPluginStore().isEnabled(id));
+        this.pluginManager.discover();
+    }
+
+    /** The shared plugin manager (also read by the Settings → Plugins page to list installed plugins). */
+    public com.editora.plugin.PluginManager pluginManager() {
+        return pluginManager;
     }
 
     private ProjectManager projects() {
@@ -160,6 +172,7 @@ public class WindowManager {
         if (holder == null) {
             return;
         }
+        controller.disposePlugins(); // stop() the window's plugins
         windows.remove(holder);
         if (!windows.isEmpty()) {
             projects().markClosed(holder.key);
@@ -223,6 +236,7 @@ public class WindowManager {
             loader.setClassLoader(WindowManager.class.getClassLoader());
             BorderPane root = loader.load();
             MainController controller = loader.getController();
+            controller.setPluginManager(pluginManager); // before init: applyPlugins() runs inside init
             controller.init(stage, config, registry, keymap);
             controller.setHostServices(hostServices);
             controller.setWindowContext(this, project);

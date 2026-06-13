@@ -36,6 +36,8 @@ public final class SnippetManager {
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     /** language → its own snippets (bundled+user merged), loaded lazily. */
     private final Map<String, List<Snippet>> cache = new LinkedHashMap<>();
+    /** Extra source dirs (e.g. plugin {@code snippets/} folders), each holding {@code <lang>.json} files. */
+    private final List<Path> extraDirs = new ArrayList<>();
 
     public SnippetManager(ConfigManager config) {
         this.config = config;
@@ -44,6 +46,15 @@ public final class SnippetManager {
     /** Drops the cache so edited user snippet files are picked up. */
     public synchronized void reload() {
         cache.clear();
+    }
+
+    /** Adds an extra snippet source dir (a plugin's {@code snippets/}); its {@code <lang>.json} files win
+     *  over bundled + user snippets on a prefix clash. Drops the cache so it's picked up. */
+    public synchronized void addExtraSourceDir(Path dir) {
+        if (dir != null && !extraDirs.contains(dir)) {
+            extraDirs.add(dir);
+            cache.clear();
+        }
     }
 
     /** Snippets available in {@code language}: its own plus global, language winning on prefix clashes. */
@@ -100,6 +111,16 @@ public final class SnippetManager {
                 readInto(byPrefix, in, language); // user overrides bundled
             } catch (IOException e) {
                 LOG.log(Level.WARNING, "Failed to read user snippets " + user, e);
+            }
+        }
+        for (Path dir : extraDirs) { // plugin-contributed snippets win over user + bundled
+            Path f = dir.resolve(language + ".json");
+            if (Files.isReadable(f)) {
+                try (InputStream in = Files.newInputStream(f)) {
+                    readInto(byPrefix, in, language);
+                } catch (IOException e) {
+                    LOG.log(Level.WARNING, "Failed to read plugin snippets " + f, e);
+                }
             }
         }
         return new ArrayList<>(byPrefix.values());

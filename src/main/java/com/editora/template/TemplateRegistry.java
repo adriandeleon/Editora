@@ -37,6 +37,8 @@ public final class TemplateRegistry {
     private final ObjectMapper mapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private List<Template> cache;
+    /** Extra template source dirs (a plugin's {@code templates/}); their {@code *.json} win by id. */
+    private final List<Path> extraDirs = new ArrayList<>();
 
     public TemplateRegistry(ConfigManager config) {
         this.config = config;
@@ -45,6 +47,14 @@ public final class TemplateRegistry {
     /** Drops the cache so edited/added user template files are picked up. */
     public synchronized void reload() {
         cache = null;
+    }
+
+    /** Adds an extra template source dir (a plugin's {@code templates/}); its {@code *.json} win by id. */
+    public synchronized void addExtraSourceDir(Path dir) {
+        if (dir != null && !extraDirs.contains(dir)) {
+            extraDirs.add(dir);
+            cache = null;
+        }
     }
 
     /** All templates (bundled + user, user winning on id), in a stable order. */
@@ -68,25 +78,33 @@ public final class TemplateRegistry {
                 byId.put(id, t);
             }
         }
-        Path dir = userDir();
-        if (Files.isDirectory(dir)) {
-            try (Stream<Path> s = Files.list(dir)) {
-                s.filter(p -> p.getFileName().toString().endsWith(".json"))
-                        .sorted()
-                        .forEach(p -> {
-                            String id = stem(p.getFileName().toString());
-                            if (!id.equals("index")) {
-                                Template t = readUser(p, id);
-                                if (t != null) {
-                                    byId.put(id, t); // user overrides bundled
-                                }
-                            }
-                        });
-            } catch (IOException e) {
-                LOG.log(Level.WARNING, "Failed to list user templates in " + dir, e);
-            }
+        scanDir(userDir(), byId); // user overrides bundled
+        for (Path extra : extraDirs) { // plugin templates win by id
+            scanDir(extra, byId);
         }
         return new ArrayList<>(byId.values());
+    }
+
+    /** Adds every {@code *.json} template in {@code dir} (id = file stem), overriding any earlier entry. */
+    private void scanDir(Path dir, Map<String, Template> byId) {
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
+        try (Stream<Path> s = Files.list(dir)) {
+            s.filter(p -> p.getFileName().toString().endsWith(".json"))
+                    .sorted()
+                    .forEach(p -> {
+                        String id = stem(p.getFileName().toString());
+                        if (!id.equals("index")) {
+                            Template t = readUser(p, id);
+                            if (t != null) {
+                                byId.put(id, t);
+                            }
+                        }
+                    });
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Failed to list templates in " + dir, e);
+        }
     }
 
     private List<String> bundledIds() {

@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Plugin support** — extend Editora without forking it. A plugin is a folder under
+  `<configDir>/plugins/<id>/` with a `plugin.json` manifest plus, optionally, a Java jar and asset dirs.
+  Two flavors, usable together: a **Java SPI** (implement `com.editora.plugin.Plugin`; a `PluginContext`
+  lets it register palette commands, keybindings, dockable tool windows, editor right-click items, and
+  status-bar segments, and edit the active buffer) and a **declarative manifest** (keymap bindings, palette
+  commands that run an external program, and `snippets/`/`templates/` dirs merged into the registries).
+  Plugins are loaded once at startup by a child `URLClassLoader` (parent = the app loader), so the same jar
+  works in dev **and** inside the packaged jlink installers — no module path, `ServiceLoader`, or
+  `ModuleLayer` needed. **Off by default and full-trust** (no sandbox): a master *Enable plugins* gate plus
+  a per-plugin enable list live in **Settings → Plugins** (with a security note, the plugins-folder path, a
+  Reload button, and load-error reporting); enabling/disabling takes effect on the next launch. Simple UI
+  mode disables plugins along with the other local-process features. Palette: `view.togglePlugins`. See
+  `docs/plugins.md` and `examples/example-plugin/` (a complete example with a build script).
+- **Plugin registry & install** — install plugins without hand-copying folders. *Settings → Plugins →
+  Browse plugins…* (palette `plugins.browse`) fetches a curated GitHub-hosted **`index.json`** over HTTPS
+  and lists installable plugins; picking one downloads its `.zip`, **verifies the SHA-256**, and unpacks it
+  into the plugins dir (with a zip-slip guard + size caps). *Install from file…* (`plugins.installFromDisk`)
+  installs a local `.zip`, and each Settings row has a **Remove** button. The registry URL is configurable
+  (a baked-in default you can override); entries show *Installed / Update available / Install / Requires
+  Editora ≥ x*. The distribution format is a `.zip` whose top level is the plugin folder contents;
+  `examples/example-plugin/build.sh` now emits one (+ its SHA-256) and `examples/editora-plugins-registry/`
+  is a ready-to-host sample index. All network/zip/disk work is off the FX thread; no new dependency
+  (`java.net.http`). See `docs/plugins.md` → *Publishing & installing*.
 - **Git history, blame & stash** (IntelliJ/VSCode parity) — a **Git Log** tool window (`M-g h`, or *Show
   File History* on a tab) lists commits; select one to see its changed files, double-click a file for a
   read-only diff against its parent, and right-click a commit to Copy Hash / Checkout / Reset

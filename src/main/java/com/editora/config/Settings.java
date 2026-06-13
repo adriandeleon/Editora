@@ -10,8 +10,12 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 21;
+    public static final int SCHEMA_VERSION = 23;
     private int schemaVersion = SCHEMA_VERSION;
+
+    /** Default plugin-registry index URL (a curated {@code index.json} on GitHub); user-overridable. */
+    public static final String DEFAULT_PLUGIN_REGISTRY =
+            "https://raw.githubusercontent.com/adriandeleon/editora-plugins/main/index.json";
 
     /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
     private String authorName = "";
@@ -81,6 +85,12 @@ public class Settings {
     /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
      *  ("author, N days ago • summary") after the caret line. */
     private boolean gitBlameInline = false;
+    /** Plugin support: off by default — plugins run full-trust, untrusted code, so they only load when
+     *  this master gate is on (and the individual plugin is enabled in {@code plugins.json}). */
+    private boolean pluginSupport = false;
+    /** Registry index URL for browsing/installing plugins (HTTPS); overridable, defaults to
+     *  {@link #DEFAULT_PLUGIN_REGISTRY}. */
+    private String pluginRegistryUrl = DEFAULT_PLUGIN_REGISTRY;
     /** Mermaid diagram support: off by default — needs the external mmdc (render/export) and maid
      *  (validation) CLIs. Renders .mmd files and ```mermaid Markdown blocks in the preview. */
     private boolean mermaidSupport = false;
@@ -492,6 +502,24 @@ public class Settings {
 
     public void setGitBlameInline(boolean gitBlameInline) {
         this.gitBlameInline = gitBlameInline;
+    }
+
+    public boolean isPluginSupport() {
+        return pluginSupport;
+    }
+
+    public void setPluginSupport(boolean pluginSupport) {
+        this.pluginSupport = pluginSupport;
+    }
+
+    /** The plugin-registry index URL; falls back to {@link #DEFAULT_PLUGIN_REGISTRY} when blank. */
+    public String getPluginRegistryUrl() {
+        return pluginRegistryUrl == null || pluginRegistryUrl.isBlank()
+                ? DEFAULT_PLUGIN_REGISTRY : pluginRegistryUrl;
+    }
+
+    public void setPluginRegistryUrl(String pluginRegistryUrl) {
+        this.pluginRegistryUrl = pluginRegistryUrl;
     }
 
     public boolean isMermaidSupport() {

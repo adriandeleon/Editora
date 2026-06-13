@@ -151,6 +151,17 @@ public final class StatusBar extends HBox {
         return label;
     }
 
+    /** Adds a plugin-contributed segment (text + optional command) at the right end of the status bar. */
+    public void addPluginSegment(String text, String commandId) {
+        Label seg = new Label(text == null ? "" : text);
+        seg.getStyleClass().add("status-segment");
+        if (commandId != null && !commandId.isBlank()) {
+            seg.getStyleClass().add("status-segment-clickable");
+            seg.setOnMouseClicked(e -> registry.run(commandId));
+        }
+        getChildren().add(seg);
+    }
+
     /** Sets the transient echo-area message (called by MainController.setStatus) and logs it for the session.
      *  The echo shows a single line only (a Label renders embedded newlines as line breaks, so a multi-line
      *  message — e.g. a compiler error dump — would grow the whole status bar); the full text goes to the

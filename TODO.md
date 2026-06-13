@@ -143,7 +143,14 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] Fix Zen mode
 
 ## Extensibility & integration
-- [ ] Plugins/API support
+- [x] Plugins/API support — Java SPI (`com.editora.plugin.Plugin`) + declarative `plugin.json`
+  (keymap / external commands / snippet & template dirs); contributes commands, keybindings, tool windows,
+  editor right-click items, and status-bar segments. Off by default (Settings → Plugins). Loaded via a child
+  `URLClassLoader` so it works in the sealed jlink installers. **Registry + install:** browse a curated
+  GitHub-hosted `index.json`, install (download + SHA-256 verify + zip-slip-guarded unzip) or install from a
+  local `.zip`; per-plugin Remove. See `docs/plugins.md` + `examples/example-plugin/` +
+  `examples/editora-plugins-registry/`. *Deferred: sandboxing, hot reload, gutter-marker contributions,
+  GitHub-API/per-repo discovery, signing beyond SHA-256, auto-update.*
 - [ ] External Tools support
 - [ ] MCP support
 - [ ] Headless support

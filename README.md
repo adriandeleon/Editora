@@ -192,8 +192,19 @@ Emacs-style keymap or a fuzzy command palette.
   saved connections (metadata only — never a password) reconnect via a picker. Features that need a local
   process (language servers, debugging, Git, Run, the HTTP client) auto-disable for remote files. Off by
   default; built on Apache MINA SSHD.
+- **Plugins** — extend Editora without forking it. A plugin is a folder under `<configDir>/plugins/<id>/`
+  with a `plugin.json` manifest plus, optionally, a Java jar and asset dirs. A **Java SPI**
+  (`com.editora.plugin.Plugin`) can add palette commands, keybindings, dockable tool windows, editor
+  right-click items, and status-bar segments; a **declarative manifest** adds keymap bindings, external
+  commands, and `snippets/`/`templates/` dirs — no code. Loaded via a child class loader, so the same jar
+  works in dev and in the packaged installers. **Off by default and full-trust** (no sandbox) — enable it,
+  and each plugin, in *Settings → Plugins*. **Install** by browsing a curated GitHub-hosted registry
+  (`index.json` over HTTPS; downloads are SHA-256-verified) or from a local `.zip`. See
+  [`docs/plugins.md`](docs/plugins.md), [`examples/example-plugin/`](examples/example-plugin/), and
+  [`examples/editora-plugins-registry/`](examples/editora-plugins-registry/).
 - **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Structure, File Information,
-  Bookmarks, Personal Notes, Problems, Search Results, Run, Debug, HTTP Client).
+  Bookmarks, Personal Notes, Problems, Search Results, Run, Debug, HTTP Client) — plus any contributed by a
+  plugin.
 - **Settings** — a category sidebar (Appearance, Editor, Tool Windows, Spell Check, Application, …) with a
   search box, a live font/theme preview, and Reset to Defaults. Changes apply instantly.
 - **Multi-language interface** — run Editora in **English, Italian, Spanish, French, Portuguese, or

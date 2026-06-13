@@ -6,6 +6,7 @@ import com.editora.config.BookmarkStore;
 import com.editora.config.ConnectionStore;
 import com.editora.config.BreakpointStore;
 import com.editora.config.NoteStore;
+import com.editora.config.PluginStore;
 import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
@@ -52,7 +53,9 @@ public enum ConfigSchema {
             Map.entry(17, (Migration) ConfigMigrations::identity),
             Map.entry(18, (Migration) ConfigMigrations::identity),
             Map.entry(19, (Migration) ConfigMigrations::identity), // v19→20: + simpleMode (additive)
-            Map.entry(20, (Migration) ConfigMigrations::identity))), // v20→21: + gitBlameInline (additive)
+            Map.entry(20, (Migration) ConfigMigrations::identity), // v20→21: + gitBlameInline (additive)
+            Map.entry(21, (Migration) ConfigMigrations::identity), // v21→22: + pluginSupport (additive)
+            Map.entry(22, (Migration) ConfigMigrations::identity))), // v22→23: + pluginRegistryUrl (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
@@ -61,7 +64,8 @@ public enum ConfigSchema {
     /** Legacy {@code recent-files.json} was a bare JSON array (v0); v1 wraps it in an object. */
     RECENT(RecentFiles.SCHEMA_VERSION, 1, Map.of(0, ConfigMigrations::wrapRecentFilesArray)),
     NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of()),
-    CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of());
+    CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of()),
+    PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;
     private final int assumedLegacyVersion;

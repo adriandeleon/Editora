@@ -38,6 +38,8 @@ public class ConfigManager {
     static final String NOTES_FILE_NAME = "notes.json";
     static final String CONNECTIONS_FILE_NAME = "connections.json";
     static final String DICTIONARY_FILE_NAME = "dictionary.txt";
+    static final String PLUGINS_FILE_NAME = "plugins.json";
+    static final String PLUGINS_DIR_NAME = "plugins";
     static final String PROJECTS_DIR_NAME = "projects";
 
     /** Pretty JSON for this window's session-state file. */
@@ -123,6 +125,21 @@ public class ConfigManager {
 
     public Path getUserDictionaryFile() {
         return shared.getUserDictionaryFile();
+    }
+
+    /** The plugin install root ({@code <configDir>/plugins}); each plugin is a subdirectory. */
+    public Path getPluginsDir() {
+        return shared.getPluginsDir();
+    }
+
+    /** The shared plugin enable-state store ({@code plugins.json}). */
+    public PluginStore getPluginStore() {
+        return shared.getPluginStore();
+    }
+
+    /** Persists the plugin enable-state. */
+    public void savePlugins() {
+        shared.savePlugins();
     }
 
     public List<com.editora.vfs.RemoteConnection> getConnections() {

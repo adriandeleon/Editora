@@ -56,6 +56,8 @@ module com.editora {
     // Jackson reflects on the template JSON DTOs (TemplateRegistry.Dto/FileDto); bundled template
     // resources are read via Class.getResourceAsStream and need no opens.
     opens com.editora.template to com.fasterxml.jackson.databind;
+    // Jackson reflects on the plugin manifest DTO (PluginManifest); the public plugin API also lives here.
+    opens com.editora.plugin to com.fasterxml.jackson.databind;
     // tm4e (a separate module) reads these grammar resources via Class.getResourceAsStream;
     // without opening the package, JPMS encapsulates the .tmLanguage.json files and grammar
     // loading silently fails, falling back to the legacy regex highlighter.
@@ -75,4 +77,6 @@ module com.editora {
     exports com.editora.config;
     exports com.editora.editor;
     exports com.editora.ui;
+    // The plugin API (Plugin, PluginContext, ActiveEditor, ToolWindowSide) — implemented by plugin jars.
+    exports com.editora.plugin;
 }

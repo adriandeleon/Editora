@@ -1,0 +1,16 @@
+{
+  "id": "example",
+  "name": "Example Plugin",
+  "version": "1.0.0",
+  "main": "com.example.editora.HelloPlugin",
+  "keymap": {
+    "C-c C-e": "plugin.example.insertStamp"
+  },
+  "commands": [
+    {
+      "id": "date",
+      "title": "Example: Print Date (external command)",
+      "run": ["bash", "-lc", "date"]
+    }
+  ]
+}

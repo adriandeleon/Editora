@@ -50,6 +50,8 @@ public class SharedConfig {
     private BreakpointStore breakpointStore = new BreakpointStore();
     /** Saved SFTP connections (metadata only, no secrets), stored in {@code connections.json}. */
     private ConnectionStore connectionStore = new ConnectionStore();
+    /** Plugin enable-state (id → enabled), stored in {@code plugins.json} — see {@link PluginStore}. */
+    private PluginStore pluginStore = new PluginStore();
     /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
     private final java.util.Set<String> userDictionary = new java.util.LinkedHashSet<>();
     /** The shared projects index ({@code projects.json}) — one source of truth across all windows. */
@@ -87,6 +89,7 @@ public class SharedConfig {
         loadBreakpoints();
         loadNotes();
         loadConnections();
+        loadPlugins();
         loadUserDictionary();
     }
 
@@ -138,6 +141,39 @@ public class SharedConfig {
 
     public Path getUserDictionaryFile() {
         return configDir.resolve(ConfigManager.DICTIONARY_FILE_NAME);
+    }
+
+    public Path getPluginsFile() {
+        return configDir.resolve(ConfigManager.PLUGINS_FILE_NAME);
+    }
+
+    /** The plugin install root: {@code <configDir>/plugins} (each plugin lives in its own subdirectory). */
+    public Path getPluginsDir() {
+        return configDir.resolve(ConfigManager.PLUGINS_DIR_NAME);
+    }
+
+    // --- plugins (enable-state) ---
+
+    public PluginStore getPluginStore() {
+        return pluginStore;
+    }
+
+    private void loadPlugins() {
+        if (Files.exists(getPluginsFile())) {
+            pluginStore = ConfigMigrations.readVersioned(
+                    getPluginsFile(), json, new PluginStore(), ConfigSchema.PLUGINS);
+        } else {
+            pluginStore = new PluginStore();
+        }
+    }
+
+    public void savePlugins() {
+        try {
+            Files.createDirectories(configDir);
+            json.writeValue(getPluginsFile().toFile(), pluginStore);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write plugins to " + getPluginsFile(), e);
+        }
     }
 
     // --- SFTP connections ---

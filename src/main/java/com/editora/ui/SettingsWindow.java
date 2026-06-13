@@ -78,7 +78,7 @@ public class SettingsWindow {
         LSP(tr("settings.cat.lsp"), false),
         DEBUG(tr("settings.cat.debug"), false),
         KEYMAPS(tr("settings.cat.keymaps"), true),
-        PLUGINS(tr("settings.cat.plugins"), true),
+        PLUGINS(tr("settings.cat.plugins"), false),
         AI(tr("settings.cat.ai"), true),
         ADVANCED(tr("settings.cat.advanced"), false);
 
@@ -150,6 +150,13 @@ public class SettingsWindow {
     private TextField maidPathField;
     private TextField templateAuthorField;
     private Label mermaidStatusLabel;
+    private com.editora.plugin.PluginManager pluginManager; // shared, injected after construction
+    private CheckBox pluginCheck;
+    private VBox pluginListBox; // rebuilt on each load() from the shared PluginManager's descriptors
+    private TextField pluginRegistryField;
+    private Runnable onBrowsePlugins;       // → MainController.browsePlugins
+    private Runnable onInstallPluginFromFile; // → MainController.installPluginFromDisk
+    private Consumer<String> onUninstallPlugin; // id → MainController.uninstallPlugin
     private CheckBox lspCheck;
     /** Per-server LSP controls, keyed by server id (data-driven so adding a server is one descriptor). */
     private final java.util.Map<String, CheckBox> lspEnableChecks = new java.util.LinkedHashMap<>();
@@ -241,6 +248,22 @@ public class SettingsWindow {
         this.onOpenFile = onOpenFile;
         this.onExportConfig = onExportConfig;
         this.onShowDebugLog = onShowDebugLog;
+    }
+
+    /**
+     * Injects the shared {@link com.editora.plugin.PluginManager} (set after construction by
+     * {@code MainController}). The Plugins page lists its discovered descriptors; safe to call before
+     * {@link #build} (the page is built lazily on first {@link #show}).
+     */
+    public void setPluginManager(com.editora.plugin.PluginManager pluginManager) {
+        this.pluginManager = pluginManager;
+    }
+
+    /** Wires the Plugins-page actions to the controller (browse registry / install zip / uninstall). */
+    public void setPluginActions(Runnable onBrowse, Runnable onInstallFromFile, Consumer<String> onUninstall) {
+        this.onBrowsePlugins = onBrowse;
+        this.onInstallPluginFromFile = onInstallFromFile;
+        this.onUninstallPlugin = onUninstall;
     }
 
     public void show(Window owner) {
@@ -539,6 +562,12 @@ public class SettingsWindow {
             apply();
         });
 
+        pluginCheck = new CheckBox(tr("settings.enablePlugins"));
+        pluginCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setPluginSupport(now);
+            apply();
+        });
+
         templateAuthorField = new TextField();
         templateAuthorField.setPromptText(System.getProperty("user.name", ""));
         templateAuthorField.textProperty().addListener((obs, was, now) -> {
@@ -664,6 +693,7 @@ public class SettingsWindow {
         pages.put(Category.HTTP_CLIENT, httpClientPage());
         pages.put(Category.LSP, lspPage());
         pages.put(Category.DEBUG, debugPage());
+        pages.put(Category.PLUGINS, pluginsPage());
         pages.put(Category.ADVANCED, advancedPage());
         for (Category c : Category.values()) {
             if (c.placeholder) {
@@ -815,6 +845,131 @@ public class SettingsWindow {
         hint.setMaxWidth(440);
         row(p, Category.HTTP_CLIENT, null, hint, "http rest request response built-in client");
         return p;
+    }
+
+    private VBox pluginsPage() {
+        VBox p = page(tr("settings.cat.plugins"));
+        Label warn = note(tr("settings.plugins.note"));
+        warn.getStyleClass().add("settings-experimental");
+        warn.setWrapText(true);
+        warn.setMaxWidth(440);
+        row(p, Category.PLUGINS, null, warn, "plugins extensions untrusted security warning");
+        row(p, Category.PLUGINS, null, pluginCheck, "plugins extensions enable support");
+
+        Label folderLabel = new Label(tr("settings.plugins.folder"));
+        Label folderPath = new Label(pluginManager == null ? "" : config.getPluginsDir().toString());
+        folderPath.getStyleClass().add("settings-hint");
+        folderPath.setWrapText(true);
+        folderPath.setMaxWidth(380);
+        HBox folderRow = new HBox(6, folderLabel, folderPath);
+        folderRow.setAlignment(Pos.CENTER_LEFT);
+        row(p, Category.PLUGINS, null, folderRow, "plugins folder directory location path");
+
+        Button reload = new Button(tr("settings.plugins.reload"));
+        reload.setOnAction(e -> {
+            if (pluginManager != null) {
+                pluginManager.discover();
+                refreshPluginList();
+            }
+        });
+        row(p, Category.PLUGINS, null, reload, "plugins reload rescan discover refresh");
+
+        Label restart = note(tr("settings.plugins.restart"));
+        restart.setWrapText(true);
+        restart.setMaxWidth(440);
+        row(p, Category.PLUGINS, null, restart, "plugins restart apply");
+
+        // --- Marketplace: a curated GitHub-hosted registry + install-from-disk.
+        Label market = section(p, tr("settings.plugins.marketplace"));
+        pluginRegistryField = new TextField();
+        pluginRegistryField.setPromptText(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
+        pluginRegistryField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setPluginRegistryUrl(now);
+            apply();
+        });
+        Label regNote = note(tr("settings.plugins.registryNote"));
+        regNote.setWrapText(true);
+        regNote.setMaxWidth(440);
+        VBox regBox = new VBox(4, pluginRegistryField, regNote);
+        row(p, Category.PLUGINS, market, labeled(tr("settings.plugins.registryUrl"), regBox),
+                "plugins registry url index marketplace github browse");
+        Button browse = new Button(tr("settings.plugins.browse"));
+        browse.setOnAction(e -> {
+            if (onBrowsePlugins != null) {
+                // The browse picker is an in-scene overlay in the MAIN window; hide Settings first so it
+                // isn't rendered behind this window (otherwise the click appears to do nothing).
+                stage.hide();
+                onBrowsePlugins.run();
+            }
+        });
+        Button installFile = new Button(tr("settings.plugins.installFromFile"));
+        installFile.setOnAction(e -> {
+            if (onInstallPluginFromFile != null) {
+                onInstallPluginFromFile.run();
+            }
+        });
+        HBox marketButtons = new HBox(8, browse, installFile);
+        marketButtons.setAlignment(Pos.CENTER_LEFT);
+        row(p, Category.PLUGINS, market, marketButtons,
+                "plugins browse install file zip marketplace registry");
+
+        Label installed = section(p, tr("settings.plugins.installed"));
+        pluginListBox = new VBox(8);
+        row(p, Category.PLUGINS, installed, pluginListBox, "plugins installed list enable disable");
+        refreshPluginList();
+        return p;
+    }
+
+    /** Rebuilds the per-plugin enable list from the shared {@link com.editora.plugin.PluginManager}. */
+    private void refreshPluginList() {
+        if (pluginListBox == null) {
+            return;
+        }
+        pluginListBox.getChildren().clear();
+        java.util.List<com.editora.plugin.PluginDescriptor> ds =
+                pluginManager == null ? java.util.List.of() : pluginManager.descriptors();
+        if (ds.isEmpty()) {
+            Label empty = note(tr("settings.plugins.none"));
+            empty.setWrapText(true);
+            pluginListBox.getChildren().add(empty);
+            return;
+        }
+        boolean master = config.getSettings().isPluginSupport();
+        for (com.editora.plugin.PluginDescriptor d : ds) {
+            String name = d.manifest().name == null || d.manifest().name.isBlank()
+                    ? d.id() : d.manifest().name;
+            String ver = d.manifest().version == null ? "" : d.manifest().version;
+            String label = ver.isBlank() ? name + "  (" + d.id() + ")"
+                    : name + "  " + ver + "  (" + d.id() + ")";
+            CheckBox cb = new CheckBox(label);
+            cb.setSelected(config.getPluginStore().isEnabled(d.id()));
+            cb.setDisable(!master);
+            cb.selectedProperty().addListener((obs, was, now) -> {
+                config.getPluginStore().setEnabled(d.id(), now);
+                config.savePlugins();
+            });
+            javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+            Button remove = new Button(tr("settings.plugins.remove"));
+            remove.getStyleClass().add("settings-link-button");
+            remove.setOnAction(ev -> {
+                if (onUninstallPlugin != null) {
+                    onUninstallPlugin.accept(d.id());
+                }
+            });
+            HBox header = new HBox(8, cb, spacer, remove);
+            header.setAlignment(Pos.CENTER_LEFT);
+            VBox entry = new VBox(2, header);
+            if (d.loadError() != null) {
+                Label err = new Label(d.loadError());
+                err.getStyleClass().add("settings-git-missing");
+                err.setWrapText(true);
+                err.setMaxWidth(420);
+                err.setPadding(new Insets(0, 0, 0, 20));
+                entry.getChildren().add(err);
+            }
+            pluginListBox.getChildren().add(entry);
+        }
     }
 
     private VBox debugPage() {
@@ -1695,6 +1850,11 @@ public class SettingsWindow {
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
+            pluginCheck.setSelected(settings.isPluginSupport());
+            if (pluginRegistryField != null) {
+                pluginRegistryField.setText(settings.getPluginRegistryUrl());
+            }
+            refreshPluginList(); // re-read enabled state + reflect the master gate
             debugCheck.setSelected(settings.isDebugSupport());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
@@ -1869,6 +2029,21 @@ public class SettingsWindow {
         try {
             blameCheck.setSelected(config.getSettings().isGitBlameInline());
             blameCheck.setDisable(!config.getSettings().isGitSupport());
+        } finally {
+            loading = prev;
+        }
+    }
+
+    /** Re-reads the "enable plugins" checkbox from settings (used after the palette toggle command). */
+    public void syncPluginsCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            pluginCheck.setSelected(config.getSettings().isPluginSupport());
+            refreshPluginList();
         } finally {
             loading = prev;
         }

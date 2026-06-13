@@ -1,0 +1,6 @@
+{
+  "id": "lorem-ipsum",
+  "name": "Lorem Ipsum",
+  "version": "1.0.0",
+  "main": "com.example.editora.lorem.LoremIpsumPlugin"
+}

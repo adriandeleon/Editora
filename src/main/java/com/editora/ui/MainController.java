@@ -87,6 +87,8 @@ import javafx.stage.Stage;
 /** Controls the main window: tabbed editors, menu actions, palette/find overlays, and status bar. */
 public class MainController {
 
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(MainController.class.getName());
     private static final PseudoClass OPEN = PseudoClass.getPseudoClass("open");
 
     @FXML
@@ -168,6 +170,24 @@ public class MainController {
     private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
     private com.editora.snippet.SnippetManager snippets;
     private com.editora.template.TemplateRegistry templates;
+    /** Shared across windows (owned by WindowManager); plugin classes load once, instances are per-window. */
+    private com.editora.plugin.PluginManager pluginManager;
+    /** Java plugin instances started in this window (for {@code stop()} on window close). */
+    private final java.util.List<com.editora.plugin.Plugin> startedPlugins = new java.util.ArrayList<>();
+    /** Editor right-click items contributed by plugins in this window (label + action over the editor). */
+    private final java.util.List<EditorMenuContribution> pluginMenuItems = new java.util.ArrayList<>();
+    /** Fetches the remote plugin-registry index (created in init when a PluginManager is present). */
+    private com.editora.plugin.PluginRegistry pluginRegistry;
+    /** Downloads/verifies/unpacks plugin zips (created in init when a PluginManager is present). */
+    private com.editora.plugin.PluginInstaller pluginInstaller;
+    /** The "Browse Plugins" picker (in-scene overlay); items come from {@link #browseEntries}. */
+    private QuickOpen<com.editora.plugin.RegistryEntry> browsePalette;
+    /** The last-fetched registry entries, shown by {@link #browsePalette}. */
+    private java.util.List<com.editora.plugin.RegistryEntry> browseEntries = java.util.List.of();
+
+    /** A plugin-contributed editor menu item: a label + an action over the {@link com.editora.plugin.ActiveEditor}. */
+    private record EditorMenuContribution(String label,
+            java.util.function.Consumer<com.editora.plugin.ActiveEditor> action) { }
     private com.editora.completion.CompletionEngine completion;
     private FileFinder fileFinder;
     private FileFinder folderFinder;
@@ -361,7 +381,8 @@ public class MainController {
                         && (lspEnabled()
                         || (!c.id().startsWith("lsp.") && !c.id().equals("tool.problems")))
                         && (httpEnabled()
-                        || (!c.id().startsWith("http.") && !c.id().equals("tool.http"))));
+                        || (!c.id().startsWith("http.") && !c.id().equals("tool.http")))
+                        && (pluginsEnabled() || !c.id().startsWith("plugins.")));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -373,6 +394,9 @@ public class MainController {
         this.settingsWindow = new SettingsWindow(config, toolWindows, gitService, mermaidService,
                 lspManager, dapManager, this::onSettingsApplied, this::setZenMode,
                 this::openPath, this::exportConfig, this::showDebugLog);
+        this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
+        this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk,
+                this::uninstallPlugin);
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
@@ -385,6 +409,7 @@ public class MainController {
         setupRecentFiles();
         setupJumpPickers();
         setupProjects();
+        applyPlugins(); // register plugin commands/tool windows/hooks (before restore, so their visibility restores)
         toolWindows.restore();
         // Honor a persisted Zen state on launch: the view options + chrome already read the flag via
         // the apply paths; this hides the side stripes (restore() opened nothing — windows were
@@ -408,6 +433,430 @@ public class MainController {
             }
         });
         applyAutoSave();
+    }
+
+    // --- plugins ----------------------------------------------------------------------------------
+
+    /** Injected by {@link WindowManager} before {@link #init}; shared across windows (classes load once). */
+    void setPluginManager(com.editora.plugin.PluginManager pm) {
+        this.pluginManager = pm;
+        if (pm != null) {
+            this.pluginRegistry = new com.editora.plugin.PluginRegistry();
+            this.pluginInstaller = new com.editora.plugin.PluginInstaller(pm);
+        }
+    }
+
+    /** Whether plugins may load — the master gate (also off in Simple UI mode). */
+    private boolean pluginsEnabled() {
+        return pluginManager != null && config.getSettings().isPluginSupport() && !simpleModeActive();
+    }
+
+    /**
+     * Applies every enabled, error-free plugin to <em>this</em> window: declarative snippet/template source
+     * dirs + keymap bindings + external-command palette entries, then each Java plugin's {@code start(ctx)}.
+     * Runs once during {@link #init} (off no hot path). One {@code try/catch} per plugin → DebugLog, so a
+     * misbehaving plugin never breaks the window.
+     */
+    private void applyPlugins() {
+        if (!pluginsEnabled()) {
+            return;
+        }
+        boolean addedAssets = false;
+        for (com.editora.plugin.PluginDescriptor d : pluginManager.descriptors()) {
+            if (!d.enabled() || d.loadError() != null) {
+                continue;
+            }
+            try {
+                // Declarative: snippet/template source dirs (per-window registries) + keymap (shared).
+                java.nio.file.Path snDir = d.dir().resolve("snippets");
+                if (java.nio.file.Files.isDirectory(snDir)) {
+                    snippets.addExtraSourceDir(snDir);
+                    addedAssets = true;
+                }
+                java.nio.file.Path tplDir = d.dir().resolve("templates");
+                if (java.nio.file.Files.isDirectory(tplDir)) {
+                    templates.addExtraSourceDir(tplDir);
+                    addedAssets = true;
+                }
+                if (d.manifest().keymap != null && !d.manifest().keymap.isEmpty()) {
+                    keymap.applyOverrides(d.manifest().keymap); // shared keymap → applies to every window
+                }
+                // Declarative external commands → palette commands.
+                for (com.editora.plugin.PluginManifest.DeclaredCommand c : d.manifest().commands) {
+                    if (c == null || c.id == null || c.id.isBlank()) {
+                        continue;
+                    }
+                    String cid = "plugin." + d.id() + "." + c.id;
+                    String title = c.title == null || c.title.isBlank() ? cid : c.title;
+                    registry.register(com.editora.command.Command.of(cid, title, () -> runDeclaredCommand(d, c)));
+                }
+                // Java plugin.
+                if (d.hasJavaEntry() && d.classLoader() != null) {
+                    com.editora.plugin.Plugin plugin = pluginManager.instantiate(d);
+                    if (plugin != null) {
+                        plugin.start(new PluginContextImpl(d));
+                        startedPlugins.add(plugin);
+                    }
+                }
+            } catch (Throwable t) {
+                LOG.log(java.util.logging.Level.WARNING, "Plugin " + d.id() + " failed to apply", t);
+                setStatus(tr("status.plugins.failed", d.id()));
+            }
+        }
+        if (addedAssets) {
+            snippets.reload();
+            templates.reload();
+        }
+    }
+
+    /** Stops this window's plugins (window close). Each {@code stop()} is isolated. */
+    void disposePlugins() {
+        for (com.editora.plugin.Plugin p : startedPlugins) {
+            try {
+                p.stop();
+            } catch (Throwable t) {
+                LOG.log(java.util.logging.Level.WARNING, "Plugin stop failed", t);
+            }
+        }
+        startedPlugins.clear();
+    }
+
+    // --- plugin registry (browse / install) ------------------------------------------------------
+
+    /**
+     * Fetches the configured registry index off-thread and shows the "Browse Plugins" picker. No-op (with a
+     * status hint) when plugins are disabled or no registry URL is set.
+     */
+    private void browsePlugins() {
+        if (!pluginsEnabled() || pluginRegistry == null) {
+            setStatus(tr("status.plugins.disabled"));
+            return;
+        }
+        String url = config.getSettings().getPluginRegistryUrl();
+        setStatus(tr("status.plugins.fetching"));
+        pluginRegistry.fetch(url, r -> {
+            if (!r.ok()) {
+                setStatus(tr("status.plugins.fetchFailed", r.error()));
+                return;
+            }
+            browseEntries = r.entries();
+            if (browseEntries.isEmpty()) {
+                setStatus(tr("status.plugins.empty"));
+                return;
+            }
+            browsePalette.show(stage);
+        });
+    }
+
+    /** The picker label: "Name  version — Installed/Update available/Install/Requires Editora ≥ x". */
+    private String browseEntryLabel(com.editora.plugin.RegistryEntry e) {
+        String ver = e.version == null ? "" : e.version;
+        return (e.name == null || e.name.isBlank() ? e.id : e.name)
+                + (ver.isBlank() ? "" : "  " + ver) + " — " + browseEntryStatus(e);
+    }
+
+    /** Installed / Update available / Install / Requires-newer, comparing to the installed descriptor. */
+    private String browseEntryStatus(com.editora.plugin.RegistryEntry e) {
+        if (!meetsMinEditora(e)) {
+            return tr("plugins.status.requiresNewer", e.minEditoraVersion);
+        }
+        String installed = installedVersion(e.id);
+        if (installed == null) {
+            return tr("plugins.status.install");
+        }
+        int cmp = com.editora.plugin.PluginInstaller.compareVersions(e.version, installed);
+        return cmp > 0 ? tr("plugins.status.updateAvailable") : tr("plugins.status.installed");
+    }
+
+    /** The installed plugin's manifest version, or null when not installed. */
+    private String installedVersion(String id) {
+        if (pluginManager == null || id == null) {
+            return null;
+        }
+        for (com.editora.plugin.PluginDescriptor d : pluginManager.descriptors()) {
+            if (id.equals(d.id())) {
+                return d.manifest().version == null ? "" : d.manifest().version;
+            }
+        }
+        return null;
+    }
+
+    /** Whether this Editora build satisfies the entry's {@code minEditoraVersion} (blank = any). */
+    private static boolean meetsMinEditora(com.editora.plugin.RegistryEntry e) {
+        String min = e.minEditoraVersion;
+        if (min == null || min.isBlank()) {
+            return true;
+        }
+        return com.editora.plugin.PluginInstaller.compareVersions(com.editora.AppInfo.VERSION, min) >= 0;
+    }
+
+    /** Confirms (showing name/version/author/source + the trust warning) then installs from the registry. */
+    private void confirmAndInstall(com.editora.plugin.RegistryEntry e) {
+        if (e == null) {
+            return;
+        }
+        if (!meetsMinEditora(e)) {
+            setStatus(tr("plugins.status.requiresNewer", e.minEditoraVersion));
+            return;
+        }
+        String body = tr("dialog.plugins.installBody",
+                (e.name == null || e.name.isBlank() ? e.id : e.name),
+                (e.version == null ? "" : e.version),
+                (e.author == null ? "" : e.author),
+                e.download);
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                body, ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.plugins.installTitle"));
+        confirm.setHeaderText(tr("dialog.plugins.installHeader"));
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+            return;
+        }
+        setStatus(tr("status.plugins.installing", e.name == null || e.name.isBlank() ? e.id : e.name));
+        pluginInstaller.installFromUrl(e, this::onPluginInstalled);
+    }
+
+    /** Install-from-disk: pick a {@code .zip}, then install it (no checksum — the user chose the file). */
+    private void installPluginFromDisk() {
+        if (!pluginsEnabled() || pluginInstaller == null) {
+            setStatus(tr("status.plugins.disabled"));
+            return;
+        }
+        FileChooser fc = new FileChooser();
+        fc.setTitle(tr("dialog.plugins.installFileTitle"));
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Plugin zip", "*.zip"));
+        java.io.File f = fc.showOpenDialog(stage);
+        if (f == null) {
+            return;
+        }
+        setStatus(tr("status.plugins.installing", f.getName()));
+        pluginInstaller.installFromZip(f.toPath(), this::onPluginInstalled);
+    }
+
+    /** Common post-install handling: enable the new plugin, persist, refresh the Settings list, report. */
+    private void onPluginInstalled(com.editora.plugin.PluginInstaller.Result r) {
+        if (!r.ok()) {
+            gitError(tr("status.plugins.installFailed", r.error() == null ? "" : r.error()),
+                    r.error());
+            return;
+        }
+        config.getPluginStore().setEnabled(r.id(), true);
+        config.savePlugins();
+        pluginRegistry.invalidate(); // status labels (Installed/Update) may change
+        settingsWindow.syncPluginsCheck(); // rebuilds the per-plugin list
+        setStatus(tr("status.plugins.installed", r.name()));
+    }
+
+    /** Uninstalls a plugin: deletes its folder + drops it from the enabled store (Settings-page Remove). */
+    private void uninstallPlugin(String id) {
+        if (pluginManager == null || id == null || id.isBlank()) {
+            return;
+        }
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                tr("dialog.plugins.uninstallBody", id), ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.plugins.uninstallTitle"));
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+            return;
+        }
+        java.nio.file.Path dir = pluginManager.pluginsDir().resolve(id);
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.walk(dir)) {
+            s.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    java.nio.file.Files.deleteIfExists(p);
+                } catch (java.io.IOException ignored) {
+                    // best-effort
+                }
+            });
+        } catch (java.io.IOException e) {
+            gitError(tr("status.plugins.uninstallFailed", id), e.getMessage());
+            return;
+        }
+        config.getPluginStore().setEnabled(id, false);
+        config.savePlugins();
+        pluginManager.discover();
+        settingsWindow.syncPluginsCheck();
+        setStatus(tr("status.plugins.uninstalled", id));
+    }
+
+    /** Runs a plugin's declared external command via the subprocess runner; reports the result. */
+    private void runDeclaredCommand(com.editora.plugin.PluginDescriptor d,
+            com.editora.plugin.PluginManifest.DeclaredCommand c) {
+        if (c.run == null || c.run.isEmpty()) {
+            return;
+        }
+        java.nio.file.Path cwd = (c.dir == null || c.dir.isBlank())
+                ? d.dir() : d.dir().resolve(c.dir).normalize();
+        setStatus(tr("status.plugins.running", c.title == null || c.title.isBlank() ? c.id : c.title));
+        new Thread(() -> {
+            com.editora.process.ProcessRunner.Result r;
+            try {
+                r = com.editora.process.ProcessRunner.run(cwd, java.time.Duration.ofSeconds(120),
+                        new java.util.ArrayList<>(c.run), java.util.Map.of());
+            } catch (RuntimeException e) {
+                Platform.runLater(() -> setStatus(tr("status.plugins.cmdFailed", e.getMessage())));
+                return;
+            }
+            String out = (r.out() + "\n" + r.err()).strip();
+            if (!out.isBlank()) {
+                LOG.info("[plugin " + d.id() + "] " + out);
+            }
+            Platform.runLater(() -> setStatus(r.ok()
+                    ? tr("status.plugins.cmdDone", c.id)
+                    : tr("status.plugins.cmdFailed", "exit " + r.exit())));
+        }, "plugin-cmd-" + d.id()).start();
+    }
+
+    /** Builds the plugin-contributed right-click items for {@code buffer} (empty when no plugin added any). */
+    private java.util.List<javafx.scene.control.MenuItem> pluginEditorMenuItems(EditorBuffer buffer) {
+        if (pluginMenuItems.isEmpty()) {
+            return java.util.List.of();
+        }
+        java.util.List<javafx.scene.control.MenuItem> items = new java.util.ArrayList<>();
+        for (EditorMenuContribution c : pluginMenuItems) {
+            javafx.scene.control.MenuItem mi = new javafx.scene.control.MenuItem(c.label());
+            mi.setGraphic(Icons.plugin());
+            mi.setOnAction(e -> {
+                try {
+                    c.action().accept(new ActiveEditorImpl(buffer));
+                } catch (Throwable t) {
+                    LOG.log(java.util.logging.Level.WARNING, "Plugin menu action failed", t);
+                }
+            });
+            items.add(mi);
+        }
+        return items;
+    }
+
+    /** A window-scoped {@link com.editora.plugin.PluginContext}; one per plugin per window. */
+    private final class PluginContextImpl implements com.editora.plugin.PluginContext {
+        private final com.editora.plugin.PluginDescriptor desc;
+
+        PluginContextImpl(com.editora.plugin.PluginDescriptor desc) {
+            this.desc = desc;
+        }
+
+        /** Namespaces a bare command id (no dot) to this plugin; a dotted id (a built-in) is used as-is. */
+        private String fullId(String id) {
+            return id != null && id.indexOf('.') < 0 ? "plugin." + desc.id() + "." + id : id;
+        }
+
+        @Override public void registerCommand(String id, String title, Runnable action) {
+            String cid = fullId(id);
+            registry.register(com.editora.command.Command.of(cid,
+                    title == null || title.isBlank() ? cid : title, action));
+        }
+
+        @Override public void bindKey(String chord, String commandId) {
+            if (chord != null && !chord.isBlank() && commandId != null) {
+                keymap.applyOverrides(java.util.Map.of(chord, fullId(commandId)));
+            }
+        }
+
+        @Override public void registerToolWindow(String id, String title,
+                com.editora.plugin.ToolWindowSide side, javafx.scene.layout.Region content, String commandId) {
+            String twId = fullId(id);
+            String cmd = commandId == null || commandId.isBlank() ? twId : fullId(commandId);
+            ToolWindow.Side s = switch (side == null ? com.editora.plugin.ToolWindowSide.BOTTOM : side) {
+                case LEFT -> ToolWindow.Side.LEFT;
+                case RIGHT -> ToolWindow.Side.RIGHT;
+                case BOTTOM -> ToolWindow.Side.BOTTOM;
+            };
+            ToolWindow tw = new ToolWindow(twId, title == null ? twId : title, s, Icons::plugin, content, cmd);
+            toolWindows.register(tw);
+            registry.register(com.editora.command.Command.of(cmd,
+                    title == null ? twId : title, () -> toolWindows.toggle(tw)));
+        }
+
+        @Override public void addEditorMenuItem(String label,
+                java.util.function.Consumer<com.editora.plugin.ActiveEditor> action) {
+            if (label != null && action != null) {
+                pluginMenuItems.add(new EditorMenuContribution(label, action));
+            }
+        }
+
+        @Override public void addStatusBarSegment(String label, String commandId) {
+            statusBar.addPluginSegment(label, commandId == null ? null : fullId(commandId));
+        }
+
+        @Override public com.editora.plugin.ActiveEditor activeEditor() {
+            return new ActiveEditorImpl(null); // tracks the live active buffer
+        }
+
+        @Override public java.nio.file.Path pluginDir() {
+            return desc.dir();
+        }
+
+        @Override public java.nio.file.Path dataDir() {
+            java.nio.file.Path data = desc.dir().resolve("data");
+            try {
+                java.nio.file.Files.createDirectories(data);
+            } catch (java.io.IOException ignored) {
+                // best-effort
+            }
+            return data;
+        }
+
+        @Override public java.nio.file.Path configDir() {
+            return config.getConfigDir();
+        }
+
+        @Override public void log(String message) {
+            LOG.info("[plugin " + desc.id() + "] " + message);
+        }
+
+        @Override public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+    }
+
+    /** A {@link com.editora.plugin.ActiveEditor} over a fixed buffer, or the live active buffer when null. */
+    private final class ActiveEditorImpl implements com.editora.plugin.ActiveEditor {
+        private final EditorBuffer fixed;
+
+        ActiveEditorImpl(EditorBuffer fixed) {
+            this.fixed = fixed;
+        }
+
+        private EditorBuffer buf() {
+            return fixed != null ? fixed : activeBuffer();
+        }
+
+        @Override public java.nio.file.Path filePath() {
+            EditorBuffer b = buf();
+            return b == null ? null : b.getPath();
+        }
+
+        @Override public String text() {
+            EditorBuffer b = buf();
+            return b == null ? "" : b.getContent();
+        }
+
+        @Override public String selectedText() {
+            EditorBuffer b = buf();
+            return b == null ? "" : b.getArea().getSelectedText();
+        }
+
+        @Override public void replaceSelection(String replacement) {
+            EditorBuffer b = buf();
+            if (b != null && b.isEditable() && replacement != null) {
+                b.getArea().replaceSelection(replacement);
+            }
+        }
+
+        @Override public void insertAtCaret(String text) {
+            EditorBuffer b = buf();
+            if (b != null && b.isEditable() && text != null) {
+                b.getArea().insertText(b.getArea().getCaretPosition(), text);
+            }
+        }
+
+        @Override public void openPath(java.nio.file.Path path) {
+            if (path != null) {
+                MainController.this.openPath(path);
+            }
+        }
     }
 
     /** Shows/hides the toolbar and status bar per the saved settings (hidden nodes also unmanaged so
@@ -545,6 +994,9 @@ public class MainController {
         switcher.setOverlayHost(overlayHost);
         branchPopup.setOverlayHost(overlayHost);
         statusBar.setOverlayHost(overlayHost);
+        if (browsePalette != null) {
+            browsePalette.setOverlayHost(overlayHost);
+        }
     }
 
     /**
@@ -781,6 +1233,14 @@ public class MainController {
                 e -> bookmarkLabel(e.bm()),
                 e -> e.file().getFileName() + ":" + (e.bm().line() + 1),
                 e -> bookmarkActivate(e.file(), e.bm().line()));
+        browsePalette = new QuickOpen<>(tr("plugins.browseTitle"), tr("plugins.browsePrompt"),
+                () -> browseEntries,
+                this::browseEntryLabel,
+                e -> e.description == null ? "" : e.description,
+                e -> (e.name == null ? "" : e.name) + " " + e.id
+                        + " " + (e.description == null ? "" : e.description), // search name+id+desc
+                this::confirmAndInstall);
+        browsePalette.setPreferredSize(760, 8); // roomier than the default — registry rows carry descriptions
         notesPalette = new QuickOpen<>(tr("notes.jumpTitle"), tr("notes.jumpPrompt"),
                 this::allNoteEntries,
                 e -> noteEntryLabel(e.note()),
@@ -4517,6 +4977,7 @@ public class MainController {
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         buffer.setCompletionProvider(completion::complete);
+        buffer.setMenuContributor(() -> pluginEditorMenuItems(buffer)); // plugin-contributed right-click items
         Settings acs = config.getSettings();
         buffer.setAutocomplete(acs.isAutocomplete(), acs.isAutocompleteProse(),
                 acs.isAutocompleteSnippets(), effectiveMermaidAutocomplete());
@@ -5949,6 +6410,19 @@ public class MainController {
         applyViewSettingsToAllBuffers(s); // → applyChromeVisibility → toolWindows.setStripesEnabled
         settingsWindow.syncToolStripeCheck();
         setStatus(tr("status.toggle.toolStripe", tr(s.isShowToolStripe() ? "common.on" : "common.off")));
+    }
+
+    /**
+     * Flips the master "Enable plugins" gate. Plugins load only at startup (no hot classloader/UI unload),
+     * so this just persists the preference and reports that a restart is needed; the Settings checkbox is
+     * re-synced for discoverability.
+     */
+    private void togglePluginSupport() {
+        Settings s = config.getSettings();
+        s.setPluginSupport(!s.isPluginSupport());
+        requestSave();
+        settingsWindow.syncPluginsCheck();
+        setStatus(tr("status.toggle.plugins", tr(s.isPluginSupport() ? "common.on" : "common.off")));
     }
 
     private void toggleSimpleMode() {
@@ -8317,6 +8791,9 @@ public class MainController {
         registry.register(Command.of("view.toggleToolStripe",
                 this::toggleToolStripe));
         registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
+        registry.register(Command.of("view.togglePlugins", this::togglePluginSupport));
+        registry.register(Command.of("plugins.browse", this::browsePlugins));
+        registry.register(Command.of("plugins.installFromDisk", this::installPluginFromDisk));
         registry.register(Command.of("config.export", this::exportConfig));
         registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
         registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));

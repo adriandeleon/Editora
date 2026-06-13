@@ -3,6 +3,18 @@ target/
 *.class
 dist/
 
+# Example plugin build artifacts
+examples/example-plugin/example-plugin.jar
+examples/example-plugin/example.zip
+examples/example-plugin/.build/
+examples/example-plugin/.zipstage/
+examples/example-plugin/.classpath
+examples/lorem-ipsum-plugin/lorem-ipsum.jar
+examples/lorem-ipsum-plugin/lorem-ipsum.zip
+examples/lorem-ipsum-plugin/.build/
+examples/lorem-ipsum-plugin/.zipstage/
+examples/lorem-ipsum-plugin/.classpath
+
 # Maven
 pom.xml.tag
 pom.xml.releaseBackup

@@ -753,6 +753,8 @@ public class EditorBuffer implements TabContent {
     }
 
     private final ContextMenu contextMenu = new ContextMenu();
+    /** Supplies extra right-click items (plugin contributions), injected by the controller; null = none. */
+    private java.util.function.Supplier<List<MenuItem>> menuContributor;
 
     private void installContextMenu() {
         contextMenu.getStyleClass().add("editor-context-menu");
@@ -783,6 +785,13 @@ public class EditorBuffer implements TabContent {
                 items.add(new SeparatorMenuItem());
             }
             items.addAll(standardMenuItems());
+            if (menuContributor != null) { // plugin-contributed items
+                List<MenuItem> extra = menuContributor.get();
+                if (extra != null && !extra.isEmpty()) {
+                    items.add(new SeparatorMenuItem());
+                    items.addAll(extra);
+                }
+            }
             if (path != null && notesEnabled) {
                 items.add(new SeparatorMenuItem());
                 boolean hasSelection = area.getSelection().getLength() > 0;
@@ -804,6 +813,11 @@ public class EditorBuffer implements TabContent {
                 contextMenu.hide();
             }
         });
+    }
+
+    /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
+    public void setMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
+        this.menuContributor = contributor;
     }
 
     /** The document offset under a context-menu click (for caret-positioning LSP nav); caret if it misses. */

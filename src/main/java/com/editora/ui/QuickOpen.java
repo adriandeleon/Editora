@@ -50,6 +50,12 @@ public class QuickOpen<T> {
     private static final double CELL_HEIGHT = 26;
     /** Max rows shown before the list scrolls. */
     private static final int MAX_VISIBLE = 12;
+    /** Default card width (px); overridable per picker via {@link #setCardWidth}. */
+    private static final double DEFAULT_WIDTH = 620;
+
+    /** Card width + the minimum number of result rows reserved (so a sparse list doesn't collapse). */
+    private double cardWidth = DEFAULT_WIDTH;
+    private int minRows = 1;
 
     private final TextField input = new TextField();
     private final ListView<T> list = new ListView<>();
@@ -91,6 +97,21 @@ public class QuickOpen<T> {
         this.overlayHost = overlayHost;
     }
 
+    /**
+     * Overrides the card width + the minimum reserved result rows for this picker (e.g. so a registry
+     * browser with a single entry still shows a roomy box instead of a one-row sliver). {@code minRows} is
+     * clamped to {@link #MAX_VISIBLE}.
+     */
+    public void setPreferredSize(double width, int minVisibleRows) {
+        this.cardWidth = width;
+        this.minRows = Math.max(1, Math.min(minVisibleRows, MAX_VISIBLE));
+        if (content != null) {
+            content.setPrefWidth(width);
+            content.setMaxSize(width, Region.USE_PREF_SIZE);
+            resizeList();
+        }
+    }
+
     private void build(String title, String prompt) {
         input.setPromptText(prompt);
         list.setItems(items);
@@ -119,8 +140,8 @@ public class QuickOpen<T> {
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, header, input, list, hint);
         content.getStyleClass().add("command-palette");
-        content.setPrefWidth(620);
-        content.setMaxSize(620, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
+        content.setPrefWidth(cardWidth);
+        content.setMaxSize(cardWidth, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p/arrows for the picker
         resizeList();
     }
@@ -128,7 +149,7 @@ public class QuickOpen<T> {
     /** Sizes the result list to its (filtered) item count, capped at {@link #MAX_VISIBLE} rows, so the
      *  popup hugs the matches instead of reserving a fixed-tall area. */
     private void resizeList() {
-        int rows = Math.max(1, Math.min(items.size(), MAX_VISIBLE));
+        int rows = Math.max(minRows, Math.min(Math.max(items.size(), minRows), MAX_VISIBLE));
         double h = rows * CELL_HEIGHT + 2; // +2 for the list's border/insets
         list.setMinHeight(h);
         list.setPrefHeight(h);
