@@ -99,13 +99,15 @@ public final class PluginInstaller {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(e.download.strip()))
                     .timeout(REQUEST_TIMEOUT).GET().build();
-            HttpResponse<byte[]> resp = client.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<java.io.InputStream> resp =
+                    client.send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() / 100 != 2) {
+                resp.body().close();
                 return new Result(false, "", "", "HTTP " + resp.statusCode());
             }
-            byte[] body = resp.body();
-            if (body.length > MAX_DOWNLOAD_BYTES) {
-                return new Result(false, "", "", "download too large");
+            byte[] body;
+            try (java.io.InputStream in = resp.body()) {
+                body = PluginRegistry.readCapped(in, MAX_DOWNLOAD_BYTES); // bounded; aborts an oversized stream
             }
             String actual = sha256(body);
             if (!actual.equalsIgnoreCase(e.sha256.strip())) {

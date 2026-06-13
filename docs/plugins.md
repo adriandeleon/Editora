@@ -139,7 +139,16 @@ Three ways, all gated by *Settings → Plugins* (enable plugins first; an instal
    a local plugin `.zip` and unpacks it (no checksum — you chose the file).
 3. **Hand-copy** — drop a plugin folder into `<configDir>/plugins/<id>/` and hit *Reload*.
 
-Every install unpacks with a **zip-slip guard** + size caps. Remote installs require a matching SHA-256.
+Every install unpacks with a **zip-slip guard** + size caps; the registry index and remote downloads are
+read with a hard size cap (a hostile registry can't exhaust memory), HTTPS-only, with no `https→http`
+downgrade. Remote installs require a matching SHA-256.
+
+**Consent at enable.** Because enabling a plugin arms its code on the next launch, Editora shows a
+**capability-disclosure confirm** before any plugin is enabled (after a Browse/file install, and when you
+tick a plugin's checkbox): it lists whether the plugin **runs executable code**, the **exact external
+commands** it declares, and any **keybindings it remaps** — so you see what you're authorizing. The
+registry URL is configurable, and a **non-default registry** is flagged with its host (a phishing-vector
+guard). This is consent, not a sandbox — see Limitations.
 
 ## Publishing & installing (registry)
 
@@ -176,6 +185,29 @@ To publish a plugin:
 A ready-to-host sample registry is in [`examples/editora-plugins-registry/`](../examples/editora-plugins-registry/).
 `download` + the registry URL must be **HTTPS**; entries needing a newer Editora than yours are shown but
 not installable (`minEditoraVersion`).
+
+### Signing the registry (authenticity)
+
+The SHA-256 in each entry gives *integrity* (the download matches the index) but not *authenticity* — a
+compromised registry could change both. Editora therefore verifies a **detached Ed25519 signature of the
+whole `index.json`** against a **bundled public key**, and **"Require signed plugins"** (Settings → Plugins,
+default **on**) blocks installs from a registry that doesn't verify. A signed index + the per-entry SHA-256
+then chain authenticity to every plugin.
+
+Workflow (one keypair, JDK-only — no dependencies; see `scripts/PluginSigningTool.java`):
+
+```sh
+# once: generate the registry keypair (keep the private key secret — never commit it)
+java scripts/PluginSigningTool.java keygen editora-registry.pub editora-registry.key
+#   → bundle editora-registry.pub at resources/com/editora/plugin/editora-registry.pub
+
+# after every edit to index.json: re-sign and publish index.json.sig next to it
+java scripts/PluginSigningTool.java sign editora-registry.key index.json   # writes index.json.sig
+```
+
+Editora fetches `<registry-url>.sig` alongside the index and verifies it. If you run your **own** registry
+(it can't be signed with Editora's bundled key), either turn off "Require signed plugins" or ship a build
+with your own bundled public key. Signing proves *who* published — it is **not** a sandbox.
 
 ## Limitations (v1)
 

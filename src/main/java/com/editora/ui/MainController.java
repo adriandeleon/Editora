@@ -184,6 +184,8 @@ public class MainController {
     private QuickOpen<com.editora.plugin.RegistryEntry> browsePalette;
     /** The last-fetched registry entries, shown by {@link #browsePalette}. */
     private java.util.List<com.editora.plugin.RegistryEntry> browseEntries = java.util.List.of();
+    /** Whether the last-fetched registry index verified against the bundled signing key. */
+    private boolean browseSigned;
 
     /** A plugin-contributed editor menu item: a label + an action over the {@link com.editora.plugin.ActiveEditor}. */
     private record EditorMenuContribution(String label,
@@ -534,15 +536,25 @@ public class MainController {
         }
         String url = config.getSettings().getPluginRegistryUrl();
         setStatus(tr("status.plugins.fetching"));
+        boolean requireSig = config.getSettings().isPluginRequireSignature();
         pluginRegistry.fetch(url, r -> {
             if (!r.ok()) {
                 setStatus(tr("status.plugins.fetchFailed", r.error()));
                 return;
             }
+            // Signature gate: when "require signed plugins" is on, refuse an unsigned/unverified registry.
+            if (requireSig && !r.signed()) {
+                gitError(tr("status.plugins.unsigned"), tr("dialog.plugins.unsignedDetail"));
+                return;
+            }
+            browseSigned = r.signed();
             browseEntries = r.entries();
             if (browseEntries.isEmpty()) {
                 setStatus(tr("status.plugins.empty"));
                 return;
+            }
+            if (!browseSigned) {
+                setStatus(tr("status.plugins.unsignedAllowed"));
             }
             browsePalette.show(stage);
         });
@@ -604,6 +616,9 @@ public class MainController {
                 (e.version == null ? "" : e.version),
                 (e.author == null ? "" : e.author),
                 e.download);
+        if (!browseSigned) {
+            body = tr("dialog.plugins.unsignedWarn") + "\n\n" + body; // reached only when the gate is off
+        }
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
                 body, ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(stage);
@@ -633,18 +648,81 @@ public class MainController {
         pluginInstaller.installFromZip(f.toPath(), this::onPluginInstalled);
     }
 
-    /** Common post-install handling: enable the new plugin, persist, refresh the Settings list, report. */
+    /** Common post-install handling: disclose capabilities + confirm enable, persist, refresh, report. */
     private void onPluginInstalled(com.editora.plugin.PluginInstaller.Result r) {
         if (!r.ok()) {
             gitError(tr("status.plugins.installFailed", r.error() == null ? "" : r.error()),
                     r.error());
             return;
         }
-        config.getPluginStore().setEnabled(r.id(), true);
-        config.savePlugins();
         pluginRegistry.invalidate(); // status labels (Installed/Update) may change
+        // Arming gate: the plugin is now on disk; show exactly what it can do before enabling it.
+        if (confirmEnablePlugin(r.id())) {
+            config.getPluginStore().setEnabled(r.id(), true);
+            config.savePlugins();
+            setStatus(tr("status.plugins.installed", r.name()));
+        } else {
+            setStatus(tr("status.plugins.notEnabled", r.name()));
+        }
         settingsWindow.syncPluginsCheck(); // rebuilds the per-plugin list
-        setStatus(tr("status.plugins.installed", r.name()));
+    }
+
+    /**
+     * Shows a capability-disclosure confirm before a plugin is <em>enabled</em> (the real arming point —
+     * code loads on next launch): whether it ships executable code, the external commands it declares, and
+     * any keybindings it remaps. Returns whether the user accepted. Falls back to enabling if the descriptor
+     * can't be found.
+     */
+    private boolean confirmEnablePlugin(String id) {
+        com.editora.plugin.PluginDescriptor d = null;
+        if (pluginManager != null) {
+            for (com.editora.plugin.PluginDescriptor c : pluginManager.descriptors()) {
+                if (c.id().equals(id)) {
+                    d = c;
+                    break;
+                }
+            }
+        }
+        if (d == null) {
+            return true;
+        }
+        String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
+        String body = tr("dialog.plugins.enableBody", name,
+                d.manifest().version == null ? "" : d.manifest().version,
+                pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.plugins.enableTitle"));
+        confirm.setHeaderText(tr("dialog.plugins.enableHeader"));
+        confirm.getDialogPane().setMinWidth(480);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    /**
+     * A human-readable, localized list of what a plugin can do, from its manifest: executable code (a jar),
+     * declared external commands (with their argv), and keybinding remaps. Used by the enable-confirm dialogs
+     * (here and in {@link SettingsWindow}). Pure aside from {@code tr(...)}.
+     */
+    public static String pluginCapabilitySummary(com.editora.plugin.PluginManifest m, boolean hasJar) {
+        StringBuilder sb = new StringBuilder();
+        if (hasJar) {
+            sb.append(tr("plugins.cap.code")).append('\n');
+        }
+        if (m.commands != null && !m.commands.isEmpty()) {
+            sb.append(tr("plugins.cap.commands")).append('\n');
+            for (com.editora.plugin.PluginManifest.DeclaredCommand c : m.commands) {
+                String argv = c.run == null ? "" : String.join(" ", c.run);
+                sb.append("    ").append(argv).append('\n');
+            }
+        }
+        if (m.keymap != null && !m.keymap.isEmpty()) {
+            sb.append(tr("plugins.cap.keymap")).append('\n');
+            m.keymap.forEach((chord, cmd) -> sb.append("    ").append(chord).append(" → ").append(cmd).append('\n'));
+        }
+        if (sb.length() == 0) {
+            sb.append(tr("plugins.cap.assetsOnly"));
+        }
+        return sb.toString().strip();
     }
 
     /** Uninstalls a plugin: deletes its folder + drops it from the enabled store (Settings-page Remove). */
@@ -1258,7 +1336,7 @@ public class MainController {
                 e -> (e.name == null ? "" : e.name) + " " + e.id
                         + " " + (e.description == null ? "" : e.description), // search name+id+desc
                 this::confirmAndInstall);
-        browsePalette.setPreferredSize(760, 8); // roomier than the default — registry rows carry descriptions
+        browsePalette.setPreferredSize(960, 10); // wide — registry rows carry a name + a long description
         notesPalette = new QuickOpen<>(tr("notes.jumpTitle"), tr("notes.jumpPrompt"),
                 this::allNoteEntries,
                 e -> noteEntryLabel(e.note()),

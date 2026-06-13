@@ -28,6 +28,25 @@ public class RegistryIndex {
         }
         // Drop entries with no id (malformed) so callers never see a half-formed row.
         idx.plugins.removeIf(e -> e == null || e.id == null || e.id.isBlank());
+        // Defensive: cap displayed strings so a hostile registry can't bloat the UI with megabyte fields.
+        for (RegistryEntry e : idx.plugins) {
+            e.id = cap(e.id, 100);
+            e.name = cap(e.name, 120);
+            e.version = cap(e.version, 40);
+            e.description = cap(e.description, 400);
+            e.author = cap(e.author, 120);
+            e.homepage = cap(e.homepage, 500);
+            e.download = cap(e.download, 1000);
+            e.sha256 = cap(e.sha256, 128);
+            e.minEditoraVersion = cap(e.minEditoraVersion, 40);
+        }
         return idx;
+    }
+
+    private static String cap(String s, int max) {
+        if (s == null) {
+            return "";
+        }
+        return s.length() <= max ? s : s.substring(0, max);
     }
 }

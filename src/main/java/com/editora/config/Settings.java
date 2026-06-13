@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 23;
+    public static final int SCHEMA_VERSION = 24;
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Default plugin-registry index URL (a curated {@code index.json} on GitHub); user-overridable. */
@@ -91,6 +91,9 @@ public class Settings {
     /** Registry index URL for browsing/installing plugins (HTTPS); overridable, defaults to
      *  {@link #DEFAULT_PLUGIN_REGISTRY}. */
     private String pluginRegistryUrl = DEFAULT_PLUGIN_REGISTRY;
+    /** Require the registry index to be signed by the bundled key before installing (default on; turn off
+     *  to use an unsigned or custom registry). */
+    private boolean pluginRequireSignature = true;
     /** Mermaid diagram support: off by default — needs the external mmdc (render/export) and maid
      *  (validation) CLIs. Renders .mmd files and ```mermaid Markdown blocks in the preview. */
     private boolean mermaidSupport = false;
@@ -520,6 +523,14 @@ public class Settings {
 
     public void setPluginRegistryUrl(String pluginRegistryUrl) {
         this.pluginRegistryUrl = pluginRegistryUrl;
+    }
+
+    public boolean isPluginRequireSignature() {
+        return pluginRequireSignature;
+    }
+
+    public void setPluginRequireSignature(boolean pluginRequireSignature) {
+        this.pluginRequireSignature = pluginRequireSignature;
     }
 
     public boolean isMermaidSupport() {

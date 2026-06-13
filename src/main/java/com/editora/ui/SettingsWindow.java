@@ -152,8 +152,10 @@ public class SettingsWindow {
     private Label mermaidStatusLabel;
     private com.editora.plugin.PluginManager pluginManager; // shared, injected after construction
     private CheckBox pluginCheck;
+    private CheckBox pluginRequireSigCheck;
     private VBox pluginListBox; // rebuilt on each load() from the shared PluginManager's descriptors
     private TextField pluginRegistryField;
+    private Label pluginRegistryWarn; // shown when the registry URL isn't the trusted default
     private Runnable onBrowsePlugins;       // → MainController.browsePlugins
     private Runnable onInstallPluginFromFile; // → MainController.installPluginFromDisk
     private Consumer<String> onUninstallPlugin; // id → MainController.uninstallPlugin
@@ -567,6 +569,11 @@ public class SettingsWindow {
             config.getSettings().setPluginSupport(now);
             apply();
         });
+        pluginRequireSigCheck = new CheckBox(tr("settings.plugins.requireSignature"));
+        pluginRequireSigCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setPluginRequireSignature(now);
+            apply();
+        });
 
         templateAuthorField = new TextField();
         templateAuthorField.setPromptText(System.getProperty("user.name", ""));
@@ -883,16 +890,31 @@ public class SettingsWindow {
         Label market = section(p, tr("settings.plugins.marketplace"));
         pluginRegistryField = new TextField();
         pluginRegistryField.setPromptText(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
+        // Wide enough to show a full registry URL (the default is ~75 chars); also grows with the page.
+        pluginRegistryField.setPrefColumnCount(64);
+        pluginRegistryField.setPrefWidth(560);
+        pluginRegistryField.setMaxWidth(Double.MAX_VALUE);
+        pluginRegistryWarn = new Label();
+        pluginRegistryWarn.getStyleClass().add("settings-git-missing"); // amber/red "caution" styling
+        pluginRegistryWarn.setWrapText(true);
+        pluginRegistryWarn.setMaxWidth(440);
         pluginRegistryField.textProperty().addListener((obs, was, now) -> {
             config.getSettings().setPluginRegistryUrl(now);
             apply();
+            updateRegistryWarn();
         });
         Label regNote = note(tr("settings.plugins.registryNote"));
         regNote.setWrapText(true);
         regNote.setMaxWidth(440);
-        VBox regBox = new VBox(4, pluginRegistryField, regNote);
+        VBox regBox = new VBox(4, pluginRegistryField, pluginRegistryWarn, regNote);
         row(p, Category.PLUGINS, market, labeled(tr("settings.plugins.registryUrl"), regBox),
                 "plugins registry url index marketplace github browse");
+        Label sigNote = note(tr("settings.plugins.requireSignatureNote"));
+        sigNote.setWrapText(true);
+        sigNote.setMaxWidth(440);
+        VBox sigBox = new VBox(2, pluginRequireSigCheck, sigNote);
+        row(p, Category.PLUGINS, market, sigBox,
+                "plugins signature signed verify registry security trust");
         Button browse = new Button(tr("settings.plugins.browse"));
         browse.setOnAction(e -> {
             if (onBrowsePlugins != null) {
@@ -945,6 +967,14 @@ public class SettingsWindow {
             cb.setSelected(config.getPluginStore().isEnabled(d.id()));
             cb.setDisable(!master);
             cb.selectedProperty().addListener((obs, was, now) -> {
+                if (loading) {
+                    return;
+                }
+                // Enabling arms code on the next launch — disclose capabilities + confirm. Disabling is free.
+                if (now && !confirmEnablePlugin(d)) {
+                    cb.setSelected(false); // user declined; revert (fires again with now=false → persists off)
+                    return;
+                }
                 config.getPluginStore().setEnabled(d.id(), now);
                 config.savePlugins();
             });
@@ -970,6 +1000,41 @@ public class SettingsWindow {
             }
             pluginListBox.getChildren().add(entry);
         }
+    }
+
+    /** Warns (with the host) when the registry URL isn't the bundled default — a phishing-vector guard. */
+    private void updateRegistryWarn() {
+        if (pluginRegistryWarn == null) {
+            return;
+        }
+        String url = config.getSettings().getPluginRegistryUrl();
+        boolean custom = url != null && !url.isBlank()
+                && !url.strip().equals(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
+        String host = "";
+        if (custom) {
+            try {
+                host = java.net.URI.create(url.strip()).getHost();
+            } catch (RuntimeException ignored) {
+                host = url.strip();
+            }
+        }
+        pluginRegistryWarn.setText(custom ? tr("settings.plugins.customRegistry", host == null ? "?" : host) : "");
+        pluginRegistryWarn.setVisible(custom);
+        pluginRegistryWarn.setManaged(custom);
+    }
+
+    /** Capability-disclosure confirm before enabling a plugin (mirrors the install gate). */
+    private boolean confirmEnablePlugin(com.editora.plugin.PluginDescriptor d) {
+        String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
+        String body = tr("dialog.plugins.enableBody", name,
+                d.manifest().version == null ? "" : d.manifest().version,
+                MainController.pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.plugins.enableTitle"));
+        confirm.setHeaderText(tr("dialog.plugins.enableHeader"));
+        confirm.getDialogPane().setMinWidth(480);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
     private VBox debugPage() {
@@ -1851,8 +1916,12 @@ public class SettingsWindow {
             refreshMermaidStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
             pluginCheck.setSelected(settings.isPluginSupport());
+            if (pluginRequireSigCheck != null) {
+                pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());
+            }
             if (pluginRegistryField != null) {
                 pluginRegistryField.setText(settings.getPluginRegistryUrl());
+                updateRegistryWarn();
             }
             refreshPluginList(); // re-read enabled state + reflect the master gate
             debugCheck.setSelected(settings.isDebugSupport());

@@ -55,7 +55,8 @@ public enum ConfigSchema {
             Map.entry(19, (Migration) ConfigMigrations::identity), // v19→20: + simpleMode (additive)
             Map.entry(20, (Migration) ConfigMigrations::identity), // v20→21: + gitBlameInline (additive)
             Map.entry(21, (Migration) ConfigMigrations::identity), // v21→22: + pluginSupport (additive)
-            Map.entry(22, (Migration) ConfigMigrations::identity))), // v22→23: + pluginRegistryUrl (additive)
+            Map.entry(22, (Migration) ConfigMigrations::identity), // v22→23: + pluginRegistryUrl (additive)
+            Map.entry(23, (Migration) ConfigMigrations::identity))), // v23→24: + pluginRequireSignature (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

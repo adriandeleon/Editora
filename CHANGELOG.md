@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Signed plugin registry (authenticity).** The registry `index.json` is verified against a **bundled
+  Ed25519 public key** via a detached signature (`index.json.sig`) before Editora trusts it, and **"Require
+  signed plugins"** (Settings → Plugins, default on) blocks installs from a registry that doesn't verify —
+  closing the registry-tampering / silent-malicious-update gap that SHA-256 alone can't. A non-default
+  registry must be signed with its own key or have the setting turned off. JDK-only (no dependency); sign
+  with `scripts/PluginSigningTool.java`. Signing proves *who* published — not a sandbox.
+- **Plugin security hardening (consent + integrity).** Enabling a plugin now shows a **capability
+  disclosure** first — whether it runs executable code, the exact external commands it declares, and any
+  keybindings it remaps — at every arming point (Browse install, install-from-file, and the per-plugin
+  enable checkbox). The registry index and plugin downloads are read with a **hard size cap** (a hostile
+  registry can't OOM the app), registry-entry fields are length-capped, and a **non-default registry URL**
+  is flagged with its host. (Consent/integrity, not a sandbox — plugins remain full-trust.)
 - **Plugin support** — extend Editora without forking it. A plugin is a folder under
   `<configDir>/plugins/<id>/` with a `plugin.json` manifest plus, optionally, a Java jar and asset dirs.
   Two flavors, usable together: a **Java SPI** (implement `com.editora.plugin.Plugin`; a `PluginContext`
