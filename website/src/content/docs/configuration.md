@@ -52,9 +52,12 @@ The live path to your settings file is shown in **About Editora** (it reflects
 
 ## Keybindings
 
-Editora ships an Emacs-style keymap (see [the reference](/keybindings)). User
-overrides go in `settings.toml` and layer on top of the defaults, so you only
-specify what you change.
+Editora ships several keymaps — **Emacs** (default), **CUA**, **Sublime Text**,
+**VS Code**, and **IntelliJ IDEA** — chosen in **Settings → Keymaps** (see [the
+reference](/keybindings) for the Emacs defaults). There you can also rebind any
+command with the built-in keybinding editor. Overrides are stored in
+`settings.toml` (the `keymap` name plus per-command overrides) and layer on top
+of the active keymap, so you only specify what you change.
 
 ## Snippets & dictionaries
 
