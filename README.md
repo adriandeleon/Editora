@@ -72,7 +72,7 @@ Emacs-style keymap or a fuzzy command palette.
   Markdown are checked in full. Toggle via "View: Toggle Spell Check"; choose a dictionary per file
   ("Spell Check: Set Language…", ships English en_US/en_GB, Spanish, and French). Pure-Java (Apache
   Lucene Hunspell).
-- **Code intelligence (LSP)** — language smarts via the Language Server Protocol, with **21 servers**
+- **Code intelligence (LSP)** _(Beta)_ — language smarts via the Language Server Protocol, with **21 servers**
   auto-detected on `PATH` (Java/JDT LS, TypeScript/JavaScript, Python/Pyright, Go, Rust, C/C++/clangd,
   C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML).
   Inline diagnostics + a Problems tool window (`M-8`) + minimap/scrollbar stripes, go-to-definition
@@ -86,7 +86,7 @@ Emacs-style keymap or a fuzzy command palette.
   (`java <file>`), a Python script (`python3`), or a shell script (`bash`); output streams into a Run
   tool window (`M-9`) with clickable stack traces, stdin, and per-file program arguments. Gated by the
   LSP feature.
-- **Debugging (DAP)** — a full debugger for **Java**, **Python** (debugpy), and **JavaScript/Node**
+- **Debugging (DAP)** _(Beta)_ — a full debugger for **Java**, **Python** (debugpy), and **JavaScript/Node**
   (vscode-js-debug): breakpoints (conditional / logpoints), step / resume / pause / run-to-cursor /
   jump-to-line, call stack, variables, watches and set-value, inline values and a value-hover popup, and
   an IntelliJ-style Debug tool window (`M-g d`). Off by default (*Settings → Debugging*); adapters are
@@ -136,7 +136,7 @@ Emacs-style keymap or a fuzzy command palette.
   `${1:default}`, mirrors, choices, variables, escapes). Snippets ship for all 21 highlighted languages
   (most from the MIT [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection);
   add your own in `~/.editora/snippets/<language>.json` (user snippets override bundled).
-- **File templates** — "New File From Template" (`C-c C-n`) creates a file (or a whole set of files) from
+- **File templates** _(Beta)_ — "New File From Template" (`C-c C-n`) creates a file (or a whole set of files) from
   a reusable template, prompting for any `${variables}` in a wizard and placing the caret at `${cursor}`.
   Bundled templates (Java class, HTML page / multi-file bundle, Markdown doc, Python script) plus your
   own in `~/.editora/templates/`.
@@ -166,7 +166,7 @@ Emacs-style keymap or a fuzzy command palette.
   edit/resolve/delete; `M-g n` jumps across files and notes export to JSON. Stored per project in
   `notes.json`. Separate from bookmarks — both coexist in the gutter. **Off by default** — turn it on
   under *Settings → Application → Enable Personal Notes*.
-- **Git** — uses your installed `git` (no bundled library). The status bar shows the current branch with
+- **Git** _(Beta)_ — uses your installed `git` (no bundled library). The status bar shows the current branch with
   ahead/behind counts (click to switch branches); the gutter draws change bars vs `HEAD` (added /
   modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
   stage, unstage, discard, **Stage All**, and a commit box. Palette/keys cover commit (`C-x g`), stage
@@ -177,16 +177,16 @@ Emacs-style keymap or a fuzzy command palette.
   (`M-g a`, GitLens-style) annotates the current line with "author, time ago • summary" (toggle in
   *Settings → Git*, off by default). **Stash** push / pop / apply / drop from the palette or the branch
   dropdown. All off the UI thread; hidden when not in a repo or when `git` isn't on `PATH`.
-- **Diff viewer & merge** — compare files in a dedicated tab: side-by-side or unified, with word-level
+- **Diff viewer & merge** _(Beta)_ — compare files in a dedicated tab: side-by-side or unified, with word-level
   intra-line highlights, prev/next-change navigation, apply-a-hunk / apply-all (undoable), live refresh,
   and patch export. Diff against `HEAD` (`C-x v =`), another commit, or any other file; a separate
   merge-conflict resolver accepts ours / theirs / both per conflict.
-- **HTTP client** — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
+- **HTTP client** _(Beta)_ — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
   Editora's **built-in** HTTP client; the response (status, headers, pretty-printed JSON body, timing/
   size) shows in an HTTP Client tool window (`M-0`). Supports `{{variable}}`/`@var` substitution,
   environment files (`http-client.env.json`) with a picker, run-whole-file, and saving the response. Off
   by default (*Settings → HTTP Client*).
-- **Remote files (SFTP)** — connect to a server over SSH/SFTP (*Remote: Connect to SFTP…*) and edit its
+- **Remote files (SFTP)** _(Beta)_ — connect to a server over SSH/SFTP (*Remote: Connect to SFTP…*) and edit its
   files as if they were local: the remote folder mounts in the Project tool window, and open/edit/save go
   straight over SFTP. Authenticates with your default `~/.ssh` keys, a chosen key file, or a password;
   saved connections (metadata only — never a password) reconnect via a picker. Features that need a local
@@ -198,9 +198,13 @@ Emacs-style keymap or a fuzzy command palette.
   right-click items, and status-bar segments; a **declarative manifest** adds keymap bindings, external
   commands, and `snippets/`/`templates/` dirs — no code. Loaded via a child class loader, so the same jar
   works in dev and in the packaged installers. **Off by default and full-trust** (no sandbox) — enable it,
-  and each plugin, in *Settings → Plugins*. **Install** by browsing a curated GitHub-hosted registry
-  (`index.json` over HTTPS; downloads are SHA-256-verified) or from a local `.zip`. See
-  [`docs/plugins.md`](docs/plugins.md), [`examples/example-plugin/`](examples/example-plugin/), and
+  and each plugin, in *Settings → Plugins*. **Install** by browsing a curated GitHub-hosted registry or from
+  a local `.zip`. Security: the registry `index.json` is verified against a bundled **Ed25519 signature**
+  (*Require signed plugins*, default on, blocks an unsigned/unverified registry); downloads are
+  **SHA-256-verified** over HTTPS with bounded reads; and a **capability-disclosure** confirm (does it run
+  code? which external commands? which keybindings?) is shown before any plugin is enabled. Signing proves
+  *who* published — not a sandbox. See [`docs/plugins.md`](docs/plugins.md),
+  [`examples/example-plugin/`](examples/example-plugin/), and
   [`examples/editora-plugins-registry/`](examples/editora-plugins-registry/).
 - **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Structure, File Information,
   Bookmarks, Personal Notes, Problems, Search Results, Run, Debug, HTTP Client) — plus any contributed by a

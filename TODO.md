@@ -3,13 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
-- [x] Plugin support + a plugin registry — extend Editora via a Java SPI or a declarative `plugin.json`
-      (commands, keybindings, tool windows, editor menu items, status-bar segments; snippets/templates).
-      Off by default, full-trust, loaded via a child `URLClassLoader` so the same jar works in dev and the
-      packaged installers. **Browse & install** from a curated GitHub registry (SHA-256-verified) or a local
-      `.zip`; **19 plugins published** (text/encode/hash/json-xml/slug/box, UUID-timestamp inserters,
+- [x] Plugin support + a signed plugin registry — extend Editora via a Java SPI or a declarative
+      `plugin.json` (commands, keybindings, tool windows, editor menu items, status-bar segments;
+      snippets/templates). Off by default, full-trust, loaded via a child `URLClassLoader` so the same jar
+      works in dev and the packaged installers. **Browse & install** from a curated GitHub registry or a
+      local `.zip`; **19 plugins published** (text/encode/hash/json-xml/slug/box, UUID-timestamp inserters,
       markdown-TOC, formatter, open-on-GitHub, reveal/terminal, scratchpad, regex-tester, color-picker,
-      word-count, calculator, task-runner, lorem-ipsum). See `docs/plugins.md`
+      word-count, calculator, task-runner, lorem-ipsum). **Security:** the index is verified against a
+      bundled Ed25519 signature (*Require signed plugins*, default on), downloads are SHA-256-verified over
+      HTTPS with bounded reads, and a capability-disclosure confirm is shown before enabling. See
+      `docs/plugins.md`
 - [x] Git history, blame & stash (IntelliJ/VSCode parity) — a **Git Log** tool window (`M-g h` / *Show File
       History*): browse commits, see a commit's files, double-click for a read-only diff, right-click to
       Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame** (`M-g a`,
@@ -159,9 +162,13 @@ A backlog of planned features and improvements. Unordered within each section.
   browse a curated GitHub-hosted `index.json`, install (download + SHA-256 verify + zip-slip-guarded unzip)
   or install from a local `.zip`; per-plugin Remove. **19 plugins published** in the
   [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) registry (which also
-  carries each plugin's source), with 18 worked examples under `examples/`. See `docs/plugins.md`.
-  *Deferred: sandboxing, hot reload, gutter-marker contributions, GitHub-API/per-repo discovery, signing
-  beyond SHA-256, auto-update.*
+  carries each plugin's source), with 18 worked examples under `examples/`. **Security:** the index is
+  verified against a bundled **Ed25519 signature** (`Settings.pluginRequireSignature`, default on, blocks an
+  unsigned/unverified registry; sign with `scripts/PluginSigningTool.java`); a **capability-disclosure
+  confirm** (jar? external commands? keybinding remaps?) runs before enabling at every arming point; reads
+  are size-bounded and a non-default registry host is flagged. See `docs/plugins.md`.
+  *Deferred: sandboxing, hot reload, gutter-marker contributions, GitHub-API/per-repo discovery,
+  per-plugin/TOFU signing, auto-update.*
 - [ ] External Tools support
 - [ ] MCP support
 - [ ] Headless support
