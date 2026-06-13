@@ -47,10 +47,19 @@ final class PreviewImageLoader {
     /** SVGs render at this device scale for crispness, then display at their logical size. */
     private static final double RASTER_SCALE = 2.0;
 
+    /**
+     * Strong reference to JSVG's logger. Badges often embed a logo as a nested SVG {@code <image>}, which
+     * JSVG can't decode-in-decode; it logs a WARNING (with a stack trace) per occurrence. The badge itself
+     * still renders, so we quiet that noise to SEVERE. The field must be {@code static final} (not a bare
+     * {@code Logger.getLogger(...)} call): {@code java.util.logging} holds only a <em>weak</em> reference to
+     * a logger, so without a strong ref of our own the logger is eventually GC'd, the SEVERE level is lost,
+     * and the warning leaks back through at the inherited level. (Mirrors {@code App.TM4E_LOG}/{@code LSP4J_LOG}.)
+     */
+    private static final java.util.logging.Logger JSVG_LOG =
+            java.util.logging.Logger.getLogger("com.github.weisj.jsvg");
+
     static {
-        // Badges often embed a logo as a nested SVG <image>, which JSVG can't decode-in-decode; it logs a
-        // WARNING (with a stack trace) per occurrence. The badge itself still renders, so quiet that noise.
-        java.util.logging.Logger.getLogger("com.github.weisj.jsvg").setLevel(java.util.logging.Level.SEVERE);
+        JSVG_LOG.setLevel(java.util.logging.Level.SEVERE);
     }
 
     /** Cap on cached decoded images. Each holds a GPU texture, so the cache is bounded (LRU) instead
