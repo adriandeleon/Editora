@@ -136,6 +136,18 @@ public class aot_build {
             cmd.add("--icon");
             cmd.add(icon);
         }
+        // Without these, a Windows MSI installs to Program Files but creates NO Start Menu entry,
+        // NO desktop shortcut, and NO install wizard — so it looks like "nothing installed". Add a
+        // real wizard (dir chooser) + a Start Menu group + a desktop shortcut. Linux .deb/.rpm
+        // likewise need --linux-shortcut for an application-menu entry. macOS DMG needs nothing
+        // (drag-to-Applications).
+        String t = type.toUpperCase(Locale.ROOT);
+        if (t.equals("MSI") || t.equals("EXE")) {
+            cmd.addAll(List.of("--win-menu", "--win-menu-group", appName,
+                    "--win-shortcut", "--win-dir-chooser"));
+        } else if (t.equals("DEB") || t.equals("RPM")) {
+            cmd.add("--linux-shortcut");
+        }
         System.out.println("[aot] wrapping installer: " + String.join(" ", cmd));
         Process p = new ProcessBuilder(cmd).inheritIO().start();
         int code = p.waitFor();
