@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Silenced a spurious LSP "Internal error" log.** Language servers that support pull diagnostics
+  (the HTML/CSS/JSON servers) send a `workspace/diagnostic/refresh` request; the client didn't implement it,
+  so lsp4j logged a SEVERE `UnsupportedOperationException` each time (visible in the debug log / dev console).
+  The client now acknowledges the request. Diagnostics were never actually affected — they already refresh on
+  each edit, on save, and when a server reports ready.
+
 - **Find/Replace highlights now stay in sync when you edit the buffer.** With the find bar open, editing the
   text left the match highlights painted at their old offsets (no longer aligned with the searched text).
   The bar now re-runs the search on each (debounced) edit and re-highlights at the new positions — without
