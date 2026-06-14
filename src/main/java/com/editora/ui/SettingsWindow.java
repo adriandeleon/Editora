@@ -119,6 +119,7 @@ public class SettingsWindow {
     private ComboBox<String> themeCombo;
     private ComboBox<String> editorThemeCombo;
     private Spinner<Integer> tabSizeSpinner;
+    private Spinner<Integer> fillColumnSpinner;
     private CheckBox columnRulerCheck;
     private CheckBox lineHighlightCheck;
     private CheckBox lineNumbersCheck;
@@ -481,6 +482,17 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setTabSize(now);
+            apply();
+        });
+
+        fillColumnSpinner = new Spinner<>(20, 200, com.editora.editor.Filler.DEFAULT_FILL_COLUMN);
+        fillColumnSpinner.setEditable(true);
+        fillColumnSpinner.setPrefWidth(90);
+        fillColumnSpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setFillColumn(now);
             apply();
         });
 
@@ -987,6 +999,12 @@ public class SettingsWindow {
                 indent,
                 labeled(tr("settings.tabSize"), tabSizeSpinner),
                 "tab size indent width spaces");
+        row(
+                p,
+                Category.EDITOR,
+                indent,
+                labeled(tr("settings.fillColumn"), fillColumnSpinner),
+                "fill column wrap paragraph reflow emacs m-q width");
         Label completion = section(p, tr("settings.section.completion"));
         row(p, Category.EDITOR, completion, autocompleteCheck, "autocomplete completion suggestions enable popup");
         HBox proseRow = new HBox(autocompleteProseCheck);
@@ -2297,6 +2315,7 @@ public class SettingsWindow {
             }
             editorThemeCombo.setValue(editorTheme);
             tabSizeSpinner.getValueFactory().setValue(settings.getTabSize());
+            fillColumnSpinner.getValueFactory().setValue(settings.getFillColumn());
             columnRulerCheck.setSelected(settings.isShowColumnRuler());
             lineHighlightCheck.setSelected(settings.isHighlightCurrentLine());
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());

@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 25;
+    public static final int SCHEMA_VERSION = 26;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -34,6 +34,9 @@ public class Settings {
     private boolean editorThemeUserSet;
 
     private int tabSize = 4;
+    /** Target column for the Emacs-style fill commands (M-q / fill-region); Emacs default. */
+    private int fillColumn = com.editora.editor.Filler.DEFAULT_FILL_COLUMN;
+
     private String keymap = "emacs";
     /** UI language code (e.g. {@code "es"}); empty = auto (system language if bundled, else English). */
     private String uiLanguage = "";
@@ -254,6 +257,14 @@ public class Settings {
 
     public void setTabSize(int tabSize) {
         this.tabSize = tabSize;
+    }
+
+    public int getFillColumn() {
+        return fillColumn < 1 ? com.editora.editor.Filler.DEFAULT_FILL_COLUMN : fillColumn;
+    }
+
+    public void setFillColumn(int fillColumn) {
+        this.fillColumn = fillColumn;
     }
 
     public String getKeymap() {

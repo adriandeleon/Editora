@@ -9569,6 +9569,72 @@ public class MainController {
         area.requestFocus();
     }
 
+    /** Emacs {@code fill-paragraph} (`M-q`): re-wrap the paragraph at the caret to the fill column. */
+    private void fillParagraph() {
+        applyFill((text, b) -> com.editora.editor.Filler.fillParagraph(
+                text, b.getFocusedArea().getCaretPosition(), fillColumn(), lineCommentFor(b)));
+    }
+
+    /** Emacs {@code fill-region}: re-wrap every paragraph in the selection (caret line if no selection). */
+    private void fillRegion() {
+        applyFill((text, b) -> {
+            CodeArea a = b.getFocusedArea();
+            int start = a.getSelection().getLength() > 0 ? a.getSelection().getStart() : a.getCaretPosition();
+            int end = a.getSelection().getLength() > 0 ? a.getSelection().getEnd() : a.getCaretPosition();
+            return com.editora.editor.Filler.fillRegion(text, start, end, fillColumn(), lineCommentFor(b));
+        });
+    }
+
+    /** Shared applier for the fill commands (guarded by {@link #activeEditable()}). */
+    private void applyFill(java.util.function.BiFunction<String, EditorBuffer, com.editora.editor.Filler.Edit> op) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        com.editora.editor.Filler.Edit edit = op.apply(area.getText(), buffer);
+        if (edit == null) {
+            return; // nothing to fill / already filled
+        }
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        area.requestFocus();
+    }
+
+    /** The active fill column (Settings), clamped to a sane minimum by {@code Settings.getFillColumn}. */
+    private int fillColumn() {
+        return config.getSettings().getFillColumn();
+    }
+
+    /** The buffer language's line-comment token (e.g. {@code "//"}), or {@code null} — for the fill prefix. */
+    private static String lineCommentFor(EditorBuffer buffer) {
+        String line =
+                com.editora.editor.Commenter.styleFor(buffer.getLanguage()).line();
+        return line == null || line.isBlank() ? null : line;
+    }
+
+    /** Emacs {@code set-fill-column} (`C-x f`): prompt for the fill column, persist it. */
+    private void setFillColumn() {
+        promptText(
+                tr("dialog.fillColumn.title"), tr("dialog.fillColumn.label"), Integer.toString(fillColumn()), value -> {
+                    try {
+                        int col = Integer.parseInt(value.strip());
+                        if (col < 1) {
+                            setStatus(tr("status.fillColumn.invalid"));
+                            return;
+                        }
+                        config.getSettings().setFillColumn(col);
+                        config.save();
+                        setStatus(tr("status.fillColumn.set", col));
+                    } catch (NumberFormatException e) {
+                        setStatus(tr("status.fillColumn.invalid"));
+                    }
+                });
+    }
+
     /** Selects the whole document in the active area (no edit, so it works in read-only/view mode too). */
     private void selectAll() {
         CodeArea area = activeArea();
@@ -9990,6 +10056,10 @@ public class MainController {
         registry.register(Command.of("edit.duplicateLine", () -> lineOp(com.editora.editor.LineOps::duplicateLine)));
         registry.register(Command.of("edit.moveLineUp", () -> lineOp(com.editora.editor.LineOps::moveLineUp)));
         registry.register(Command.of("edit.moveLineDown", () -> lineOp(com.editora.editor.LineOps::moveLineDown)));
+        // Emacs fill commands: re-wrap paragraphs to the fill column (M-q / fill-region / set-fill-column).
+        registry.register(Command.of("edit.fillParagraph", this::fillParagraph));
+        registry.register(Command.of("edit.fillRegion", this::fillRegion));
+        registry.register(Command.of("edit.setFillColumn", this::setFillColumn));
         // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
         // a second press toggles to the true line start (column 0).
         registry.register(Command.of(

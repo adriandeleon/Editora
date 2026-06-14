@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Emacs fill commands.** Re-wrap paragraphs to a fill column: **Fill Paragraph** (`M-q`) reflows the
+  paragraph at the caret, **Fill Region** reflows every paragraph in the selection, and **Set Fill Column**
+  (`C-x f`) sets the target width (default 70, also in Settings → Editor). Filling preserves the paragraph's
+  indentation and an adaptive fill prefix — line comments (`//`, `#`, `;`, …), Markdown blockquotes (`>`),
+  and Javadoc (`*`) — so code comments and quoted text wrap correctly; a word longer than the column is
+  never broken. (Auto Fill mode and justification are deferred.)
+
 ### Fixed
 
 - **LSP completion now triggers on each server's own trigger characters** (e.g. `<` for HTML, `:` / space
