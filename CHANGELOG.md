@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Find in Files toolbar icon now toggles the panel** — one click opens it (focusing the query field),
+  another click closes it (matching `C-s`'s in-file find and the `M-6` tool-window toggle). `C-S-f` toggles
+  too, since it shares the command.
+
 ### Fixed
 
 - **Find/Replace highlights now stay in sync when you edit the buffer.** With the find bar open, editing the
