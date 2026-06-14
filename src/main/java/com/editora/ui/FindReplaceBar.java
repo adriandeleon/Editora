@@ -20,6 +20,7 @@ import javafx.util.Duration;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.SearchMatcher;
 import org.fxmisc.richtext.CodeArea;
+import org.reactfx.Subscription;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -41,6 +42,12 @@ public class FindReplaceBar extends HBox {
     private final Label countLabel = new Label();
 
     private final PauseTransition debounce = new PauseTransition(Duration.millis(150));
+    /** Debounced re-highlight after the buffer is edited while the bar is open (separate from the query
+     *  debounce so an edit re-highlights without moving the caret/selection). */
+    private final PauseTransition editDebounce = new PauseTransition(Duration.millis(150));
+    /** Subscription to the searched buffer's text changes (live while the bar is shown); null when hidden. */
+    private Subscription textSub;
+
     private List<int[]> matches = List.of();
     private int activeIndex = -1;
     private int searchAnchor; // caret offset when the search started — incremental jumps anchor here
@@ -85,6 +92,9 @@ public class FindReplaceBar extends HBox {
         regex.selectedProperty().addListener((o, a, b) -> recompute());
         wholeWord.selectedProperty().addListener((o, a, b) -> recompute());
         debounce.setOnFinished(e -> recompute());
+        // A buffer edit while the bar is open re-runs the search so the highlights track the new text,
+        // but without selecting/scrolling to a match (that would fight the user's typing).
+        editDebounce.setOnFinished(e -> recomputeHighlightsOnly());
 
         getChildren()
                 .addAll(
@@ -108,6 +118,7 @@ public class FindReplaceBar extends HBox {
         setManaged(true);
         CodeArea area = area();
         searchAnchor = area == null ? 0 : area.getCaretPosition();
+        subscribeToEdits(area); // keep the highlights in sync as the buffer is edited
         findField.requestFocus();
         findField.selectAll();
         recompute();
@@ -119,6 +130,8 @@ public class FindReplaceBar extends HBox {
     public void hideBar() {
         setVisible(false);
         setManaged(false);
+        unsubscribeFromEdits();
+        editDebounce.stop();
         EditorBuffer buffer = activeBuffer.get();
         if (buffer != null) {
             buffer.clearSearchMatches();
@@ -126,6 +139,25 @@ public class FindReplaceBar extends HBox {
         }
         matches = List.of();
         activeIndex = -1;
+    }
+
+    /** (Re)subscribes to {@code area}'s text changes so edits re-run the search (debounced). */
+    private void subscribeToEdits(CodeArea area) {
+        unsubscribeFromEdits();
+        if (area != null) {
+            textSub = area.plainTextChanges().subscribe(c -> {
+                if (isVisible() && !findField.getText().isEmpty()) {
+                    editDebounce.playFromStart();
+                }
+            });
+        }
+    }
+
+    private void unsubscribeFromEdits() {
+        if (textSub != null) {
+            textSub.unsubscribe();
+            textSub = null;
+        }
     }
 
     public boolean isShown() {
@@ -173,6 +205,40 @@ public class FindReplaceBar extends HBox {
         }
         activeIndex = SearchMatcher.nextIndex(matches, searchAnchor, true);
         applyActive(buffer, area, false);
+    }
+
+    /**
+     * Re-runs the search against the (just-edited) buffer and re-highlights all matches at their new
+     * offsets, <em>without</em> selecting/scrolling to a match — so the highlights track edits but don't
+     * fight the user's typing. Fired (debounced) from the buffer's text-change subscription.
+     */
+    private void recomputeHighlightsOnly() {
+        EditorBuffer buffer = activeBuffer.get();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
+        String query = findField.getText();
+        if (area == null || query.isEmpty()) {
+            return;
+        }
+        matches = computeMatches(area, query);
+        if (matches.isEmpty()) {
+            activeIndex = -1;
+            buffer.clearSearchMatches();
+            countLabel.setText("");
+            return;
+        }
+        // Keep the "active" (boxed) match near the caret, but never move the caret/selection here.
+        activeIndex = SearchMatcher.nextIndex(matches, area.getCaretPosition(), true);
+        buffer.setSearchMatches(matches, activeIndex);
+        countLabel.setText(tr("find.count", activeIndex + 1, matches.size()));
+    }
+
+    /** The current match set for {@code query} (empty on an invalid regex; no UI side effects). */
+    private List<int[]> computeMatches(CodeArea area, String query) {
+        if (regex.isSelected() && SearchMatcher.regexError(query) != null) {
+            return List.of();
+        }
+        return SearchMatcher.matches(
+                area.getText(), query, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
     }
 
     /** Cycles to the next match (a repeated C-s). */
