@@ -1,6 +1,6 @@
 ---
 title: "HTML live preview, with no browser engine"
-description: How Editora previews HTML in a real browser: a loopback HTTP server, live-as-you-type reload, and a long-poll trick — without bundling a WebView.
+description: "How Editora previews HTML in a real browser: a loopback HTTP server, live-as-you-type reload, and a long-poll trick — without bundling a WebView."
 date: 2026-06-18
 author: Adrian De Leon
 tags: [web, feature]
