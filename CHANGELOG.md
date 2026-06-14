@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Command descriptions in the palette.** Every command now has a one-line description, shown as a detail
+  line between the results list and the navigation hint in the command palette (`M-x`) — it updates live as
+  you arrow through the list, so you can tell what an unfamiliar command does before running it. All ~231
+  descriptions are fully localized in every bundled language (en/it/es/fr/pt/de); a build test guarantees
+  every command has one. The website's Commands page reads the same descriptions, so the app and the site
+  never drift.
+
 - **Configurable shortcuts (keybinding editor).** Settings → Keymaps now lists every command with its
   current shortcut and a filter box: **Record** a new chord (multi-key sequences like `C-x C-s` are
   captured live), **Reset** one command to the keymap default, or **Reset all shortcuts**. Rebinding
