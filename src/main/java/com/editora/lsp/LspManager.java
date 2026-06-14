@@ -333,6 +333,61 @@ public final class LspManager {
         });
     }
 
+    /**
+     * The completion <em>trigger characters</em> {@code file}'s server advertised (e.g. {@code .} for Java,
+     * {@code <} for HTML), or empty if the server isn't ready / advertises none. The editor fires LSP
+     * completion when one of these is typed — so HTML/CSS/etc. complete like VS Code, not just on a word
+     * prefix (see {@code EditorBuffer.setLspTriggerChars}).
+     */
+    public java.util.Set<Character> triggerCharacters(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s == null ? java.util.Set.of() : triggerCharsOf(s.capabilities());
+    }
+
+    /** Pure extraction of completion trigger characters from a server's capabilities (null-safe). */
+    static java.util.Set<Character> triggerCharsOf(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null || caps.getCompletionProvider() == null) {
+            return java.util.Set.of();
+        }
+        List<String> triggers = caps.getCompletionProvider().getTriggerCharacters();
+        if (triggers == null) {
+            return java.util.Set.of();
+        }
+        java.util.Set<Character> out = new java.util.HashSet<>();
+        for (String t : triggers) {
+            if (t != null && !t.isEmpty()) {
+                out.add(t.charAt(0));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Requests <em>pull</em> diagnostics ({@code textDocument/diagnostic}) for {@code file} and routes the
+     * result through the same diagnostics callback as pushed {@code publishDiagnostics}. A no-op unless the
+     * file's server advertises a {@code diagnosticProvider} (so push-only servers like jdtls/pyright/tsserver
+     * are untouched). An "unchanged" report leaves the current diagnostics in place.
+     */
+    public void pullDiagnostics(Path file) {
+        if (file == null) {
+            return;
+        }
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || s.capabilities() == null || s.capabilities().getDiagnosticProvider() == null) {
+            return;
+        }
+        s.diagnostic(uri(file)).whenComplete((report, error) -> {
+            if (error != null) {
+                return;
+            }
+            List<LspDiagnostic> mapped = DiagnosticMapper.mapReport(report);
+            if (mapped == null) {
+                return; // unchanged report — keep what's already shown
+            }
+            Platform.runLater(() -> onDiagnostics.accept(file, mapped));
+        });
+    }
+
     /** Shuts down every running server (best-effort) and clears all routing state. */
     public void shutdownAll() {
         sessionByDocUri.clear();

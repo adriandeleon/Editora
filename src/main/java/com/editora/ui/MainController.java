@@ -3457,8 +3457,14 @@ public class MainController {
                 lspManager.openDocument(path, lspRootFor(buffer), lang, buffer.text());
             }
             buffer.setLspActive(true);
+            // Push the server's completion trigger characters + request initial pull diagnostics. Both are
+            // no-ops until the server's initialize completes (then onLspServerStatus "ready" refreshes them),
+            // and effective immediately when the server for this root is already running (a 2nd file).
+            buffer.setLspTriggerChars(lspManager.triggerCharacters(path));
+            lspManager.pullDiagnostics(path);
         } else {
             buffer.setLspActive(false);
+            buffer.setLspTriggerChars(java.util.Set.of());
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
                 lspProblems.remove(path);
@@ -3577,6 +3583,18 @@ public class MainController {
             if (t.contains("ready") || t.contains("error")) {
                 statusBar.setLspLoading(false); // server finished starting (or failed)
             }
+            if (t.contains("ready")) {
+                // A server just finished initializing — its capabilities are now known. Push completion
+                // trigger characters to every open managed buffer and pull initial diagnostics (the
+                // pull-model servers don't publish until asked).
+                for (Tab tab : tabPane.getTabs()) {
+                    EditorBuffer b = bufferOf(tab);
+                    if (b != null && b.getPath() != null && lspManager.isManaged(b.getPath())) {
+                        b.setLspTriggerChars(lspManager.triggerCharacters(b.getPath()));
+                        lspManager.pullDiagnostics(b.getPath());
+                    }
+                }
+            }
         }
     }
 
@@ -3608,10 +3626,11 @@ public class MainController {
         setStatus(tr("status.lsp.restarted"));
     }
 
-    /** Notifies the server of a save (didSave) for a managed file. */
+    /** Notifies the server of a save (didSave) for a managed file + refreshes pull-model diagnostics. */
     private void notifyLspSaved(EditorBuffer buffer) {
         if (buffer != null && buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
             lspManager.saveDocument(buffer.getPath());
+            lspManager.pullDiagnostics(buffer.getPath()); // no-op for push-only servers
         }
     }
 
@@ -5708,6 +5727,12 @@ public class MainController {
         buffer.setLspChangeListener(text -> {
             if (buffer.getPath() != null) {
                 lspManager.changeDocument(buffer.getPath(), text);
+            }
+        });
+        // Pull-model diagnostics (fired on the same debounce as didChange; no-op for push-only servers).
+        buffer.setLspDiagnosticsRequester(() -> {
+            if (buffer.getPath() != null) {
+                lspManager.pullDiagnostics(buffer.getPath());
             }
         });
         buffer.setLspCompletionProvider((pos, cb) -> {

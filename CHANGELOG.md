@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **LSP completion now triggers on each server's own trigger characters** (e.g. `<` for HTML, `:` / space
+  for CSS), not just on `.` or a 2-character word prefix. This makes HTML/CSS/JSON/YAML autocomplete behave
+  like VS Code — typing `<` in an HTML file now pops up tag completions. The trigger set is read from the
+  server's advertised capabilities, so every language server gets its correct triggers.
+- **LSP pull diagnostics** (`textDocument/diagnostic`, LSP 3.17) are now supported. Servers that deliver
+  diagnostics on request rather than by pushing `publishDiagnostics` — vscode-html/css/json and others — now
+  surface their warnings/errors as squiggles and in the Problems panel. Push-only servers (jdtls, Pyright,
+  tsserver) are unaffected.
+
 ### Added
 
 - **HTML Live Preview.** A floating browser-globe button now appears at the top-right of any `.html`/`.htm`/

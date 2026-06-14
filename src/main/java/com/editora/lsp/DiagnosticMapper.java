@@ -13,6 +13,21 @@ public final class DiagnosticMapper {
 
     private DiagnosticMapper() {}
 
+    /**
+     * Maps a pull-diagnostics report ({@code textDocument/diagnostic} result) to editor diagnostics, or
+     * {@code null} for an <em>unchanged</em> report (the caller should keep the file's current diagnostics).
+     */
+    public static List<LspDiagnostic> mapReport(org.eclipse.lsp4j.DocumentDiagnosticReport report) {
+        if (report == null) {
+            return List.of();
+        }
+        var full = report.getRelatedFullDocumentDiagnosticReport();
+        if (full == null) {
+            return null; // "unchanged" report → nothing to apply; leave the existing diagnostics in place
+        }
+        return map(full.getItems());
+    }
+
     /** Maps a server's diagnostic list (may be null) to editor diagnostics, skipping malformed entries. */
     public static List<LspDiagnostic> map(List<Diagnostic> diagnostics) {
         List<LspDiagnostic> out = new ArrayList<>();
