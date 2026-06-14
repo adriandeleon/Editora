@@ -219,3 +219,13 @@ Apache MINA SSHD (org.apache.sshd: sshd-osgi, sshd-sftp)
     Apache License, Version 2.0.
     https://mina.apache.org/sshd-project/
     https://www.apache.org/licenses/LICENSE-2.0
+
+Simple Icons (browser glyphs)
+    The Chrome, Firefox, and Microsoft Edge glyphs in the HTML Live Preview
+    browser picker (com.editora.ui.Icons) are the single-path SVG logos from the
+    Simple Icons collection, released under CC0 1.0 Universal (public domain).
+    The Safari glyph is a generic compass (Material Design). The brand logos are
+    trademarks of their respective owners and are used here only to identify the
+    browser a preview opens in.
+    https://github.com/simple-icons/simple-icons
+    https://creativecommons.org/publicdomain/zero/1.0/
