@@ -1,6 +1,7 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import { getCollection } from "astro:content";
+import { groupedFeatures } from "../lib/features";
 import { version, repo } from "../lib/editora";
 import { whatsNew } from "../lib/whatsnew";
 
@@ -36,180 +37,7 @@ const fmtDate = (d: Date) =>
     timeZone: "UTC",
   });
 
-const featureGroups = [
-  {
-    title: "Keyboard & commands",
-    cards: [
-      {
-        title: "Command-driven core",
-        body: "Hunting through menus? Every action is a registered <code>Command</code> — bound to a chord or one <kbd>M-x</kbd> search away. 200+ commands, nothing buried.",
-      },
-      {
-        title: "Keymaps your way",
-        body: "Pick <strong>Emacs</strong>, <strong>CUA</strong>, <strong>Sublime Text</strong>, <strong>VS Code</strong>, or <strong>IntelliJ IDEA</strong> — switch live, no restart. Or rebind any command yourself in the built-in keybinding editor (multi-key chords like <kbd>C-x C-s</kbd> supported).",
-      },
-      {
-        title: "Jump-to popups",
-        body: "Lost in a big project? Fuzzy-jump to recent files, symbols, open tabs, and tool windows — plus an Emacs <code>find-file</code>-style path finder.",
-      },
-      {
-        title: "Multiple cursors",
-        body: "Add a caret at the next occurrence or above/below, or <kbd>Alt</kbd>-drag a column/box selection — edit many places at once, VS Code-style.",
-      },
-    ],
-  },
-  {
-    title: "Editing",
-    cards: [
-      {
-        title: "Snippets",
-        body: "Retyping the same boilerplate? Expand VS Code / TextMate templates with tab stops, mirrors, choices, and variables — a prefix + <kbd>Tab</kbd>. Ships for all 21 languages.",
-      },
-      {
-        title: "Smart indentation",
-        body: "Per-language auto-indent on <kbd>Enter</kbd> (block openers, matching-pair stanzas, closer re-alignment), plus smart backspace that clears a whole indent level in one press.",
-      },
-      {
-        title: "Auto-close & bracket matching",
-        body: "Typing <code>([{</code> or quotes inserts the closer, type-over to skip, wrap a selection, and Backspace clears an empty pair — and the bracket beside the caret is highlighted with its match.",
-      },
-      {
-        title: "Comment toggling",
-        body: "<kbd>M-;</kbd> comments or uncomments the line or selection using the language's syntax (<code>//</code>, <code>#</code>, <code>&lt;!-- --&gt;</code>, <code>/* */</code>, <code>--</code>, …).",
-      },
-      {
-        title: "Spell checking",
-        body: "Red wavy underlines with right-click suggestions, Add-to-Dictionary, and Ignore — full text for prose, comments & strings for code. Pure-Java Hunspell; English, Spanish, French.",
-      },
-    ],
-  },
-  {
-    title: "Code intelligence",
-    cards: [
-      {
-        title: "Syntax highlighting",
-        body: "TextMate grammars (via tm4e) for 21 languages: Java, Python, Rust, Go, Kotlin, C/C++, C#, Ruby, SQL, Markdown, and more.",
-      },
-      {
-        title: "Language servers (LSP)",
-        beta: true,
-        body: "Go-to-definition, find references, hover docs, diagnostics, and completions via 20+ language servers (Java, TypeScript, Python, Go, Rust, C/C++, and more) — auto-detected, never bundled.",
-      },
-      {
-        title: "Autocomplete",
-        body: "As-you-type completion — a popup for code (LSP + snippets) and inline ghost text for prose. Trigger with <kbd>C-M-i</kbd> / <kbd>M-/</kbd>.",
-      },
-    ],
-  },
-  {
-    title: "Run & debug",
-    cards: [
-      {
-        title: "Run files",
-        body: "Run a Java compact source file, Python, or shell script from a gutter ▶ — output and <code>stdin</code> in the Run console, with clickable stack traces and per-file arguments.",
-      },
-      {
-        title: "Debugging (DAP)",
-        beta: true,
-        body: "Full debugging for Java, Python, and JavaScript: breakpoints, step in/over/out, watches, set-value, run-to-cursor, inline values, and an interactive console.",
-      },
-      {
-        title: "HTTP client",
-        beta: true,
-        body: "Run <code>.http</code> / <code>.rest</code> requests from a gutter ▶ — environments, variables, and a formatted response view. Built on the JDK HTTP client.",
-      },
-    ],
-  },
-  {
-    title: "Git & diff",
-    cards: [
-      {
-        title: "Git integration",
-        beta: true,
-        body: "Native Git: status-bar branch, gutter change bars vs HEAD, a Commit tool window, fetch / pull / push + branches — plus a history/log view, inline blame, and stash.",
-      },
-      {
-        title: "Diff & merge",
-        beta: true,
-        body: "Side-by-side and unified diff (vs HEAD, a commit, or another file) with word-level highlights and apply-hunk arrows — plus a merge-conflict resolver.",
-      },
-    ],
-  },
-  {
-    title: "Docs & diagrams",
-    cards: [
-      {
-        title: "Markdown preview",
-        body: "IntelliJ-style 3-mode view (Editor / Split / Preview), rendered natively with CommonMark + GFM. GitHub-style output: task-list checkboxes, code pills, and local/remote images. Live and theme-matched.",
-      },
-      {
-        title: "Mermaid diagrams",
-        body: "Render Mermaid diagrams inline in Markdown and in standalone <code>.mmd</code> files, with live linting and export to SVG / PNG / PDF.",
-      },
-      {
-        title: "Export to PDF & print",
-        body: "Export code or the Markdown preview to a syntax-highlighted PDF, or print with a preview — light-themed and generated off-thread.",
-      },
-      {
-        title: "HTML live preview",
-        beta: true,
-        body: "Click the globe on any HTML file to open it in a detected browser (Safari, Chrome, Firefox, Edge…), served over a loopback web server with live-as-you-type reload — sibling CSS, JS, and images included.",
-      },
-    ],
-  },
-  {
-    title: "Workspace & files",
-    cards: [
-      {
-        title: "Projects",
-        body: "VS Code single-folder workspaces: a root folder plus its own saved session (open files, layout, folds), shown as a filterable file tree.",
-      },
-      {
-        title: "Bookmarks & notes",
-        body: "Line bookmarks (gutter markers, cross-file jump, per-project), plus Personal Notes attached to a word/line/range — stored outside the file, surviving renames, with Markdown bodies.",
-      },
-      {
-        title: "Find in files",
-        body: "Project-wide search and replace with a results panel, plus AceJump to leap the caret to any visible spot by typing a label.",
-      },
-      {
-        title: "File templates",
-        beta: true,
-        body: "New File From Template — single- or multi-file scaffolds with interactive placeholders (author, date, file name, …).",
-      },
-      {
-        title: "Read-only / View mode",
-        body: "Toggle a buffer read-only to browse without editing; pager-style <kbd>Space</kbd>/<kbd>Backspace</kbd> paging and a Word-style View Mode banner.",
-      },
-      {
-        title: "Remote files (SFTP)",
-        beta: true,
-        body: "Browse, edit, search, and save files on a remote host over SSH/SFTP — the project tree, search, bookmarks, and notes all work over the wire.",
-      },
-    ],
-  },
-  {
-    title: "Customization & extensibility",
-    cards: [
-      {
-        title: "Themes & fonts",
-        body: "Six editor themes (Primer, Nord, Cupertino, Dracula, Islands — light &amp; dark) that follow the app theme, plus five bundled monospace fonts — no install needed.",
-      },
-      {
-        title: "Plugins",
-        body: 'Extend the editor with commands, tool windows, and integrations — install from a built-in registry of <a href="/plugins">19 plugins</a> or write your own (Java or a simple manifest).',
-      },
-      {
-        title: "Simple UI mode",
-        body: "One toggle strips the editor to the essentials — hiding the extra toolbar groups, tool-window stripe, breadcrumb, gutter, and minimap for a calm, minimal surface.",
-      },
-      {
-        title: "Localized UI",
-        body: "The whole interface is translated — English, Italian, Spanish, French, Portuguese, and German — selectable in Settings.",
-      },
-    ],
-  },
-];
+const featureGroups = await groupedFeatures();
 
 const perfStats = [
   {
@@ -352,14 +180,14 @@ const platforms = [
           <div class="feature-group">
             <h3 class="feature-group-title">{g.title}</h3>
             <div class="grid">
-              {g.cards.map((f) => (
-                <article class="card">
+              {g.items.map((f) => (
+                <a class="card" href={`/features/${f.id}`}>
                   <h4>
-                    {f.title}
-                    {f.beta && <span class="beta-pill">Beta</span>}
+                    {f.data.title}
+                    {f.data.beta && <span class="beta-pill">Beta</span>}
                   </h4>
-                  <p set:html={f.body} />
-                </article>
+                  <p set:html={f.data.summary} />
+                </a>
               ))}
             </div>
           </div>
@@ -833,15 +661,34 @@ const platforms = [
   }
 
   .card {
+    display: block;
     background: var(--bg-soft);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 1.25rem;
+    color: inherit;
+    transition:
+      border-color 0.15s ease,
+      transform 0.05s ease;
+  }
+
+  .card:hover {
+    text-decoration: none;
+    border-color: var(--accent);
   }
 
   .card h4 {
     margin: 0 0 0.5rem;
     font-size: 1.05rem;
+    color: var(--text);
+  }
+
+  .card p {
+    color: var(--muted);
+  }
+
+  .card:hover h4 {
+    color: var(--accent);
   }
 
   .perf {

@@ -1,0 +1,131 @@
+---
+import { getCollection, render } from "astro:content";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import Layout from "../../layouts/Layout.astro";
+import { groupedFeatures } from "../../lib/features";
+
+export async function getStaticPaths() {
+  const features = await getCollection("features");
+  return features.map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+
+// Screenshot: drop one at public/screenshots/features/<slug>.<ext> and it shows.
+const exts = ["png", "jpg", "jpeg", "webp", "gif", "avif"];
+const shot = exts
+  .map((e) => `screenshots/features/${entry.id}.${e}`)
+  .find((p) => existsSync(resolve("public", p)));
+
+// Sibling features in the same group, for "Related".
+const groups = await groupedFeatures();
+const group = groups.find((g) => g.items.some((f) => f.id === entry.id));
+const related = (group?.items ?? []).filter((f) => f.id !== entry.id).slice(0, 6);
+---
+
+<Layout
+  title={`${entry.data.title} — Editora`}
+  description={entry.data.summary.replace(/<[^>]+>/g, "")}
+>
+  <main class="doc feature">
+    <p class="back"><a href="/#features">← All features</a></p>
+    <h1>
+      {entry.data.title}
+      {entry.data.beta && <span class="beta-pill">Beta</span>}
+    </h1>
+    <p class="summary" set:html={entry.data.summary} />
+
+    {
+      shot ? (
+        <figure class="shot">
+          <img src={`/${shot}`} alt={`${entry.data.title} in Editora`} />
+        </figure>
+      ) : (
+        <div class="shot-placeholder" aria-hidden="true">
+          <span>Screenshot coming soon</span>
+        </div>
+      )
+    }
+
+    <Content />
+
+    {
+      related.length > 0 && (
+        <section class="related">
+          <h2>More in {group?.title}</h2>
+          <ul>
+            {related.map((f) => (
+              <li>
+                <a href={`/features/${f.id}`}>{f.data.title}</a>
+                {f.data.beta && <span class="beta-pill">Beta</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+  </main>
+</Layout>
+
+<style>
+  .back {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+  }
+  .summary {
+    font-size: 1.15rem;
+    color: var(--muted);
+    margin: 0 0 2rem;
+  }
+  .shot {
+    margin: 0 0 2.5rem;
+  }
+  .shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .shot-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16 / 9;
+    margin: 0 0 2.5rem;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    color: var(--faint);
+    font-size: 0.95rem;
+  }
+  .related {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .related h2 {
+    font-size: 1.1rem;
+    margin: 0 0 0.75rem;
+  }
+  .related ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+  }
+  .related li {
+    display: flex;
+    align-items: center;
+  }
+  .related .beta-pill {
+    margin-left: 0.35rem;
+  }
+</style>

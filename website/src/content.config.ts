@@ -37,4 +37,16 @@ const blog = defineCollection({
   }),
 });
 
-export const collections = { docs, news, blog };
+// One page per feature — drives both the home grid and /features/<slug>.
+const features = defineCollection({
+  loader: glob({ pattern: "**/*.md", base: "./src/content/features" }),
+  schema: z.object({
+    title: z.string(),
+    group: z.string(),
+    order: z.number().default(100),
+    beta: z.boolean().default(false),
+    summary: z.string(), // HTML — the card body on the home page
+  }),
+});
+
+export const collections = { docs, news, blog, features };
