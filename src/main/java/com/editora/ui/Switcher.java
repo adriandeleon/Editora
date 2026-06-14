@@ -86,6 +86,8 @@ public class Switcher {
                 if (dirty) {
                     label.getStyleClass().add("dirty-name"); // amber/italic, like a dirty tab
                 }
+                // File-type glyph for real files; a non-buffer tab (Welcome) gets none.
+                label.setGraphic(buffer != null ? FileIcons.forFileName(name) : null);
                 setGraphic(label);
                 setText(null);
             }

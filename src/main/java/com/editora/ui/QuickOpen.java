@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -45,6 +46,8 @@ public class QuickOpen<T> {
     private final Consumer<T> onChoose;
     /** Optional per-item CSS class applied to the row's title label (e.g. "dirty-name"); null = none. */
     private Function<T, String> itemStyleClass;
+
+    private Function<T, Node> itemIcon;
 
     /** Fixed list-cell height; lets the result list hug its row count. */
     private static final double CELL_HEIGHT = 26;
@@ -102,6 +105,11 @@ public class QuickOpen<T> {
     /** Sets a per-item CSS class applied to the row's title label (e.g. "dirty-name" for unsaved files). */
     public void setItemStyleClass(Function<T, String> itemStyleClass) {
         this.itemStyleClass = itemStyleClass;
+    }
+
+    /** Sets a per-item leading icon shown on the row's title label (e.g. a file-type glyph). */
+    public void setItemIcon(Function<T, Node> itemIcon) {
+        this.itemIcon = itemIcon;
     }
 
     /** Injects the shared overlay host used to show the picker card. */
@@ -295,6 +303,7 @@ public class QuickOpen<T> {
                 return;
             }
             title.setText(label.apply(item));
+            title.setGraphic(itemIcon == null ? null : itemIcon.apply(item));
             if (appliedClass != null) {
                 title.getStyleClass().remove(appliedClass);
             }

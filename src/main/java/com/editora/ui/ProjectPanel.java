@@ -573,7 +573,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 label = name == null ? item.toString() : name.toString();
             }
             setText(dirty ? "• " + label : label);
-            setGraphic(isDir ? Icons.project() : Icons.fileSheet());
+            Path fileName = item.getFileName();
+            setGraphic(isDir ? Icons.project() : FileIcons.forFileName(fileName == null ? label : fileName.toString()));
             setContextMenu(isRoot ? null : contextMenuFor(getTreeItem(), isDir));
         }
 

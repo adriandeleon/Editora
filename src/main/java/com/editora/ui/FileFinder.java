@@ -359,7 +359,13 @@ public class FileFinder {
             }
             boolean dir = Files.isDirectory(item);
             label.setText(item.getFileName() + (dir ? SEP : ""));
-            box.getChildren().setAll(dir ? Icons.project() : Icons.fileSheet(), label);
+            Path fileName = item.getFileName();
+            box.getChildren()
+                    .setAll(
+                            dir
+                                    ? Icons.project()
+                                    : FileIcons.forFileName(fileName == null ? item.toString() : fileName.toString()),
+                            label);
             setGraphic(box);
         }
     }

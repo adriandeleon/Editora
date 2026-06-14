@@ -220,12 +220,22 @@ Apache MINA SSHD (org.apache.sshd: sshd-osgi, sshd-sftp)
     https://mina.apache.org/sshd-project/
     https://www.apache.org/licenses/LICENSE-2.0
 
-Simple Icons (browser glyphs)
+Simple Icons (browser + file-type glyphs)
     The Chrome, Firefox, and Microsoft Edge glyphs in the HTML Live Preview
-    browser picker (com.editora.ui.Icons) are the single-path SVG logos from the
-    Simple Icons collection, released under CC0 1.0 Universal (public domain).
-    The Safari glyph is a generic compass (Material Design). The brand logos are
+    browser picker (com.editora.ui.Icons), and the per-language file-type glyphs
+    in com.editora.ui.FileIcons (Java, Python, JavaScript, TypeScript, Go, PHP,
+    Ruby, C, C++, C#, Kotlin, HTML5, CSS, Markdown, YAML, Bash, Docker, Terraform,
+    Mermaid, …), are the single-path SVG logos from the Simple Icons collection,
+    released under CC0 1.0 Universal (public domain). The brand logos are
     trademarks of their respective owners and are used here only to identify the
-    browser a preview opens in.
+    file type / browser. They are recolored monochrome to match the editor theme.
     https://github.com/simple-icons/simple-icons
     https://creativecommons.org/publicdomain/zero/1.0/
+
+Material Design Icons (category + UI glyphs)
+    The category file-type glyphs in com.editora.ui.FileIcons (image, archive,
+    PDF, table/CSV, lock, JSON, code, storage/SQL, settings, document) and the
+    toolbar/UI glyphs in com.editora.ui.Icons are single-path SVGs from Google's
+    Material Design Icons, released under the Apache License 2.0.
+    https://github.com/google/material-design-icons
+    https://www.apache.org/licenses/LICENSE-2.0

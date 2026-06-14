@@ -19,7 +19,7 @@ final class Icons {
 
     private Icons() {}
 
-    private static Node of(String content) {
+    static Node of(String content) {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("toolbar-icon");

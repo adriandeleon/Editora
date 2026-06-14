@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-file-type icons.** File icons now reflect the file's type instead of a single generic document glyph.
+  Editing `Main.java` shows the Java logo, `app.py` the Python logo, `style.css` the CSS logo, an image its
+  picture glyph, a `.zip` an archive glyph, and so on — covering every language/format Editora supports
+  (Java, Python, JS/TS, Go, PHP, Ruby, C/C++, C#, Kotlin, HTML, CSS, Markdown, YAML, JSON, XML, shell,
+  Docker, Terraform, Mermaid, SQL, INI/TOML, images, PDFs, archives, CSV, …), with the generic document glyph
+  as a fallback for unknown types. The icons appear everywhere a file is listed — **editor tabs**, the
+  **Project tool window** tree, the **Jump to Open File** and **Jump to Recent File** pickers, the
+  **Switcher** (Ctrl-Tab), and the **file/folder finders**. They are monochrome single-path glyphs in the
+  existing toolbar-icon style, so they track the light/dark theme automatically (no per-theme overrides).
+  Brand logos are from Simple Icons (CC0); category glyphs from Material Design Icons (Apache-2.0).
+
 - **Local file history.** Editora now silently snapshots local files over time — on save, auto-save, and
   before an external-change reload — so you can recover earlier versions independently of any VCS. Browse them
   in a new **File History** tool window (`M-g l` or the palette **File History: Show**): each revision shows
