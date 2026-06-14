@@ -193,6 +193,10 @@ final class LanguageServerSession implements LanguageClient {
         td.setHover(new HoverCapabilities());
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
+        // Pull diagnostics (LSP 3.17): many modern servers — vscode-html/css/json, etc. — deliver
+        // diagnostics only on a textDocument/diagnostic *request* (a diagnosticProvider) instead of
+        // pushing publishDiagnostics. Declaring this lets us pull them (see LspManager.pullDiagnostics).
+        td.setDiagnostic(new org.eclipse.lsp4j.DiagnosticCapabilities(false));
         ClientCapabilities cc = new ClientCapabilities();
         cc.setTextDocument(td);
         // Declare we answer workspace/configuration — otherwise Pyright never asks for
@@ -369,6 +373,15 @@ final class LanguageServerSession implements LanguageClient {
         }
         ReferenceParams params = new ReferenceParams(new TextDocumentIdentifier(uri), pos, new ReferenceContext(true));
         return server.getTextDocumentService().references(params);
+    }
+
+    /** Pull diagnostics ({@code textDocument/diagnostic}) for {@code uri}; null when the session isn't ready. */
+    CompletableFuture<org.eclipse.lsp4j.DocumentDiagnosticReport> diagnostic(String uri) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return server.getTextDocumentService()
+                .diagnostic(new org.eclipse.lsp4j.DocumentDiagnosticParams(new TextDocumentIdentifier(uri)));
     }
 
     private boolean ready() {

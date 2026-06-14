@@ -288,6 +288,11 @@ public class EditorBuffer implements TabContent {
     private boolean lspActive;
 
     private java.util.function.Consumer<String> lspChangeListener;
+    /** Debounced pull-diagnostics request (servers that answer textDocument/diagnostic); null = none. */
+    private Runnable lspDiagnosticsRequester;
+    /** Completion trigger characters the server advertised (e.g. {@code .} for Java, {@code <} for HTML). */
+    private java.util.Set<Character> lspTriggerChars = java.util.Set.of();
+
     private javafx.scene.control.Tooltip lspTooltip;
     /** Message currently shown by {@link #lspTooltip} — skips a re-{@code show()} (flicker) on each move. */
     private String lspTooltipText;
@@ -444,10 +449,16 @@ public class EditorBuffer implements TabContent {
         });
         // Live Mermaid linting: debounced maid run for .mmd buffers (only while enabled + maid detected).
         area.multiPlainChanges().successionEnds(Duration.ofMillis(450)).subscribe(ignore -> scheduleMermaidLint());
-        // LSP document sync: debounced didChange notification (only while the buffer is LSP-managed).
+        // LSP document sync: debounced didChange notification (only while the buffer is LSP-managed) +
+        // a debounced pull-diagnostics request (no-op unless the server uses the pull model). The pull is
+        // here, not in lspChangeListener, so it fires once per debounce — not on every completion keystroke
+        // (requestLspCompletion flushes lspChangeListener directly to send fresh text before completing).
         area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> {
             if (lspActive && lspChangeListener != null) {
                 lspChangeListener.accept(area.getText());
+            }
+            if (lspActive && lspDiagnosticsRequester != null) {
+                lspDiagnosticsRequester.run();
             }
         });
         // HTML live preview: debounced reload pulse for HTML buffers (only while a browser preview is open).
@@ -1256,6 +1267,16 @@ public class EditorBuffer implements TabContent {
     /** Injects the debounced didChange sink (text → controller → server); null disables change notices. */
     public void setLspChangeListener(java.util.function.Consumer<String> listener) {
         this.lspChangeListener = listener;
+    }
+
+    /** Injects the debounced pull-diagnostics request (fired on the same pulse as didChange); null disables. */
+    public void setLspDiagnosticsRequester(Runnable requester) {
+        this.lspDiagnosticsRequester = requester;
+    }
+
+    /** Sets the completion trigger characters the server advertised (empty = none / not yet known). */
+    public void setLspTriggerChars(java.util.Set<Character> chars) {
+        this.lspTriggerChars = chars == null ? java.util.Set.of() : chars;
     }
 
     /** True if this file can be run (a Java 25 compact source file, a Python script, or a shell script
@@ -3956,9 +3977,11 @@ public class EditorBuffer implements TabContent {
         return completionPopup != null && completionPopup.isShowing();
     }
 
-    /** True if the char just before {@code caret} is an LSP completion trigger character (Java's '.'). */
-    private static boolean endsWithLspTrigger(String text, int caret) {
-        return caret > 0 && caret <= text.length() && text.charAt(caret - 1) == '.';
+    /** True if the char just before {@code caret} is one of the server's advertised completion trigger
+     *  characters (e.g. {@code .} for Java, {@code <} for HTML) — so completion fires there, not just on a
+     *  word prefix. The set comes from the server's capabilities via {@link #setLspTriggerChars}. */
+    private boolean endsWithLspTrigger(String text, int caret) {
+        return caret > 0 && caret <= text.length() && lspTriggerChars.contains(text.charAt(caret - 1));
     }
 
     /** Keeps LSP items whose label or insert text starts with {@code prefix} (case-insensitive). The

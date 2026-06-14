@@ -62,4 +62,23 @@ class DiagnosticMapperTest {
         noRange.setMessage("x");
         assertTrue(DiagnosticMapper.map(List.of(noRange)).isEmpty());
     }
+
+    @Test
+    void mapReportFullReportMapsItems() {
+        Diagnostic d = diag(1, 0, 1, 3, DiagnosticSeverity.Warning, "duplicate attribute");
+        var full = new org.eclipse.lsp4j.RelatedFullDocumentDiagnosticReport(List.of(d));
+        List<LspDiagnostic> out = DiagnosticMapper.mapReport(new org.eclipse.lsp4j.DocumentDiagnosticReport(full));
+        assertEquals(1, out.size());
+        assertEquals("duplicate attribute", out.get(0).message());
+        assertEquals(LspDiagnostic.Severity.WARNING, out.get(0).severity());
+    }
+
+    @Test
+    void mapReportUnchangedReportReturnsNull() {
+        var unchanged = new org.eclipse.lsp4j.RelatedUnchangedDocumentDiagnosticReport("result-id");
+        org.junit.jupiter.api.Assertions.assertNull(
+                DiagnosticMapper.mapReport(new org.eclipse.lsp4j.DocumentDiagnosticReport(unchanged)));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                DiagnosticMapper.mapReport(null).isEmpty()); // null report → empty (clears)
+    }
 }
