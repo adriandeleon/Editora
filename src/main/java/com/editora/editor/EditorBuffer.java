@@ -133,6 +133,10 @@ public class EditorBuffer implements TabContent {
     private static final double BASE_PREVIEW_FONT = 15;
     /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
     private Node viewModeControl;
+    /** The floating "open in browser" control overlaid top-right (injected for HTML buffers). */
+    private Node htmlPreviewControl;
+    /** Fired from the debounced edit pulse while this is an HTML buffer (drives HTML live-preview reload). */
+    private Runnable htmlPreviewDirtyListener;
     /** Active debounced subscription driving live preview re-render (null when not previewing). */
     private Subscription previewSub;
     /** Bumped per preview render request; background results discard if stale. */
@@ -444,6 +448,12 @@ public class EditorBuffer implements TabContent {
         area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> {
             if (lspActive && lspChangeListener != null) {
                 lspChangeListener.accept(area.getText());
+            }
+        });
+        // HTML live preview: debounced reload pulse for HTML buffers (only while a browser preview is open).
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
+            if (isHtml() && htmlPreviewDirtyListener != null) {
+                htmlPreviewDirtyListener.run();
             }
         });
         // Dirty only when the content differs from the last saved/loaded text, so reverting an edit
@@ -1115,6 +1125,11 @@ public class EditorBuffer implements TabContent {
         return "mermaid".equals(language);
     }
 
+    /** An HTML file (.html/.htm/.xhtml) — eligible for the HTML Live Preview "open in browser" control. */
+    public boolean isHtml() {
+        return "html".equals(language);
+    }
+
     /** Whether this buffer supports the 3-mode preview: Markdown always, Mermaid only while the feature
      *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off). */
     public boolean hasPreview() {
@@ -1615,6 +1630,25 @@ public class EditorBuffer implements TabContent {
         return viewModeControl != null;
     }
 
+    /** Overlays the HTML "open in browser" control top-right of the code pane; {@code null} removes it. */
+    public void setHtmlPreviewControl(Node control) {
+        if (htmlPreviewControl != null && htmlPreviewControl != control) {
+            removeCornerControl(htmlPreviewControl);
+        }
+        this.htmlPreviewControl = control;
+        rebuildViewHost();
+    }
+
+    /** Whether the floating HTML "open in browser" control is currently attached. */
+    public boolean hasHtmlPreviewControl() {
+        return htmlPreviewControl != null;
+    }
+
+    /** Injects the debounced HTML-edit listener (fires the live-preview reload); {@code null} disables it. */
+    public void setHtmlPreviewDirtyListener(Runnable listener) {
+        this.htmlPreviewDirtyListener = listener;
+    }
+
     /** Switches the Markdown view mode, (un)subscribing the live preview and rebuilding the view host. */
     public void setMarkdownViewMode(MarkdownViewMode mode) {
         MarkdownViewMode target = mode == null ? MarkdownViewMode.EDITOR : mode;
@@ -2100,27 +2134,38 @@ public class EditorBuffer implements TabContent {
         previewPane.getContent().setStyle("-fx-font-size: " + (BASE_PREVIEW_FONT * previewFontScale) + "px;");
     }
 
-    /** Removes the floating control from whichever pane currently hosts it. */
+    /** Removes the floating corner control(s) from whichever pane currently hosts them. */
     private void detachViewModeControl() {
-        if (viewModeControl == null) {
+        removeCornerControl(viewModeControl);
+        removeCornerControl(htmlPreviewControl);
+    }
+
+    private void removeCornerControl(Node control) {
+        if (control == null) {
             return;
         }
-        root.getChildren().remove(viewModeControl);
+        root.getChildren().remove(control);
         if (previewHost != null) {
-            previewHost.getChildren().remove(viewModeControl);
+            previewHost.getChildren().remove(control);
         }
     }
 
-    /** Overlays the control at the top-right of the code pane ({@link #root}), clear of its minimap. */
+    /** Overlays the corner control(s) at the top-right of the code pane ({@link #root}), clear of its minimap.
+     *  A buffer is Markdown <em>or</em> HTML, so at most one of the two controls is non-null. */
     private void attachControlToCodePane() {
-        if (viewModeControl == null) {
+        placeCornerControl(viewModeControl);
+        placeCornerControl(htmlPreviewControl);
+    }
+
+    private void placeCornerControl(Node control) {
+        if (control == null) {
             return;
         }
-        if (!root.getChildren().contains(viewModeControl)) {
-            root.getChildren().add(viewModeControl);
+        if (!root.getChildren().contains(control)) {
+            root.getChildren().add(control);
         }
-        AnchorPane.setTopAnchor(viewModeControl, 6d);
-        AnchorPane.setRightAnchor(viewModeControl, codePaneControlInset());
+        AnchorPane.setTopAnchor(control, 6d);
+        AnchorPane.setRightAnchor(control, codePaneControlInset());
     }
 
     private double codePaneControlInset() {

@@ -74,6 +74,7 @@ public class SettingsWindow {
         GIT(tr("settings.cat.git"), false),
         MERMAID(tr("settings.cat.mermaid"), false),
         HTTP_CLIENT(tr("settings.cat.httpClient"), false),
+        HTML_PREVIEW(tr("settings.cat.htmlPreview"), false),
         LSP(tr("settings.cat.lsp"), false),
         DEBUG(tr("settings.cat.debug"), false),
         KEYMAPS(tr("settings.cat.keymaps"), false),
@@ -145,6 +146,7 @@ public class SettingsWindow {
     private Label gitStatusLabel;
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
+    private CheckBox htmlPreviewCheck;
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -616,6 +618,12 @@ public class SettingsWindow {
             apply();
         });
 
+        htmlPreviewCheck = new CheckBox(tr("settings.htmlPreview.enable"));
+        htmlPreviewCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setHtmlPreviewSupport(now);
+            apply();
+        });
+
         pluginCheck = new CheckBox(tr("settings.enablePlugins"));
         pluginCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setPluginSupport(now);
@@ -754,6 +762,7 @@ public class SettingsWindow {
         pages.put(Category.GIT, gitPage());
         pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.HTTP_CLIENT, httpClientPage());
+        pages.put(Category.HTML_PREVIEW, htmlPreviewPage());
         pages.put(Category.LSP, lspPage());
         pages.put(Category.DEBUG, debugPage());
         pages.put(Category.KEYMAPS, keymapsPage());
@@ -1111,6 +1120,16 @@ public class SettingsWindow {
         hint.setWrapText(true);
         hint.setMaxWidth(440);
         row(p, Category.HTTP_CLIENT, null, hint, "http rest request response built-in client");
+        return p;
+    }
+
+    private VBox htmlPreviewPage() {
+        VBox p = page(tr("settings.cat.htmlPreview"));
+        row(p, Category.HTML_PREVIEW, null, htmlPreviewCheck, "html live preview browser serve enable");
+        Label hint = note(tr("settings.htmlPreview.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.HTML_PREVIEW, null, hint, "html preview browser safari chrome firefox edge server localhost");
         return p;
     }
 
@@ -2321,6 +2340,7 @@ public class SettingsWindow {
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
+            htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
                 pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());
@@ -2669,6 +2689,20 @@ public class SettingsWindow {
         }
         updateLspToolRowsEnabled(); // the Problems/Run/Debug rows are gated by the LSP feature
         refreshLspStatus();
+    }
+
+    /** Re-syncs the HTML Live Preview checkbox to the current setting (after a palette toggle). */
+    public void syncHtmlPreviewCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            htmlPreviewCheck.setSelected(config.getSettings().isHtmlPreviewSupport());
+        } finally {
+            loading = prev;
+        }
     }
 
     /** Re-syncs the autocomplete checkboxes to the current settings (used after a palette toggle). */

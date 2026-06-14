@@ -192,6 +192,10 @@ Emacs-style keymap or a fuzzy command palette.
   size) shows in an HTTP Client tool window (`M-0`). Supports `{{variable}}`/`@var` substitution,
   environment files (`http-client.env.json`) with a picker, run-whole-file, and saving the response. Off
   by default (*Settings → HTTP Client*).
+- **HTML live preview** _(Beta)_ — a floating browser icon on any HTML file opens it in a detected desktop
+  browser (Safari, Chrome, Firefox, Edge, or the system default), served over a tiny **loopback** web server
+  so its CSS/JS/images load. The page **reloads live as you type** (unsaved edits included). Off by default
+  (*Settings → HTML Preview*); no external tool — it uses the JDK's built-in HTTP server.
 - **Remote files (SFTP)** _(Beta)_ — connect to a server over SSH/SFTP (*Remote: Connect to SFTP…*) and edit its
   files as if they were local: the remote folder mounts in the Project tool window, and open/edit/save go
   straight over SFTP. Authenticates with your default `~/.ssh` keys, a chosen key file, or a password;

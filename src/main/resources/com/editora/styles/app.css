@@ -411,6 +411,19 @@
 .md-viewmode-segment:selected { -fx-background-color: -color-accent-subtle; }
 .md-viewmode-segment:selected .toolbar-icon { -fx-fill: -color-accent-fg; }
 
+/* HTML Live Preview: the floating "open in browser" globe, top-right of an HTML editor. */
+.html-preview-toggle {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 3 5 3 5;
+    -fx-opacity: 0.92;
+}
+.html-preview-toggle .toolbar-icon { -fx-fill: -color-fg-muted; }
+.html-preview-toggle:hover { -fx-opacity: 1; }
+.html-preview-toggle:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
+
 /* The preview's −/+ zoom control (top-left of the preview pane). */
 .md-zoom {
     -fx-background-color: -color-bg-subtle;
