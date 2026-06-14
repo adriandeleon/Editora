@@ -6,6 +6,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import javafx.geometry.Side;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
@@ -49,11 +50,22 @@ public class HtmlPreviewToggle extends Button {
         } else {
             for (Browser b : list) {
                 MenuItem item = new MenuItem(labelFor.apply(b));
-                item.setGraphic(Icons.htmlPreview());
+                item.setGraphic(iconFor(b.id()));
                 item.setOnAction(e -> onPick.accept(b));
                 menu.getItems().add(item);
             }
         }
         menu.show(this, Side.BOTTOM, 0, 0);
+    }
+
+    /** The recognizable per-browser glyph; the System Default (and any unknown id) falls back to the globe. */
+    private static Node iconFor(String id) {
+        return switch (id) {
+            case "safari" -> Icons.browserSafari();
+            case "chrome" -> Icons.browserChrome();
+            case "firefox" -> Icons.browserFirefox();
+            case "edge" -> Icons.browserEdge();
+            default -> Icons.htmlPreview();
+        };
     }
 }
