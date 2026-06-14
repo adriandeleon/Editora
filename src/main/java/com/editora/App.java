@@ -58,6 +58,12 @@ public class App extends Application {
         // crash and can be attached to a bug report (the in-memory capture was installed in main()).
         com.editora.ui.DebugLog.attachFile(shared.getConfigDir());
 
+        // Point the spawned-server ledger at the config dir and reap any LSP/DAP server leaked by a
+        // previous run that died too hard for the shutdown hook to fire (SIGKILL, power loss). Must run
+        // before any window builds (which can start servers) so we don't race a fresh server's startup.
+        com.editora.process.ProcessRegistry.setLedgerFile(shared.getConfigDir().resolve("spawned-servers.txt"));
+        com.editora.process.ProcessRegistry.reapOrphans();
+
         // Localize the UI: pick the language (explicit setting, else system, else English) and load the
         // message catalog before any UI text is created. A change takes effect on the next launch.
         com.editora.i18n.Messages.init(com.editora.i18n.Messages.resolve(
@@ -207,6 +213,10 @@ public class App extends Application {
                 System.exit(0);
             }
         }
+        // Force-kill any LSP/DAP server we spawn if the JVM exits without going through a window-close
+        // teardown — a plain `kill`/SIGTERM, an OS quit, or most crashes. Without this, killing the app
+        // orphaned the external servers (e.g. jdtls), which then pile up and hold their workspace locks.
+        com.editora.process.ProcessRegistry.installShutdownHook();
         launch(args);
     }
 

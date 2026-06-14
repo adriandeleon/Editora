@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.editora.process.ProcessRegistry;
 import com.editora.process.ProcessRunner;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.CompletionCapabilities;
@@ -129,6 +130,7 @@ final class LanguageServerSession implements LanguageClient {
             pb.redirectError(ProcessBuilder.Redirect.DISCARD);
             ProcessRunner.applyStandardEnv(pb);
             process = pb.start();
+            ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
             Launcher<LanguageServer> launcher = LSPLauncher.createClientLauncher(
                     this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
@@ -410,12 +412,10 @@ final class LanguageServerSession implements LanguageClient {
         if (process != null) {
             // The launcher is often a wrapper (Homebrew jdtls → python → java); destroying only the
             // wrapper orphans the real server JVM, which keeps running and holds its workspace `.lock`
-            // so the next session for the same root can't start (it hangs / never initializes — no
-            // diagnostics, no completion). Kill the whole descendant tree (snapshot first, before the
-            // root dies and the children reparent).
-            java.util.List<ProcessHandle> tree = process.descendants().toList();
-            process.destroy();
-            tree.forEach(ProcessHandle::destroy);
+            // so the next session for the same root can't start. ProcessRegistry.killTree kills the whole
+            // descendant tree (children first), escalates to a force-kill if SIGTERM is ignored, and
+            // untracks it so the shutdown hook / next-run reaper won't chase a dead pid.
+            ProcessRegistry.killTree(process);
         }
         executor.shutdownNow();
     }

@@ -12,6 +12,7 @@ import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.editora.process.ProcessRegistry;
 import org.eclipse.lsp4j.debug.Capabilities;
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments;
 import org.eclipse.lsp4j.debug.ContinueArguments;
@@ -145,6 +146,7 @@ public final class DapClient implements IDebugProtocolClient {
     public CompletableFuture<Capabilities> connectStdio(Process process, String adapterId) {
         try {
             this.adapterProcess = process;
+            ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
                     this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
@@ -163,6 +165,7 @@ public final class DapClient implements IDebugProtocolClient {
      *  {@link #dispose} kills it and its descendants. */
     public void setAdapterProcess(Process process) {
         this.adapterProcess = process;
+        ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
     }
 
     private static Socket openWithRetry(int port, int tries) throws InterruptedException {
@@ -453,17 +456,9 @@ public final class DapClient implements IDebugProtocolClient {
             // best effort
         }
         // Kill the adapter subprocess and its descendants (debugpy stdio, or a node js-debug server). Like
-        // LanguageServerSession: destroy the descendant tree first, then the root — a wrapper script
-        // (e.g. node launched via a shim) would otherwise orphan the real adapter.
-        Process p = adapterProcess;
-        if (p != null) {
-            try {
-                p.descendants().forEach(ProcessHandle::destroy);
-            } catch (RuntimeException ignored) {
-                // best effort
-            }
-            p.destroy();
-        }
+        // LanguageServerSession: ProcessRegistry.killTree destroys the descendant tree first (a wrapper
+        // script would otherwise orphan the real adapter), escalates to a force-kill, and untracks it.
+        ProcessRegistry.killTree(adapterProcess);
         executor.shutdownNow();
     }
 
