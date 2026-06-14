@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Language servers and debug adapters no longer pile up as orphaned processes.** Previously the external
+  servers Editora spawns (e.g. `jdtls`) were only killed when a window was closed through the app — so
+  force-quitting, a crash, an OS quit, or a `kill` left them running, where they accumulate and hold their
+  workspace locks. Now a central `ProcessRegistry` reaps them three ways: a **JVM shutdown hook** force-kills
+  every spawned server tree on exit (covers normal quit and SIGTERM/`kill`); the per-server **teardown
+  escalates** (SIGTERM the whole tree, then force-kill anything that ignores it after a grace period); and a
+  small on-disk **ledger** lets a fresh launch **reap any server leaked by a previous run that died hard**
+  (SIGKILL / power loss), matched by PID + start time + executable so it can never kill an unrelated process.
+
 - **Silenced a spurious LSP "Internal error" log.** Language servers that support pull diagnostics
   (the HTML/CSS/JSON servers) send a `workspace/diagnostic/refresh` request; the client didn't implement it,
   so lsp4j logged a SEVERE `UnsupportedOperationException` each time (visible in the debug log / dev console).
