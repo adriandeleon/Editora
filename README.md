@@ -190,6 +190,12 @@ Emacs-style keymap or a fuzzy command palette.
   intra-line highlights, prev/next-change navigation, apply-a-hunk / apply-all (undoable), live refresh,
   and patch export. Diff against `HEAD` (`C-x v =`), another commit, or any other file; a separate
   merge-conflict resolver accepts ours / theirs / both per conflict.
+- **Local file history** — IntelliJ-style snapshots of local files, taken on save, auto-save, and before an
+  external-change reload, independent of any VCS. A **File History** tool window (`M-g l`) lists each revision
+  (date/time, reason, size; the latest tagged *Current*); double-click for a read-only diff against the
+  current file, or restore one (an undoable whole-file replace). Snapshots are deduped by content and stored
+  gzip-compressed under `<configDir>/history/`, pruned by configurable limits (revisions/file, age,
+  size/project). On by default; local-only; off in Simple UI mode.
 - **HTTP client** _(Beta)_ — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
   Editora's **built-in** HTTP client; the response (status, headers, pretty-printed JSON body, timing/
   size) shows in an HTTP Client tool window (`M-0`). Supports `{{variable}}`/`@var` substitution,
@@ -219,9 +225,9 @@ Emacs-style keymap or a fuzzy command palette.
   *who* published — not a sandbox. See [`docs/plugins.md`](docs/plugins.md),
   [`examples/example-plugin/`](examples/example-plugin/), and
   [`examples/editora-plugins-registry/`](examples/editora-plugins-registry/).
-- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Structure, File Information,
-  Bookmarks, Personal Notes, Problems, Search Results, Run, Debug, HTTP Client) — plus any contributed by a
-  plugin.
+- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Git Log, File History, Structure, File
+  Information, Bookmarks, Personal Notes, Problems, Search Results, Run, Debug, HTTP Client) — plus any
+  contributed by a plugin.
 - **Settings** — a category sidebar (Appearance, Editor, Tool Windows, Spell Check, Application, …) with a
   search box, a live font/theme preview, and Reset to Defaults. Changes apply instantly.
 - **Multi-language interface** — run Editora in **English, Italian, Spanish, French, Portuguese, or
