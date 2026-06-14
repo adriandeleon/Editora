@@ -1462,6 +1462,8 @@ public class MainController {
                 p -> p.getFileName() == null ? p.toString() : p.getFileName().toString(),
                 p -> p.getParent() == null ? "" : p.getParent().toString(),
                 this::openRecent);
+        recentPalette.setItemIcon(p -> FileIcons.forFileName(
+                p.getFileName() == null ? p.toString() : p.getFileName().toString()));
         structurePalette = new QuickOpen<>(
                 "Jump to Structure",
                 "Type to filter symbols…",
@@ -1485,6 +1487,7 @@ public class MainController {
                 });
         openFilesPalette.setItemStyleClass(
                 tab -> isTabDirty(tab) ? "dirty-name" : null); // amber/italic, like a dirty tab
+        openFilesPalette.setItemIcon(tab -> FileIcons.forFileName(bufferTitle(tab))); // file-type glyph
         toolWindowPalette = new QuickOpen<>(
                 "Jump to Tool Window",
                 "Type to filter tool windows…",
@@ -6030,6 +6033,10 @@ public class MainController {
         if (remote) {
             header.getChildren().add(Icons.remote()); // cloud glyph: this file lives on a remote host
         }
+        // A file-type glyph reflecting the file's kind (Java/Python/image/…), or a generic doc.
+        Node typeIcon = FileIcons.forFileName(buffer.getTitle());
+        typeIcon.getStyleClass().add("tab-file-icon");
+        header.getChildren().add(typeIcon);
         header.getChildren().add(title);
         enableTabDrag(header, tab);
         tab.setText("");
