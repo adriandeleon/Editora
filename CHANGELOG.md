@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Local file history.** Editora now silently snapshots local files over time — on save, auto-save, and
+  before an external-change reload — so you can recover earlier versions independently of any VCS. Browse them
+  in a new **File History** tool window (`M-g l` or the palette **File History: Show**): each revision shows
+  its date/time, reason, and size, with the latest tagged **Current**. Double-click a revision for a read-only
+  diff against the current file, or restore one (an undoable whole-file replace). Snapshots are deduped by
+  content, stored gzip-compressed and content-addressed under `<configDir>/history/`, and pruned by
+  configurable limits (max revisions/file, max age, max size per project — Settings → Application → Local
+  History). On by default; local-only (no SFTP) and off in Simple UI mode.
 - **Emacs fill commands.** Re-wrap paragraphs to a fill column: **Fill Paragraph** (`M-q`) reflows the
   paragraph at the caret, **Fill Region** reflows every paragraph in the selection, and **Set Fill Column**
   (`C-x f`) sets the target width (default 70, also in Settings → Editor). Filling preserves the paragraph's

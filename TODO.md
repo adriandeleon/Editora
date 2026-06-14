@@ -135,7 +135,11 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Git support — native CLI (branch/status, gutter change bars, commit workflow, fetch/pull/push)
 - [x] Diff viewer + merge-conflict UI — side-by-side / unified diff (vs HEAD / commit / another file),
       word-level highlights, apply-hunk / apply-all, patch export, merge-conflict resolver
-- [ ] Local History support
+- [x] Local file history — IntelliJ-style snapshots on save / auto-save / before an external reload; a
+      **File History** tool window (`M-g l`) lists revisions (date/time, reason, size; latest tagged
+      *Current*), double-click for a read-only diff vs current, restore = undoable whole-file replace.
+      Gzip'd content-addressed blobs + a per-project index under `<configDir>/history/`, deduped, with
+      configurable retention (revisions/file, age, size/project). On by default; local-only; off in Simple UI
 - [x] Detect external file changes — prompt to reload when a file changes on disk (focus-regain / tab switch)
 - [ ] Auto-reload modified files
 - [x] Remote file editing support — SSH/SFTP: browse/open/edit/save remote files; saved connections
