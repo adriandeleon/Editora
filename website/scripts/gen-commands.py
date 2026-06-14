@@ -111,77 +111,11 @@ def category(cid):
         return "Window"
     return "Application"
 
-# Curated descriptions where they add info beyond the title (plain text).
-DESC = {
-    "edit.cut": "Cut the selection (or region) to the clipboard.",
-    "edit.copy": "Copy the selection (or region).",
-    "edit.paste": "Paste (yank) the clipboard contents.",
-    "edit.deleteChar": "Delete the character after the caret.",
-    "edit.killWord": "Delete from the caret to the end of the word.",
-    "edit.killLine": "Delete from the caret to the end of the line.",
-    "edit.setMark": "Drop the mark; movement then extends the selection.",
-    "edit.exchangePointAndMark": "Swap the caret and the mark.",
-    "edit.toggleComment": "Comment/uncomment the line or selection.",
-    "edit.cancel": "Abort the current action and clear the mark.",
-    "edit.completion": "Manually trigger autocomplete at the caret.",
-    "edit.addCaretNextOccurrence": "Add a caret at the next match of the selection.",
-    "edit.addCaretAbove": "Add a caret on the line above.",
-    "edit.addCaretBelow": "Add a caret on the line below.",
-    "edit.collapseCarets": "Collapse multiple carets back to one.",
-    "edit.transposeChars": "Swap the two characters around the caret.",
-    "edit.transposeWords": "Swap the two words around the caret.",
-    "edit.transposeLines": "Swap the current line with the one above.",
-    "find.show": "Incremental find (case / regex / whole-word).",
-    "find.showBackward": "Incremental find, searching backward.",
-    "find.replace": "Find and replace in the current file.",
-    "search.inFiles": "Project-wide find (and replace) across files.",
-    "nav.aceJump": "Jump the caret to any visible spot by typing a label.",
-    "nav.goToLine": "Jump to a line, or line:column.",
-    "nav.recenter": "Scroll so the caret line is centered.",
-    "lsp.gotoDefinition": "Jump to the definition of the symbol at the caret.",
-    "lsp.findReferences": "List all references to the symbol at the caret.",
-    "lsp.hover": "Show type/documentation for the symbol at the caret.",
-    "lsp.restartServers": "Restart all running language servers.",
-    "git.stageFile": "Stage the current file's changes.",
-    "git.switchBranch": "Open the branch dropdown to check out a branch.",
-    "git.commit": "Open the Commit tool window and focus the message.",
-    "debug.start": "Start debugging, or continue when paused.",
-    "debug.runToCursor": "Resume and stop at the caret line.",
-    "debug.jumpToLine": "Move the execution pointer to the caret (no code run).",
-    "debug.toggleBreakpoint": "Add/remove a breakpoint on the caret line.",
-    "debug.toggleExceptionBreakpoints": "Break on thrown/uncaught exceptions.",
-    "http.runRequest": "Send the .http request at the caret.",
-    "http.runFile": "Send every request in the file in order.",
-    "diff.vsHead": "Diff the file against the last commit (HEAD).",
-    "diff.compareWith": "Diff the file against another file you pick.",
-    "diff.vsCommit": "Diff the file against a commit you pick.",
-    "merge.resolve": "Open the merge-conflict resolver for the file.",
-    "notes.add": "Attach a personal note to the caret line/selection.",
-    "notes.jump": "Jump to a note across files.",
-    "notes.search": "Search note bodies, tags, and files.",
-    "template.new": "Create a new file from a template (untitled).",
-    "template.newInFolder": "Create a template file written to a folder.",
-    "run.rerun": "Re-run the last file with the same arguments.",
-    "file.run": "Run the current file (Java/Python/shell).",
-    "file.runWithArgs": "Run the current file with program arguments.",
-    "remote.connect": "Open a file over SFTP from a remote host.",
-    "mermaid.export": "Export the Mermaid diagram to SVG/PNG/PDF.",
-    "switcher.show": "Most-recently-used open-file switcher.",
-    "buffer.jump": "Fuzzy picker over the open tabs.",
-    "recent.jump": "Fuzzy picker over recently opened files.",
-    "structure.jump": "Fuzzy-jump to a symbol in the active file.",
-    "bookmarks.jump": "Cross-file fuzzy bookmark picker.",
-    "tool.jump": "Fuzzy picker over the tool windows.",
-    "palette.show": "Open the fuzzy command palette.",
-    "view.toggleReadOnly": "Make the buffer read-only / editable.",
-    "view.toggleZen": "Distraction-free mode — hide all chrome.",
-    "config.export": "Zip the active config directory to your home folder.",
-    "editor.exportPdf": "Export the file to a PDF (light theme).",
-    "editor.print": "Print the file (with a preview).",
-    "preview.exportPdf": "Export the Markdown/Mermaid preview to PDF.",
-    "preview.print": "Print the Markdown/Mermaid preview.",
-    "window.other": "Cycle focus between the editor and tool windows.",
-}
+# Descriptions come straight from i18n: command.<id>.desc (English base), the single
+# source of truth shared with the app's command palette. `props` already parsed them as
+# "<id>.desc" → text above; see DESC_OF below.
+def desc_of(cid):
+    return props.get(cid + ".desc", "")
 
 def js(s):
     return s.replace("\\", "\\\\").replace('"', '\\"')
@@ -215,7 +149,7 @@ for g in ORDER:
     for cid in groups[g]:
         title = js(props.get(cid, cid))
         key = key_for.get(cid, "")
-        desc = js(DESC.get(cid, ""))
+        desc = js(desc_of(cid))
         parts = [f'title: "{title}"', f'id: "{cid}"']
         if key:
             parts.append(f'keys: "{js(key)}"')

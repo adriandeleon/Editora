@@ -52,6 +52,8 @@ public class CommandPalette {
     private final TextField input = new TextField();
     private final ListView<Command> list = new ListView<>();
     private final ObservableList<Command> items = FXCollections.observableArrayList();
+    /** One-line description of the highlighted command, shown above the navigation hint. */
+    private final Label desc = new Label();
 
     /** The palette card (header + input + list + hint); shown via the shared {@link OverlayHost}. */
     private VBox content;
@@ -109,9 +111,18 @@ public class CommandPalette {
 
         Label header = new Label(tr("palette.header"));
         header.getStyleClass().add("palette-title");
+        // Description of the highlighted command, between the list and the navigation hint. Single line
+        // with a fixed height (so the card doesn't jitter as descriptions vary in length) and ellipsis.
+        desc.getStyleClass().add("palette-desc");
+        desc.setMaxWidth(Double.MAX_VALUE);
+        desc.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
+        list.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> {
+            String d = sel == null ? "" : sel.description();
+            desc.setText(d.isEmpty() ? " " : d); // keep one line tall so the card never collapses/jitters
+        });
         Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ run  ·  esc / C-g cancel");
         hint.getStyleClass().add("palette-hint");
-        content = new VBox(6, header, input, list, hint);
+        content = new VBox(6, header, input, list, desc, hint);
         content.getStyleClass().add("command-palette");
         content.setPrefWidth(620);
         content.setMaxSize(620, Region.USE_PREF_SIZE); // hug its content; don't stretch to fill the overlay

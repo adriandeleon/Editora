@@ -1161,6 +1161,15 @@
     -fx-padding: 6 4 2 4;
 }
 
+/* One-line description of the highlighted command, between the list and the navigation hint. */
+.command-palette .palette-desc {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
+    -fx-padding: 6 4 2 4;
+    -fx-border-color: -color-border-default transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+}
+
 .find-bar {
     -fx-background-color: -color-bg-subtle;
     -fx-padding: 4 8 4 8;

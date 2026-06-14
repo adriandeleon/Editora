@@ -63,6 +63,21 @@ class MessagesTest {
     }
 
     @Test
+    void everyCommandTitleHasAMatchingDescription() {
+        // The command palette shows command.<id>.desc as the highlighted command's detail line, so
+        // every registered command's title key (command.<id>, not the .desc itself) must have one.
+        Properties base = loadProps("/com/editora/i18n/messages.properties");
+        Set<String> keys = base.stringPropertyNames();
+        Set<String> missing = new TreeSet<>();
+        for (String key : keys) {
+            if (key.startsWith("command.") && !key.endsWith(".desc") && !keys.contains(key + ".desc")) {
+                missing.add(key);
+            }
+        }
+        assertTrue(missing.isEmpty(), "command titles without a .desc description: " + missing);
+    }
+
+    @Test
     void trFallsBackOverlayThenBaseThenKey() {
         Messages.init("es");
         // A key present in the overlay returns the Spanish value.
