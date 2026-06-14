@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://editora-project.dev/sitemap-index.xml

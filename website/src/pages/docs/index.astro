@@ -1,9 +1,0 @@
----
-import { getEntry } from "astro:content";
-import DocsLayout from "../../layouts/DocsLayout.astro";
-
-const entry = await getEntry("docs", "introduction");
-if (!entry) throw new Error("docs/introduction.md is missing");
----
-
-<DocsLayout entry={entry} />
