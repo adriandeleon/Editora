@@ -53,6 +53,13 @@ public final class CompletionPopup {
         });
         VBox box = new VBox(list);
         box.getStyleClass().add("completion-popup");
+        // A Popup has its own scene that does NOT inherit the editor scene's stylesheets, so without this
+        // app.css (and its `.completion-*` rules + AtlantaFX `-color-*` vars) never apply and the list
+        // falls back to bare default colors. Attach it to the content subtree (the note-tooltip idiom).
+        java.net.URL css = CompletionPopup.class.getResource("/com/editora/styles/app.css");
+        if (css != null) {
+            box.getStylesheets().add(css.toExternalForm());
+        }
         popup.getContent().add(box);
         popup.setAutoHide(true);
         popup.setAutoFix(true);
