@@ -48,6 +48,8 @@ public class SharedConfig {
     private NoteStore noteStore = new NoteStore();
     /** Breakpoints (all files/projects), stored in {@code breakpoints.json} — see {@link BreakpointStore}. */
     private BreakpointStore breakpointStore = new BreakpointStore();
+    /** Local File History index (all files/projects), in {@code history/index.json} — see {@link HistoryStore}. */
+    private HistoryStore historyStore = new HistoryStore();
     /** Saved SFTP connections (metadata only, no secrets), stored in {@code connections.json}. */
     private ConnectionStore connectionStore = new ConnectionStore();
     /** Plugin enable-state (id → enabled), stored in {@code plugins.json} — see {@link PluginStore}. */
@@ -87,6 +89,7 @@ public class SharedConfig {
         settings = ConfigMigrations.readVersioned(getSettingsFile(), toml, new Settings(), ConfigSchema.SETTINGS);
         loadBookmarks();
         loadBreakpoints();
+        loadHistory();
         loadNotes();
         loadConnections();
         loadPlugins();
@@ -137,6 +140,16 @@ public class SharedConfig {
 
     public Path getBreakpointsFile() {
         return configDir.resolve(ConfigManager.BREAKPOINTS_FILE_NAME);
+    }
+
+    /** The Local File History index file ({@code history/index.json}). */
+    public Path getHistoryFile() {
+        return configDir.resolve(ConfigManager.HISTORY_DIR_NAME).resolve(ConfigManager.HISTORY_INDEX_NAME);
+    }
+
+    /** The directory holding gzip'd revision bodies ({@code history/blobs/}). */
+    public Path getHistoryBlobsDir() {
+        return configDir.resolve(ConfigManager.HISTORY_DIR_NAME).resolve(ConfigManager.HISTORY_BLOBS_NAME);
     }
 
     public Path getConnectionsFile() {
@@ -236,6 +249,21 @@ public class SharedConfig {
         }
     }
 
+    public Map<String, List<HistoryRevision>> historyBucket(String key) {
+        return historyStore.bucket(key);
+    }
+
+    /** The whole per-project history map (every project) — used to compute live blob hashes for GC. */
+    public Map<String, Map<String, List<HistoryRevision>>> historyByProject() {
+        return historyStore.getByProject();
+    }
+
+    public void deleteHistoryForProject(String projectKey) {
+        if (historyStore.getByProject().remove(projectKey == null ? "" : projectKey) != null) {
+            saveHistory();
+        }
+    }
+
     // --- user dictionary ---
 
     /** The user's added spell-check words (lower-cased). Mutated in place; persisted by {@link #addUserWord}. */
@@ -316,6 +344,25 @@ public class SharedConfig {
                     getBreakpointsFile(), json, new BreakpointStore(), ConfigSchema.BREAKPOINTS);
         } else {
             breakpointStore = new BreakpointStore();
+        }
+    }
+
+    private void loadHistory() {
+        if (Files.exists(getHistoryFile())) {
+            historyStore =
+                    ConfigMigrations.readVersioned(getHistoryFile(), json, new HistoryStore(), ConfigSchema.HISTORY);
+        } else {
+            historyStore = new HistoryStore();
+        }
+    }
+
+    /** Writes the Local File History index to {@code history/index.json}, independently of a session save. */
+    public void saveHistory() {
+        try {
+            Files.createDirectories(getHistoryFile().getParent());
+            json.writeValue(getHistoryFile().toFile(), historyStore);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write history to " + getHistoryFile(), e);
         }
     }
 

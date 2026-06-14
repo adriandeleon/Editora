@@ -41,6 +41,11 @@ public class ConfigManager {
     static final String PLUGINS_FILE_NAME = "plugins.json";
     static final String PLUGINS_DIR_NAME = "plugins";
     static final String PROJECTS_DIR_NAME = "projects";
+    /** Local File History lives under {@code history/}: a small {@code index.json} + {@code blobs/} bodies. */
+    static final String HISTORY_DIR_NAME = "history";
+
+    static final String HISTORY_INDEX_NAME = "index.json";
+    static final String HISTORY_BLOBS_NAME = "blobs";
 
     /** Pretty JSON for this window's session-state file. */
     private final ObjectMapper json = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -217,6 +222,34 @@ public class ConfigManager {
     /** Removes a project's entire breakpoint bucket (called when the project is deleted) and persists. */
     public void deleteBreakpointsForProject(String projectKey) {
         shared.deleteBreakpointsForProject(projectKey);
+    }
+
+    /**
+     * The Local File History map (absolute file path -> revisions, newest-first) for <em>this window's</em>
+     * project — bucket chosen by the current session file, exactly like {@link #getBookmarks()}. Persist
+     * with {@link #saveHistory()}.
+     */
+    public Map<String, List<HistoryRevision>> getHistory() {
+        return shared.historyBucket(currentBookmarkKey());
+    }
+
+    /** The whole per-project history map (across all projects) — for computing live blob hashes. */
+    public Map<String, Map<String, List<HistoryRevision>>> getHistoryByProject() {
+        return shared.historyByProject();
+    }
+
+    public void saveHistory() {
+        shared.saveHistory();
+    }
+
+    /** Removes a project's entire history bucket (called when the project is deleted) and persists. */
+    public void deleteHistoryForProject(String projectKey) {
+        shared.deleteHistoryForProject(projectKey);
+    }
+
+    /** The directory holding gzip'd Local File History revision bodies ({@code history/blobs/}). */
+    public Path getHistoryBlobsDir() {
+        return shared.getHistoryBlobsDir();
     }
 
     // --- per-window session state ---

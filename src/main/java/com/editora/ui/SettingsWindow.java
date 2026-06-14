@@ -144,6 +144,10 @@ public class SettingsWindow {
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
     private CheckBox blameCheck;
+    private CheckBox localHistoryCheck;
+    private Spinner<Integer> historyMaxPerFileSpinner;
+    private Spinner<Integer> historyMaxAgeSpinner;
+    private Spinner<Integer> historyMaxTotalSpinner;
     private Label gitStatusLabel;
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
@@ -603,6 +607,16 @@ public class SettingsWindow {
             apply();
         });
 
+        localHistoryCheck = new CheckBox(tr("settings.enableLocalHistory"));
+        historyMaxPerFileSpinner = historySpinner(1, 1000, 50, Settings::setHistoryMaxPerFile);
+        historyMaxAgeSpinner = historySpinner(0, 3650, 30, Settings::setHistoryMaxAgeDays);
+        historyMaxTotalSpinner = historySpinner(1, 5000, 50, Settings::setHistoryMaxTotalMb);
+        localHistoryCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setLocalHistory(now);
+            updateHistoryRowsEnabled();
+            apply();
+        });
+
         mermaidCheck = new CheckBox(tr("settings.enableMermaid"));
         mermaidCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setMermaidSupport(now);
@@ -754,6 +768,30 @@ public class SettingsWindow {
     }
 
     /** A view-toggle checkbox that writes {@code setter} and applies live. */
+    /** A small editable int spinner that writes {@code setter} + re-applies (skipping the loading phase). */
+    private Spinner<Integer> historySpinner(
+            int min, int max, int def, java.util.function.BiConsumer<Settings, Integer> setter) {
+        Spinner<Integer> s = new Spinner<>(min, max, def);
+        s.setEditable(true);
+        s.setPrefWidth(100);
+        s.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            setter.accept(config.getSettings(), now);
+            apply();
+        });
+        return s;
+    }
+
+    /** Local-history retention spinners are only meaningful while the master switch is on. */
+    private void updateHistoryRowsEnabled() {
+        boolean on = localHistoryCheck.isSelected();
+        historyMaxPerFileSpinner.setDisable(!on);
+        historyMaxAgeSpinner.setDisable(!on);
+        historyMaxTotalSpinner.setDisable(!on);
+    }
+
     private CheckBox viewCheck(String label, java.util.function.BiConsumer<Settings, Boolean> setter) {
         CheckBox check = new CheckBox(label);
         check.selectedProperty().addListener((obs, was, now) -> {
@@ -1078,6 +1116,32 @@ public class SettingsWindow {
         row(p, Category.APPLICATION, features, projectsRow, "projects workspace folder");
         row(p, Category.APPLICATION, features, notesCheck, "personal notes annotations enable feature");
         row(p, Category.APPLICATION, features, zenCheck, "zen distraction free focus");
+        Label history = section(p, tr("settings.section.localHistory"));
+        row(
+                p,
+                Category.APPLICATION,
+                history,
+                localHistoryCheck,
+                "local file history snapshot version revision restore undo");
+        row(
+                p,
+                Category.APPLICATION,
+                history,
+                labeled(tr("settings.history.maxPerFile"), historyMaxPerFileSpinner),
+                "local history max revisions per file limit retention");
+        row(
+                p,
+                Category.APPLICATION,
+                history,
+                labeled(tr("settings.history.maxAgeDays"), historyMaxAgeSpinner),
+                "local history max age days retention prune");
+        row(
+                p,
+                Category.APPLICATION,
+                history,
+                labeled(tr("settings.history.maxTotalMb"), historyMaxTotalSpinner),
+                "local history max total size megabytes project budget");
+        p.getChildren().add(note(tr("settings.history.note")));
         Label templates = section(p, tr("settings.section.templates"));
         row(
                 p,
@@ -2351,6 +2415,11 @@ public class SettingsWindow {
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
+            localHistoryCheck.setSelected(settings.isLocalHistory());
+            historyMaxPerFileSpinner.getValueFactory().setValue(settings.getHistoryMaxPerFile());
+            historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
+            historyMaxTotalSpinner.getValueFactory().setValue(settings.getHistoryMaxTotalMb());
+            updateHistoryRowsEnabled();
             updateGitRowEnabled();
             updateNotesRowEnabled();
             updateLspToolRowsEnabled();

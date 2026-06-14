@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 26;
+    public static final int SCHEMA_VERSION = 27;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -96,6 +96,15 @@ public class Settings {
     /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
      *  ("author, N days ago • summary") after the caret line. */
     private boolean gitBlameInline = false;
+    /** Local File History: on by default — silently snapshots local files on save/auto-save/external
+     *  reload so prior versions can be browsed, diffed, and restored independently of VCS. */
+    private boolean localHistory = true;
+    /** Max revisions kept per file (oldest pruned beyond this); ≤0 = unbounded. */
+    private int historyMaxPerFile = 50;
+    /** Max age in days for a revision (older pruned, newest always kept); ≤0 = no age limit. */
+    private int historyMaxAgeDays = 30;
+    /** Max total uncompressed history bytes kept per project (oldest evicted beyond this); ≤0 = unbounded. */
+    private int historyMaxTotalMb = 50;
     /** Plugin support: off by default — plugins run full-trust, untrusted code, so they only load when
      *  this master gate is on (and the individual plugin is enabled in {@code plugins.json}). */
     private boolean pluginSupport = false;
@@ -544,6 +553,38 @@ public class Settings {
 
     public void setGitBlameInline(boolean gitBlameInline) {
         this.gitBlameInline = gitBlameInline;
+    }
+
+    public boolean isLocalHistory() {
+        return localHistory;
+    }
+
+    public void setLocalHistory(boolean localHistory) {
+        this.localHistory = localHistory;
+    }
+
+    public int getHistoryMaxPerFile() {
+        return historyMaxPerFile;
+    }
+
+    public void setHistoryMaxPerFile(int historyMaxPerFile) {
+        this.historyMaxPerFile = historyMaxPerFile;
+    }
+
+    public int getHistoryMaxAgeDays() {
+        return historyMaxAgeDays;
+    }
+
+    public void setHistoryMaxAgeDays(int historyMaxAgeDays) {
+        this.historyMaxAgeDays = historyMaxAgeDays;
+    }
+
+    public int getHistoryMaxTotalMb() {
+        return historyMaxTotalMb;
+    }
+
+    public void setHistoryMaxTotalMb(int historyMaxTotalMb) {
+        this.historyMaxTotalMb = historyMaxTotalMb;
     }
 
     public boolean isPluginSupport() {
