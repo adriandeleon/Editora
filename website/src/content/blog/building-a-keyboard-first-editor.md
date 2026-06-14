@@ -7,14 +7,14 @@ tags: [design, keyboard]
 ---
 
 Most editors grow features as menus. A new capability shows up as a menu item,
-maybe a toolbar button, and — if you're lucky — a shortcut buried in a
+maybe a toolbar button, and, if you're lucky, a shortcut buried in a
 preferences screen. Editora is built the other way around: **every action is a
 command first.**
 
 ## Commands are the foundation
 
 In Editora, there's no such thing as an action that isn't a command. Saving,
-toggling a bookmark, starting the debugger, switching a theme — each is a
+toggling a bookmark, starting the debugger, switching a theme, each is a
 registered `Command` with an id and a title. That single decision pays off
 everywhere:
 
@@ -39,7 +39,7 @@ for the mouse to get something done.
 
 A keyboard-driven editor has to keep up with you. Editora tokenizes,
 parses, and searches off the UI thread, re-highlights incrementally from the
-changed line, and only repaints what's visible — so typing stays smooth even on
+changed line, and only repaints what's visible, so typing stays smooth even on
 large files. Performance isn't an afterthought; it's a constraint the whole
 codebase is held to.
 

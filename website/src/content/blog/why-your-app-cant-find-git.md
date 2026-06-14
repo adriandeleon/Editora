@@ -19,8 +19,8 @@ When you launch an app from Finder (or a `.desktop` file on Linux), it does
 actually live in: Homebrew (`/opt/homebrew/bin`), npm globals, and especially
 anything under a version manager.
 
-Editora shells out a lot — Git, the Mermaid CLI, every LSP server, the debug
-adapters, the run feature — so "can't find the binary" would have been a
+Editora shells out a lot: Git, the Mermaid CLI, every LSP server, the debug
+adapters, the run feature, so "can't find the binary" would have been a
 constant support burden.
 
 ## The fix: rebuild the PATH the app should have had
@@ -39,7 +39,7 @@ discarded, a 5-second timeout, and marker strings fencing the PATH off from any
 approach VS Code uses (`resolveShellEnv`).
 
 Why go to that trouble instead of hardcoding directories? Because the important
-ones are **version-specific and can't be hardcoded** — nvm's
+ones are **version-specific and can't be hardcoded**: nvm's
 `~/.nvm/versions/node/<version>/bin` (where npm-global tools like
 `typescript-language-server` and `pyright-langserver` live) changes with every
 Node version, and fnm/asdf/volta are similar. Only your shell knows the current
@@ -49,7 +49,7 @@ one. A list of hardcoded dirs (`/opt/homebrew/bin`, `~/.cargo/bin`, `~/go/bin`,
 ## Making it cheap
 
 Spawning a login shell isn't free, so the result is **cached** after the first
-call, and the LSP manager **warms it off-thread** at startup — so neither tool
+call, and the LSP manager **warms it off-thread** at startup, so neither tool
 detection nor the first subprocess launch blocks the UI. (Windows has no
 POSIX login-shell convention, so it skips this and relies on the hardcoded
 dirs plus any Settings override.)
@@ -57,6 +57,6 @@ dirs plus any Settings override.)
 ## The takeaway
 
 If your app shells out and "works from the terminal but not when double-clicked,"
-this is almost certainly why. Don't trust the PATH a GUI launch hands you —
+this is almost certainly why. Don't trust the PATH a GUI launch hands you,
 reconstruct the one the user actually has, and resolve binaries to absolute paths
 yourself.

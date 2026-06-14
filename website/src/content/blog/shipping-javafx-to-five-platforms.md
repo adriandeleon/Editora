@@ -13,7 +13,7 @@ it.
 
 ## No cross-building
 
-jpackage and JavaFX are host-specific — you build a macOS DMG on macOS, a Windows
+jpackage and JavaFX are host-specific: you build a macOS DMG on macOS, a Windows
 MSI on Windows, and so on. So the release workflow is a **five-way matrix**, each
 target on its own GitHub-hosted runner, each building for *itself* with the same
 `-Pdist` profile. There's no clever cross-compilation; there's five machines.
@@ -27,8 +27,8 @@ platform.
 ## Automatic modules vs. jlink
 
 Editora is a proper JPMS module, and the `dist` build uses `jlink` to produce a
-trimmed runtime. The problem: several key dependencies — RichTextFX (and its
-reactfx/flowless/undofx/wellbehavedfx friends), tm4e, PDFBox, lsp4j — are
+trimmed runtime. The problem: several key dependencies: RichTextFX (and its
+reactfx/flowless/undofx/wellbehavedfx friends), tm4e, PDFBox, lsp4j, are
 **automatic modules**, which jlink refuses to link.
 
 The fix is the `moditect` plugin, which injects generated `module-info`

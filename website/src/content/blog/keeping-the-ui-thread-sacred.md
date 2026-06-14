@@ -15,14 +15,14 @@ doctrine that keeps them fast.
 
 Tokenizing, parsing, and search all run **off** the UI thread on a dedicated
 executor, and apply their results back **on** the FX thread behind a
-generation/stale-result guard — if a newer edit has landed by the time the work
+generation/stale-result guard: if a newer edit has landed by the time the work
 finishes, the stale result is dropped. So a slow highlight pass on a big file
 never freezes the cursor; it just gets superseded.
 
 ## Debounce and coalesce
 
-Re-highlighting is debounced. The document overlays — whitespace markers, the
-80-column ruler, the minimap, search highlights, the gutter — **coalesce to one
+Re-highlighting is debounced. The document overlays: whitespace markers, the
+80-column ruler, the minimap, search highlights, the gutter, **coalesce to one
 redraw per pulse** with a simple `pending` flag plus `Platform.runLater`. The
 rule for new code is strict: don't add per-keystroke or per-scroll work that
 isn't coalesced. A handful of listeners each doing "just a little" work per pulse
@@ -56,8 +56,8 @@ beats degrading by accident.
 ## The cultural part
 
 The technical rules only stick because of a habit: **every change is assessed for
-its cost on the hot paths** — allocation per keystroke, added FX-thread work,
-extra layout/CSS passes — and that cost gets stated, even when it's "negligible."
+its cost on the hot paths**: allocation per keystroke, added FX-thread work,
+extra layout/CSS passes, and that cost gets stated, even when it's "negligible."
 When something risks a regression, I measure (temporary `System.nanoTime`
 instrumentation) rather than guess. Performance isn't a milestone you hit once;
 it's a constraint you keep paying attention to.

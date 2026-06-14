@@ -307,7 +307,7 @@ const platforms = [
             {latest.map((p) => (
               <a class="latest-card" href={p.href}>
                 <span class="latest-tags">
-                  <span class={`latest-kind ${p.kind.toLowerCase()}`}>{p.kind}</span>
+                  <span class={`latest-kind kind-${p.kind.toLowerCase()}`}>{p.kind}</span>
                   {p.beta && <span class="beta-pill">Beta</span>}
                 </span>
                 <span class="latest-title">{p.title}</span>
@@ -687,11 +687,11 @@ const platforms = [
     border: 1px solid var(--border);
     color: var(--muted);
   }
-  .latest-kind.news {
+  .latest-kind.kind-news {
     color: var(--accent);
     border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   }
-  .latest-kind.blog {
+  .latest-kind.kind-blog {
     color: var(--bookmark);
     border-color: color-mix(in srgb, var(--bookmark) 40%, transparent);
   }

@@ -13,10 +13,10 @@ satisfying root cause.
 
 ## Bug 1: the language server that wouldn't die
 
-Symptom: open a Java project, close it, open it again — and now there are no
+Symptom: open a Java project, close it, open it again: and now there are no
 diagnostics, no completion, just a server that seems to hang on startup.
 
-The cause was a zombie. Disposing a session killed the process I launched — but
+The cause was a zombie. Disposing a session killed the process I launched, but
 `jdtls` (and several other servers) isn't the real server; it's a **wrapper
 script** (Homebrew's `jdtls` → python → java). Destroy only the wrapper and the
 real server JVM is **orphaned**, still running, still holding its Eclipse
@@ -41,19 +41,19 @@ No error. The server was clearly running and reporting.
 The culprit was **symlinks**. A language server reports diagnostics under the
 file's *real* URI. On macOS, `/tmp` is a symlink to `/private/tmp`, and plenty of
 people keep projects under symlinked directories. So the server says "problem in
-`/private/tmp/Foo.java`," while the open buffer remembers the path you opened —
+`/private/tmp/Foo.java`," while the open buffer remembers the path you opened,
 `/tmp/Foo.java`. Editora matched them by `normalize()`, which doesn't resolve
 symlinks, so **every diagnostic was dropped on the floor**.
 
-The fix is to match by **canonical** (symlink-resolved) path — `toRealPath`, with
-a normalize fallback — everywhere a server-reported path is reconciled with an
+The fix is to match by **canonical** (symlink-resolved) path: `toRealPath`, with
+a normalize fallback. Everywhere a server-reported path is reconciled with an
 open tab. It's a one-line idea with a unit test guarding it, and it's the
 difference between "LSP is broken" and "LSP works."
 
 ## What they have in common
 
-Both bugs were invisible — no stack trace, no error dialog, just a feature
+Both bugs were invisible: no stack trace, no error dialog, just a feature
 quietly not working. And both came from a mismatch between what I *thought* I was
 managing (a process, a path) and what the OS actually had (a process *tree*, a
-*real* path). When you integrate external tools, those two gaps — descendant
-processes and canonical paths — are worth checking first.
+*real* path). When you integrate external tools, those two gaps: descendant
+processes and canonical path, are worth checking first.

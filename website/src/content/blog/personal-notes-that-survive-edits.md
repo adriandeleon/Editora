@@ -6,7 +6,7 @@ author: Adrian De Leon
 tags: [editor, design]
 ---
 
-Personal Notes let you attach an annotation to a word, line, or range — stored
+Personal Notes let you attach an annotation to a word, line, or range, stored
 *outside* the file, which is what makes them useful for read-only, generated, or
 shared code you don't want to touch. But "stored outside the file" raises an
 obvious question: when the file changes, how does a note stay attached to the
@@ -16,8 +16,8 @@ right place? That anchoring problem is the whole feature.
 
 There are really two problems hiding here:
 
-1. **The file moved or was renamed** — the note has to find its file again.
-2. **The text inside the file changed** — the note has to find its *spot* again.
+1. **The file moved or was renamed**: the note has to find its file again.
+2. **The text inside the file changed**: the note has to find its *spot* again.
 
 Editora handles them separately.
 
@@ -32,11 +32,11 @@ than a filename.
 
 ## Finding the spot: anchors with context
 
-Within a file, a note stores a `TextAnchor` — not just a line and column, but the
+Within a file, a note stores a `TextAnchor`, not just a line and column, but the
 selected text plus a `prefix` and `suffix` of surrounding context. Relocating a
 note (the pure, unit-tested `NoteAnchors.relocate`) works in levels:
 
-- First, check the saved offset — if the text there still matches, nothing moved.
+- First, check the saved offset, if the text there still matches, nothing moved.
 - Otherwise, score the occurrences of the anchored text across the document,
   with a bonus for matching prefix/suffix context and for proximity to the
   original position, and move the note to the best one.
@@ -59,7 +59,7 @@ further each session.
 
 The model carries tags, a status (active/resolved/orphaned), and the full
 `FileIdentity`, so the obvious next steps — fuzzy matching beyond nearest-text,
-team sync — are additive rather than rewrites. But the core idea is simple and
+team sync: are additive rather than rewrites. But the core idea is simple and
 worth stealing for any "metadata about code that lives outside the code": don't
 anchor to a position, anchor to *content plus context*, and re-find it every time
 you open.

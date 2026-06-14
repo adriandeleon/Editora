@@ -19,9 +19,9 @@ different ways.
   `vscode.java.*` commands; at debug time, asking it to
   `vscode.java.startDebugSession` returns a **TCP port**, and the client
   connects a socket to it.
-- **Python** is **debugpy over stdio** — Editora spawns
+- **Python** is **debugpy over stdio**: Editora spawns
   `python -m debugpy.adapter` and speaks DAP over the process's stdin/stdout.
-- **JavaScript** is **vscode-js-debug over a socket** — spawn
+- **JavaScript** is **vscode-js-debug over a socket**: spawn
   `node dapDebugServer.js <port>` and connect.
 
 All three then speak the same protocol (via `org.eclipse.lsp4j.debug`), so
@@ -41,7 +41,7 @@ work, plus a threading one:
   just the launcher — a wrapper script otherwise leaves the real adapter running.
 - **Don't block the reader thread.** When the `initialized` event arrives, you
   fire `setBreakpoints` / `setExceptionBreakpoints` / `configurationDone`. That
-  callback runs on the DAP **reader thread** — so if you `.join()` on those
+  callback runs on the DAP **reader thread**: so if you `.join()` on those
   requests, you deadlock, because the responses can't be read while you're
   blocking the reader. Fire and don't wait.
 
@@ -49,7 +49,7 @@ work, plus a threading one:
 
 It would have been faster, short-term, to write a Java-only debugger and stop
 there. But DAP meant Python and JavaScript were mostly a matter of "spawn the
-adapter differently and shape the launch arguments" — the breakpoints, stepping,
+adapter differently and shape the launch arguments": the breakpoints, stepping,
 call stack, watches, inline values, and the console came along for free. The same
 bet LSP makes for language smarts, DAP makes for debugging: do the protocol once,
 get the languages cheaply.
