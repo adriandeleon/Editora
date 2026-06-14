@@ -435,6 +435,20 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
+     * Acknowledges {@code workspace/diagnostic/refresh}. Servers that support pull diagnostics
+     * (vscode-html/css/json) send this request to ask the client to re-request diagnostics for its
+     * open documents. lsp4j's default {@link LanguageClient#refreshDiagnostics()} throws
+     * {@code UnsupportedOperationException}, which lsp4j then logs as a SEVERE "Internal error";
+     * overriding it to complete normally silences that noise. We don't force an immediate re-pull
+     * here — {@code LspManager.pullDiagnostics} already runs on every (debounced) edit, on save, and
+     * when the server first reports ready — so the hint is effectively honored on the next pulse.
+     */
+    @Override
+    public CompletableFuture<Void> refreshDiagnostics() {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
      * Answers {@code workspace/configuration} so servers that read settings this way pick up our defaults
      * — notably **Pyright**, which only offers auto-import completions when
      * {@code python.analysis.autoImportCompletions} is on (its own default is off). We enable it however
