@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 24;
+    public static final int SCHEMA_VERSION = 25;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -113,6 +113,10 @@ public class Settings {
     private boolean httpClientSupport = false;
     /** The {@code ijhttp} command/path; blank = resolve {@code ijhttp} on PATH. */
     private String ijhttpCommand = "";
+    /** HTML Live Preview (serve an HTML file over a loopback HttpServer + open it in a browser): off by default. */
+    private boolean htmlPreviewSupport = false;
+    /** The last-used browser id for the HTML preview ({@code ""} until the user picks one). */
+    private String htmlPreviewBrowser = "";
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -288,6 +292,22 @@ public class Settings {
 
     public void setHttpClientSupport(boolean httpClientSupport) {
         this.httpClientSupport = httpClientSupport;
+    }
+
+    public boolean isHtmlPreviewSupport() {
+        return htmlPreviewSupport;
+    }
+
+    public void setHtmlPreviewSupport(boolean htmlPreviewSupport) {
+        this.htmlPreviewSupport = htmlPreviewSupport;
+    }
+
+    public String getHtmlPreviewBrowser() {
+        return htmlPreviewBrowser == null ? "" : htmlPreviewBrowser;
+    }
+
+    public void setHtmlPreviewBrowser(String htmlPreviewBrowser) {
+        this.htmlPreviewBrowser = htmlPreviewBrowser == null ? "" : htmlPreviewBrowser;
     }
 
     public String getIjhttpCommand() {

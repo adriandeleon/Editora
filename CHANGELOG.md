@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTML Live Preview.** A floating browser-globe button now appears at the top-right of any `.html`/`.htm`/
+  `.xhtml` editor (mirroring the Markdown preview toggle). Click it to open the current file in a **detected
+  browser** — Safari, Chrome, Firefox, Edge, or the system default. The file is served over a tiny embedded
+  web server bound to **loopback only**, so its sibling CSS, JS, and images load, and a small injected script
+  **reloads the page live as you type** (serving the buffer's in-memory text, so unsaved edits show
+  instantly). Off by default — enable it under **Settings → HTML Preview** (or the **Toggle HTML Live
+  Preview** command). Palette commands: **Open in Browser** / **Open in Browser…** (pick a browser). No new
+  dependency (uses the JDK's built-in `HttpServer`).
+
 - **Command descriptions in the palette.** Every command now has a one-line description, shown as a detail
   line between the results list and the navigation hint in the command palette (`M-x`) — it updates live as
   you arrow through the list, so you can tell what an unfamiliar command does before running it. All ~231

@@ -33,6 +33,10 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] HTTP Client (`.http`/`.rest` files) — a green ▶ on every request runs it with the built-in JDK
       HTTP client; response (status/headers/pretty-JSON/timing) in an HTTP Client tool window (`M-0`);
       `{{var}}`/`@var` substitution, environment files (`http-client.env.json`), run-whole-file
+- [x] HTML Live Preview — a floating browser icon on `.html`/`.htm`/`.xhtml` files opens them in a detected
+      browser (Safari/Chrome/Firefox/Edge/system default) served over a loopback JDK `HttpServer`, with
+      live-as-you-type reload (assets load from disk; the page from the live buffer text); off by default
+      (Settings → HTML Preview); `htmlPreview.open` / `htmlPreview.openIn` / `view.toggleHtmlPreview`
 - [x] File templates — "New File From Template" (`C-c C-n`): single- or multi-file templates with a
       `${var}` wizard and `$0`/`${cursor}` placeholders; bundled (Java class, HTML page/bundle, Markdown,
       Python) + user templates in `~/.editora/templates/`
