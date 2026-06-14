@@ -91,6 +91,7 @@
   "M-g n": "notes.jump",
   "M-g j": "nav.aceJump",
   "M-g h": "tool.gitLog",
+  "M-g l": "tool.fileHistory",
   "M-g a": "git.toggleBlame",
   "C-c i": "snippets.insert",
   "C-c C-n": "template.new",

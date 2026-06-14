@@ -81,6 +81,14 @@ final class Icons {
                 + "9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z");
     }
 
+    /** Clock-face "schedule" glyph (Material) for the Local File History tool window — distinct from the
+     *  clock-with-back-arrow {@link #gitLog()}. */
+    static Node history() {
+        return of("M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 "
+                + "2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 "
+                + "3.15.75-1.23-4.5-2.67z");
+    }
+
     /** Person-with-lines "annotate/blame" glyph (Material "person") for inline blame. */
     static Node blame() {
         return of("M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 "

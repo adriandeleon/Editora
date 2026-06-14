@@ -5,6 +5,7 @@ import java.util.Map;
 import com.editora.config.BookmarkStore;
 import com.editora.config.BreakpointStore;
 import com.editora.config.ConnectionStore;
+import com.editora.config.HistoryStore;
 import com.editora.config.NoteStore;
 import com.editora.config.PluginStore;
 import com.editora.config.ProjectManager;
@@ -61,7 +62,8 @@ public enum ConfigSchema {
                     Map.entry(22, (Migration) ConfigMigrations::identity), // v22→23: + pluginRegistryUrl (additive)
                     Map.entry(23, (Migration) ConfigMigrations::identity), // v23→24: + pluginRequireSignature
                     Map.entry(24, (Migration) ConfigMigrations::identity), // v24→25: + htmlPreviewSupport/Browser
-                    Map.entry(25, (Migration) ConfigMigrations::identity))), // v25→26: + fillColumn (additive)
+                    Map.entry(25, (Migration) ConfigMigrations::identity), // v25→26: + fillColumn (additive)
+                    Map.entry(26, (Migration) ConfigMigrations::identity))), // v26→27: + localHistory + limits
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
@@ -71,7 +73,8 @@ public enum ConfigSchema {
     RECENT(RecentFiles.SCHEMA_VERSION, 1, Map.of(0, ConfigMigrations::wrapRecentFilesArray)),
     NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of()),
     CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of()),
-    PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of());
+    PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
+    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;
     private final int assumedLegacyVersion;
