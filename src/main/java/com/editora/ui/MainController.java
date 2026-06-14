@@ -2245,9 +2245,14 @@ public class MainController {
         });
     }
 
-    /** Opens (or focuses) the Find-in-Files tool window and focuses its query field. */
+    /** Toggles the Find-in-Files tool window: opens it (focusing its query field) when closed, closes it
+     *  when already open — so the toolbar icon (and {@code C-S-f}) acts as an open/close toggle. */
     private void openSearchInFiles() {
-        toolWindows.open(searchToolWindow, true);
+        if (toolWindows.isOpen(searchToolWindow)) {
+            toolWindows.close(searchToolWindow);
+        } else {
+            toolWindows.open(searchToolWindow, true);
+        }
     }
 
     /** Starts AceJump on the active buffer: type a character, then a label, to jump the caret. */
