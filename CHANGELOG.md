@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Find/Replace highlights now stay in sync when you edit the buffer.** With the find bar open, editing the
+  text left the match highlights painted at their old offsets (no longer aligned with the searched text).
+  The bar now re-runs the search on each (debounced) edit and re-highlights at the new positions — without
+  moving the caret or selection, so it doesn't interfere with typing.
+
 ### Added
 
 - **Emacs fill commands.** Re-wrap paragraphs to a fill column: **Fill Paragraph** (`M-q`) reflows the
