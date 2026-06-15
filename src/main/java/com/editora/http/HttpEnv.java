@@ -20,27 +20,37 @@ public final class HttpEnv {
 
     private HttpEnv() {}
 
-    /** The variables of one environment ({@code name → value}) from {@code json}, or empty if absent. */
+    /** The IntelliJ-reserved environment whose variables are shared across every environment. */
+    private static final String SHARED = "$shared";
+
+    /** The variables of one environment ({@code name → value}) from {@code json}, with the {@code $shared}
+     *  environment merged in underneath (a specific environment's value wins), or empty if absent. */
     public static java.util.Map<String, String> variables(String json, String environment) {
         java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
         if (json == null || json.isBlank() || environment == null || environment.isEmpty()) {
             return out;
         }
         try {
-            JsonNode env = MAPPER.readTree(json).get(environment);
-            if (env != null && env.isObject()) {
-                for (Map.Entry<String, JsonNode> e : env.properties()) {
-                    JsonNode v = e.getValue();
-                    out.put(e.getKey(), v.isValueNode() ? v.asText() : v.toString());
-                }
-            }
+            JsonNode root = MAPPER.readTree(json);
+            putEnv(out, root.get(SHARED)); // shared first (lowest precedence)
+            putEnv(out, root.get(environment)); // the selected environment overrides
         } catch (Exception e) {
             return new java.util.LinkedHashMap<>();
         }
         return out;
     }
 
-    /** The ordered top-level environment names in {@code json}, or an empty list if it is blank/invalid. */
+    private static void putEnv(java.util.Map<String, String> out, JsonNode env) {
+        if (env != null && env.isObject()) {
+            for (Map.Entry<String, JsonNode> e : env.properties()) {
+                JsonNode v = e.getValue();
+                out.put(e.getKey(), v.isValueNode() ? v.asText() : v.toString());
+            }
+        }
+    }
+
+    /** The ordered top-level environment names in {@code json} (excluding the reserved {@code $shared}), or
+     *  an empty list if it is blank/invalid. */
     public static List<String> environmentNames(String json) {
         List<String> names = new ArrayList<>();
         if (json == null || json.isBlank()) {
@@ -49,7 +59,11 @@ public final class HttpEnv {
         try {
             JsonNode root = MAPPER.readTree(json);
             if (root != null && root.isObject()) {
-                root.fieldNames().forEachRemaining(names::add);
+                root.fieldNames().forEachRemaining(name -> {
+                    if (!SHARED.equals(name)) {
+                        names.add(name);
+                    }
+                });
             }
         } catch (Exception e) {
             return new ArrayList<>(); // malformed → no environments (non-fatal)

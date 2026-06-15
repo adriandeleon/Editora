@@ -79,6 +79,9 @@ public final class HttpClientService {
         LocalDateTime now = LocalDateTime.now();
         Function<String, String> sub = s -> HttpVars.substitute(s, vars, now, captured, baseDir);
         String url = sub.apply(request.url()).trim();
+        if (!request.directives().noAutoEncoding()) {
+            url = UrlEncoding.encodeIllegal(url); // default auto-encoding (off under @no-auto-encoding)
+        }
         String method = request.method().isEmpty() ? "GET" : request.method();
 
         List<String[]> headers = new ArrayList<>();
@@ -90,23 +93,32 @@ public final class HttpClientService {
 
         BodyContent bc = resolveBody(request, baseDir, sub, contentType, headers);
         String label = method + " " + url;
+        // Digest shorthand (Authorization: Digest user pass): send anonymously, then answer a 401 challenge.
+        DigestAuth.Credentials digest = digestCredentials(headers);
+        if (digest != null) {
+            headers.removeIf(h -> h[0].equalsIgnoreCase("Authorization"));
+        }
         try {
             HttpClient client = clientFor(request.directives(), cookies);
             Duration timeout = request.directives().timeoutSeconds() > 0
                     ? Duration.ofSeconds(request.directives().timeoutSeconds())
                     : REQUEST_TIMEOUT;
-            HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(timeout);
-            for (String[] h : headers) {
-                try {
-                    b.header(h[0], h[1]);
-                } catch (IllegalArgumentException ignore) {
-                    // a header the JDK client forbids setting (Host, Content-Length, …) — skip it
-                }
-            }
-            b.method(method, bc.publisher());
 
             long t0 = System.nanoTime();
-            HttpResponse<String> resp = client.send(b.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = send(client, url, method, headers, timeout, bc.publisher(), null);
+            if (digest != null && resp.statusCode() == 401) {
+                String challenge = resp.headers().firstValue("WWW-Authenticate").orElse("");
+                if (challenge.regionMatches(true, 0, "Digest", 0, 6)) {
+                    String authz = DigestAuth.authorization(
+                            digest,
+                            method,
+                            requestTarget(url),
+                            DigestAuth.parseChallenge(challenge),
+                            randomHex(),
+                            "00000001");
+                    resp = send(client, url, method, headers, timeout, bc.publisher(), authz);
+                }
+            }
             long ms = (System.nanoTime() - t0) / 1_000_000;
 
             List<String[]> respHeaders = new ArrayList<>();
@@ -170,13 +182,69 @@ public final class HttpClientService {
     }
 
     private static HttpClient clientFor(HttpFile.Directives directives, CookieManager cookies) {
+        Duration connect = directives.connectionTimeoutSeconds() > 0
+                ? Duration.ofSeconds(directives.connectionTimeoutSeconds())
+                : CONNECT_TIMEOUT;
         HttpClient.Builder b = HttpClient.newBuilder()
-                .connectTimeout(CONNECT_TIMEOUT)
+                .connectTimeout(connect)
                 .followRedirects(directives.noRedirect() ? HttpClient.Redirect.NEVER : HttpClient.Redirect.NORMAL);
         if (!directives.noCookieJar()) {
             b.cookieHandler(cookies);
         }
         return b.build();
+    }
+
+    /** Builds and sends one request; {@code authOverride} (when non-null) sets the Authorization header. */
+    private static HttpResponse<String> send(
+            HttpClient client,
+            String url,
+            String method,
+            List<String[]> headers,
+            Duration timeout,
+            HttpRequest.BodyPublisher publisher,
+            String authOverride)
+            throws java.io.IOException, InterruptedException {
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(timeout);
+        for (String[] h : headers) {
+            try {
+                b.header(h[0], h[1]);
+            } catch (IllegalArgumentException ignore) {
+                // a header the JDK client forbids setting (Host, Content-Length, …) — skip it
+            }
+        }
+        if (authOverride != null) {
+            b.header("Authorization", authOverride);
+        }
+        b.method(method, publisher);
+        return client.send(b.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static DigestAuth.Credentials digestCredentials(List<String[]> headers) {
+        for (String[] h : headers) {
+            if (h[0].equalsIgnoreCase("Authorization")) {
+                return DigestAuth.shorthand(h[1]);
+            }
+        }
+        return null;
+    }
+
+    /** The request target (path + query) for the Digest {@code uri} parameter. */
+    private static String requestTarget(String url) {
+        try {
+            URI u = URI.create(url);
+            String path = u.getRawPath();
+            if (path == null || path.isEmpty()) {
+                path = "/";
+            }
+            return u.getRawQuery() == null ? path : path + "?" + u.getRawQuery();
+        } catch (Exception e) {
+            return url;
+        }
+    }
+
+    private static String randomHex() {
+        return String.format(
+                "%016x", java.util.concurrent.ThreadLocalRandom.current().nextLong());
     }
 
     /** Writes the response body to each {@code >>}/{@code >>!} target (force overwrites; plain skips existing). */

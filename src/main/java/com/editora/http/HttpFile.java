@@ -24,9 +24,15 @@ public final class HttpFile {
 
     private HttpFile() {}
 
-    /** Per-request comment directives; {@code timeoutSeconds == 0} means "use the default". */
-    public record Directives(boolean noRedirect, boolean noCookieJar, boolean noLog, int timeoutSeconds) {
-        public static final Directives NONE = new Directives(false, false, false, 0);
+    /** Per-request comment directives; a {@code 0} timeout means "use the default". */
+    public record Directives(
+            boolean noRedirect,
+            boolean noCookieJar,
+            boolean noLog,
+            boolean noAutoEncoding,
+            int timeoutSeconds,
+            int connectionTimeoutSeconds) {
+        public static final Directives NONE = new Directives(false, false, false, false, 0, 0);
     }
 
     /** An external request body: the {@code path} (relative to the request file), whether to substitute
@@ -299,7 +305,9 @@ public final class HttpFile {
         boolean noRedirect = false;
         boolean noCookieJar = false;
         boolean noLog = false;
+        boolean noAutoEncoding = false;
         int timeout = 0;
+        int connectionTimeout = 0;
         for (int k = from; k < to; k++) {
             String s = lines[k].strip();
             if (!isComment(s)) {
@@ -317,11 +325,16 @@ public final class HttpFile {
                 noCookieJar = true;
             } else if (low.startsWith("no-log")) {
                 noLog = true;
+            } else if (low.startsWith("no-auto-encoding")) {
+                noAutoEncoding = true;
+            } else if (low.startsWith("connection-timeout")) {
+                connectionTimeout =
+                        parseInt(tok.substring("connection-timeout".length()).strip());
             } else if (low.startsWith("timeout")) {
                 timeout = parseInt(tok.substring("timeout".length()).strip());
             }
         }
-        return new Directives(noRedirect, noCookieJar, noLog, timeout);
+        return new Directives(noRedirect, noCookieJar, noLog, noAutoEncoding, timeout, connectionTimeout);
     }
 
     private static BodyRef parseBodyRef(String line) {
