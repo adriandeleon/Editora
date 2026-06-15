@@ -2057,6 +2057,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
         projectPanel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         projectPanel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
+        // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (local files only).
+        breadcrumb.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
+        breadcrumb.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         projectPanel.setFileActions(new ProjectPanel.FileActions() {
             @Override
             public boolean localHistoryEnabled() {

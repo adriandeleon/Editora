@@ -5,7 +5,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -17,11 +20,16 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.layout.StackPane;
 import javafx.util.Callback;
 
 import atlantafx.base.controls.Breadcrumbs;
+import atlantafx.base.controls.Breadcrumbs.BreadCrumbActionEvent;
 import atlantafx.base.controls.Breadcrumbs.BreadCrumbItem;
+import com.editora.vfs.Vfs;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * IntelliJ-style file navigation bar: shows the active file's absolute path as clickable segments.
@@ -36,11 +44,21 @@ public class FileBreadcrumb extends StackPane {
     private static final double BAR_HEIGHT = 24;
 
     private final Consumer<Path> onOpenFile;
+    /** Injected by MainController: reveal a crumb in the OS file manager. Args: (path, isDirectory). */
+    private BiConsumer<Path, Boolean> onReveal;
+    /** Injected by MainController: open a terminal at a crumb's folder. Args: (path, isDirectory). */
+    private BiConsumer<Path, Boolean> onOpenTerminal;
+
     private final Breadcrumbs<Path> breadcrumbs = new Breadcrumbs<>();
     private final ScrollPane scroll = new ScrollPane(breadcrumbs);
 
     /** The crumb node for the trailing (leaf) segment, used to anchor a re-opened dropdown. */
     private Node leafCrumbNode;
+
+    /** Crumb path → its button node, so a crumb-action click can anchor the dropdown on the clicked crumb.
+     *  Rebuilt on each {@link #showPath}. (The AtlantaFX skin owns each crumb button's {@code onAction} —
+     *  it overrides any handler the crumb factory sets — so clicks are caught via {@code onCrumbAction}.) */
+    private final Map<Path, ButtonBase> crumbNodes = new HashMap<>();
 
     /** The bar is shown only when enabled (the user setting) and a file is active. */
     private boolean enabled;
@@ -53,6 +71,8 @@ public class FileBreadcrumb extends StackPane {
 
         breadcrumbs.setAutoNavigationEnabled(false);
         breadcrumbs.setCrumbFactory(crumbFactory());
+        // The skin overrides each crumb button's onAction (to fire this event), so catch clicks here.
+        breadcrumbs.setOnCrumbAction(this::onCrumbAction);
 
         scroll.setFitToHeight(true);
         scroll.setPannable(true);
@@ -75,6 +95,16 @@ public class FileBreadcrumb extends StackPane {
 
         setVisible(false);
         setManaged(false);
+    }
+
+    /** Injects the "Reveal in File Manager" handler ({@code (path, isDirectory)}) for the crumb menu. */
+    public void setOnReveal(BiConsumer<Path, Boolean> onReveal) {
+        this.onReveal = onReveal;
+    }
+
+    /** Injects the "Open Terminal Here" handler ({@code (path, isDirectory)}) for the crumb menu. */
+    public void setOnOpenTerminal(BiConsumer<Path, Boolean> onOpenTerminal) {
+        this.onOpenTerminal = onOpenTerminal;
     }
 
     /** Enables/disables the bar (the user setting). Hidden entirely when disabled. */
@@ -116,6 +146,7 @@ public class FileBreadcrumb extends StackPane {
         if (cumulative.isEmpty()) {
             cumulative.add(path);
         }
+        crumbNodes.clear(); // rebuilt by the crumb factory as setSelectedCrumb lays out the new trail
         breadcrumbs.setSelectedCrumb(Breadcrumbs.buildTreeModel(cumulative.toArray(new Path[0])));
     }
 
@@ -124,15 +155,23 @@ public class FileBreadcrumb extends StackPane {
             Path p = item.getValue();
             Hyperlink link = new Hyperlink(crumbLabel(p));
             link.getStyleClass().add("file-breadcrumb-crumb");
-            link.setOnAction(e -> {
-                link.setVisited(false);
-                showCrumbMenu(p, link);
-            });
+            crumbNodes.put(p, link); // anchor lookup for onCrumbAction (the skin owns the button's onAction)
             if (item.isLast()) {
                 leafCrumbNode = link;
             }
             return link;
         };
+    }
+
+    /** A crumb was clicked (the skin fires this regardless of auto-navigation): drop its dropdown. */
+    private void onCrumbAction(BreadCrumbActionEvent<Path> e) {
+        Path p = e.getSelectedCrumb().getValue();
+        ButtonBase crumbButton = crumbNodes.get(p);
+        Node anchor = crumbButton != null ? crumbButton : breadcrumbs;
+        if (anchor instanceof Hyperlink link) {
+            link.setVisited(false); // don't leave the crumb showing the "visited" link color
+        }
+        showCrumbMenu(p, anchor);
     }
 
     private static String crumbLabel(Path p) {
@@ -141,7 +180,8 @@ public class FileBreadcrumb extends StackPane {
     }
 
     private void showCrumbMenu(Path crumbPath, Node anchor) {
-        Path dir = Files.isDirectory(crumbPath) ? crumbPath : crumbPath.getParent();
+        boolean isDir = Files.isDirectory(crumbPath);
+        Path dir = isDir ? crumbPath : crumbPath.getParent();
         if (dir == null) {
             return;
         }
@@ -157,6 +197,22 @@ public class FileBreadcrumb extends StackPane {
         files.sort(byName);
 
         ContextMenu menu = new ContextMenu();
+        // Reveal / Open Terminal act on this crumb (local files only — meaningless over SFTP).
+        if ((onReveal != null || onOpenTerminal != null) && Vfs.isLocal(crumbPath)) {
+            if (onReveal != null) {
+                MenuItem reveal = new MenuItem(tr("menu.revealInFileManager"), Icons.revealInFiles());
+                reveal.setOnAction(e -> onReveal.accept(crumbPath, isDir));
+                menu.getItems().add(reveal);
+            }
+            if (onOpenTerminal != null) {
+                MenuItem terminal = new MenuItem(tr("menu.openTerminal"), Icons.terminal());
+                terminal.setOnAction(e -> onOpenTerminal.accept(crumbPath, isDir));
+                menu.getItems().add(terminal);
+            }
+            if (!dirs.isEmpty() || !files.isEmpty()) {
+                menu.getItems().add(new SeparatorMenuItem()); // divider before the folder listing
+            }
+        }
         for (Path d : dirs) {
             MenuItem mi = new MenuItem(d.getFileName().toString(), Icons.project());
             mi.setOnAction(e -> navigateInto(d, anchor));
