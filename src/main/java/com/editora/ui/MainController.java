@@ -2031,6 +2031,37 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
         projectPanel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         projectPanel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
+        projectPanel.setFileActions(new ProjectPanel.FileActions() {
+            @Override
+            public boolean localHistoryEnabled() {
+                return MainController.this.localHistoryEnabled();
+            }
+
+            @Override
+            public void showLocalHistory(Path file) {
+                showLocalHistoryForPath(file);
+            }
+
+            @Override
+            public boolean gitEnabled() {
+                return MainController.this.gitEnabled();
+            }
+
+            @Override
+            public void gitShowFileHistory(Path file) {
+                ifGit(() -> gitFileHistoryForPath(file));
+            }
+
+            @Override
+            public void gitCompareWithHead(Path file) {
+                ifGit(() -> diffPathVsHead(file));
+            }
+
+            @Override
+            public void gitStage(Path file) {
+                ifGit(() -> gitStageForPath(file));
+            }
+        });
         projectToolWindow = new ToolWindow(
                 "project",
                 tr("toolwindow.project"),
@@ -4476,16 +4507,24 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.diff.noFile"));
             return;
         }
+        diffPathVsHead(b.getPath());
+    }
+
+    /** Opens a read-only diff of {@code path} at HEAD (left) vs its working-tree text (right). */
+    private void diffPathVsHead(Path path) {
+        if (path == null || Files.isDirectory(path)) {
+            setStatus(tr("status.diff.noFile"));
+            return;
+        }
         if (currentRepoRoot == null) {
             setStatus(tr(gitService.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
             return;
         }
-        String rel = com.editora.git.GitService.repoRelative(currentRepoRoot, b.getPath());
+        String rel = com.editora.git.GitService.repoRelative(currentRepoRoot, path);
         if (rel == null) {
             setStatus(tr("status.diff.notInRepo"));
             return;
         }
-        Path path = b.getPath();
         String name = path.getFileName().toString();
         openDiff(
                 tr("diff.title.vsHead", name),
@@ -5193,6 +5232,48 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         refreshLocalHistory();
         toolWindows.open(fileHistoryToolWindow);
+    }
+
+    // --- Project tree "Show Local History" / "Git" submenu (act on a tree path, not the active tab) ---
+
+    /**
+     * Project-tree "Show Local History": opens {@code file} (the Local History tool window is keyed to the
+     * active buffer) then shows its history. No-op for a folder / when the feature is off / a remote file.
+     */
+    private void showLocalHistoryForPath(Path file) {
+        if (!localHistoryEnabled()) {
+            setStatus(tr("status.history.disabled"));
+            return;
+        }
+        if (file == null || Files.isDirectory(file) || !com.editora.vfs.Vfs.isLocal(file)) {
+            setStatus(tr("status.history.noFile"));
+            return;
+        }
+        openPath(file); // makes it the active buffer, which the history tool window tracks
+        showLocalHistory();
+    }
+
+    /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */
+    private void gitFileHistoryForPath(Path file) {
+        if (file == null || Files.isDirectory(file)) {
+            setStatus(tr("status.diff.noFile"));
+            return;
+        }
+        loadGitLog(file);
+        toolWindows.open(gitLogToolWindow);
+    }
+
+    /** Project-tree Git ▸ Stage File for {@code file}: {@code git add -- <relpath>}. */
+    private void gitStageForPath(Path file) {
+        if (file == null || Files.isDirectory(file) || currentRepoRoot == null) {
+            setStatus(tr("status.noGitFile"));
+            return;
+        }
+        gitOp(
+                "Staged " + file.getFileName(),
+                "add",
+                "--",
+                currentRepoRoot.relativize(file.toAbsolutePath()).toString());
     }
 
     /** Opens a read-only diff of {@code revision} (left) vs the active file's current text (right). */

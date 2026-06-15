@@ -25,6 +25,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TreeCell;
@@ -63,6 +64,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private BiConsumer<Path, Boolean> onReveal;
     /** Injected by MainController: open a terminal at a path's folder. Args: (path, isDirectory). */
     private BiConsumer<Path, Boolean> onOpenTerminal;
+    /** Injected by MainController: per-file Local History + Git actions for the cell menu (files only). */
+    private FileActions fileActions;
+
+    /**
+     * File-scoped actions the Project tree's cell menu offers — Local History and Git. Injected by
+     * {@code MainController} so the panel stays decoupled from the editor/history/git internals. The
+     * {@code *Enabled} flags gate (disable) the corresponding menu entries to match the feature toggles.
+     */
+    public interface FileActions {
+        boolean localHistoryEnabled();
+
+        void showLocalHistory(Path file);
+
+        boolean gitEnabled();
+
+        void gitShowFileHistory(Path file);
+
+        void gitCompareWithHead(Path file);
+
+        void gitStage(Path file);
+    }
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
     private OverlayInput.Prompt prompt;
@@ -421,6 +443,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.onOpenTerminal = onOpenTerminal;
     }
 
+    /** Injects the per-file Local History + Git actions shown on a file cell's menu. */
+    public void setFileActions(FileActions fileActions) {
+        this.fileActions = fileActions;
+    }
+
     private void renameItem(TreeItem<Path> item) {
         if (prompt == null) {
             return;
@@ -629,6 +656,36 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 terminal.setGraphic(Icons.terminal());
                 terminal.setOnAction(e -> onOpenTerminal.accept(treeItem.getValue(), isDir));
                 menu.getItems().add(terminal);
+            }
+            // Local History + Git act on a concrete file (not a folder).
+            if (fileActions != null && !isDir) {
+                Path file = treeItem.getValue();
+                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+
+                MenuItem localHistory = new MenuItem(tr("project.menu.localHistory"));
+                localHistory.setGraphic(Icons.history());
+                localHistory.setOnAction(e -> fileActions.showLocalHistory(file));
+                menu.getItems().add(localHistory);
+
+                Menu git = new Menu(tr("project.menu.git"));
+                git.setGraphic(Icons.git());
+                MenuItem fileHistory = new MenuItem(tr("project.menu.git.fileHistory"));
+                fileHistory.setGraphic(Icons.gitLog());
+                fileHistory.setOnAction(e -> fileActions.gitShowFileHistory(file));
+                MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
+                compareHead.setGraphic(Icons.diff());
+                compareHead.setOnAction(e -> fileActions.gitCompareWithHead(file));
+                MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
+                stage.setGraphic(Icons.stageAll());
+                stage.setOnAction(e -> fileActions.gitStage(file));
+                git.getItems().addAll(fileHistory, compareHead, stage);
+                menu.getItems().add(git);
+
+                // Disable to match the live feature toggles, mirroring the tab context menu.
+                menu.setOnShowing(e -> {
+                    localHistory.setDisable(!fileActions.localHistoryEnabled());
+                    git.setDisable(!fileActions.gitEnabled());
+                });
             }
             return menu;
         }
