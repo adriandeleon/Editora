@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **File-type icons now line up in the Project tree (and other file lists).** Each glyph's node bounds equal
+  its ink, which varies per file type, so the icon column had a ragged width and file names jumped left/right
+  (and the taller document glyphs sat high). Every file/folder glyph is now centered in a fixed-size box, so
+  names start at the same x and icons are vertically centered. Applies wherever file icons appear — the tree,
+  tabs, the Open-Files / Recent pickers, and the Switcher.
+
 - **Distinct icons for the tab right-click close menu.** The six close commands (Close, Close Other Tabs,
   Close All Tabs, Close Unmodified Tabs, Close Tabs to the Left/Right) all shared the plain ✕. They now each
   carry a variant of the ✕ so they're distinguishable at a glance: one small square (other), three squares
