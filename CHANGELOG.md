@@ -96,6 +96,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reveal in File Manager / Open Terminal Here from the breadcrumb.** Clicking a folder or file crumb in the
+  navigation bar now lists **Reveal in File Manager** and **Open Terminal Here** for that crumb (above the
+  folder-contents dropdown) — Reveal selects the file or opens the folder; Open Terminal opens at the folder
+  (the file's parent for a file crumb). Shown for local files only. This also **fixes the crumb dropdown not
+  opening at all**: the AtlantaFX breadcrumb skin owns each crumb button's action, so the click is now caught
+  via the control's crumb-action event instead of an `onAction` the skin overrode.
+
 - **"Comment / Uncomment" in the editor right-click menu.** For files whose language has comment syntax, the
   code-area context menu now offers Comment / Uncomment (the same action as the `M-;` keybinding and the
   command palette) — it line-comments the caret's line or block/line-comments the selection, and toggles back
