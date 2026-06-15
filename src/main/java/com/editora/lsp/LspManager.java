@@ -278,6 +278,52 @@ public final class LspManager {
         });
     }
 
+    /** True if {@code file}'s server is ready and advertises whole-document formatting. */
+    public boolean supportsFormatting(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && formattingProvider(s.capabilities());
+    }
+
+    /** Pure: whether a server's capabilities include {@code documentFormattingProvider} (null-safe). */
+    static boolean formattingProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return false;
+        }
+        var p = caps.getDocumentFormattingProvider();
+        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
+    }
+
+    /**
+     * Requests whole-document formatting ({@code textDocument/formatting}) for {@code file} and delivers the
+     * resulting edits to {@code cb} on the FX thread (empty list if the server returns nothing or errors).
+     * {@code tabSize}/{@code insertSpaces} are formatter hints (many formatters use their own config).
+     */
+    public void formatDocument(
+            Path file, int tabSize, boolean insertSpaces, Consumer<List<com.editora.editor.LspTextEdit>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.formatting(uri(file), new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
+                .whenComplete((result, error) -> {
+                    List<com.editora.editor.LspTextEdit> edits = new ArrayList<>();
+                    if (error == null && result != null) {
+                        for (org.eclipse.lsp4j.TextEdit e : result) {
+                            if (e != null && e.getRange() != null) {
+                                edits.add(new com.editora.editor.LspTextEdit(
+                                        e.getRange().getStart().getLine(),
+                                        e.getRange().getStart().getCharacter(),
+                                        e.getRange().getEnd().getLine(),
+                                        e.getRange().getEnd().getCharacter(),
+                                        e.getNewText() == null ? "" : e.getNewText()));
+                            }
+                        }
+                    }
+                    Platform.runLater(() -> cb.accept(edits));
+                });
+    }
+
     public void hover(Path file, int line, int character, Consumer<String> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {

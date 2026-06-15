@@ -96,6 +96,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Format Document command (LSP).** A new command-palette command **LSP: Format Document** reformats the
+  whole active file via its language server (`textDocument/formatting`) — available when a server is running
+  for the file's language and advertises formatting. Edits apply through the undoable buffer (so a single
+  Undo reverts), and it reports when no formatter is available or the file is already formatted. Also
+  available as **Format Document** in the editor right-click menu, shown only when the server advertises
+  formatting.
+
 - **Right-click a tool-window icon → Hide.** Right-clicking a button in the tool-window stripe now offers
   **Hide**, which removes that icon from the stripe (persisted). Bring it back from Settings → Tool Windows.
 

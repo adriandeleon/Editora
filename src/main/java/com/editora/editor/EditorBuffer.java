@@ -332,6 +332,9 @@ public class EditorBuffer implements TabContent {
 
     private Runnable lspFindReferencesAction = () -> {};
     private Runnable lspHoverAction = () -> {};
+    private Runnable lspFormatAction = () -> {};
+    /** Whether this buffer's server advertises whole-document formatting (refreshed when it reports ready). */
+    private boolean lspFormatAvailable;
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
     private static final int CONTEXT_CHARS = 40;
     /** Git gutter change bars: 0-based line → CSS class ({@code git-added}/{@code git-modified}/
@@ -956,7 +959,14 @@ public class EditorBuffer implements TabContent {
             area.moveTo(offset);
             lspHoverAction.run();
         });
-        return List.of(def, refs, hover);
+        List<MenuItem> items = new java.util.ArrayList<>(List.of(def, refs, hover));
+        if (lspFormatAvailable) {
+            MenuItem format = new MenuItem(tr("command.lsp.formatDocument"));
+            format.setGraphic(MenuIcons.code());
+            format.setOnAction(e -> lspFormatAction.run()); // whole-document — no caret positioning needed
+            items.add(format);
+        }
+        return items;
     }
 
     /** Markdown inline-format actions for the right-click menu (markdown buffers only). */
@@ -1527,11 +1537,18 @@ public class EditorBuffer implements TabContent {
         diagnosticStripe.setActive(lspActive);
     }
 
-    /** Injects the LSP navigation actions surfaced in the right-click menu while {@link #isLspActive()}. */
-    public void setLspNavActions(Runnable gotoDefinition, Runnable findReferences, Runnable hover) {
+    /** Injects the LSP actions surfaced in the right-click menu while {@link #isLspActive()} (Format is
+     *  shown only when the server advertises it — see {@link #setLspFormatAvailable}). */
+    public void setLspNavActions(Runnable gotoDefinition, Runnable findReferences, Runnable hover, Runnable format) {
         this.lspGotoDefinitionAction = gotoDefinition == null ? () -> {} : gotoDefinition;
         this.lspFindReferencesAction = findReferences == null ? () -> {} : findReferences;
         this.lspHoverAction = hover == null ? () -> {} : hover;
+        this.lspFormatAction = format == null ? () -> {} : format;
+    }
+
+    /** Whether to offer "Format Document" in the right-click menu (the server's formatting capability). */
+    public void setLspFormatAvailable(boolean available) {
+        this.lspFormatAvailable = available;
     }
 
     /** Current document text (for an initial didOpen). */
@@ -4138,6 +4155,11 @@ public class EditorBuffer implements TabContent {
      * {@code import} line a TypeScript auto-import adds). Edits are applied bottom-to-top so earlier
      * offsets stay valid; out-of-range positions are clamped/skipped. Inert when not editable.
      */
+    /** Whether this file's detected indentation is spaces rather than tabs — the LSP formatting hint. */
+    public boolean detectInsertSpaces(int tabSize) {
+        return !Indenter.detectUnit(area.getText(), tabSize).contains("\t");
+    }
+
     public void applyLspEdits(java.util.List<LspTextEdit> edits) {
         if (edits == null || edits.isEmpty() || !isEditable()) {
             return;
