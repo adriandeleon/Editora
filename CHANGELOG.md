@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Distinct icons for the tab right-click close menu.** The six close commands (Close, Close Other Tabs,
+  Close All Tabs, Close Unmodified Tabs, Close Tabs to the Left/Right) all shared the plain ✕. They now each
+  carry a variant of the ✕ so they're distinguishable at a glance: one small square (other), three squares
+  (all), a check (unmodified/saved), and a left/right triangle (direction). "Close" keeps the plain ✕.
+
 - **The Find in Files toolbar icon now toggles the panel** — one click opens it (focusing the query field),
   another click closes it (matching `C-s`'s in-file find and the `M-6` tool-window toggle). `C-S-f` toggles
   too, since it shares the command.
