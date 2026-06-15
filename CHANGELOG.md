@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   faster in the gutter (measured A/B in one process). Line numbers, folding, and all gutter markers are
   unchanged.
 
+- **Cheaper spell-check overlay redraw while scrolling prose.** The red-squiggle overlay re-runs each scroll
+  pulse over the visible words. It now checks the (cached) spelling verdict *before* the per-word syntax-style
+  lookup, so that lookup runs only for the few misspelled words instead of every visible word, and it hoists
+  the per-word offset query out of the loop. Redrawing a ~375-line Markdown file was ~16–22% faster (measured
+  A/B in one process); squiggle placement is unchanged.
+
 ### Changed
 
 - **The Find in Files toolbar icon now toggles the panel** — one click opens it (focusing the query field),
