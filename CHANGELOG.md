@@ -96,6 +96,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **"Comment / Uncomment" in the editor right-click menu.** For files whose language has comment syntax, the
+  code-area context menu now offers Comment / Uncomment (the same action as the `M-;` keybinding and the
+  command palette) — it line-comments the caret's line or block/line-comments the selection, and toggles back
+  off when already commented. Hidden for plaintext (no comment syntax) and while read-only.
+
 - **Per-file-type icons.** File icons now reflect the file's type instead of a single generic document glyph.
   Editing `Main.java` shows the Java logo, `app.py` the Python logo, `style.css` the CSS logo, an image its
   picture glyph, a `.zip` an archive glyph, and so on — covering every language/format Editora supports

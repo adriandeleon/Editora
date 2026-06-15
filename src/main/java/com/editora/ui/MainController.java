@@ -10224,20 +10224,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (buffer == null) {
             return;
         }
-        CodeArea area = buffer.getFocusedArea();
-        com.editora.editor.Commenter.CommentStyle style = com.editora.editor.Commenter.styleFor(buffer.getLanguage());
-        com.editora.editor.Commenter.Edit edit = com.editora.editor.Commenter.toggle(
-                area.getText(),
-                area.getSelection().getStart(),
-                area.getSelection().getEnd(),
-                style);
-        if (edit == null) {
+        // The comment logic lives on the buffer (so the editor right-click menu can invoke it too).
+        if (!buffer.toggleComment()) {
             setStatus(tr("status.noCommentSyntax"));
-            return;
         }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.selectRange(edit.selStart(), edit.selEnd());
-        area.requestFocus();
     }
 
     /** Applies an Emacs transpose (chars/words/lines) to the active editable buffer at the caret. */
