@@ -1346,12 +1346,37 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.windowProject = project;
         this.projectKey = project == null ? "" : project.id();
         projectPanel.setRoot(project == null ? null : Path.of(project.root()));
+        updateProjectFolderView(); // global ("No Project") window: show the active file's folder instead
         refreshProjectPanelList();
         updateWindowTitle();
         // When a project window is freshly opened, show the Projects tool window so the file tree is
         // right there (called only on a new window build, never when focusing an already-open project).
         if (project != null && projectsEnabled() && projectToolWindow != null) {
             toolWindows.open(projectToolWindow, false);
+        }
+    }
+
+    /**
+     * In the global ("No Project") window, points the Project tool window at the active file's parent
+     * folder and titles it "Current Folder" — so it doubles as a file explorer for the file being edited,
+     * tracking tab switches. No-op when a project is open (the tree stays the project root and the title
+     * "Project") or while a remote folder is mounted (that root is set explicitly). With no local file
+     * active it shows the placeholder and the default title.
+     */
+    private void updateProjectFolderView() {
+        if (windowProject != null || !projectsEnabled() || activeRemoteAuthority != null) {
+            return; // a project / remote mount owns the tree root + title — leave them alone
+        }
+        EditorBuffer b = activeBuffer();
+        Path path = b == null ? null : b.getPath();
+        Path dir = (path != null && com.editora.vfs.Vfs.isLocal(path))
+                ? path.toAbsolutePath().getParent()
+                : null;
+        if (!java.util.Objects.equals(projectPanel.getRoot(), dir)) {
+            projectPanel.setRoot(dir); // null => placeholder (unsaved/Welcome tab); rebuilds only on change
+        }
+        if (projectToolWindow != null) {
+            projectToolWindow.setTitle(tr(dir != null ? "toolwindow.currentFolder" : "toolwindow.project"));
         }
     }
 
@@ -1951,6 +1976,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             structurePanel.attach(buffer);
             statusBar.attach(buffer);
             breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
+            updateProjectFolderView(); // global window: retarget the tree at the new file's folder
             if (AUTOSAVE_FOCUS.equals(autoSaveMode())) {
                 autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
             }
@@ -6789,6 +6815,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (buffer == activeBuffer()) {
             breadcrumb.setActiveFile(buffer.getPath());
+            updateProjectFolderView(); // global window: an untitled buffer just gained a folder to show
         }
         return ok;
     }

@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Project tool window shows the current file's folder when no project is open.** In the global
+  ("No Project") window it no longer just shows an empty "No project open" placeholder — it roots the tree at
+  the active file's parent directory and titles the tool window **"Current Folder"**, so it doubles as a file
+  explorer that follows you as you switch tabs. With a project open it's unchanged (the tree stays the project
+  root, titled "Project"); a mounted remote folder is also left as-is. An unsaved/Welcome tab (no folder)
+  falls back to the placeholder.
+
 - **File-type icons now line up in the Project tree (and other file lists).** Each glyph's node bounds equal
   its ink, which varies per file type, so the icon column had a ragged width and file names jumped left/right
   (and the taller document glyphs sat high). Every file/folder glyph is now centered in a fixed-size box, so

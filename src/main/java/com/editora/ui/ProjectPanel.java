@@ -207,6 +207,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         rebuildBody();
     }
 
+    /** The folder the tree is currently rooted at, or {@code null} when showing the placeholder. */
+    public Path getRoot() {
+        return root;
+    }
+
     /** Rebuilds the body: placeholder (no project), filtered flat results, or the lazy tree. */
     private void rebuildBody() {
         long gen = searchGen.incrementAndGet(); // invalidate any in-flight search

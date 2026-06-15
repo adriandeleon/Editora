@@ -22,7 +22,8 @@ final class ToolWindowPanel extends BorderPane {
     ToolWindowPanel(ToolWindow tw, Runnable onClose) {
         getStyleClass().add("tool-window");
 
-        Label title = new Label(tw.getTitle());
+        Label title = new Label();
+        title.textProperty().bind(tw.titleProperty()); // updates live when a tool window retitles itself
         title.getStyleClass().add("tool-window-title");
 
         Region spacer = new Region();
