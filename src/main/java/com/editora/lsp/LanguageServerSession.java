@@ -27,7 +27,9 @@ import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
+import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
+import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverCapabilities;
 import org.eclipse.lsp4j.HoverParams;
@@ -51,6 +53,7 @@ import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
+import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
@@ -343,6 +346,15 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
         return server.getTextDocumentService().completion(new CompletionParams(new TextDocumentIdentifier(uri), pos));
+    }
+
+    /** Whole-document formatting ({@code textDocument/formatting}) → the edits to apply, or empty. */
+    CompletableFuture<List<? extends TextEdit>> formatting(String uri, FormattingOptions options) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        DocumentFormattingParams params = new DocumentFormattingParams(new TextDocumentIdentifier(uri), options);
+        return server.getTextDocumentService().formatting(params).exceptionally(t -> List.of());
     }
 
     /** Resolves a completion item ({@code completionItem/resolve}) to fill in its {@code additionalTextEdits}

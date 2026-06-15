@@ -3895,10 +3895,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             // no-ops until the server's initialize completes (then onLspServerStatus "ready" refreshes them),
             // and effective immediately when the server for this root is already running (a 2nd file).
             buffer.setLspTriggerChars(lspManager.triggerCharacters(path));
+            buffer.setLspFormatAvailable(lspManager.supportsFormatting(path));
             lspManager.pullDiagnostics(path);
         } else {
             buffer.setLspActive(false);
             buffer.setLspTriggerChars(java.util.Set.of());
+            buffer.setLspFormatAvailable(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
                 lspProblems.remove(path);
@@ -4025,6 +4027,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     EditorBuffer b = bufferOf(tab);
                     if (b != null && b.getPath() != null && lspManager.isManaged(b.getPath())) {
                         b.setLspTriggerChars(lspManager.triggerCharacters(b.getPath()));
+                        b.setLspFormatAvailable(lspManager.supportsFormatting(b.getPath()));
                         lspManager.pullDiagnostics(b.getPath());
                     }
                 }
@@ -4058,6 +4061,34 @@ public class MainController implements com.editora.mcp.McpBridge {
         refreshProblems();
         applyLspGating();
         setStatus(tr("status.lsp.restarted"));
+    }
+
+    /** Reformats the whole active file via its language server ({@code textDocument/formatting}), if the
+     *  server is running and advertises formatting. Edits apply through the undoable buffer. */
+    private void formatDocument() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null || buffer.getPath() == null || !activeEditable()) {
+            setStatus(tr("status.lsp.formatUnavailable"));
+            return;
+        }
+        Path path = buffer.getPath();
+        if (!lspManager.isManaged(path) || !lspManager.supportsFormatting(path)) {
+            setStatus(tr("status.lsp.formatUnavailable"));
+            return;
+        }
+        int tabSize = config.getSettings().getTabSize();
+        setStatus(tr("status.lsp.formatting"));
+        lspManager.formatDocument(path, tabSize, buffer.detectInsertSpaces(tabSize), edits -> {
+            if (buffer != activeBuffer()) {
+                return; // user switched tabs before the server replied
+            }
+            if (edits.isEmpty()) {
+                setStatus(tr("status.lsp.formatNoChange"));
+                return;
+            }
+            buffer.applyLspEdits(edits);
+            setStatus(tr("status.lsp.formatted"));
+        });
     }
 
     /** Notifies the server of a save (didSave) for a managed file + refreshes pull-model diagnostics. */
@@ -6384,7 +6415,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 cb.accept(java.util.List.of());
             }
         });
-        buffer.setLspNavActions(this::lspGotoDefinition, this::lspFindReferences, this::lspShowHover);
+        buffer.setLspNavActions(
+                this::lspGotoDefinition, this::lspFindReferences, this::lspShowHover, this::formatDocument);
         syncBufferLsp(buffer);
         ensurePreviewControls(buffer);
         ensureHtmlPreviewControl(buffer); // the floating "open in browser" globe (HTML buffers, feature on)
@@ -10705,6 +10737,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("lsp.findReferences", () -> ifLsp(this::lspFindReferences)));
         registry.register(Command.of("lsp.hover", () -> ifLsp(this::lspShowHover)));
         registry.register(Command.of("lsp.restartServers", () -> ifLsp(this::restartLspServers)));
+        registry.register(Command.of("lsp.formatDocument", () -> ifLsp(this::formatDocument)));
         registry.register(Command.of("view.toggleLsp", this::toggleLsp));
         registry.register(Command.of("tool.commit", () -> ifGit(() -> toolWindows.toggle(commitToolWindow))));
         // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
