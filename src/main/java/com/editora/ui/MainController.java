@@ -2029,6 +2029,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
+        projectPanel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
+        projectPanel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         projectToolWindow = new ToolWindow(
                 "project",
                 tr("toolwindow.project"),
@@ -7010,6 +7012,59 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.copiedPath"));
     }
 
+    /** Reveals the active buffer's file in the OS file manager (a no-op for an unsaved/remote file). */
+    private void revealActiveBuffer() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        revealInFileManager(buffer.getPath(), false, isLocalBuffer(buffer));
+    }
+
+    /** Opens a terminal at the active buffer's containing folder (no-op for an unsaved/remote file). */
+    private void openTerminalForActiveBuffer() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        openTerminalAt(buffer.getPath(), false, isLocalBuffer(buffer));
+    }
+
+    /**
+     * Reveals {@code path} in the OS file manager. Used by the palette command, the tab context menu,
+     * and the Project tool window. No-op (with a status hint) for an unsaved or remote file.
+     */
+    private void revealInFileManager(Path path, boolean isDir, boolean local) {
+        if (path == null) {
+            setStatus(tr("status.reveal.noFile"));
+            return;
+        }
+        if (!local) {
+            setStatus(tr("status.reveal.remote"));
+            return;
+        }
+        com.editora.process.DesktopActions.reveal(
+                path.toAbsolutePath(),
+                isDir,
+                msg -> Platform.runLater(() -> setStatus(tr("status.reveal.failed", msg))));
+    }
+
+    /** Opens a terminal at {@code path}'s containing folder. Shared by the command, tab menu, and tree. */
+    private void openTerminalAt(Path path, boolean isDir, boolean local) {
+        if (path == null) {
+            setStatus(tr("status.reveal.noFile"));
+            return;
+        }
+        if (!local) {
+            setStatus(tr("status.reveal.remote"));
+            return;
+        }
+        com.editora.process.DesktopActions.openTerminal(
+                path.toAbsolutePath(),
+                isDir,
+                msg -> Platform.runLater(() -> setStatus(tr("status.terminal.failed", msg))));
+    }
+
     /**
      * Toggles a tab's pinned state. Pinned tabs are kept grouped at the front of the strip (in pin
      * order) and skipped by the bulk-close actions.
@@ -7150,6 +7205,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem history = new MenuItem(tr("command.git.fileHistory"));
         history.setGraphic(Icons.gitLog());
         history.setOnAction(e -> ifGit(this::showFileHistory));
+        MenuItem reveal = new MenuItem(tr("menu.revealInFileManager"));
+        reveal.setGraphic(Icons.revealInFiles());
+        reveal.setOnAction(e -> revealInFileManager(buffer.getPath(), false, isLocalBuffer(buffer)));
+        MenuItem terminal = new MenuItem(tr("menu.openTerminal"));
+        terminal.setGraphic(Icons.terminal());
+        terminal.setOnAction(e -> openTerminalAt(buffer.getPath(), false, isLocalBuffer(buffer)));
 
         ContextMenu menu = new ContextMenu(
                 save,
@@ -7167,6 +7228,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 compareWith,
                 history,
                 new SeparatorMenuItem(),
+                reveal,
+                terminal,
                 copyPath,
                 pin,
                 rename);
@@ -7174,6 +7237,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             closeLeft.setDisable(eligibleToLeft(tab).isEmpty());
             closeRight.setDisable(eligibleToRight(tab).isEmpty());
             boolean hasPath = buffer.getPath() != null;
+            // Reveal/terminal only make sense for a saved, local file.
+            boolean localPath = hasPath && isLocalBuffer(buffer);
+            reveal.setDisable(!localPath);
+            terminal.setDisable(!localPath);
             copyPath.setDisable(!hasPath);
             rename.setDisable(!hasPath);
             compareWith.setDisable(!hasPath);
@@ -10362,6 +10429,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("buffer.copyPath", () -> copyPath(activeBuffer())));
         registry.register(Command.of("buffer.togglePin", () -> togglePin(activeTab())));
         registry.register(Command.of("buffer.rename", () -> renameFile(activeBuffer(), activeTab())));
+        registry.register(Command.of("file.revealInFileManager", this::revealActiveBuffer));
+        registry.register(Command.of("file.openTerminal", this::openTerminalForActiveBuffer));
         registry.register(Command.of("buffer.next", this::nextBuffer));
         registry.register(Command.of("app.quit", this::onQuit));
         registry.register(Command.of("palette.show", this::onPalette));

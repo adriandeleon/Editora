@@ -59,6 +59,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final java.util.function.Predicate<Path> isModified;
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
     private Consumer<Path> onNewFromTemplate;
+    /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
+    private BiConsumer<Path, Boolean> onReveal;
+    /** Injected by MainController: open a terminal at a path's folder. Args: (path, isDirectory). */
+    private BiConsumer<Path, Boolean> onOpenTerminal;
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
     private OverlayInput.Prompt prompt;
@@ -407,6 +411,16 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.onNewFromTemplate = onNewFromTemplate;
     }
 
+    /** Injects the "Reveal in File Manager" handler ({@code (path, isDirectory)}) for the cell menu. */
+    public void setOnReveal(BiConsumer<Path, Boolean> onReveal) {
+        this.onReveal = onReveal;
+    }
+
+    /** Injects the "Open Terminal Here" handler ({@code (path, isDirectory)}) for the cell menu. */
+    public void setOnOpenTerminal(BiConsumer<Path, Boolean> onOpenTerminal) {
+        this.onOpenTerminal = onOpenTerminal;
+    }
+
     private void renameItem(TreeItem<Path> item) {
         if (prompt == null) {
             return;
@@ -595,6 +609,21 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 delete.setGraphic(Icons.trash());
                 delete.setOnAction(e -> deleteItem(treeItem));
                 menu.getItems().add(delete);
+            }
+            if (onReveal != null || onOpenTerminal != null) {
+                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+            }
+            if (onReveal != null) {
+                MenuItem reveal = new MenuItem(tr("project.menu.revealInFileManager"));
+                reveal.setGraphic(Icons.revealInFiles());
+                reveal.setOnAction(e -> onReveal.accept(treeItem.getValue(), isDir));
+                menu.getItems().add(reveal);
+            }
+            if (onOpenTerminal != null) {
+                MenuItem terminal = new MenuItem(tr("project.menu.openTerminal"));
+                terminal.setGraphic(Icons.terminal());
+                terminal.setOnAction(e -> onOpenTerminal.accept(treeItem.getValue(), isDir));
+                menu.getItems().add(terminal);
             }
             return menu;
         }

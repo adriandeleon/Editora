@@ -255,7 +255,6 @@ file…* for a local `.zip`). Each plugin's full source is in that repo under `p
 | **Markdown TOC** | Insert a table of contents built from the document's headings. |
 | **Format Runner** | Format the active file with an external formatter (prettier/black/gofmt/rustfmt/clang-format). |
 | **Open on GitHub** | Open the active file at the caret line on its remote's web UI. |
-| **Reveal & Terminal** | Reveal the file in the OS file manager, or open a terminal at its folder. |
 | **Scratchpad** | A persistent scratchpad tool window (auto-saved). |
 | **Regex Tester** | A live regex tester tool window (pattern + flags + match spans/groups). |
 | **Color Picker** | Pick a color and insert it as HEX / `rgb()` / `rgba()`. |
