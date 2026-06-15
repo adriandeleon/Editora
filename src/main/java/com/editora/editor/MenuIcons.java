@@ -93,6 +93,11 @@ final class MenuIcons {
         return of("M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z");
     }
 
+    /** Two slashes "//" — comment / uncomment. */
+    static Node comment() {
+        return of("M4 18 8 6 10 6 6 18z M12 18 16 6 18 6 14 18z");
+    }
+
     /** Material "insert_link". */
     static Node link() {
         return of("M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 "

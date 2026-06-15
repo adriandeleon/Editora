@@ -625,6 +625,39 @@ public class EditorBuffer implements TabContent {
         a.requestFocus();
     }
 
+    /**
+     * True when this buffer's language has comment syntax and the buffer is editable — i.e. the
+     * "Comment / Uncomment" action is offered (right-click menu) and would do something. Plaintext has
+     * no comment syntax, so it's excluded.
+     */
+    public boolean supportsComments() {
+        Commenter.CommentStyle s = Commenter.styleFor(language);
+        return (s.hasLine() || s.hasBlock()) && isEditable() && !largeFile;
+    }
+
+    /**
+     * Toggles line/region comments on the selection (or the caret's line when nothing is selected),
+     * Emacs comment-dwim style. Returns {@code false} when the language has no comment syntax or the
+     * buffer isn't editable. Kept in {@code editor} (mirroring the Markdown format methods) so the editor
+     * context menu can invoke it without depending on {@code ui}; {@code MainController.toggleComment}
+     * delegates here.
+     */
+    public boolean toggleComment() {
+        if (!isEditable() || largeFile) {
+            return false;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        Commenter.Edit edit = Commenter.toggle(
+                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), Commenter.styleFor(language));
+        if (edit == null) {
+            return false;
+        }
+        a.replaceText(edit.from(), edit.to(), edit.replacement());
+        a.selectRange(edit.selStart(), edit.selEnd());
+        a.requestFocus();
+        return true;
+    }
+
     /** Toggles an inline marker ({@code **}/{@code *}/{@code ~~}/{@code `}) around the selection. */
     public void formatInline(String marker) {
         if (!canFormatMarkdown()) {
@@ -848,6 +881,13 @@ public class EditorBuffer implements TabContent {
             }
             if (canFormatMarkdown()) {
                 items.addAll(markdownMenuItems());
+                items.add(new SeparatorMenuItem());
+            }
+            if (supportsComments()) {
+                MenuItem comment = new MenuItem(tr("editmenu.toggleComment"));
+                comment.setGraphic(MenuIcons.comment());
+                comment.setOnAction(ev -> toggleComment());
+                items.add(comment);
                 items.add(new SeparatorMenuItem());
             }
             items.addAll(standardMenuItems());
