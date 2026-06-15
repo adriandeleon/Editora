@@ -63,7 +63,8 @@ public enum ConfigSchema {
                     Map.entry(23, (Migration) ConfigMigrations::identity), // v23→24: + pluginRequireSignature
                     Map.entry(24, (Migration) ConfigMigrations::identity), // v24→25: + htmlPreviewSupport/Browser
                     Map.entry(25, (Migration) ConfigMigrations::identity), // v25→26: + fillColumn (additive)
-                    Map.entry(26, (Migration) ConfigMigrations::identity))), // v26→27: + localHistory + limits
+                    Map.entry(26, (Migration) ConfigMigrations::identity), // v26→27: + localHistory + limits
+                    Map.entry(27, (Migration) ConfigMigrations::identity))), // v27→28: + mcpSupport (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

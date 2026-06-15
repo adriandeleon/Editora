@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 27;
+    public static final int SCHEMA_VERSION = 28;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -129,6 +129,9 @@ public class Settings {
     private boolean htmlPreviewSupport = false;
     /** The last-used browser id for the HTML preview ({@code ""} until the user picks one). */
     private String htmlPreviewBrowser = "";
+    /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
+     *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
+    private boolean mcpSupport = false;
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -328,6 +331,14 @@ public class Settings {
 
     public void setHtmlPreviewBrowser(String htmlPreviewBrowser) {
         this.htmlPreviewBrowser = htmlPreviewBrowser == null ? "" : htmlPreviewBrowser;
+    }
+
+    public boolean isMcpSupport() {
+        return mcpSupport;
+    }
+
+    public void setMcpSupport(boolean mcpSupport) {
+        this.mcpSupport = mcpSupport;
     }
 
     public String getIjhttpCommand() {

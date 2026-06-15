@@ -57,6 +57,9 @@ public final class StatusBar extends HBox {
     /** Indeterminate progress while the debug session is starting; hidden once running/suspended. */
     private final ProgressBar debugProgress = new ProgressBar(0);
 
+    /** MCP server running indicator; clickable → copy the connection command. Hidden when the server is off. */
+    private final Label mcp = segment("mcp.copyEndpoint", tr("statusbar.tip.mcp"));
+
     private final Label position = segment("nav.goToLine", tr("statusbar.tip.goToLine"));
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
     private final Label indent = segment("buffer.setTabSize", tr("statusbar.tip.setTabSize"));
@@ -75,6 +78,8 @@ public final class StatusBar extends HBox {
     private String lspServerName = "";
 
     private boolean lspLoadingState;
+    /** Whether the app-wide MCP server is running, so Simple-mode toggling can re-apply its visibility. */
+    private boolean mcpRunning;
     /** A single listener refreshes every segment on caret / text / selection changes. */
     private final InvalidationListener changeListener = obs -> refresh();
 
@@ -100,6 +105,11 @@ public final class StatusBar extends HBox {
         lsp.getStyleClass().add("status-lsp");
         lsp.setVisible(false); // shown only when the active file is served by a language server
         lsp.setManaged(false);
+
+        mcp.getStyleClass().add("status-mcp");
+        mcp.setText(tr("statusbar.mcp"));
+        mcp.setVisible(false); // shown only while the MCP server is running
+        mcp.setManaged(false);
 
         lspProgress.getStyleClass().add("status-lsp-progress");
         lspProgress.setPrefWidth(90);
@@ -127,6 +137,7 @@ public final class StatusBar extends HBox {
                         lspProgress,
                         git,
                         lsp,
+                        mcp,
                         readOnly,
                         zoomGroup(),
                         position,
@@ -291,6 +302,18 @@ public final class StatusBar extends HBox {
         lspProgress.setManaged(showProgress);
     }
 
+    /** Shows/hides the MCP-server-running indicator (suppressed in Simple UI mode). */
+    public void setMcpRunning(boolean running) {
+        mcpRunning = running;
+        applyMcpStatusVisibility();
+    }
+
+    private void applyMcpStatusVisibility() {
+        boolean show = mcpRunning && !simpleMode;
+        mcp.setVisible(show);
+        mcp.setManaged(show);
+    }
+
     /** Shows/updates the Debug segment ({@code state} non-blank → "Debug: state"; null/blank → hidden). */
     public void setDebug(String state) {
         boolean show = state != null && !state.isBlank();
@@ -387,6 +410,7 @@ public final class StatusBar extends HBox {
             this.simpleMode = simpleMode;
             refresh();
             applyLspStatusVisibility(); // the LSP segment + loading bar are event-driven, not in refresh()
+            applyMcpStatusVisibility(); // the MCP segment is event-driven too
         }
     }
 
