@@ -3,7 +3,9 @@ package com.editora.ui;
 import java.util.Locale;
 import java.util.Map;
 
+import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.layout.StackPane;
 
 import com.editora.editor.LanguageRegistry;
 
@@ -316,12 +318,36 @@ public final class FileIcons {
                             + ".223 12.223 0 0 0 5.32-10.604Z"));
 
     /**
-     * A fresh glyph node for {@code fileName}, reflecting its type. Falls back to the generic
-     * document glyph for unknown types.
+     * A fresh glyph node for {@code fileName}, reflecting its type, centered in a fixed-size box so
+     * names line up in a list (see {@link #boxed}). Falls back to the generic document glyph for
+     * unknown types.
      */
     public static Node forFileName(String fileName) {
         String path = PATHS.get(iconKeyFor(fileName));
-        return path == null ? Icons.fileSheet() : Icons.of(path);
+        return boxed(path == null ? Icons.fileSheet() : Icons.of(path));
+    }
+
+    /**
+     * Side of the fixed square every file/folder glyph is centered in. Each glyph's node bounds equal
+     * its <em>ink</em> bounds, which vary per glyph (a wide document sheet vs. a narrow {@code <>}), so
+     * placed raw they'd give the icon column a ragged width and shift the following label. Centering in
+     * a constant box gives one icon-column width and vertically centers the glyph. {@code 20} comfortably
+     * holds a 24dp glyph at the {@code Icons} 0.8 scale (19.2 px).
+     */
+    private static final double ICON_BOX = 20;
+
+    /**
+     * Wraps {@code icon} in a fixed-size, centered box so rows in a file list (the Project tree, tabs,
+     * pickers, the Switcher) align regardless of each glyph's intrinsic width/height.
+     */
+    public static Node boxed(Node icon) {
+        StackPane box = new StackPane(icon);
+        box.setMinSize(ICON_BOX, ICON_BOX);
+        box.setPrefSize(ICON_BOX, ICON_BOX);
+        box.setMaxSize(ICON_BOX, ICON_BOX);
+        box.setAlignment(Pos.CENTER);
+        box.setMouseTransparent(true); // purely decorative — let clicks reach the row
+        return box;
     }
 
     /**

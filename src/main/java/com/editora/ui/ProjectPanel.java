@@ -574,7 +574,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
             setText(dirty ? "• " + label : label);
             Path fileName = item.getFileName();
-            setGraphic(isDir ? Icons.project() : FileIcons.forFileName(fileName == null ? label : fileName.toString()));
+            // Box the folder glyph in the same fixed icon column as the (already-boxed) file glyphs, so
+            // folder and file rows share one icon width and every label starts at the same x.
+            setGraphic(
+                    isDir
+                            ? FileIcons.boxed(Icons.project())
+                            : FileIcons.forFileName(fileName == null ? label : fileName.toString()));
             setContextMenu(isRoot ? null : contextMenuFor(getTreeItem(), isDir));
         }
 
