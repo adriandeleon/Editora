@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Loading a large file (5–50 MB) with a language server enabled no longer freezes the editor.** Large-file
+  mode already turns off syntax highlighting and the minimap, but LSP stayed on — so opening, say, a big
+  `.json`/`.xml`/`.log` with its server enabled sent the whole document to the server and then mapped and
+  rendered the flood of diagnostics it returned (the Problems tree, minimap, and scrollbar stripes) on the UI
+  thread, locking up the editor. LSP is now disabled in large-file mode too (like highlighting, the minimap,
+  Git change bars, and inline blame), so the file just opens as fast, plain text. Autocomplete is likewise
+  disabled in large-file mode — it allocated the whole document on every keystroke to find the word prefix
+  (the same per-cursor-move cost brace matching already avoids), which made typing in a large file stutter.
+
 - **Diff viewer: next/previous-change no longer makes the scroll jump erratically.** The two side-by-side
   panes were kept in sync by copying the absolute pixel scroll position from one to the other, in both
   directions. That value is a RichTextFX *estimate* refined as lines are measured, so each pane settled to a
