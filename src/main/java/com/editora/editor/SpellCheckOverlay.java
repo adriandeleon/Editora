@@ -158,20 +158,25 @@ final class SpellCheckOverlay extends Region {
         if (line.isEmpty()) {
             return;
         }
+        // Absolute offset is the paragraph's base offset plus the column — hoist the base query out of the
+        // per-word loop (it was called up to twice per word). getParagraph(p,0) is the paragraph's first char.
+        int parBase = area.getAbsolutePosition(paragraph, 0);
         for (int[] span : spanCache.computeIfAbsent(line, SpellChecker::wordSpans)) {
             int start = span[0];
             int end = span[1];
-            int abs = area.getAbsolutePosition(paragraph, start);
-            if (!eligible(abs)) {
-                continue; // eligibility is style-dependent → always evaluated fresh (never cached)
-            }
-            // Cache the Hunspell verdict per word (cleared on dictionary/ignore changes). Checked only
-            // after eligibility, so ineligible code tokens still never reach the dictionary, as before.
+            // Spell verdict first (cached per word) — so the per-word style lookup (eligible(), an area
+            // query) runs only for the few misspelled words on screen, not every visible word. Reordering
+            // is safe: eligibility still gates drawing, and a misspelled code token is still skipped; the
+            // only difference is its (harmless) cache entry. This is the per-scroll-pulse hot path on prose.
             if (!spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)) {
                 continue;
             }
-            Bounds b = toLocal(area.getCharacterBoundsOnScreen(abs, area.getAbsolutePosition(paragraph, end))
-                    .orElse(null));
+            int abs = parBase + start;
+            if (!eligible(abs)) {
+                continue; // eligibility is style-dependent (inline/fenced code) → evaluated fresh
+            }
+            Bounds b =
+                    toLocal(area.getCharacterBoundsOnScreen(abs, parBase + end).orElse(null));
             if (b == null) {
                 continue;
             }
