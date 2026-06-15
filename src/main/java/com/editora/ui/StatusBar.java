@@ -133,8 +133,8 @@ public final class StatusBar extends HBox {
                         language,
                         indent,
                         endings,
-                        size,
-                        encoding);
+                        encoding,
+                        size);
         refresh();
     }
 
