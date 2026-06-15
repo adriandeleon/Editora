@@ -82,7 +82,7 @@ import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import static com.editora.i18n.Messages.tr;
 
 /** Controls the main window: tabbed editors, menu actions, palette/find overlays, and status bar. */
-public class MainController {
+public class MainController implements com.editora.mcp.McpBridge {
 
     private static final java.util.logging.Logger LOG =
             java.util.logging.Logger.getLogger(MainController.class.getName());
@@ -278,6 +278,12 @@ public class MainController {
     private final com.editora.web.HtmlPreviewService htmlPreviewService =
             new com.editora.web.HtmlPreviewService(this::openExternalUrl);
     private java.util.List<com.editora.web.Browsers.Browser> htmlBrowsers = java.util.List.of();
+    // MCP server: a single app-wide loopback HTTP endpoint exposing live editor state + the command
+    // registry to an LLM agent. Static so only the first window with the feature on starts it (the
+    // setting is shared); that window's controller is the bridge. (Multi-window caveat: if the owner
+    // window closes, the server stops until a settings re-apply re-arms it from another window.)
+    private static com.editora.mcp.McpServer mcpServer;
+    private static MainController mcpOwner;
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
     private final com.editora.diff.DiffService diffService = new com.editora.diff.DiffService();
@@ -450,6 +456,7 @@ public class MainController {
                         && (httpEnabled() || (!c.id().startsWith("http.") && !c.id().equals("tool.http")))
                         && (htmlPreviewEnabled() || !c.id().startsWith("htmlPreview."))
                         && (localHistoryEnabled() || !c.id().equals("tool.fileHistory"))
+                        && (mcpEnabled() || !c.id().startsWith("mcp."))
                         && (pluginsEnabled() || !c.id().startsWith("plugins.")));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
@@ -473,6 +480,7 @@ public class MainController {
                 this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
         this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk, this::uninstallPlugin);
+        this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
         this.settingsWindow.setOnKeymapChanged(this::reloadKeymap); // picker/combo → live keymap switch
         this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
             @Override
@@ -526,6 +534,7 @@ public class MainController {
         applyMermaidSupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
         applyHttpClientSupport(); // configure ijhttp; .http run glyphs off when disabled (default)
         applyHtmlPreviewSupport(); // HTML "open in browser" control off when disabled (default)
+        applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
         applyLspSupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
         applyDebugSupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on jdtls)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
@@ -1406,6 +1415,7 @@ public class MainController {
         searchService.shutdown();
         mermaidService.shutdown();
         htmlPreviewService.shutdown(); // stop the HTML-preview HTTP server + worker
+        stopMcpIfOwner(); // stop the MCP server if this window owns it
         pdfService.shutdown();
         printService.shutdown();
         runService.stop();
@@ -2617,6 +2627,247 @@ public class MainController {
         } else {
             setStatus(tr("statusbar.tip.htmlPreviewDisabled"));
         }
+    }
+
+    // --- MCP server (loopback HTTP, exposes editor state + commands to an LLM agent) --------------
+
+    private boolean mcpEnabled() {
+        // Simple UI mode disables the MCP server too (without changing the saved setting).
+        return config.getSettings().isMcpSupport() && !simpleModeActive();
+    }
+
+    /**
+     * Reconciles the MCP server with its setting (mirrors {@link #applyHttpClientSupport}). Starts the
+     * single app-wide loopback server when first enabled (this window becomes its bridge), or stops it
+     * when disabled. Runs at startup and on every settings apply.
+     */
+    private void applyMcpSupport() {
+        boolean on = mcpEnabled();
+        if (on && mcpServer == null) {
+            try {
+                com.editora.mcp.McpServer s = new com.editora.mcp.McpServer(this, config.getConfigDir());
+                s.start();
+                mcpServer = s;
+                mcpOwner = this;
+            } catch (Exception e) {
+                LOG.log(java.util.logging.Level.WARNING, "MCP server failed to start", e);
+                setStatus(tr("status.mcp.failed"));
+            }
+        } else if (!on && mcpServer != null && mcpOwner == this) {
+            mcpServer.stop();
+            mcpServer = null;
+            mcpOwner = null;
+        }
+        statusBar.setMcpRunning(mcpServer != null && mcpServer.isRunning());
+    }
+
+    /**
+     * A security-notice confirmation shown before the MCP server is enabled (from the palette toggle and
+     * the Settings checkbox). Returns true to proceed. Mirrors {@link #confirmEnablePlugin}.
+     */
+    private boolean confirmEnableMcp() {
+        Alert confirm =
+                new Alert(Alert.AlertType.WARNING, tr("dialog.mcp.enableBody"), ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.mcp.enableTitle"));
+        confirm.setHeaderText(tr("dialog.mcp.enableHeader"));
+        confirm.getDialogPane().setMinWidth(480);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    /** Stops the MCP server if this window owns it (called from {@link #disposeWindow}). */
+    private void stopMcpIfOwner() {
+        if (mcpServer != null && mcpOwner == this) {
+            mcpServer.stop();
+            mcpServer = null;
+            mcpOwner = null;
+        }
+    }
+
+    /** Runs {@code action} only when the MCP server is enabled; otherwise reports it (no-op). */
+    private void ifMcp(Runnable action) {
+        if (mcpEnabled()) {
+            action.run();
+        } else {
+            setStatus(tr("statusbar.tip.mcpDisabled"));
+        }
+    }
+
+    /** {@code view.toggleMcp}: flip the feature (with a security notice before enabling), re-apply, re-sync. */
+    private void toggleMcpSupport() {
+        Settings s = config.getSettings();
+        boolean turningOn = !s.isMcpSupport();
+        if (turningOn && !confirmEnableMcp()) {
+            return; // user declined the security notice; leave the server off
+        }
+        s.setMcpSupport(turningOn);
+        config.save();
+        applyMcpSupport();
+        if (settingsWindow != null) {
+            settingsWindow.syncMcpCheck();
+        }
+        setStatus(tr("status.toggle.mcp", tr(s.isMcpSupport() ? "common.on" : "common.off")));
+    }
+
+    /** Copies a ready-to-paste {@code claude mcp add} command (endpoint URL + bearer token) to the clipboard. */
+    private void copyMcpEndpoint() {
+        if (mcpServer == null || !mcpServer.isRunning()) {
+            setStatus(tr("status.mcp.notRunning"));
+            return;
+        }
+        String cmd = "claude mcp add --transport http editora " + mcpServer.url() + " --header \"Authorization: Bearer "
+                + mcpServer.token() + "\"";
+        ClipboardContent cc = new ClipboardContent();
+        cc.putString(cmd);
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        setStatus(tr("status.mcp.endpointCopied"));
+    }
+
+    // --- McpBridge: marshals editor reads onto the FX thread for the off-FX HTTP worker -----------
+
+    /** Runs {@code task} on the FX thread and blocks (with a timeout) for its result. */
+    private static <T> T mcpOnFx(java.util.function.Supplier<T> task) {
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            return task.get();
+        }
+        java.util.concurrent.CompletableFuture<T> f = new java.util.concurrent.CompletableFuture<>();
+        javafx.application.Platform.runLater(() -> {
+            try {
+                f.complete(task.get());
+            } catch (Throwable t) {
+                f.completeExceptionally(t);
+            }
+        });
+        try {
+            return f.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public java.util.List<OpenFile> listOpenFiles() {
+        return mcpOnFx(() -> {
+            EditorBuffer active = activeBuffer();
+            java.util.List<OpenFile> out = new java.util.ArrayList<>();
+            for (Tab tab : tabPane.getTabs()) {
+                EditorBuffer b = bufferOf(tab);
+                if (b == null) {
+                    continue;
+                }
+                out.add(new OpenFile(
+                        b.getPath() == null ? null : b.getPath().toString(),
+                        b.getTitle(),
+                        b.getLanguage(),
+                        b.isDirty(),
+                        b == active));
+            }
+            return out;
+        });
+    }
+
+    @Override
+    public BufferContent readBuffer(String path) {
+        return mcpOnFx(() -> {
+            EditorBuffer b = path == null ? activeBuffer() : openBufferForPath(path);
+            if (b == null) {
+                return null;
+            }
+            return new BufferContent(
+                    b.getPath() == null ? null : b.getPath().toString(),
+                    b.getTitle(),
+                    b.getLanguage(),
+                    b.isDirty(),
+                    b.getContent());
+        });
+    }
+
+    @Override
+    public java.util.List<Diagnostic> getDiagnostics(String path) {
+        return mcpOnFx(() -> {
+            Path target = path != null
+                    ? Path.of(path)
+                    : (activeBuffer() == null ? null : activeBuffer().getPath());
+            if (target == null) {
+                return java.util.List.<Diagnostic>of();
+            }
+            Path key = canonicalPath(target);
+            java.util.List<Diagnostic> out = new java.util.ArrayList<>();
+            for (var e : lspProblems.entrySet()) {
+                if (!canonicalPath(e.getKey()).equals(key)) {
+                    continue;
+                }
+                for (com.editora.editor.LspDiagnostic d : e.getValue()) {
+                    out.add(new Diagnostic(
+                            d.startLine() + 1, d.startCol() + 1, d.severity().name(), d.message(), d.origin()));
+                }
+            }
+            return out;
+        });
+    }
+
+    @Override
+    public java.util.List<SearchMatch> findInFiles(
+            String query, boolean caseSensitive, boolean regex, boolean wholeWord) {
+        com.editora.search.SearchQuery q = new com.editora.search.SearchQuery(query, caseSensitive, regex, wholeWord);
+        java.util.concurrent.CompletableFuture<com.editora.search.SearchService.Outcome> fut =
+                new java.util.concurrent.CompletableFuture<>();
+        javafx.application.Platform.runLater(() -> {
+            java.util.Map<Path, String> open = new java.util.HashMap<>();
+            for (Tab tab : tabPane.getTabs()) {
+                EditorBuffer b = bufferOf(tab);
+                if (b != null && b.getPath() != null) {
+                    open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
+                }
+            }
+            Path root = null;
+            Project p = projects == null ? null : projects.active();
+            if (p != null) {
+                root = Path.of(p.root());
+            }
+            searchService.search(q, root, open, fut::complete);
+        });
+        com.editora.search.SearchService.Outcome outcome;
+        try {
+            outcome = fut.get(20, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        java.util.List<SearchMatch> out = new java.util.ArrayList<>();
+        for (com.editora.search.FileResult fr : outcome.files()) {
+            for (com.editora.search.LineMatch lm : fr.matches()) {
+                out.add(new SearchMatch(fr.file().toString(), lm.line(), lm.col(), lm.lineText()));
+            }
+        }
+        return out;
+    }
+
+    @Override
+    public java.util.List<CommandInfo> listCommands() {
+        return mcpOnFx(() -> {
+            java.util.List<CommandInfo> out = new java.util.ArrayList<>();
+            for (com.editora.command.Command c : registry.all()) {
+                out.add(new CommandInfo(c.id(), c.title(), c.description()));
+            }
+            return out;
+        });
+    }
+
+    @Override
+    public boolean executeCommand(String id) {
+        return mcpOnFx(() -> registry.run(id));
+    }
+
+    /** Finds the open buffer whose file matches {@code path} (by canonical path), or null. */
+    private EditorBuffer openBufferForPath(String path) {
+        Path key = canonicalPath(Path.of(path));
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null && b.getPath() != null && canonicalPath(b.getPath()).equals(key)) {
+                return b;
+            }
+        }
+        return null;
     }
 
     // --- HTTP Client (.http via ijhttp) ----------------------------------------------------------
@@ -9612,6 +9863,7 @@ public class MainController {
         applyMermaidSupport();
         applyHttpClientSupport();
         applyHtmlPreviewSupport();
+        applyMcpSupport();
         applyAutoSave();
         applyAutocomplete();
         applyMultiCaret();
@@ -10132,6 +10384,8 @@ public class MainController {
         registry.register(Command.of("htmlPreview.open", () -> ifHtmlPreview(this::htmlPreviewOpen)));
         registry.register(Command.of("htmlPreview.openIn", () -> ifHtmlPreview(this::htmlPreviewOpenIn)));
         registry.register(Command.of("view.toggleHtmlPreview", this::toggleHtmlPreviewSupport));
+        registry.register(Command.of("mcp.copyEndpoint", () -> ifMcp(this::copyMcpEndpoint)));
+        registry.register(Command.of("view.toggleMcp", this::toggleMcpSupport));
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
         registry.register(Command.of("view.toggleMinimap", this::toggleMinimap));

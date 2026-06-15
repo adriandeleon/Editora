@@ -75,6 +75,7 @@ public class SettingsWindow {
         MERMAID(tr("settings.cat.mermaid"), false),
         HTTP_CLIENT(tr("settings.cat.httpClient"), false),
         HTML_PREVIEW(tr("settings.cat.htmlPreview"), false),
+        MCP(tr("settings.cat.mcp"), false),
         LSP(tr("settings.cat.lsp"), false),
         DEBUG(tr("settings.cat.debug"), false),
         KEYMAPS(tr("settings.cat.keymaps"), false),
@@ -100,6 +101,9 @@ public class SettingsWindow {
     private final Consumer<Path> onOpenFile;
     private final Runnable onExportConfig;
     private final Runnable onShowDebugLog;
+    /** Security-notice confirm shown before the MCP checkbox enables the server; null = no gate. */
+    private java.util.function.BooleanSupplier mcpConfirm;
+
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
     private final com.editora.mermaid.MermaidService mermaidService;
@@ -152,6 +156,7 @@ public class SettingsWindow {
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox htmlPreviewCheck;
+    private CheckBox mcpCheck;
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -285,6 +290,11 @@ public class SettingsWindow {
         this.onBrowsePlugins = onBrowse;
         this.onInstallPluginFromFile = onInstallFromFile;
         this.onUninstallPlugin = onUninstall;
+    }
+
+    /** Wires the security-notice confirm shown before the MCP checkbox enables the server. */
+    public void setMcpConfirm(java.util.function.BooleanSupplier confirm) {
+        this.mcpConfirm = confirm;
     }
 
     public void show(Window owner) {
@@ -650,6 +660,23 @@ public class SettingsWindow {
             apply();
         });
 
+        mcpCheck = new CheckBox(tr("settings.mcp.enable"));
+        mcpCheck.selectedProperty().addListener((obs, was, now) -> {
+            // A user-initiated enable shows a security notice first; declining reverts the checkbox.
+            if (!loading && now && mcpConfirm != null && !mcpConfirm.getAsBoolean()) {
+                boolean prev = loading;
+                loading = true;
+                try {
+                    mcpCheck.setSelected(false);
+                } finally {
+                    loading = prev;
+                }
+                return;
+            }
+            config.getSettings().setMcpSupport(now);
+            apply();
+        });
+
         pluginCheck = new CheckBox(tr("settings.enablePlugins"));
         pluginCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setPluginSupport(now);
@@ -813,6 +840,7 @@ public class SettingsWindow {
         pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.HTTP_CLIENT, httpClientPage());
         pages.put(Category.HTML_PREVIEW, htmlPreviewPage());
+        pages.put(Category.MCP, mcpPage());
         pages.put(Category.LSP, lspPage());
         pages.put(Category.DEBUG, debugPage());
         pages.put(Category.KEYMAPS, keymapsPage());
@@ -1212,6 +1240,16 @@ public class SettingsWindow {
         hint.setWrapText(true);
         hint.setMaxWidth(440);
         row(p, Category.HTML_PREVIEW, null, hint, "html preview browser safari chrome firefox edge server localhost");
+        return p;
+    }
+
+    private VBox mcpPage() {
+        VBox p = page(tr("settings.cat.mcp"));
+        row(p, Category.MCP, null, mcpCheck, "mcp model context protocol agent server enable ai claude");
+        Label hint = note(tr("settings.mcp.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.MCP, null, hint, "mcp agent llm command palette diagnostics search loopback token endpoint");
         return p;
     }
 
@@ -2429,6 +2467,7 @@ public class SettingsWindow {
             refreshMermaidStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
+            mcpCheck.setSelected(settings.isMcpSupport());
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
                 pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());
@@ -2788,6 +2827,19 @@ public class SettingsWindow {
         loading = true;
         try {
             htmlPreviewCheck.setSelected(config.getSettings().isHtmlPreviewSupport());
+        } finally {
+            loading = prev;
+        }
+    }
+
+    public void syncMcpCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            mcpCheck.setSelected(config.getSettings().isMcpSupport());
         } finally {
             loading = prev;
         }

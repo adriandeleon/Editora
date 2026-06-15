@@ -998,6 +998,18 @@
     -fx-text-fill: -color-accent-fg;
 }
 
+/* MCP server segment: a green "running" pill, deliberately noticeable (a local agent endpoint is live). */
+.status-bar .status-mcp {
+    -fx-text-fill: -color-success-fg;
+    -fx-font-weight: bold;
+    -fx-background-color: -color-success-subtle;
+    -fx-background-radius: 4;
+}
+
+.status-bar .status-mcp:hover {
+    -fx-background-color: -color-success-muted;
+}
+
 /* Read-only (View mode) toggle: muted "Editable" by default, amber/bold "Read-Only" when active. */
 .status-bar .status-readonly.active {
     -fx-text-fill: #bf8700;
