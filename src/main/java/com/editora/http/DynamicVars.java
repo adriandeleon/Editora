@@ -50,8 +50,6 @@ public final class DynamicVars {
         switch (head) {
             case "$uuid", "$random.uuid", "$guid":
                 return UUID.randomUUID().toString();
-            case "$timestamp":
-                return String.valueOf(now.toEpochSecond(ZoneOffset.UTC));
             case "$isoTimestamp":
                 return now.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT);
             case "$randomInt":
@@ -71,6 +69,11 @@ public final class DynamicVars {
             default:
                 break;
         }
+        if (n.equals("$timestamp") || n.startsWith("$timestamp ")) {
+            String[] tok = tokens(n.substring("$timestamp".length()));
+            LocalDateTime at = tok.length >= 2 ? applyOffset(now, parseInt(tok[0], 0), tok[1]) : now;
+            return String.valueOf(at.toEpochSecond(ZoneOffset.UTC));
+        }
         if (n.startsWith("$localDatetime")) {
             return datetime(n.substring("$localDatetime".length()), now, true);
         }
@@ -88,22 +91,54 @@ public final class DynamicVars {
     }
 
     private static String datetime(String suffix, LocalDateTime now, boolean local) {
-        String fmt = stripQuotes(suffix.trim());
+        // {{$datetime <format> [<amount> <unit>]}} — format is a quoted custom pattern or rfc1123/iso8601.
+        String[] tok = tokens(suffix);
+        String fmt = tok.length >= 1 ? tok[0] : "";
+        LocalDateTime at = tok.length >= 3 ? applyOffset(now, parseInt(tok[1], 0), tok[2]) : now;
         try {
             if (fmt.isEmpty() || fmt.equalsIgnoreCase("iso8601")) {
                 return local
-                        ? now.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                        : now.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT);
+                        ? at.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                        : at.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT);
             }
             DateTimeFormatter f = fmt.equalsIgnoreCase("rfc1123")
                     ? DateTimeFormatter.RFC_1123_DATE_TIME
                     : DateTimeFormatter.ofPattern(fmt, Locale.ROOT);
             return local
-                    ? now.atZone(ZoneId.systemDefault()).format(f)
-                    : now.atOffset(ZoneOffset.UTC).format(f);
+                    ? at.atZone(ZoneId.systemDefault()).format(f)
+                    : at.atOffset(ZoneOffset.UTC).format(f);
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /** Adds a signed {@code amount} of {@code unit} (y/M/w/d/h/m/s/ms) to {@code t} for date-math vars. */
+    private static LocalDateTime applyOffset(LocalDateTime t, int amount, String unit) {
+        return switch (unit) {
+            case "y" -> t.plusYears(amount);
+            case "M" -> t.plusMonths(amount);
+            case "w" -> t.plusWeeks(amount);
+            case "d" -> t.plusDays(amount);
+            case "h" -> t.plusHours(amount);
+            case "m" -> t.plusMinutes(amount);
+            case "s" -> t.plusSeconds(amount);
+            case "ms" -> t.plus(amount, java.time.temporal.ChronoUnit.MILLIS);
+            default -> t;
+        };
+    }
+
+    /** Whitespace-splits {@code s} into tokens, keeping a quoted segment together (quotes stripped). */
+    private static String[] tokens(String s) {
+        if (s == null || s.isBlank()) {
+            return new String[0];
+        }
+        java.util.List<String> out = new java.util.ArrayList<>();
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("\"[^\"]*\"|'[^']*'|\\S+").matcher(s.trim());
+        while (m.find()) {
+            out.add(stripQuotes(m.group()));
+        }
+        return out.toArray(new String[0]);
     }
 
     private static String dotenv(String key, Path dir) {
