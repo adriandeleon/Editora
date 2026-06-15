@@ -33,7 +33,7 @@ public final class HttpResponseFormat {
     }
 
     /** Pretty-prints a JSON body (by content type); other bodies are returned unchanged. */
-    static String prettyBody(String body, String contentType) {
+    public static String prettyBody(String body, String contentType) {
         if (body == null) {
             return "";
         }

@@ -2220,7 +2220,13 @@ public class MainController {
         });
         debugToolWindow = new ToolWindow(
                 "debug", tr("toolwindow.debug"), ToolWindow.Side.BOTTOM, Icons::debug, debugPanel, "tool.debug");
-        httpPanel = new HttpClientPanel(this::saveHttpResponse);
+        httpPanel = new HttpClientPanel(
+                this::saveHttpResponse,
+                this::copyHttpAsCurl,
+                this::openHttpResponseInTab,
+                config.getSettings().getFontFamily(),
+                Math.max(1, (int) Math.round(config.getSettings().getFontSize()
+                        * config.getSettings().getFontZoom())));
         httpPanel.setOnEnvironmentChanged(env -> {
             config.getWorkspaceState().setHttpEnvironment(env);
             config.save();
@@ -2642,6 +2648,8 @@ public class MainController {
                 b.setHttpEnabled(on);
             }
         }
+        Settings s = config.getSettings();
+        httpPanel.setEditorFont(s.getFontFamily(), Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom())));
         updateRunButton(); // re-gate the HTTP tool window on the active buffer
     }
 
@@ -2673,10 +2681,11 @@ public class MainController {
         }
         com.editora.http.HttpFile.Request req =
                 com.editora.http.HttpFile.parse(text).get(index);
-        com.editora.http.HttpFile.Parsed parsed = com.editora.http.HttpFile.parseRequest(req.block());
+        com.editora.http.HttpFile.Parsed parsed = com.editora.http.HttpFile.parseRequest(req);
         String label = parsed.method() + " " + parsed.url();
         startHttpRun(label);
-        httpService.run(parsed, httpVariables(buffer, text), r -> finishHttpRun(label, r));
+        java.nio.file.Path baseDir = buffer.getPath().toAbsolutePath().getParent();
+        httpService.run(parsed, httpVariables(buffer, text), baseDir, ex -> finishHttpRun(label, ex));
     }
 
     /** Runs every request in the active {@code .http} file sequentially (palette command). */
@@ -2696,7 +2705,7 @@ public class MainController {
         }
         String text = b.getContent();
         java.util.List<com.editora.http.HttpFile.Parsed> reqs = com.editora.http.HttpFile.parse(text).stream()
-                .map(r -> com.editora.http.HttpFile.parseRequest(r.block()))
+                .map(r -> com.editora.http.HttpFile.parseRequest(r))
                 .toList();
         if (reqs.isEmpty()) {
             setStatus(tr("status.http.noRequest"));
@@ -2704,18 +2713,11 @@ public class MainController {
         }
         String label = b.getPath().getFileName().toString();
         startHttpRun(label);
-        httpService.runAll(reqs, httpVariables(b, text), results -> {
-            StringBuilder sb = new StringBuilder();
-            boolean allOk = true;
-            for (int i = 0; i < results.size(); i++) {
-                if (i > 0) {
-                    sb.append("\n\n").append("─".repeat(40)).append("\n\n");
-                }
-                sb.append(com.editora.http.HttpResponseFormat.render(results.get(i)));
-                allOk &= results.get(i).ok();
-            }
-            httpPanel.showResult(sb.toString(), allOk ? 0 : 1);
-            setStatus(allOk ? tr("status.http.done", label) : tr("status.http.failed", reqs.size()));
+        java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
+        httpService.runAll(reqs, httpVariables(b, text), baseDir, exchanges -> {
+            httpPanel.showExchanges(exchanges);
+            boolean allOk = exchanges.stream().allMatch(ex -> ex.result().ok());
+            setStatus(allOk ? tr("status.http.done", label) : tr("status.http.failed", exchanges.size()));
         });
     }
 
@@ -2725,9 +2727,89 @@ public class MainController {
         setStatus(tr("status.http.running", label));
     }
 
-    private void finishHttpRun(String label, com.editora.http.HttpResult r) {
-        httpPanel.showResult(com.editora.http.HttpResponseFormat.render(r), r.ok() ? 0 : 1);
+    private void finishHttpRun(String label, com.editora.http.HttpExchange ex) {
+        httpPanel.showExchanges(java.util.List.of(ex));
+        com.editora.http.HttpResult r = ex.result();
         setStatus(r.failed() || !r.ok() ? tr("status.http.failed", r.status()) : tr("status.http.done", label));
+    }
+
+    /** Copies {@code ex}'s (resolved) request as a {@code curl} command to the clipboard. */
+    private void copyHttpAsCurl(com.editora.http.HttpExchange ex) {
+        String curl = com.editora.http.CurlExport.toCurl(ex.method(), ex.url(), ex.headers(), ex.requestBody());
+        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+        cc.putString(curl);
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        setStatus(tr("status.http.curlCopied"));
+    }
+
+    /** Opens {@code ex}'s response body in a new (untitled) editor tab, highlighted by content type. */
+    private void openHttpResponseInTab(com.editora.http.HttpExchange ex) {
+        com.editora.http.HttpResult r = ex.result();
+        if (r.failed()) {
+            setStatus(tr("status.http.noResponse"));
+            return;
+        }
+        EditorBuffer buffer = new EditorBuffer();
+        buffer.setDisplayName("response" + responseExt(r.contentType()));
+        addBuffer(buffer, true);
+        buffer.setContent(com.editora.http.HttpResponseFormat.prettyBody(r.body(), r.contentType()));
+    }
+
+    private static String responseExt(String contentType) {
+        String ct = contentType == null ? "" : contentType.toLowerCase(java.util.Locale.ROOT);
+        if (ct.contains("json")) {
+            return ".json";
+        }
+        if (ct.contains("html")) {
+            return ".html";
+        }
+        if (ct.contains("xml")) {
+            return ".xml";
+        }
+        return ".txt";
+    }
+
+    /** Copies the response viewer's selected request as a {@code curl} command (palette command). */
+    private void copyActiveHttpAsCurl() {
+        com.editora.http.HttpExchange ex = httpPanel.getSelectedExchange();
+        if (ex == null) {
+            setStatus(tr("status.http.noResponse"));
+            return;
+        }
+        copyHttpAsCurl(ex);
+    }
+
+    /** Opens the response viewer's selected response in a new editor tab (palette command). */
+    private void openActiveHttpResponseInTab() {
+        com.editora.http.HttpExchange ex = httpPanel.getSelectedExchange();
+        if (ex == null) {
+            setStatus(tr("status.http.noResponse"));
+            return;
+        }
+        openHttpResponseInTab(ex);
+    }
+
+    /** Converts a {@code curl} command on the clipboard into a request block, appending it to the active
+     *  {@code .http} buffer (or a new one). */
+    private void importCurlFromClipboard() {
+        String clip = javafx.scene.input.Clipboard.getSystemClipboard().getString();
+        if (clip == null || clip.isBlank() || !clip.contains("curl")) {
+            setStatus(tr("status.http.notCurl"));
+            return;
+        }
+        String request = com.editora.http.CurlImport.toHttpRequest(clip.strip());
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.isHttpFile() && b.isEditable()) {
+            String snippet = (b.getArea().getLength() == 0 ? "" : "\n") + "###\n" + request + "\n";
+            b.getArea().insertText(b.getArea().getLength(), snippet);
+            b.getArea().moveTo(b.getArea().getLength());
+        } else {
+            EditorBuffer nb = new EditorBuffer();
+            nb.setDisplayName("requests.http");
+            addBuffer(nb, true);
+            nb.setContent(request);
+        }
+        setStatus(tr("status.http.curlImported"));
     }
 
     /** The resolved variable map for a {@code .http} buffer: the selected environment's vars (public +
@@ -10171,6 +10253,9 @@ public class MainController {
         registry.register(Command.of("http.runFile", () -> ifHttp(this::runHttpFile)));
         registry.register(
                 Command.of("http.selectEnvironment", () -> ifHttp(() -> toolWindows.open(httpToolWindow, true))));
+        registry.register(Command.of("http.importCurl", () -> ifHttp(this::importCurlFromClipboard)));
+        registry.register(Command.of("http.copyAsCurl", () -> ifHttp(this::copyActiveHttpAsCurl)));
+        registry.register(Command.of("http.openResponseInTab", () -> ifHttp(this::openActiveHttpResponseInTab)));
         registry.register(Command.of("tool.http", () -> ifHttp(() -> toolWindows.toggle(httpToolWindow))));
         // Debugging (DAP). Gated by the "Enable Java debugging" setting (default off).
         registry.register(Command.of("debug.start", () -> ifDebug(this::debugStart)));

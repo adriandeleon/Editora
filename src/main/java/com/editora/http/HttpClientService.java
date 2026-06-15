@@ -1,10 +1,14 @@
 package com.editora.http;
 
+import java.net.CookieManager;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -13,14 +17,18 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import javafx.application.Platform;
 
 /**
  * UI-facing façade for running {@code .http} requests with the <b>built-in JDK {@code HttpClient}</b>
- * (no external CLI): work runs on one daemon executor and results post back on the JavaFX thread. The
- * caller supplies a parsed request ({@link HttpFile.Parsed}) and the resolved variable map; this resolves
- * {@code {{vars}}} (via {@link HttpVars}), executes, and returns an {@link HttpResult}.
+ * (no external CLI): work runs on one daemon executor and results post back on the JavaFX thread. A run
+ * gets a fresh {@link CookieManager} (a per-run cookie jar) and a {@link CapturedResponses} session, so a
+ * later request can reference an earlier one's response ({@code {{name.response.body.$.x}}}). Per-request
+ * directives ({@code @no-redirect}/{@code @no-cookie-jar}/{@code @timeout}), external bodies, multipart, and
+ * the {@code >>}/{@code >>!} response-redirect operators are honored here. Each call returns an
+ * {@link HttpExchange} carrying the fully resolved request alongside its {@link HttpResult}.
  */
 public final class HttpClientService {
 
@@ -32,64 +40,183 @@ public final class HttpClientService {
         t.setDaemon(true);
         return t;
     });
-    private final HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(CONNECT_TIMEOUT)
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
 
-    /** Runs a single request off-thread, posting its {@link HttpResult} on the FX thread. */
-    public void run(HttpFile.Parsed request, Map<String, String> vars, Consumer<HttpResult> onResult) {
+    /** Runs a single request off-thread (its own cookie jar, no prior context), posting on the FX thread. */
+    public void run(HttpFile.Parsed request, Map<String, String> vars, Path baseDir, Consumer<HttpExchange> onResult) {
         exec.submit(() -> {
-            HttpResult r = execute(request, vars);
-            Platform.runLater(() -> onResult.accept(r));
+            CookieManager cookies = new CookieManager();
+            HttpExchange ex = execute(request, vars, baseDir, new CapturedResponses(), cookies);
+            Platform.runLater(() -> onResult.accept(ex));
         });
     }
 
-    /** Runs {@code requests} sequentially off-thread, posting all results together on the FX thread. */
-    public void runAll(List<HttpFile.Parsed> requests, Map<String, String> vars, Consumer<List<HttpResult>> onResult) {
+    /** Runs {@code requests} sequentially off-thread, sharing one cookie jar + captured-response session so
+     *  later requests can reference earlier responses; posts all exchanges together on the FX thread. */
+    public void runAll(
+            List<HttpFile.Parsed> requests,
+            Map<String, String> vars,
+            Path baseDir,
+            Consumer<List<HttpExchange>> onResult) {
         exec.submit(() -> {
-            List<HttpResult> results = new ArrayList<>();
+            CookieManager cookies = new CookieManager();
+            CapturedResponses captured = new CapturedResponses();
+            List<HttpExchange> out = new ArrayList<>();
             for (HttpFile.Parsed req : requests) {
-                results.add(execute(req, vars));
+                HttpExchange ex = execute(req, vars, baseDir, captured, cookies);
+                captured.put(req.name(), ex.result());
+                out.add(ex);
             }
-            Platform.runLater(() -> onResult.accept(results));
+            Platform.runLater(() -> onResult.accept(out));
         });
     }
 
-    private HttpResult execute(HttpFile.Parsed request, Map<String, String> vars) {
+    private HttpExchange execute(
+            HttpFile.Parsed request,
+            Map<String, String> vars,
+            Path baseDir,
+            CapturedResponses captured,
+            CookieManager cookies) {
         LocalDateTime now = LocalDateTime.now();
-        String url = HttpVars.substitute(request.url(), vars, now).trim();
+        Function<String, String> sub = s -> HttpVars.substitute(s, vars, now, captured, baseDir);
+        String url = sub.apply(request.url()).trim();
+        String method = request.method().isEmpty() ? "GET" : request.method();
+
+        List<String[]> headers = new ArrayList<>();
+        for (String[] h : request.headers()) {
+            headers.add(new String[] {h[0], sub.apply(h[1])});
+        }
+        headers = HttpAuth.normalizeHeaders(headers);
+        String contentType = headerValue(headers, "Content-Type");
+
+        BodyContent bc = resolveBody(request, baseDir, sub, contentType, headers);
+        String label = method + " " + url;
         try {
-            String body = HttpVars.substitute(request.body(), vars, now);
-            HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(REQUEST_TIMEOUT);
-            for (String[] h : request.headers()) {
+            HttpClient client = clientFor(request.directives(), cookies);
+            Duration timeout = request.directives().timeoutSeconds() > 0
+                    ? Duration.ofSeconds(request.directives().timeoutSeconds())
+                    : REQUEST_TIMEOUT;
+            HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(timeout);
+            for (String[] h : headers) {
                 try {
-                    b.header(h[0], HttpVars.substitute(h[1], vars, now));
+                    b.header(h[0], h[1]);
                 } catch (IllegalArgumentException ignore) {
                     // a header the JDK client forbids setting (Host, Content-Length, …) — skip it
                 }
             }
-            HttpRequest.BodyPublisher publisher = body == null || body.isBlank()
-                    ? HttpRequest.BodyPublishers.noBody()
-                    : HttpRequest.BodyPublishers.ofString(body);
-            b.method(request.method().isEmpty() ? "GET" : request.method(), publisher);
+            b.method(method, bc.publisher());
 
             long t0 = System.nanoTime();
             HttpResponse<String> resp = client.send(b.build(), HttpResponse.BodyHandlers.ofString());
             long ms = (System.nanoTime() - t0) / 1_000_000;
 
-            List<String[]> headers = new ArrayList<>();
+            List<String[]> respHeaders = new ArrayList<>();
             resp.headers().map().forEach((k, values) -> {
                 for (String v : values) {
-                    headers.add(new String[] {k, v});
+                    respHeaders.add(new String[] {k, v});
                 }
             });
-            String contentType = resp.headers().firstValue("content-type").orElse("");
+            String respType = resp.headers().firstValue("content-type").orElse("");
             long size = resp.body() == null ? 0 : resp.body().getBytes(StandardCharsets.UTF_8).length;
-            return new HttpResult(resp.statusCode(), headers, resp.body(), contentType, ms, size, null);
+            HttpResult result = new HttpResult(resp.statusCode(), respHeaders, resp.body(), respType, ms, size, null);
+            writeRedirects(request, baseDir, result);
+            return new HttpExchange(label, method, url, headers, bc.display(), result);
         } catch (Exception e) {
-            return new HttpResult(0, List.of(), "", "", 0, 0, errorMessage(url, e));
+            HttpResult err = new HttpResult(0, List.of(), "", "", 0, 0, errorMessage(url, e));
+            return new HttpExchange(label, method, url, headers, bc.display(), err);
         }
+    }
+
+    /** The request body publisher + a display string (for the cURL/history view). */
+    private record BodyContent(HttpRequest.BodyPublisher publisher, String display) {}
+
+    private static BodyContent resolveBody(
+            HttpFile.Parsed request,
+            Path baseDir,
+            Function<String, String> sub,
+            String contentType,
+            List<String[]> headers) {
+        // multipart/form-data: assemble the parts (inline parts substituted, < ./file parts slurped).
+        if (Multipart.isMultipart(contentType)) {
+            String boundary = Multipart.boundaryOf(contentType);
+            if (boundary.isEmpty()) {
+                boundary = "EditoraBoundary" + Long.toHexString(System.nanoTime());
+                setHeader(headers, "Content-Type", contentType + "; boundary=" + boundary);
+            }
+            byte[] bytes = Multipart.build(Multipart.parse(request.body(), boundary), boundary, baseDir, sub);
+            return new BodyContent(
+                    HttpRequest.BodyPublishers.ofByteArray(bytes), "(multipart/form-data, " + bytes.length + " bytes)");
+        }
+        // external body: < ./file (raw) or <@ ./file (substituted), optional encoding.
+        if (request.bodyRef() != null && baseDir != null) {
+            try {
+                HttpFile.BodyRef ref = request.bodyRef();
+                Charset cs = ref.encoding() == null ? StandardCharsets.UTF_8 : Charset.forName(ref.encoding());
+                String content = new String(Files.readAllBytes(baseDir.resolve(ref.path())), cs);
+                if (ref.substitute()) {
+                    content = sub.apply(content);
+                }
+                return new BodyContent(HttpRequest.BodyPublishers.ofString(content), content);
+            } catch (Exception e) {
+                return new BodyContent(
+                        HttpRequest.BodyPublishers.noBody(),
+                        "(missing body file: " + request.bodyRef().path() + ")");
+            }
+        }
+        String body = sub.apply(request.body());
+        if (body == null || body.isBlank()) {
+            return new BodyContent(HttpRequest.BodyPublishers.noBody(), "");
+        }
+        return new BodyContent(HttpRequest.BodyPublishers.ofString(body), body);
+    }
+
+    private static HttpClient clientFor(HttpFile.Directives directives, CookieManager cookies) {
+        HttpClient.Builder b = HttpClient.newBuilder()
+                .connectTimeout(CONNECT_TIMEOUT)
+                .followRedirects(directives.noRedirect() ? HttpClient.Redirect.NEVER : HttpClient.Redirect.NORMAL);
+        if (!directives.noCookieJar()) {
+            b.cookieHandler(cookies);
+        }
+        return b.build();
+    }
+
+    /** Writes the response body to each {@code >>}/{@code >>!} target (force overwrites; plain skips existing). */
+    private static void writeRedirects(HttpFile.Parsed request, Path baseDir, HttpResult result) {
+        if (baseDir == null || result.failed()) {
+            return;
+        }
+        for (HttpFile.Redirect r : request.redirects()) {
+            try {
+                Path target = baseDir.resolve(r.path());
+                if (!r.force() && Files.exists(target)) {
+                    continue;
+                }
+                if (target.getParent() != null) {
+                    Files.createDirectories(target.getParent());
+                }
+                Files.writeString(target, result.body() == null ? "" : result.body());
+            } catch (Exception ignore) {
+                // best-effort: a failed redirect write never aborts the response
+            }
+        }
+    }
+
+    private static String headerValue(List<String[]> headers, String name) {
+        for (String[] h : headers) {
+            if (h[0].equalsIgnoreCase(name)) {
+                return h[1];
+            }
+        }
+        return "";
+    }
+
+    private static void setHeader(List<String[]> headers, String name, String value) {
+        for (String[] h : headers) {
+            if (h[0].equalsIgnoreCase(name)) {
+                h[1] = value;
+                return;
+            }
+        }
+        headers.add(new String[] {name, value});
     }
 
     private static String errorMessage(String url, Exception e) {
