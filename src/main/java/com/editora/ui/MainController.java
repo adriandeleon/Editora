@@ -1224,6 +1224,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private void wireOverlayHost() {
         palette.setOverlayHost(overlayHost);
+        palette.setDocsOpener(this::openExternalUrl); // C-h → command docs in the system browser
         recentPalette.setOverlayHost(overlayHost);
         structurePalette.setOverlayHost(overlayHost);
         openFilesPalette.setOverlayHost(overlayHost);
