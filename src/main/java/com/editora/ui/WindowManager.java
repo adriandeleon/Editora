@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 
+import javafx.animation.PauseTransition;
 import javafx.application.HostServices;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
@@ -12,6 +13,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeyDispatcher;
@@ -45,6 +47,13 @@ public class WindowManager {
     /** The JavaFX primary stage, reused for the first window built (then null — others get a new Stage). */
     private Stage primaryStage;
 
+    /**
+     * Debounce for persisting the open-window restore set after a close. The delay must comfortably exceed a
+     * quit's close-handler burst (a few ms) so the timer can't elapse mid-quit and persist a half-drained set
+     * — see {@link #reconcileOpenSet()}. A single in-session close just persists ~⅓ s later.
+     */
+    private final PauseTransition openSetReconcile = new PauseTransition(Duration.millis(350));
+
     /** A live window: its project key ({@code ""} = the global session), its stage and controller. */
     private record Holder(String key, Stage stage, MainController controller) {}
 
@@ -59,6 +68,7 @@ public class WindowManager {
                 id -> shared.getSettings().isPluginSupport()
                         && shared.getPluginStore().isEnabled(id));
         this.pluginManager.discover();
+        openSetReconcile.setOnFinished(e -> reconcileOpenSet());
     }
 
     /** The shared plugin manager (also read by the Settings → Plugins page to list installed plugins). */
@@ -175,8 +185,11 @@ public class WindowManager {
 
     /**
      * Called from a window's close handler after its session has been persisted. Drops the window from the
-     * live set; if other windows remain (the user closed one of several), forgets it from the restore set.
-     * When the last window closes (a quit), the restore set is left intact so the app reopens it.
+     * live set and (re)starts the {@linkplain #openSetReconcile debounced reconcile} of the persisted restore
+     * set. The reconcile — not an eager {@code markClosed} here — is what makes a quit restore every window:
+     * a Cmd-Q / OS quit fires this for each window in one burst, the debounce timer can't elapse inside that
+     * burst (the JVM exits first), so it never persists a half-drained set; only a genuine single close (the
+     * app keeps running) lives long enough for the timer to fire and forget that one window.
      */
     public void onWindowClosed(MainController controller) {
         Holder holder = null;
@@ -191,10 +204,36 @@ public class WindowManager {
         }
         controller.disposePlugins(); // stop() the window's plugins
         windows.remove(holder);
-        if (!windows.isEmpty()) {
-            projects().markClosed(holder.key);
-            projects().save();
+        openSetReconcile.playFromStart();
+    }
+
+    /**
+     * Persists the set of currently-open windows as the restore set. Debounced (see {@link #openSetReconcile})
+     * so a burst of closes settles to a single write, and — crucially — so it cannot run <em>during</em> a
+     * quit. The two ends:
+     *
+     * <ul>
+     *   <li><b>A genuine single-window close</b> (the app keeps running) outlives the debounce, which then
+     *       persists the reduced live set, so the closed window is forgotten and won't reopen.
+     *   <li><b>A quit</b> (Cmd-Q / OS quit fires every window's close handler in one fast burst; {@code
+     *       app.quit} uses {@code Platform.exit()} and fires none) terminates the JVM before the debounce
+     *       timer elapses — so the reduced set is never written and the full pre-quit set stays on disk,
+     *       reopening every window next launch.
+     * </ul>
+     *
+     * The guard against an empty live set is belt-and-suspenders for the unlikely case the timer does fire
+     * after the last window closed: we persist nothing rather than an empty set.
+     */
+    private void reconcileOpenSet() {
+        if (windows.isEmpty()) {
+            return; // quitting — keep the pre-quit open set so it's all restored next launch
         }
+        List<String> keys = new ArrayList<>();
+        for (Holder h : windows) {
+            keys.add(h.key);
+        }
+        projects().setOpenWindows(keys);
+        projects().save();
     }
 
     /**
