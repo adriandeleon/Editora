@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Spell check no longer flags commands, URLs, paths, and identifiers.** Tokens like `./mvnw`,
+  `javafx:run`, `https://github.com/…`, `path/to/file.txt`, `snake_case`, and `a@b.com` were getting red
+  squiggles — in Markdown prose, in fenced ` ``` ` code blocks, and in comments/strings of Java/Python/Shell
+  and other code files. The checker now recognizes a flagged word that's part of a URL, path, e-mail, or
+  dotted/underscored/colon-joined token and leaves it alone (ordinary words, including hyphenated ones like
+  `well-known`, are still checked). In Markdown it additionally skips whole fenced code blocks and link
+  targets. The check runs only for the few already-flagged words, so it doesn't affect scroll performance.
+
 - **Language servers and debug adapters no longer pile up as orphaned processes.** Previously the external
   servers Editora spawns (e.g. `jdtls`) were only killed when a window was closed through the app — so
   force-quitting, a crash, an OS quit, or a `kill` left them running, where they accumulate and hold their

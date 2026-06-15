@@ -42,6 +42,51 @@ class SpellCheckerTest {
                 SpellChecker.wordSpans(q).stream().map(s -> word(q, s)).toList());
     }
 
+    /** Is the first letter run of {@code token} part of a structured (URL/path/identifier) token? */
+    private static boolean structural(String token) {
+        List<int[]> spans = SpellChecker.wordSpans(token);
+        return !spans.isEmpty() && SpellChecker.partOfStructuredToken(token, spans.get(0)[0], spans.get(0)[1]);
+    }
+
+    @Test
+    void structuredTokensAreSkipped() {
+        assertTrue(structural("./mvnw")); // command / path
+        assertTrue(structural("mvnw.cmd")); // dotted
+        assertTrue(structural("javafx:run")); // colon-joined
+        assertTrue(structural("https://github.com/adriandeleon/Editora")); // URL
+        assertTrue(structural("user@example.com")); // e-mail
+        assertTrue(structural("snake_case_name")); // underscore
+        assertTrue(structural("path/to/file.txt")); // path
+        assertTrue(structural("target/Editora-1.0.jar")); // path + version
+    }
+
+    @Test
+    void plainWordsAreNotSkipped() {
+        assertFalse(structural("hello"));
+        assertFalse(structural("well-known")); // hyphenated word
+        assertFalse(structural("state-of-the-art"));
+        assertFalse(structural("don't")); // apostrophe
+        assertFalse(structural("sentence.")); // trailing period trimmed
+        assertFalse(structural("(word),")); // wrapping punctuation trimmed
+        assertFalse(structural("\"quoted\"")); // quotes trimmed
+        assertFalse(structural("word"));
+    }
+
+    @Test
+    void structuredCheckIsContextAwareWithinALine() {
+        String line = "see https://example.com or the mvnw script";
+        for (int[] s : SpellChecker.wordSpans(line)) {
+            String w = word(line, s);
+            boolean st = SpellChecker.partOfStructuredToken(line, s[0], s[1]);
+            if (w.equals("https") || w.equals("example") || w.equals("com")) {
+                assertTrue(st, w + " should be structural (part of the URL)");
+            }
+            if (w.equals("see") || w.equals("or") || w.equals("the") || w.equals("mvnw") || w.equals("script")) {
+                assertFalse(st, w + " should be a plain word");
+            }
+        }
+    }
+
     @Test
     void skipsIdentifiersAcronymsNumbersAndShortWords() {
         assertTrue(SpellChecker.skip("a")); // too short
