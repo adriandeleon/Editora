@@ -96,6 +96,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Open a command's online docs from the palette (C-h).** In the command palette, press **C-h** to open the
+  highlighted command's documentation page (`https://editora-project.dev/docs/commands/<id>`) in your system
+  default browser. The palette footer now lists `C-h docs` alongside the other shortcuts.
+
 - **Format Document command (LSP).** A new command-palette command **LSP: Format Document** reformats the
   whole active file via its language server (`textDocument/formatting`) — available when a server is running
   for the file's language and advertises formatting. Edits apply through the undoable buffer (so a single

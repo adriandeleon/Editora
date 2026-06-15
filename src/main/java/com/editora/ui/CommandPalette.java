@@ -43,8 +43,14 @@ public class CommandPalette {
     private static final boolean IS_MAC =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
+    /** Base URL for per-command documentation on the website; the command id is appended. */
+    private static final String DOCS_BASE = "https://editora-project.dev/docs/commands/";
+
     private final CommandRegistry registry;
     private final KeymapManager keymap;
+    /** Injected: opens a URL in the system default browser (the highlighted command's docs, on C-h). */
+    private java.util.function.Consumer<String> docsOpener = url -> {};
+
     private Map<String, String> commandToKey;
     /** Only commands matching this predicate are listed (e.g. project commands hidden when disabled). */
     private final java.util.function.Predicate<Command> visible;
@@ -120,7 +126,7 @@ public class CommandPalette {
             String d = sel == null ? "" : sel.description();
             desc.setText(d.isEmpty() ? " " : d); // keep one line tall so the card never collapses/jitters
         });
-        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ run  ·  esc / C-g cancel");
+        Label hint = new Label(tr("palette.hint"));
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, header, input, list, desc, hint);
         content.getStyleClass().add("command-palette");
@@ -135,6 +141,11 @@ public class CommandPalette {
     /** Injects the shared overlay host used to show the palette card. */
     public void setOverlayHost(OverlayHost overlayHost) {
         this.overlayHost = overlayHost;
+    }
+
+    /** Injects the system-browser opener used by C-h to show the highlighted command's online docs. */
+    public void setDocsOpener(java.util.function.Consumer<String> docsOpener) {
+        this.docsOpener = docsOpener == null ? url -> {} : docsOpener;
     }
 
     private void onKey(KeyEvent e) {
@@ -173,8 +184,24 @@ public class CommandPalette {
                     e.consume();
                 }
             }
+            case H -> {
+                if (e.isControlDown()) {
+                    openDocs();
+                    e.consume();
+                }
+            }
             default -> {}
         }
+    }
+
+    /** C-h: open the highlighted command's online documentation in the system default browser. */
+    private void openDocs() {
+        Command command = list.getSelectionModel().getSelectedItem();
+        if (command == null) {
+            return;
+        }
+        hide();
+        docsOpener.accept(DOCS_BASE + command.id());
     }
 
     private void move(int delta) {
