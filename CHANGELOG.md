@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **Smoother scrolling in files with many lines.** The line-number gutter set each row's number via a
+  per-row reactive binding that subscribed/unsubscribed as cells recycled during a scroll — measurable churn
+  on the hot path. The number is now set directly from the live line count, and re-pads only when the count
+  crosses a power of 10 (rare). A layout-forced scroll sweep over a ~375-line Markdown file was ~12–21%
+  faster in the gutter (measured A/B in one process). Line numbers, folding, and all gutter markers are
+  unchanged.
+
 ### Changed
 
 - **The Find in Files toolbar icon now toggles the panel** — one click opens it (focusing the query field),
