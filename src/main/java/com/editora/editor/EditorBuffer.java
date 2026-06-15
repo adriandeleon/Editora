@@ -756,6 +756,7 @@ public class EditorBuffer implements TabContent {
         spellChecker = new SpellChecker(spellLanguage, spellUserWords);
         spellOverlay.setChecker(spellChecker);
         spellOverlay.setProseMode(isProse());
+        spellOverlay.setMarkdown(isMarkdown()); // skip fenced ``` code blocks from spell check
         AnchorPane.setTopAnchor(lintOverlay, 0d);
         AnchorPane.setBottomAnchor(lintOverlay, 0d);
         AnchorPane.setLeftAnchor(lintOverlay, 0d);
@@ -1026,8 +1027,8 @@ public class EditorBuffer implements TabContent {
         for (int[] span : SpellChecker.wordSpans(line)) {
             if (col >= span[0] && col <= span[1]) {
                 int absStart = area.getAbsolutePosition(paragraph, span[0]);
-                if (!spellEligible(absStart)) {
-                    return null;
+                if (!spellEligible(absStart) || SpellChecker.partOfStructuredToken(line, span[0], span[1])) {
+                    return null; // not eligible, or part of a URL/path/identifier — not a misspelling
                 }
                 String word = line.substring(span[0], span[1]);
                 return spellChecker.isMisspelled(word)
@@ -1041,7 +1042,9 @@ public class EditorBuffer implements TabContent {
     /** Mirror of {@link SpellCheckOverlay}'s eligibility: which words are checked in this buffer. */
     private boolean spellEligible(int abs) {
         java.util.Collection<String> style = area.getStyleOfChar(abs);
-        return isProse() ? !style.contains("code") : style.contains("comment") || style.contains("string");
+        return isProse()
+                ? !style.contains("code") && !style.contains("link")
+                : style.contains("comment") || style.contains("string");
     }
 
     private void addToDictionary(String word) {

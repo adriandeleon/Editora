@@ -1,5 +1,7 @@
 package com.editora.editor;
 
+import java.time.Duration;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.List;
 
@@ -31,8 +33,14 @@ final class SpellCheckOverlay extends Region {
     private final Canvas canvas = new Canvas(1, 1);
     private SpellChecker checker;
     private boolean proseMode;
+    private boolean markdown;
     private boolean active;
     private boolean redrawPending;
+
+    /** Lines (0-based) inside a Markdown fenced ``` code block — never spell-checked. Their content is
+     *  the embedded language (or unstyled), so the per-char "code" style class can't catch them; this
+     *  whole-line skip does. Recomputed off the debounced edit pulse, not per scroll. */
+    private BitSet codeLines = new BitSet();
 
     // Both wordSpans(line) and isMisspelled(word) are otherwise recomputed for every visible word on
     // every scroll/resize pulse, even though the text hasn't changed — and isMisspelled is a Hunspell
@@ -59,8 +67,51 @@ final class SpellCheckOverlay extends Region {
         getChildren().add(canvas);
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
+        // Recompute fenced-code line ranges off the debounced edit pulse (O(lines), not per keystroke);
+        // only while active, so an inactive overlay (e.g. a large file with spell check off) does no work.
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> {
+            if (active) {
+                recomputeCodeLines();
+            }
+        });
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+    }
+
+    /** Whether this is a Markdown buffer (enables fenced-code-block skipping). */
+    void setMarkdown(boolean markdown) {
+        this.markdown = markdown;
+        recomputeCodeLines();
+        scheduleRedraw();
+    }
+
+    private void recomputeCodeLines() {
+        codeLines = markdown ? fencedCodeLines(area.getText()) : new BitSet();
+    }
+
+    /** 0-based line indices inside Markdown fenced code blocks (the ``` delimiter lines included). Pure. */
+    static BitSet fencedCodeLines(String text) {
+        BitSet code = new BitSet();
+        if (text == null || text.isEmpty()) {
+            return code;
+        }
+        String[] lines = text.split("\n", -1);
+        int fenceStart = -1;
+        for (int i = 0; i < lines.length; i++) {
+            String trimmed = lines[i].trim();
+            if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+                if (fenceStart < 0) {
+                    fenceStart = i;
+                } else {
+                    code.set(fenceStart, i + 1); // mark the whole fence, delimiters included
+                    fenceStart = -1;
+                }
+            }
+        }
+        if (fenceStart >= 0) {
+            code.set(fenceStart, lines.length); // an unterminated fence runs to EOF (as editors render it)
+        }
+        return code;
     }
 
     void setChecker(SpellChecker checker) {
@@ -82,6 +133,7 @@ final class SpellCheckOverlay extends Region {
         this.active = active;
         setVisible(active);
         if (active) {
+            recomputeCodeLines(); // pick up the current text (it may have changed while inactive)
             scheduleRedraw();
         } else {
             clear();
@@ -143,8 +195,8 @@ final class SpellCheckOverlay extends Region {
             g.setStroke(SQUIGGLE);
             g.setLineWidth(1.0);
             for (int p = first; p <= last; p++) {
-                if (area.isFolded(p)) {
-                    continue;
+                if (area.isFolded(p) || (markdown && codeLines.get(p))) {
+                    continue; // skip folded lines and Markdown fenced code blocks
                 }
                 drawParagraph(g, p, w, h);
             }
@@ -171,6 +223,11 @@ final class SpellCheckOverlay extends Region {
             if (!spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)) {
                 continue;
             }
+            // Don't flag a "misspelled" run that is actually part of a URL, path, command, or
+            // dotted/underscored identifier (checked only for the few flagged words, off the hot path).
+            if (SpellChecker.partOfStructuredToken(line, start, end)) {
+                continue;
+            }
             int abs = parBase + start;
             if (!eligible(abs)) {
                 continue; // eligibility is style-dependent (inline/fenced code) → evaluated fresh
@@ -191,7 +248,8 @@ final class SpellCheckOverlay extends Region {
     private boolean eligible(int abs) {
         Collection<String> style = area.getStyleOfChar(abs);
         if (proseMode) {
-            return !style.contains("code"); // skip Markdown inline/fenced code; check prose
+            // Skip Markdown inline `code` and links/URLs; check the rest (prose, headings, bold/italic).
+            return !style.contains("code") && !style.contains("link");
         }
         return style.contains("comment") || style.contains("string"); // code: only comments/strings
     }

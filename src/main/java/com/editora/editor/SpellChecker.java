@@ -104,6 +104,49 @@ public final class SpellChecker {
         return allUpper; // ALL-CAPS acronym (e.g. HTTP, NASA)
     }
 
+    /** Wrapping punctuation trimmed from a whitespace token's ends before judging it (quotes, brackets,
+     *  sentence punctuation, Markdown emphasis). Notably excludes {@code / \\ @ _ = ~} and {@code -}: those
+     *  are part of the token's structure (or intra-word), not edge decoration. */
+    private static final String EDGE = "\"'`()[]{}<>,;:.!?*#|…‘’“”";
+
+    /**
+     * Whether the letter run {@code [start, end)} is part of a URL, file path, e-mail, or
+     * dotted/underscored/colon-joined identifier rather than a standalone prose word — i.e. spell check
+     * should leave it alone. Looks at the whole whitespace-bounded token around the run: after trimming
+     * wrapping punctuation, if it contains anything other than letters, {@code -}, or {@code '} (a slash,
+     * colon, {@code @}, underscore, internal dot, digit, …) the run is structural. Pure / unit-tested.
+     *
+     * <p>So {@code ./mvnw}, {@code mvnw.cmd}, {@code javafx:run}, {@code https://x/y}, {@code a@b.com},
+     * {@code snake_case}, {@code file.txt} are skipped, while {@code well-known}, {@code don't},
+     * {@code sentence.} (trailing period trimmed) and ordinary words are still checked.
+     */
+    public static boolean partOfStructuredToken(String line, int start, int end) {
+        if (line == null || start < 0 || end > line.length() || start >= end) {
+            return false;
+        }
+        int ts = start;
+        int te = end;
+        while (ts > 0 && !Character.isWhitespace(line.charAt(ts - 1))) {
+            ts--;
+        }
+        while (te < line.length() && !Character.isWhitespace(line.charAt(te))) {
+            te++;
+        }
+        while (ts < te && EDGE.indexOf(line.charAt(ts)) >= 0) {
+            ts++;
+        }
+        while (te > ts && EDGE.indexOf(line.charAt(te - 1)) >= 0) {
+            te--;
+        }
+        for (int k = ts; k < te; k++) {
+            char c = line.charAt(k);
+            if (!Character.isLetter(c) && c != '-' && c != '\'') {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Splits a line into checkable word spans ({@code [start, end)} offsets) — maximal runs of letters
      * with intra-word apostrophes (so {@code don't} stays one word), trimming leading/trailing
