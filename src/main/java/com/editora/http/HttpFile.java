@@ -2,6 +2,7 @@ package com.editora.http;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -10,9 +11,11 @@ import java.util.Set;
  * each request is a method+URL line, optional headers, a blank line, and an optional body. Lines starting
  * with {@code #}/{@code //} are comments and {@code @name = value} lines are variable declarations.
  *
- * <p>Used to draw a gutter ▶ on each request's start line and to <b>extract</b> a single request (plus the
- * file's {@code @variable} preamble) into a temp file that {@code ijhttp} can run on its own — since
- * {@code ijhttp} only executes whole files.
+ * <p>Beyond the basics it recognizes the IntelliJ extensions used by the executor: an external body
+ * reference ({@code < ./file} raw, {@code <@ ./file} substituted), response-redirect operators
+ * ({@code >> file} / {@code >>! file} force), and per-request comment directives ({@code # @no-redirect},
+ * {@code # @no-cookie-jar}, {@code # @no-log}, {@code # @timeout N}, {@code # @name x}). Response-handler
+ * scripts ({@code > {% … %}}) are still recognized only to end the body — they are not executed.
  */
 public final class HttpFile {
 
@@ -21,14 +24,28 @@ public final class HttpFile {
 
     private HttpFile() {}
 
+    /** Per-request comment directives; {@code timeoutSeconds == 0} means "use the default". */
+    public record Directives(boolean noRedirect, boolean noCookieJar, boolean noLog, int timeoutSeconds) {
+        public static final Directives NONE = new Directives(false, false, false, 0);
+    }
+
+    /** An external request body: the {@code path} (relative to the request file), whether to substitute
+     *  {@code {{vars}}} in it ({@code <@} vs {@code <}), and an optional {@code encoding}. */
+    public record BodyRef(String path, boolean substitute, String encoding) {}
+
+    /** A response-redirect operator: write the response body to {@code path}; {@code force} ({@code >>!})
+     *  overwrites an existing file, plain {@code >>} skips it. */
+    public record Redirect(String path, boolean force) {}
+
     /**
      * One request: its 0-based {@code startLine} (the method/URL line — where the ▶ goes) through
      * {@code endLine} (the last non-blank line of its section), the {@code method} (defaulting to
      * {@code GET} when omitted), the raw {@code url} (may contain {@code {{vars}}}), an optional
-     * {@code name} (from a {@code ### name} separator or a {@code # @name x} comment), and the raw
-     * {@code block} text (the request, from start to end line).
+     * {@code name} (from a {@code ### name} separator or a {@code # @name x} comment), the per-request
+     * {@code directives}, and the raw {@code block} text (the request, from start to end line).
      */
-    public record Request(int startLine, int endLine, String method, String url, String name, String block) {}
+    public record Request(
+            int startLine, int endLine, String method, String url, String name, Directives directives, String block) {}
 
     /** Parses {@code text} into its requests, in document order. */
     public static List<Request> parse(String text) {
@@ -74,7 +91,8 @@ public final class HttpFile {
                     last--;
                 }
                 String[] mu = methodUrl(lines[reqLine]);
-                out.add(new Request(reqLine, last, mu[0], mu[1], name, join(lines, reqLine, last)));
+                Directives directives = directivesOf(lines, i, sectionEnd);
+                out.add(new Request(reqLine, last, mu[0], mu[1], name, directives, join(lines, reqLine, last)));
             }
             i = sectionEnd;
         }
@@ -93,11 +111,25 @@ public final class HttpFile {
         return -1;
     }
 
-    /** A single request broken into its parts for the built-in executor. {@code headers} is a list of
-     *  {@code [name, value]}; {@code url}/{@code value}s/{@code body} may still contain {@code {{vars}}}. */
-    public record Parsed(String method, String url, List<String[]> headers, String body) {}
+    /**
+     * A single request broken into its parts for the built-in executor. {@code headers} is a list of
+     * {@code [name, value]}; {@code url}/{@code value}s/{@code body} may still contain {@code {{vars}}}. The
+     * {@code name}/{@code directives} are carried from the {@link Request} (only via {@link #parseRequest(Request)});
+     * {@code bodyRef} is non-null for an external body; {@code redirects} holds any {@code >>}/{@code >>!} targets.
+     */
+    public record Parsed(
+            String method,
+            String url,
+            List<String[]> headers,
+            String body,
+            String name,
+            BodyRef bodyRef,
+            List<Redirect> redirects,
+            Directives directives) {}
 
-    /** Parses one request {@code block} (from {@link Request#block()}) into method/URL/headers/body. */
+    /** Parses one request {@code block} (from {@link Request#block()}) into method/URL/headers/body, plus an
+     *  external-body reference + redirect operators. The {@code name}/{@code directives} default; use
+     *  {@link #parseRequest(Request)} to carry those from the enclosing request. */
     public static Parsed parseRequest(String block) {
         String[] lines = (block == null ? "" : block).split("\n", -1);
         int i = 0;
@@ -110,7 +142,7 @@ public final class HttpFile {
             }
         }
         if (i >= lines.length) {
-            return new Parsed("GET", "", List.of(), "");
+            return new Parsed("GET", "", List.of(), "", null, null, List.of(), Directives.NONE);
         }
         String[] mu = methodUrl(lines[i]);
         StringBuilder url = new StringBuilder(mu[1]);
@@ -136,18 +168,46 @@ public final class HttpFile {
         while (i < lines.length && lines[i].strip().isEmpty()) {
             i++; // skip the blank line between headers and body
         }
+        // An external-body reference (< ./file raw, <@ ./file substituted) replaces an inline body.
+        BodyRef bodyRef = null;
+        if (i < lines.length) {
+            String t = lines[i].stripLeading();
+            if (t.startsWith("<@") || (t.startsWith("<") && !t.startsWith("<>"))) {
+                bodyRef = parseBodyRef(t);
+                i++;
+            }
+        }
         StringBuilder body = new StringBuilder();
+        List<Redirect> redirects = new ArrayList<>();
+        boolean bodyDone = false;
         for (; i < lines.length; i++) {
             String t = lines[i].stripLeading();
+            if (t.startsWith(">>")) {
+                bodyDone = true; // a response-redirect operator (>> file / >>! file)
+                redirects.add(parseRedirect(t));
+                continue;
+            }
             if (t.startsWith(">") || t.startsWith("<>")) {
-                break; // a response-handler / redirect line ends the body (not executed in v1)
+                bodyDone = true; // a response-handler / response-ref line ends the body (not executed)
+                continue;
+            }
+            if (bodyDone) {
+                continue; // trailing handler-script content after the body is ignored
             }
             if (body.length() > 0) {
                 body.append('\n');
             }
             body.append(lines[i]);
         }
-        return new Parsed(mu[0], url.toString(), headers, body.toString().strip());
+        return new Parsed(
+                mu[0], url.toString(), headers, body.toString().strip(), null, bodyRef, redirects, Directives.NONE);
+    }
+
+    /** Like {@link #parseRequest(String)} but carries the request's {@code name} + {@code directives}. */
+    public static Parsed parseRequest(Request req) {
+        Parsed p = parseRequest(req.block());
+        return new Parsed(
+                p.method(), p.url(), p.headers(), p.body(), req.name(), p.bodyRef(), p.redirects(), req.directives());
     }
 
     /** Every {@code @name = value} declaration as {@code [name, rawValue]} pairs, in order. */
@@ -232,6 +292,63 @@ public final class HttpFile {
             return rest.isEmpty() ? null : rest;
         }
         return null;
+    }
+
+    /** Scans a section's comment lines {@code [from, to)} for the per-request directives. */
+    static Directives directivesOf(String[] lines, int from, int to) {
+        boolean noRedirect = false;
+        boolean noCookieJar = false;
+        boolean noLog = false;
+        int timeout = 0;
+        for (int k = from; k < to; k++) {
+            String s = lines[k].strip();
+            if (!isComment(s)) {
+                continue;
+            }
+            String c = (s.startsWith("//") ? s.substring(2) : s.substring(1)).strip();
+            if (!c.startsWith("@")) {
+                continue;
+            }
+            String tok = c.substring(1);
+            String low = tok.toLowerCase(Locale.ROOT);
+            if (low.startsWith("no-redirect")) {
+                noRedirect = true;
+            } else if (low.startsWith("no-cookie-jar")) {
+                noCookieJar = true;
+            } else if (low.startsWith("no-log")) {
+                noLog = true;
+            } else if (low.startsWith("timeout")) {
+                timeout = parseInt(tok.substring("timeout".length()).strip());
+            }
+        }
+        return new Directives(noRedirect, noCookieJar, noLog, timeout);
+    }
+
+    private static BodyRef parseBodyRef(String line) {
+        boolean substitute = line.startsWith("<@");
+        String rest = line.substring(substitute ? 2 : 1).strip();
+        String encoding = null;
+        if (substitute && !rest.startsWith(".") && !rest.startsWith("/")) {
+            int sp = rest.indexOf(' ');
+            if (sp > 0) {
+                encoding = rest.substring(0, sp);
+                rest = rest.substring(sp + 1).strip();
+            }
+        }
+        return new BodyRef(rest, substitute, encoding);
+    }
+
+    private static Redirect parseRedirect(String line) {
+        boolean force = line.startsWith(">>!");
+        return new Redirect(line.substring(force ? 3 : 2).strip(), force);
+    }
+
+    private static int parseInt(String s) {
+        try {
+            return Integer.parseInt(s.strip());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private static boolean isVarDecl(String stripped) {
