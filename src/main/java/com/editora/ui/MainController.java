@@ -3567,6 +3567,7 @@ public class MainController {
         boolean eligible = lspEnabled()
                 && path != null
                 && com.editora.vfs.Vfs.isLocal(path)
+                && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
                 && serverId != null
                 && serverEnabled(serverId)
                 && Boolean.TRUE.equals(lspServerAvailable.get(serverId));

@@ -1433,7 +1433,11 @@ public class EditorBuffer implements TabContent {
     /** Turns LSP rendering (diagnostics overlay + hover) on/off for this buffer. The controller drives
      *  document open/close + requests; this only gates the editor surface. */
     public void setLspActive(boolean on) {
-        this.lspActive = on && isLspLanguage() && !hugeFile;
+        // Large-file mode disables LSP just like syntax highlighting and the minimap: a 5–50 MB document
+        // would flood the FX thread with a full-text didOpen and tens/hundreds of thousands of diagnostics
+        // to map + render (the Problems tree, minimap + scrollbar stripes), freezing the editor. largeFile
+        // is implied by hugeFile (see setReadOnly), so this single guard covers both.
+        this.lspActive = on && isLspLanguage() && !largeFile;
         lspOverlay.setActive(this.lspActive);
         // The minimap stripes only draw while LSP is active for this file, regardless of any stale list.
         minimap.setDiagnosticsEnabled(this.lspActive);
@@ -3754,7 +3758,9 @@ public class EditorBuffer implements TabContent {
      *  minimum prefix length so an explicit invoke works on a single character. */
     private void updateCompletion(CodeArea a, boolean manual) {
         if (!autocompleteEnabled
-                || hugeFile
+                || largeFile // off in large-file mode: a.getText() below would allocate the whole document
+                // per trigger (the same per-keystroke cost brace matching is gated to avoid), and there is
+                // no LSP/grammar to complete against on a large file anyway. largeFile implies hugeFile.
                 || !isEditable()
                 || hasActiveSnippet()
                 || (suppressCompletion && !manual)
