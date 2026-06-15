@@ -16,6 +16,8 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Button;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.ClipboardContent;
@@ -31,6 +33,8 @@ import javafx.scene.paint.Color;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.WorkspaceState;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Lays out IntelliJ-style left/right/bottom stripes around the editor area, manages registered
@@ -125,6 +129,10 @@ public class ToolWindowManager {
         button.getStyleClass().addAll("tool-stripe-button", "flat");
         button.setTooltip(new Tooltip(tooltipFor(tw)));
         button.setOnAction(e -> toggle(tw));
+        // Right-click → Hide the icon (persisted; re-show from Settings → Tool Windows).
+        MenuItem hide = new MenuItem(tr("toolwindow.hide"), Icons.closeSmall());
+        hide.setOnAction(e -> setVisible(tw, false));
+        button.setContextMenu(new ContextMenu(hide));
         enableReorderDrag(tw, button);
         stripeButtons.put(tw, button);
         if (shouldShowButton(tw)) {
