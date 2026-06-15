@@ -231,6 +231,40 @@ final class Icons {
                 + "19 17.59 13.41 12z");
     }
 
+    /**
+     * The close-variant glyphs below keep the {@link #closeTab()} X (scaled to ~0.82 to leave margin) as the
+     * shared anchor and add one distinguishing mark, so the six tab close-menu items read as a family yet
+     * stay distinct at menu size: one square = "other(s)", three squares = "all", a check = "unmodified
+     * (saved)", and a left/right triangle = direction.
+     */
+    private static final String CLOSE_X = "M17.74 7.42 16.58 6.26 12 10.84 7.42 6.26 6.26 7.42 10.84 12 "
+            + "6.26 16.58 7.42 17.74 12 13.16 16.58 17.74 17.74 16.58 13.16 12z";
+
+    /** Close other tabs: the X plus one small square (the tab kept) at the top-right. */
+    static Node closeOtherTabs() {
+        return of(CLOSE_X + " M18.5 2h4v4h-4z");
+    }
+
+    /** Close all tabs: the X plus three small squares (all tabs) along the bottom. */
+    static Node closeAllTabs() {
+        return of(CLOSE_X + " M6 20h3v3H6z M10.5 20h3v3h-3z M15 20h3v3h-3z");
+    }
+
+    /** Close unmodified tabs: the X plus a small check (the saved/clean tabs) at the bottom-right. */
+    static Node closeUnmodifiedTabs() {
+        return of(CLOSE_X + " M17.91 21.32 16.49 19.9 16.01 20.38 17.91 22.28 21.99 18.2 21.51 17.72z");
+    }
+
+    /** Close tabs to the left: the X plus a left-pointing triangle. */
+    static Node closeTabsLeft() {
+        return of(CLOSE_X + " M5 8 5 16 1 12z");
+    }
+
+    /** Close tabs to the right: the X plus a right-pointing triangle. */
+    static Node closeTabsRight() {
+        return of(CLOSE_X + " M19 8 19 16 23 12z");
+    }
+
     static Node settings() {
         return of("M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41."
                 + "12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-"
