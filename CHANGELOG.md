@@ -96,6 +96,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Right-click a tool-window icon → Hide.** Right-clicking a button in the tool-window stripe now offers
+  **Hide**, which removes that icon from the stripe (persisted). Bring it back from Settings → Tool Windows.
+
 - **Reveal in File Manager / Open Terminal Here from the breadcrumb.** Clicking a folder or file crumb in the
   navigation bar now lists **Reveal in File Manager** and **Open Terminal Here** for that crumb (above the
   folder-contents dropdown) — Reveal selects the file or opens the folder; Open Terminal opens at the folder
