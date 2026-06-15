@@ -132,6 +132,22 @@ public class ProjectManager {
         index.getOpenProjectIds().remove(projectKey == null ? "" : projectKey);
     }
 
+    /**
+     * Replaces the open-window set with exactly {@code keys} (order preserved, de-duplicated, {@code null}
+     * → {@code ""}). Used to reconcile the persisted set to the live set of open windows. Persist via
+     * {@link #save()}.
+     */
+    public void setOpenWindows(java.util.Collection<String> keys) {
+        List<String> list = new ArrayList<>();
+        for (String k : keys) {
+            String key = k == null ? "" : k;
+            if (!list.contains(key)) {
+                list.add(key);
+            }
+        }
+        index.setOpenProjectIds(list);
+    }
+
     /** True if a window for {@code projectKey} ({@code ""} = global) is recorded as open. */
     public boolean isOpen(String projectKey) {
         return index.getOpenProjectIds().contains(projectKey == null ? "" : projectKey);

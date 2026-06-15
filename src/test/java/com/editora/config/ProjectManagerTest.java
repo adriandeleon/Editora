@@ -104,6 +104,24 @@ class ProjectManagerTest {
     }
 
     @Test
+    void setOpenWindowsReplacesTheSetDedupedAndPersists(@TempDir Path dir) {
+        ProjectManager pm = new ProjectManager(dir);
+        pm.markOpen("");
+        pm.markOpen("old-1");
+        // Reconcile to a brand-new live set: the stale "old-1" is dropped, nulls become "", dups collapse.
+        pm.setOpenWindows(java.util.Arrays.asList("", "a-1", "a-1", null));
+        assertEquals(List.of("", "a-1"), pm.openProjectIds());
+        pm.save();
+
+        ProjectManager reloaded = new ProjectManager(dir);
+        assertEquals(List.of("", "a-1"), reloaded.openProjectIds());
+
+        // An empty live set leaves the persisted set empty (callers skip persisting on quit instead).
+        reloaded.setOpenWindows(List.of());
+        assertTrue(reloaded.openProjectIds().isEmpty());
+    }
+
+    @Test
     void migratesV1ActiveProjectIntoOpenSet(@TempDir Path dir) throws Exception {
         // A pre-multi-window (v1) projects.json: a single activeProjectId, no openProjectIds.
         Files.writeString(dir.resolve("projects.json"), """
