@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.IntFunction;
 
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -363,6 +364,8 @@ public final class DiffViewerPane implements TabContent {
         }
         installGutter(leftArea, leftNos, editableSide == EditableSide.LEFT);
         installGutter(rightArea, rightNos, editableSide == EditableSide.RIGHT);
+        installScrollFocus(leftArea);
+        installScrollFocus(rightArea);
         syncScroll(leftArea, rightArea);
         syncScroll(rightArea, leftArea);
 
@@ -386,16 +389,36 @@ public final class DiffViewerPane implements TabContent {
         return l;
     }
 
+    /**
+     * Keeps the two side-by-side panes aligned: copies the scroll position of the <b>focused</b> pane to
+     * the other. The rows are 1:1 aligned (filler lines), so the absolute scroll offsets match.
+     *
+     * <p>Only the focused pane drives, which makes the sync strictly one-directional at any moment and so
+     * <b>cannot oscillate</b>. (A naïve bidirectional copy fed back: RichTextFX refines {@code estimatedScrollY}
+     * as paragraphs are measured, so the follower settled to a slightly different value and pushed the leader
+     * back — a feedback loop, worst on a navigation jump into an unmeasured region.) A scroll gesture focuses
+     * its pane (see {@code installScrollFocus}), so the other pane follows it. This governs only interactive
+     * scrolling — next/prev navigation pins both panes explicitly (see {@link #scrollToRow(int)}).
+     */
     private void syncScroll(CodeArea from, CodeArea to) {
         from.estimatedScrollYProperty().addListener((o, ov, nv) -> {
-            if (syncing || nv == null) {
-                return;
+            if (syncing || nv == null || !from.isFocused()) {
+                return; // only the focused (actively scrolled) pane drives the other — no feedback loop
             }
             syncing = true;
             try {
                 to.estimatedScrollYProperty().setValue(nv);
             } finally {
                 syncing = false;
+            }
+        });
+    }
+
+    /** A scroll gesture on a pane focuses it, so it becomes the one that drives the other (see syncScroll). */
+    private static void installScrollFocus(CodeArea area) {
+        area.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
+            if (!area.isFocused()) {
+                area.requestFocus();
             }
         });
     }
@@ -754,14 +777,30 @@ public final class DiffViewerPane implements TabContent {
         int sideEnd = blockEndFrom(sideRow);
         if (unified && unifiedArea != null) {
             int u = unifiedRowFor(sideRow);
-            unifiedArea.showParagraphAtTop(Math.max(0, u));
+            int top = Math.max(0, u);
             selectLines(unifiedArea, u, unifiedRowFor(sideEnd));
+            // Pin the row to the top AFTER the selection (selectRange schedules a caret-follow scroll that
+            // would otherwise leave the block bottom-aligned). One pulse later runs after that follow.
+            Platform.runLater(() -> unifiedArea.showParagraphAtTop(top));
         } else if (leftArea != null && rightArea != null) {
-            leftArea.showParagraphAtTop(Math.max(0, sideRow));
-            // Highlight the block on both panes; focus the editable side (or the left) so it's visible.
+            int top = Math.max(0, sideRow);
+            // Highlight the block on both panes (caret at the block top — see selectLines). The rows are 1:1
+            // aligned (filler lines), so navigation pins BOTH panes to the same top row explicitly, with the
+            // scroll sync suppressed. Relying on the focus-gated sync listener to align the follower fails on a
+            // backward jump: selectRange's caret-follow may already have left the driven pane at `top`, so its
+            // estimatedScrollY never changes, the listener never fires, and the follower is stranded at its own
+            // caret-follow position. Setting both deterministically can't desync.
             selectLines(leftArea, sideRow, sideEnd);
             selectLines(rightArea, sideRow, sideEnd);
-            (editableSide == EditableSide.RIGHT ? rightArea : leftArea).requestFocus();
+            Platform.runLater(() -> {
+                syncing = true;
+                try {
+                    leftArea.showParagraphAtTop(top);
+                    rightArea.showParagraphAtTop(top);
+                } finally {
+                    syncing = false;
+                }
+            });
         }
     }
 
@@ -773,7 +812,9 @@ public final class DiffViewerPane implements TabContent {
         }
         int s = Math.max(0, Math.min(start, pars - 1));
         int e = Math.max(s + 1, Math.min(end, pars));
-        area.selectRange(s, 0, e - 1, area.getParagraph(e - 1).length());
+        // Anchor at the block end, caret at the block START, so RichTextFX's caret-follow scroll targets the
+        // top of the block — agreeing with the explicit showParagraphAtTop instead of pulling to the bottom.
+        area.selectRange(e - 1, area.getParagraph(e - 1).length(), s, 0);
     }
 
     /** Maps a side-by-side row index to the first unified row at/after it (unified expands MODIFIED). */

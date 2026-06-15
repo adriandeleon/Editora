@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Diff viewer: next/previous-change no longer makes the scroll jump erratically.** The two side-by-side
+  panes were kept in sync by copying the absolute pixel scroll position from one to the other, in both
+  directions. That value is a RichTextFX *estimate* refined as lines are measured, so each pane settled to a
+  slightly different value and pushed the other back — a feedback loop, worst when navigation jumped into an
+  unmeasured region. Now only the *focused* (actively scrolled) pane drives the other, so interactive sync is
+  strictly one-directional and cannot oscillate. Next/previous-change navigation bypasses the sync entirely:
+  it pins *both* panes to the same top row explicitly (the rows are 1:1 aligned, so this can't desync) and
+  puts the selection caret at the block's top so caret-follow agrees with the scroll.
+
 - **Spell check no longer flags commands, URLs, paths, and identifiers.** Tokens like `./mvnw`,
   `javafx:run`, `https://github.com/…`, `path/to/file.txt`, `snake_case`, and `a@b.com` were getting red
   squiggles — in Markdown prose, in fenced ` ``` ` code blocks, and in comments/strings of Java/Python/Shell
