@@ -265,6 +265,17 @@ final class Icons {
         return of(CLOSE_X + " M19 8 19 16 23 12z");
     }
 
+    /** Material "folder" — reveal a file/folder in the OS file manager. */
+    static Node revealInFiles() {
+        return of("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
+    }
+
+    /** Material "terminal" — open a terminal at a folder. */
+    static Node terminal() {
+        return of("M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10z"
+                + "M18 17h-6v-2h6v2zM7.5 17l-1.41-1.41L8.67 13l-2.59-2.59L7.5 9l4 4-4 4z");
+    }
+
     static Node settings() {
         return of("M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41."
                 + "12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-"
