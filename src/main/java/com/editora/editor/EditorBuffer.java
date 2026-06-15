@@ -981,20 +981,38 @@ public class EditorBuffer implements TabContent {
 
     /** The Cut/Copy/Paste/Undo/Redo/Select All items, with state for the current selection/clipboard. */
     private List<MenuItem> standardMenuItems() {
-        boolean hasSelection = area.getSelection().getLength() > 0;
+        // Cut/Copy/Paste route through the multi-caret-aware path first (falling back to the native single-
+        // caret op), so a box/column selection copies *every* caret's selection — matching the edit.cut/
+        // copy/paste commands. Without this, area.copy() only grabs the primary caret's row. A box selection
+        // makes copy/cut available even when the primary selection is empty (extra carets carry the rest).
+        boolean hasMulti = hasMultipleCarets();
+        boolean canCopy = area.getSelection().getLength() > 0 || hasMulti;
+        boolean editable = isEditable();
         boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
         MenuItem cut = new MenuItem(tr("editmenu.cut"));
         cut.setGraphic(MenuIcons.cut());
-        cut.setOnAction(e -> area.cut());
-        cut.setDisable(!hasSelection);
+        cut.setOnAction(e -> {
+            if (!multiCaretCut()) {
+                area.cut();
+            }
+        });
+        cut.setDisable(!canCopy || !editable);
         MenuItem copy = new MenuItem(tr("editmenu.copy"));
         copy.setGraphic(MenuIcons.copy());
-        copy.setOnAction(e -> area.copy());
-        copy.setDisable(!hasSelection);
+        copy.setOnAction(e -> {
+            if (!multiCaretCopy()) {
+                area.copy();
+            }
+        });
+        copy.setDisable(!canCopy);
         MenuItem paste = new MenuItem(tr("editmenu.paste"));
         paste.setGraphic(MenuIcons.paste());
-        paste.setOnAction(e -> area.paste());
-        paste.setDisable(!hasClipboardText);
+        paste.setOnAction(e -> {
+            if (!multiCaretPaste()) {
+                area.paste();
+            }
+        });
+        paste.setDisable(!hasClipboardText || !editable);
         MenuItem undo = new MenuItem(tr("editmenu.undo"));
         undo.setGraphic(MenuIcons.undo());
         undo.setOnAction(e -> area.undo());
