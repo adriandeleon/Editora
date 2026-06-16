@@ -1990,7 +1990,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
             checkExternalChanges(); // prompt if the file we just switched to changed on disk
             refreshGit(); // update branch/status + this file's gutter change bars
-            updateLspStatusBar(); // show/hide the "LSP: <server>" segment for the new active file
+            updateLspStatusBar(); // show/hide the "LSP: <server>" segment + Problems window for the new file
+            updateDebugAvailability(); // show the Debug window only for a debuggable file (or a live session)
             updateRunButton(); // show the Run button only for a compact source file
             refreshLocalHistory(); // re-gate + reload the Local File History list for the new active file
         });
@@ -3332,11 +3333,21 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b.setBreakpointsEnabled(on && isDebuggableBuffer(b));
             }
         }
-        toolWindows.setAvailable(debugToolWindow, on);
+        updateDebugAvailability();
         if (!on) {
             statusBar.setDebug(null);
             statusBar.setDebugLoading(false);
         }
+    }
+
+    /**
+     * The Debug tool-window stripe button is shown only when the active file is debuggable (Java/Python/JS) —
+     * or whenever a debug session is live, so it never disappears mid-session if you peek at another file.
+     * Re-run on tab switch and on debug state changes.
+     */
+    private void updateDebugAvailability() {
+        boolean available = debugSupportEnabled() && (isDebuggableBuffer(activeBuffer()) || dapManager.isActive());
+        toolWindows.setAvailable(debugToolWindow, available);
     }
 
     /** Whether a buffer's language has a registered debug adapter (java/python/javascript). */
@@ -3428,6 +3439,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
                 boolean starting = state == com.editora.dap.DapManager.State.STARTING;
                 statusBar.setDebugLoading(starting);
+                updateDebugAvailability(); // keep the window available during a session; hide it once it ends
                 if (starting) {
                     toolWindows.open(debugToolWindow);
                 }
@@ -3816,9 +3828,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         java.util.Map.entry("terraform", s.getTerraformLspCommand()),
                         java.util.Map.entry("toml", s.getTomlLspCommand()),
                         java.util.Map.entry("csharp", s.getCsharpLspCommand())));
-        if (problemsToolWindow != null) {
-            toolWindows.setAvailable(problemsToolWindow, on);
-        }
+        updateProblemsAvailability();
         // The Run affordance (compact source files) is gated by the LSP feature: toggle every buffer's
         // Run detection, then refresh the active buffer's Run tool-window availability.
         boolean shellRun = on && s.isBashLspEnabled();
@@ -4094,6 +4104,21 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean managed = b != null && b.getPath() != null && lspManager.isManaged(b.getPath());
         String serverId = managed ? com.editora.lsp.LspServerRegistry.serverIdFor(b.getLanguage()) : null;
         statusBar.setLsp(serverId != null ? serverLabel(serverId) : null);
+        updateProblemsAvailability(); // the Problems window tracks the same active-file LSP-managed condition
+    }
+
+    /**
+     * The Problems tool-window stripe button is shown only when the active file is served by a language
+     * server (LSP on + the file is managed) — the same condition as the status-bar {@code LSP:} segment. So
+     * it's hidden on a Welcome/Markdown/plain tab even if another open file has diagnostics.
+     */
+    private void updateProblemsAvailability() {
+        if (problemsToolWindow == null) {
+            return;
+        }
+        EditorBuffer b = activeBuffer();
+        boolean available = lspEnabled() && b != null && b.getPath() != null && lspManager.isManaged(b.getPath());
+        toolWindows.setAvailable(problemsToolWindow, available);
     }
 
     /** The short server name shown in the status bar — the configured command's basename (e.g. jdtls,
@@ -4447,8 +4472,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         EditorBuffer b = activeBuffer();
         Path file = b == null ? null : b.getPath();
         Path context = gitContextPath();
+        // No active file and no project context (e.g. the Welcome tab in a No-Project window): show no Git
+        // rather than falling back to the process working directory's repo.
+        if (context == null) {
+            applyGitState(com.editora.git.GitService.RepoState.NONE);
+            return;
+        }
         // Git shells out to a local process — a remote (SFTP) context has no local repo.
-        if (context != null && !com.editora.vfs.Vfs.isLocal(context)) {
+        if (!com.editora.vfs.Vfs.isLocal(context)) {
             applyGitState(com.editora.git.GitService.RepoState.NONE);
             return;
         }

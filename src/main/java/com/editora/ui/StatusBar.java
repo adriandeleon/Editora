@@ -76,6 +76,11 @@ public final class StatusBar extends HBox {
     private EditorBuffer attached;
     /** Simple UI mode hides the git / language / tab-size / line-ending / encoding / LSP segments (size is kept). */
     private boolean simpleMode;
+    /** Git feature on (setGitEnabled) and the active file actually in a repo (setGitBranch) — both gate the
+     *  branch segment's visibility, so it's hidden for files outside any repo (or the no-file Welcome tab). */
+    private boolean gitFeatureEnabled = true;
+
+    private boolean gitInRepo;
     /** Latest LSP server name + loading state, so Simple-mode toggling can re-apply their visibility. */
     private String lspServerName = "";
 
@@ -251,23 +256,24 @@ public final class StatusBar extends HBox {
      * ("Git off", greyed, non-clickable); when on, {@link #setGitBranch} repopulates it.
      */
     public void setGitEnabled(boolean enabled) {
+        gitFeatureEnabled = enabled;
         git.setDisable(!enabled);
         if (!enabled) {
             git.setText(tr("statusbar.gitOff"));
             git.getTooltip().setText(tr("statusbar.tip.gitDisabled"));
         }
+        applyGitVisibility();
     }
 
     /**
-     * Updates the Git branch segment. The segment is <em>always</em> visible: with a {@code null}/blank
-     * {@code branch} (not under version control) it shows "No VCS" — clicking still opens the dropdown,
-     * which then offers "Clone Git repository…". Otherwise it shows {@code ⎇ branch} with optional
-     * {@code ↑ahead ↓behind}.
+     * Updates the Git branch segment. Shown only when the active file is inside a repo: a {@code null}/blank
+     * {@code branch} (no version control for this file, or no file) <em>hides</em> the segment entirely;
+     * otherwise it shows {@code ⎇ branch} with optional {@code ↑ahead ↓behind}.
      */
     public void setGitBranch(String branch, int ahead, int behind) {
         if (branch == null || branch.isBlank()) {
-            git.setText(tr("statusbar.noVcs"));
-            git.getTooltip().setText(tr("statusbar.tip.noVcs"));
+            gitInRepo = false;
+            applyGitVisibility();
             return;
         }
         StringBuilder sb = new StringBuilder("⎇ ").append(branch); // ⎇
@@ -279,6 +285,15 @@ public final class StatusBar extends HBox {
         }
         git.setText(sb.toString());
         git.getTooltip().setText(tr("statusbar.tip.gitBranch"));
+        gitInRepo = true;
+        applyGitVisibility();
+    }
+
+    /** The branch segment shows only when Git is on, the active file is in a repo, and not in Simple UI mode. */
+    private void applyGitVisibility() {
+        boolean vis = gitFeatureEnabled && gitInRepo && !simpleMode;
+        git.setVisible(vis);
+        git.setManaged(vis);
     }
 
     /**
@@ -369,10 +384,12 @@ public final class StatusBar extends HBox {
             seg.setManaged(vis);
         }
         // These are normally always shown; Simple mode hides them.
-        for (Label seg : new Label[] {git, indent, encoding}) {
+        for (Label seg : new Label[] {indent, encoding}) {
             seg.setVisible(!simpleMode);
             seg.setManaged(!simpleMode);
         }
+        // The git segment has its own gate (feature on + active file in a repo + not Simple mode).
+        applyGitVisibility();
         // The read-only segment is a toggle: always shown (when there's a buffer), reflecting and
         // flipping the state. "Read-Only" (amber/active) ⇄ "Editable" (muted); click runs the command.
         readOnly.setVisible(hasBuffer);
