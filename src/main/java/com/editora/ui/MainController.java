@@ -6053,6 +6053,28 @@ public class MainController implements com.editora.mcp.McpBridge {
         refreshSplitButtons();
         refreshEditState(); // start disabled (no buffer yet)
         refreshPasteState();
+        // Pin the toolbar height so it doesn't jump when the (taller) project combo is hidden — by
+        // Simple UI mode or by disabling Projects. Measured after the first layout pass (skin + CSS applied).
+        Platform.runLater(this::stabilizeToolbarHeight);
+    }
+
+    /**
+     * Keeps the toolbar a constant height regardless of whether the project combo is showing. The
+     * {@link ProjectCombo} is taller than the icon buttons, so toggling its visibility (Simple UI mode, or the
+     * Projects feature being off) would otherwise resize the whole bar. Pinning {@code minHeight} to the
+     * combo-driven height (measured, no magic number) makes that the bar's floor in every mode; it still grows
+     * for any taller child. No-op until the combo has a valid preferred height (after the first layout).
+     */
+    private void stabilizeToolbarHeight() {
+        if (toolBar == null || toolbarProjectCombo == null) {
+            return;
+        }
+        double comboH = toolbarProjectCombo.prefHeight(-1); // independent of the combo's current visibility
+        if (comboH <= 0) {
+            return;
+        }
+        javafx.geometry.Insets in = toolBar.getInsets();
+        toolBar.setMinHeight(Math.ceil(comboH + in.getTop() + in.getBottom()));
     }
 
     /**
