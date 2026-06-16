@@ -229,6 +229,15 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         runSearch();
     }
 
+    /** Pre-fills the search field (e.g. from the editor's single-line selection) and runs the search. */
+    public void setQuery(String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        queryField.setText(text);
+        runSearch();
+    }
+
     @Override
     public void focusFirstItem() {
         queryField.requestFocus();

@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Find and Find in Files pre-fill from the selected text.** Select a word or phrase on a single line, then
+  open the in-editor Find/Replace bar (the toolbar icon, `C-s`/`C-r`, or Replace) or Find in Files (its
+  toolbar icon or `C-S-f`) and the selection becomes the search term — the field is also selected so you can
+  type over it. A multi-line selection is left alone (it isn't a sensible find term) and whatever query was
+  already there is kept. Matches the VS Code / browser convention.
+
 - **Markdown split view now keeps the editor and preview scrolled together.** In SPLIT mode (editor +
   rendered preview side by side), scrolling one pane scrolls the other by the same fraction of its content,
   so the two stay roughly aligned even though their heights differ. The pane the mouse is over drives the

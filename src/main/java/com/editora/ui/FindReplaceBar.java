@@ -118,6 +118,7 @@ public class FindReplaceBar extends HBox {
         setManaged(true);
         CodeArea area = area();
         searchAnchor = area == null ? 0 : area.getCaretPosition();
+        seedFromSelection(area); // a single-line selection pre-fills the find field
         subscribeToEdits(area); // keep the highlights in sync as the buffer is edited
         findField.requestFocus();
         findField.selectAll();
@@ -125,6 +126,22 @@ public class FindReplaceBar extends HBox {
         if (backward) {
             status.accept(tr("find.reverseSearch"));
         }
+    }
+
+    /**
+     * If the editor has a non-empty selection that stays on a single line, use it as the search query —
+     * matching the VS Code / browser convention of opening Find on the selected text. A multi-line
+     * selection is left alone (it isn't a sensible find term), keeping whatever query was already there.
+     */
+    private void seedFromSelection(CodeArea area) {
+        if (area == null) {
+            return;
+        }
+        String sel = area.getSelectedText();
+        if (sel == null || sel.isEmpty() || sel.indexOf('\n') >= 0 || sel.indexOf('\r') >= 0) {
+            return;
+        }
+        findField.setText(sel);
     }
 
     public void hideBar() {
