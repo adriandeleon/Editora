@@ -512,7 +512,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
                 () -> tabPane.getSelectionModel().getSelectedItem(),
-                tab -> tabPane.getSelectionModel().select(tab),
+                this::activateAndFocusTab,
                 this::closeTabFromSwitcher);
         setupMruTracking();
         registerCommands();
@@ -1523,13 +1523,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 tab -> (isTabDirty(tab) ? "• " : "") + bufferTitle(tab), // dirty marker, like the tab
                 tab -> bufferParentDir(tab),
                 tab -> bufferTitle(tab), // search by the plain name (no "• " prefix)
-                tab -> {
-                    tabPane.getSelectionModel().select(tab);
-                    EditorBuffer b = bufferOf(tab);
-                    if (b != null) {
-                        b.getArea().requestFocus();
-                    }
-                });
+                this::activateAndFocusTab);
         openFilesPalette.setItemStyleClass(
                 tab -> isTabDirty(tab) ? "dirty-name" : null); // amber/italic, like a dirty tab
         openFilesPalette.setItemIcon(tab -> FileIcons.forFileName(bufferTitle(tab))); // file-type glyph
@@ -2037,6 +2031,22 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void closeTabFromSwitcher(Tab tab) {
         closeTab(tab);
+    }
+
+    /**
+     * Selects a tab chosen in an overlay picker (the Switcher / "Jump to Open File") and moves the caret into
+     * its editor. The focus request is deferred via {@code Platform.runLater} because these pickers close through
+     * the shared {@link OverlayHost}, whose {@code hide()} synchronously restores focus to the previously-focused
+     * area — running the focus request afterward ensures the caret lands in the newly selected buffer instead of
+     * the old one (otherwise the user has to click to get a caret). Robust regardless of whether the picker
+     * hides before or after invoking this.
+     */
+    private void activateAndFocusTab(Tab tab) {
+        tabPane.getSelectionModel().select(tab);
+        EditorBuffer buffer = bufferOf(tab);
+        if (buffer != null) {
+            Platform.runLater(() -> buffer.getArea().requestFocus());
+        }
     }
 
     /**
