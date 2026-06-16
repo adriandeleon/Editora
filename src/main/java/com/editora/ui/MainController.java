@@ -962,7 +962,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 String title,
                 com.editora.plugin.ToolWindowSide side,
                 javafx.scene.layout.Region content,
-                String commandId) {
+                String commandId,
+                java.util.function.Supplier<javafx.scene.Node> icon) {
             String twId = fullId(id);
             String cmd = commandId == null || commandId.isBlank() ? twId : fullId(commandId);
             ToolWindow.Side s =
@@ -971,7 +972,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                         case RIGHT -> ToolWindow.Side.RIGHT;
                         case BOTTOM -> ToolWindow.Side.BOTTOM;
                     };
-            ToolWindow tw = new ToolWindow(twId, title == null ? twId : title, s, Icons::plugin, content, cmd);
+            // A null supplier (or one returning null) falls back to the default plugin (jigsaw) icon. The
+            // factory is invoked per window/repaint, so it must yield a fresh node each time.
+            java.util.function.Supplier<javafx.scene.Node> iconFactory = icon == null
+                    ? Icons::plugin
+                    : () -> {
+                        javafx.scene.Node n = icon.get();
+                        return n != null ? n : Icons.plugin();
+                    };
+            ToolWindow tw = new ToolWindow(twId, title == null ? twId : title, s, iconFactory, content, cmd);
             toolWindows.register(tw);
             registry.register(
                     com.editora.command.Command.of(cmd, title == null ? twId : title, () -> toolWindows.toggle(tw)));

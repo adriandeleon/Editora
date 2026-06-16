@@ -91,7 +91,8 @@ public class HelloPlugin implements Plugin {
 | --- | --- |
 | `registerCommand(id, title, action)` | A palette command (id namespaced to the plugin). |
 | `bindKey(chord, commandId)` | A keybinding. |
-| `registerToolWindow(id, title, side, content, commandId)` | A dockable tool window (`LEFT`/`RIGHT`/`BOTTOM`). |
+| `registerToolWindow(id, title, side, content, commandId)` | A dockable tool window (`LEFT`/`RIGHT`/`BOTTOM`), using the default plugin (jigsaw) stripe icon. |
+| `registerToolWindow(id, title, side, content, commandId, icon)` | Same, with a custom stripe icon: `icon` is a `Supplier<javafx.scene.Node>` (e.g. an `SVGPath` with the `toolbar-icon` style class, themed for light/dark). Called per window/repaint, so it must return a fresh node each time; `null` (or a null result) falls back to the jigsaw. |
 | `addEditorMenuItem(label, action)` | An editor right-click item; the action gets an `ActiveEditor`. |
 | `addStatusBarSegment(label, commandId)` | A clickable status-bar segment. |
 | `activeEditor()` | The live active-buffer facade (`filePath`/`text`/`selectedText`/`replaceSelection`/`insertAtCaret`/`setText`/`openPath`). `setText` replaces the whole buffer (undoable) — for whole-file transforms like formatting. |
