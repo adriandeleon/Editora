@@ -219,6 +219,15 @@ public class EditorBuffer implements TabContent {
     private long completionGen;
     /** The view the completion popup is currently driven by (for click-accept routing). */
     private CodeArea completionArea;
+
+    /** The IntelliJ-style documentation side-popup (lazily created) + its lazy resolver/state. */
+    private CompletionDocPopup docPopup;
+
+    private java.util.function.BiConsumer<Object, java.util.function.Consumer<String>> completionDocResolver;
+    private boolean completionDocEnabled = true; // Settings: auto-show docs beside the list
+    private boolean docPopupActive; // per-open session flag (reset on each popup open; Ctrl+Q toggles)
+    private long docGen; // generation guard for the debounced/async doc fetch
+    private javafx.animation.PauseTransition docDebounce;
     /** Suppresses one auto-trigger pass right after we programmatically accept a completion. */
     private boolean suppressCompletion;
     /** Inline "ghost text" suggestion (prose buffers): a single muted suffix drawn after the caret. */
@@ -3787,8 +3796,113 @@ public class EditorBuffer implements TabContent {
                     acceptCompletion(completionArea, c);
                 }
             });
+            completionPopup.setOnSelect(this::onCompletionSelect); // drive the documentation side-popup
+            completionPopup.setOnHidden(this::hideDocPopup); // also tear the doc popup down on auto-hide
         }
         return completionPopup;
+    }
+
+    // ---- Completion documentation side-popup (IntelliJ "quick documentation") ----
+
+    /** Injects the lazy doc resolver (opaque token → markdown), set by the controller (LSP-backed). */
+    public void setCompletionDocResolver(
+            java.util.function.BiConsumer<Object, java.util.function.Consumer<String>> resolver) {
+        this.completionDocResolver = resolver;
+    }
+
+    /** Whether the documentation popup auto-shows beside the completion list (the Settings toggle). */
+    public void setCompletionDocEnabled(boolean enabled) {
+        this.completionDocEnabled = enabled;
+        if (!enabled) {
+            hideDocPopup();
+        }
+    }
+
+    private CompletionDocPopup docPopup() {
+        if (docPopup == null) {
+            docPopup = new CompletionDocPopup();
+        }
+        return docPopup;
+    }
+
+    /** Ctrl+Q: toggle the doc popup for the open completion session (show/hide for the current selection). */
+    public void toggleCompletionDoc() {
+        if (completionPopup == null || !completionPopup.isShowing()) {
+            return;
+        }
+        docPopupActive = !docPopupActive;
+        if (docPopupActive) {
+            scheduleDoc(completionPopup.selected());
+        } else {
+            hideDocPopup();
+        }
+    }
+
+    private void onCompletionSelect(Completion c) {
+        if (docPopupActive) {
+            scheduleDoc(c);
+        }
+    }
+
+    /** Debounced per-selection doc fetch (so arrowing quickly doesn't hammer the resolver). */
+    private void scheduleDoc(Completion c) {
+        docGen++;
+        if (c == null || completionDocResolver == null) {
+            hideDocPopup();
+            return;
+        }
+        if (docDebounce == null) {
+            docDebounce = new javafx.animation.PauseTransition(javafx.util.Duration.millis(180));
+        }
+        docDebounce.stop();
+        long gen = docGen;
+        docDebounce.setOnFinished(e -> requestDoc(c, gen));
+        docDebounce.playFromStart();
+    }
+
+    private void requestDoc(Completion c, long gen) {
+        if (gen != docGen || !docPopupActive || completionPopup == null || !completionPopup.isShowing()) {
+            return;
+        }
+        completionDocResolver.accept(c.resolveToken(), doc -> {
+            if (gen != docGen || !docPopupActive || completionPopup == null || !completionPopup.isShowing()) {
+                return;
+            }
+            showDoc(c, doc);
+        });
+    }
+
+    private void showDoc(Completion c, String doc) {
+        // The declaration (signature/type) header is shown for every item; the rendered documentation is
+        // added only when the server provides any. Nothing to show ⇒ hide (e.g. a plain word/snippet).
+        String signature = c.detail() == null ? "" : c.detail().strip();
+        javafx.scene.Node rendered = null;
+        if (doc != null && !doc.isBlank()) {
+            try {
+                rendered = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(doc.strip()), null);
+            } catch (RuntimeException ex) {
+                rendered = null;
+            }
+        }
+        if (signature.isBlank() && rendered == null) {
+            hideDocPopup();
+            return;
+        }
+        Bounds anchor = completionPopup.screenBounds();
+        if (anchor == null || completionArea == null || completionArea.getScene() == null) {
+            return;
+        }
+        docPopup().show(completionArea.getScene().getWindow(), anchor, signature, rendered);
+    }
+
+    private void hideDocPopup() {
+        docGen++;
+        if (docDebounce != null) {
+            docDebounce.stop();
+        }
+        if (docPopup != null) {
+            docPopup.hide();
+        }
     }
 
     /**
@@ -3843,6 +3957,11 @@ public class EditorBuffer implements TabContent {
                     e.consume();
                     return;
                 }
+                if (e.getCode() == KeyCode.Q) { // C-q toggles the documentation popup (IntelliJ quick-doc)
+                    toggleCompletionDoc();
+                    e.consume();
+                    return;
+                }
             }
             switch (e.getCode()) {
                 case DOWN -> {
@@ -3851,6 +3970,14 @@ public class EditorBuffer implements TabContent {
                 }
                 case UP -> {
                     completionPopup.moveUp();
+                    e.consume();
+                }
+                case PAGE_DOWN -> {
+                    completionPopup.pageDown();
+                    e.consume();
+                }
+                case PAGE_UP -> {
+                    completionPopup.pageUp();
                     e.consume();
                 }
                 case ENTER, TAB -> {
@@ -3870,7 +3997,7 @@ public class EditorBuffer implements TabContent {
                     hideCompletion();
                     e.consume();
                 }
-                case LEFT, RIGHT, HOME, END, PAGE_UP, PAGE_DOWN -> hideCompletion(); // let the caret move
+                case LEFT, RIGHT, HOME, END -> hideCompletion(); // let the caret move
                 default -> {} // letters/Backspace fall through; the debounced trigger refreshes the list
             }
         });
@@ -3891,8 +4018,32 @@ public class EditorBuffer implements TabContent {
         });
         // Any caret move or scroll invalidates the inline ghost's position; clear it (the debounce
         // re-shows it after the next pause in typing). The popup manages its own key/caret handling.
-        a.caretPositionProperty().addListener((o, ov, nv) -> hideGhost());
+        a.caretPositionProperty().addListener((o, ov, nv) -> {
+            hideGhost();
+            dismissCompletionIfPrefixEmpty(a); // close at once when Backspace deletes the whole typed word
+        });
         a.estimatedScrollYProperty().addListener((o, ov, nv) -> hideGhost());
+    }
+
+    /**
+     * Closes the popup the instant the caret lands where there is no word prefix — e.g. Backspace deleted
+     * the whole typed word — so the list doesn't linger over an empty prefix (and isn't left to the 280 ms
+     * debounce). Kept open only when the caret is right after an LSP trigger char (member completion).
+     */
+    private void dismissCompletionIfPrefixEmpty(CodeArea a) {
+        if (completionPopup == null || !completionPopup.isShowing()) {
+            return;
+        }
+        int caret = a.getCaretPosition();
+        String text = a.getText();
+        int start = caret;
+        while (start > 0 && isPrefixChar(text.charAt(start - 1))) {
+            start--;
+        }
+        boolean afterTrigger = lspActive && !isProse() && endsWithLspTrigger(text, caret);
+        if (start == caret && !afterTrigger) {
+            hideCompletion();
+        }
     }
 
     /** True while the completion popup or the inline ghost is visible. */
@@ -3935,7 +4086,11 @@ public class EditorBuffer implements TabContent {
         int min = manual ? 1 : CompletionEngine.MIN_PREFIX;
         // LSP "trigger character" (e.g. Java's '.'): fire member completion with no prefix, and keep an
         // open LSP popup updating as the member name is typed (IntelliJ-style) — bypassing the min-prefix.
-        boolean lspTrigger = lspActive && !isProse() && (endsWithLspTrigger(text, caret) || completionPopupShowing());
+        // Keeping it open with an empty prefix is only right immediately after a trigger char; once the
+        // user backspaces past the typed word (prefix empty, not after a trigger) the popup must close.
+        boolean lspTrigger = lspActive
+                && !isProse()
+                && (endsWithLspTrigger(text, caret) || (completionPopupShowing() && !prefix.isEmpty()));
         if (prefix.length() < min && !lspTrigger) {
             hideCompletion();
             return;
@@ -3995,7 +4150,9 @@ public class EditorBuffer implements TabContent {
         completionArea = a;
         // Take ownership of editor-context chords so C-n/C-p reach the popup instead of moving the caret.
         a.getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        completionPopup().show(a.getScene().getWindow(), caretScreen, items);
+        docPopupActive = completionDocEnabled; // arm the doc popup for this session (Ctrl+Q toggles it)
+        completionPopup().setQuery(prefix);
+        completionPopup().show(a.getScene().getWindow(), caretScreen, items, 0);
     }
 
     /** The suffix of the best word completion that continues {@code prefix}, or null if none qualifies. */
@@ -4100,6 +4257,7 @@ public class EditorBuffer implements TabContent {
         if (completionPopup != null) {
             completionPopup.hide();
         }
+        hideDocPopup(); // the doc popup never outlives the completion list
     }
 
     /** Injected async LSP completion source: {@code accept({line,char}, items->…)}; null = none. */
@@ -4123,7 +4281,10 @@ public class EditorBuffer implements TabContent {
             if (gen != completionGen || a.getScene() == null || a.getCaretPosition() != caret || hasActiveSnippet()) {
                 return;
             }
-            java.util.List<Completion> merged = mergeCompletions(filterByPrefix(lspItems, prefix), localItems);
+            // Order LSP items by the server's relevance (preselect, then sortText) — IntelliJ-style —
+            // before merging the local snippets in after them.
+            java.util.List<Completion> ordered = CompletionEngine.sortLspByRelevance(filterByPrefix(lspItems, prefix));
+            java.util.List<Completion> merged = mergeCompletions(ordered, localItems);
             if (merged.isEmpty()) {
                 hidePopup();
                 return;
@@ -4134,7 +4295,9 @@ public class EditorBuffer implements TabContent {
             }
             completionArea = a;
             a.getProperties().put("editora.ownsKeys", Boolean.TRUE);
-            completionPopup().show(a.getScene().getWindow(), cs, merged);
+            docPopupActive = completionDocEnabled; // arm the doc popup for this session (Ctrl+Q toggles it)
+            completionPopup().setQuery(prefix);
+            completionPopup().show(a.getScene().getWindow(), cs, merged, preselectIndexOf(merged));
         });
     }
 
@@ -4145,9 +4308,15 @@ public class EditorBuffer implements TabContent {
 
     /** True if the char just before {@code caret} is one of the server's advertised completion trigger
      *  characters (e.g. {@code .} for Java, {@code <} for HTML) — so completion fires there, not just on a
-     *  word prefix. The set comes from the server's capabilities via {@link #setLspTriggerChars}. */
+     *  word prefix. The set comes from the server's capabilities via {@link #setLspTriggerChars}.
+     *  Whitespace is never treated as a trigger: no language completes on a space, and doing so would keep
+     *  the popup open on a blank/indented line after the typed word is deleted. */
     private boolean endsWithLspTrigger(String text, int caret) {
-        return caret > 0 && caret <= text.length() && lspTriggerChars.contains(text.charAt(caret - 1));
+        if (caret <= 0 || caret > text.length()) {
+            return false;
+        }
+        char c = text.charAt(caret - 1);
+        return !Character.isWhitespace(c) && lspTriggerChars.contains(c);
     }
 
     /** Keeps LSP items whose label or insert text starts with {@code prefix} (case-insensitive). The
@@ -4184,6 +4353,16 @@ public class EditorBuffer implements TabContent {
             }
         }
         return i == p.length();
+    }
+
+    /** Index of the first preselected item, or 0 (the popup pre-highlights the server's preselect). */
+    private static int preselectIndexOf(java.util.List<Completion> items) {
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).preselect()) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     /** Merges LSP completions (first) with local snippet items, de-duped by insert text, capped. */

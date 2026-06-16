@@ -86,6 +86,42 @@ public final class CompletionEngine {
         return out.size() > max ? out.subList(0, max) : out;
     }
 
+    /**
+     * Orders language-server completions by the server's relevance — preselected first, then by
+     * {@code sortText} (nulls last), then alphabetically by label — matching IntelliJ (which surfaces the
+     * most relevant candidate at the top). Pure/unit-tested; a stable sort, so equal-key items keep the
+     * server's order. Returns a new list (the input is left untouched).
+     */
+    public static List<Completion> sortLspByRelevance(List<Completion> items) {
+        if (items == null || items.size() < 2) {
+            return items == null ? List.of() : items;
+        }
+        List<Completion> out = new ArrayList<>(items);
+        out.sort((a, b) -> {
+            if (a.preselect() != b.preselect()) {
+                return a.preselect() ? -1 : 1;
+            }
+            String sa = a.sortText();
+            String sb = b.sortText();
+            if (sa == null && sb != null) {
+                return 1;
+            }
+            if (sa != null && sb == null) {
+                return -1;
+            }
+            if (sa != null) {
+                int c = sa.compareTo(sb);
+                if (c != 0) {
+                    return c;
+                }
+            }
+            String la = a.label() == null ? "" : a.label();
+            String lb = b.label() == null ? "" : b.label();
+            return la.compareToIgnoreCase(lb);
+        });
+        return out;
+    }
+
     /** Exact-case prefix matches first, then case-insensitive alphabetical. */
     static int rankCompare(String a, String b, String prefix) {
         boolean ea = a.startsWith(prefix);

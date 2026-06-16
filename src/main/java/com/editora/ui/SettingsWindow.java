@@ -135,6 +135,7 @@ public class SettingsWindow {
     private CheckBox autocompleteProseCheck;
     private CheckBox autocompleteSnippetsCheck;
     private CheckBox autocompleteMermaidCheck;
+    private CheckBox completionDocCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
     private CheckBox toolbarCheck;
@@ -526,6 +527,7 @@ public class SettingsWindow {
         autocompleteProseCheck = viewCheck(tr("settings.autocomplete.prose"), Settings::setAutocompleteProse);
         autocompleteSnippetsCheck = viewCheck(tr("settings.autocomplete.snippets"), Settings::setAutocompleteSnippets);
         autocompleteMermaidCheck = viewCheck(tr("settings.autocomplete.mermaid"), Settings::setAutocompleteMermaid);
+        completionDocCheck = viewCheck(tr("settings.completionDoc"), Settings::setCompletionDoc);
         // The per-source toggles are only meaningful while the master switch is on.
         autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
             autocompleteProseCheck.setDisable(!now);
@@ -1082,6 +1084,12 @@ public class SettingsWindow {
         HBox mermaidRow = new HBox(autocompleteMermaidCheck);
         mermaidRow.setPadding(new Insets(0, 0, 0, 20));
         row(p, Category.EDITOR, completion, mermaidRow, "autocomplete mermaid diagram keywords snippets mmd");
+        row(
+                p,
+                Category.EDITOR,
+                completion,
+                completionDocCheck,
+                "completion documentation quick doc popup javadoc ctrl q");
         Label markdown = section(p, tr("settings.section.markdown"));
         row(
                 p,
@@ -2433,6 +2441,7 @@ public class SettingsWindow {
             autocompleteProseCheck.setDisable(!settings.isAutocomplete());
             autocompleteSnippetsCheck.setDisable(!settings.isAutocomplete());
             autocompleteMermaidCheck.setDisable(!settings.isAutocomplete());
+            completionDocCheck.setSelected(settings.isCompletionDoc());
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
@@ -2861,6 +2870,7 @@ public class SettingsWindow {
             autocompleteProseCheck.setDisable(!s.isAutocomplete());
             autocompleteSnippetsCheck.setDisable(!s.isAutocomplete());
             autocompleteMermaidCheck.setDisable(!s.isAutocomplete());
+            completionDocCheck.setSelected(s.isCompletionDoc());
         } finally {
             loading = prev;
         }
