@@ -48,6 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTTP Client: you can now right-click the response body to copy it.** The response body is a read-only
+  RichTextFX editor, which (unlike the headers' text area) has no built-in context menu, so right-clicking the
+  JSON/XML/etc. output did nothing. It now has a **Copy** / **Select All** menu — Copy puts the selection, or
+  the whole body when nothing is selected, on the clipboard.
+
 - **Loading a large file (5–50 MB) with a language server enabled no longer freezes the editor.** Large-file
   mode already turns off syntax highlighting and the minimap, but LSP stayed on — so opening, say, a big
   `.json`/`.xml`/`.log` with its server enabled sent the whole document to the server and then mapped and

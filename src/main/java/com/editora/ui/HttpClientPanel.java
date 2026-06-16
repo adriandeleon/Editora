@@ -9,9 +9,13 @@ import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -152,6 +156,7 @@ public final class HttpClientPanel extends VBox implements ToolWindowContent {
         bodyArea.setFocusTraversable(true);
         bodyArea.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
         bodyArea.setWrapText(false);
+        installBodyContextMenu(); // RichTextFX has no default menu — add Copy / Select All for the response
         setEditorFont(fontFamily, fontSize);
 
         SplitPane split = new SplitPane(headersArea, new VirtualizedScrollPane<>(bodyArea));
@@ -175,6 +180,31 @@ public final class HttpClientPanel extends VBox implements ToolWindowContent {
         fontStyle = "-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;";
         bodyArea.setStyle(fontStyle);
         headersArea.setStyle(fontStyle);
+    }
+
+    /**
+     * Right-click menu for the response body. The body is a read-only RichTextFX {@link CodeArea}, which —
+     * unlike a {@code TextArea} — has no built-in context menu, so without this there's no way to copy the
+     * response by mouse. Copy puts the selection (or the whole body when nothing is selected) on the
+     * clipboard without disturbing the selection.
+     */
+    private void installBodyContextMenu() {
+        MenuItem copy = new MenuItem(tr("editmenu.copy"), Icons.copy());
+        copy.setOnAction(e -> {
+            String text = bodyArea.getSelection().getLength() > 0 ? bodyArea.getSelectedText() : bodyArea.getText();
+            ClipboardContent cc = new ClipboardContent();
+            cc.putString(text);
+            Clipboard.getSystemClipboard().setContent(cc);
+        });
+        MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"), Icons.selectAll());
+        selectAll.setOnAction(e -> bodyArea.selectAll());
+        ContextMenu menu = new ContextMenu(copy, selectAll);
+        // Use the UI font (not the body's inherited monospace), matching the editor right-click menu.
+        menu.getStyleClass().add("editor-context-menu");
+        bodyArea.setOnContextMenuRequested(e -> {
+            menu.show(bodyArea, e.getScreenX(), e.getScreenY());
+            e.consume();
+        });
     }
 
     /** No request run yet / cleared. */
