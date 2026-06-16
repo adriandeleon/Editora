@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 29;
+    public static final int SCHEMA_VERSION = 30;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -74,6 +74,8 @@ public class Settings {
     private boolean autocompleteMermaid = true;
     /** Auto-show the IntelliJ-style documentation popup beside the completion list (Ctrl+Q toggles it). */
     private boolean completionDoc = true;
+    /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
+    private boolean editorConfigSupport = true;
 
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
@@ -453,6 +455,14 @@ public class Settings {
 
     public void setCompletionDoc(boolean completionDoc) {
         this.completionDoc = completionDoc;
+    }
+
+    public boolean isEditorConfigSupport() {
+        return editorConfigSupport;
+    }
+
+    public void setEditorConfigSupport(boolean editorConfigSupport) {
+        this.editorConfigSupport = editorConfigSupport;
     }
 
     public String getSpellLanguage() {

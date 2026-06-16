@@ -3,6 +3,11 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] EditorConfig (`.editorconfig`) — resolves the nearest config chain (nearest-dir-wins, up to `root`)
+      and applies indent style/size + `tab_width`, `end_of_line`, `charset` (utf-8/utf-8-bom/latin1/
+      utf-16le/be, round-tripped on read & save), `max_line_length` (column ruler), and on-save
+      `trim_trailing_whitespace` / `insert_final_newline`. Glob sections (`*` `**` `?` `[seq]` `{a,b}`
+      `{n1..n2}`). On by default; Settings → Editor + **View: Toggle EditorConfig**. Local files only
 - [x] MCP server — a minimal Model Context Protocol server (loopback HTTP + bearer-token auth) embedded in
       the editor, exposing live state + the command registry to an LLM agent (six tools); off by default
       behind a security notice (Settings → MCP Server). No new dependency

@@ -145,6 +145,7 @@ public class SettingsWindow {
     private CheckBox simpleModeCheck;
     private CheckBox toolStripeCheck;
     private CheckBox markdownFormatBarCheck;
+    private CheckBox editorConfigCheck;
     private CheckBox multiCaretCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
@@ -596,6 +597,7 @@ public class SettingsWindow {
         simpleModeCheck = viewCheck(tr("settings.simpleMode"), Settings::setSimpleMode);
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
         markdownFormatBarCheck = viewCheck(tr("settings.markdownFormatBar"), Settings::setMarkdownFormatBar);
+        editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
 
         projectsCheck = new CheckBox(tr("settings.enableProjects"));
@@ -1073,6 +1075,12 @@ public class SettingsWindow {
                 indent,
                 labeled(tr("settings.fillColumn"), fillColumnSpinner),
                 "fill column wrap paragraph reflow emacs m-q width");
+        row(
+                p,
+                Category.EDITOR,
+                indent,
+                editorConfigCheck,
+                "editorconfig indent style size charset end of line trailing whitespace final newline");
         Label completion = section(p, tr("settings.section.completion"));
         row(p, Category.EDITOR, completion, autocompleteCheck, "autocomplete completion suggestions enable popup");
         HBox proseRow = new HBox(autocompleteProseCheck);
@@ -2456,6 +2464,7 @@ public class SettingsWindow {
             templateAuthorField.setText(settings.getAuthorNameRaw());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
+            editorConfigCheck.setSelected(settings.isEditorConfigSupport());
             multiCaretCheck.setSelected(settings.isMultiCaret());
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
@@ -2926,6 +2935,7 @@ public class SettingsWindow {
             simpleModeCheck.setSelected(s.isSimpleMode());
             toolStripeCheck.setSelected(s.isShowToolStripe());
             markdownFormatBarCheck.setSelected(s.isMarkdownFormatBar());
+            editorConfigCheck.setSelected(s.isEditorConfigSupport());
             multiCaretCheck.setSelected(s.isMultiCaret());
             projectsCheck.setSelected(s.isProjectSupport());
         } finally {

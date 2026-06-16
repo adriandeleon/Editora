@@ -267,4 +267,31 @@ class IndenterTest {
         Indenter.TabEdit e = Indenter.smartTab("a\n\nb", 0, 4, "java", 4, false);
         assertEquals("\ta\n\n\tb", e.replacement()); // the empty middle line is left alone
     }
+
+    @Test
+    void overrideForcesSpacesRegardlessOfDocument() {
+        // Document is tab-indented, but the EditorConfig override forces 2 spaces.
+        Indenter.TabEdit e = Indenter.smartTab("\tx", 2, 2, "java", 4, false, Boolean.TRUE, 2);
+        assertEquals("  ", e.replacement());
+        Indenter.EnterEdit en = Indenter.enterEdit("  if (x) {", 10, "java", 4, Boolean.TRUE, 2);
+        assertTrue(en.insert().contains("    ")); // base 2 + one 2-space level after the opener
+    }
+
+    @Test
+    void overrideForcesTabRegardlessOfDocument() {
+        // Space-indented document, caret after the content → insert one indent unit; the override forces a tab.
+        Indenter.TabEdit e = Indenter.smartTab("  x", 3, 3, "java", 4, false, Boolean.FALSE, null);
+        assertEquals("\t", e.replacement());
+    }
+
+    @Test
+    void nullOverrideMatchesLegacyDetection() {
+        String text = "    x"; // space-indented document
+        assertEquals(
+                Indenter.smartTab(text, 1, 1, "java", 4, false).replacement(),
+                Indenter.smartTab(text, 1, 1, "java", 4, false, null, null).replacement());
+        assertEquals(
+                Indenter.enterEdit("\tif (x) {", 9, "java", 4).insert(),
+                Indenter.enterEdit("\tif (x) {", 9, "java", 4, null, null).insert());
+    }
 }

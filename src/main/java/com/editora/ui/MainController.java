@@ -6866,12 +6866,34 @@ public class MainController implements com.editora.mcp.McpBridge {
             return file.getFileName() + " — very large file (" + StatusBar.formatSize(size)
                     + "): read-only, showing first " + StatusBar.formatSize(content.length());
         }
-        buffer.setContent(Files.readString(file));
+        buffer.setContent(readWithCharset(buffer, file));
         if (size >= EditorBuffer.LARGE_FILE_BYTES) {
             buffer.setLargeFile(true);
             return largeFileNote(file);
         }
         return "";
+    }
+
+    /**
+     * Reads {@code file}, decoding by its BOM if present, else by the EditorConfig {@code charset} (so a
+     * no-BOM Latin-1/UTF-16 file round-trips), else UTF-8. Records the chosen charset on the buffer so it
+     * shows in the status bar and is reused on save. A read error falls back to plain UTF-8.
+     */
+    private String readWithCharset(EditorBuffer buffer, Path file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        String name = com.editora.editorconfig.EditorConfigCharset.detectByBom(bytes);
+        if (name == null) {
+            name = com.editora.editorconfig.EditorConfigCharset.UTF_8;
+            if (editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)) {
+                String ec =
+                        com.editora.editorconfig.EditorConfig.resolveFor(file).charset();
+                if (ec != null) {
+                    name = ec;
+                }
+            }
+        }
+        buffer.setDetectedCharset(name);
+        return com.editora.editorconfig.EditorConfigCharset.decode(bytes, name);
     }
 
     /** Reads up to {@code maxChars} characters (UTF-8) from {@code file}, bounding memory use. */
@@ -7056,9 +7078,23 @@ public class MainController implements com.editora.mcp.McpBridge {
         return ok;
     }
 
+    /**
+     * The exact bytes to write for {@code buffer}: the EditorConfig save transforms (trim trailing
+     * whitespace / final newline / end-of-line) applied to the text, then encoded in the effective charset
+     * (BOM-aware). The live document is not mutated — only what we write. Inert (content + detected charset)
+     * when EditorConfig is off.
+     */
+    private byte[] saveBytes(EditorBuffer buffer) {
+        com.editora.editorconfig.EditorConfigProperties p = editorConfigEnabled()
+                ? buffer.getEditorConfigProps()
+                : com.editora.editorconfig.EditorConfigProperties.EMPTY;
+        String text = com.editora.editorconfig.EditorConfigTransform.transform(buffer.getContent(), p);
+        return com.editora.editorconfig.EditorConfigCharset.encode(text, buffer.getEffectiveCharset());
+    }
+
     private boolean writeBuffer(EditorBuffer buffer, Path file) {
         try {
-            Files.writeString(file, buffer.getContent());
+            Files.write(file, saveBytes(buffer));
             recordHistory(buffer, HistoryRevision.REASON_SAVE); // snapshot the just-saved version
             buffer.markClean();
             buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
@@ -7110,11 +7146,12 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private void autoSaveBuffer(EditorBuffer buffer) {
         String content = buffer.getContent();
+        byte[] bytes = saveBytes(buffer); // transform + encode on the FX thread (pure); write off-thread
         Path file = buffer.getPath();
         recordHistory(buffer, HistoryRevision.REASON_AUTOSAVE); // snapshot before the off-thread write
         autoSaveExecutor.submit(() -> {
             try {
-                Files.writeString(file, content);
+                Files.write(file, bytes);
                 Platform.runLater(() -> {
                     if (content.equals(buffer.getContent())) {
                         buffer.markClean();
@@ -10453,6 +10490,56 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setSpellLanguage(spellLanguageFor(buffer)); // per-file override, else the global default
         buffer.setSpellCheckEnabled(s.isSpellCheck());
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
+        applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
+    }
+
+    /** Whether {@code .editorconfig} support is enabled. */
+    private boolean editorConfigEnabled() {
+        return config.getSettings().isEditorConfigSupport();
+    }
+
+    /**
+     * Pushes the file's resolved {@code .editorconfig} properties onto {@code buffer} (indent style/size,
+     * EOL, ruler column from {@code max_line_length}, and write charset), or clears the overrides when the
+     * feature is off / the file is non-local / has no path. The save-time props are stored on the buffer
+     * for {@code writeBuffer}. Reuses {@link com.editora.editorconfig.EditorConfig#resolveFor}.
+     */
+    private void applyEditorConfig(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (!editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)) {
+            buffer.setEditorConfigProps(com.editora.editorconfig.EditorConfigProperties.EMPTY);
+            buffer.setIndentOverride(null, null);
+            buffer.setRulerColumn(null);
+            buffer.setCharsetOverride(null);
+            return; // EOL override is left to a manual choice; tab size already comes from global settings
+        }
+        com.editora.editorconfig.EditorConfigProperties p = com.editora.editorconfig.EditorConfig.resolveFor(path);
+        buffer.setEditorConfigProps(p);
+        buffer.setIndentOverride(p.insertSpaces(), p.indentSize());
+        if (p.insertSpaces() != null || p.tabWidth() != null || p.indentSize() != null) {
+            buffer.setTabSize(p.effectiveTabWidth(config.getSettings().getTabSize()));
+        }
+        if (p.endOfLine() != null) {
+            buffer.setEolOverride("crlf".equals(p.endOfLine()) ? "CRLF" : "lf".equals(p.endOfLine()) ? "LF" : null);
+        }
+        buffer.setRulerColumn(p.maxLineLength()); // null = default 80, OFF = hide
+        buffer.setCharsetOverride(p.charset());
+    }
+
+    /** Re-applies (or clears) {@code .editorconfig} for every open buffer — init + on settings apply. */
+    private void applyEditorConfigSupport() {
+        if (!editorConfigEnabled()) {
+            com.editora.editorconfig.EditorConfig.clearCache();
+        }
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer buffer = bufferOf(tab);
+            if (buffer != null) {
+                applyEditorConfig(buffer);
+            }
+        }
+        if (statusBar != null) {
+            statusBar.refresh();
+        }
     }
 
     /** The spell-check language for a buffer: its per-file override (if any/valid), else the global default. */
@@ -11012,6 +11099,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isPdfSyntaxHighlighting(),
                         v -> config.getSettings().setPdfSyntaxHighlighting(v),
                         null)));
+        registry.register(Command.of(
+                "view.toggleEditorConfig",
+                () -> toggleSetting(
+                        "view.toggleEditorConfig",
+                        () -> config.getSettings().isEditorConfigSupport(),
+                        v -> config.getSettings().setEditorConfigSupport(v),
+                        this::applyEditorConfigSupport)));
         registry.register(Command.of(
                 "view.toggleNoteIndicators",
                 () -> toggleSetting(

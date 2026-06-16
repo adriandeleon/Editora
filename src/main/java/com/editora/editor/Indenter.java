@@ -48,11 +48,28 @@ public final class Indenter {
      * </ul>
      */
     public static TabEdit smartTab(String text, int selStart, int selEnd, String language, int tabSize, boolean shift) {
+        return smartTab(text, selStart, selEnd, language, tabSize, shift, null, null);
+    }
+
+    /**
+     * As {@link #smartTab(String, int, int, String, int, boolean)}, but forcing the indent unit from an
+     * EditorConfig override when {@code insertSpaces != null} ({@code true} = {@code indentSize} spaces,
+     * {@code false} = a tab); a {@code null} override falls back to {@link #detectUnit}.
+     */
+    public static TabEdit smartTab(
+            String text,
+            int selStart,
+            int selEnd,
+            String language,
+            int tabSize,
+            boolean shift,
+            Boolean insertSpaces,
+            Integer indentSize) {
         Style style = styleFor(language);
         if (style == Style.PLAIN) {
             return null;
         }
-        String unit = detectUnit(text, tabSize);
+        String unit = unitFor(text, tabSize, insertSpaces, indentSize);
         int a = Math.min(selStart, selEnd);
         int b = Math.max(selStart, selEnd);
 
@@ -171,12 +188,19 @@ public final class Indenter {
      * dropped to the base indent.
      */
     public static EnterEdit enterEdit(String text, int caret, String language, int tabSize) {
+        return enterEdit(text, caret, language, tabSize, null, null);
+    }
+
+    /** As {@link #enterEdit(String, int, String, int)}, but forcing the indent unit from an EditorConfig
+     *  override when {@code insertSpaces != null} (else {@link #detectUnit}). */
+    public static EnterEdit enterEdit(
+            String text, int caret, String language, int tabSize, Boolean insertSpaces, Integer indentSize) {
         Style style = styleFor(language);
         int ls = lineStart(text, caret);
         String before = text.substring(ls, caret);
         String after = lineAfter(text, caret);
         String indent = leadingWhitespace(text.substring(ls, lineEnd(text, caret)));
-        String unit = detectUnit(text, tabSize);
+        String unit = unitFor(text, tabSize, insertSpaces, indentSize);
 
         if (isPairSplit(style, before, after)) {
             String body = indent + unit;
@@ -370,6 +394,19 @@ public final class Indenter {
     }
 
     // --- helpers ----------------------------------------------------------------------------------
+
+    /** The indent unit to use: an EditorConfig override when {@code insertSpaces != null} (tab, or
+     *  {@code indentSize}/{@code tabSize} spaces), else the document's {@link #detectUnit detected} unit. */
+    static String unitFor(String text, int tabSize, Boolean insertSpaces, Integer indentSize) {
+        if (insertSpaces == null) {
+            return detectUnit(text, tabSize);
+        }
+        if (insertSpaces) {
+            int n = indentSize != null && indentSize > 0 ? indentSize : tabSize;
+            return " ".repeat(Math.max(1, n));
+        }
+        return "\t";
+    }
 
     /** The document's indent unit: tab vs {@code tabSize} spaces, inferred from the first indented line. */
     static String detectUnit(String text, int tabSize) {
