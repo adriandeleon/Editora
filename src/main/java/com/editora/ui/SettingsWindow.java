@@ -2653,6 +2653,17 @@ public class SettingsWindow {
         }
     }
 
+    /**
+     * Re-reads every control from the live {@link Settings} if the window has been built and is showing.
+     * Used by the settings-changing palette commands so an open Settings window tracks a palette change
+     * (when it's closed, the next {@link #show} reloads anyway).
+     */
+    public void syncAll() {
+        if (built && stage.isShowing()) {
+            load();
+        }
+    }
+
     public void syncProjectsCheck() {
         if (!built) {
             return;
@@ -2944,7 +2955,8 @@ public class SettingsWindow {
         return families;
     }
 
-    private static List<String> fontFamilyChoices() {
+    /** The editor-font picker choices (bundled monospace families first, then system monospace). */
+    public static List<String> fontFamilyChoices() {
         List<String> choices = new ArrayList<>(Fonts.BUNDLED);
         for (String family : monospaceFamilies()) {
             if (!choices.contains(family)) {
