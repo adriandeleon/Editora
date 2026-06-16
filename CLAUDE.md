@@ -180,7 +180,10 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   modules via normal parent delegation; **no `ModuleLayer`**). Compile a plugin on a plain **classpath**, not
   the module path. **API (the exported `com.editora.plugin` package):** `interface Plugin {void start(ctx);
   default void stop()}`; `interface PluginContext` (`registerCommand(id,title,Runnable)`, `bindKey(chord,
-  commandId)`, `registerToolWindow(id,title,ToolWindowSide,Region,commandId)`, `addEditorMenuItem(label,
+  commandId)`, `registerToolWindow(id,title,ToolWindowSide,Region,commandId[,Supplier<Node> icon])` (the icon
+  overload sets the stripe glyph — a `Supplier<javafx.scene.Node>`, e.g. an `SVGPath` with the `toolbar-icon`
+  style class; the no-icon overload is a `default` delegating with `null` ⇒ the jigsaw `Icons.plugin()`),
+  `addEditorMenuItem(label,
   Consumer<ActiveEditor>)`, `addStatusBarSegment(label,commandId)`, `activeEditor()`, `pluginDir()/dataDir()/
   configDir()`, `log/setStatus`); `interface ActiveEditor` (narrow editor facade — `filePath/text/
   selectedText/replaceSelection/insertAtCaret/setText/openPath` (`setText` = whole-buffer replace, undoable —
