@@ -113,6 +113,8 @@ public class EditorBuffer implements TabContent {
     }
 
     private MarkdownViewMode markdownViewMode = MarkdownViewMode.EDITOR;
+    /** Re-entrancy guard for the SPLIT-mode editor↔preview scroll sync. */
+    private boolean syncingScroll;
     /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
     private ScrollPane previewPane;
     /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
@@ -487,7 +489,78 @@ public class EditorBuffer implements TabContent {
         });
         installContextMenu();
         installFormatBarListeners(area);
+        installSplitScrollSync();
         installOverlays();
+    }
+
+    /**
+     * Keeps the editor and the rendered preview aligned in Markdown SPLIT mode: the pane the mouse is over
+     * drives the other, mapped by scroll <i>fraction</i> so the two track even though their content heights
+     * differ. Gating on which pane is <b>hovered</b> (the wheel target) makes the sync strictly
+     * one-directional at any moment — the mouse is over at most one pane — so it cannot oscillate (RichTextFX
+     * refines {@code estimatedScrollY} as paragraphs are measured, and a naïve bidirectional copy would feed
+     * that back, the same pitfall {@code DiffViewerPane} guards against). A {@code syncingScroll} re-entrancy
+     * flag wraps each programmatic set as a second guard. The preview→editor half is wired in
+     * {@link #previewPane()}.
+     */
+    private void installSplitScrollSync() {
+        area.estimatedScrollYProperty().addListener((o, ov, nv) -> {
+            if (markdownViewMode == MarkdownViewMode.SPLIT
+                    && !syncingScroll
+                    && previewPane != null
+                    && !previewPane.isHover()) {
+                syncPreviewToEditorScroll();
+            }
+        });
+    }
+
+    /** editor → preview: copy the editor's scroll fraction onto the preview's vvalue. */
+    private void syncPreviewToEditorScroll() {
+        if (previewPane == null) {
+            return;
+        }
+        double scrollable = editorScrollableHeight();
+        if (scrollable <= 1) {
+            return;
+        }
+        Double y = area.estimatedScrollYProperty().getValue();
+        double frac = clamp01((y == null ? 0 : y) / scrollable);
+        double vmin = previewPane.getVmin();
+        double vmax = previewPane.getVmax();
+        syncingScroll = true;
+        try {
+            previewPane.setVvalue(vmin + frac * (vmax - vmin));
+        } finally {
+            syncingScroll = false;
+        }
+    }
+
+    /** preview → editor: copy the preview's scroll fraction onto the editor's estimated scroll-Y. */
+    private void syncEditorToPreviewScroll() {
+        if (previewPane == null) {
+            return;
+        }
+        double scrollable = editorScrollableHeight();
+        if (scrollable <= 1) {
+            return;
+        }
+        double range = previewPane.getVmax() - previewPane.getVmin();
+        double frac = range > 0 ? clamp01((previewPane.getVvalue() - previewPane.getVmin()) / range) : 0;
+        syncingScroll = true;
+        try {
+            area.estimatedScrollYProperty().setValue(frac * scrollable);
+        } finally {
+            syncingScroll = false;
+        }
+    }
+
+    private double editorScrollableHeight() {
+        Double total = area.totalHeightEstimateProperty().getValue();
+        return (total == null ? 0 : total) - area.getHeight();
+    }
+
+    private static double clamp01(double v) {
+        return v < 0 ? 0 : (v > 1 ? 1 : v);
     }
 
     /** Show/reposition the Markdown format bar as the selection or scroll changes (coalesced per pulse). */
@@ -1769,6 +1842,9 @@ public class EditorBuffer implements TabContent {
         if (target == MarkdownViewMode.PREVIEW) {
             // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
             Platform.runLater(previewPane()::requestFocus);
+        } else if (target == MarkdownViewMode.SPLIT) {
+            // Align the freshly-shown preview to the editor's current scroll position (metrics settle first).
+            Platform.runLater(this::syncPreviewToEditorScroll);
         }
         if (changed) {
             onViewModeChanged.run();
@@ -1813,6 +1889,12 @@ public class EditorBuffer implements TabContent {
                 } else if (e.getCode() == KeyCode.BACK_SPACE || e.getCode() == KeyCode.PAGE_UP) {
                     scrollPreviewPage(false);
                     e.consume();
+                }
+            });
+            // SPLIT-mode scroll sync (preview → editor); the editor → preview half is in installSplitScrollSync.
+            previewPane.vvalueProperty().addListener((o, ov, nv) -> {
+                if (markdownViewMode == MarkdownViewMode.SPLIT && !syncingScroll && previewPane.isHover()) {
+                    syncEditorToPreviewScroll();
                 }
             });
         }
