@@ -77,6 +77,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Tool windows and status segments now follow the active file's capabilities.** The **Problems** stripe
+  button shows only when the active file is served by a language server; the **Debug** stripe button only for
+  a debuggable file (Java/Python/JS) or while a debug session is live; and the **Git Log** stripe button plus
+  the status-bar **branch** segment only when the active file is inside a git repo. Each is hidden (not greyed)
+  when it doesn't apply — so a Welcome/Markdown/plain-text tab no longer shows Problems, Debug, the branch
+  segment, or a git context inherited from the working directory. The `LSP:` status segment already cleared
+  on non-LSP files.
+
 - **Find and Find in Files pre-fill from the selected text.** Select a word or phrase on a single line, then
   open the in-editor Find/Replace bar (the toolbar icon, `C-s`/`C-r`, or Replace) or Find in Files (its
   toolbar icon or `C-S-f`) and the selection becomes the search term — the field is also selected so you can
