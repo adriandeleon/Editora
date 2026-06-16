@@ -2073,8 +2073,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public boolean gitEnabled() {
-                return MainController.this.gitEnabled();
+            public boolean gitAvailable() {
+                return MainController.this.gitAvailable();
             }
 
             @Override
@@ -2455,6 +2455,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Simple UI mode disables Git (status-bar VCS segment, gutter change bars, Commit window); saved setting
         // unchanged.
         return config.getSettings().isGitSupport() && !simpleModeActive();
+    }
+
+    /** True when Git actions can actually run: the feature is on AND the active context is inside a repo
+     *  (the "No VCS" state has no repo). Drives whether repo-only menu items are shown/enabled. */
+    private boolean gitAvailable() {
+        return gitEnabled() && currentRepoRoot != null;
     }
 
     /** Effective Local File History gate: the setting, but off in Simple UI mode (saved setting unchanged). */
@@ -7387,8 +7393,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             terminal.setDisable(!localPath);
             copyPath.setDisable(!hasPath);
             rename.setDisable(!hasPath);
-            compareWith.setDisable(!hasPath);
-            diffHead.setDisable(!hasPath || !gitEnabled());
+            compareWith.setDisable(!hasPath); // not a Git action — works on any two files
+            // Git-only items (Compare with HEAD, Show File History) are hidden entirely when there's no VCS
+            // available for this file (Git off, or not inside a repo) — not just disabled.
+            boolean gitFile = hasPath && gitAvailable();
+            diffHead.setVisible(gitFile);
+            history.setVisible(gitFile);
             // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
             save.setDisable(hasPath && !buffer.isDirty());
             pin.setText(pinned.contains(tab) ? "Unpin Tab" : "Pin Tab");
