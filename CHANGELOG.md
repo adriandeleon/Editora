@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Git menu items are hidden/disabled when there's no VCS.** The tab right-click menu no longer shows
+  **Compare with HEAD** and **Git: Show File History** when the file isn't under Git (feature off, or not
+  inside a repo) — only "Compare With…" (which isn't a Git action) remains. The Project tool window's **Git**
+  submenu is greyed out in the same case. Both now key off "Git available" (enabled *and* inside a repo)
+  rather than just the feature toggle.
+
 - **HTTP Client: you can now right-click the response body to copy it.** The response body is a read-only
   RichTextFX editor, which (unlike the headers' text area) has no built-in context menu, so right-clicking the
   JSON/XML/etc. output did nothing. It now has a **Copy** / **Select All** menu — Copy puts the selection, or

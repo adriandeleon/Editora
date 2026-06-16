@@ -77,7 +77,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         void showLocalHistory(Path file);
 
-        boolean gitEnabled();
+        /** True when Git actions can run (the feature is on AND the context is inside a repo). */
+        boolean gitAvailable();
 
         void gitShowFileHistory(Path file);
 
@@ -689,7 +690,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 // Disable to match the live feature toggles, mirroring the tab context menu.
                 menu.setOnShowing(e -> {
                     localHistory.setDisable(!fileActions.localHistoryEnabled());
-                    git.setDisable(!fileActions.gitEnabled());
+                    git.setDisable(!fileActions.gitAvailable()); // grey out the Git submenu when there's no VCS
                 });
             }
             return menu;
