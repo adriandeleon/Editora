@@ -2358,8 +2358,34 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (toolWindows.isOpen(searchToolWindow)) {
             toolWindows.close(searchToolWindow);
         } else {
+            String selection = selectedLineForSearch();
+            if (selection != null) {
+                searchPanel.setQuery(selection); // pre-fill (and run) from the editor selection
+            }
             toolWindows.open(searchToolWindow, true);
         }
+    }
+
+    /**
+     * The active buffer's selection when it is non-empty and stays on a single line, else {@code null}.
+     * Used to pre-fill the find-in-files query from the selected text (the VS Code convention); a
+     * multi-line selection isn't a sensible search term, so it returns {@code null} and the query is left
+     * untouched.
+     */
+    private String selectedLineForSearch() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return null;
+        }
+        org.fxmisc.richtext.CodeArea area = buffer.getFocusedArea();
+        if (area == null) {
+            return null;
+        }
+        String sel = area.getSelectedText();
+        if (sel == null || sel.isEmpty() || sel.indexOf('\n') >= 0 || sel.indexOf('\r') >= 0) {
+            return null;
+        }
+        return sel;
     }
 
     /** Starts AceJump on the active buffer: type a character, then a label, to jump the caret. */
