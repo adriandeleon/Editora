@@ -3938,11 +3938,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             // and effective immediately when the server for this root is already running (a 2nd file).
             buffer.setLspTriggerChars(lspManager.triggerCharacters(path));
             buffer.setLspFormatAvailable(lspManager.supportsFormatting(path));
+            buffer.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
             lspManager.pullDiagnostics(path);
         } else {
             buffer.setLspActive(false);
             buffer.setLspTriggerChars(java.util.Set.of());
             buffer.setLspFormatAvailable(false);
+            buffer.setLspRangeFormatAvailable(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
                 lspProblems.remove(path);
@@ -4070,6 +4072,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     if (b != null && b.getPath() != null && lspManager.isManaged(b.getPath())) {
                         b.setLspTriggerChars(lspManager.triggerCharacters(b.getPath()));
                         b.setLspFormatAvailable(lspManager.supportsFormatting(b.getPath()));
+                        b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(b.getPath()));
                         lspManager.pullDiagnostics(b.getPath());
                     }
                 }
@@ -6466,6 +6469,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         buffer.setCompletionDocEnabled(config.getSettings().isCompletionDoc());
+        // Tab re-indents the current line to the server's convention via range formatting (when supported).
+        buffer.setLspRangeFormatter((sl, sc, el, ec, cb) -> {
+            if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+                int tabSize = config.getSettings().getTabSize();
+                lspManager.rangeFormatting(
+                        buffer.getPath(), sl, sc, el, ec, tabSize, buffer.detectInsertSpaces(tabSize), cb);
+            } else {
+                cb.accept(java.util.List.of());
+            }
+        });
         buffer.setLspNavActions(
                 this::lspGotoDefinition, this::lspFindReferences, this::lspShowHover, this::formatDocument);
         syncBufferLsp(buffer);

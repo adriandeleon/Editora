@@ -346,6 +346,12 @@ public class EditorBuffer implements TabContent {
     private Runnable lspFormatAction = () -> {};
     /** Whether this buffer's server advertises whole-document formatting (refreshed when it reports ready). */
     private boolean lspFormatAvailable;
+    /** Whether this buffer's server advertises range formatting — enables Tab to re-indent the line. */
+    private boolean lspRangeFormatAvailable;
+    /** Injected range-formatter (the controller wires it to the LSP manager); null = none. */
+    private LspRangeFormatter lspRangeFormatter;
+    /** Generation guard so a stale async re-indent result can't clobber a later edit. */
+    private long reindentGen;
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
     private static final int CONTEXT_CHARS = 40;
     /** Git gutter change bars: 0-based line → CSS class ({@code git-added}/{@code git-modified}/
@@ -1631,6 +1637,27 @@ public class EditorBuffer implements TabContent {
     /** Whether to offer "Format Document" in the right-click menu (the server's formatting capability). */
     public void setLspFormatAvailable(boolean available) {
         this.lspFormatAvailable = available;
+    }
+
+    /** Async range-formatter for Tab line re-indent: requests the edits the server would apply to a line
+     *  range and delivers them on the FX thread. Keeps {@code editor} free of lsp4j. */
+    public interface LspRangeFormatter {
+        void format(
+                int startLine,
+                int startChar,
+                int endLine,
+                int endChar,
+                java.util.function.Consumer<java.util.List<LspTextEdit>> callback);
+    }
+
+    /** Injects the range-formatter used by Tab to re-indent the current line (controller-wired; null off). */
+    public void setLspRangeFormatter(LspRangeFormatter formatter) {
+        this.lspRangeFormatter = formatter;
+    }
+
+    /** Whether the server advertises range formatting — gates Tab's LSP line re-indent (else plain Tab). */
+    public void setLspRangeFormatAvailable(boolean available) {
+        this.lspRangeFormatAvailable = available;
     }
 
     /** Current document text (for an initial didOpen). */
@@ -3379,6 +3406,8 @@ public class EditorBuffer implements TabContent {
                 // while a completion popup/ghost is showing, so Tab accepts the completion instead.
                 if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
                     e.consume();
+                } else if (!e.isShiftDown() && tryLspReindentLine(a)) {
+                    e.consume(); // LSP re-indents the current line (async); see tryLspReindentLine
                 } else if (applySmartTab(a, e.isShiftDown())) {
                     e.consume();
                 }
@@ -3406,6 +3435,65 @@ public class EditorBuffer implements TabContent {
         }
         a.selectRange(edit.selStart(), edit.selEnd());
         return true;
+    }
+
+    /**
+     * Plain Tab re-indents the current line to the language server's convention (the chosen behavior:
+     * indentation only, not a full line reformat). Returns {@code true} when it takes over the keystroke
+     * (LSP active + the server supports range formatting + a single caret on a non-blank line) and kicks
+     * off an async request; the result adjusts only the line's leading whitespace. Returns {@code false}
+     * to fall back to the normal smart-Tab indent (no server, unsupported, blank line, or a selection).
+     */
+    private boolean tryLspReindentLine(CodeArea a) {
+        if (!lspActive || !lspRangeFormatAvailable || lspRangeFormatter == null) {
+            return false;
+        }
+        if (!isEditable() || hugeFile || largeFile || a.getSelection().getLength() > 0) {
+            return false;
+        }
+        int par = a.getCurrentParagraph();
+        String line = a.getParagraph(par).getText();
+        // Formatters strip a blank line's whitespace, so they can't indent a fresh line you're about to
+        // type on — leave those to the local smart-Tab indent.
+        if (line.isBlank()) {
+            return false;
+        }
+        int caret = a.getCaretPosition();
+        long gen = ++reindentGen;
+        lspRangeFormatter.format(par, 0, par, line.length(), edits -> {
+            if (gen != reindentGen
+                    || a.getScene() == null
+                    || a.getCurrentParagraph() != par
+                    || !a.getParagraph(par).getText().equals(line)) {
+                return; // stale, detached, or the line changed under us
+            }
+            applyLspLineIndent(a, par, line, caret, edits);
+        });
+        return true;
+    }
+
+    /** Adopts the formatter's leading whitespace for the current line, leaving the rest of the line as-is. */
+    private void applyLspLineIndent(CodeArea a, int par, String line, int caret, java.util.List<LspTextEdit> edits) {
+        String newIndent = LineIndent.formattedIndent(line, edits, par);
+        if (newIndent == null) {
+            return; // unusable (multi-line) result → leave the line untouched
+        }
+        String oldIndent = LineIndent.leadingWhitespace(line);
+        if (newIndent.equals(oldIndent)) {
+            return; // already correctly indented
+        }
+        int lineStart = a.getAbsolutePosition(par, 0);
+        int oldEnd = lineStart + oldIndent.length();
+        suppressCompletion = true;
+        try {
+            a.replaceText(lineStart, oldEnd, newIndent);
+            int delta = newIndent.length() - oldIndent.length();
+            int newCaret = caret <= oldEnd ? lineStart + newIndent.length() : caret + delta;
+            newCaret = Math.max(lineStart, Math.min(newCaret, a.getLength()));
+            a.moveTo(newCaret);
+        } finally {
+            Platform.runLater(() -> suppressCompletion = false);
+        }
     }
 
     /**
