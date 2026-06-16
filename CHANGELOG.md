@@ -118,6 +118,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The bar now re-runs the search on each (debounced) edit and re-highlights at the new positions — without
   moving the caret or selection, so it doesn't interfere with typing.
 
+- **Right-click Cut/Copy/Paste now act on a column (box) selection.** The editor context menu's
+  Cut/Copy/Paste called the native single-caret operations, so on an Alt+drag column/box selection they only
+  touched the primary row — even though the `edit.cut`/`copy`/`paste` *commands* already worked (they route
+  through the multi-caret-aware path). The menu items now use that same path (falling back to the native op
+  when there's a single caret), Cut/Copy are enabled on a box selection even when the primary selection is
+  empty, and the mutating Cut/Paste are gated to editable buffers.
+
+- **Every window that was open at quit now reopens.** With multiple project windows open, a Cmd-Q / OS quit
+  fired each window's close handler in turn, and the eager "mark closed" drained the saved open-window set
+  down to just the last window — so only one reopened on the next launch. Closing a window is now reconciled
+  on a short debounce that can't elapse during a quit's close-handler burst: a genuine single close persists
+  the reduced set (that window is forgotten), but a quit exits the JVM before the timer fires, leaving the
+  full pre-quit set on disk so every window reopens. (`app.quit` already worked — it fires no close handlers.)
+
 ### Added
 
 - **Open a command's online docs from the palette (C-h).** In the command palette, press **C-h** to open the
@@ -145,6 +159,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code-area context menu now offers Comment / Uncomment (the same action as the `M-;` keybinding and the
   command palette) — it line-comments the caret's line or block/line-comments the selection, and toggles back
   off when already commented. Hidden for plaintext (no comment syntax) and while read-only.
+
+- **MCP server (Model Context Protocol).** Editora can run a small **Model Context Protocol** server so an
+  LLM agent (Claude Code, etc.) can observe live editor state and drive the command registry. It's a
+  **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** that writes its endpoint to
+  `<configDir>/mcp-endpoint.json` for discovery, and exposes six tools: `list_open_files`, `read_buffer`,
+  `get_diagnostics`, `find_in_files`, `list_commands`, and `execute_command`. A status-bar **MCP** indicator
+  shows when it's running (click to copy the connection command) and is hidden in Simple UI mode. Off by
+  default and gated by a security-notice dialog — enable it under **Settings → MCP Server** (or the
+  **Toggle MCP Server** command, `view.toggleMcp`; `mcp.copyEndpoint` copies the endpoint). No new
+  dependency (the JDK's built-in `HttpServer` + Jackson).
+
+- **Reveal in File Manager / Open Terminal Here (built-in).** Revealing a file in Finder/Explorer/your file
+  manager and opening a terminal at a folder are now core features (previously an example plugin), reachable
+  from the **command palette** (`file.revealInFileManager` / `file.openTerminal`), the **tab right-click
+  menu**, and the **Project tool window** menu (both files and folders). Local saved files only; per-OS argv
+  (Finder/Explorer select, `xdg-open` on Linux) launched off the UI thread. (The breadcrumb crumb menu — see
+  below — surfaces the same two actions.)
+
+- **Show Local History + a Git submenu in the Project tree menu.** The Project tool window's per-file
+  right-click menu gained **Show Local History** and a **Git** submenu (Show File History, Compare with HEAD,
+  Stage File), mirroring the editor tab menu but acting on the clicked tree path. The Git items grey out when
+  Git is off, and Local History when it's off.
+
+- **HTTP Client — request chaining, multipart, dynamic vars, and a richer viewer.** The `.http`/`.rest`
+  client moved much closer to IntelliJ's: reference an earlier named request's response in a later one
+  (`{{name.response.body.$.path}}` / `.headers.H` / `.status`, threaded across a run-all), **multipart/
+  form-data** bodies (inline + `< ./file` parts), **external request bodies** (`< ./file` raw, `<@ ./file`
+  substituted), **response-to-file** redirects (`>> file` / `>>! file`), per-request directives
+  (`# @no-redirect` / `@no-cookie-jar` / `@no-log` / `@timeout N`), a per-run cookie jar, and the full
+  **dynamic-variable** family (`{{$random.*}}`, `{{$datetime "fmt"}}`, `{{$processEnv.X}}`, `{{$dotenv.X}}`).
+  The response viewer is now a content-type-highlighted read-only editor with split status/headers/body, an
+  in-session history picker, **Copy as cURL**, **Import cURL**, and **Open in editor tab**. No new dependency.
+
+- **HTTP Client — Digest auth, URL auto-encoding, date math, and `$shared` env.** A second IntelliJ-parity
+  pass: the `Authorization: Digest user pass` shorthand now performs the 401-challenge round-trip
+  (RFC 2617); request URLs are **percent-encoded automatically** after substitution (disable with
+  `# @no-auto-encoding`); `{{$datetime}}` / `{{$localDatetime}}` / `{{$timestamp}}` take signed **offsets**
+  (`y/M/w/d/h/m/s/ms`); and a `$shared` section in `http-client.env.json` merges its variables under every
+  environment (and is hidden from the picker). New directive `# @connection-timeout N`.
 
 - **Per-file-type icons.** File icons now reflect the file's type instead of a single generic document glyph.
   Editing `Main.java` shows the Java logo, `app.py` the Python logo, `style.css` the CSS logo, an image its
