@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Markdown split view now keeps the editor and preview scrolled together.** In SPLIT mode (editor +
+  rendered preview side by side), scrolling one pane scrolls the other by the same fraction of its content,
+  so the two stay roughly aligned even though their heights differ. The pane the mouse is over drives the
+  other, which keeps the sync one-directional at any moment so it can't oscillate; entering SPLIT aligns the
+  preview to the editor's current position. Negligible cost — it rides existing scroll-position listeners with
+  no new per-keystroke or per-pulse work.
+
 - **The Project tool window shows the current file's folder when no project is open.** In the global
   ("No Project") window it no longer just shows an empty "No project open" placeholder — it roots the tree at
   the active file's parent directory and titles the tool window **"Current Folder"**, so it doubles as a file
