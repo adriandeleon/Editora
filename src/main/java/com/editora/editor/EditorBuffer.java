@@ -403,6 +403,15 @@ public class EditorBuffer implements TabContent {
     private Color minimapViewport = Color.web("#0969da", 0.14);
     /** Visual tab width (columns); applied to the minimap and persisted via Settings. */
     private int tabSize = 4;
+    // EditorConfig overrides (null = no override → fall back to detection/global). See com.editora.editorconfig.
+    private Boolean indentInsertSpacesOverride;
+    private Integer indentSizeOverride;
+    private String eolOverride; // "LF"/"CRLF" — effective line ending (EditorConfig or a manual choice)
+    private Integer rulerColumnOverride; // null = default 80; EditorConfigProperties.OFF = hide
+    private String detectedCharset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
+    private String charsetOverride; // EditorConfig charset to write; null = keep detected
+    private com.editora.editorconfig.EditorConfigProperties editorConfigProps =
+            com.editora.editorconfig.EditorConfigProperties.EMPTY;
     /** Whether the user enabled the 80-column ruler. The line is only actually shown when a visible
      *  line reaches column 80 (see {@link #measureAndPlaceRuler}). */
     private boolean rulerVisible;
@@ -2970,10 +2979,13 @@ public class EditorBuffer implements TabContent {
      * the visible text width (e.g. the window is too narrow, or the text is scrolled past it).
      */
     private void measureAndPlaceRuler() {
-        if (!rulerVisible) {
+        if (!rulerVisible
+                || rulerColumnOverride != null
+                        && rulerColumnOverride == com.editora.editorconfig.EditorConfigProperties.OFF) {
+            columnRuler.setVisible(false);
             return;
         }
-        Double x = column80X();
+        Double x = columnRulerX();
         double viewportWidth = scrollPane.getWidth();
         boolean show = x != null && x >= 0 && x <= viewportWidth;
         columnRuler.setVisible(show);
@@ -2989,7 +3001,8 @@ public class EditorBuffer implements TabContent {
      * a {@code from == to} character-bounds call, avoids any dependence on glyph ink widths). Returns
      * {@code null} if no visible line has any text to measure from.
      */
-    private Double column80X() {
+    private Double columnRulerX() {
+        int col = rulerColumnOverride != null && rulerColumnOverride > 0 ? rulerColumnOverride : 80;
         try {
             int total = area.getParagraphs().size();
             if (total == 0) {
@@ -3018,7 +3031,7 @@ public class EditorBuffer implements TabContent {
                 return null;
             }
             double advance = (end.getMinX() - start.getMinX()) / refLen;
-            return start.getMinX() + 80 * advance;
+            return start.getMinX() + col * advance;
         } catch (RuntimeException ignored) {
             // Viewport mid-layout; a later event will re-measure.
         }
@@ -3148,9 +3161,9 @@ public class EditorBuffer implements TabContent {
         return text != null && text.contains("\r\n") ? "CRLF" : "LF";
     }
 
-    /** The detected line ending of the current document ({@code "LF"}/{@code "CRLF"}). */
+    /** The effective line ending: the override (EditorConfig / a manual choice) when set, else detected. */
     public String getLineEnding() {
-        return detectLineEnding(area.getText());
+        return eolOverride != null ? eolOverride : detectLineEnding(area.getText());
     }
 
     /** Sets the visual tab width used by the minimap (and tracked for future use). */
@@ -3164,6 +3177,46 @@ public class EditorBuffer implements TabContent {
 
     public int getTabSize() {
         return tabSize;
+    }
+
+    // --- EditorConfig overrides ------------------------------------------------------------------
+
+    /** Forces the indent unit (EditorConfig {@code indent_style}/{@code indent_size}); null = auto-detect. */
+    public void setIndentOverride(Boolean insertSpaces, Integer size) {
+        this.indentInsertSpacesOverride = insertSpaces;
+        this.indentSizeOverride = size;
+    }
+
+    /** The effective line ending to write on save ({@code "LF"}/{@code "CRLF"}); null = no override. */
+    public void setEolOverride(String eol) {
+        this.eolOverride = "CRLF".equals(eol) || "LF".equals(eol) ? eol : null;
+    }
+
+    /** The ruler column (EditorConfig {@code max_line_length}); null = default, OFF = hide; re-measures. */
+    public void setRulerColumn(Integer column) {
+        this.rulerColumnOverride = column;
+        measureAndPlaceRuler();
+    }
+
+    public void setDetectedCharset(String charset) {
+        this.detectedCharset = charset == null ? com.editora.editorconfig.EditorConfigCharset.UTF_8 : charset;
+    }
+
+    public void setCharsetOverride(String charset) {
+        this.charsetOverride = charset;
+    }
+
+    /** The charset to write: the EditorConfig override if set, else the charset detected on open. */
+    public String getEffectiveCharset() {
+        return charsetOverride != null ? charsetOverride : detectedCharset;
+    }
+
+    public void setEditorConfigProps(com.editora.editorconfig.EditorConfigProperties props) {
+        this.editorConfigProps = props == null ? com.editora.editorconfig.EditorConfigProperties.EMPTY : props;
+    }
+
+    public com.editora.editorconfig.EditorConfigProperties getEditorConfigProps() {
+        return editorConfigProps;
     }
 
     // --- Spell checking ---------------------------------------------------------------------------
@@ -3426,7 +3479,14 @@ public class EditorBuffer implements TabContent {
             return false;
         }
         Indenter.TabEdit edit = Indenter.smartTab(
-                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), language, tabSize, shift);
+                a.getText(),
+                a.getSelection().getStart(),
+                a.getSelection().getEnd(),
+                language,
+                tabSize,
+                shift,
+                indentInsertSpacesOverride,
+                indentSizeOverride);
         if (edit == null) {
             return false; // PLAIN (prose/plaintext): keep the editor's default Tab behavior
         }
@@ -3546,7 +3606,8 @@ public class EditorBuffer implements TabContent {
                     }
                 }
             }
-            Indenter.EnterEdit edit = Indenter.enterEdit(a.getText(), caret, language, tabSize);
+            Indenter.EnterEdit edit = Indenter.enterEdit(
+                    a.getText(), caret, language, tabSize, indentInsertSpacesOverride, indentSizeOverride);
             a.replaceText(caret, caret, edit.insert());
             a.moveTo(caret + edit.caretOffset());
             a.requestFollowCaret();
@@ -4506,6 +4567,9 @@ public class EditorBuffer implements TabContent {
      */
     /** Whether this file's detected indentation is spaces rather than tabs — the LSP formatting hint. */
     public boolean detectInsertSpaces(int tabSize) {
+        if (indentInsertSpacesOverride != null) {
+            return indentInsertSpacesOverride;
+        }
         return !Indenter.detectUnit(area.getText(), tabSize).contains("\t");
     }
 

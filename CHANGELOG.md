@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **EditorConfig (`.editorconfig`) support.** Opening a file now resolves the nearest `.editorconfig`
+  chain (walking up to `root = true`, nearest-directory-wins) and applies its style to the buffer:
+  - `indent_style` / `indent_size` / `tab_width` drive Tab/Enter indentation (tabs vs. N spaces) and the
+    minimap/indent math, overriding Editora's auto-detection.
+  - `end_of_line` (lf/crlf/cr) sets the line ending used on save; a manual EOL change still wins for the
+    session.
+  - `charset` (utf-8, utf-8-bom, latin1, utf-16le, utf-16be) is honored on **read and save** — files are
+    decoded with the right charset (BOM-detected first, else the `.editorconfig` value) and written back
+    in the same charset, BOM preserved. The status bar shows the active charset.
+  - `max_line_length` sets the column-ruler position (`off` hides it).
+  - `trim_trailing_whitespace` and `insert_final_newline` are applied **on save** (disk bytes only — the
+    on-screen document, caret, and undo history are untouched).
+  - Glob sections support `*` `**` `?` `[seq]` `[!seq]` `{a,b}` `{n1..n2}`; unknown keys/sections are ignored.
+  - **On by default**; toggle via Settings → Editor → "Enable EditorConfig" or the `view.toggleEditorConfig`
+    palette command. Local files only.
+
 - **Tab re-indents the current line to the language server's convention.** In an LSP language whose server
   supports range formatting (e.g. Java via jdtls), pressing Tab snaps the current line's indentation to
   what the formatter would produce — only the leading whitespace changes, the rest of the line is left

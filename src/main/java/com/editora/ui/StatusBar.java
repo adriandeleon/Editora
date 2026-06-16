@@ -382,7 +382,15 @@ public final class StatusBar extends HBox {
             readOnly.getTooltip().setText(ro ? tr("statusbar.tip.readOnly") : tr("statusbar.tip.editable"));
         }
 
-        indent.setText(tr("statusbar.tabSize", settings.get().getTabSize()));
+        // Indent + encoding reflect the active buffer's effective values (an .editorconfig can override
+        // the global tab size / charset per file), else the global default.
+        indent.setText(tr(
+                "statusbar.tabSize",
+                hasBuffer ? buffer.getTabSize() : settings.get().getTabSize()));
+        encoding.setText(
+                hasBuffer
+                        ? com.editora.editorconfig.EditorConfigCharset.displayName(buffer.getEffectiveCharset())
+                        : "UTF-8");
         zoomPercent.setText(Math.round(settings.get().getFontZoom() * 100) + "%");
         if (!hasBuffer) {
             return;

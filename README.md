@@ -71,6 +71,11 @@ Emacs-style keymap or a fuzzy command palette.
   (per language: braces, `:` for Python/YAML, `do`/`then` for shell, `def`/`class`/`do` for Ruby, open
   tags for XML/HTML); Enter between a matching pair opens an indented stanza; typing a closing
   bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred from the file.
+- **EditorConfig** — honors a project's `.editorconfig` (nearest-directory-wins, walking up to `root`):
+  indent style/size and `tab_width`, `end_of_line`, `charset` (utf-8, utf-8-bom, latin1, utf-16le/be —
+  round-tripped on read and save), `max_line_length` (drives the column ruler), and on-save
+  `trim_trailing_whitespace` / `insert_final_newline`. On by default; toggle via Settings → Editor or the
+  "View: Toggle EditorConfig" palette command.
 - **Auto-close & matching brackets** — typing `([{`/quotes inserts the matching closer (type over it to
   skip, wrap a selection by typing a bracket/quote around it, Backspace clears an empty pair); the
   bracket matching the one next to the caret is highlighted.
