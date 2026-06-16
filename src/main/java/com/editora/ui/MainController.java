@@ -3903,6 +3903,62 @@ public class MainController implements com.editora.mcp.McpBridge {
         };
     }
 
+    /** Sets a server's per-server enable toggle (mirrors {@link #serverEnabled}). */
+    private void setServerEnabled(String serverId, boolean on) {
+        Settings s = config.getSettings();
+        switch (serverId) {
+            case "typescript" -> s.setTypescriptLspEnabled(on);
+            case "python" -> s.setPythonLspEnabled(on);
+            case "xml" -> s.setXmlLspEnabled(on);
+            case "json" -> s.setJsonLspEnabled(on);
+            case "bash" -> s.setBashLspEnabled(on);
+            case "yaml" -> s.setYamlLspEnabled(on);
+            case "go" -> s.setGoLspEnabled(on);
+            case "rust" -> s.setRustLspEnabled(on);
+            case "php" -> s.setPhpLspEnabled(on);
+            case "ruby" -> s.setRubyLspEnabled(on);
+            case "clangd" -> s.setClangdLspEnabled(on);
+            case "html" -> s.setHtmlLspEnabled(on);
+            case "css" -> s.setCssLspEnabled(on);
+            case "kotlin" -> s.setKotlinLspEnabled(on);
+            case "lua" -> s.setLuaLspEnabled(on);
+            case "dockerfile" -> s.setDockerfileLspEnabled(on);
+            case "sql" -> s.setSqlLspEnabled(on);
+            case "terraform" -> s.setTerraformLspEnabled(on);
+            case "toml" -> s.setTomlLspEnabled(on);
+            case "csharp" -> s.setCsharpLspEnabled(on);
+            default -> s.setJavaLspEnabled(on);
+        }
+    }
+
+    /** Sets a server's configured command (blank ⇒ the server's default); mirrors {@link #serverCommand}. */
+    private void setServerCommand(String serverId, String command) {
+        Settings s = config.getSettings();
+        switch (serverId) {
+            case "typescript" -> s.setTypescriptLspCommand(command);
+            case "python" -> s.setPythonLspCommand(command);
+            case "xml" -> s.setXmlLspCommand(command);
+            case "json" -> s.setJsonLspCommand(command);
+            case "bash" -> s.setBashLspCommand(command);
+            case "yaml" -> s.setYamlLspCommand(command);
+            case "go" -> s.setGoLspCommand(command);
+            case "rust" -> s.setRustLspCommand(command);
+            case "php" -> s.setPhpLspCommand(command);
+            case "ruby" -> s.setRubyLspCommand(command);
+            case "clangd" -> s.setClangdLspCommand(command);
+            case "html" -> s.setHtmlLspCommand(command);
+            case "css" -> s.setCssLspCommand(command);
+            case "kotlin" -> s.setKotlinLspCommand(command);
+            case "lua" -> s.setLuaLspCommand(command);
+            case "dockerfile" -> s.setDockerfileLspCommand(command);
+            case "sql" -> s.setSqlLspCommand(command);
+            case "terraform" -> s.setTerraformLspCommand(command);
+            case "toml" -> s.setTomlLspCommand(command);
+            case "csharp" -> s.setCsharpLspCommand(command);
+            default -> s.setJavaLspCommand(command);
+        }
+    }
+
     /** Applies the detection-dependent gate to every open buffer (per the file's own server). */
     private void applyLspGating() {
         for (Tab tab : tabPane.getTabs()) {
@@ -8572,6 +8628,286 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
+    // --- Settings palette commands ----------------------------------------------------------------
+    // Every Settings-window control has a command-palette equivalent (Editora is command-driven). The
+    // helpers below flip/prompt the same Settings field a control writes, then persist, re-apply the
+    // feature, keep an open Settings window in step (syncAll), and echo a status. Two generic status
+    // keys (status.settingToggled / status.settingChanged) reuse each command's own localized title.
+
+    /** Flips a boolean setting, persists, re-applies, syncs Settings, and echoes "<title> — on/off". */
+    private void toggleSetting(
+            String commandId,
+            java.util.function.BooleanSupplier get,
+            java.util.function.Consumer<Boolean> set,
+            Runnable apply) {
+        boolean next = !get.getAsBoolean();
+        set.accept(next);
+        requestSave();
+        if (apply != null) {
+            apply.run();
+        }
+        if (settingsWindow != null) {
+            settingsWindow.syncAll();
+        }
+        setStatus(tr("status.settingToggled", commandTitle(commandId), tr(next ? "common.on" : "common.off")));
+    }
+
+    /** Prompts for a string setting (current value pre-filled), persists, re-applies, and echoes it. */
+    private void promptStringSetting(
+            String commandId,
+            java.util.function.Supplier<String> get,
+            java.util.function.Consumer<String> set,
+            Runnable apply) {
+        promptText(commandTitle(commandId), tr("palette.setting.value"), get.get(), v -> {
+            String value = v.trim();
+            set.accept(value);
+            requestSave();
+            if (apply != null) {
+                apply.run();
+            }
+            if (settingsWindow != null) {
+                settingsWindow.syncAll();
+            }
+            setStatus(tr("status.settingChanged", commandTitle(commandId), value));
+        });
+    }
+
+    /** Prompts for an integer setting (clamped to [min,max]); reports a parse error without changing it. */
+    private void promptIntSetting(
+            String commandId,
+            java.util.function.IntSupplier get,
+            int min,
+            int max,
+            java.util.function.IntConsumer set,
+            Runnable apply) {
+        promptText(commandTitle(commandId), tr("palette.setting.value"), Integer.toString(get.getAsInt()), v -> {
+            int parsed;
+            try {
+                parsed = Integer.parseInt(v.trim());
+            } catch (NumberFormatException ex) {
+                setStatus(tr("status.setting.invalidNumber", v.trim()));
+                return;
+            }
+            int clamped = Math.max(min, Math.min(max, parsed));
+            set.accept(clamped);
+            requestSave();
+            if (apply != null) {
+                apply.run();
+            }
+            if (settingsWindow != null) {
+                settingsWindow.syncAll();
+            }
+            setStatus(tr("status.settingChanged", commandTitle(commandId), Integer.toString(clamped)));
+        });
+    }
+
+    /** Generic single-choice picker that sets a setting to the chosen value (label fn for display). */
+    private void chooseSetting(
+            String commandId,
+            java.util.function.Supplier<List<String>> options,
+            java.util.function.Function<String, String> label,
+            java.util.function.Consumer<String> onChoose) {
+        QuickOpen<String> picker = new QuickOpen<>(
+                commandTitle(commandId), tr("palette.setting.pick"), options::get, label::apply, id -> "", id -> {
+                    if (id != null) {
+                        onChoose.accept(id);
+                    }
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Picker for the editor font family (same choices as Settings → Appearance). */
+    private void chooseFont() {
+        chooseSetting("appearance.setFont", SettingsWindow::fontFamilyChoices, name -> name, name -> {
+            Settings s = config.getSettings();
+            s.setFontFamily(name);
+            requestSave();
+            applyViewSettingsToAllBuffers(s);
+            if (settingsWindow != null) {
+                settingsWindow.syncAll();
+            }
+            setStatus(tr("status.settingChanged", commandTitle("appearance.setFont"), name));
+        });
+    }
+
+    /** Picker for the UI language (Automatic + bundled locales); applies after a restart. */
+    private void chooseUiLanguage() {
+        List<String> ids = new java.util.ArrayList<>();
+        ids.add(""); // "" = Automatic (follow the system language)
+        ids.addAll(com.editora.i18n.Messages.available().keySet());
+        chooseSetting(
+                "appearance.setUiLanguage",
+                () -> ids,
+                id -> id.isEmpty() ? tr("settings.language.auto") : com.editora.i18n.Messages.languageName(id),
+                id -> {
+                    config.getSettings().setUiLanguage(id);
+                    requestSave();
+                    if (settingsWindow != null) {
+                        settingsWindow.syncAll();
+                    }
+                    setStatus(tr("dialog.language.restart"));
+                });
+    }
+
+    /** Picker for the PDF export page size. */
+    private void choosePdfPageSize() {
+        chooseSetting("editor.setPdfPageSize", () -> List.of("letter", "a4"), v -> v, v -> {
+            config.getSettings().setPdfPageSize(v);
+            requestSave();
+            if (settingsWindow != null) {
+                settingsWindow.syncAll();
+            }
+            setStatus(tr("status.settingChanged", commandTitle("editor.setPdfPageSize"), v));
+        });
+    }
+
+    /** Picker over the LSP servers: toggles the chosen server's per-server enable. */
+    private void chooseLspServerToggle() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("command.lsp.toggleServer"),
+                tr("palette.setting.pick"),
+                () -> List.of(LSP_SERVER_IDS),
+                id -> id + "  —  " + tr(serverEnabled(id) ? "common.on" : "common.off"),
+                this::serverLabel,
+                id -> {
+                    if (id == null) {
+                        return;
+                    }
+                    boolean next = !serverEnabled(id);
+                    setServerEnabled(id, next);
+                    requestSave();
+                    applyLspSupport();
+                    if (settingsWindow != null) {
+                        settingsWindow.syncAll();
+                    }
+                    setStatus(tr("status.settingToggled", id, tr(next ? "common.on" : "common.off")));
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Picker over the LSP servers, then prompts for the chosen server's command (blank ⇒ default). */
+    private void chooseLspServerCommand() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("command.lsp.setServerCommand"),
+                tr("palette.setting.pick"),
+                () -> List.of(LSP_SERVER_IDS),
+                id -> id,
+                this::serverLabel,
+                id -> {
+                    if (id == null) {
+                        return;
+                    }
+                    promptText(id, tr("palette.setting.value"), serverCommand(id), v -> {
+                        String value = v.trim();
+                        setServerCommand(id, value);
+                        requestSave();
+                        applyLspSupport();
+                        if (settingsWindow != null) {
+                            settingsWindow.syncAll();
+                        }
+                        setStatus(tr("status.settingChanged", id, value));
+                    });
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    // Debug adapters: "java" has no enable (gated by the Java LSP server); python/javascript do.
+    private static final String[] DEBUG_TOGGLEABLE_ADAPTERS = {"python", "javascript"};
+    private static final String[] DEBUG_PATH_ADAPTERS = {"java", "python", "javascript"};
+
+    /** Display name for a debug adapter (language names are deliberately untranslated, like LSP ids). */
+    private static String debugAdapterLabel(String id) {
+        return switch (id) {
+            case "python" -> "Python";
+            case "javascript" -> "JavaScript";
+            default -> "Java";
+        };
+    }
+
+    private boolean debugAdapterEnabled(String id) {
+        Settings s = config.getSettings();
+        return switch (id) {
+            case "python" -> s.isPythonDebugEnabled();
+            case "javascript" -> s.isJsDebugEnabled();
+            default -> true;
+        };
+    }
+
+    private String debugAdapterPath(String id) {
+        Settings s = config.getSettings();
+        return switch (id) {
+            case "python" -> s.getPythonDebugCommand();
+            case "javascript" -> s.getJsDebugPath();
+            default -> s.getJavaDebugPluginPath();
+        };
+    }
+
+    /** Picker over the python/javascript debug adapters: toggles the chosen one's enable. */
+    private void chooseDebugAdapterToggle() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("command.debug.toggleAdapter"),
+                tr("palette.setting.pick"),
+                () -> List.of(DEBUG_TOGGLEABLE_ADAPTERS),
+                id -> debugAdapterLabel(id) + "  —  " + tr(debugAdapterEnabled(id) ? "common.on" : "common.off"),
+                id -> "",
+                id -> {
+                    if (id == null) {
+                        return;
+                    }
+                    Settings s = config.getSettings();
+                    boolean next = !debugAdapterEnabled(id);
+                    if ("python".equals(id)) {
+                        s.setPythonDebugEnabled(next);
+                    } else {
+                        s.setJsDebugEnabled(next);
+                    }
+                    requestSave();
+                    applyDebugSupport();
+                    if (settingsWindow != null) {
+                        settingsWindow.syncAll();
+                    }
+                    setStatus(
+                            tr("status.settingToggled", debugAdapterLabel(id), tr(next ? "common.on" : "common.off")));
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Picker over the java/python/javascript debug adapters, then prompts for that adapter's path. */
+    private void chooseDebugAdapterPath() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("command.debug.setAdapterPath"),
+                tr("palette.setting.pick"),
+                () -> List.of(DEBUG_PATH_ADAPTERS),
+                MainController::debugAdapterLabel,
+                this::debugAdapterPath,
+                id -> {
+                    if (id == null) {
+                        return;
+                    }
+                    promptText(debugAdapterLabel(id), tr("palette.setting.value"), debugAdapterPath(id), v -> {
+                        String value = v.trim();
+                        Settings s = config.getSettings();
+                        switch (id) {
+                            case "python" -> s.setPythonDebugCommand(value);
+                            case "javascript" -> s.setJsDebugPath(value);
+                            default -> s.setJavaDebugPluginPath(value);
+                        }
+                        requestSave();
+                        applyDebugSupport();
+                        if (settingsWindow != null) {
+                            settingsWindow.syncAll();
+                        }
+                        setStatus(tr("status.settingChanged", debugAdapterLabel(id), value));
+                    });
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
     /** Converts the active buffer's line endings between LF and CRLF. */
     private void chooseLineEndings() {
         if (!activeEditable()) {
@@ -10636,6 +10972,171 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("keymap.select", this::chooseKeymap));
         registry.register(Command.of("theme.setAppTheme", this::chooseAppTheme));
         registry.register(Command.of("theme.setEditorTheme", this::chooseEditorTheme));
+        // Settings palette commands — a command-palette equivalent for every Settings-window control.
+        registry.register(Command.of("appearance.setFont", this::chooseFont));
+        registry.register(Command.of(
+                "appearance.setFontSize",
+                () -> promptIntSetting(
+                        "appearance.setFontSize",
+                        () -> config.getSettings().getFontSize(),
+                        6,
+                        72,
+                        v -> config.getSettings().setFontSize(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of("appearance.setUiLanguage", this::chooseUiLanguage));
+        registry.register(Command.of("editor.setPdfPageSize", this::choosePdfPageSize));
+        registry.register(Command.of(
+                "view.togglePdfLineNumbers",
+                () -> toggleSetting(
+                        "view.togglePdfLineNumbers",
+                        () -> config.getSettings().isPdfLineNumbers(),
+                        v -> config.getSettings().setPdfLineNumbers(v),
+                        null)));
+        registry.register(Command.of(
+                "view.togglePdfSyntaxHighlighting",
+                () -> toggleSetting(
+                        "view.togglePdfSyntaxHighlighting",
+                        () -> config.getSettings().isPdfSyntaxHighlighting(),
+                        v -> config.getSettings().setPdfSyntaxHighlighting(v),
+                        null)));
+        registry.register(Command.of(
+                "view.toggleNoteIndicators",
+                () -> toggleSetting(
+                        "view.toggleNoteIndicators",
+                        () -> config.getSettings().isShowNoteIndicators(),
+                        v -> config.getSettings().setShowNoteIndicators(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleCompletionDoc",
+                () -> toggleSetting(
+                        "view.toggleCompletionDoc",
+                        () -> config.getSettings().isCompletionDoc(),
+                        v -> config.getSettings().setCompletionDoc(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleProjects",
+                () -> toggleSetting(
+                        "view.toggleProjects",
+                        () -> config.getSettings().isProjectSupport(),
+                        v -> config.getSettings().setProjectSupport(v),
+                        this::applyProjectSupport)));
+        registry.register(Command.of(
+                "view.toggleNotes",
+                () -> toggleSetting(
+                        "view.toggleNotes",
+                        () -> config.getSettings().isNotesSupport(),
+                        v -> config.getSettings().setNotesSupport(v),
+                        this::applyNotesSupport)));
+        registry.register(Command.of(
+                "view.toggleLocalHistory",
+                () -> toggleSetting(
+                        "view.toggleLocalHistory",
+                        () -> config.getSettings().isLocalHistory(),
+                        v -> config.getSettings().setLocalHistory(v),
+                        this::applyLocalHistory)));
+        registry.register(Command.of(
+                "view.toggleGit",
+                () -> toggleSetting(
+                        "view.toggleGit",
+                        () -> config.getSettings().isGitSupport(),
+                        v -> config.getSettings().setGitSupport(v),
+                        this::applyGitSupport)));
+        registry.register(Command.of(
+                "view.toggleMermaid",
+                () -> toggleSetting(
+                        "view.toggleMermaid",
+                        () -> config.getSettings().isMermaidSupport(),
+                        v -> config.getSettings().setMermaidSupport(v),
+                        this::applyMermaidSupport)));
+        registry.register(Command.of(
+                "view.toggleHttpClient",
+                () -> toggleSetting(
+                        "view.toggleHttpClient",
+                        () -> config.getSettings().isHttpClientSupport(),
+                        v -> config.getSettings().setHttpClientSupport(v),
+                        this::applyHttpClientSupport)));
+        registry.register(Command.of(
+                "view.toggleDebug",
+                () -> toggleSetting(
+                        "view.toggleDebug",
+                        () -> config.getSettings().isDebugSupport(),
+                        v -> config.getSettings().setDebugSupport(v),
+                        this::applyDebugSupport)));
+        registry.register(Command.of(
+                "file.setAutoSaveDelay",
+                () -> promptIntSetting(
+                        "file.setAutoSaveDelay",
+                        () -> Math.max(1, (int) Math.round(config.getSettings().getAutoSaveDelayMillis() / 1000.0)),
+                        1,
+                        3600,
+                        v -> config.getSettings().setAutoSaveDelayMillis(v * 1000),
+                        this::applyAutoSave)));
+        registry.register(Command.of(
+                "app.setAuthorName",
+                () -> promptStringSetting(
+                        "app.setAuthorName",
+                        () -> config.getSettings().getAuthorNameRaw(),
+                        v -> config.getSettings().setAuthorName(v),
+                        null)));
+        registry.register(Command.of(
+                "history.setMaxPerFile",
+                () -> promptIntSetting(
+                        "history.setMaxPerFile",
+                        () -> config.getSettings().getHistoryMaxPerFile(),
+                        1,
+                        1000,
+                        v -> config.getSettings().setHistoryMaxPerFile(v),
+                        this::applyLocalHistory)));
+        registry.register(Command.of(
+                "history.setMaxAgeDays",
+                () -> promptIntSetting(
+                        "history.setMaxAgeDays",
+                        () -> config.getSettings().getHistoryMaxAgeDays(),
+                        1,
+                        3650,
+                        v -> config.getSettings().setHistoryMaxAgeDays(v),
+                        this::applyLocalHistory)));
+        registry.register(Command.of(
+                "history.setMaxTotalMb",
+                () -> promptIntSetting(
+                        "history.setMaxTotalMb",
+                        () -> config.getSettings().getHistoryMaxTotalMb(),
+                        1,
+                        10000,
+                        v -> config.getSettings().setHistoryMaxTotalMb(v),
+                        this::applyLocalHistory)));
+        registry.register(Command.of(
+                "mermaid.setMmdcCommand",
+                () -> promptStringSetting(
+                        "mermaid.setMmdcCommand",
+                        () -> config.getSettings().getMmdcPath(),
+                        v -> config.getSettings().setMmdcPath(v),
+                        this::applyMermaidSupport)));
+        registry.register(Command.of(
+                "mermaid.setMaidCommand",
+                () -> promptStringSetting(
+                        "mermaid.setMaidCommand",
+                        () -> config.getSettings().getMaidPath(),
+                        v -> config.getSettings().setMaidPath(v),
+                        this::applyMermaidSupport)));
+        registry.register(Command.of(
+                "plugins.toggleRequireSignature",
+                () -> toggleSetting(
+                        "plugins.toggleRequireSignature",
+                        () -> config.getSettings().isPluginRequireSignature(),
+                        v -> config.getSettings().setPluginRequireSignature(v),
+                        null)));
+        registry.register(Command.of(
+                "plugins.setRegistryUrl",
+                () -> promptStringSetting(
+                        "plugins.setRegistryUrl",
+                        () -> config.getSettings().getPluginRegistryUrl(),
+                        v -> config.getSettings().setPluginRegistryUrl(v),
+                        null)));
+        registry.register(Command.of("lsp.toggleServer", this::chooseLspServerToggle));
+        registry.register(Command.of("lsp.setServerCommand", this::chooseLspServerCommand));
+        registry.register(Command.of("debug.toggleAdapter", this::chooseDebugAdapterToggle));
+        registry.register(Command.of("debug.setAdapterPath", this::chooseDebugAdapterPath));
         registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));
         registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
