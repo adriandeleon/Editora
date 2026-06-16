@@ -60,6 +60,34 @@ public final class EditorConfig {
         return merged;
     }
 
+    /**
+     * The nearest {@code .editorconfig} file governing {@code file} (the closest one walking up its directory
+     * tree, stopping at the first {@code root = true}), or {@code null} when none applies. Used by the status-bar
+     * indicator to open the active config.
+     */
+    public static Path nearestFile(Path file) {
+        if (file == null) {
+            return null;
+        }
+        Path abs;
+        try {
+            abs = file.toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return null;
+        }
+        for (Path dir = abs.getParent(); dir != null; dir = dir.getParent()) {
+            Path ecFile = dir.resolve(FILENAME);
+            if (Files.isRegularFile(ecFile)) {
+                return ecFile;
+            }
+            EditorConfigParser.Parsed parsed = readParsed(ecFile);
+            if (parsed != null && parsed.root()) {
+                break;
+            }
+        }
+        return null;
+    }
+
     private static EditorConfigParser.Parsed readParsed(Path ecFile) {
         try {
             if (!Files.isRegularFile(ecFile)) {

@@ -3,6 +3,9 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Global indent-style preference — Settings → Editor → "Indent style" + **Editor: Set Indent Style…**
+      palette command: force Spaces or Tabs for Tab/Enter, or keep Detect (per-file auto-detection).
+      A file's `.editorconfig` `indent_style` wins; the global pref is the fallback above per-file detect
 - [x] EditorConfig (`.editorconfig`) — resolves the nearest config chain (nearest-dir-wins, up to `root`)
       and applies indent style/size + `tab_width`, `end_of_line`, `charset` (utf-8/utf-8-bom/latin1/
       utf-16le/be, round-tripped on read & save), `max_line_length` (column ruler), and on-save

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **EditorConfig status-bar indicator.** When an `.editorconfig` governs the current file, the status bar
+  shows an **EditorConfig** segment; clicking it (or the **EditorConfig: Open Active File** palette command)
+  opens the nearest governing `.editorconfig`. Hidden when no config applies and in Simple UI mode.
+
+- **Global indent-style preference.** Settings → Editor → "Indent style" (and the **Editor: Set Indent
+  Style…** palette command) lets you force **Spaces** or **Tabs** for Tab/Enter indentation, or keep
+  **Detect from file** (the default — per-file auto-detection from the file's existing indentation). A
+  file's `.editorconfig` `indent_style` still wins over this when EditorConfig is enabled; the global
+  preference is the fallback, and per-file detection is the fallback below that. Applies live to every
+  open buffer.
+
 - **EditorConfig (`.editorconfig`) support.** Opening a file now resolves the nearest `.editorconfig`
   chain (walking up to `root = true`, nearest-directory-wins) and applies its style to the buffer:
   - `indent_style` / `indent_size` / `tab_width` drive Tab/Enter indentation (tabs vs. N spaces) and the

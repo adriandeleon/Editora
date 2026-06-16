@@ -8767,6 +8767,27 @@ public class MainController implements com.editora.mcp.McpBridge {
         picker.show(stage);
     }
 
+    /** Picker for the global indent style (Detect / Spaces / Tabs); applies live to every buffer. */
+    private void chooseIndentStyle() {
+        chooseSetting(
+                "editor.setIndentStyle",
+                () -> List.of("detect", "space", "tab"),
+                SettingsWindow::indentStyleName,
+                id -> {
+                    Settings s = config.getSettings();
+                    s.setIndentStyle(id);
+                    requestSave();
+                    applyViewSettingsToAllBuffers(s);
+                    if (settingsWindow != null) {
+                        settingsWindow.syncAll();
+                    }
+                    setStatus(tr(
+                            "status.settingChanged",
+                            commandTitle("editor.setIndentStyle"),
+                            SettingsWindow.indentStyleName(id)));
+                });
+    }
+
     /** Picker for the editor font family (same choices as Settings → Appearance). */
     private void chooseFont() {
         chooseSetting("appearance.setFont", SettingsWindow::fontFamilyChoices, name -> name, name -> {
@@ -10508,14 +10529,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         Path path = buffer.getPath();
         if (!editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)) {
             buffer.setEditorConfigProps(com.editora.editorconfig.EditorConfigProperties.EMPTY);
-            buffer.setIndentOverride(null, null);
+            applyEffectiveIndent(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY);
             buffer.setRulerColumn(null);
             buffer.setCharsetOverride(null);
             return; // EOL override is left to a manual choice; tab size already comes from global settings
         }
         com.editora.editorconfig.EditorConfigProperties p = com.editora.editorconfig.EditorConfig.resolveFor(path);
         buffer.setEditorConfigProps(p);
-        buffer.setIndentOverride(p.insertSpaces(), p.indentSize());
+        applyEffectiveIndent(buffer, p);
         if (p.insertSpaces() != null || p.tabWidth() != null || p.indentSize() != null) {
             buffer.setTabSize(p.effectiveTabWidth(config.getSettings().getTabSize()));
         }
@@ -10524,6 +10545,50 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         buffer.setRulerColumn(p.maxLineLength()); // null = default 80, OFF = hide
         buffer.setCharsetOverride(p.charset());
+    }
+
+    /**
+     * Resolves the effective indent override for a buffer and pushes it via {@link EditorBuffer#setIndentOverride}.
+     * Precedence: a file's {@code .editorconfig} {@code indent_style} (when present) wins; else the global
+     * {@link Settings#getIndentStyle()} preference ({@code space}/{@code tab}); else {@code null} → per-file
+     * auto-detection ({@code Indenter.detectUnit}). For {@code space}, the size falls back to the global tab size
+     * when {@code .editorconfig} didn't specify {@code indent_size}.
+     */
+    private void applyEffectiveIndent(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties p) {
+        Boolean insertSpaces = p.insertSpaces();
+        Integer size = p.indentSize();
+        if (insertSpaces == null) {
+            String style = config.getSettings().getIndentStyle();
+            if ("space".equals(style)) {
+                insertSpaces = Boolean.TRUE;
+                if (size == null) {
+                    size = config.getSettings().getTabSize();
+                }
+            } else if ("tab".equals(style)) {
+                insertSpaces = Boolean.FALSE;
+            }
+            // "detect" leaves insertSpaces null → Indenter falls back to detectUnit
+        }
+        buffer.setIndentOverride(insertSpaces, size);
+    }
+
+    /**
+     * Opens the {@code .editorconfig} file governing the active buffer (the status-bar indicator's click action,
+     * also a palette command). Reports a status message when there's no file / no governing {@code .editorconfig}.
+     */
+    private void openActiveEditorConfig() {
+        EditorBuffer buffer = activeBuffer();
+        Path path = buffer == null ? null : buffer.getPath();
+        if (path == null || !com.editora.vfs.Vfs.isLocal(path)) {
+            setStatus(tr("status.editorConfig.none"));
+            return;
+        }
+        Path ec = com.editora.editorconfig.EditorConfig.nearestFile(path);
+        if (ec == null) {
+            setStatus(tr("status.editorConfig.none"));
+            return;
+        }
+        openPath(ec);
     }
 
     /** Re-applies (or clears) {@code .editorconfig} for every open buffer — init + on settings apply. */
@@ -11106,6 +11171,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isEditorConfigSupport(),
                         v -> config.getSettings().setEditorConfigSupport(v),
                         this::applyEditorConfigSupport)));
+        registry.register(Command.of("editorConfig.openActive", this::openActiveEditorConfig));
         registry.register(Command.of(
                 "view.toggleNoteIndicators",
                 () -> toggleSetting(
@@ -11251,6 +11317,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("plugins.browse", this::browsePlugins));
         registry.register(Command.of("plugins.installFromDisk", this::installPluginFromDisk));
         registry.register(Command.of("config.export", this::exportConfig));
+        registry.register(Command.of("editor.setIndentStyle", this::chooseIndentStyle));
         registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
         registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));
         registry.register(Command.of("editor.print", this::printCode));

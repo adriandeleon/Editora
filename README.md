@@ -71,7 +71,8 @@ Emacs-style keymap or a fuzzy command palette.
 - **Auto / smart indentation** — Enter keeps the indentation and adds a level after a block opener
   (per language: braces, `:` for Python/YAML, `do`/`then` for shell, `def`/`class`/`do` for Ruby, open
   tags for XML/HTML); Enter between a matching pair opens an indented stanza; typing a closing
-  bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred from the file.
+  bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred per file, or forced
+  globally via Settings → Editor → "Indent style" (Detect / Spaces / Tabs).
 - **EditorConfig** — honors a project's `.editorconfig` (nearest-directory-wins, walking up to `root`):
   indent style/size and `tab_width`, `end_of_line`, `charset` (utf-8, utf-8-bom, latin1, utf-16le/be —
   round-tripped on read and save), `max_line_length` (drives the column ruler), and on-save
