@@ -28,6 +28,7 @@ Emacs-style keymap or a fuzzy command palette.
 - [Features](#features)
 - [Requirements](#requirements)
 - [Build & Run](#build--run)
+- [Contributing](#contributing)
 - [Releases](#releases)
 - [Command line](#command-line)
 - [Configuration](#configuration)
@@ -333,6 +334,28 @@ On startup the fat jar prints `WARNING: Unsupported JavaFX configuration: classe
 classpath rather than the module path (which is how a fat jar works). The app runs normally, and the
 warning cannot be cleanly suppressed — the native installers launch from the module path and don't
 show it.
+
+## Contributing
+
+All Java is auto-formatted with [Palantir Java Format](https://github.com/palantir/palantir-java-format)
+(a lambda-friendly, 120-column fork of google-java-format), enforced by the
+[Spotless](https://github.com/diffplug/spotless) Maven plugin. **Run `./mvnw spotless:apply` before
+committing** — `spotless:check` is bound to the `verify` phase, so `./mvnw verify`, `./mvnw package`,
+and CI fail on unformatted code (the `javafx:run` / `compile` dev loop is deliberately left untouched).
+The pipeline removes unused imports, formats, then orders imports into three blank-line-separated groups
+(JDK → `javafx` → third-party + `com.editora`, static imports last). Wrap hand-aligned code in
+`// spotless:off` … `// spotless:on` to opt out.
+
+Two conventions the build checks for:
+
+- **Every user-facing string is localized.** Add new keys to all six
+  `src/main/resources/com/editora/i18n/messages[_<lang>].properties` catalogs (English base +
+  `it`/`es`/`fr`/`pt`/`de`); the test suite fails if any locale is missing a key.
+- **Every action is a command.** User-facing features are registered in the command registry so they
+  appear in the command palette (`M-x`); toolbar buttons and keybindings dispatch through commands too.
+
+Tests cover pure logic only (`./mvnw test`) — there is no GUI/toolkit test harness, so verify
+interactive behavior by running the app (`./mvnw javafx:run`).
 
 ## Releases
 
