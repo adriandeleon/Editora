@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **IntelliJ-style code completion popup.** The autocomplete list now looks and behaves much closer to
+  IntelliJ IDEA:
+  - **Per-kind icons** — each row shows a glyph for its kind (method, field, variable, class, interface,
+    enum, keyword, module, snippet, …), mapped from the language server's `CompletionItemKind`.
+  - **Matched-character bolding** — the characters you've typed are bolded within each candidate
+    (contiguous prefix/substring, or camelCase/subsequence).
+  - **Relevance ordering** — LSP candidates are ordered by the server's relevance (preselect, then
+    `sortText`), and the server's preselected item starts highlighted, instead of raw server order.
+  - **Documentation side-popup** — a panel beside the list shows the selected symbol's documentation
+    (and signature), resolved lazily from the server and rendered as Markdown. It auto-shows (toggle the
+    default in Settings → Editor) and **Ctrl+Q** shows/hides it for the current item. It positions to the
+    right of the list and flips left at the screen edge.
+  - **Deprecated APIs** are struck through; **PageUp/PageDown** page the list.
+  - The type/detail column is enriched from the server's `labelDetails`.
+  Negligible cost on the typing hot path — the icon/label/ordering work is cheap and per-render, and the
+  documentation is resolved off the FX thread and debounced per selection.
+
 ### Performance
 
 - **Smoother scrolling in files with many lines.** The line-number gutter set each row's number via a

@@ -278,6 +278,42 @@ public final class LspManager {
         });
     }
 
+    /**
+     * Resolves the documentation for a completion item (the opaque {@code token} is the LSP
+     * {@code CompletionItem} from {@link CompletionMapper}) and delivers its markdown/plain-text body to
+     * {@code cb} on the FX thread — {@code null} when there is none. Short-circuits when the item already
+     * carries its documentation (many servers send it eagerly), else issues {@code completionItem/resolve}.
+     * Drives the IntelliJ-style documentation side-popup.
+     */
+    public void resolveCompletionDoc(Path file, Object token, Consumer<String> cb) {
+        if (!(token instanceof CompletionItem item)) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        String existing = documentationOf(item);
+        LanguageServerSession s = sessionFor(file);
+        if (existing != null || s == null) {
+            Platform.runLater(() -> cb.accept(existing));
+            return;
+        }
+        s.resolveCompletion(item).whenComplete((resolved, error) -> {
+            String doc = (error == null && resolved != null) ? documentationOf(resolved) : null;
+            Platform.runLater(() -> cb.accept(doc));
+        });
+    }
+
+    /** The item's documentation as a string (markdown or plain text), or null/blank → null. */
+    private static String documentationOf(CompletionItem item) {
+        var doc = item.getDocumentation();
+        if (doc == null) {
+            return null;
+        }
+        String s = doc.isLeft()
+                ? doc.getLeft()
+                : (doc.getRight() == null ? null : doc.getRight().getValue());
+        return (s == null || s.isBlank()) ? null : s;
+    }
+
     /** True if {@code file}'s server is ready and advertises whole-document formatting. */
     public boolean supportsFormatting(Path file) {
         LanguageServerSession s = sessionFor(file);

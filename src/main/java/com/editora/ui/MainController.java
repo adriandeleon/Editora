@@ -6457,6 +6457,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 cb.accept(java.util.List.of());
             }
         });
+        // Lazy documentation for the completion doc side-popup: resolve the item's docs on demand.
+        buffer.setCompletionDocResolver((token, cb) -> {
+            if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+                lspManager.resolveCompletionDoc(buffer.getPath(), token, cb);
+            } else {
+                cb.accept(null);
+            }
+        });
+        buffer.setCompletionDocEnabled(config.getSettings().isCompletionDoc());
         buffer.setLspNavActions(
                 this::lspGotoDefinition, this::lspFindReferences, this::lspShowHover, this::formatDocument);
         syncBufferLsp(buffer);
@@ -10164,6 +10173,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (buffer != null) {
                 buffer.setAutocomplete(
                         s.isAutocomplete(), s.isAutocompleteProse(), s.isAutocompleteSnippets(), mermaidAc);
+                buffer.setCompletionDocEnabled(s.isCompletionDoc());
             }
         }
     }
@@ -10294,6 +10304,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         EditorBuffer b = activeBuffer();
         if (b != null) {
             b.triggerCompletion();
+        }
+    }
+
+    /** Toggles the completion documentation popup for the open completion list (the {@code edit.completionDoc}
+     *  command, Ctrl+Q — IntelliJ "quick documentation"). */
+    private void toggleCompletionDoc() {
+        EditorBuffer b = activeBuffer();
+        if (b != null) {
+            b.toggleCompletionDoc();
         }
     }
 
@@ -10834,6 +10853,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.redo", this::onRedo));
         registry.register(Command.of("edit.cancel", this::cancel));
         registry.register(Command.of("edit.completion", this::triggerCompletion));
+        registry.register(Command.of("edit.completionDoc", this::toggleCompletionDoc));
         registry.register(Command.of("edit.toggleComment", this::toggleComment));
         registry.register(
                 Command.of("edit.transposeChars", () -> transpose(com.editora.editor.Transposer::transposeChars)));

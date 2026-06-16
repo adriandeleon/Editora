@@ -64,4 +64,30 @@ class CompletionEngineTest {
         assertTrue(merged.stream().allMatch(c -> c.kind() == Kind.WORD));
         assertFalse(merged.isEmpty());
     }
+
+    private static Completion lsp(String label, String sortText, boolean preselect) {
+        return Completion.lsp(label, label, "", null, null, sortText, preselect, false, null);
+    }
+
+    @Test
+    void relevanceSortPutsPreselectFirstThenSortTextThenLabel() {
+        List<Completion> sorted = CompletionEngine.sortLspByRelevance(List.of(
+                lsp("zebra", "0003", false),
+                lsp("apple", "0001", false),
+                lsp("preselected", "0009", true),
+                lsp("mango", "0002", false)));
+        assertEquals("preselected", sorted.get(0).label()); // preselect wins regardless of sortText
+        assertEquals("apple", sorted.get(1).label()); // then by sortText ascending
+        assertEquals("mango", sorted.get(2).label());
+        assertEquals("zebra", sorted.get(3).label());
+    }
+
+    @Test
+    void relevanceSortKeepsNullSortTextLastAndFallsBackToLabel() {
+        List<Completion> sorted = CompletionEngine.sortLspByRelevance(
+                List.of(lsp("noSort2", null, false), lsp("withSort", "0001", false), lsp("noSort1", null, false)));
+        assertEquals("withSort", sorted.get(0).label()); // has sortText → before the nulls
+        assertEquals("noSort1", sorted.get(1).label()); // null sortText → alphabetical fallback
+        assertEquals("noSort2", sorted.get(2).label());
+    }
 }

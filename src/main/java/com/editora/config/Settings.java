@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 28;
+    public static final int SCHEMA_VERSION = 29;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -72,6 +72,8 @@ public class Settings {
     /** Mermaid keyword + snippet autocomplete in .mmd buffers; on by default but only effective when
      *  Mermaid support is enabled and the tools are detected. */
     private boolean autocompleteMermaid = true;
+    /** Auto-show the IntelliJ-style documentation popup beside the completion list (Ctrl+Q toggles it). */
+    private boolean completionDoc = true;
 
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
@@ -443,6 +445,14 @@ public class Settings {
 
     public void setAutocompleteMermaid(boolean autocompleteMermaid) {
         this.autocompleteMermaid = autocompleteMermaid;
+    }
+
+    public boolean isCompletionDoc() {
+        return completionDoc;
+    }
+
+    public void setCompletionDoc(boolean completionDoc) {
+        this.completionDoc = completionDoc;
     }
 
     public String getSpellLanguage() {

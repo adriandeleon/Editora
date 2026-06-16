@@ -1238,20 +1238,64 @@
 .completion-list .list-cell:filled:selected {
     -fx-background-color: -color-accent-emphasis;
 }
-.completion-list .list-cell:filled:selected .completion-label,
 .completion-list .list-cell:filled:selected .completion-detail {
     -fx-text-fill: -color-fg-emphasis;
 }
+/* Label text runs are Text nodes inside a TextFlow, so they fill via -fx-fill (not -fx-text-fill). */
+.completion-list .list-cell:filled:selected .completion-label-text,
+.completion-list .list-cell:filled:selected .completion-match {
+    -fx-fill: -color-fg-emphasis;
+}
+/* The per-kind glyph is an SVGPath with the .toolbar-icon class; recolor it on the selected row. */
+.completion-list .list-cell:filled:selected .completion-icon .toolbar-icon {
+    -fx-fill: -color-fg-emphasis;
+}
 .completion-label {
     -fx-text-fill: -color-fg-default;
+}
+.completion-label-text {
+    -fx-fill: -color-fg-default;
+}
+/* The typed characters, bolded (IntelliJ-style). */
+.completion-match {
+    -fx-fill: -color-accent-fg;
+    -fx-font-weight: bold;
 }
 .completion-detail {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;
 }
 /* Snippet rows get an accent label so they read as "expandable" vs plain words. */
-.completion-kind-snippet .completion-label {
+.completion-kind-snippet .completion-label-text {
+    -fx-fill: -color-accent-fg;
+}
+/* Deprecated entries are struck through (set in code); dim them a touch when not selected. */
+.completion-deprecated .completion-label-text {
+    -fx-fill: -color-fg-muted;
+}
+
+/* Documentation side-popup (IntelliJ "quick documentation"), shown beside the completion list. */
+.completion-doc-popup {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-padding: 8 10 8 10;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 10, 0.1, 0, 2);
+}
+.completion-doc-scroll {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+.completion-doc-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+/* The declaration/signature header at the top of the doc popup — monospace, wraps, slightly emphasized. */
+.completion-doc-signature {
+    -fx-font-family: monospace;
+    -fx-font-size: 12px;
     -fx-text-fill: -color-accent-fg;
+    -fx-padding: 0 0 2 0;
 }
 
 /* Inline "ghost text" completion suffix drawn after the caret (prose buffers). Muted + transparent so

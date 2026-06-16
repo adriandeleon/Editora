@@ -4,7 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.completion.Completion;
+import com.editora.completion.CompletionIconKind;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.CompletionItemTag;
 import org.eclipse.lsp4j.InsertTextFormat;
 
 /**
@@ -12,6 +15,11 @@ import org.eclipse.lsp4j.InsertTextFormat;
  * insert text prefers an explicit {@code insertText}/{@code textEdit} newText; snippet-format items fall
  * back to the plain label (Editora inserts literal text for LSP items rather than running a snippet
  * session), so server placeholders like {@code $0} are never inserted verbatim.
+ *
+ * <p>The IntelliJ-style presentation fields are populated here (the only place that touches lsp4j's
+ * {@code CompletionItemKind}/tags): {@code iconKind} for the per-row glyph, the right-hand {@code detail}
+ * (type/container, enriched from {@code labelDetails}), {@code sortText}/{@code preselect} for relevance
+ * ordering, the {@code deprecated} flag, and the raw item as an opaque resolve token for the doc popup.
  */
 public final class CompletionMapper {
 
@@ -37,11 +45,78 @@ public final class CompletionMapper {
             }
             String label = item.getLabel().strip();
             String insert = insertText(item, label);
-            String detail = item.getDetail();
             Runnable onAccept = onAcceptFor == null ? null : onAcceptFor.apply(item);
-            out.add(Completion.lsp(label, insert, detail == null ? "" : detail, onAccept));
+            out.add(Completion.lsp(
+                    label,
+                    insert,
+                    detailText(item),
+                    onAccept,
+                    iconKindOf(item.getKind()),
+                    item.getSortText(),
+                    Boolean.TRUE.equals(item.getPreselect()),
+                    isDeprecated(item),
+                    item));
         }
         return out;
+    }
+
+    /** Maps lsp4j's {@code CompletionItemKind} to the editor's display kind — the sole lsp4j-kind touchpoint. */
+    static CompletionIconKind iconKindOf(CompletionItemKind k) {
+        if (k == null) {
+            return CompletionIconKind.OTHER;
+        }
+        return switch (k) {
+            case Method -> CompletionIconKind.METHOD;
+            case Function -> CompletionIconKind.FUNCTION;
+            case Constructor -> CompletionIconKind.CONSTRUCTOR;
+            case Field -> CompletionIconKind.FIELD;
+            case Property -> CompletionIconKind.PROPERTY;
+            case Variable -> CompletionIconKind.VARIABLE;
+            case Class -> CompletionIconKind.CLASS;
+            case Interface -> CompletionIconKind.INTERFACE;
+            case Module -> CompletionIconKind.MODULE;
+            case Unit -> CompletionIconKind.UNIT;
+            case Value -> CompletionIconKind.VALUE;
+            case Enum -> CompletionIconKind.ENUM;
+            case Keyword -> CompletionIconKind.KEYWORD;
+            case Snippet -> CompletionIconKind.SNIPPET;
+            case Color -> CompletionIconKind.COLOR;
+            case File -> CompletionIconKind.FILE;
+            case Reference -> CompletionIconKind.REFERENCE;
+            case Folder -> CompletionIconKind.FOLDER;
+            case EnumMember -> CompletionIconKind.ENUM_MEMBER;
+            case Constant -> CompletionIconKind.CONSTANT;
+            case Struct -> CompletionIconKind.STRUCT;
+            case Event -> CompletionIconKind.EVENT;
+            case Operator -> CompletionIconKind.OPERATOR;
+            case TypeParameter -> CompletionIconKind.TYPE_PARAMETER;
+            case Text -> CompletionIconKind.TEXT;
+        };
+    }
+
+    /** The right-hand muted hint: the type/container — {@code labelDetails.description} when present, else
+     *  {@code detail}; newlines collapsed so it stays a single line. */
+    static String detailText(CompletionItem item) {
+        String desc =
+                item.getLabelDetails() == null ? null : item.getLabelDetails().getDescription();
+        String d = (desc != null && !desc.isBlank()) ? desc : item.getDetail();
+        if (d == null) {
+            return "";
+        }
+        return d.replaceAll("\\s*\\R\\s*", " ").strip();
+    }
+
+    /** Whether the item is deprecated — via the modern {@code tags} list or the legacy {@code deprecated} flag. */
+    @SuppressWarnings("deprecation")
+    static boolean isDeprecated(CompletionItem item) {
+        if (item.getTags() != null) {
+            for (CompletionItemTag t : item.getTags()) {
+                if (t == CompletionItemTag.Deprecated) {
+                    return true;
+                }
+            }
+        }
+        return Boolean.TRUE.equals(item.getDeprecated());
     }
 
     /** Whether {@code item} may carry deferred edits (auto-import) — has resolve data or additional edits. */
