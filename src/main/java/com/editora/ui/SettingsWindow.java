@@ -124,6 +124,7 @@ public class SettingsWindow {
     private ComboBox<String> editorThemeCombo;
     private Spinner<Integer> tabSizeSpinner;
     private Spinner<Integer> fillColumnSpinner;
+    private ComboBox<String> indentStyleCombo;
     private CheckBox columnRulerCheck;
     private CheckBox lineHighlightCheck;
     private CheckBox lineNumbersCheck;
@@ -538,6 +539,28 @@ public class SettingsWindow {
 
         pdfLineNumbersCheck = viewCheck(tr("settings.pdf.lineNumbers"), Settings::setPdfLineNumbers);
         pdfHighlightCheck = viewCheck(tr("settings.pdf.highlight"), Settings::setPdfSyntaxHighlighting);
+        indentStyleCombo = new ComboBox<>();
+        indentStyleCombo.getItems().setAll("detect", "space", "tab");
+        indentStyleCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String key) {
+                return indentStyleName(key);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        indentStyleCombo.setPrefWidth(170);
+        indentStyleCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setIndentStyle(now);
+            apply();
+        });
+
         pdfPageSizeCombo = new ComboBox<>();
         pdfPageSizeCombo.getItems().setAll("letter", "a4");
         pdfPageSizeCombo.setConverter(new StringConverter<>() {
@@ -1063,6 +1086,12 @@ public class SettingsWindow {
                 multiCaretCheck,
                 "multiple cursors carets column box selection alt drag vs code");
         Label indent = section(p, tr("settings.section.indentation"));
+        row(
+                p,
+                Category.EDITOR,
+                indent,
+                labeled(tr("settings.indentStyle"), indentStyleCombo),
+                "indent style tabs spaces detect auto width");
         row(
                 p,
                 Category.EDITOR,
@@ -2433,6 +2462,7 @@ public class SettingsWindow {
             }
             editorThemeCombo.setValue(editorTheme);
             tabSizeSpinner.getValueFactory().setValue(settings.getTabSize());
+            indentStyleCombo.setValue(settings.getIndentStyle());
             fillColumnSpinner.getValueFactory().setValue(settings.getFillColumn());
             columnRulerCheck.setSelected(settings.isShowColumnRuler());
             lineHighlightCheck.setSelected(settings.isHighlightCurrentLine());
@@ -2936,6 +2966,7 @@ public class SettingsWindow {
             toolStripeCheck.setSelected(s.isShowToolStripe());
             markdownFormatBarCheck.setSelected(s.isMarkdownFormatBar());
             editorConfigCheck.setSelected(s.isEditorConfigSupport());
+            indentStyleCombo.setValue(s.getIndentStyle());
             multiCaretCheck.setSelected(s.isMultiCaret());
             projectsCheck.setSelected(s.isProjectSupport());
         } finally {
@@ -3064,6 +3095,15 @@ public class SettingsWindow {
             case "es" -> tr("spell.lang.es");
             case "fr" -> tr("spell.lang.fr");
             default -> id;
+        };
+    }
+
+    /** Friendly label for a global indent-style id ({@code detect}/{@code space}/{@code tab}); shared with the palette picker. */
+    public static String indentStyleName(String id) {
+        return switch (id == null ? "detect" : id) {
+            case "space" -> tr("settings.indentStyle.space");
+            case "tab" -> tr("settings.indentStyle.tab");
+            default -> tr("settings.indentStyle.detect");
         };
     }
 

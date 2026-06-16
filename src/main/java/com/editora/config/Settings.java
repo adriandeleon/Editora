@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 30;
+    public static final int SCHEMA_VERSION = 31;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -34,6 +34,12 @@ public class Settings {
     private boolean editorThemeUserSet;
 
     private int tabSize = 4;
+    /**
+     * Global indent unit for Tab/Enter: {@code "detect"} (per-file auto-detection, default), {@code "space"}
+     * (force {@link #tabSize} spaces), or {@code "tab"}. A file's {@code .editorconfig} {@code indent_style}
+     * still wins over this when EditorConfig is enabled.
+     */
+    private String indentStyle = "detect";
     /** Target column for the Emacs-style fill commands (M-q / fill-region); Emacs default. */
     private int fillColumn = com.editora.editor.Filler.DEFAULT_FILL_COLUMN;
 
@@ -273,6 +279,15 @@ public class Settings {
 
     public void setTabSize(int tabSize) {
         this.tabSize = tabSize;
+    }
+
+    /** {@code "detect"} (default), {@code "space"}, or {@code "tab"}. */
+    public String getIndentStyle() {
+        return indentStyle == null ? "detect" : indentStyle;
+    }
+
+    public void setIndentStyle(String indentStyle) {
+        this.indentStyle = indentStyle;
     }
 
     public int getFillColumn() {

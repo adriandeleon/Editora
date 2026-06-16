@@ -66,6 +66,8 @@ public final class StatusBar extends HBox {
     private final Label endings = segment("buffer.convertLineEndings", tr("statusbar.tip.convertEndings"));
     private final Label size = new Label();
     private final Label encoding = new Label("UTF-8");
+    /** Shown when an {@code .editorconfig} governs the active buffer; clickable → open that file. */
+    private final Label editorConfig = segment("editorConfig.openActive", tr("statusbar.tip.editorConfig"));
     /** Read-only ("View mode") indicator; shown only when the active buffer is non-editable. */
     private final Label readOnly = segment("view.toggleReadOnly", tr("statusbar.tip.readOnly"));
     /** Text-zoom percentage (clickable to reset to 100%). */
@@ -95,6 +97,11 @@ public final class StatusBar extends HBox {
         size.getStyleClass().add("status-segment");
         size.setTooltip(new Tooltip(tr("statusbar.tip.fileSize")));
         encoding.getStyleClass().add("status-segment");
+
+        editorConfig.getStyleClass().add("status-editorconfig");
+        editorConfig.setText(tr("statusbar.editorConfig"));
+        editorConfig.setVisible(false); // shown only when an .editorconfig governs the active buffer
+        editorConfig.setManaged(false);
 
         readOnly.setText(tr("statusbar.readOnly"));
         readOnly.getStyleClass().add("status-readonly");
@@ -142,6 +149,7 @@ public final class StatusBar extends HBox {
                         zoomGroup(),
                         position,
                         language,
+                        editorConfig,
                         indent,
                         endings,
                         encoding,
@@ -391,6 +399,12 @@ public final class StatusBar extends HBox {
                 hasBuffer
                         ? com.editora.editorconfig.EditorConfigCharset.displayName(buffer.getEffectiveCharset())
                         : "UTF-8");
+        // Show the EditorConfig indicator only when an .editorconfig actually applies to the active buffer
+        // (the buffer's resolved properties are non-empty). Hidden in Simple UI mode.
+        var ecProps = hasBuffer ? buffer.getEditorConfigProps() : null;
+        boolean ecActive = ecProps != null && !ecProps.isEmpty() && !simpleMode;
+        editorConfig.setVisible(ecActive);
+        editorConfig.setManaged(ecActive);
         zoomPercent.setText(Math.round(settings.get().getFontZoom() * 100) + "%");
         if (!hasBuffer) {
             return;

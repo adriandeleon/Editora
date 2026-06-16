@@ -998,6 +998,11 @@
     -fx-text-fill: -color-accent-fg;
 }
 
+/* EditorConfig segment: a subtle accent indicating an .editorconfig governs the active file. */
+.status-bar .status-editorconfig {
+    -fx-text-fill: -color-accent-fg;
+}
+
 /* MCP server segment: a green "running" pill, deliberately noticeable (a local agent endpoint is live). */
 .status-bar .status-mcp {
     -fx-text-fill: -color-success-fg;
