@@ -36,7 +36,8 @@ Emacs-style keymap or a fuzzy command palette.
 ## Features
 
 - **Command-driven core** — every action is a `Command`; bind it to a chord or run it
-  from the M-x command palette.
+  from the M-x command palette, which shows each command's one-line description and opens its online
+  docs with `C-h`.
 - **Keyboard "Jump to…" popups** — fuzzy pickers for recent files (`C-x C-r`), the active file's
   structure/symbols (`M-g i`), open files/tabs (`C-x b`), and tool windows (`M-g t`) — keyboard-first
   alternatives to their list/tool-window UIs.
@@ -46,7 +47,9 @@ Emacs-style keymap or a fuzzy command palette.
 - **Projects** (off by default; enable in Settings) — VSCode single-folder-workspace style: a root
   folder + its own saved session (open files, layout, folds), shown as a filterable file tree in the
   Project tool window with a project switcher in the toolbar. Open (`C-x C-p`)/switch (`C-x p`)/close
-  via the palette or toolbar; switching restores that project's files and layout.
+  via the palette or toolbar; switching restores that project's files and layout. With no project open, the
+  Project tool window becomes a **"Current Folder"** explorer rooted at the active file's directory, tracking
+  the focused tab.
 - **Keybinding themes** — choose **Emacs** (default), **CUA**, **Sublime Text**, **VSCode**, or
   **IntelliJ IDEA** in Settings → Keymaps (or the `Keymap: Select…` command); switching is live, no
   restart, and each theme adapts to macOS (Cmd) vs Windows/Linux (Ctrl). Emacs uses multi-key chord
@@ -73,6 +76,9 @@ Emacs-style keymap or a fuzzy command palette.
   bracket matching the one next to the caret is highlighted.
 - **Comment / uncomment** (`M-;`) — toggles a line comment for a single line and a block/region comment
   for a multi-line selection, using the language's comment syntax (`//`, `#`, `<!-- -->`, `/* */`, `--`, …).
+- **Fill paragraph** (`M-q`) — re-wrap a paragraph (or the selection, with "Fill Region") to a fill column
+  (`C-x f`, default 70), preserving its indentation and an adaptive fill prefix — line comments, Markdown
+  blockquotes (`>`), and Javadoc (`*`) — so code comments and quoted text wrap correctly.
 - **Multiple cursors & column selection** — VS Code–style multi-caret editing: add a caret at the next
   occurrence of the selection / above / below, type or edit everywhere at once, `Esc` to collapse; plus
   Alt-drag column/box selection. (Powered by a personal RichTextFX fork.)
@@ -85,8 +91,9 @@ Emacs-style keymap or a fuzzy command palette.
   auto-detected on `PATH` (Java/JDT LS, TypeScript/JavaScript, Python/Pyright, Go, Rust, C/C++/clangd,
   C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML).
   Inline diagnostics + a Problems tool window (`M-8`) + minimap/scrollbar stripes, go-to-definition
-  (`M-.`), find references (`M-?`), hover docs (`C-c h`), LSP-backed completion, and auto-imports.
-  Off by default; per-server command + enable in *Settings → LSP*.
+  (`M-.`), find references (`M-?`), hover docs (`C-c h`), LSP-backed completion, auto-imports, and
+  **Format Document** (whole-file reformat via the server, when it advertises formatting — palette or the
+  editor right-click menu). Off by default; per-server command + enable in *Settings → LSP*.
 - **Search** — incremental find bar (`C-s`/`C-r`) with regex, case, and whole-word toggles, a match
   count, and live highlight-all; **Find in Files** (`C-S-f`) across the project + open buffers with
   replace-in-files and a results tool window (`M-6`); and **AceJump** (`M-g j`) — type a character, then
@@ -124,7 +131,8 @@ Emacs-style keymap or a fuzzy command palette.
   floating control top-right of the editor, rendered natively (CommonMark + GFM: tables, task lists,
   strikethrough, autolinks) with **GitHub-style** output — task-list checkboxes, inline-code pills,
   underlined h1/h2, and **images** (local and remote). Live-updating and theme-matched; the mode is
-  remembered per file. Zoom the preview text with its `−`/`+` control or, in Preview mode,
+  remembered per file. In Split mode the editor and preview scroll together (the pane under the mouse
+  drives the other). Zoom the preview text with its `−`/`+` control or, in Preview mode,
   **Ctrl + mouse wheel**.
 - **Mermaid diagrams** — render Mermaid in the preview (standalone `.mmd` files and ` ```mermaid `
   fenced blocks inside Markdown), export a diagram to **SVG / PNG / PDF**, get live `maid` linting with
@@ -158,6 +166,10 @@ Emacs-style keymap or a fuzzy command palette.
   area when no files are open, instead of a blank Untitled buffer; `--new-file[=name]` opens a fresh buffer
   instead.
 - **Recent files** — persistent most-recently-used list.
+- **File-type icons** — every file shows a glyph for its type (the Java/Python/CSS/… logo, an image,
+  archive, PDF, table, … glyph, or a generic document fallback) everywhere it's listed: editor tabs, the
+  Project tree, the Open-Files / Recent pickers, the Switcher, and the file/folder finders. Monochrome
+  single-path glyphs that track the light/dark theme (Simple Icons + Material Design Icons).
 - **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
   Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`
   is a cross-file jump picker. Reorder bookmarks (and file groups) in the tool window with Alt+Up/Down,
@@ -198,9 +210,13 @@ Emacs-style keymap or a fuzzy command palette.
   size/project). On by default; local-only; off in Simple UI mode.
 - **HTTP client** _(Beta)_ — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
   Editora's **built-in** HTTP client; the response (status, headers, pretty-printed JSON body, timing/
-  size) shows in an HTTP Client tool window (`M-0`). Supports `{{variable}}`/`@var` substitution,
-  environment files (`http-client.env.json`) with a picker, run-whole-file, and saving the response. Off
-  by default (*Settings → HTTP Client*).
+  size) shows in an HTTP Client tool window (`M-0`) with a content-type-highlighted viewer, an in-session
+  history, **Copy as cURL** / **Import cURL**, and Open-in-editor. Close to IntelliJ's HTTP Client: `{{var}}`/
+  `@var` substitution and **dynamic variables** (`{{$random.*}}`, `{{$datetime}}` with date math, `{{$dotenv.X}}`,
+  …), **request chaining** (reference an earlier request's response), **multipart** and external-file bodies,
+  **environment files** (`http-client.env.json` + a `$shared` section) with a picker, **Basic/Digest auth**
+  shorthand, automatic URL encoding, response-to-file redirects, per-request directives, run-whole-file, and
+  saving the response. Off by default (*Settings → HTTP Client*).
 - **HTML live preview** _(Beta)_ — a floating browser icon on any HTML file opens it in a detected desktop
   browser (Safari, Chrome, Firefox, Edge, or the system default), served over a tiny **loopback** web server
   so its CSS/JS/images load. The page **reloads live as you type** (unsaved edits included). Off by default
@@ -225,6 +241,14 @@ Emacs-style keymap or a fuzzy command palette.
   *who* published — not a sandbox. See [`docs/plugins.md`](docs/plugins.md),
   [`examples/example-plugin/`](examples/example-plugin/), and
   [`examples/editora-plugins-registry/`](examples/editora-plugins-registry/).
+- **MCP server** _(Beta)_ — embed a [Model Context Protocol](https://modelcontextprotocol.io) server in the
+  running editor so an LLM agent (Claude Code, etc.) can observe live editor state and drive the command
+  registry. A small **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** exposes six tools —
+  `list_open_files`, `read_buffer`, `get_diagnostics`, `find_in_files`, `list_commands`, and
+  `execute_command` — and writes its endpoint to `<configDir>/mcp-endpoint.json` for discovery. A status-bar
+  **MCP** indicator shows when it's running (click to copy the connection command). Off by default and
+  guarded by a security-notice dialog — enable it under *Settings → MCP Server* (or the **Toggle MCP Server**
+  command). No external tool or new dependency (the JDK's built-in `HttpServer`).
 - **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Git Log, File History, Structure, File
   Information, Bookmarks, Personal Notes, Problems, Search Results, Run, Debug, HTTP Client) — plus any
   contributed by a plugin.

@@ -3,6 +3,20 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] MCP server — a minimal Model Context Protocol server (loopback HTTP + bearer-token auth) embedded in
+      the editor, exposing live state + the command registry to an LLM agent (six tools); off by default
+      behind a security notice (Settings → MCP Server). No new dependency
+- [x] Local file history — IntelliJ-style snapshots of local files on save / auto-save / before an
+      external reload, independent of any VCS; a **File History** tool window (`M-g l`) lists revisions
+      (date/time, reason, size; latest tagged *Current*), double-click for a read-only diff vs current,
+      restore = undoable whole-file replace. Gzip'd content-addressed blobs under `<configDir>/history/`,
+      deduped, configurable retention. On by default; local-only; off in Simple UI
+- [x] Emacs fill commands — Fill Paragraph (`M-q`), Fill Region, Set Fill Column (`C-x f`): re-wrap to a
+      fill column, preserving indentation + an adaptive fill prefix (line comments, `>` quotes, Javadoc `*`)
+- [x] LSP Format Document — whole-file reformat via the language server (palette + editor right-click),
+      undoable, when the server advertises formatting
+- [x] File-type icons — per-type glyphs everywhere a file is listed (tabs, Project tree, pickers, Switcher,
+      finders); plus a "Current Folder" Project explorer when no project is open
 - [x] Plugin support + a signed plugin registry — extend Editora via a Java SPI or a declarative
       `plugin.json` (commands, keybindings, tool windows, editor menu items, status-bar segments;
       snippets/templates). Off by default, full-trust, loaded via a child `URLClassLoader` so the same jar
@@ -31,8 +45,11 @@ A backlog of planned features and improvements. Unordered within each section.
       for remote files. Off by default; built on Apache MINA SSHD (Remote: Connect / Saved Connections /
       Open File / Disconnect)
 - [x] HTTP Client (`.http`/`.rest` files) — a green ▶ on every request runs it with the built-in JDK
-      HTTP client; response (status/headers/pretty-JSON/timing) in an HTTP Client tool window (`M-0`);
-      `{{var}}`/`@var` substitution, environment files (`http-client.env.json`), run-whole-file
+      HTTP client; response (status/headers/pretty-JSON/timing) in an HTTP Client tool window (`M-0`) with a
+      highlighted viewer, history, Copy/Import as cURL. Near IntelliJ parity: `{{var}}`/`@var` + dynamic vars
+      (`$random`/`$datetime` with date math/`$dotenv`), request chaining, multipart + external-file bodies,
+      environment files (`http-client.env.json` + `$shared`), Basic/Digest auth, auto URL-encoding,
+      response-to-file, per-request directives, run-whole-file
 - [x] HTML Live Preview — a floating browser icon on `.html`/`.htm`/`.xhtml` files opens them in a detected
       browser (Safari/Chrome/Firefox/Edge/system default) served over a loopback JDK `HttpServer`, with
       live-as-you-type reload (assets load from disk; the page from the live buffer text); off by default
@@ -99,9 +116,13 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Autoclose `()[]{}` and quotes
 - [x] Highlight matching braces
 - [x] Comment/uncomment code region
+- [x] Fill paragraph/region (Emacs `M-q` / Fill Region / `C-x f` set fill column) — re-wrap to a fill
+      column, preserving indentation + an adaptive fill prefix (line comments, `>` quotes, Javadoc `*`)
 - [x] Smart line start (`C-a`) — first press to the first non-whitespace, second toggles to column 0
 - [x] Markdown formatting — format bar + smart list/heading/link/table editing (see "Recently shipped")
-- [ ] Format document — whole-document reformat (will ride LSP formatting; GFM table reflow exists)
+- [x] Format document — **LSP: Format Document** reformats the whole file via the language server
+      (`textDocument/formatting`, when it advertises formatting), undoable; palette + editor right-click.
+      (GFM table reflow also exists.)
 - [x] Column select support — column/block selection (overlay + column-aware edits)
 - [x] Multiple cursors support — VS Code–style multi-caret (add at next occurrence / above / below) +
       Alt-drag column selection (personal RichTextFX fork); see "Recently shipped"
@@ -122,8 +143,9 @@ A backlog of planned features and improvements. Unordered within each section.
       `C-M-i`/`M-/` trigger; Settings toggle. (Next: document-words, LSP, fuzzy matching.)
 - [x] LSP support — **21 servers** (see "Recently shipped"): diagnostics + Problems window (`M-8`) +
       minimap/scrollbar stripes, go-to-definition (`M-.`), find references (`M-?`), hover (`C-c h`),
-      LSP-backed completion, and TS/PHP auto-imports. Server-centric registry, per-server Settings, off by
-      default. (Next: formatting / format-on-save; rename, code actions, quick fixes; document symbols.)
+      LSP-backed completion, TS/PHP auto-imports, and **Format Document** (whole-file reformat).
+      Server-centric registry, per-server Settings, off by default. (Next: format-on-save; rename, code
+      actions, quick fixes; document symbols.)
 - [ ] Fix structure for the 21 languages we support
 - [x] Multi language support — UI string translation (en/it/es/fr/pt/de); see "UI localization (i18n)"
       under "Recently shipped"
@@ -161,7 +183,11 @@ A backlog of planned features and improvements. Unordered within each section.
 ## UI / UX
 - [ ] UI final touches (fonts, colors, etc.)
 - [x] Pretty up Settings Window — sidebar categories, search, live preview, reset
-- [ ] Upgrade breadcrumbs support
+- [x] File-type icons — a per-type glyph (language logos, image/archive/PDF/table/…, generic fallback)
+      everywhere a file is listed: tabs, Project tree, Open-Files/Recent pickers, Switcher, file/folder finders
+- [x] "Current Folder" explorer — with no project open, the Project tool window roots at the active file's
+      folder and follows the focused tab
+- [ ] Upgrade breadcrumbs support — _partial:_ Reveal in File Manager / Open Terminal Here on a crumb
 - [ ] Fix Zen mode
 
 ## Extensibility & integration
@@ -182,7 +208,13 @@ A backlog of planned features and improvements. Unordered within each section.
   *Deferred: sandboxing, hot reload, gutter-marker contributions, GitHub-API/per-repo discovery,
   per-plugin/TOFU signing, auto-update.*
 - [ ] External Tools support
-- [ ] MCP support
+- [x] MCP support — a minimal **Model Context Protocol** server embedded in the editor (loopback HTTP +
+      bearer-token auth) so an LLM agent (Claude Code, …) can observe state + drive the command registry.
+      Six tools: `list_open_files`, `read_buffer`, `get_diagnostics`, `find_in_files`, `list_commands`,
+      `execute_command`; writes `<configDir>/mcp-endpoint.json` for discovery; status-bar indicator
+      (click to copy the connection command). Off by default behind a security-notice dialog
+      (Settings → MCP Server; `view.toggleMcp` / `mcp.copyEndpoint`). No new dependency (`jdk.httpserver`).
+      (Next: more tools, resources/prompts, stdio transport.)
 - [ ] Headless support
 
 ## Packaging
