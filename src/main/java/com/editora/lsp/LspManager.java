@@ -329,6 +329,61 @@ public final class LspManager {
         return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
     }
 
+    /** True if {@code file}'s server is ready and advertises range formatting (for Tab line re-indent). */
+    public boolean supportsRangeFormatting(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && rangeFormattingProvider(s.capabilities());
+    }
+
+    /** Pure: whether a server's capabilities include {@code documentRangeFormattingProvider} (null-safe). */
+    static boolean rangeFormattingProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return false;
+        }
+        var p = caps.getDocumentRangeFormattingProvider();
+        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
+    }
+
+    /**
+     * Requests range formatting ({@code textDocument/rangeFormatting}) over the line range
+     * {@code [startLine..endLine]} and delivers the resulting edits to {@code cb} on the FX thread (empty
+     * on error / unsupported). Used by Tab to re-indent the current line to the server's convention.
+     */
+    public void rangeFormatting(
+            Path file,
+            int startLine,
+            int startChar,
+            int endLine,
+            int endChar,
+            int tabSize,
+            boolean insertSpaces,
+            Consumer<List<com.editora.editor.LspTextEdit>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        org.eclipse.lsp4j.Range range =
+                new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
+        s.rangeFormatting(uri(file), range, new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
+                .whenComplete((result, error) -> {
+                    List<com.editora.editor.LspTextEdit> edits = new ArrayList<>();
+                    if (error == null && result != null) {
+                        for (org.eclipse.lsp4j.TextEdit e : result) {
+                            if (e != null && e.getRange() != null) {
+                                edits.add(new com.editora.editor.LspTextEdit(
+                                        e.getRange().getStart().getLine(),
+                                        e.getRange().getStart().getCharacter(),
+                                        e.getRange().getEnd().getLine(),
+                                        e.getRange().getEnd().getCharacter(),
+                                        e.getNewText() == null ? "" : e.getNewText()));
+                            }
+                        }
+                    }
+                    Platform.runLater(() -> cb.accept(edits));
+                });
+    }
+
     /**
      * Requests whole-document formatting ({@code textDocument/formatting}) for {@code file} and delivers the
      * resulting edits to {@code cb} on the FX thread (empty list if the server returns nothing or errors).

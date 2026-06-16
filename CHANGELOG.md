@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tab re-indents the current line to the language server's convention.** In an LSP language whose server
+  supports range formatting (e.g. Java via jdtls), pressing Tab snaps the current line's indentation to
+  what the formatter would produce — only the leading whitespace changes, the rest of the line is left
+  alone. It still accepts an open completion / advances a snippet tab-stop first, indents a multi-line
+  selection, and on a blank line or when the server can't format it falls back to the normal smart-Tab
+  indent. Uses `textDocument/rangeFormatting` (resolved off-thread).
+
 - **IntelliJ-style code completion popup.** The autocomplete list now looks and behaves much closer to
   IntelliJ IDEA:
   - **Per-kind icons** — each row shows a glyph for its kind (method, field, variable, class, interface,

@@ -357,6 +357,17 @@ final class LanguageServerSession implements LanguageClient {
         return server.getTextDocumentService().formatting(params).exceptionally(t -> List.of());
     }
 
+    /** Range formatting ({@code textDocument/rangeFormatting}) over {@code range} → the edits, or empty. */
+    CompletableFuture<List<? extends TextEdit>> rangeFormatting(
+            String uri, org.eclipse.lsp4j.Range range, FormattingOptions options) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        org.eclipse.lsp4j.DocumentRangeFormattingParams params =
+                new org.eclipse.lsp4j.DocumentRangeFormattingParams(new TextDocumentIdentifier(uri), options, range);
+        return server.getTextDocumentService().rangeFormatting(params).exceptionally(t -> List.of());
+    }
+
     /** Resolves a completion item ({@code completionItem/resolve}) to fill in its {@code additionalTextEdits}
      *  (e.g. a TypeScript auto-import); returns the item unchanged if the server can't resolve. */
     CompletableFuture<CompletionItem> resolveCompletion(CompletionItem item) {
