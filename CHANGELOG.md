@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project tool window auto-refreshes on filesystem changes.** A watcher on the project tree (the root +
+  currently-expanded folders) refreshes the view when files are created, deleted, renamed, or modified on
+  disk — by another app, a build, git, or Editora itself — preserving expanded folders and the selection.
+  Local projects only; on macOS (where the JDK uses a polling watcher) external changes may take a few
+  seconds to appear. Deleting a file from the tree's right-click menu now also removes its row immediately.
+
 - **EditorConfig status-bar indicator.** When an `.editorconfig` governs the current file, the status bar
   shows an **EditorConfig** segment; clicking it (or the **EditorConfig: Open Active File** palette command)
   opens the nearest governing `.editorconfig`. Hidden when no config applies and in Simple UI mode.

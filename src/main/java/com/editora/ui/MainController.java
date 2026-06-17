@@ -1455,6 +1455,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         printService.shutdown();
         runService.stop();
         autoSaveExecutor.shutdownNow();
+        projectPanel.dispose(); // stop the project tree's filesystem watcher + its daemon thread
     }
 
     /**
