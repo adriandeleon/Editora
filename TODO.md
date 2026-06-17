@@ -152,9 +152,12 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] LSP support — **21 servers** (see "Recently shipped"): diagnostics + Problems window (`M-8`) +
       minimap/scrollbar stripes, go-to-definition (`M-.`), find references (`M-?`), hover (`C-c h`),
       LSP-backed completion, TS/PHP auto-imports, and **Format Document** (whole-file reformat).
-      Server-centric registry, per-server Settings, off by default. (Next: format-on-save; rename, code
-      actions, quick fixes; document symbols.)
-- [ ] Fix structure for the 21 languages we support
+      Server-centric registry, per-server Settings, off by default. Document symbols power the Structure
+      tool window. (Next: format-on-save; rename, code actions, quick fixes.)
+- [x] Fix structure for the 21 languages we support — the Structure tool window now builds from the
+      language server's `textDocument/documentSymbol` (precise hierarchy, real kinds, per-kind icons,
+      method signatures), with the fold-region/TextMate heuristic as the fallback for non-LSP files;
+      sort (Position/Name/Kind) + kind filter, expanded by default
 - [x] Multi language support — UI string translation (en/it/es/fr/pt/de); see "UI localization (i18n)"
       under "Recently shipped"
 
