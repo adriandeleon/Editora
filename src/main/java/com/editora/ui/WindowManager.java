@@ -48,11 +48,16 @@ public class WindowManager {
     private Stage primaryStage;
 
     /**
-     * Debounce for persisting the open-window restore set after a close. The delay must comfortably exceed a
-     * quit's close-handler burst (a few ms) so the timer can't elapse mid-quit and persist a half-drained set
-     * — see {@link #reconcileOpenSet()}. A single in-session close just persists ~⅓ s later.
+     * Debounce for persisting the open-window restore set after a close. Each close calls {@code
+     * playFromStart}, so a run of closes ending in the app quitting (an OS/Cmd-Q burst <em>or</em> the user
+     * clicking each window's close button one after another) keeps resetting the timer; the last close
+     * empties the live set and the JVM exits before it fires, so {@link #reconcileOpenSet()} never persists
+     * a drained set and every window restores next launch. The delay must therefore comfortably exceed the
+     * gap between successive manual window closes — 350 ms was shorter than a human's click-to-click cadence,
+     * so closing two windows one at a time wrongly forgot the first. A genuine single close (the app keeps
+     * running and the user works on past this delay) still persists the reduced set and forgets that window.
      */
-    private final PauseTransition openSetReconcile = new PauseTransition(Duration.millis(350));
+    private final PauseTransition openSetReconcile = new PauseTransition(Duration.seconds(3));
 
     /** A live window: its project key ({@code ""} = the global session), its stage and controller. */
     private record Holder(String key, Stage stage, MainController controller) {}
@@ -96,14 +101,11 @@ public class WindowManager {
             boolean simple) {
         this.primaryStage = primaryStage; // reused for the first window built
         Settings settings = shared.getSettings();
-        if (!settings.isProjectSupport()) {
-            buildWindow("", null, null, targets, zen, newFile, simple);
-            return;
-        }
+        boolean projectsOn = settings.isProjectSupport();
         ProjectManager pm = projects();
         LinkedHashSet<String> toOpen = new LinkedHashSet<>(pm.openProjectIds());
         Project cli = null;
-        if (projectArg != null) {
+        if (projectsOn && projectArg != null) {
             Path root = Path.of(projectArg).toAbsolutePath().normalize();
             String name = root.getFileName() == null
                     ? root.toString()
@@ -111,6 +113,12 @@ public class WindowManager {
             cli = pm.createOrGet(name, root);
             pm.save();
             toOpen.add(cli.id());
+        }
+        // Restore the no-project windows (the global "" window + any untitled "New Window"s) regardless of
+        // the Projects feature; project windows restore only when Projects are enabled. So a project id in
+        // the saved set is dropped when Projects are off, but multiple plain windows still come back.
+        if (!projectsOn) {
+            toOpen.removeIf(key -> !key.isEmpty() && !key.startsWith(UNTITLED_PREFIX));
         }
         if (toOpen.isEmpty()) {
             toOpen.add(""); // nothing remembered ⇒ open the global window
@@ -124,22 +132,36 @@ public class WindowManager {
                                 : toOpen.iterator().next();
 
         for (String key : toOpen) {
-            Project project = key.isEmpty() ? null : findProject(key);
-            if (!key.isEmpty() && project == null) {
+            boolean untitled = key.startsWith(UNTITLED_PREFIX);
+            Project project = (key.isEmpty() || untitled) ? null : findProject(key);
+            if (!key.isEmpty() && !untitled && project == null) {
                 continue; // a stale id (project deleted out from under the open set)
             }
+            Path stateFile = untitled ? untitledStateFile(key) : (project == null ? null : pm.stateFile(project));
             boolean isPrimary = key.equals(primary);
-            buildWindow(
-                    key,
-                    project,
-                    project == null ? null : pm.stateFile(project),
-                    isPrimary ? targets : List.of(),
-                    isPrimary && zen,
-                    isPrimary ? newFile : null,
-                    isPrimary && simple);
-            pm.markOpen(key);
+            try {
+                buildWindow(
+                        key,
+                        project,
+                        stateFile,
+                        isPrimary ? targets : List.of(),
+                        isPrimary && zen,
+                        isPrimary ? newFile : null,
+                        isPrimary && simple);
+                pm.markOpen(key);
+            } catch (RuntimeException | Error t) {
+                // One window failing to build (corrupt session, etc.) must NOT abort restoring the rest —
+                // launch runs in App.start with no catch, so an uncaught throw here would silently leave only
+                // the windows built before it. Log and continue with the remaining windows.
+                java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                        .log(java.util.logging.Level.WARNING, "Failed to build window for key '" + key + "'", t);
+            }
+        }
+        if (findHolder(primary) == null && !windows.isEmpty()) {
+            primary = windows.get(0).key(); // the chosen primary failed to build — focus whatever opened
         }
         pm.save();
+        gcOrphanWindowSessions(toOpen);
         focusKey(primary);
     }
 
@@ -157,6 +179,36 @@ public class WindowManager {
         projects().markOpen("");
         setActiveAndSave("");
         return stage;
+    }
+
+    /** Prefix marking an "untitled" no-project window key ({@code untitled:<uuid>}); see {@link #newWindow()}. */
+    private static final String UNTITLED_PREFIX = "untitled:";
+
+    /**
+     * Opens a brand-new editor window not tied to any project (the palette "New Window" command). Unlike
+     * {@link #openOrFocusGlobal()} (which focuses the single global window), this always <em>builds</em> a
+     * new window, so the user can have several side-by-side without loading a project. Each gets a unique
+     * {@code untitled:<uuid>} key and its <b>own</b> session file ({@code windows/<uuid>.json}) — so windows
+     * never clobber each other's open files/layout — and is restored on the next launch like a project
+     * window (when Projects are enabled). Works whether or not Projects are enabled.
+     */
+    public Stage newWindow() {
+        String uuid = java.util.UUID.randomUUID().toString().substring(0, 8);
+        String key = UNTITLED_PREFIX + uuid;
+        Stage stage = buildWindow(key, null, untitledStateFile(key), List.of(), false, null, false);
+        projects().markOpen(key);
+        setActiveAndSave(key);
+        return stage;
+    }
+
+    /** Directory holding per-window session files for untitled no-project windows ({@code windows/<uuid>.json}). */
+    private Path windowsDir() {
+        return shared.getConfigDir().resolve("windows");
+    }
+
+    /** The session file for an {@code untitled:<uuid>} window key. */
+    private Path untitledStateFile(String key) {
+        return windowsDir().resolve(key.substring(UNTITLED_PREFIX.length()) + ".json");
     }
 
     /** Opens (or focuses) {@code project}'s window. A null/empty-id project routes to the global window. */
@@ -307,7 +359,9 @@ public class WindowManager {
             Stage stage = primaryStage != null ? primaryStage : new Stage();
             primaryStage = null; // only the first window reuses the JavaFX primary stage
             CommandRegistry registry = new CommandRegistry();
-            ConfigManager config = project == null ? new ConfigManager(shared) : new ConfigManager(shared, stateFile);
+            // A no-project window normally uses the default workspace-state.json (stateFile null); a project
+            // OR an extra "untitled" no-project window passes its own session file so windows never clobber.
+            ConfigManager config = stateFile == null ? new ConfigManager(shared) : new ConfigManager(shared, stateFile);
             config.setWorkspaceStateFile(config.getWorkspaceStateFile()); // load this window's session
 
             FXMLLoader loader = new FXMLLoader(WindowManager.class.getResource("main.fxml"));
@@ -439,6 +493,37 @@ public class WindowManager {
         var screens = Screen.getScreensForRectangle(x, y, 1, 1);
         Screen screen = screens.isEmpty() ? Screen.getPrimary() : screens.get(0);
         return screen.getVisualBounds();
+    }
+
+    /**
+     * Deletes {@code windows/<uuid>.json} session files for untitled windows that are no longer in the
+     * open set (i.e. closed in a previous session) — so they don't accumulate. Best-effort; a missing dir
+     * or an unreadable file is ignored. Run once at launch against the set being restored.
+     */
+    private void gcOrphanWindowSessions(java.util.Collection<String> openKeys) {
+        Path dir = windowsDir();
+        if (!java.nio.file.Files.isDirectory(dir)) {
+            return;
+        }
+        java.util.Set<String> keep = new java.util.HashSet<>();
+        for (String k : openKeys) {
+            if (k.startsWith(UNTITLED_PREFIX)) {
+                keep.add(k.substring(UNTITLED_PREFIX.length()) + ".json");
+            }
+        }
+        try (var stream = java.nio.file.Files.list(dir)) {
+            stream.filter(p -> p.getFileName().toString().endsWith(".json"))
+                    .filter(p -> !keep.contains(p.getFileName().toString()))
+                    .forEach(p -> {
+                        try {
+                            java.nio.file.Files.deleteIfExists(p);
+                        } catch (java.io.IOException ignored) {
+                            // leave it; a later launch retries
+                        }
+                    });
+        } catch (java.io.IOException ignored) {
+            // best-effort cleanup
+        }
     }
 
     private Project findProject(String id) {
