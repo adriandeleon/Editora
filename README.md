@@ -141,11 +141,25 @@ Emacs-style keymap or a fuzzy command palette.
   default and is independently selectable in Settings.
 - **Markdown preview** — IntelliJ-style 3-mode view (Editor / Editor + Preview / Preview) via a
   floating control top-right of the editor, rendered natively (CommonMark + GFM: tables, task lists,
-  strikethrough, autolinks) with **GitHub-style** output — task-list checkboxes, inline-code pills,
+  strikethrough, autolinks, plus **YAML front matter**, **footnotes**, **heading anchors**, and
+  **`++inserted++`** text) with **GitHub-style** output — task-list checkboxes, inline-code pills,
   underlined h1/h2, and **images** (local and remote). Live-updating and theme-matched; the mode is
   remembered per file. In Split mode the editor and preview scroll together (the pane under the mouse
   drives the other). Zoom the preview text with its `−`/`+` control or, in Preview mode,
-  **Ctrl + mouse wheel**.
+  **Ctrl + mouse wheel**. The **Structure** tool window shows the document's heading outline.
+- **Markdown authoring** — **paste or drag-drop images** into a saved Markdown file (saved into a sibling
+  `assets/` folder with an `![](…)` link inserted), **smart link paste** (paste a URL over a selection to
+  make `[selection](url)`), and **table editing** with **Tab** / **Shift-Tab** to move between cells and
+  **Enter** to add a row (reflowing as you go) — alongside the existing format bar and smart list/heading
+  editing.
+- **Markdown lint** — high-confidence rules (trailing whitespace, blank-line runs, heading-marker spacing,
+  multiple H1, fenced blocks missing a language, missing final newline, broken reference links) shown as
+  inline squiggles with hover messages and listed in a **Markdown Lint** tool window. On by default;
+  toggle with "View: Toggle Markdown Lint".
+- **LaTeX math** — render inline `$…$` and display `$$…$$` math in the preview (and block formulas in PDF
+  export) via the pure-Java **JLaTeXMath**, with GitHub-style delimiter rules so prose dollar amounts are
+  left alone. **Off by default** — enable under *Settings → Editor → Render LaTeX math* or with
+  "View: Toggle Math Rendering".
 - **Mermaid diagrams** — render Mermaid in the preview (standalone `.mmd` files and ` ```mermaid `
   fenced blocks inside Markdown), export a diagram to **SVG / PNG / PDF**, get live `maid` linting with
   inline error squiggles, and keyword + snippet autocomplete in `.mmd` files. Uses the external
@@ -156,6 +170,9 @@ Emacs-style keymap or a fuzzy command palette.
   vector text (headings, lists, tables, images, embedded diagrams), or a standalone Mermaid `.mmd`
   diagram. Run "File: Export to PDF" / "File: Export Preview to PDF" from the palette; choose line
   numbers, syntax highlighting, and page size (Letter / A4) under *Settings → Editor → PDF Export*.
+- **Export to HTML** — export a Markdown file's rendered preview to a standalone, self-contained `.html`
+  file (embedded stylesheet, heading anchors, math rendered as images). Run "Preview: Export to HTML" from
+  the palette.
 - **Print** — native printing of code or the rendered Markdown preview, with a print-preview window
   first (always light, what-you-preview-is-what-prints), reusing the PDF layout core. Run "File: Print"
   / "File: Print Preview" from the palette.

@@ -3,6 +3,14 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Markdown support improvements — preview **CommonMark extensions** (YAML front matter, footnotes,
+      heading anchors, `++inserted++`); **heading outline** in the Structure tool window; **Markdown lint**
+      (squiggles + tool window; `View: Toggle Markdown Lint`, on by default); **image paste & drag-drop**
+      (into a sibling `assets/` folder); **smart link paste** (URL over a selection → `[sel](url)`); **table
+      cell navigation** (Tab/Shift-Tab between cells, Enter adds a row, reflow); **LaTeX math** via
+      JLaTeXMath (inline `$…$` + display `$$…$$` in the preview and PDF, off by default — `View: Toggle Math
+      Rendering`); and **Export to HTML** (`Preview: Export to HTML`, standalone self-contained file).
+      *Deferred: inline-math in PDF/print, live Mermaid in exported HTML, full base64 image embedding in HTML*
 - [x] TODO / highlight patterns (IntelliJ-style) — configurable regex patterns (TODO + FIXME by default,
       each with a color) highlighted wherever they match in the editor, and listed in a **TODO** tool
       window (`M-g o`) grouped by file (scans the open project's tree, else the open files; double-click to
@@ -88,6 +96,7 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Markdown editing — IntelliJ-style floating format bar on selection (bold/italic/strikethrough/code/
       link/list + Normal–H1…H6), `C-c`-prefixed shortcuts + right-click Format menu; smart list/blockquote
       continuation on Enter, heading promote/demote, link helpers (Ctrl/Cmd-click to open), GFM table reflow
+      + cell navigation (Tab/Shift-Tab, Enter adds a row), image paste/drag-drop, and smart link paste
 - [x] Run a file from a gutter ▶ — Java 25 compact source (`java <file>`), Python (`python3`), and shell
       (`bash`, when the Bash LSP is enabled); streams output into a Run tool window (`M-9`); gated by LSP
 - [x] Print — native printing of code or the Markdown preview with a print-preview window (always light),
