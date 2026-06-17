@@ -34,6 +34,21 @@
 .text.bold       { -fx-fill: #24292f; -fx-font-weight: bold; }
 .text.italic     { -fx-fill: #24292f; -fx-font-style: italic; }
 
+/* LSP semantic tokens (Primer Light defaults). These OVERLAY the lexical TextMate classes — a
+   semantically classified span carries only its `sem-*` class(es), so there's no conflict with the
+   token rules above. Same compound `.text.<class>` form + cache rules. The modifier classes
+   `sem-constant`/`sem-deprecated` are listed LAST so, when appended to a base class (e.g.
+   `sem-variable sem-constant`), they win the fill on source order. Each editor theme overrides these
+   (see editor-themes/*.css) just like the lexical classes; these base values suit Primer Light. */
+.text.sem-parameter { -fx-fill: #24292f; -fx-font-style: italic; }
+.text.sem-variable  { -fx-fill: #24292f; }
+.text.sem-property  { -fx-fill: #0550ae; }
+.text.sem-function  { -fx-fill: #8250df; }
+.text.sem-type      { -fx-fill: #953800; }
+.text.sem-macro     { -fx-fill: #953800; }
+.text.sem-constant  { -fx-fill: #0550ae; } /* readonly/static emphasis */
+.text.sem-deprecated { -fx-fill: #6e7781; -fx-strikethrough: true; } /* TextMate can never do this */
+
 /* Matching-bracket highlight (combined with the bracket's token class, so it keeps its color). A
    semi-transparent box reads on both light and dark editor themes, so no per-theme override is needed.
    Compound `.text.<class>` like the token rules (no descendant combinator → keeps the style cache). */

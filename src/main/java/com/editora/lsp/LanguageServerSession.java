@@ -184,6 +184,48 @@ final class LanguageServerSession implements LanguageClient {
                 });
     }
 
+    /**
+     * The semantic token types/modifiers we understand (the standard LSP 3.16 legend). The server
+     * intersects these with its own and reports the <em>effective</em> legend in its capabilities, which
+     * {@code LspManager} reads to decode responses — so this list only bounds what a server may send.
+     */
+    private static final java.util.List<String> SEMANTIC_TOKEN_TYPES = java.util.List.of(
+            org.eclipse.lsp4j.SemanticTokenTypes.Namespace,
+            org.eclipse.lsp4j.SemanticTokenTypes.Type,
+            org.eclipse.lsp4j.SemanticTokenTypes.Class,
+            org.eclipse.lsp4j.SemanticTokenTypes.Enum,
+            org.eclipse.lsp4j.SemanticTokenTypes.Interface,
+            org.eclipse.lsp4j.SemanticTokenTypes.Struct,
+            org.eclipse.lsp4j.SemanticTokenTypes.TypeParameter,
+            org.eclipse.lsp4j.SemanticTokenTypes.Parameter,
+            org.eclipse.lsp4j.SemanticTokenTypes.Variable,
+            org.eclipse.lsp4j.SemanticTokenTypes.Property,
+            org.eclipse.lsp4j.SemanticTokenTypes.EnumMember,
+            org.eclipse.lsp4j.SemanticTokenTypes.Event,
+            org.eclipse.lsp4j.SemanticTokenTypes.Function,
+            org.eclipse.lsp4j.SemanticTokenTypes.Method,
+            org.eclipse.lsp4j.SemanticTokenTypes.Macro,
+            org.eclipse.lsp4j.SemanticTokenTypes.Keyword,
+            org.eclipse.lsp4j.SemanticTokenTypes.Modifier,
+            org.eclipse.lsp4j.SemanticTokenTypes.Comment,
+            org.eclipse.lsp4j.SemanticTokenTypes.String,
+            org.eclipse.lsp4j.SemanticTokenTypes.Number,
+            org.eclipse.lsp4j.SemanticTokenTypes.Regexp,
+            org.eclipse.lsp4j.SemanticTokenTypes.Operator,
+            org.eclipse.lsp4j.SemanticTokenTypes.Decorator);
+
+    private static final java.util.List<String> SEMANTIC_TOKEN_MODIFIERS = java.util.List.of(
+            org.eclipse.lsp4j.SemanticTokenModifiers.Declaration,
+            org.eclipse.lsp4j.SemanticTokenModifiers.Definition,
+            org.eclipse.lsp4j.SemanticTokenModifiers.Readonly,
+            org.eclipse.lsp4j.SemanticTokenModifiers.Static,
+            org.eclipse.lsp4j.SemanticTokenModifiers.Deprecated,
+            org.eclipse.lsp4j.SemanticTokenModifiers.Abstract,
+            org.eclipse.lsp4j.SemanticTokenModifiers.Async,
+            org.eclipse.lsp4j.SemanticTokenModifiers.Modification,
+            org.eclipse.lsp4j.SemanticTokenModifiers.Documentation,
+            org.eclipse.lsp4j.SemanticTokenModifiers.DefaultLibrary);
+
     private static ClientCapabilities clientCapabilities() {
         TextDocumentClientCapabilities td = new TextDocumentClientCapabilities();
         td.setSynchronization(new SynchronizationCapabilities(false, false, true));
@@ -202,6 +244,13 @@ final class LanguageServerSession implements LanguageClient {
         // diagnostics only on a textDocument/diagnostic *request* (a diagnosticProvider) instead of
         // pushing publishDiagnostics. Declaring this lets us pull them (see LspManager.pullDiagnostics).
         td.setDiagnostic(new org.eclipse.lsp4j.DiagnosticCapabilities(false));
+        // Semantic tokens (LSP 3.16): a server-resolved classification we overlay onto TextMate — it
+        // distinguishes a parameter from a field from a type and flags deprecated/static/readonly. We
+        // advertise both encodings (the decoder handles either); LspManager prefers range and falls back to
+        // a full request for range-less servers (e.g. jdtls, which advertises range=false, full=true).
+        var stRequests = new org.eclipse.lsp4j.SemanticTokensClientCapabilitiesRequests(true, true); // full, range
+        td.setSemanticTokens(new org.eclipse.lsp4j.SemanticTokensCapabilities(
+                stRequests, SEMANTIC_TOKEN_TYPES, SEMANTIC_TOKEN_MODIFIERS, java.util.List.of("relative")));
         ClientCapabilities cc = new ClientCapabilities();
         cc.setTextDocument(td);
         // Declare we answer workspace/configuration — otherwise Pyright never asks for
@@ -421,6 +470,28 @@ final class LanguageServerSession implements LanguageClient {
         }
         return server.getTextDocumentService()
                 .diagnostic(new org.eclipse.lsp4j.DocumentDiagnosticParams(new TextDocumentIdentifier(uri)));
+    }
+
+    /** Semantic tokens over {@code range} ({@code textDocument/semanticTokens/range}); null when not ready. */
+    CompletableFuture<org.eclipse.lsp4j.SemanticTokens> semanticTokensRange(String uri, org.eclipse.lsp4j.Range range) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return server.getTextDocumentService()
+                .semanticTokensRange(
+                        new org.eclipse.lsp4j.SemanticTokensRangeParams(new TextDocumentIdentifier(uri), range))
+                .exceptionally(t -> null);
+    }
+
+    /** Whole-document semantic tokens ({@code textDocument/semanticTokens/full}), for servers that don't
+     *  advertise range requests; null when the session isn't ready. */
+    CompletableFuture<org.eclipse.lsp4j.SemanticTokens> semanticTokensFull(String uri) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return server.getTextDocumentService()
+                .semanticTokensFull(new org.eclipse.lsp4j.SemanticTokensParams(new TextDocumentIdentifier(uri)))
+                .exceptionally(t -> null);
     }
 
     private boolean ready() {

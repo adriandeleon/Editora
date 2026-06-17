@@ -50,6 +50,7 @@ import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 import org.fxmisc.richtext.multi.MultiCaretController;
 import org.fxmisc.richtext.util.UndoUtils;
@@ -306,6 +307,19 @@ public class EditorBuffer implements TabContent {
     private java.util.function.Consumer<String> lspChangeListener;
     /** Debounced pull-diagnostics request (servers that answer textDocument/diagnostic); null = none. */
     private Runnable lspDiagnosticsRequester;
+    /** Debounced semantic-tokens request (servers advertising range semantic tokens); null = none. */
+    private Runnable semanticTokensRequester;
+    /** LSP semantic highlighting active for this buffer (server supports it + the feature is on). */
+    private boolean semanticActive;
+    /** Latest server semantic tokens (absolute positions), overlaid onto the TextMate highlight. */
+    private java.util.List<SemanticToken> semanticTokens = java.util.List.of();
+    /** True once the document changed after {@link #semanticTokens} were captured — suppresses the overlay
+     *  (so we never mis-color shifted text) until a fresh response lands via {@link #setSemanticTokens}. */
+    private boolean semanticStale;
+    /** Debounces a viewport semantic-tokens re-request after scrolling settles (so a new region gets
+     *  tokens without firing a server request per scroll frame). */
+    private final javafx.animation.PauseTransition semanticScrollDebounce =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
     /** Completion trigger characters the server advertised (e.g. {@code .} for Java, {@code <} for HTML). */
     private java.util.Set<Character> lspTriggerChars = java.util.Set.of();
 
@@ -485,6 +499,11 @@ public class EditorBuffer implements TabContent {
                         .getMajor();
                 dirtyFromLine = Math.min(dirtyFromLine, line);
             }
+            // The cached semantic tokens now point at shifted offsets; suppress the overlay until the
+            // next response re-anchors them (one boolean write — off the per-char path's cost budget).
+            if (semanticActive && !semanticStale) {
+                semanticStale = true;
+            }
         });
         area.multiPlainChanges().successionEnds(Duration.ofMillis(150)).subscribe(ignore -> {
             applyHighlighting();
@@ -502,6 +521,16 @@ public class EditorBuffer implements TabContent {
             }
             if (lspActive && lspDiagnosticsRequester != null) {
                 lspDiagnosticsRequester.run();
+            }
+            if (semanticActive && semanticTokensRequester != null) {
+                semanticTokensRequester.run();
+            }
+        });
+        // After scrolling settles, re-request semantic tokens for the now-visible region (debounced so a
+        // drag-scroll doesn't fire a request per frame). Inert unless semantic highlighting is active.
+        semanticScrollDebounce.setOnFinished(e -> {
+            if (semanticActive && semanticTokensRequester != null) {
+                semanticTokensRequester.run();
             }
         });
         // HTML live preview: debounced reload pulse for HTML buffers (only while a browser preview is open).
@@ -606,6 +635,11 @@ public class EditorBuffer implements TabContent {
         a.selectionProperty().addListener((obs, old, now) -> scheduleFormatBar());
         a.estimatedScrollYProperty().addListener((obs, old, now) -> scheduleFormatBar());
         a.estimatedScrollXProperty().addListener((obs, old, now) -> scheduleFormatBar());
+        a.estimatedScrollYProperty().addListener((obs, old, now) -> {
+            if (semanticActive) {
+                semanticScrollDebounce.playFromStart(); // re-request tokens for the scrolled-to region
+            }
+        });
         a.focusedProperty().addListener((obs, was, now) -> {
             if (!now) {
                 hideFormatBar();
@@ -1631,6 +1665,59 @@ public class EditorBuffer implements TabContent {
         lspOverlay.setDiagnostics(diagnostics);
         minimap.setDiagnostics(diagnostics);
         diagnosticStripe.setDiagnostics(diagnostics);
+    }
+
+    /** The debounced semantic-tokens request (fired on the 300 ms didChange pulse while active); null = none. */
+    public void setSemanticTokensRequester(Runnable requester) {
+        this.semanticTokensRequester = requester;
+    }
+
+    /** Turns LSP semantic highlighting on/off for this buffer (server supports it + feature enabled). Off in
+     *  large-file mode, like the diagnostics overlay. Re-applies the highlight so the overlay appears/clears. */
+    public void setSemanticActive(boolean on) {
+        boolean next = on && !largeFile;
+        if (next == semanticActive) {
+            return;
+        }
+        semanticActive = next;
+        if (!semanticActive) {
+            semanticTokens = java.util.List.of();
+            semanticStale = false;
+        }
+        invalidateHighlighting(); // force a full re-tokenize so the overlay is added/removed everywhere
+        applyHighlighting();
+    }
+
+    public boolean isSemanticActive() {
+        return semanticActive;
+    }
+
+    /** Pushes fresh server semantic tokens (absolute positions) and re-applies so they overlay the
+     *  TextMate highlight immediately. No-op when semantic highlighting is off for this buffer. */
+    public void setSemanticTokens(java.util.List<SemanticToken> tokens) {
+        if (!semanticActive) {
+            return;
+        }
+        semanticTokens = tokens == null ? java.util.List.of() : tokens;
+        semanticStale = false; // these are anchored to the current text → safe to overlay again
+        invalidateHighlighting();
+        applyHighlighting();
+    }
+
+    /** The inclusive 0-based line range currently visible in the editor (for a viewport semantic-tokens
+     *  request). Falls back to the whole document if the viewport indices aren't available yet. */
+    public int[] visibleLineWindow() {
+        int paragraphs = area.getParagraphs().size();
+        try {
+            int first = area.firstVisibleParToAllParIndex();
+            int last = area.lastVisibleParToAllParIndex();
+            if (last >= first && first >= 0) {
+                return new int[] {first, Math.min(last, Math.max(0, paragraphs - 1))};
+            }
+        } catch (RuntimeException ignore) {
+            // viewport not laid out yet — fall through to the whole-document window
+        }
+        return new int[] {0, Math.max(0, paragraphs - 1)};
     }
 
     /** The scrollbar stripe is shown whenever LSP is active for this buffer (minimap on or off). It sits
@@ -4841,7 +4928,16 @@ public class EditorBuffer implements TabContent {
                 if (a.fromOffset() + a.spans().length() != area.getLength()) {
                     return;
                 }
-                area.setStyleSpans(a.fromOffset(), a.spans());
+                StyleSpans<Collection<String>> spans = a.spans();
+                // Overlay the server's semantic tokens on top of the lexical highlight (semantic wins
+                // where present). Suppressed while stale (doc edited since the tokens were anchored).
+                if (semanticActive && !semanticStale && !semanticTokens.isEmpty()) {
+                    StyleSpans<Collection<String>> sem = buildSemanticSpans(a.fromOffset(), spans.length());
+                    if (sem != null) {
+                        spans = spans.overlay(sem, (lex, s) -> s.isEmpty() ? lex : s);
+                    }
+                }
+                area.setStyleSpans(a.fromOffset(), spans);
                 scheduleBraceMatch(); // re-apply the match highlight the spans just overwrote
                 // Replace per-line end-states from fromLine onward (the prefix is unchanged).
                 while (lineStates.size() > fromLine) {
@@ -4860,5 +4956,46 @@ public class EditorBuffer implements TabContent {
                 onSymbolsChanged.run();
             });
         });
+    }
+
+    /**
+     * A sparse {@link StyleSpans} of length {@code windowLen} (so it can {@code overlay} the TextMate
+     * spans starting at {@code windowStart}) carrying each cached semantic token's CSS class; gaps and
+     * out-of-window tokens are empty styles. Returns {@code null} if no token falls in the window.
+     *
+     * <p>Tokens are sorted by position (the decoder preserves wire order), so a single forward cursor
+     * builds the spans; an out-of-order or overlapping token is skipped defensively. Positions map
+     * through the live document (the {@code area}) — the {@code editor} package stays {@code lsp}-free.
+     */
+    private StyleSpans<Collection<String>> buildSemanticSpans(int windowStart, int windowLen) {
+        StyleSpansBuilder<Collection<String>> b = new StyleSpansBuilder<>();
+        int cursor = 0; // offset within the window of the next unstyled char
+        int paragraphs = area.getParagraphs().size();
+        for (SemanticToken t : semanticTokens) {
+            if (t.line() < 0 || t.line() >= paragraphs) {
+                continue; // line no longer exists (shrunk doc); the stale guard usually precludes this
+            }
+            int col = Math.min(t.startChar(), area.getParagraphLength(t.line()));
+            int off = area.getAbsolutePosition(t.line(), col) - windowStart;
+            if (off < cursor || off >= windowLen) {
+                continue; // before the cursor (overlap/out-of-order) or past the window end
+            }
+            int len = Math.min(t.length(), windowLen - off);
+            if (len <= 0) {
+                continue;
+            }
+            if (off > cursor) {
+                b.add(Collections.emptyList(), off - cursor);
+            }
+            b.add(List.of(t.cssClasses().split(" ")), len);
+            cursor = off + len;
+        }
+        if (cursor == 0) {
+            return null; // no token in this window — skip the overlay entirely
+        }
+        if (cursor < windowLen) {
+            b.add(Collections.emptyList(), windowLen - cursor);
+        }
+        return b.create();
     }
 }
