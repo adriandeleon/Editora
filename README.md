@@ -86,6 +86,11 @@ Emacs-style keymap or a fuzzy command palette.
 - **Fill paragraph** (`M-q`) — re-wrap a paragraph (or the selection, with "Fill Region") to a fill column
   (`C-x f`, default 70), preserving its indentation and an adaptive fill prefix — line comments, Markdown
   blockquotes (`>`), and Javadoc (`*`) — so code comments and quoted text wrap correctly.
+- **Emacs editing & movement commands** — the full set beyond the basics: backward-kill-word (`M-DEL`),
+  word/region case conversion (`M-u`/`M-l`/`M-c`, `C-x C-u`/`C-x C-l`), join-line (`M-^`), whitespace
+  fixups (`M-\`, `M-SPC`), delete-blank-lines (`C-x C-o`), open-line (`C-o`), kill-whole-line (`C-S-DEL`),
+  zap-to-char (`M-z`), balanced-expression motion (`C-M-f`/`C-M-b`, mark/kill-sexp), defun motion
+  (`C-M-a`/`C-M-e`), and mark-paragraph / mark-whole-buffer. All palette-discoverable and rebindable.
 - **Multiple cursors & column selection** — VS Code–style multi-caret editing: add a caret at the next
   occurrence of the selection / above / below, type or edit everywhere at once, `Esc` to collapse; plus
   Alt-drag column/box selection. (Powered by a personal RichTextFX fork.)
