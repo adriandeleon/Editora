@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Markdown support improvements.** A broad set of upgrades to the Markdown experience:
+  - **More CommonMark extensions** in the preview — **YAML front matter** (rendered as a metadata block),
+    **footnotes**, **heading anchors**, and **`++inserted++`** text, on top of the existing GFM tables /
+    task lists / strikethrough / autolinks.
+  - **Heading outline** — the **Structure** tool window now shows a Markdown document's `#`…`######` heading
+    tree (ATX + Setext), so long documents are navigable; click a heading to jump.
+  - **Markdown linting** — high-confidence rules (trailing whitespace, multiple blank lines, ATX hash
+    spacing, multiple top-level H1, fenced block without a language, missing final newline, broken
+    reference links) shown as inline squiggles with hover messages and listed in a **Markdown Lint** tool
+    window. On by default; toggle with **View: Toggle Markdown Lint**.
+  - **Image paste & drag-drop** — paste an image from the clipboard, or drop image files onto a saved
+    Markdown buffer, and the image is written into a sibling `assets/` folder with an `![](…)` link inserted.
+  - **Smart link paste** — paste a URL over a selection to wrap it as `[selection](url)`.
+  - **Table editing** — **Tab** / **Shift-Tab** move between pipe-table cells and **Enter** on the last row
+    adds a row, reflowing the table as you go.
+  - **LaTeX math** — render inline `$…$` and display `$$…$$` math in the preview (and block formulas in PDF
+    export) via JLaTeXMath, with GitHub-style delimiter rules so prose dollar amounts are left alone.
+    **Off by default** (Settings → Editor → *Render LaTeX math*, or **View: Toggle Math Rendering**).
+  - **Export to HTML** — export the rendered preview to a standalone, self-contained `.html` file (embedded
+    stylesheet, heading anchors, math as images) via **Preview: Export to HTML**.
+
 - **More Emacs editing & movement commands.** Filled the remaining gaps versus a standard Emacs
   `global-map`: **backward-kill-word** (`M-DEL`); case commands **upcase/downcase/capitalize-word**
   (`M-u`/`M-l`/`M-c`) and **upcase/downcase-region** (`C-x C-u`/`C-x C-l`); whitespace and line surgery —
