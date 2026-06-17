@@ -5,9 +5,11 @@ import java.util.List;
 
 /**
  * Parses Git merge-conflict markers ({@code <<<<<<<} / {@code |||||||} / {@code =======} / {@code >>>>>>>})
- * into an ordered list of segments — plain regions and conflict regions with the "ours" and "theirs"
- * sides — and {@link #resolve}s a file given a per-conflict {@link Choice}. Pure and unit-tested; the
- * optional 3-way {@code |||||||} base region is recognized and skipped (a 2-way ours/theirs view).
+ * into an ordered list of segments — plain regions and conflict regions with the "ours", "theirs" and
+ * (when the markers were written in {@code diff3}/{@code zdiff3} style) the common-ancestor "base" sides —
+ * and {@link #resolve}s a file given a per-conflict {@link Choice}. Pure and unit-tested. The 3-way
+ * {@code |||||||} base region is captured when present; with Git's default {@code merge} conflict style it
+ * is absent and {@link Conflict#base()} is empty (a 2-way ours/theirs view).
  */
 public final class ConflictParser {
 
@@ -18,11 +20,28 @@ public final class ConflictParser {
         UNRESOLVED,
         OURS,
         THEIRS,
+        BASE,
         BOTH
     }
 
-    /** One conflict: the {@code ours} lines, the {@code theirs} lines, and the labels from the markers. */
-    public record Conflict(String oursLabel, List<String> ours, String theirsLabel, List<String> theirs) {}
+    /**
+     * One conflict: the {@code ours}/{@code theirs} lines, the optional common-ancestor {@code base} lines
+     * (empty unless the markers were written in {@code diff3}/{@code zdiff3} style), and the labels from the
+     * markers.
+     */
+    public record Conflict(
+            String oursLabel,
+            List<String> ours,
+            String baseLabel,
+            List<String> base,
+            String theirsLabel,
+            List<String> theirs) {
+
+        /** Whether this conflict carries a captured 3-way common-ancestor region. */
+        public boolean hasBase() {
+            return !base.isEmpty();
+        }
+    }
 
     public sealed interface Segment permits PlainSegment, ConflictSegment {}
 
@@ -41,6 +60,13 @@ public final class ConflictParser {
 
         public boolean hasConflicts() {
             return conflictCount() > 0;
+        }
+
+        /** Whether any conflict carries a captured 3-way common-ancestor (base) region. */
+        public boolean hasBase() {
+            return segments.stream()
+                    .anyMatch(s ->
+                            s instanceof ConflictSegment cs && cs.conflict().hasBase());
         }
     }
 
@@ -76,7 +102,9 @@ public final class ConflictParser {
                 }
                 String oursLabel = label(line, OURS);
                 List<String> ours = new ArrayList<>();
+                List<String> base = new ArrayList<>();
                 List<String> theirs = new ArrayList<>();
+                String baseLabel = "";
                 String theirsLabel = "";
                 i++;
                 // ours lines until the base (|||||||) or separator (=======)
@@ -87,12 +115,14 @@ public final class ConflictParser {
                     ours.add(lines.get(i));
                     i++;
                 }
-                // optional base region (3-way) — skip it
+                // optional base region (3-way diff3/zdiff3 style) — capture it
                 if (i < n && lines.get(i).startsWith(BASE)) {
+                    baseLabel = label(lines.get(i), BASE);
                     i++;
                     while (i < n
                             && !lines.get(i).startsWith(SEP)
                             && !lines.get(i).startsWith(THEIRS)) {
+                        base.add(lines.get(i));
                         i++;
                     }
                 }
@@ -107,8 +137,8 @@ public final class ConflictParser {
                     theirsLabel = label(lines.get(i), THEIRS);
                     i++;
                 }
-                segments.add(new ConflictSegment(
-                        new Conflict(oursLabel, List.copyOf(ours), theirsLabel, List.copyOf(theirs))));
+                segments.add(new ConflictSegment(new Conflict(
+                        oursLabel, List.copyOf(ours), baseLabel, List.copyOf(base), theirsLabel, List.copyOf(theirs))));
             } else {
                 plain.add(line);
                 i++;
@@ -144,13 +174,18 @@ public final class ConflictParser {
                 switch (choice == null ? Choice.UNRESOLVED : choice) {
                     case OURS -> out.addAll(c.ours());
                     case THEIRS -> out.addAll(c.theirs());
+                    case BASE -> out.addAll(c.base());
                     case BOTH -> {
                         out.addAll(c.ours());
                         out.addAll(c.theirs());
                     }
-                    default -> { // UNRESOLVED: keep the conflict markers verbatim
+                    default -> { // UNRESOLVED: keep the conflict markers verbatim (incl. the 3-way base, if any)
                         out.add(OURS + (c.oursLabel().isEmpty() ? "" : " " + c.oursLabel()));
                         out.addAll(c.ours());
+                        if (c.hasBase()) {
+                            out.add(BASE + (c.baseLabel().isEmpty() ? "" : " " + c.baseLabel()));
+                            out.addAll(c.base());
+                        }
                         out.add(SEP);
                         out.addAll(c.theirs());
                         out.add(THEIRS + (c.theirsLabel().isEmpty() ? "" : " " + c.theirsLabel()));
