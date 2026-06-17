@@ -114,6 +114,7 @@
   "C--": "view.textZoomOut",
   "C-0": "view.textZoomReset",
   "M-g d": "tool.debug",
+  "M-g o": "tool.todo",
   "C-c C-b": "debug.toggleBreakpoint",
   "C-c C-d d": "debug.start",
   "C-c C-d c": "debug.continue",

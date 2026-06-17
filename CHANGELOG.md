@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **TODO / highlight patterns (IntelliJ-style).** Configurable regex patterns (TODO and FIXME by default,
+  each with its own color) are highlighted everywhere they match in the editor, and listed in a new **TODO**
+  tool window (`M-g o`) grouped by file — scanning the open project's tree when a project is open, else the
+  open files; double-click a result to jump to it. Matches also show as **overview stripes** over the
+  scrollbar and on the minimap edge (each in its pattern's color; click to jump, hover for the line). On by
+  default. Add/edit/remove patterns (name, regex, a **color picker**, case-sensitivity, enabled) in
+  **Settings → Editor → TODO Highlighting**; commands `tool.todo`,
+  `todo.refresh`, `todo.addPattern`, and `view.toggleTodoHighlight`. Highlighting runs off the UI thread and
+  is debounced; the project scan is lazy (only when the tool window is open or refreshed).
+
 - **LSP-powered Structure tool window.** For files served by a language server, the Structure outline is now
   built from the server's `textDocument/documentSymbol` response — a precise hierarchy of classes, methods,
   fields, enums, etc. with proper kinds and per-kind icons, and methods showing their signature (parameters

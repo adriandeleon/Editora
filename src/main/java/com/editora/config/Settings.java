@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 32;
+    public static final int SCHEMA_VERSION = 33;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -85,6 +85,10 @@ public class Settings {
     private boolean semanticHighlight = true;
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
     private boolean editorConfigSupport = true;
+    /** Highlight configured patterns (TODO/FIXME/…) in the editor + list them in the TODO tool window. */
+    private boolean todoHighlight = true;
+    /** The highlight patterns (regex + color); defaults to TODO (amber) + FIXME (red). */
+    private java.util.List<com.editora.todo.TodoPattern> todoPatterns = com.editora.todo.TodoPatterns.defaults();
 
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
@@ -489,6 +493,22 @@ public class Settings {
 
     public void setEditorConfigSupport(boolean editorConfigSupport) {
         this.editorConfigSupport = editorConfigSupport;
+    }
+
+    public boolean isTodoHighlight() {
+        return todoHighlight;
+    }
+
+    public void setTodoHighlight(boolean todoHighlight) {
+        this.todoHighlight = todoHighlight;
+    }
+
+    public java.util.List<com.editora.todo.TodoPattern> getTodoPatterns() {
+        return todoPatterns == null ? java.util.List.of() : todoPatterns;
+    }
+
+    public void setTodoPatterns(java.util.List<com.editora.todo.TodoPattern> todoPatterns) {
+        this.todoPatterns = todoPatterns;
     }
 
     public String getSpellLanguage() {

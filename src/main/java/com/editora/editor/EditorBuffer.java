@@ -267,6 +267,8 @@ public class EditorBuffer implements TabContent {
     private final LspDiagnosticOverlay lspOverlay = new LspDiagnosticOverlay(area);
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable. */
     private final DiagnosticStripe diagnosticStripe = new DiagnosticStripe(area);
+    /** TODO/highlight overview stripe over the scrollbar (beside the diagnostic stripe). */
+    private final TodoStripe todoStripe = new TodoStripe(area);
     /** Files above this size are never scanned for compact-source detection (keeps it off the hot path). */
     private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
     /** Whether the Run affordance is enabled at all (gated by the LSP feature setting). */
@@ -291,6 +293,12 @@ public class EditorBuffer implements TabContent {
     private Runnable onRunnableChanged = () -> {};
 
     private final SearchHighlightOverlay searchOverlay = new SearchHighlightOverlay(area);
+    /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text. */
+    private final TodoHighlightOverlay todoOverlay = new TodoHighlightOverlay(area);
+    /** Injected matcher (compiled patterns) + on/off gate; null/false = no highlight. */
+    private TodoMatcher todoMatcher;
+
+    private boolean todoEnabled;
     private final AceJumpOverlay aceJump = new AceJumpOverlay(area);
     /** Async maid validator (text, callback) injected by the controller; null = no linting. */
     private java.util.function.BiConsumer<
@@ -511,6 +519,8 @@ public class EditorBuffer implements TabContent {
         });
         // Live Mermaid linting: debounced maid run for .mmd buffers (only while enabled + maid detected).
         area.multiPlainChanges().successionEnds(Duration.ofMillis(450)).subscribe(ignore -> scheduleMermaidLint());
+        // TODO/highlight patterns: debounced re-scan for the in-editor highlight (no-op when off / huge file).
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> refreshTodoMarks());
         // LSP document sync: debounced didChange notification (only while the buffer is LSP-managed) +
         // a debounced pull-diagnostics request (no-op unless the server uses the pull model). The pull is
         // here, not in lspChangeListener, so it fires once per debounce — not on every completion keystroke
@@ -909,6 +919,7 @@ public class EditorBuffer implements TabContent {
                         scrollPane,
                         noteOverlay,
                         searchOverlay,
+                        todoOverlay,
                         whitespace,
                         spellOverlay,
                         lintOverlay,
@@ -917,6 +928,7 @@ public class EditorBuffer implements TabContent {
                         aceJump,
                         minimap,
                         diagnosticStripe,
+                        todoStripe,
                         columnRuler);
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
@@ -958,6 +970,10 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setBottomAnchor(searchOverlay, 0d);
         AnchorPane.setLeftAnchor(searchOverlay, 0d);
         AnchorPane.setRightAnchor(searchOverlay, Minimap.WIDTH);
+        AnchorPane.setTopAnchor(todoOverlay, 0d);
+        AnchorPane.setBottomAnchor(todoOverlay, 0d);
+        AnchorPane.setLeftAnchor(todoOverlay, 0d);
+        AnchorPane.setRightAnchor(todoOverlay, Minimap.WIDTH);
         AnchorPane.setTopAnchor(aceJump, 0d);
         AnchorPane.setBottomAnchor(aceJump, 0d);
         AnchorPane.setLeftAnchor(aceJump, 0d);
@@ -976,6 +992,10 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setBottomAnchor(diagnosticStripe, 0d);
         AnchorPane.setRightAnchor(diagnosticStripe, 0d);
         diagnosticStripe.setOnActivate(this::jumpToLine);
+        AnchorPane.setTopAnchor(todoStripe, 0d);
+        AnchorPane.setBottomAnchor(todoStripe, 0d);
+        AnchorPane.setRightAnchor(todoStripe, 0d);
+        todoStripe.setOnActivate(this::jumpToLine);
     }
 
     /** Moves the caret to the start of {@code line} (0-based), scrolls it into view, and focuses the editor. */
@@ -1289,6 +1309,37 @@ public class EditorBuffer implements TabContent {
     /** Clears the find-match highlight overlay. */
     public void clearSearchMatches() {
         searchOverlay.setMatches(java.util.List.of(), -1);
+    }
+
+    /** Enables/disables the TODO-pattern highlight for this buffer and re-scans (the controller pushes the
+     *  effective {@code Settings.todoHighlight}). */
+    public void setTodoHighlightEnabled(boolean enabled) {
+        this.todoEnabled = enabled;
+        minimap.setTodoEnabled(enabled && !largeFile);
+        updateTodoStripe(); // (de)activate + position the scrollbar overview stripe
+        refreshTodoMarks();
+    }
+
+    /** Injects the compiled-pattern matcher (decoupled from the {@code todo}/{@code config} packages) and
+     *  re-scans. */
+    public void setTodoMatcher(TodoMatcher matcher) {
+        this.todoMatcher = matcher;
+        refreshTodoMarks();
+    }
+
+    /** Re-scans the buffer text and updates the highlight overlay + the scrollbar/minimap overview stripes;
+     *  inert when off / no matcher / huge file. */
+    private void refreshTodoMarks() {
+        if (!todoEnabled || todoMatcher == null || largeFile) {
+            todoOverlay.setMarks(java.util.List.of());
+            todoStripe.setMarks(java.util.List.of());
+            minimap.setTodoMarks(java.util.List.of());
+            return;
+        }
+        java.util.List<TodoMark> marks = todoMatcher.match(area.getText());
+        todoOverlay.setMarks(marks);
+        todoStripe.setMarks(marks);
+        minimap.setTodoMarks(marks);
     }
 
     /** Starts AceJump: the next typed character labels its visible occurrences to jump the caret. */
@@ -1727,6 +1778,16 @@ public class EditorBuffer implements TabContent {
         boolean minimapShown = minimapVisible && !largeFile;
         AnchorPane.setRightAnchor(diagnosticStripe, minimapShown ? Minimap.WIDTH : 0d);
         diagnosticStripe.setActive(lspActive);
+        updateTodoStripe();
+    }
+
+    /** Positions the TODO overview stripe over the scrollbar: at the edge (inside the minimap when shown),
+     *  shifted left by the diagnostic stripe's width when that one is also active, so they sit side by side. */
+    private void updateTodoStripe() {
+        boolean minimapShown = minimapVisible && !largeFile;
+        double base = minimapShown ? Minimap.WIDTH : 0d;
+        AnchorPane.setRightAnchor(todoStripe, base + (lspActive ? DiagnosticStripe.WIDTH : 0d));
+        todoStripe.setActive(todoEnabled && !largeFile);
     }
 
     /** Injects the LSP actions surfaced in the right-click menu while {@link #isLspActive()} (Format is

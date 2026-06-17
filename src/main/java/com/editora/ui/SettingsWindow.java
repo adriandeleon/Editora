@@ -148,6 +148,8 @@ public class SettingsWindow {
     private CheckBox toolStripeCheck;
     private CheckBox markdownFormatBarCheck;
     private CheckBox editorConfigCheck;
+    private CheckBox todoHighlightCheck;
+    private javafx.scene.layout.VBox todoPatternsBox;
     private CheckBox multiCaretCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
@@ -623,6 +625,7 @@ public class SettingsWindow {
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
         markdownFormatBarCheck = viewCheck(tr("settings.markdownFormatBar"), Settings::setMarkdownFormatBar);
         editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
+        todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
 
         projectsCheck = new CheckBox(tr("settings.enableProjects"));
@@ -1142,6 +1145,9 @@ public class SettingsWindow {
                 markdown,
                 markdownFormatBarCheck,
                 "markdown format bar selection bold italic toolbar floating");
+        Label todoHl = section(p, tr("settings.section.todo"));
+        row(p, Category.EDITOR, todoHl, todoHighlightCheck, "todo fixme highlight patterns tags comments annotations");
+        row(p, Category.EDITOR, todoHl, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -1162,6 +1168,119 @@ public class SettingsWindow {
                 labeled(tr("settings.pdf.pageSize"), pdfPageSizeCombo),
                 "pdf export page size letter a4 paper");
         return p;
+    }
+
+    /** The TODO/highlight pattern editor: one row per pattern (enabled / name / regex / color / case) plus
+     *  an "Add" button. Edits write back to {@code Settings.todoPatterns} and apply live. */
+    private javafx.scene.Node todoPatternsEditor() {
+        todoPatternsBox = new VBox(4);
+        Button add = new Button(tr("settings.todo.add"));
+        add.setOnAction(e -> {
+            java.util.List<com.editora.todo.TodoPattern> list = mutableTodoPatterns();
+            list.add(new com.editora.todo.TodoPattern(
+                    tr("settings.todo.newName"),
+                    "\\bTODO\\b",
+                    com.editora.todo.TodoPatterns.DEFAULT_COLOR,
+                    false,
+                    true));
+            config.getSettings().setTodoPatterns(list);
+            rebuildTodoRows();
+            apply();
+        });
+        VBox box = new VBox(6, todoPatternsBox, add);
+        rebuildTodoRows();
+        return box;
+    }
+
+    private java.util.List<com.editora.todo.TodoPattern> mutableTodoPatterns() {
+        return new java.util.ArrayList<>(config.getSettings().getTodoPatterns());
+    }
+
+    private void rebuildTodoRows() {
+        if (todoPatternsBox == null) {
+            return;
+        }
+        todoPatternsBox.getChildren().clear();
+        int size = config.getSettings().getTodoPatterns().size();
+        for (int i = 0; i < size; i++) {
+            todoPatternsBox.getChildren().add(todoRow(i));
+        }
+    }
+
+    private javafx.scene.Node todoRow(int index) {
+        com.editora.todo.TodoPattern p = config.getSettings().getTodoPatterns().get(index);
+        CheckBox enabled = new CheckBox();
+        enabled.setSelected(p.isEnabled());
+        enabled.setTooltip(new Tooltip(tr("settings.todo.enabledTip")));
+        TextField name = new TextField(p.getName());
+        name.setPromptText(tr("settings.todo.namePrompt"));
+        name.setPrefWidth(110);
+        TextField regex = new TextField(p.getPattern());
+        regex.setPromptText(tr("settings.todo.regexPrompt"));
+        HBox.setHgrow(regex, Priority.ALWAYS);
+        javafx.scene.control.ColorPicker color = new javafx.scene.control.ColorPicker(parseColor(p.getColor()));
+        color.setTooltip(new Tooltip(tr("settings.todo.colorPrompt")));
+        color.setPrefWidth(56);
+        CheckBox caseSensitive = new CheckBox(tr("settings.todo.case"));
+        caseSensitive.setSelected(p.isCaseSensitive());
+        Button remove = new Button("✕");
+        remove.setTooltip(new Tooltip(tr("settings.todo.removeTip")));
+
+        Runnable commit = () -> {
+            java.util.List<com.editora.todo.TodoPattern> cur = mutableTodoPatterns();
+            if (index >= cur.size()) {
+                return;
+            }
+            com.editora.todo.TodoPattern up = cur.get(index);
+            up.setEnabled(enabled.isSelected());
+            up.setName(name.getText());
+            up.setPattern(regex.getText());
+            up.setColor(toHex(color.getValue()));
+            up.setCaseSensitive(caseSensitive.isSelected());
+            config.getSettings().setTodoPatterns(cur);
+            apply();
+        };
+        // Checkboxes + the color picker apply immediately; text fields commit on Enter / focus-loss.
+        enabled.selectedProperty().addListener((o, a, b) -> commit.run());
+        caseSensitive.selectedProperty().addListener((o, a, b) -> commit.run());
+        color.valueProperty().addListener((o, a, b) -> commit.run());
+        name.setOnAction(e -> commit.run());
+        regex.setOnAction(e -> commit.run());
+        java.util.function.Consumer<TextField> onBlur =
+                tf -> tf.focusedProperty().addListener((o, was, now) -> {
+                    if (!now) {
+                        commit.run();
+                    }
+                });
+        onBlur.accept(name);
+        onBlur.accept(regex);
+        remove.setOnAction(e -> {
+            java.util.List<com.editora.todo.TodoPattern> cur = mutableTodoPatterns();
+            if (index < cur.size()) {
+                cur.remove(index);
+            }
+            config.getSettings().setTodoPatterns(cur);
+            rebuildTodoRows();
+            apply();
+        });
+        HBox row = new HBox(6, enabled, name, regex, color, caseSensitive, remove);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    private static javafx.scene.paint.Color parseColor(String web) {
+        try {
+            return javafx.scene.paint.Color.web(web == null || web.isBlank() ? "#E5C07B" : web);
+        } catch (RuntimeException e) {
+            return javafx.scene.paint.Color.web("#E5C07B");
+        }
+    }
+
+    private static String toHex(javafx.scene.paint.Color c) {
+        return String.format(
+                "#%02X%02X%02X",
+                (int) Math.round(c.getRed() * 255), (int) Math.round(c.getGreen() * 255), (int)
+                        Math.round(c.getBlue() * 255));
     }
 
     private VBox spellPage() {
@@ -2504,6 +2623,8 @@ public class SettingsWindow {
             toolStripeCheck.setSelected(settings.isShowToolStripe());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
             editorConfigCheck.setSelected(settings.isEditorConfigSupport());
+            todoHighlightCheck.setSelected(settings.isTodoHighlight());
+            rebuildTodoRows();
             multiCaretCheck.setSelected(settings.isMultiCaret());
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
@@ -2976,6 +3097,8 @@ public class SettingsWindow {
             toolStripeCheck.setSelected(s.isShowToolStripe());
             markdownFormatBarCheck.setSelected(s.isMarkdownFormatBar());
             editorConfigCheck.setSelected(s.isEditorConfigSupport());
+            todoHighlightCheck.setSelected(s.isTodoHighlight());
+            rebuildTodoRows();
             indentStyleCombo.setValue(s.getIndentStyle());
             multiCaretCheck.setSelected(s.isMultiCaret());
             projectsCheck.setSelected(s.isProjectSupport());
