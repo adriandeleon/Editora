@@ -389,6 +389,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Button toolbarRestoreButton;
     /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
     private boolean markActive;
+    /** Cycle state for {@code move-to-window-line-top-bottom} (M-r): center → top → bottom. */
+    private int windowLineCycle = -1;
     /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
     private boolean checkingExternalChanges;
 
@@ -11217,6 +11219,162 @@ public class MainController implements com.editora.mcp.McpBridge {
         area.requestFocus();
     }
 
+    /**
+     * Applies a pure {@link com.editora.editor.EmacsEdits} caret-based edit (backward-kill-word, the
+     * case-word commands, join-line, the whitespace commands, open-line, kill-whole-line, …) to the
+     * active editable buffer. Mirrors {@link #transpose} / {@link #lineOp}.
+     */
+    private void emacsEdit(java.util.function.BiFunction<String, Integer, com.editora.editor.EmacsEdits.Edit> op) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        com.editora.editor.EmacsEdits.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        if (edit == null) {
+            return;
+        }
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        deactivateMark();
+        area.requestFocus();
+    }
+
+    /** Emacs {@code upcase-region} (`C-x C-u`) / {@code downcase-region} (`C-x C-l`): case the selection. */
+    private void emacsCaseRegion(boolean upper) {
+        if (!activeEditable()) {
+            return;
+        }
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        var sel = area.getSelection();
+        com.editora.editor.EmacsEdits.Edit edit = upper
+                ? com.editora.editor.EmacsEdits.upcaseRegion(area.getText(), sel.getStart(), sel.getEnd())
+                : com.editora.editor.EmacsEdits.downcaseRegion(area.getText(), sel.getStart(), sel.getEnd());
+        if (edit == null) {
+            return; // no selection / already the target case
+        }
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        deactivateMark();
+        area.requestFocus();
+    }
+
+    /** Emacs structural caret motion (forward/backward-sexp, beginning/end-of-defun); honors the mark. */
+    private void sexpMove(java.util.function.BiFunction<String, Integer, Integer> nav) {
+        moveAndFollow(a -> a.moveTo(nav.apply(a.getText(), a.getCaretPosition()), selPolicy()));
+    }
+
+    /** Emacs {@code mark-sexp} (`C-M-SPC`): select the balanced expression after the caret. */
+    private void markSexp() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int caret = area.getCaretPosition();
+        int end = com.editora.editor.SexpNav.forward(area.getText(), caret);
+        if (end <= caret) {
+            return;
+        }
+        area.selectRange(caret, end);
+        markActive = true;
+        area.requestFollowCaret();
+    }
+
+    /** Emacs {@code mark-paragraph} (`M-h`): select the paragraph (blank-line delimited) around the caret. */
+    private void markParagraph() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int[] bounds = com.editora.editor.SexpNav.paragraphBounds(area.getText(), area.getCaretPosition());
+        if (bounds[0] >= bounds[1]) {
+            return;
+        }
+        area.selectRange(bounds[0], bounds[1]);
+        markActive = true;
+        area.requestFollowCaret();
+    }
+
+    /** Emacs {@code kill-sexp} (`C-M-k`): delete the balanced expression after the caret. */
+    private void killSexp() {
+        emacsEdit((text, caret) -> {
+            int end = com.editora.editor.SexpNav.forward(text, caret);
+            return end > caret ? new com.editora.editor.EmacsEdits.Edit(caret, end, "", caret) : null;
+        });
+    }
+
+    /**
+     * Emacs {@code zap-to-char} (`M-z`): read one more character, then delete from the caret up to and
+     * including its next occurrence. The character is captured via a one-shot {@code KEY_TYPED} filter
+     * on the focused area (interactive, like AceJump — the span computation is the pure, tested
+     * {@link com.editora.editor.EmacsEdits#zapToChar}).
+     */
+    private void zapToChar() {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        setStatus(tr("status.zapToChar"));
+        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, new javafx.event.EventHandler<>() {
+            @Override
+            public void handle(javafx.scene.input.KeyEvent e) {
+                area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
+                e.consume();
+                String ch = e.getCharacter();
+                if (ch == null || ch.isEmpty() || ch.charAt(0) < ' ') {
+                    setStatus(""); // Escape / no printable character: cancel
+                    return;
+                }
+                com.editora.editor.EmacsEdits.Edit edit =
+                        com.editora.editor.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch.charAt(0));
+                if (edit == null) {
+                    setStatus(tr("status.zapNotFound", ch));
+                    return;
+                }
+                area.replaceText(edit.from(), edit.to(), edit.replacement());
+                area.moveTo(edit.caret());
+                deactivateMark();
+                setStatus("");
+            }
+        });
+    }
+
+    /**
+     * Emacs {@code move-to-window-line-top-bottom} (`M-r`): cycle the caret through the center, top,
+     * and bottom visible lines of the editor window on successive presses.
+     */
+    private void moveToWindowLine() {
+        CodeArea a = activeArea();
+        if (a == null) {
+            return;
+        }
+        try {
+            int first = a.firstVisibleParToAllParIndex();
+            int last = a.lastVisibleParToAllParIndex();
+            windowLineCycle = (windowLineCycle + 1) % 3;
+            int target =
+                    switch (windowLineCycle) {
+                        case 0 -> (first + last) / 2; // center
+                        case 1 -> first; // top
+                        default -> last; // bottom
+                    };
+            a.moveTo(a.getAbsolutePosition(target, 0), selPolicy());
+            a.requestFollowCaret();
+        } catch (RuntimeException ignored) {
+            // Viewport not laid out yet — nothing to move to.
+        }
+    }
+
     /** Emacs {@code fill-paragraph} (`M-q`): re-wrap the paragraph at the caret to the fill column. */
     private void fillParagraph() {
         applyFill((text, b) -> com.editora.editor.Filler.fillParagraph(
@@ -11973,6 +12131,37 @@ public class MainController implements com.editora.mcp.McpBridge {
                     a.deleteText(caret, nextWordBoundary(a.getText(), caret));
                 })));
         registry.register(Command.of("edit.killLine", () -> withArea(this::killLine)));
+        // Additional Emacs editing/movement commands (kill-ring features remain deferred).
+        registry.register(
+                Command.of("edit.backwardKillWord", () -> emacsEdit(com.editora.editor.EmacsEdits::backwardKillWord)));
+        registry.register(Command.of("edit.upcaseWord", () -> emacsEdit(com.editora.editor.EmacsEdits::upcaseWord)));
+        registry.register(
+                Command.of("edit.downcaseWord", () -> emacsEdit(com.editora.editor.EmacsEdits::downcaseWord)));
+        registry.register(
+                Command.of("edit.capitalizeWord", () -> emacsEdit(com.editora.editor.EmacsEdits::capitalizeWord)));
+        registry.register(Command.of("edit.upcaseRegion", () -> emacsCaseRegion(true)));
+        registry.register(Command.of("edit.downcaseRegion", () -> emacsCaseRegion(false)));
+        registry.register(Command.of(
+                "edit.deleteIndentation", () -> emacsEdit(com.editora.editor.EmacsEdits::deleteIndentation)));
+        registry.register(Command.of(
+                "edit.deleteHorizontalSpace", () -> emacsEdit(com.editora.editor.EmacsEdits::deleteHorizontalSpace)));
+        registry.register(
+                Command.of("edit.justOneSpace", () -> emacsEdit(com.editora.editor.EmacsEdits::justOneSpace)));
+        registry.register(
+                Command.of("edit.deleteBlankLines", () -> emacsEdit(com.editora.editor.EmacsEdits::deleteBlankLines)));
+        registry.register(Command.of("edit.openLine", () -> emacsEdit(com.editora.editor.EmacsEdits::openLine)));
+        registry.register(
+                Command.of("edit.killWholeLine", () -> emacsEdit(com.editora.editor.EmacsEdits::killWholeLine)));
+        registry.register(Command.of("edit.zapToChar", this::zapToChar));
+        registry.register(Command.of("edit.killSexp", this::killSexp));
+        registry.register(Command.of("edit.markSexp", this::markSexp));
+        registry.register(Command.of("edit.markParagraph", this::markParagraph));
+        registry.register(Command.of("nav.forwardSexp", () -> sexpMove(com.editora.editor.SexpNav::forward)));
+        registry.register(Command.of("nav.backwardSexp", () -> sexpMove(com.editora.editor.SexpNav::backward)));
+        registry.register(
+                Command.of("nav.beginningOfDefun", () -> sexpMove(com.editora.editor.SexpNav::beginningOfDefun)));
+        registry.register(Command.of("nav.endOfDefun", () -> sexpMove(com.editora.editor.SexpNav::endOfDefun)));
+        registry.register(Command.of("nav.moveToWindowLine", this::moveToWindowLine));
     }
 
     private void killLine(CodeArea a) {
