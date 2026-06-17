@@ -103,6 +103,24 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     });
     private final AtomicLong searchGen = new AtomicLong();
 
+    // Filesystem watcher: auto-refresh the tree when files change on disk. Watches only the root + currently
+    // -expanded directories (re-synced on expand/collapse and after each refresh) so it's cheap even on huge
+    // trees; a daemon thread drains events and a debounce coalesces bursts into one refreshTree(). Local roots
+    // only (a remote SFTP root has no local WatchService). On macOS the JDK uses a polling watcher, so external
+    // changes may take a few seconds to show (the focus-regain refresh covers the immediate case).
+    private java.nio.file.WatchService watchService;
+    private Thread watchThread;
+    private final java.util.Map<java.nio.file.WatchKey, Path> watchKeys = new java.util.HashMap<>();
+    private final PauseTransition watchDebounce = new PauseTransition(Duration.millis(250));
+    private volatile boolean disposed;
+    // In-app rename/delete update the tree directly (instantly); the watcher then re-fires for that same
+    // change (the OS delivers the event a beat later — ~1 s on macOS) and would run a redundant full
+    // refreshTree() rebuild that reads as the edit "settling" a second later. Skip the watcher refresh for a
+    // short window after an in-app filesystem change so the instant update is the only one the user sees.
+    private volatile long lastLocalChangeMs;
+
+    private static final long SELF_CHANGE_WINDOW_MS = 1500;
+
     private Path root;
     private boolean filtering;
     private boolean loading;
@@ -130,6 +148,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 openSelected();
             }
+        });
+        // Expanding/collapsing a folder changes which directories we need to watch.
+        tree.addEventHandler(TreeItem.<Path>branchExpandedEvent(), e -> syncWatches());
+        tree.addEventHandler(TreeItem.<Path>branchCollapsedEvent(), e -> syncWatches());
+        // A coalesced filesystem-change event re-scans the tree (preserving expansion + selection) — unless
+        // we just made the change ourselves (in-app rename/delete already updated the tree instantly).
+        watchDebounce.setOnFinished(e -> {
+            if (disposed) {
+                return;
+            }
+            if (System.currentTimeMillis() - lastLocalChangeMs < SELF_CHANGE_WINDOW_MS) {
+                syncWatches(); // our own edit already refreshed the tree; just keep the watch set current
+                return;
+            }
+            refreshTree();
+            syncWatches(); // a newly-created folder that's expanded would need watching
         });
 
         Label placeholder = new Label(tr("project.placeholder"));
@@ -227,7 +261,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         loading = true;
         filterField.clear();
         loading = false;
-        rebuildBody();
+        ensureWatchOrStop(); // start a watcher for a local root (or stop it for remote/none)
+        rebuildBody(); // ends with syncWatches() — registers the new root's dirs, cancels the old root's
     }
 
     /** The folder the tree is currently rooted at, or {@code null} when showing the placeholder. */
@@ -271,6 +306,118 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             });
         }
         getChildren().setAll(filterField, tree);
+        syncWatches(); // register the (new) tree's directories with the filesystem watcher
+    }
+
+    // --- filesystem watcher (auto-refresh on disk changes) ---------------------------------------
+
+    /** Starts the watcher for a local root, or cancels all watches for a remote/absent root. */
+    private void ensureWatchOrStop() {
+        if (root != null && com.editora.vfs.Vfs.isLocal(root) && Files.isDirectory(root)) {
+            ensureWatchService();
+        } else {
+            cancelAllWatches();
+        }
+    }
+
+    /** Lazily creates the {@link java.nio.file.WatchService} + its daemon drain thread (once per panel). */
+    private void ensureWatchService() {
+        if (watchService != null || disposed) {
+            return;
+        }
+        try {
+            watchService = java.nio.file.FileSystems.getDefault().newWatchService();
+        } catch (IOException | RuntimeException e) {
+            watchService = null; // watching unsupported here; the focus-regain refresh still applies
+            return;
+        }
+        watchThread = new Thread(this::watchLoop, "project-fs-watch");
+        watchThread.setDaemon(true);
+        watchThread.start();
+    }
+
+    /**
+     * Registers the root + currently-expanded directories with the watcher and cancels watches for
+     * directories no longer present/expanded. Runs on the FX thread (it reads the tree). Cheap: the set is
+     * just the visible folders.
+     */
+    private void syncWatches() {
+        if (watchService == null) {
+            return;
+        }
+        java.util.Set<Path> desired = new java.util.HashSet<>();
+        if (root != null && Files.isDirectory(root)) {
+            desired.add(root);
+        }
+        if (tree.getRoot() instanceof PathItem rootItem) {
+            collectExpanded(rootItem, desired); // expanded directories (root included)
+        }
+        watchKeys.entrySet().removeIf(entry -> {
+            if (!desired.contains(entry.getValue())) {
+                entry.getKey().cancel();
+                return true;
+            }
+            return false;
+        });
+        java.util.Set<Path> already = new java.util.HashSet<>(watchKeys.values());
+        for (Path dir : desired) {
+            if (already.contains(dir) || !Files.isDirectory(dir)) {
+                continue;
+            }
+            try {
+                java.nio.file.WatchKey key = dir.register(
+                        watchService,
+                        java.nio.file.StandardWatchEventKinds.ENTRY_CREATE,
+                        java.nio.file.StandardWatchEventKinds.ENTRY_DELETE,
+                        java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
+                watchKeys.put(key, dir);
+            } catch (IOException | RuntimeException ignored) {
+                // a dir we can't watch (perms, vanished) is simply not watched
+            }
+        }
+    }
+
+    private void cancelAllWatches() {
+        for (java.nio.file.WatchKey key : watchKeys.keySet()) {
+            key.cancel();
+        }
+        watchKeys.clear();
+    }
+
+    /** Daemon loop: drains watch events and schedules a single coalesced refresh on the FX thread. */
+    private void watchLoop() {
+        while (!disposed) {
+            java.nio.file.WatchKey key;
+            try {
+                key = watchService.take();
+            } catch (InterruptedException | java.nio.file.ClosedWatchServiceException e) {
+                return; // disposed
+            }
+            key.pollEvents(); // we re-list rather than apply individual events; just drain them
+            key.reset();
+            Platform.runLater(() -> {
+                if (!disposed) {
+                    watchDebounce.playFromStart();
+                }
+            });
+        }
+    }
+
+    /** Stops the watcher + its thread; call on window close so the daemon thread + native handles are freed. */
+    public void dispose() {
+        disposed = true;
+        watchDebounce.stop();
+        watchKeys.clear();
+        java.nio.file.WatchService ws = watchService;
+        watchService = null;
+        if (ws != null) {
+            try {
+                ws.close(); // unblocks watchLoop's take()
+            } catch (IOException ignored) {
+                // closing best-effort
+            }
+        }
+        searchExecutor.shutdownNow();
     }
 
     /** Bounded project-wide filename search: dot-dirs skipped, capped on entries visited and matches. */
@@ -478,7 +625,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
                         return;
                     }
-                    refreshAfterChange(item);
+                    markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
+                    refreshAfterChange();
                     onFileRenamed.accept(path, target);
                 });
     }
@@ -502,8 +650,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             showError(tr("project.deleteError", path.getFileName(), ex.getMessage()));
             return;
         }
-        refreshAfterChange(item);
+        markLocalChange(); // suppress the watcher's redundant ~1s-later refresh for our own delete
+        refreshAfterChange();
         onFileDeleted.accept(path);
+    }
+
+    /** Records an in-app filesystem change so the watcher skips its redundant refresh for a short window. */
+    private void markLocalChange() {
+        lastLocalChangeMs = System.currentTimeMillis();
     }
 
     /** Shows a modal error dialog when a filesystem operation (rename/delete) fails. */
@@ -515,12 +669,18 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         alert.showAndWait();
     }
 
-    /** Refreshes the view after a rename/delete: re-run the filter, or re-list the lazy parent. */
-    private void refreshAfterChange(TreeItem<Path> item) {
+    /**
+     * Refreshes the view after an in-app rename/delete by re-scanning the live tree from disk (by path) —
+     * <em>not</em> the captured {@code TreeItem}. The confirm/rename dialog is a separate window, so closing
+     * it regains focus on the main window and fires its focus-regain {@link #refreshTree()}, which rebuilds
+     * the tree with new node instances; the captured item is then detached and removing/reloading it would
+     * be a no-op. Re-listing from disk drops the just-deleted file (and shows the renamed name) reliably.
+     */
+    private void refreshAfterChange() {
         if (filtering) {
             rebuildBody();
-        } else if (item.getParent() instanceof PathItem parent) {
-            parent.reload();
+        } else {
+            refreshTree();
         }
     }
 
