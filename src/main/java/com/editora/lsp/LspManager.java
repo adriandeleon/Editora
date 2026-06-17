@@ -209,10 +209,18 @@ public final class LspManager {
             if (spec == null) {
                 return null;
             }
-            // jdtls gets the java-debug plugin via initializationOptions.bundles when debugging is on, so
-            // it registers the vscode.java.* debug commands. Other servers get no init options.
-            Object initOptions =
-                    "java".equals(serverId) && !debugBundles.isEmpty() ? Map.of("bundles", debugBundles) : null;
+            // Per-server initializationOptions:
+            //  - jdtls gets the java-debug plugin bundle (when debugging is on) so it registers the
+            //    vscode.java.* debug commands.
+            //  - gopls ships semantic tokens DISABLED and only advertises semanticTokensProvider when its
+            //    `semanticTokens` option is set at initialize (confirmed: the flat key works, `ui.` doesn't);
+            //    enabling it is free — gopls computes tokens only when we request them.
+            Object initOptions = null;
+            if ("java".equals(serverId) && !debugBundles.isEmpty()) {
+                initOptions = Map.of("bundles", debugBundles);
+            } else if ("go".equals(serverId)) {
+                initOptions = Map.of("semanticTokens", true);
+            }
             LanguageServerSession session = new LanguageServerSession(
                     spec,
                     root,
