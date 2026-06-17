@@ -400,6 +400,20 @@ final class LanguageServerSession implements LanguageClient {
         return server.getTextDocumentService().references(params);
     }
 
+    /** Document symbols ({@code textDocument/documentSymbol}) for {@code uri} — empty when not ready/on error. */
+    CompletableFuture<
+                    java.util.List<
+                            org.eclipse.lsp4j.jsonrpc.messages.Either<
+                                    org.eclipse.lsp4j.SymbolInformation, org.eclipse.lsp4j.DocumentSymbol>>>
+            documentSymbol(String uri) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(java.util.List.of());
+        }
+        return server.getTextDocumentService()
+                .documentSymbol(new org.eclipse.lsp4j.DocumentSymbolParams(new TextDocumentIdentifier(uri)))
+                .exceptionally(t -> java.util.List.of());
+    }
+
     /** Pull diagnostics ({@code textDocument/diagnostic}) for {@code uri}; null when the session isn't ready. */
     CompletableFuture<org.eclipse.lsp4j.DocumentDiagnosticReport> diagnostic(String uri) {
         if (!ready()) {

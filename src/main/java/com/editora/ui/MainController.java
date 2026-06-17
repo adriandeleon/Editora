@@ -1979,6 +1979,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
             fileInfoPanel.attach(buffer);
             structurePanel.attach(buffer);
+            requestStructureSymbols(buffer); // upgrade the outline to LSP symbols when the server supports them
             statusBar.attach(buffer);
             breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
             updateProjectFolderView(); // global window: retarget the tree at the new file's folder
@@ -3992,6 +3993,25 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Opens+activates an eligible buffer on its language's server, or deactivates+closes it otherwise. */
+    /**
+     * Refreshes the Structure tool window's outline for {@code buffer} from the language server
+     * ({@code textDocument/documentSymbol}) when its server supports it; otherwise clears the LSP outline so
+     * the panel falls back to the TextMate/fold heuristic. Only acts for the active buffer (Structure tracks
+     * the active tab); a genuinely empty LSP result also falls back to the heuristic.
+     */
+    private void requestStructureSymbols(EditorBuffer buffer) {
+        if (buffer == null || buffer != activeBuffer()) {
+            return;
+        }
+        Path path = buffer.getPath();
+        if (path != null && lspManager.isManaged(path) && lspManager.supportsDocumentSymbols(path)) {
+            lspManager.documentSymbols(
+                    path, syms -> structurePanel.setLspSymbols(buffer, syms.isEmpty() ? null : syms));
+        } else {
+            structurePanel.setLspSymbols(buffer, null);
+        }
+    }
+
     private void syncBufferLsp(EditorBuffer buffer) {
         Path path = buffer.getPath();
         String lang = buffer.getLanguage();
@@ -4168,6 +4188,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         lspManager.pullDiagnostics(b.getPath());
                     }
                 }
+                requestStructureSymbols(activeBuffer()); // the outline can now be populated from the server
             }
         }
     }
@@ -6560,6 +6581,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setLspChangeListener(text -> {
             if (buffer.getPath() != null) {
                 lspManager.changeDocument(buffer.getPath(), text);
+                requestStructureSymbols(buffer); // keep the Structure outline live as the document changes
             }
         });
         // Pull-model diagnostics (fired on the same debounce as didChange; no-op for push-only servers).

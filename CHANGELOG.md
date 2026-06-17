@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LSP-powered Structure tool window.** For files served by a language server, the Structure outline is now
+  built from the server's `textDocument/documentSymbol` response — a precise hierarchy of classes, methods,
+  fields, enums, etc. with proper kinds and per-kind icons, and methods showing their signature (parameters
+  and return type, in a muted colour) — instead of the fold/TextMate heuristic (which
+  remains the fallback for non-LSP languages, when LSP is off, or for remote files). The outline refreshes
+  live as you type and once the server finishes starting, and clicking an entry still navigates to it. New
+  toolbar controls: a **sort** selector (Position / Name / Kind) and a **kind filter** to hide categories.
+
 - **Project tool window auto-refreshes on filesystem changes.** A watcher on the project tree (the root +
   currently-expanded folders) refreshes the view when files are created, deleted, renamed, or modified on
   disk — by another app, a build, git, or Editora itself — preserving expanded folders and the selection.

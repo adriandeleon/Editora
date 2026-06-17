@@ -9,10 +9,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import javafx.application.Platform;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.IndexedCell;
+import javafx.scene.control.MenuButton;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -20,12 +26,15 @@ import javafx.scene.control.TreeView;
 import javafx.scene.control.skin.VirtualFlow;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.util.StringConverter;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.FoldRegions.Region;
 import com.editora.editor.TextMateHighlighter.Symbol;
+import com.editora.lsp.SymbolNode;
 import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
@@ -42,13 +51,33 @@ import static com.editora.i18n.Messages.tr;
  */
 public class StructurePanel extends VBox implements ToolWindowContent {
 
+    /** How the outline rows are ordered (session-only, like the filter box). */
+    public enum SortMode {
+        POSITION,
+        NAME,
+        KIND
+    }
+
     private final TextField filterField = new TextField();
     private final TreeView<StructureNode> tree = new TreeView<>();
+    private final ComboBox<SortMode> sortCombo = new ComboBox<>();
+    private final MenuButton kindFilter = new MenuButton();
 
     private EditorBuffer buffer;
     private List<StructureNode> roots = List.of();
+    /**
+     * The LSP document-symbol outline for the active buffer, or {@code null} to use the TextMate/fold
+     * heuristic. {@link #setLspSymbols} pushes it (an empty list means "LSP served, but no symbols").
+     */
+    private List<SymbolNode> lspSymbols;
+
+    private SortMode sortMode = SortMode.POSITION;
+    /** Symbol kinds toggled off in the kind filter (session-only). */
+    private final Set<String> hiddenKinds = new java.util.HashSet<>();
     /** Suppresses selection-driven navigation while the tree is rebuilt programmatically. */
     private boolean suppressNavigation;
+    /** Guards against re-entrant kind-filter menu rebuilds firing the checkbox listeners. */
+    private boolean rebuildingKindFilter;
 
     public StructurePanel() {
         getStyleClass().add("structure-panel");
@@ -61,6 +90,39 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         filterField.setPromptText(tr("structure.filterPrompt"));
         filterField.getStyleClass().add("structure-filter");
         filterField.textProperty().addListener((o, w, n) -> applyFilter(n));
+
+        // Sort mode (Position / Name / Kind) — re-sorts and re-renders the outline.
+        sortCombo.getItems().setAll(SortMode.POSITION, SortMode.NAME, SortMode.KIND);
+        sortCombo.setValue(SortMode.POSITION);
+        sortCombo.getStyleClass().add("structure-sort");
+        sortCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(SortMode m) {
+                return switch (m == null ? SortMode.POSITION : m) {
+                    case NAME -> tr("structure.sort.name");
+                    case KIND -> tr("structure.sort.kind");
+                    default -> tr("structure.sort.position");
+                };
+            }
+
+            @Override
+            public SortMode fromString(String s) {
+                return SortMode.POSITION;
+            }
+        });
+        sortCombo.valueProperty().addListener((o, w, n) -> {
+            sortMode = n == null ? SortMode.POSITION : n;
+            rebuild();
+        });
+
+        // Kind filter: a dropdown of the kinds present in the current outline, each toggleable.
+        kindFilter.setText(tr("structure.filter.kinds"));
+        kindFilter.getStyleClass().add("structure-kind-filter");
+        kindFilter.setGraphic(Icons.find());
+
+        HBox toolbar = new HBox(4, sortCombo, kindFilter);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+        toolbar.getStyleClass().add("structure-toolbar");
 
         tree.setShowRoot(false);
         tree.getStyleClass().add("structure-tree");
@@ -82,7 +144,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         });
 
         setSpacing(4);
-        getChildren().addAll(filterField, tree);
+        getChildren().addAll(toolbar, filterField, tree);
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
     }
 
@@ -112,6 +174,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             this.buffer.setOnSymbolsChanged(null);
         }
         this.buffer = buffer;
+        this.lspSymbols = null; // start with the heuristic; MainController pushes LSP symbols if available
         if (buffer == null) {
             rebuild();
             return;
@@ -289,7 +352,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     /** Moves the editor caret to {@code item}'s region, optionally focusing the editor. */
     private void navigateTo(TreeItem<StructureNode> item, boolean focusEditor) {
-        if (item == null || item.getValue() == null || item.getValue().region() == null || buffer == null) {
+        if (item == null || item.getValue() == null || buffer == null) {
             return;
         }
         CodeArea area = buffer.getArea();
@@ -314,7 +377,15 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     // --- Tree construction ---
 
     private void rebuild() {
-        roots = buffer == null ? List.of() : buildNodes();
+        if (buffer == null) {
+            roots = List.of();
+        } else if (lspSymbols != null) {
+            roots = fromLsp(lspSymbols); // LSP-served file: precise hierarchy + kinds
+        } else {
+            roots = buildNodes(); // fallback: fold-region nesting + TextMate-scope names
+        }
+        sortNodes(roots);
+        rebuildKindFilter();
         // A rebuild reselects the first row; that must not move the editor caret.
         suppressNavigation = true;
         try {
@@ -322,6 +393,97 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         } finally {
             suppressNavigation = false;
         }
+    }
+
+    /**
+     * Pushes the LSP document-symbol outline for {@code forBuffer} (or {@code null} to use the heuristic). A
+     * no-op if the active buffer changed since the request was issued (a stale async result).
+     */
+    public void setLspSymbols(EditorBuffer forBuffer, List<SymbolNode> symbols) {
+        if (forBuffer != buffer) {
+            return;
+        }
+        this.lspSymbols = symbols;
+        rebuild();
+    }
+
+    /** Converts the LSP symbol tree into structure nodes (region-less; navigation uses the symbol line). */
+    private static List<StructureNode> fromLsp(List<SymbolNode> symbols) {
+        List<StructureNode> out = new ArrayList<>();
+        for (SymbolNode s : symbols) {
+            if (s == null) {
+                continue;
+            }
+            StructureNode node = new StructureNode(null, s.name(), s.kind(), Math.max(0, s.line()), s.detail());
+            node.children().addAll(fromLsp(s.children()));
+            out.add(node);
+        }
+        return out;
+    }
+
+    /** Re-orders {@code nodes} (and their descendants) per the current {@link SortMode}. */
+    private void sortNodes(List<StructureNode> nodes) {
+        Comparator<StructureNode> cmp =
+                switch (sortMode) {
+                    case NAME ->
+                        Comparator.<StructureNode, String>comparing(
+                                n -> n.label().toLowerCase(Locale.ROOT));
+                    case KIND ->
+                        Comparator.<StructureNode, String>comparing(n -> n.kind() == null ? "" : n.kind())
+                                .thenComparing(n -> n.label().toLowerCase(Locale.ROOT));
+                    default -> Comparator.comparingInt(StructureNode::line);
+                };
+        nodes.sort(cmp);
+        for (StructureNode n : nodes) {
+            sortNodes(n.children());
+        }
+    }
+
+    /** Rebuilds the kind-filter dropdown from the kinds present in the outline (preserving existing toggles). */
+    private void rebuildKindFilter() {
+        Set<String> present = new TreeSet<>();
+        collectKinds(roots, present);
+        hiddenKinds.retainAll(present); // forget toggles for kinds no longer in the outline
+        rebuildingKindFilter = true;
+        try {
+            kindFilter.getItems().clear();
+            kindFilter.setDisable(present.isEmpty());
+            for (String kind : present) {
+                CheckMenuItem item = new CheckMenuItem(kindLabel(kind));
+                item.setSelected(!hiddenKinds.contains(kind));
+                item.selectedProperty().addListener((o, w, on) -> {
+                    if (rebuildingKindFilter) {
+                        return;
+                    }
+                    if (on) {
+                        hiddenKinds.remove(kind);
+                    } else {
+                        hiddenKinds.add(kind);
+                    }
+                    applyFilter(filterField.getText());
+                });
+                kindFilter.getItems().add(item);
+            }
+        } finally {
+            rebuildingKindFilter = false;
+        }
+    }
+
+    private static void collectKinds(List<StructureNode> nodes, Set<String> out) {
+        for (StructureNode n : nodes) {
+            if (n.kind() != null && !n.kind().isBlank()) {
+                out.add(n.kind());
+            }
+            collectKinds(n.children(), out);
+        }
+    }
+
+    /** Display label for a (technical) kind id — capitalized; not localized, like other technical tokens. */
+    private static String kindLabel(String kind) {
+        if (kind == null || kind.isEmpty()) {
+            return "?";
+        }
+        return Character.toUpperCase(kind.charAt(0)) + kind.substring(1);
     }
 
     private List<StructureNode> buildNodes() {
@@ -446,15 +608,15 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 childItems.add(ci);
             }
         }
-        boolean self =
-                q.isEmpty() || CommandPalette.isSubsequence(q, node.label().toLowerCase(Locale.ROOT));
+        boolean kindVisible = node.kind() == null || !hiddenKinds.contains(node.kind());
+        boolean self = kindVisible
+                && (q.isEmpty() || CommandPalette.isSubsequence(q, node.label().toLowerCase(Locale.ROOT)));
         if (!self && childItems.isEmpty()) {
             return null;
         }
         TreeItem<StructureNode> item = new TreeItem<>(node);
         item.getChildren().setAll(childItems);
-        // Collapsed by default; expand only while filtering so matches stay visible.
-        item.setExpanded(!q.isEmpty());
+        item.setExpanded(true); // expand by default so the whole outline is visible at a glance
         return item;
     }
 
@@ -462,23 +624,77 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         @Override
         protected void updateItem(StructureNode item, boolean empty) {
             super.updateItem(item, empty);
-            setText(empty || item == null ? null : item.label());
+            if (empty || item == null) {
+                setText(null);
+                setGraphic(null);
+                return;
+            }
+            boolean real = item.kind() != null && item.line() >= 0;
+            String sig = signature(item);
+            if (sig.isEmpty()) {
+                // No signature to append: plain text + (for real rows) a kind icon.
+                setText(item.label());
+                setGraphic(real ? StructureIcons.forKind(item.kind()) : null);
+                return;
+            }
+            // Method/function: render "name" then the signature "(params) : ret" in a muted colour, abutting
+            // the name (no inter-node gap), with the kind icon to the left.
+            setText(null);
+            javafx.scene.text.Text name = new javafx.scene.text.Text(item.label());
+            name.getStyleClass().add("structure-name");
+            javafx.scene.text.Text detail = new javafx.scene.text.Text(sig);
+            detail.getStyleClass().add("structure-detail");
+            HBox box = new HBox(name, detail);
+            box.setAlignment(Pos.CENTER_LEFT);
+            if (real) {
+                Node icon = StructureIcons.forKind(item.kind());
+                HBox.setMargin(icon, new javafx.geometry.Insets(0, 4, 0, 0));
+                box.getChildren().add(0, icon);
+            }
+            setGraphic(box);
+        }
+
+        /**
+         * The signature to show after a callable symbol's name: the server's detail (e.g. {@code (String x) :
+         * void}, wrapped in parens if it isn't already), or {@code "()"} when there's no detail. Empty for
+         * non-callable kinds, so fields/classes show just their name.
+         */
+        private static String signature(StructureNode n) {
+            if (!isCallable(n.kind())) {
+                return "";
+            }
+            String d = n.detail() == null ? "" : n.detail().strip();
+            if (d.isEmpty()) {
+                return "()";
+            }
+            return d.startsWith("(") ? d : "(" + d + ")";
+        }
+
+        private static boolean isCallable(String kind) {
+            return "method".equals(kind) || "function".equals(kind) || "constructor".equals(kind);
         }
     }
 
-    /** A node in the structure tree: a foldable region, its symbol label/kind, the line to navigate to, and children. */
+    /** A node in the structure tree: a foldable region, its symbol label/kind, the line to navigate to, an
+     *  optional detail (the LSP signature, e.g. {@code (String x) : void}), and children. */
     private static final class StructureNode {
         private final Region region;
         private final String label;
         private final String kind;
         private final int line;
+        private final String detail;
         private final List<StructureNode> children = new ArrayList<>();
 
         StructureNode(Region region, String label, String kind, int line) {
+            this(region, label, kind, line, "");
+        }
+
+        StructureNode(Region region, String label, String kind, int line, String detail) {
             this.region = region;
             this.label = label;
             this.kind = kind;
             this.line = line;
+            this.detail = detail == null ? "" : detail;
         }
 
         Region region() {
@@ -495,6 +711,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
         int line() {
             return line;
+        }
+
+        String detail() {
+            return detail;
         }
 
         List<StructureNode> children() {
