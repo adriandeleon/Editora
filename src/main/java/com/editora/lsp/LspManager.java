@@ -415,6 +415,38 @@ public final class LspManager {
                 });
     }
 
+    /** True if {@code file}'s server is ready and advertises the document-symbol outline (Structure window). */
+    public boolean supportsDocumentSymbols(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && documentSymbolProvider(s.capabilities());
+    }
+
+    /** Pure: whether a server's capabilities include {@code documentSymbolProvider} (null-safe). */
+    static boolean documentSymbolProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return false;
+        }
+        var p = caps.getDocumentSymbolProvider();
+        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
+    }
+
+    /**
+     * Requests the document-symbol outline ({@code textDocument/documentSymbol}) for {@code file} and delivers
+     * the mapped {@link SymbolNode} tree to {@code cb} on the FX thread (empty when unsupported / on error).
+     * Powers the Structure tool window for LSP-served files.
+     */
+    public void documentSymbols(Path file, Consumer<List<SymbolNode>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.documentSymbol(uri(file)).whenComplete((result, error) -> {
+            List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
+            Platform.runLater(() -> cb.accept(symbols));
+        });
+    }
+
     public void hover(Path file, int line, int character, Consumer<String> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {

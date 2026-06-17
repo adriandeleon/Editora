@@ -139,6 +139,16 @@
     -fx-padding: 1 4 1 4;
 }
 
+/* Two-tone method rows: the name in the default fill, the signature "(params) : ret" muted. (Raw Text
+   nodes don't inherit the cell's -fx-text-fill, so the name's fill is set explicitly for dark themes.) */
+.structure-tree .structure-name {
+    -fx-fill: -color-fg-default;
+}
+
+.structure-tree .structure-detail {
+    -fx-fill: -color-fg-muted;
+}
+
 /* Bookmarks tool window: same look as the Structure panel. */
 .bookmarks-panel {
     -fx-background-color: -color-bg-default;
