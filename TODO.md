@@ -200,6 +200,13 @@ A backlog of planned features and improvements. Unordered within each section.
       folder and follows the focused tab
 - [ ] Upgrade breadcrumbs support — _partial:_ Reveal in File Manager / Open Terminal Here on a crumb
 - [ ] Fix Zen mode
+- [~] Font ligatures (Fira Code / JetBrains Mono `=>`, `!=`, …) — **not feasible on the current stack.**
+      Programming ligatures are OpenType contextual alternates (`calt`), and JavaFX exposes no
+      feature-control API (no `-fx-font-feature-settings`, no `Font` method) — it only auto-shapes
+      complex scripts, never Latin programming ligatures. Even if it did, RichTextFX's editing model
+      maps one char → one glyph cell for caret/selection/hit-testing, which ligature glyph-substitution
+      breaks (the caret lands in the wrong column). Would require both JavaFX feature support *and*
+      ligature-aware caret math in the fork. Deferred unless JavaFX adds OpenType feature control
 
 ## Extensibility & integration
 - [x] Plugins/API support — Java SPI (`com.editora.plugin.Plugin`) + declarative `plugin.json`
