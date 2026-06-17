@@ -185,7 +185,13 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] Log mode support
 
 ## Keybindings
-- [ ] Complete emacs movement/text manipulation keybindings
+- [x] Complete emacs movement/text manipulation keybindings — backward-kill-word (`M-DEL`),
+      upcase/downcase/capitalize-word + region (`M-u`/`M-l`/`M-c`, `C-x C-u`/`C-x C-l`), join-line (`M-^`),
+      delete-horizontal-space (`M-\`), just-one-space (`M-SPC`), delete-blank-lines (`C-x C-o`),
+      open-line (`C-o`), kill-whole-line (`C-S-DEL`), zap-to-char (`M-z`), forward/backward-sexp +
+      mark/kill-sexp (`C-M-f`/`C-M-b`/`C-M-SPC`/`C-M-k`), beginning/end-of-defun (`C-M-a`/`C-M-e`),
+      mark-paragraph (`M-h`), mark-whole-buffer (`C-x h`), move-to-window-line (`M-r`). *Kill ring
+      (yank-pop / consecutive-kill accumulation) still deferred.*
 - [x] Fully configurable shortcuts — keybinding editor in Settings → Keymaps: searchable command list,
       multi-key chord recorder, conflict warnings, per-command + global reset; live (no restart), persisted
       as overrides on top of the active keymap theme

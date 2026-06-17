@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **More Emacs editing & movement commands.** Filled the remaining gaps versus a standard Emacs
+  `global-map`: **backward-kill-word** (`M-DEL`); case commands **upcase/downcase/capitalize-word**
+  (`M-u`/`M-l`/`M-c`) and **upcase/downcase-region** (`C-x C-u`/`C-x C-l`); whitespace and line surgery —
+  **join-line / delete-indentation** (`M-^`), **delete-horizontal-space** (`M-\`), **just-one-space**
+  (`M-SPC`), **delete-blank-lines** (`C-x C-o`), **open-line** (`C-o`), **kill-whole-line** (`C-S-DEL`),
+  and **zap-to-char** (`M-z`); structural navigation — **forward/backward-sexp** (`C-M-f`/`C-M-b`),
+  **mark-sexp** (`C-M-SPC`), **kill-sexp** (`C-M-k`), **beginning/end-of-defun** (`C-M-a`/`C-M-e`, heuristic
+  in a language-agnostic editor), and **mark-paragraph** (`M-h`); plus **mark-whole-buffer** (`C-x h`) and
+  **move-to-window-line-top-bottom** (`M-r`). All are palette-discoverable and rebindable like any command.
+  *Kill-ring behavior (yank-pop, consecutive-kill accumulation) remains deferred — these "kill" commands
+  delete, and cut/copy/paste still use the system clipboard.*
+
 - **Keyboard macros (Emacs-style).** Record a sequence of editor actions and replay it. Recording captures
   the faithful interleaved stream of **invoked commands and literally typed text**, and replay reproduces the
   exact sequence — replayed typing runs through the same auto-close / auto-indent assists as live typing.
