@@ -21,6 +21,8 @@ public class KeyDispatcher {
     private final CommandRegistry registry;
     private final KeymapManager keymap;
     private final Consumer<String> statusListener;
+    /** Optional hook fed each literally-typed character that reaches the editor (for the macro recorder). */
+    private Consumer<Character> typedListener;
 
     private String pending = "";
     /** True when the last KEY_PRESSED was consumed, so its paired KEY_TYPED is swallowed too. */
@@ -39,6 +41,15 @@ public class KeyDispatcher {
     /** Installs a first-look hook (see {@link #preDispatch}); may be null to clear. */
     public void setPreDispatch(java.util.function.BiPredicate<String, EventTarget> hook) {
         this.preDispatch = hook;
+    }
+
+    /**
+     * Installs a hook fed each literally-typed character that reaches the editor (i.e. a {@code KEY_TYPED}
+     * not swallowed as part of a command chord). Used by the macro recorder to capture typed text
+     * interleaved with command invocations. May be null to clear.
+     */
+    public void setTypedListener(Consumer<Character> listener) {
+        this.typedListener = listener;
     }
 
     public void install(Scene scene) {
@@ -84,7 +95,25 @@ public class KeyDispatcher {
         if (consumedPress || (IS_MAC && event.isAltDown())) {
             consumedPress = false;
             event.consume();
+            return;
         }
+        // A genuine character reaching the editor — feed it to the macro recorder (if any).
+        if (typedListener != null) {
+            String s = event.getCharacter();
+            if (s != null) {
+                for (int i = 0; i < s.length(); i++) {
+                    char c = s.charAt(i);
+                    if (isRecordableChar(c)) {
+                        typedListener.accept(c);
+                    }
+                }
+            }
+        }
+    }
+
+    /** A typed char worth recording in a macro: printable, or one of tab / newline / carriage-return. */
+    private static boolean isRecordableChar(char c) {
+        return (c >= 0x20 && c != 0x7F) || c == '\t' || c == '\n' || c == '\r';
     }
 
     void handle(KeyEvent event) {
