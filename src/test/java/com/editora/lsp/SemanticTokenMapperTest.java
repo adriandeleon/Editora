@@ -38,6 +38,29 @@ class SemanticTokenMapperTest {
     }
 
     @Test
+    void crossServerTypesMap() {
+        // Non-standard token types captured from the real legends of our other servers.
+        assertEquals("sem-property", SemanticTokenMapper.cssClass("member", 0, MODS)); // typescript
+        assertEquals("sem-property", SemanticTokenMapper.cssClass("field", 0, MODS)); // C#
+        assertEquals("sem-constant", SemanticTokenMapper.cssClass("constant", 0, MODS)); // C#
+        assertEquals("sem-type", SemanticTokenMapper.cssClass("builtinType", 0, MODS)); // rust-analyzer
+        assertEquals("sem-type", SemanticTokenMapper.cssClass("typeAlias", 0, MODS)); // rust-analyzer
+        assertEquals("sem-type", SemanticTokenMapper.cssClass("union", 0, MODS)); // rust-analyzer
+        assertEquals("sem-type", SemanticTokenMapper.cssClass("concept", 0, MODS)); // clangd (C++)
+        // taplo's only two token types — previously both unmapped, so TOML semantic highlight was a no-op.
+        assertEquals("sem-property", SemanticTokenMapper.cssClass("tomlTableKey", 0, MODS));
+        assertEquals("sem-property", SemanticTokenMapper.cssClass("tomlArrayKey", 0, MODS));
+    }
+
+    @Test
+    void constantTypeDoesNotDoubleEmphasis() {
+        // a 'constant' base + readonly/static must not yield "sem-constant sem-constant"
+        assertEquals("sem-constant", SemanticTokenMapper.cssClass("constant", bit(2), MODS)); // readonly
+        assertEquals("sem-constant", SemanticTokenMapper.cssClass("constant", bit(3), MODS)); // static
+        assertEquals("sem-constant sem-deprecated", SemanticTokenMapper.cssClass("constant", bit(4), MODS));
+    }
+
+    @Test
     void lexicalTypesDeferToTextMate() {
         for (String t : List.of("keyword", "comment", "string", "number", "regexp", "operator", "modifier")) {
             assertNull(SemanticTokenMapper.cssClass(t, 0, MODS), t + " should fall through to TextMate");

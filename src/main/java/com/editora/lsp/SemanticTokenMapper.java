@@ -32,7 +32,7 @@ public final class SemanticTokenMapper {
             return base + " sem-deprecated";
         }
         if (hasMod(modBits, modLegend, "readonly") || hasMod(modBits, modLegend, "static")) {
-            return base + " sem-constant";
+            return base.equals("sem-constant") ? base : base + " sem-constant"; // avoid "sem-constant sem-constant"
         }
         return base;
     }
@@ -44,11 +44,32 @@ public final class SemanticTokenMapper {
         }
         return switch (type) {
             case "parameter" -> "sem-parameter";
-            case "property", "enumMember", "event", "recordComponent" -> "sem-property";
+            // member (TS), field (C#), tomlTableKey/tomlArrayKey (taplo) are field/property-like.
+            case "property",
+                    "enumMember",
+                    "event",
+                    "recordComponent",
+                    "member",
+                    "field",
+                    "tomlTableKey",
+                    "tomlArrayKey" -> "sem-property";
             case "variable" -> "sem-variable";
             case "function", "method" -> "sem-function";
-            case "class", "interface", "enum", "struct", "type", "typeParameter", "namespace", "record" -> "sem-type";
+            // builtinType/typeAlias/union (rust-analyzer), concept (clangd) are type-like.
+            case "class",
+                    "interface",
+                    "enum",
+                    "struct",
+                    "type",
+                    "typeParameter",
+                    "namespace",
+                    "record",
+                    "builtinType",
+                    "typeAlias",
+                    "union",
+                    "concept" -> "sem-type";
             case "macro", "decorator", "annotation", "annotationMember" -> "sem-macro";
+            case "constant" -> "sem-constant"; // C# emits a 'constant' type
             default -> null; // keyword/comment/string/number/regexp/operator/modifier — TextMate nails these
         };
     }
