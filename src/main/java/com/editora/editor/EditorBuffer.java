@@ -3778,39 +3778,7 @@ public class EditorBuffer implements TabContent {
             if (!isEditable() || hasActiveSnippet()) {
                 return;
             }
-            if (a.getSelection().getLength() > 0) {
-                a.replaceSelection("");
-            }
-            int caret = a.getCaretPosition();
-            // Markdown list/blockquote continuation: continue the marker on the next line, or end the
-            // list when Enter is pressed on an empty item.
-            if (isMarkdown()) {
-                int par = a.getCurrentParagraph();
-                int lineStart = a.getAbsolutePosition(par, 0);
-                String line = a.getParagraph(par).getText();
-                int markerLen = MarkdownLines.markerLength(line);
-                if (markerLen > 0 && caret - lineStart >= markerLen) {
-                    if (MarkdownLines.isEmptyItem(line)) {
-                        a.replaceText(lineStart, lineStart + line.length(), ""); // exit list (clear marker)
-                        a.requestFollowCaret();
-                        e.consume();
-                        return;
-                    }
-                    String cont = MarkdownLines.continuation(line);
-                    if (cont != null) {
-                        a.replaceText(caret, caret, "\n" + cont);
-                        a.moveTo(caret + 1 + cont.length());
-                        a.requestFollowCaret();
-                        e.consume();
-                        return;
-                    }
-                }
-            }
-            Indenter.EnterEdit edit = Indenter.enterEdit(
-                    a.getText(), caret, language, tabSize, indentInsertSpacesOverride, indentSizeOverride);
-            a.replaceText(caret, caret, edit.insert());
-            a.moveTo(caret + edit.caretOffset());
-            a.requestFollowCaret();
+            applyEnter(a);
             e.consume(); // we inserted the newline+indent ourselves
         });
         // Smart backspace: when the caret is in a line's leading whitespace, one Backspace clears the
@@ -3860,23 +3828,153 @@ public class EditorBuffer implements TabContent {
                     || a.getSelection().getLength() > 0) {
                 return;
             }
-            char c = e.getCharacter().charAt(0);
-            Indenter.Style style = Indenter.styleFor(language);
-            int caret = a.getCaretPosition();
-            int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
-            String beforeCaret = a.getText(lineStart, caret);
-            boolean bracket = Indenter.isCloserChar(style, c) && !beforeCaret.isEmpty() && beforeCaret.isBlank();
-            boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c);
-            if (!bracket && !keyword) {
-                return;
-            }
-            // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
-            String currentIndent = leadingIndent(beforeCaret);
-            String aligned = Indenter.closerAlignIndent(a.getText(), caret, tabSize);
-            if (!aligned.equals(currentIndent)) {
-                a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
-            }
+            applyCloserDedent(a, e.getCharacter().charAt(0));
         });
+    }
+
+    /**
+     * The body of the Enter auto-indent (Markdown list/blockquote continuation, else {@link Indenter}):
+     * clears any selection, inserts the indented newline, and moves the caret. Shared by the {@code ENTER}
+     * key filter and macro replay ({@link #typeChar} for {@code '\n'}).
+     */
+    private void applyEnter(CodeArea a) {
+        if (a.getSelection().getLength() > 0) {
+            a.replaceSelection("");
+        }
+        int caret = a.getCaretPosition();
+        // Markdown list/blockquote continuation: continue the marker on the next line, or end the
+        // list when Enter is pressed on an empty item.
+        if (isMarkdown()) {
+            int par = a.getCurrentParagraph();
+            int lineStart = a.getAbsolutePosition(par, 0);
+            String line = a.getParagraph(par).getText();
+            int markerLen = MarkdownLines.markerLength(line);
+            if (markerLen > 0 && caret - lineStart >= markerLen) {
+                if (MarkdownLines.isEmptyItem(line)) {
+                    a.replaceText(lineStart, lineStart + line.length(), ""); // exit list (clear marker)
+                    a.requestFollowCaret();
+                    return;
+                }
+                String cont = MarkdownLines.continuation(line);
+                if (cont != null) {
+                    a.replaceText(caret, caret, "\n" + cont);
+                    a.moveTo(caret + 1 + cont.length());
+                    a.requestFollowCaret();
+                    return;
+                }
+            }
+        }
+        Indenter.EnterEdit edit = Indenter.enterEdit(
+                a.getText(), caret, language, tabSize, indentInsertSpacesOverride, indentSizeOverride);
+        a.replaceText(caret, caret, edit.insert());
+        a.moveTo(caret + edit.caretOffset());
+        a.requestFollowCaret();
+    }
+
+    /**
+     * Auto-close decision for a typed character (see {@link AutoClose}): insert a pair / type over a
+     * closer / wrap the selection. Returns {@code true} when it acted (so the caller consumes the event and
+     * skips normal insertion), {@code false} for ordinary typing. Shared by the auto-close key filter and
+     * macro replay ({@link #typeChar}).
+     */
+    private boolean applyAutoCloseTyped(CodeArea a, char c) {
+        if (AutoClose.closerFor(c) == 0 && !AutoClose.isCloser(c)) {
+            return false; // not a bracket or quote
+        }
+        int caret = a.getCaretPosition();
+        int len = a.getLength();
+        char prev = caret > 0 ? a.getText(caret - 1, caret).charAt(0) : 0;
+        char next = caret < len ? a.getText(caret, caret + 1).charAt(0) : 0;
+        boolean hasSel = a.getSelection().getLength() > 0;
+        AutoClose.Decision d = AutoClose.decide(c, prev, next, hasSel);
+        switch (d.action()) {
+            case INSERT_PAIR -> {
+                a.replaceText(caret, caret, "" + c + d.closer());
+                a.moveTo(caret + 1);
+                return true;
+            }
+            case SKIP_OVER -> {
+                a.moveTo(caret + 1);
+                return true;
+            }
+            case WRAP_SELECTION -> {
+                int s = a.getSelection().getStart();
+                String sel = a.getSelectedText();
+                a.replaceText(s, a.getSelection().getEnd(), "" + c + sel + d.closer());
+                a.selectRange(s + 1, s + 1 + sel.length());
+                return true;
+            }
+            case NONE -> {
+                return false; // normal typing (and the auto-indent closer-dedent may run)
+            }
+        }
+        return false;
+    }
+
+    /**
+     * When a closing token is typed alone on a line (a {@code )]}} bracket, or a completed closer keyword
+     * like {@code end}/{@code fi}), re-aligns the line's indent to its opener. Does <em>not</em> insert the
+     * character (the caller does). Shared by the auto-indent key filter and macro replay ({@link #typeChar}).
+     */
+    private void applyCloserDedent(CodeArea a, char c) {
+        Indenter.Style style = Indenter.styleFor(language);
+        int caret = a.getCaretPosition();
+        int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
+        String beforeCaret = a.getText(lineStart, caret);
+        boolean bracket = Indenter.isCloserChar(style, c) && !beforeCaret.isEmpty() && beforeCaret.isBlank();
+        boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c);
+        if (!bracket && !keyword) {
+            return;
+        }
+        // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
+        String currentIndent = leadingIndent(beforeCaret);
+        String aligned = Indenter.closerAlignIndent(a.getText(), caret, tabSize);
+        if (!aligned.equals(currentIndent)) {
+            a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
+        }
+    }
+
+    /**
+     * Replays a run of literally-typed text from a recorded macro, routing each character through the same
+     * typing assists the live key filters use (auto-close, Enter auto-indent, closer dedent, smart Tab), so
+     * a replayed {@code (} pairs and a replayed newline re-indents exactly as when typed by hand.
+     */
+    public void typeString(String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < text.length(); i++) {
+            typeChar(text.charAt(i));
+        }
+    }
+
+    /** Types a single character through the editor's typing assists. See {@link #typeString}. */
+    public void typeChar(char c) {
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        if (!isEditable() || hugeFile) {
+            return;
+        }
+        if (c == '\n' || c == '\r') {
+            applyEnter(a);
+            return;
+        }
+        if (c == '\t') {
+            if (!applySmartTab(a, false)) {
+                a.replaceSelection("\t");
+            }
+            a.requestFollowCaret();
+            return;
+        }
+        // Mirror the live KEY_TYPED order: auto-close first; if it didn't act, closer-dedent then insert.
+        if (applyAutoCloseTyped(a, c)) {
+            a.requestFollowCaret();
+            return;
+        }
+        if (a.getSelection().getLength() == 0) {
+            applyCloserDedent(a, c);
+        }
+        a.replaceSelection(String.valueOf(c));
+        a.requestFollowCaret();
     }
 
     /**
@@ -3900,33 +3998,8 @@ public class EditorBuffer implements TabContent {
                 return;
             }
             char c = e.getCharacter().charAt(0);
-            if (AutoClose.closerFor(c) == 0 && !AutoClose.isCloser(c)) {
-                return; // not a bracket or quote
-            }
-            int caret = a.getCaretPosition();
-            int len = a.getLength();
-            char prev = caret > 0 ? a.getText(caret - 1, caret).charAt(0) : 0;
-            char next = caret < len ? a.getText(caret, caret + 1).charAt(0) : 0;
-            boolean hasSel = a.getSelection().getLength() > 0;
-            AutoClose.Decision d = AutoClose.decide(c, prev, next, hasSel);
-            switch (d.action()) {
-                case INSERT_PAIR -> {
-                    a.replaceText(caret, caret, "" + c + d.closer());
-                    a.moveTo(caret + 1);
-                    e.consume();
-                }
-                case SKIP_OVER -> {
-                    a.moveTo(caret + 1);
-                    e.consume();
-                }
-                case WRAP_SELECTION -> {
-                    int s = a.getSelection().getStart();
-                    String sel = a.getSelectedText();
-                    a.replaceText(s, a.getSelection().getEnd(), "" + c + sel + d.closer());
-                    a.selectRange(s + 1, s + 1 + sel.length());
-                    e.consume();
-                }
-                case NONE -> {} // normal typing (and the auto-indent closer-dedent may run)
+            if (applyAutoCloseTyped(a, c)) {
+                e.consume();
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {

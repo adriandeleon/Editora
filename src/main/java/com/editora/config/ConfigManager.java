@@ -40,6 +40,7 @@ public class ConfigManager {
     static final String DICTIONARY_FILE_NAME = "dictionary.txt";
     static final String PLUGINS_FILE_NAME = "plugins.json";
     static final String PLUGINS_DIR_NAME = "plugins";
+    static final String MACROS_FILE_NAME = "macros.json";
     static final String PROJECTS_DIR_NAME = "projects";
     /** Local File History lives under {@code history/}: a small {@code index.json} + {@code blobs/} bodies. */
     static final String HISTORY_DIR_NAME = "history";
@@ -146,6 +147,16 @@ public class ConfigManager {
     /** Persists the plugin enable-state. */
     public void savePlugins() {
         shared.savePlugins();
+    }
+
+    /** The shared keyboard-macro store ({@code macros.json}). */
+    public MacroStore getMacroStore() {
+        return shared.getMacroStore();
+    }
+
+    /** Persists the saved keyboard macros. */
+    public void saveMacros() {
+        shared.saveMacros();
     }
 
     public List<com.editora.vfs.RemoteConnection> getConnections() {

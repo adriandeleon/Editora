@@ -323,6 +323,13 @@ public class WindowManager {
         }
     }
 
+    /** Re-registers the synthetic {@code macro.run.*} commands in every window after the saved set changed. */
+    public void broadcastMacrosChanged() {
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller.refreshSavedMacroCommands();
+        }
+    }
+
     /**
      * Rebuilds the shared keymap from scratch — base keymap ({@code Settings.keymap}, with the macOS
      * {@code .mac} variant when present) → user overrides → enabled plugins' keymap overrides — mirroring

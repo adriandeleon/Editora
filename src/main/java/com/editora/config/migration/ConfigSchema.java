@@ -6,6 +6,7 @@ import com.editora.config.BookmarkStore;
 import com.editora.config.BreakpointStore;
 import com.editora.config.ConnectionStore;
 import com.editora.config.HistoryStore;
+import com.editora.config.MacroStore;
 import com.editora.config.NoteStore;
 import com.editora.config.PluginStore;
 import com.editora.config.ProjectManager;
@@ -80,7 +81,8 @@ public enum ConfigSchema {
     NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of()),
     CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of()),
     PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
-    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of());
+    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of()),
+    MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;
     private final int assumedLegacyVersion;
