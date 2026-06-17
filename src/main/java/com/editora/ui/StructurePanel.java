@@ -378,7 +378,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     private void rebuild() {
         if (buffer == null) {
-            roots = List.of();
+            roots = new ArrayList<>(); // mutable: sortNodes sorts roots in place (a diff/Welcome tab has no buffer)
         } else if (lspSymbols != null) {
             roots = fromLsp(lspSymbols); // LSP-served file: precise hierarchy + kinds
         } else {
@@ -433,7 +433,12 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                                 .thenComparing(n -> n.label().toLowerCase(Locale.ROOT));
                     default -> Comparator.comparingInt(StructureNode::line);
                 };
-        nodes.sort(cmp);
+        // Guard: List.sort throws UnsupportedOperationException on an immutable list (even an empty one),
+        // and an empty/singleton list needs no sorting anyway. Lists of 2+ here are always mutable
+        // (roots + every node's children are built as ArrayLists), so the in-place sort is safe.
+        if (nodes.size() > 1) {
+            nodes.sort(cmp);
+        }
         for (StructureNode n : nodes) {
             sortNodes(n.children());
         }
