@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 31;
+    public static final int SCHEMA_VERSION = 32;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -80,6 +80,9 @@ public class Settings {
     private boolean autocompleteMermaid = true;
     /** Auto-show the IntelliJ-style documentation popup beside the completion list (Ctrl+Q toggles it). */
     private boolean completionDoc = true;
+    /** Overlay LSP semantic tokens on the syntax highlight (resolved types/params/deprecated, …); on by
+     *  default but only effective when LSP is enabled and the server advertises range semantic tokens. */
+    private boolean semanticHighlight = true;
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
     private boolean editorConfigSupport = true;
 
@@ -470,6 +473,14 @@ public class Settings {
 
     public void setCompletionDoc(boolean completionDoc) {
         this.completionDoc = completionDoc;
+    }
+
+    public boolean isSemanticHighlight() {
+        return semanticHighlight;
+    }
+
+    public void setSemanticHighlight(boolean semanticHighlight) {
+        this.semanticHighlight = semanticHighlight;
     }
 
     public boolean isEditorConfigSupport() {

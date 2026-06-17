@@ -3561,6 +3561,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     private EditorBuffer debugValuesBuffer;
     /** Inline-value fetch cap — frames can hold hundreds of locals; the overlay needs a name→value map. */
     private static final int MAX_INLINE_VALUES = 100;
+    /** Lines of over-scan above/below the viewport when requesting semantic tokens, so small scrolls stay
+     *  within the cached band and don't trigger a fresh server request. */
+    private static final int SEMANTIC_WINDOW_PAD = 200;
 
     /** Fetches the selected frame's local variables and paints them as inline values in the frame's
      *  file buffer; also arms the hover value tooltip there (IntelliJ's editor surfaces). */
@@ -3992,6 +3995,46 @@ public class MainController implements com.editora.mcp.McpBridge {
         updateLspStatusBar();
     }
 
+    /**
+     * Requests semantic tokens for {@code buffer}'s visible region (padded by {@link #SEMANTIC_WINDOW_PAD})
+     * and pushes them into the buffer when the response lands — but only if it's still the active buffer
+     * (a background tab's tokens would overlay nothing useful and waste an apply). No-op when semantic
+     * highlighting isn't active for the buffer / it isn't server-managed.
+     */
+    private void requestSemanticTokens(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (path == null || !buffer.isSemanticActive() || !lspManager.isManaged(path)) {
+            return;
+        }
+        int[] window = buffer.visibleLineWindow();
+        lspManager.requestSemanticTokens(
+                path, window[0] - SEMANTIC_WINDOW_PAD, window[1] + SEMANTIC_WINDOW_PAD, tokens -> {
+                    if (buffer == activeBuffer()) {
+                        buffer.setSemanticTokens(tokens);
+                    }
+                });
+    }
+
+    /**
+     * Re-gates LSP semantic highlighting against {@code Settings.semanticHighlight} for every open buffer
+     * (the palette toggle's apply). Doesn't disturb the language-server sessions — just flips each managed
+     * buffer's overlay on/off and fetches tokens when turning on.
+     */
+    private void applySemanticHighlight() {
+        boolean want = config.getSettings().isSemanticHighlight();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b == null || b.getPath() == null) {
+                continue;
+            }
+            boolean on = want && lspManager.isManaged(b.getPath()) && lspManager.supportsSemanticTokens(b.getPath());
+            b.setSemanticActive(on);
+            if (on) {
+                requestSemanticTokens(b);
+            }
+        }
+    }
+
     /** Opens+activates an eligible buffer on its language's server, or deactivates+closes it otherwise. */
     /**
      * Refreshes the Structure tool window's outline for {@code buffer} from the language server
@@ -4037,11 +4080,19 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.setLspFormatAvailable(lspManager.supportsFormatting(path));
             buffer.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
             lspManager.pullDiagnostics(path);
+            // Semantic highlighting: gate on the setting + the server's capability; request the initial
+            // viewport (a no-op until the server reports ready, then onLspServerStatus refreshes it).
+            boolean semantic = config.getSettings().isSemanticHighlight() && lspManager.supportsSemanticTokens(path);
+            buffer.setSemanticActive(semantic);
+            if (semantic) {
+                requestSemanticTokens(buffer);
+            }
         } else {
             buffer.setLspActive(false);
             buffer.setLspTriggerChars(java.util.Set.of());
             buffer.setLspFormatAvailable(false);
             buffer.setLspRangeFormatAvailable(false);
+            buffer.setSemanticActive(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
                 lspProblems.remove(path);
@@ -4186,6 +4237,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         b.setLspFormatAvailable(lspManager.supportsFormatting(b.getPath()));
                         b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(b.getPath()));
                         lspManager.pullDiagnostics(b.getPath());
+                        // Capabilities are known now — (re)gate semantic highlighting + fetch initial tokens.
+                        boolean sem = config.getSettings().isSemanticHighlight()
+                                && lspManager.supportsSemanticTokens(b.getPath());
+                        b.setSemanticActive(sem);
+                        if (sem) {
+                            requestSemanticTokens(b);
+                        }
                     }
                 }
                 requestStructureSymbols(activeBuffer()); // the outline can now be populated from the server
@@ -6656,6 +6714,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 lspManager.pullDiagnostics(buffer.getPath());
             }
         });
+        // Semantic tokens re-request (fired on the same debounce as didChange + on scroll-settle).
+        buffer.setSemanticTokensRequester(() -> requestSemanticTokens(buffer));
         buffer.setLspCompletionProvider((pos, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
                 lspManager.completion(
@@ -11631,6 +11691,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("lsp.restartServers", () -> ifLsp(this::restartLspServers)));
         registry.register(Command.of("lsp.formatDocument", () -> ifLsp(this::formatDocument)));
         registry.register(Command.of("view.toggleLsp", this::toggleLsp));
+        registry.register(Command.of(
+                "view.toggleSemanticHighlight",
+                () -> toggleSetting(
+                        "view.toggleSemanticHighlight",
+                        () -> config.getSettings().isSemanticHighlight(),
+                        config.getSettings()::setSemanticHighlight,
+                        this::applySemanticHighlight)));
         registry.register(Command.of("tool.commit", () -> ifGit(() -> toolWindows.toggle(commitToolWindow))));
         // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
         // absent / not in a repo. The ifGit wrapper disables the commands + keybindings when Git is off.

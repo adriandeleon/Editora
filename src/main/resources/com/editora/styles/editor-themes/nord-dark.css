@@ -39,6 +39,16 @@
 .text.bold       { -fx-fill: #d8dee9; -fx-font-weight: bold; }
 .text.italic     { -fx-fill: #d8dee9; -fx-font-style: italic; }
 
+/* LSP semantic tokens — mirror this theme's lexical token colors (overlaid on TextMate). */
+.text.sem-parameter { -fx-fill: #d8dee9; -fx-font-style: italic; }
+.text.sem-variable  { -fx-fill: #d8dee9; }
+.text.sem-property  { -fx-fill: #88c0d0; }
+.text.sem-function  { -fx-fill: #88c0d0; }
+.text.sem-type      { -fx-fill: #8fbcbb; }
+.text.sem-macro     { -fx-fill: #8fbcbb; }
+.text.sem-constant  { -fx-fill: #b48ead; }
+.text.sem-deprecated { -fx-fill: #7b88a1; -fx-strikethrough: true; }
+
 /* Project tree: folder accent + muted file, matching this theme. */
 .project-tree { -project-folder-color: #88c0d0; -project-file-color: #6c7689; }
 

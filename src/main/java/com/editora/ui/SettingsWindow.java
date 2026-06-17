@@ -137,6 +137,7 @@ public class SettingsWindow {
     private CheckBox autocompleteSnippetsCheck;
     private CheckBox autocompleteMermaidCheck;
     private CheckBox completionDocCheck;
+    private CheckBox semanticHighlightCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
     private CheckBox toolbarCheck;
@@ -530,6 +531,7 @@ public class SettingsWindow {
         autocompleteSnippetsCheck = viewCheck(tr("settings.autocomplete.snippets"), Settings::setAutocompleteSnippets);
         autocompleteMermaidCheck = viewCheck(tr("settings.autocomplete.mermaid"), Settings::setAutocompleteMermaid);
         completionDocCheck = viewCheck(tr("settings.completionDoc"), Settings::setCompletionDoc);
+        semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
         // The per-source toggles are only meaningful while the master switch is on.
         autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
             autocompleteProseCheck.setDisable(!now);
@@ -1127,6 +1129,12 @@ public class SettingsWindow {
                 completion,
                 completionDocCheck,
                 "completion documentation quick doc popup javadoc ctrl q");
+        row(
+                p,
+                Category.EDITOR,
+                completion,
+                semanticHighlightCheck,
+                "semantic highlighting lsp tokens types parameters fields deprecated");
         Label markdown = section(p, tr("settings.section.markdown"));
         row(
                 p,
@@ -2480,6 +2488,7 @@ public class SettingsWindow {
             autocompleteSnippetsCheck.setDisable(!settings.isAutocomplete());
             autocompleteMermaidCheck.setDisable(!settings.isAutocomplete());
             completionDocCheck.setSelected(settings.isCompletionDoc());
+            semanticHighlightCheck.setSelected(settings.isSemanticHighlight());
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
@@ -2921,6 +2930,7 @@ public class SettingsWindow {
             autocompleteSnippetsCheck.setDisable(!s.isAutocomplete());
             autocompleteMermaidCheck.setDisable(!s.isAutocomplete());
             completionDocCheck.setSelected(s.isCompletionDoc());
+            semanticHighlightCheck.setSelected(s.isSemanticHighlight());
         } finally {
             loading = prev;
         }

@@ -447,6 +447,69 @@ public final class LspManager {
         });
     }
 
+    /** True if {@code file}'s server is ready and advertises range semantic tokens (viewport highlighting). */
+    public boolean supportsSemanticTokens(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && semanticTokensProvider(s.capabilities()) != null;
+    }
+
+    /**
+     * Pure: the server's semantic-tokens registration options if it supports range <em>or</em> full
+     * requests (and carries a legend), else {@code null}. Null-safe — gates {@link #requestSemanticTokens},
+     * which prefers range (viewport) and falls back to full for range-less servers.
+     */
+    static org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions semanticTokensProvider(
+            org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return null;
+        }
+        var p = caps.getSemanticTokensProvider();
+        if (p == null || p.getLegend() == null) {
+            return null;
+        }
+        return (eitherTrue(p.getRange()) || eitherTrue(p.getFull())) ? p : null;
+    }
+
+    /** True if an LSP {@code Either<Boolean, ?>} capability is present (right form) or explicitly true. */
+    private static boolean eitherTrue(org.eclipse.lsp4j.jsonrpc.messages.Either<Boolean, ?> e) {
+        return e != null && (e.isRight() || Boolean.TRUE.equals(e.getLeft()));
+    }
+
+    /**
+     * Requests semantic tokens over the line window {@code [startLine..endLine]} (inclusive) and delivers
+     * the decoded, CSS-classed {@link com.editora.editor.SemanticToken}s to {@code cb} on the FX thread
+     * (empty when unsupported / on error). The window bounds cost on large files — the caller passes the
+     * visible paragraph range. Decoding uses the server's effective legend, never hardcoded indices.
+     */
+    public void requestSemanticTokens(
+            Path file, int startLine, int endLine, Consumer<List<com.editora.editor.SemanticToken>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        var prov = s == null ? null : semanticTokensProvider(s.capabilities());
+        if (prov == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        var legend = prov.getLegend();
+        // Prefer a range (viewport) request to bound cost; fall back to a whole-document request for a
+        // server that advertises only `full` (no range).
+        java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.SemanticTokens> fut;
+        if (eitherTrue(prov.getRange())) {
+            // [startLine,0) .. [endLine+1,0) covers whole lines startLine..endLine; clamp start to >= 0.
+            var range = new org.eclipse.lsp4j.Range(
+                    new Position(Math.max(0, startLine), 0), new Position(Math.max(0, endLine) + 1, 0));
+            fut = s.semanticTokensRange(uri(file), range);
+        } else {
+            fut = s.semanticTokensFull(uri(file));
+        }
+        fut.whenComplete((tokens, error) -> {
+            List<com.editora.editor.SemanticToken> out = (error != null || tokens == null)
+                    ? List.of()
+                    : SemanticTokensDecoder.decode(
+                            tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
+            Platform.runLater(() -> cb.accept(out));
+        });
+    }
+
     public void hover(Path file, int line, int character, Consumer<String> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
