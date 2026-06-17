@@ -253,9 +253,14 @@ public class EditorBuffer implements TabContent {
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
     private final InlineValuesOverlay inlineValues = new InlineValuesOverlay(area);
-    private final BlameOverlay blameOverlay = new BlameOverlay(area);
-    /** Per-line blame (for {@link #blameHashAtCaret}); null = blame off. Mirrors what the overlay paints. */
+    /** Per-line blame for the IntelliJ-style gutter "Annotate" column; null = blame off. */
     private java.util.List<BlameInfo> blameLines;
+    /** Fixed annotation-column width in px, computed from the widest author+date when blame is set, so
+     *  line numbers stay aligned regardless of which row's gutter is (re)built. */
+    private double blameColumnWidth;
+    /** Render size (px) of the blame annotation text — must match {@code .blame-author}/{@code .blame-date}
+     *  in {@code app.css} so the measured column width matches what's actually drawn (not the editor font). */
+    private static final double BLAME_FONT_SIZE = 10;
 
     private final MermaidLintOverlay lintOverlay = new MermaidLintOverlay(area);
     private final LspDiagnosticOverlay lspOverlay = new LspDiagnosticOverlay(area);
@@ -334,6 +339,8 @@ public class EditorBuffer implements TabContent {
     private java.util.UUID hoverNoteId;
     /** Handles a gutter note-marker click (the controller opens/edits that line's note). Default: no-op. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterNoteClick = (buffer, line) -> {};
+    /** Handles a click on a line's blame annotation (the controller shows that line's commit). Default: no-op. */
+    private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBlameClick = (buffer, line) -> {};
     /** Invoked by the "Add Personal Note" context-menu item (the controller prompts + creates). */
     private java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> {};
     /** "Run File" context-menu handler (compact source files); null hides the item. */
@@ -448,6 +455,13 @@ public class EditorBuffer implements TabContent {
                 breakpoints::isBreakpoint,
                 this::breakpointStyleClass,
                 line -> gutterBreakpointClick.accept(this, line));
+        // Gutter blame "Annotate" column (leftmost): reserved only while blame is on; the per-line
+        // author/date/heatmap come from the controller-supplied list, click shows that line's commit.
+        folds.setBlameHooks(
+                () -> blameLines != null,
+                this::blameInfoAt,
+                () -> blameColumnWidth,
+                line -> gutterBlameClick.accept(this, line));
         breakpoints.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
@@ -866,7 +880,6 @@ public class EditorBuffer implements TabContent {
                         lintOverlay,
                         lspOverlay,
                         inlineValues,
-                        blameOverlay,
                         aceJump,
                         minimap,
                         diagnosticStripe,
@@ -907,11 +920,6 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setLeftAnchor(inlineValues, 0d);
         AnchorPane.setRightAnchor(inlineValues, Minimap.WIDTH);
         installDebugHover(area);
-        // Inline git blame shares the text rectangle, mouse-transparent (active only while blame is on).
-        AnchorPane.setTopAnchor(blameOverlay, 0d);
-        AnchorPane.setBottomAnchor(blameOverlay, 0d);
-        AnchorPane.setLeftAnchor(blameOverlay, 0d);
-        AnchorPane.setRightAnchor(blameOverlay, Minimap.WIDTH);
         AnchorPane.setTopAnchor(searchOverlay, 0d);
         AnchorPane.setBottomAnchor(searchOverlay, 0d);
         AnchorPane.setLeftAnchor(searchOverlay, 0d);
@@ -1740,25 +1748,57 @@ public class EditorBuffer implements TabContent {
         inlineValues.setValues(hugeFile ? null : values);
     }
 
-    /** GitLens-style inline blame for the caret line: per-0-based-line annotations (null/empty clears it).
-     *  Already formatted + localized by the controller, so {@code editor} stays git-free. Off on huge files. */
+    /** IntelliJ-style blame "Annotate" gutter column: per-0-based-line annotations (null/empty clears it).
+     *  Already formatted + localized by the controller (author/date/tooltip/heatmap), so {@code editor}
+     *  stays git-free. Off on huge files. Computes the fixed column width from the widest author+date, then
+     *  rebuilds the gutter so the column appears/disappears. */
     public void setBlame(java.util.List<BlameInfo> lines) {
         this.blameLines = (hugeFile || lines == null || lines.isEmpty()) ? null : java.util.List.copyOf(lines);
-        blameOverlay.setBlame(blameLines);
+        this.blameColumnWidth = blameLines == null ? 0 : measureBlameColumnWidth(blameLines);
+        refreshGutter();
     }
 
-    /** Whether inline blame is currently showing (non-null per-line data). */
+    /** Per-line annotation for the gutter column (null for a blank/unloaded row). */
+    private BlameInfo blameInfoAt(int line) {
+        return (blameLines != null && line >= 0 && line < blameLines.size()) ? blameLines.get(line) : null;
+    }
+
+    /** Measures the annotation column once: the widest "author + date" across all lines, in the actual
+     *  (small) gutter font so the column isn't padded for the larger editor font, capped so a runaway long
+     *  author can't let it dominate (it ellipsizes instead), plus a little cell padding. Off-scene
+     *  {@code Text} layout bounds use the font directly, so this is safe. */
+    private double measureBlameColumnWidth(java.util.List<BlameInfo> lines) {
+        javafx.scene.text.Text probe = new javafx.scene.text.Text();
+        probe.setFont(javafx.scene.text.Font.font(fontFamily, BLAME_FONT_SIZE));
+        double max = 0;
+        for (BlameInfo bi : lines) {
+            if (bi == null || bi.isEmpty()) {
+                continue;
+            }
+            probe.setText(bi.author() + "  " + bi.date());
+            max = Math.max(max, probe.getLayoutBounds().getWidth());
+        }
+        if (max <= 0) {
+            return 0;
+        }
+        double capped = Math.min(max, BLAME_FONT_SIZE * 17.0); // bound a runaway author; longer ones ellipsize
+        return Math.ceil(capped) + 10; // + cell padding / inter-label gap
+    }
+
+    /** Whether blame annotations are currently showing (non-null per-line data). */
     public boolean isBlameOn() {
         return blameLines != null;
     }
 
+    /** The commit hash that last touched {@code line} (for "show this commit"), or null. */
+    public String blameHashAt(int line) {
+        BlameInfo bi = blameInfoAt(line);
+        return bi == null ? null : bi.hash();
+    }
+
     /** The commit hash that last touched the caret line (for "show this commit"), or null. */
     public String blameHashAtCaret() {
-        if (blameLines == null) {
-            return null;
-        }
-        int p = area.getCurrentParagraph();
-        return (p >= 0 && p < blameLines.size()) ? blameLines.get(p).hash() : null;
+        return blameHashAt(area.getCurrentParagraph());
     }
 
     /** Async evaluator injected by the controller (DAP {@code evaluate} with context "hover"):
@@ -2474,7 +2514,11 @@ public class EditorBuffer implements TabContent {
         }
         whitespace.setFont(family, size);
         inlineValues.setFont(family, size);
-        blameOverlay.setFont(family, size);
+        if (blameLines != null) {
+            // The blame annotation column width is font-relative — recompute + rebuild so it stays aligned.
+            blameColumnWidth = measureBlameColumnWidth(blameLines);
+            refreshGutter();
+        }
         scheduleRulerMeasure();
     }
 
@@ -2754,6 +2798,14 @@ public class EditorBuffer implements TabContent {
     public void setGutterNoteClick(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
         if (handler != null) {
             this.gutterNoteClick = handler;
+        }
+    }
+
+    /** Sets the blame-annotation click handler ({@code (buffer, line)}) — the controller shows that
+     *  line's commit. */
+    public void setGutterBlameClick(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
+        if (handler != null) {
+            this.gutterBlameClick = handler;
         }
     }
 

@@ -106,6 +106,33 @@
     -fx-text-fill: -color-fg-default;
 }
 
+/* Git blame "Annotate" gutter column (IntelliJ-style): the leftmost per-line author + date. The slot
+   reserves a fixed width and carries the age-heatmap background inline per line; the author ellipsizes
+   and the date hugs the right edge. Semantic colors so it tracks the app/editor theme. */
+.editor-area .fold-gutter .blame-slot {
+    -fx-padding: 0 4 0 4;
+    -fx-spacing: 4;
+    -fx-border-color: transparent -color-border-muted transparent transparent;
+    -fx-border-width: 0 1 0 0;
+}
+.editor-area .fold-gutter .blame-author {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-family: "monospace";
+    -fx-font-size: 10px;
+}
+.editor-area .fold-gutter .blame-date {
+    -fx-text-fill: -color-fg-subtle;
+    -fx-font-family: "monospace";
+    -fx-font-size: 10px;
+}
+/* Hover tooltip on a blame annotation: full commit detail (author / date / message / hash). */
+.blame-tooltip {
+    -fx-font-family: "JetBrains Mono", "Consolas", monospace;
+    -fx-font-size: 12px;
+    -fx-background-color: -color-bg-overlay;
+    -fx-text-fill: -color-fg-default;
+}
+
 /* Hover preview of a collapsed region's hidden content. The colors are set inline per editor theme
    (FoldManager.setPreviewColors); these defaults match the default (Primer Light) editor theme. */
 .fold-preview-tooltip {

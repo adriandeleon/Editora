@@ -5286,15 +5286,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 args);
     }
 
-    // --- Inline blame ----------------------------------------------------------------------------
+    // --- Git blame annotations (IntelliJ-style gutter column) ------------------------------------
 
-    /** Whether inline blame is effectively on (Git enabled + the setting + not Simple mode). */
+    /** Whether blame annotations are effectively on (Git enabled + the setting + not Simple mode). */
     private boolean gitBlameEnabled() {
         return gitEnabled() && config.getSettings().isGitBlameInline();
     }
 
     /** Pushes blame to the active buffer (and clears it everywhere else); runs on init / settings apply /
-     *  tab switch / git mutation. Only the focused buffer shows blame (caret-line annotation). */
+     *  tab switch / git mutation. Only the focused buffer is annotated (blame is one git call per file). */
     private void applyGitBlame() {
         EditorBuffer active = activeBuffer();
         for (Tab tab : tabPane.getTabs()) {
@@ -5328,16 +5328,71 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
+    /** Maps git blame into the per-line annotation column (author + date, full-commit tooltip, age-heatmap
+     *  background). The heatmap is scaled across this file's oldest→newest committed lines and tinted for
+     *  the current theme. Uncommitted lines get a label only (no heatmap, no commit to open). */
     private List<com.editora.editor.BlameInfo> toBlameInfos(List<com.editora.git.BlameParser.BlameLine> lines) {
         long now = System.currentTimeMillis() / 1000L;
+        long min = Long.MAX_VALUE;
+        long max = Long.MIN_VALUE;
+        for (com.editora.git.BlameParser.BlameLine bl : lines) {
+            if (!bl.uncommitted()) {
+                min = Math.min(min, bl.epochSeconds());
+                max = Math.max(max, bl.epochSeconds());
+            }
+        }
+        boolean dark = appThemeDark();
         List<com.editora.editor.BlameInfo> out = new java.util.ArrayList<>(lines.size());
         for (com.editora.git.BlameParser.BlameLine bl : lines) {
-            String text = bl.uncommitted()
-                    ? tr("blame.uncommitted")
-                    : tr("blame.annotation", bl.author(), relativeTimeLabel(bl.epochSeconds(), now), bl.summary());
-            out.add(new com.editora.editor.BlameInfo(text, bl.uncommitted() ? "" : bl.hash()));
+            if (bl.uncommitted()) {
+                String label = tr("blame.uncommitted");
+                out.add(new com.editora.editor.BlameInfo(label, "", label, "", ""));
+                continue;
+            }
+            String date = blameDate(bl.epochSeconds());
+            String shortHash = bl.hash().substring(0, Math.min(8, bl.hash().length()));
+            String tooltip = tr(
+                    "blame.tooltip",
+                    bl.author(),
+                    date,
+                    relativeTimeLabel(bl.epochSeconds(), now),
+                    bl.summary(),
+                    shortHash);
+            double intensity = com.editora.git.BlameHeatmap.intensity(bl.epochSeconds(), min, max);
+            out.add(new com.editora.editor.BlameInfo(
+                    shortAuthor(bl.author()), date, tooltip, heatmapColor(intensity, dark), bl.hash()));
         }
         return out;
+    }
+
+    /** Compact author for the narrow annotation column: the first name (first whitespace-delimited token);
+     *  the full name stays in the hover tooltip. Falls back to the whole string when there's no space. */
+    private static String shortAuthor(String author) {
+        if (author == null) {
+            return "";
+        }
+        String trimmed = author.strip();
+        int sp = trimmed.indexOf(' ');
+        return sp > 0 ? trimmed.substring(0, sp) : trimmed;
+    }
+
+    /** ISO {@code yyyy-MM-dd} commit date for the annotation column (technical, not localized). */
+    private static String blameDate(long epochSeconds) {
+        return java.time.Instant.ofEpochSecond(epochSeconds)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDate()
+                .toString();
+    }
+
+    /** IntelliJ-style age-heatmap tint: a warm background whose opacity scales with the commit's newness
+     *  ({@code intensity} 0=oldest → 1=newest), toned down on dark themes so it doesn't overpower the text. */
+    private static String heatmapColor(double intensity, boolean dark) {
+        double t = Math.max(0.0, Math.min(1.0, intensity));
+        double alpha = (dark ? 0.05 : 0.04) + (dark ? 0.25 : 0.30) * t;
+        int r = dark ? 255 : 240;
+        int g = dark ? 190 : 165;
+        int b = dark ? 90 : 70;
+        return String.format(java.util.Locale.ROOT, "rgba(%d,%d,%d,%.3f)", r, g, b, alpha);
     }
 
     /** Localized "N days ago"-style label from the pure {@link com.editora.git.RelativeTime} bucketing. */
@@ -5550,7 +5605,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** Toggles inline blame (palette + {@code M-g a}); persists the setting and re-applies. */
+    /** Toggles blame annotations (palette + {@code M-g a}); persists the setting and re-applies. */
     private void toggleGitBlame() {
         ifGit(() -> {
             Settings s = config.getSettings();
@@ -5565,10 +5620,20 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Opens the read-only diff of the active file at the caret line's commit vs its parent. */
     private void blameShowCommit() {
         EditorBuffer b = activeBuffer();
+        showBlameCommit(b, b == null ? null : b.blameHashAtCaret());
+    }
+
+    /** Clicking a line's blame annotation opens that line's commit (IntelliJ-style). */
+    private void onGutterBlameClick(EditorBuffer buffer, int line) {
+        showBlameCommit(buffer, buffer == null ? null : buffer.blameHashAt(line));
+    }
+
+    /** Opens the read-only diff of {@code b}'s file at {@code hash} vs its parent (shared by the caret
+     *  command and the gutter-annotation click). */
+    private void showBlameCommit(EditorBuffer b, String hash) {
         if (b == null || b.getPath() == null || currentRepoRoot == null) {
             return;
         }
-        String hash = b.blameHashAtCaret();
         if (hash == null || hash.isBlank()) {
             setStatus(tr("status.git.noBlameLine"));
             return;
@@ -6532,6 +6597,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setGutterBookmarkClick(this::onGutterBookmarkClick);
         buffer.setOnNotesChanged(() -> persistNotes(buffer));
         buffer.setGutterNoteClick(this::onGutterNoteClick);
+        buffer.setGutterBlameClick(this::onGutterBlameClick);
         // Refresh the Run button when this buffer's runnable status flips (only acts if it's active).
         buffer.setOnRunnableChanged(() -> {
             if (activeBuffer() == buffer) {
