@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **New Window command.** A palette command **Window: New Window** (`C-x 5 2`) opens an additional editor
+  window without having to load a project — previously a second window only appeared when a project was
+  opened. Each new window has its **own session** (independent open files, layout, and bounds — windows no
+  longer share or clobber one state file) and is **restored on the next launch** like a project window.
+  Works whether or not the Projects feature is enabled.
+
 - **TODO / highlight patterns (IntelliJ-style).** Configurable regex patterns (TODO and FIXME by default,
   each with its own color) are highlighted everywhere they match in the editor, and listed in a new **TODO**
   tool window (`M-g o`) grouped by file — scanning the open project's tree when a project is open, else the

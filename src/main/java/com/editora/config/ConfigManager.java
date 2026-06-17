@@ -278,19 +278,25 @@ public class ConfigManager {
     }
 
     /**
-     * The project key for this window's session: {@code ""} for the default {@code workspace-state.json}
-     * (no project), otherwise the project id (the {@code projects/<id>.json} base name). The bucketed
-     * stores are keyed by this.
+     * The project key for this window's session: the project id (the {@code projects/<id>.json} base name)
+     * for a project window, else {@code ""} (the no-project bucket). Crucially, an untitled "New Window"
+     * session lives in {@code windows/<uuid>.json} but still maps to {@code ""} — so every no-project window
+     * (the global one and any untitled ones) shares the global bookmark/note bucket. Only files directly
+     * under {@code projects/} get their own bucket. The bucketed stores are keyed by this.
      */
     private String currentBookmarkKey() {
         Path name = workspaceStateFile.getFileName();
         if (name == null) {
             return "";
         }
-        String file = name.toString();
-        if (file.equals(WORKSPACE_FILE_NAME)) {
-            return "";
+        Path parent = workspaceStateFile.getParent();
+        String dir = parent == null || parent.getFileName() == null
+                ? ""
+                : parent.getFileName().toString();
+        if (!ProjectManager.PROJECTS_DIR.equals(dir)) {
+            return ""; // the global workspace-state.json OR an untitled window's windows/<uuid>.json
         }
+        String file = name.toString();
         return file.endsWith(".json") ? file.substring(0, file.length() - ".json".length()) : file;
     }
 

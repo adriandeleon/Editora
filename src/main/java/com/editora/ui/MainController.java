@@ -11442,6 +11442,11 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void registerCommands() {
         registry.register(Command.of("file.new", this::onNew));
+        registry.register(Command.of("window.new", () -> {
+            if (windowManager != null) {
+                windowManager.newWindow();
+            }
+        }));
         registry.register(Command.of("file.open", this::onOpen));
         registry.register(Command.of("file.find", () -> fileFinder.show(stage)));
         // Project commands no-op when project support is disabled (fully gated).
