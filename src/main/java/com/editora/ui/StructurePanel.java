@@ -493,6 +493,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     private List<StructureNode> buildNodes() {
         CodeArea area = buffer.getArea();
+        if (buffer.isMarkdown()) {
+            return markdownHeadingNodes(area.getText());
+        }
         int paras = area.getParagraphs().size();
         List<Region> regions =
                 new ArrayList<>(new LinkedHashSet<>(buffer.getFoldManager().regions()));
@@ -569,6 +572,29 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // No grammar/symbols: keep the old header-text label and show every region.
         String text = area.getParagraph(start).getText().trim();
         return new StructureNode(r, text.isEmpty() ? "line " + (start + 1) : text, null, start);
+    }
+
+    /** Builds the heading outline for a Markdown buffer (ATX/Setext), nested by heading level. */
+    private static List<StructureNode> markdownHeadingNodes(String text) {
+        List<StructureNode> roots = new ArrayList<>();
+        Deque<StructureNode> stack = new ArrayDeque<>();
+        Deque<Integer> levels = new ArrayDeque<>();
+        for (com.editora.editor.MarkdownOutline.Heading h : com.editora.editor.MarkdownOutline.headings(text)) {
+            StructureNode node =
+                    new StructureNode(null, h.title().isBlank() ? "(untitled)" : h.title(), "heading", h.line());
+            while (!levels.isEmpty() && levels.peek() >= h.level()) {
+                stack.pop();
+                levels.pop();
+            }
+            if (stack.isEmpty()) {
+                roots.add(node);
+            } else {
+                stack.peek().children().add(node);
+            }
+            stack.push(node);
+            levels.push(h.level());
+        }
+        return roots;
     }
 
     /** Languages whose folds are brace-delimited (Allman braces put the signature above the start line). */

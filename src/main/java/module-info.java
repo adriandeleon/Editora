@@ -17,6 +17,7 @@ module com.editora {
     requires org.commonmark;
     // SVG rasterizer for the Markdown preview's badge images (renders via AWT → java.desktop).
     requires com.github.weisj.jsvg;
+    requires jlatexmath; // pure-Java LaTeX math rendering for the Markdown preview/PDF
     requires java.desktop;
     requires java.net.http; // built-in HTTP client for .http request execution
     requires jdk.httpserver; // built-in HttpServer for the HTML Live Preview (com.editora.web), loopback only
@@ -27,6 +28,10 @@ module com.editora {
     requires org.commonmark.ext.gfm.strikethrough;
     requires org.commonmark.ext.task.list.items;
     requires org.commonmark.ext.autolink;
+    requires org.commonmark.ext.front.matter; // YAML front matter
+    requires org.commonmark.ext.footnotes;
+    requires org.commonmark.ext.heading.anchor; // heading id generation for HTML export
+    requires org.commonmark.ext.ins; // ++underline++
     requires java.logging;
     // Language Server Protocol client (LSP4J) + its JSON-RPC transport. Automatic modules
     // (filename-derived names) — moditect injects real descriptors for the jlink dist build.

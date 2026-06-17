@@ -22,12 +22,21 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import org.commonmark.ext.autolink.AutolinkExtension;
+import org.commonmark.ext.footnotes.FootnoteDefinition;
+import org.commonmark.ext.footnotes.FootnoteReference;
+import org.commonmark.ext.footnotes.FootnotesExtension;
+import org.commonmark.ext.footnotes.InlineFootnote;
+import org.commonmark.ext.front.matter.YamlFrontMatterBlock;
+import org.commonmark.ext.front.matter.YamlFrontMatterExtension;
+import org.commonmark.ext.front.matter.YamlFrontMatterNode;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
 import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.gfm.tables.TableCell;
 import org.commonmark.ext.gfm.tables.TableRow;
 import org.commonmark.ext.gfm.tables.TablesExtension;
+import org.commonmark.ext.ins.Ins;
+import org.commonmark.ext.ins.InsExtension;
 import org.commonmark.ext.task.list.items.TaskListItemMarker;
 import org.commonmark.ext.task.list.items.TaskListItemsExtension;
 import org.commonmark.node.BlockQuote;
@@ -61,12 +70,22 @@ public final class MarkdownRenderer {
     private static final double MAX_IMAGE_WIDTH = 700;
     /** Readable column width (GitHub-style): the content is capped to this and centered in the pane. */
     private static final double MAX_CONTENT_WIDTH = 860;
+    /** Point sizes passed to JLaTeXMath for inline {@code $…$} and display {@code $$…$$} math. */
+    private static final double INLINE_MATH_SIZE = 16;
 
-    private static final List<org.commonmark.Extension> EXTENSIONS = List.of(
+    private static final double DISPLAY_MATH_SIZE = 20;
+
+    /** Parser/text extensions, shared so the AST and the plain-text rendering stay in sync. (The
+     *  heading-anchor extension is renderer-only — it's added to the HTML renderer in {@code
+     *  MarkdownHtmlExport}, not here.) */
+    static final List<org.commonmark.Extension> EXTENSIONS = List.of(
             TablesExtension.create(),
             StrikethroughExtension.create(),
             TaskListItemsExtension.create(),
-            AutolinkExtension.create());
+            AutolinkExtension.create(),
+            YamlFrontMatterExtension.create(),
+            FootnotesExtension.create(),
+            InsExtension.create());
 
     private static final Parser PARSER = Parser.builder().extensions(EXTENSIONS).build();
 
@@ -124,6 +143,15 @@ public final class MarkdownRenderer {
             return tf;
         }
         if (node instanceof Paragraph p) {
+            // A paragraph that is just $$…$$ renders as a centered block formula.
+            if (MathImages.isEnabled()) {
+                String disp = soleDisplayMath(paragraphText(p));
+                if (disp != null) {
+                    StackPane wrap = new StackPane(MathImages.blockNode(disp, DISPLAY_MATH_SIZE));
+                    wrap.getStyleClass().add("md-math-block-wrap");
+                    return wrap;
+                }
+            }
             // A paragraph that is just an image renders as a block image (not squeezed into a TextFlow).
             if (p.getFirstChild() instanceof org.commonmark.node.Image img && img.getNext() == null) {
                 return imageNode(img, baseDir);
@@ -165,6 +193,12 @@ public final class MarkdownRenderer {
         }
         if (node instanceof TableBlock tb) {
             return renderTable(tb, baseDir);
+        }
+        if (node instanceof YamlFrontMatterBlock fm) {
+            return frontMatterBlock(fm);
+        }
+        if (node instanceof FootnoteDefinition def) {
+            return footnoteDefinition(def, baseDir);
         }
         // Unknown block container: render its children.
         VBox box = new VBox();
@@ -292,6 +326,42 @@ public final class MarkdownRenderer {
         return label;
     }
 
+    /** YAML front matter rendered as a muted key/value metadata block at the top of the document. */
+    private static Node frontMatterBlock(YamlFrontMatterBlock fm) {
+        VBox box = new VBox();
+        box.getStyleClass().add("md-frontmatter");
+        for (org.commonmark.node.Node n = fm.getFirstChild(); n != null; n = n.getNext()) {
+            if (n instanceof YamlFrontMatterNode meta) {
+                Label row = new Label(meta.getKey() + ": " + String.join(", ", meta.getValues()));
+                row.getStyleClass().add("md-frontmatter-row");
+                row.setWrapText(true);
+                box.getChildren().add(row);
+            }
+        }
+        return box.getChildren().isEmpty() ? null : box;
+    }
+
+    /** A footnote definition: its label marker followed by the definition's block content. */
+    private static Node footnoteDefinition(FootnoteDefinition def, Path baseDir) {
+        HBox row = new HBox();
+        row.getStyleClass().add("md-footnote-def");
+        Label marker = new Label("[" + def.getLabel() + "]");
+        marker.getStyleClass().add("md-footnote-def-marker");
+        VBox content = new VBox();
+        content.getStyleClass().add("md-footnote-def-content");
+        HBox.setHgrow(content, Priority.ALWAYS);
+        appendBlocks(def, content, baseDir);
+        row.getChildren().addAll(marker, content);
+        return row;
+    }
+
+    /** An inline footnote reference, rendered as a small raised {@code [label]} marker. */
+    private static Text footnoteRef(String label) {
+        Text t = new Text("[" + (label == null ? "" : label) + "]");
+        t.getStyleClass().addAll("md-text", "md-footnote-ref");
+        return t;
+    }
+
     /** Whether a fenced block's info string marks it as Mermaid (first token, case-insensitive). */
     private static boolean isMermaidInfo(String info) {
         if (info == null) {
@@ -318,7 +388,11 @@ public final class MarkdownRenderer {
 
     private static void emitInline(org.commonmark.node.Node n, TextFlow flow, List<String> styles, Path baseDir) {
         if (n instanceof org.commonmark.node.Text t) {
-            flow.getChildren().add(styledText(t.getLiteral(), styles));
+            if (MathImages.isEnabled()) {
+                appendTextWithMath(t.getLiteral(), flow, styles);
+            } else {
+                flow.getChildren().add(styledText(t.getLiteral(), styles));
+            }
         } else if (n instanceof Code c) {
             flow.getChildren().add(inlineCode(c.getLiteral()));
         } else if (n instanceof Emphasis) {
@@ -327,6 +401,12 @@ public final class MarkdownRenderer {
             appendInline(n, flow, with(styles, "md-bold"), baseDir);
         } else if (n instanceof Strikethrough) {
             appendInline(n, flow, with(styles, "md-strike"), baseDir);
+        } else if (n instanceof Ins) {
+            appendInline(n, flow, with(styles, "md-ins"), baseDir);
+        } else if (n instanceof FootnoteReference ref) {
+            flow.getChildren().add(footnoteRef(ref.getLabel()));
+        } else if (n instanceof InlineFootnote) {
+            appendInline(n, flow, with(styles, "md-footnote-ref"), baseDir);
         } else if (n instanceof Link link) {
             int from = flow.getChildren().size();
             appendInline(n, flow, with(styles, "md-link"), baseDir);
@@ -352,6 +432,48 @@ public final class MarkdownRenderer {
         Label code = new Label(literal);
         code.getStyleClass().add("md-inline-code");
         return code;
+    }
+
+    /** Splits a text run into literal text + inline math (rendered as small images). */
+    private static void appendTextWithMath(String literal, TextFlow flow, List<String> styles) {
+        for (MathSpans.Segment seg : MathSpans.segments(literal)) {
+            if (seg.span() == null) {
+                if (!seg.text().isEmpty()) {
+                    flow.getChildren().add(styledText(seg.text(), styles));
+                }
+            } else {
+                flow.getChildren().add(MathImages.inlineNode(seg.span().latex(), INLINE_MATH_SIZE));
+            }
+        }
+    }
+
+    /** The concatenated literal text of a paragraph's inline children, or null if it isn't pure text. */
+    private static String paragraphText(Paragraph p) {
+        StringBuilder sb = new StringBuilder();
+        for (org.commonmark.node.Node c = p.getFirstChild(); c != null; c = c.getNext()) {
+            if (c instanceof org.commonmark.node.Text t) {
+                sb.append(t.getLiteral());
+            } else {
+                return null; // contains markup → not a bare display-math paragraph
+            }
+        }
+        return sb.toString();
+    }
+
+    /** If {@code text} is exactly one {@code $$…$$} display-math span, its LaTeX; else null. */
+    private static String soleDisplayMath(String text) {
+        if (text == null) {
+            return null;
+        }
+        String trimmed = text.strip();
+        List<MathSpans.Span> spans = MathSpans.find(trimmed);
+        if (spans.size() == 1) {
+            MathSpans.Span s = spans.get(0);
+            if (s.display() && s.start() == 0 && s.end() == trimmed.length()) {
+                return s.latex();
+            }
+        }
+        return null;
     }
 
     private static Text styledText(String s, List<String> styles) {

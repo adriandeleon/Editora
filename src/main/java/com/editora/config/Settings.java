@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 33;
+    public static final int SCHEMA_VERSION = 35;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -89,6 +89,11 @@ public class Settings {
     private boolean todoHighlight = true;
     /** The highlight patterns (regex + color); defaults to TODO (amber) + FIXME (red). */
     private java.util.List<com.editora.todo.TodoPattern> todoPatterns = com.editora.todo.TodoPatterns.defaults();
+    /** Lint Markdown buffers (squiggles + the Markdown Lint tool window). */
+    private boolean markdownLint = true;
+    /** Render LaTeX math ({@code $…$} / {@code $$…$$}) in the Markdown preview/PDF. Off by default
+     *  ({@code $} is common in prose, so this is opt-in). */
+    private boolean mathSupport = false;
 
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
@@ -501,6 +506,22 @@ public class Settings {
 
     public void setTodoHighlight(boolean todoHighlight) {
         this.todoHighlight = todoHighlight;
+    }
+
+    public boolean isMarkdownLint() {
+        return markdownLint;
+    }
+
+    public void setMarkdownLint(boolean markdownLint) {
+        this.markdownLint = markdownLint;
+    }
+
+    public boolean isMathSupport() {
+        return mathSupport;
+    }
+
+    public void setMathSupport(boolean mathSupport) {
+        this.mathSupport = mathSupport;
     }
 
     public java.util.List<com.editora.todo.TodoPattern> getTodoPatterns() {
