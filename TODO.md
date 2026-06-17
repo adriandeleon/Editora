@@ -3,6 +3,11 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] TODO / highlight patterns (IntelliJ-style) — configurable regex patterns (TODO + FIXME by default,
+      each with a color) highlighted wherever they match in the editor, and listed in a **TODO** tool
+      window (`M-g o`) grouped by file (scans the open project's tree, else the open files; double-click to
+      jump). On by default; add/edit/remove patterns in Settings → Editor → TODO Highlighting; commands
+      `tool.todo` / `todo.refresh` / `todo.addPattern` / `view.toggleTodoHighlight`
 - [x] Global indent-style preference — Settings → Editor → "Indent style" + **Editor: Set Indent Style…**
       palette command: force Spaces or Tabs for Tab/Enter, or keep Detect (per-file auto-detection).
       A file's `.editorconfig` `indent_style` wins; the global pref is the fallback above per-file detect

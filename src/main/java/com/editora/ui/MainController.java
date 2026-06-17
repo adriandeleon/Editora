@@ -264,6 +264,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     private SearchPanel searchPanel;
     private ToolWindow searchToolWindow;
     private final com.editora.search.SearchService searchService = new com.editora.search.SearchService();
+    private TodoPanel todoPanel;
+    private ToolWindow todoToolWindow;
+    private final com.editora.todo.TodoService todoService = new com.editora.todo.TodoService();
     private QuickOpen<NoteEntry> notesPalette;
     private QuickOpen<NoteEntry> notesSearchPalette;
     /** Session-only Simple-UI override from the {@code --simple} CLI flag; OR'd with the saved setting. */
@@ -537,6 +540,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
         applyLspSupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
         applyDebugSupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on jdtls)
+        applyTodoHighlight(); // compile TODO/FIXME patterns + highlight (on by default)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
@@ -1448,6 +1452,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             historyService.shutdown();
         }
         searchService.shutdown();
+        todoService.shutdown();
         mermaidService.shutdown();
         htmlPreviewService.shutdown(); // stop the HTML-preview HTTP server + worker
         stopMcpIfOwner(); // stop the MCP server if this window owns it
@@ -2292,6 +2297,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         searchToolWindow = new ToolWindow(
                 "search", tr("toolwindow.search"), ToolWindow.Side.BOTTOM, Icons::find, searchPanel, "tool.search");
+        todoPanel = new TodoPanel(new TodoPanel.Actions() {
+            @Override
+            public void openMatch(java.nio.file.Path file, int line, int col) {
+                openPath(file);
+                Platform.runLater(() -> gotoInFile(file, line, col));
+            }
+
+            @Override
+            public void refresh() {
+                runTodoScan();
+            }
+        });
+        todoToolWindow = new ToolWindow(
+                "todo", tr("toolwindow.todo"), ToolWindow.Side.BOTTOM, Icons::todo, todoPanel, "tool.todo");
         problemsPanel = new ProblemsPanel(this::openAndGoto);
         problemsToolWindow = new ToolWindow(
                 "problems",
@@ -2339,6 +2358,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.setAvailable(fileHistoryToolWindow, false); // shown only for a local file with history on
         toolWindows.register(fileInfoToolWindow);
         toolWindows.register(searchToolWindow);
+        toolWindows.register(todoToolWindow);
         toolWindows.register(problemsToolWindow);
         toolWindows.register(runToolWindow);
         toolWindows.setAvailable(runToolWindow, false); // shown only when the active file is a compact source
@@ -2359,10 +2379,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
             }
         }
+        // Scope to THIS window's project tree (else the "No Project" window scans only the open files).
+        // Use windowProject, not the global ProjectManager.active(), so a global window never inherits
+        // another window's project root.
         java.nio.file.Path root = null;
-        Project p = projects == null ? null : projects.active();
-        if (p != null) {
-            root = java.nio.file.Path.of(p.root());
+        if (windowProject != null && projectsEnabled()) {
+            root = java.nio.file.Path.of(windowProject.root());
         }
         setStatus(tr("search.searching"));
         searchService.search(query, root, open, outcome -> {
@@ -5344,6 +5366,118 @@ public class MainController implements com.editora.mcp.McpBridge {
                 args);
     }
 
+    // --- TODO / highlight patterns ---------------------------------------------------------------
+
+    /** The compiled-pattern matcher pushed to every buffer; rebuilt on init + each settings apply. */
+    private com.editora.editor.TodoMatcher todoMatcher = text -> java.util.List.of();
+    /** Effective highlight on/off (Settings.todoHighlight). */
+    private boolean todoHighlightOn;
+
+    /** Compiles the configured patterns and pushes the highlight matcher + on/off to every buffer. On by
+     *  default; the project / open-files scan in the TODO tool window is lazy (refreshed on demand). */
+    private void applyTodoHighlight() {
+        Settings s = config.getSettings();
+        todoHighlightOn = s.isTodoHighlight();
+        List<com.editora.todo.TodoPatterns.Compiled> compiled =
+                todoHighlightOn ? com.editora.todo.TodoPatterns.compile(s.getTodoPatterns()) : java.util.List.of();
+        todoMatcher = text -> toTodoMarks(com.editora.todo.TodoScanner.scan(text, compiled));
+        for (Tab tab : tabPane.getTabs()) {
+            applyTodoToBuffer(bufferOf(tab));
+        }
+        refreshTodoPanelIfOpen();
+    }
+
+    /** Pushes the current matcher + enabled state to one buffer (used by applyTodoHighlight + addBuffer). */
+    private void applyTodoToBuffer(EditorBuffer b) {
+        if (b == null) {
+            return;
+        }
+        b.setTodoMatcher(todoMatcher);
+        b.setTodoHighlightEnabled(todoHighlightOn);
+    }
+
+    /** Maps pure scanner matches to the editor's neutral highlight marks (offsets + 0-based line + color). */
+    private static List<com.editora.editor.TodoMark> toTodoMarks(List<com.editora.todo.TodoMatch> matches) {
+        List<com.editora.editor.TodoMark> out = new java.util.ArrayList<>(matches.size());
+        for (com.editora.todo.TodoMatch m : matches) {
+            out.add(new com.editora.editor.TodoMark(
+                    m.start(), m.end(), Math.max(0, m.line() - 1), m.lineText(), m.color()));
+        }
+        return out;
+    }
+
+    /** Re-runs the TODO tool-window scan if it's open (e.g. after the patterns changed). */
+    private void refreshTodoPanelIfOpen() {
+        if (todoToolWindow != null && todoPanel != null && toolWindows.isOpen(todoToolWindow)) {
+            runTodoScan();
+        }
+    }
+
+    /** Scans for TODO/highlight matches and fills the tool window: the open project's tree when a project
+     *  is open, else just the open buffers. Off-thread (TodoService); no-op when the feature is off. */
+    private void runTodoScan() {
+        Settings s = config.getSettings();
+        if (!s.isTodoHighlight()) {
+            todoPanel.setResults(new com.editora.todo.TodoService.Outcome(java.util.List.of(), 0, 0, false));
+            return;
+        }
+        List<com.editora.todo.TodoPatterns.Compiled> compiled =
+                com.editora.todo.TodoPatterns.compile(s.getTodoPatterns());
+        java.util.Map<java.nio.file.Path, String> open = new java.util.HashMap<>();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null && b.getPath() != null) {
+                open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
+            }
+        }
+        // Scope: THIS window's project tree, else (the "No Project" window) only the open files. Use
+        // windowProject, not the global ProjectManager.active() — the global window must not inherit a
+        // project root from another window.
+        java.nio.file.Path root = null;
+        if (windowProject != null && projectsEnabled()) {
+            root = java.nio.file.Path.of(windowProject.root());
+        }
+        setStatus(tr("todo.scanning"));
+        todoService.scan(compiled, root, open, outcome -> {
+            todoPanel.setResults(outcome);
+            setStatus(
+                    outcome.totalMatches() == 0
+                            ? tr("todo.none")
+                            : tr("todo.summary", outcome.totalMatches(), outcome.fileCount()));
+        });
+    }
+
+    /** Toggles the TODO tool window; opening it auto-scans via {@code TodoPanel.focusFirstItem}. */
+    private void toggleTodoWindow() {
+        toolWindows.toggle(todoToolWindow);
+    }
+
+    /** Quick-add a highlight pattern from the palette (name → regex); full editing is in Settings. */
+    private void promptAddTodoPattern() {
+        promptText(tr("todo.addPattern.title"), tr("todo.addPattern.nameLabel"), "", name -> {
+            if (name == null || name.isBlank()) {
+                return;
+            }
+            String suggested = "\\b" + java.util.regex.Pattern.quote(name.strip()) + "\\b";
+            promptText(tr("todo.addPattern.title"), tr("todo.addPattern.regexLabel"), suggested, regex -> {
+                if (regex == null || regex.isBlank()) {
+                    return;
+                }
+                Settings s = config.getSettings();
+                java.util.List<com.editora.todo.TodoPattern> list = new java.util.ArrayList<>(s.getTodoPatterns());
+                list.add(new com.editora.todo.TodoPattern(
+                        name.strip(), regex.strip(), com.editora.todo.TodoPatterns.DEFAULT_COLOR, false, true));
+                s.setTodoPatterns(list);
+                requestSave();
+                applyTodoHighlight();
+                if (settingsWindow != null) {
+                    settingsWindow.syncAll();
+                }
+                setStatus(tr("status.todo.patternAdded", name.strip()));
+            });
+        });
+    }
+
     // --- Git blame annotations (IntelliJ-style gutter column) ------------------------------------
 
     /** Whether blame annotations are effectively on (Git enabled + the setting + not Simple mode). */
@@ -6656,6 +6790,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setOnNotesChanged(() -> persistNotes(buffer));
         buffer.setGutterNoteClick(this::onGutterNoteClick);
         buffer.setGutterBlameClick(this::onGutterBlameClick);
+        applyTodoToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)
         // Refresh the Run button when this buffer's runnable status flips (only acts if it's active).
         buffer.setOnRunnableChanged(() -> {
             if (activeBuffer() == buffer) {
@@ -10842,6 +10977,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyHttpClientSupport();
         applyHtmlPreviewSupport();
         applyMcpSupport();
+        applyTodoHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
         applyAutoSave();
         applyAutocomplete();
         applyMultiCaret();
@@ -11650,6 +11786,21 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.fileInformation", () -> toolWindows.toggle(fileInfoToolWindow)));
         registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
         registry.register(Command.of("search.inFiles", this::openSearchInFiles));
+        registry.register(Command.of("tool.todo", this::toggleTodoWindow));
+        registry.register(Command.of("todo.refresh", () -> {
+            if (!toolWindows.isOpen(todoToolWindow)) {
+                toolWindows.toggle(todoToolWindow);
+            }
+            runTodoScan();
+        }));
+        registry.register(Command.of(
+                "view.toggleTodoHighlight",
+                () -> toggleSetting(
+                        "view.toggleTodoHighlight",
+                        () -> config.getSettings().isTodoHighlight(),
+                        v -> config.getSettings().setTodoHighlight(v),
+                        this::applyTodoHighlight)));
+        registry.register(Command.of("todo.addPattern", this::promptAddTodoPattern));
         registry.register(Command.of("nav.aceJump", this::startAceJump));
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
         registry.register(Command.of("file.run", this::runActiveFile));

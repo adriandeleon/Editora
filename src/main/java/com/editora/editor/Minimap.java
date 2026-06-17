@@ -54,6 +54,11 @@ final class Minimap extends Region {
     private java.util.List<LspDiagnostic> diagnostics = java.util.List.of();
     /** Gate for the diagnostic stripes: only drawn when LSP is active for this buffer. */
     private boolean diagnosticsEnabled;
+    /** TODO/highlight matches drawn as colored stripes on the LEFT edge (so they never clash with the
+     *  right-edge diagnostics); never cached. */
+    private java.util.List<TodoMark> todoMarks = java.util.List.of();
+
+    private boolean todoEnabled;
 
     private static final Color ERROR_STRIPE = Color.web("#e5484d");
     private static final Color WARNING_STRIPE = Color.web("#e2a03f");
@@ -108,6 +113,21 @@ final class Minimap extends Region {
             return;
         }
         this.diagnosticsEnabled = enabled;
+        repaintStripes();
+    }
+
+    /** Sets the TODO/highlight matches drawn as left-edge stripes; a cheap stripe-only repaint. */
+    void setTodoMarks(java.util.List<TodoMark> marks) {
+        this.todoMarks = marks == null ? java.util.List.of() : marks;
+        repaintStripes();
+    }
+
+    /** Enables/disables the TODO stripes (driven by TODO-highlight-on for this buffer); a cheap repaint. */
+    void setTodoEnabled(boolean enabled) {
+        if (this.todoEnabled == enabled) {
+            return;
+        }
+        this.todoEnabled = enabled;
         repaintStripes();
     }
 
@@ -207,6 +227,7 @@ final class Minimap extends Region {
         }
         drawViewport(g, w, h, total, rowHeight);
         drawDiagnosticStripes(g, w, h, total, rowHeight);
+        drawTodoStripes(g, h, total, rowHeight);
     }
 
     /** Cheap redraw on scroll: re-blit the cached content image and draw the viewport rectangle. */
@@ -233,6 +254,7 @@ final class Minimap extends Region {
         double rowHeight = rowHeight(h, total);
         drawViewport(g, w, h, total, rowHeight);
         drawDiagnosticStripes(g, w, h, total, rowHeight);
+        drawTodoStripes(g, h, total, rowHeight);
     }
 
     /** Vertical pixels per line: a fixed size, but compressed to fit when the document is long. */
@@ -284,6 +306,23 @@ final class Minimap extends Region {
             case WARNING -> WARNING_STRIPE;
             default -> INFO_STRIPE;
         };
+    }
+
+    /** Draws TODO/highlight matches as colored stripes on the LEFT edge (each in its pattern's color). */
+    private void drawTodoStripes(GraphicsContext g, double h, int total, double rowHeight) {
+        if (!todoEnabled || todoMarks.isEmpty() || total == 0) {
+            return;
+        }
+        double markH = Math.max(2.0, rowHeight);
+        for (TodoMark m : todoMarks) {
+            try {
+                g.setFill(Color.web(m.colorWeb()));
+            } catch (RuntimeException e) {
+                g.setFill(Color.web("#E5C07B"));
+            }
+            double y = clamp(m.line(), total) * rowHeight;
+            g.fillRect(0, Math.min(y, h - markH), STRIPE_WIDTH, markH);
+        }
     }
 
     /** Draws a block for each contiguous run of non-whitespace characters in {@code text}. */

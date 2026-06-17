@@ -1440,6 +1440,21 @@
     -fx-font-size: 0.9em;
 }
 
+/* TODO tool window: file-group rows + the per-pattern color tag. (The in-editor highlight is a Canvas
+   overlay colored inline per pattern, so it needs no CSS.) */
+.todo-panel .todo-summary { -fx-text-fill: -color-fg-muted; }
+/* Compact icon-only Refresh button in the TODO tool window header. */
+.todo-panel .todo-refresh { -fx-padding: 2 6 2 6; -fx-background-radius: 4; }
+.todo-panel .todo-file-row { -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
+.todo-panel .todo-color-tag { -fx-background-radius: 2; -fx-border-color: -color-border-muted; -fx-border-radius: 2; }
+/* Hover tooltip on a TODO scrollbar-overview stripe mark (the matched line's text). */
+.todo-stripe-tooltip {
+    -fx-font-family: "JetBrains Mono", "Consolas", monospace;
+    -fx-font-size: 12px;
+    -fx-background-color: -color-bg-overlay;
+    -fx-text-fill: -color-fg-default;
+}
+
 /* LSP: Problems tool window severity colors + the diagnostic hover tooltip. */
 .problems-panel .problem-lang-row { -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
 .problems-panel .problem-error { -fx-text-fill: #e5484d; }
