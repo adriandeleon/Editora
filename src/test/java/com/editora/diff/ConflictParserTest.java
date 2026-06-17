@@ -50,10 +50,32 @@ class ConflictParserTest {
     }
 
     @Test
-    void skipsThreeWayBaseRegion() {
+    void capturesThreeWayBaseRegion() {
         List<String> diff3 = List.of("<<<<<<< ours", "x", "||||||| base", "original", "=======", "y", ">>>>>>> theirs");
-        Conflict c = ((ConflictSegment) ConflictParser.parse(diff3).segments().get(0)).conflict();
+        ConflictFile f = ConflictParser.parse(diff3);
+        assertTrue(f.hasBase());
+        Conflict c = ((ConflictSegment) f.segments().get(0)).conflict();
         assertEquals(List.of("x"), c.ours());
-        assertEquals(List.of("y"), c.theirs()); // base ("original") is skipped
+        assertEquals(List.of("y"), c.theirs());
+        assertTrue(c.hasBase());
+        assertEquals("base", c.baseLabel());
+        assertEquals(List.of("original"), c.base()); // base is captured, not skipped
+    }
+
+    @Test
+    void twoWayConflictHasEmptyBase() {
+        Conflict c = ((ConflictSegment) ConflictParser.parse(SAMPLE).segments().get(1)).conflict();
+        assertFalse(c.hasBase());
+        assertTrue(c.base().isEmpty());
+        assertFalse(ConflictParser.parse(SAMPLE).hasBase());
+    }
+
+    @Test
+    void resolveFromBaseAndRoundTripsDiff3Markers() {
+        List<String> diff3 = List.of("<<<<<<< ours", "x", "||||||| base", "original", "=======", "y", ">>>>>>> theirs");
+        ConflictFile f = ConflictParser.parse(diff3);
+        assertEquals(List.of("original"), ConflictParser.resolve(f, List.of(Choice.BASE)));
+        // Unresolved → the full diff3 markers (incl. the base region) are preserved verbatim.
+        assertEquals(diff3, ConflictParser.resolve(f, List.of(Choice.UNRESOLVED)));
     }
 }

@@ -105,7 +105,16 @@ public final class MergeViewerPane implements TabContent {
                 "merge-theirs");
         HBox.setHgrow(ours, Priority.ALWAYS);
         HBox.setHgrow(theirs, Priority.ALWAYS);
-        HBox sides = new HBox(8, ours, theirs);
+        // 3-way (diff3/zdiff3) markers carry the common ancestor — show it as a middle column when present.
+        HBox sides;
+        if (c.hasBase()) {
+            VBox base =
+                    sideBox(tr("merge.base", c.baseLabel().isEmpty() ? "base" : c.baseLabel()), c.base(), "merge-base");
+            HBox.setHgrow(base, Priority.ALWAYS);
+            sides = new HBox(8, ours, base, theirs);
+        } else {
+            sides = new HBox(8, ours, theirs);
+        }
 
         Label chosen = new Label();
         chosen.getStyleClass().add("merge-chosen");
@@ -115,7 +124,13 @@ public final class MergeViewerPane implements TabContent {
         acceptOurs.setOnAction(e -> choose(index, Choice.OURS, chosen, tr("merge.kept.ours")));
         acceptTheirs.setOnAction(e -> choose(index, Choice.THEIRS, chosen, tr("merge.kept.theirs")));
         acceptBoth.setOnAction(e -> choose(index, Choice.BOTH, chosen, tr("merge.kept.both")));
-        HBox actions = new HBox(6, acceptOurs, acceptTheirs, acceptBoth, spacer(), chosen);
+        HBox actions = new HBox(6, acceptOurs, acceptTheirs, acceptBoth);
+        if (c.hasBase()) {
+            Button acceptBase = new Button(tr("merge.acceptBase"));
+            acceptBase.setOnAction(e -> choose(index, Choice.BASE, chosen, tr("merge.kept.base")));
+            actions.getChildren().add(acceptBase);
+        }
+        actions.getChildren().addAll(spacer(), chosen);
         actions.setAlignment(Pos.CENTER_LEFT);
 
         VBox card = new VBox(4, header, sides, actions);

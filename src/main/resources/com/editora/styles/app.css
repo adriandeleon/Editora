@@ -1611,6 +1611,7 @@
 .merge-side { -fx-border-width: 0; }
 .merge-ours { -fx-control-inner-background: rgba(63, 185, 80, 0.10); }
 .merge-theirs { -fx-control-inner-background: rgba(68, 147, 248, 0.10); }
+.merge-base { -fx-control-inner-background: rgba(139, 148, 158, 0.12); }
 .merge-chosen { -fx-text-fill: -color-success-fg; -fx-font-size: 11px; }
 
 /* Debug Log window: monospace read-only log area + a muted file-path footer. */
