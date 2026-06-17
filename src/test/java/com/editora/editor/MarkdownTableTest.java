@@ -49,4 +49,51 @@ class MarkdownTableTest {
         String text = "pre\n| a | b |\nafter";
         assertNull(MarkdownTable.blockBounds(text, 1)); // caret in "pre"
     }
+
+    @Test
+    void tabMovesToNextCellAndReflows() {
+        String block = "| a | b |\n|---|---|\n| 1 | 22 |";
+        MarkdownTable.Nav nav = MarkdownTable.tab(block, 2, true); // caret in header cell "a"
+        assertEquals("| a   | b   |\n| --- | --- |\n| 1   | 22  |", nav.block());
+        assertEquals('b', nav.block().charAt(nav.caret()));
+    }
+
+    @Test
+    void shiftTabMovesToPreviousCell() {
+        String block = "| a   | b   |\n| --- | --- |\n| 1   | 22  |";
+        MarkdownTable.Nav nav = MarkdownTable.tab(block, 8, false); // caret in header cell "b"
+        assertEquals('a', nav.block().charAt(nav.caret()));
+    }
+
+    @Test
+    void tabWrapsToNextRowSkippingDelimiter() {
+        String block = "| a | b |\n|---|---|\n| 1 | 2 |";
+        MarkdownTable.Nav nav = MarkdownTable.tab(block, 6, true); // last header cell → first data cell
+        assertEquals('1', nav.block().charAt(nav.caret()));
+    }
+
+    @Test
+    void tabPastLastCellAppendsRow() {
+        String block = "| a | b |\n|---|---|\n| 1 | 2 |";
+        MarkdownTable.Nav nav = MarkdownTable.tab(block, block.length() - 2, true);
+        assertEquals(4, nav.block().split("\n", -1).length);
+    }
+
+    @Test
+    void enterOnLastRowAddsRow() {
+        String block = "| a | b |\n|---|---|\n| 1 | 2 |";
+        MarkdownTable.Nav nav = MarkdownTable.enter(block, block.length() - 1);
+        assertEquals(4, nav.block().split("\n", -1).length);
+    }
+
+    @Test
+    void enterMidTableReturnsNull() {
+        String block = "| a | b |\n|---|---|\n| 1 | 2 |";
+        assertNull(MarkdownTable.enter(block, 2)); // header row, not the last row
+    }
+
+    @Test
+    void tabReturnsNullOutsideTable() {
+        assertNull(MarkdownTable.tab("not a table", 3, true));
+    }
 }

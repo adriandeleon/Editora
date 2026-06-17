@@ -264,6 +264,7 @@ public class EditorBuffer implements TabContent {
     private static final double BLAME_FONT_SIZE = 10;
 
     private final MermaidLintOverlay lintOverlay = new MermaidLintOverlay(area);
+    private final MarkdownLintOverlay mdLintOverlay = new MarkdownLintOverlay(area);
     private final LspDiagnosticOverlay lspOverlay = new LspDiagnosticOverlay(area);
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable. */
     private final DiagnosticStripe diagnosticStripe = new DiagnosticStripe(area);
@@ -309,6 +310,15 @@ public class EditorBuffer implements TabContent {
     private javafx.scene.control.Tooltip lintTooltip;
     /** Message currently shown by {@link #lintTooltip} — skips a re-{@code show()} (flicker) on each move. */
     private String lintTooltipText;
+    /** Async Markdown linter (text, callback) injected by the controller; null = no linting. */
+    private java.util.function.BiConsumer<String, java.util.function.Consumer<java.util.List<MarkdownLint.Diagnostic>>>
+            markdownLintValidator;
+
+    private boolean markdownLintEnabled;
+    private javafx.scene.control.Tooltip mdLintTooltip;
+    private String mdLintTooltipText;
+    /** Injected handler for image files dropped onto a Markdown buffer (controller copies + inserts links). */
+    private java.util.function.Consumer<java.util.List<java.io.File>> imageDropHandler;
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     private boolean lspActive;
 
@@ -518,7 +528,10 @@ public class EditorBuffer implements TabContent {
             recomputeRun(); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
         });
         // Live Mermaid linting: debounced maid run for .mmd buffers (only while enabled + maid detected).
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(450)).subscribe(ignore -> scheduleMermaidLint());
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(450)).subscribe(ignore -> {
+            scheduleMermaidLint();
+            scheduleMarkdownLint();
+        });
         // TODO/highlight patterns: debounced re-scan for the in-editor highlight (no-op when off / huge file).
         area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> refreshTodoMarks());
         // LSP document sync: debounced didChange notification (only while the buffer is LSP-managed) +
@@ -843,6 +856,32 @@ public class EditorBuffer implements TabContent {
         formatLink(url);
     }
 
+    /** Inserts {@code text} at the focused area's caret (replacing any selection), then focuses it. */
+    public void insertAtCaret(String text) {
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        a.replaceSelection(text);
+        a.requestFocus();
+    }
+
+    /** Smart paste: if a URL is on the clipboard and a single-line selection is active, wrap it as a link
+     *  ({@code [selection](url)}) and return true; otherwise false so the caller does a normal paste. */
+    public boolean trySmartLinkPaste() {
+        if (!canFormatMarkdown()) {
+            return false;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        var sel = a.getSelection();
+        if (sel.getLength() == 0 || a.getText(sel.getStart(), sel.getEnd()).contains("\n")) {
+            return false;
+        }
+        String clip = javafx.scene.input.Clipboard.getSystemClipboard().getString();
+        if (clip == null || !clip.strip().matches("(?i)(https?|ftp|mailto):\\S+")) {
+            return false;
+        }
+        formatLink(clip.strip());
+        return true;
+    }
+
     /** Promote ({@code delta<0}) / demote ({@code delta>0}) the heading level of the selected line(s). */
     public void formatHeading(int delta) {
         if (!canFormatMarkdown()) {
@@ -923,6 +962,7 @@ public class EditorBuffer implements TabContent {
                         whitespace,
                         spellOverlay,
                         lintOverlay,
+                        mdLintOverlay,
                         lspOverlay,
                         inlineValues,
                         aceJump,
@@ -954,6 +994,12 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setLeftAnchor(lintOverlay, 0d);
         AnchorPane.setRightAnchor(lintOverlay, Minimap.WIDTH);
         installLintHover(area);
+        AnchorPane.setTopAnchor(mdLintOverlay, 0d);
+        AnchorPane.setBottomAnchor(mdLintOverlay, 0d);
+        AnchorPane.setLeftAnchor(mdLintOverlay, 0d);
+        AnchorPane.setRightAnchor(mdLintOverlay, Minimap.WIDTH);
+        installMarkdownLintHover(area);
+        installImageDrop(area);
         AnchorPane.setTopAnchor(lspOverlay, 0d);
         AnchorPane.setBottomAnchor(lspOverlay, 0d);
         AnchorPane.setLeftAnchor(lspOverlay, 0d);
@@ -1485,6 +1531,133 @@ public class EditorBuffer implements TabContent {
                 lintTooltip.hide();
             }
         });
+    }
+
+    // --- Live Markdown linting -----------------------------------------------------------------------
+
+    /** Injects the async Markdown linter: {@code accept(text, diagnostics->…)}; null disables linting. */
+    public void setMarkdownLintValidator(
+            java.util.function.BiConsumer<String, java.util.function.Consumer<java.util.List<MarkdownLint.Diagnostic>>>
+                    validator) {
+        this.markdownLintValidator = validator;
+    }
+
+    /** Turns Markdown linting on/off for this buffer (controller gates on the setting; Markdown buffers only). */
+    public void setMarkdownLintEnabled(boolean on) {
+        this.markdownLintEnabled = on && isMarkdown() && !hugeFile;
+        mdLintOverlay.setActive(this.markdownLintEnabled);
+        if (this.markdownLintEnabled) {
+            scheduleMarkdownLint();
+        }
+    }
+
+    private void scheduleMarkdownLint() {
+        if (!markdownLintEnabled || !isMarkdown() || hugeFile || markdownLintValidator == null) {
+            return;
+        }
+        markdownLintValidator.accept(area.getText(), mdLintOverlay::setDiagnostics);
+    }
+
+    /** Shows the lint message(s) in a tooltip when hovering a squiggled span (overlay is mouse-transparent). */
+    private void installMarkdownLintHover(CodeArea a) {
+        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
+            if (!markdownLintEnabled || mdLintOverlay.diagnostics().isEmpty()) {
+                if (mdLintTooltip != null) {
+                    mdLintTooltip.hide();
+                }
+                return;
+            }
+            try {
+                var hit = a.hit(e.getX(), e.getY());
+                var pos = a.offsetToPosition(
+                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+                var hits = mdLintOverlay.at(pos.getMajor(), pos.getMinor());
+                if (hits.isEmpty()) {
+                    if (mdLintTooltip != null) {
+                        mdLintTooltip.hide();
+                    }
+                    return;
+                }
+                StringBuilder sb = new StringBuilder();
+                for (var d : hits) {
+                    if (sb.length() > 0) {
+                        sb.append('\n');
+                    }
+                    sb.append(d.code()).append(": ").append(d.message());
+                }
+                String text = sb.toString();
+                if (mdLintTooltip != null && mdLintTooltip.isShowing() && text.equals(mdLintTooltipText)) {
+                    return;
+                }
+                if (mdLintTooltip == null) {
+                    mdLintTooltip = new javafx.scene.control.Tooltip();
+                    mdLintTooltip.getStyleClass().add("mermaid-lint-tooltip");
+                    mdLintTooltip.setWrapText(true);
+                    mdLintTooltip.setMaxWidth(420);
+                }
+                mdLintTooltip.setText(text);
+                mdLintTooltipText = text;
+                mdLintTooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
+            } catch (RuntimeException ignored) {
+                // viewport mid-layout / hit miss — ignore
+            }
+        });
+        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
+            if (mdLintTooltip != null) {
+                mdLintTooltip.hide();
+            }
+        });
+    }
+
+    /** Injects the handler for image files dropped onto a Markdown buffer; null disables the drop affordance. */
+    public void setImageDropHandler(java.util.function.Consumer<java.util.List<java.io.File>> handler) {
+        this.imageDropHandler = handler;
+    }
+
+    /** Accepts dropped image files on a Markdown buffer (copy into {@code assets/} + insert {@code ![](…)}). */
+    private void installImageDrop(CodeArea a) {
+        a.addEventHandler(javafx.scene.input.DragEvent.DRAG_OVER, e -> {
+            if (imageDropHandler != null
+                    && isMarkdown()
+                    && isEditable()
+                    && e.getDragboard().hasFiles()
+                    && hasImageFile(e.getDragboard().getFiles())) {
+                e.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
+                e.consume();
+            }
+        });
+        a.addEventHandler(javafx.scene.input.DragEvent.DRAG_DROPPED, e -> {
+            if (imageDropHandler == null
+                    || !isMarkdown()
+                    || !isEditable()
+                    || !e.getDragboard().hasFiles()) {
+                return;
+            }
+            java.util.List<java.io.File> images = e.getDragboard().getFiles().stream()
+                    .filter(EditorBuffer::isImageFile)
+                    .toList();
+            if (images.isEmpty()) {
+                return;
+            }
+            imageDropHandler.accept(images);
+            e.setDropCompleted(true);
+            e.consume();
+        });
+    }
+
+    private static boolean hasImageFile(java.util.List<java.io.File> files) {
+        return files.stream().anyMatch(EditorBuffer::isImageFile);
+    }
+
+    private static boolean isImageFile(java.io.File f) {
+        String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+        return n.endsWith(".png")
+                || n.endsWith(".jpg")
+                || n.endsWith(".jpeg")
+                || n.endsWith(".gif")
+                || n.endsWith(".bmp")
+                || n.endsWith(".webp")
+                || n.endsWith(".svg");
     }
 
     // --- LSP (Language Server Protocol) integration ---------------------------------------------
@@ -2613,6 +2786,7 @@ public class EditorBuffer implements TabContent {
         addAutoIndent(area2);
         addCompletionKeys(area2);
         installCompletionTrigger(area2);
+        installImageDrop(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
             multiCaret2 = MultiCaretController.install(area2); // same multi-caret add-on in the split view
         }
@@ -3657,7 +3831,9 @@ public class EditorBuffer implements TabContent {
                 // Plain Tab first tries to expand a snippet prefix; otherwise smart-indent (Shift-Tab
                 // always dedents). Only code buffers get smart Tab — prose keeps the default. Skipped
                 // while a completion popup/ghost is showing, so Tab accepts the completion instead.
-                if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
+                if (tryMarkdownTableTab(a, !e.isShiftDown())) {
+                    e.consume(); // Tab/Shift-Tab move between table cells (and reflow)
+                } else if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
                     e.consume();
                 } else if (!e.isShiftDown() && tryLspReindentLine(a)) {
                     e.consume(); // LSP re-indents the current line (async); see tryLspReindentLine
@@ -3666,6 +3842,27 @@ public class EditorBuffer implements TabContent {
                 }
             }
         });
+    }
+
+    /** Tab/Shift-Tab cell navigation inside a Markdown pipe table (reflows + moves the caret). */
+    private boolean tryMarkdownTableTab(CodeArea a, boolean forward) {
+        if (!isMarkdown() || !isEditable() || hugeFile || a.getSelection().getLength() > 0) {
+            return false;
+        }
+        String text = a.getText();
+        int caret = a.getCaretPosition();
+        int[] bounds = MarkdownTable.blockBounds(text, caret);
+        if (bounds == null) {
+            return false;
+        }
+        MarkdownTable.Nav nav = MarkdownTable.tab(text.substring(bounds[0], bounds[1]), caret - bounds[0], forward);
+        if (nav == null) {
+            return false;
+        }
+        a.replaceText(bounds[0], bounds[1], nav.block());
+        a.moveTo(bounds[0] + Math.max(0, Math.min(nav.caret(), nav.block().length())));
+        a.requestFollowCaret();
+        return true;
     }
 
     /**
@@ -3845,6 +4042,18 @@ public class EditorBuffer implements TabContent {
         // Markdown list/blockquote continuation: continue the marker on the next line, or end the
         // list when Enter is pressed on an empty item.
         if (isMarkdown()) {
+            // In a table: Enter on the last row appends a new row (else fall through to a normal newline).
+            int[] tb = MarkdownTable.blockBounds(a.getText(), caret);
+            if (tb != null) {
+                MarkdownTable.Nav nav = MarkdownTable.enter(a.getText().substring(tb[0], tb[1]), caret - tb[0]);
+                if (nav != null) {
+                    a.replaceText(tb[0], tb[1], nav.block());
+                    a.moveTo(tb[0]
+                            + Math.max(0, Math.min(nav.caret(), nav.block().length())));
+                    a.requestFollowCaret();
+                    return;
+                }
+            }
             int par = a.getCurrentParagraph();
             int lineStart = a.getAbsolutePosition(par, 0);
             String line = a.getParagraph(par).getText();

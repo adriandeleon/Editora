@@ -198,7 +198,7 @@ final class PreviewImageLoader {
     }
 
     /** Copies an ARGB {@link BufferedImage} into a JavaFX {@link WritableImage} (no javafx.swing needed). */
-    private static Image toFxImage(BufferedImage buf) {
+    static Image toFxImage(BufferedImage buf) {
         int w = buf.getWidth();
         int h = buf.getHeight();
         WritableImage out = new WritableImage(w, h);

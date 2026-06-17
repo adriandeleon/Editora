@@ -354,7 +354,14 @@
 .markdown-preview .md-bold { -fx-font-weight: bold; }
 .markdown-preview .md-italic { -fx-font-style: italic; }
 .markdown-preview .md-strike { -fx-strikethrough: true; }
+.markdown-preview .md-ins { -fx-underline: true; }
 .markdown-preview .md-link { -fx-fill: -color-accent-fg; }
+/* Footnote reference: a small, raised, accent-colored [label] marker. */
+.markdown-preview .md-footnote-ref {
+    -fx-fill: -color-accent-fg;
+    -fx-font-size: 0.78em;
+    -fx-translate-y: -0.35em;
+}
 /* Inline code as a GitHub-style pill (a Label, so it can carry a rounded gray background). */
 .markdown-preview .md-inline-code {
     -fx-font-family: monospace;
@@ -391,6 +398,32 @@
 }
 .markdown-preview .md-table-header { -fx-background-color: -color-bg-subtle; }
 .markdown-preview .md-table-header .md-text { -fx-font-weight: bold; }
+
+/* YAML front matter: a muted metadata block at the top of the document. */
+.markdown-preview .md-frontmatter {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted;
+    -fx-border-width: 0 0 0 3;
+    -fx-background-radius: 6;
+    -fx-padding: 8 12 8 12;
+    -fx-spacing: 2;
+}
+.markdown-preview .md-frontmatter-row { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.92em; }
+
+/* Footnote definitions: a small marker beside the definition body. */
+.markdown-preview .md-footnote-def { -fx-spacing: 8; -fx-padding: 1 0 1 0; }
+.markdown-preview .md-footnote-def-marker { -fx-text-fill: -color-accent-fg; -fx-min-width: 28; }
+.markdown-preview .md-footnote-def-content { -fx-spacing: 4; }
+
+/* LaTeX math (JLaTeXMath → image). Block formulas are centered; inline ones flow in the text. */
+.markdown-preview .md-math-block-wrap { -fx-alignment: center; -fx-padding: 8 0 8 0; }
+.markdown-preview .md-math-error {
+    -fx-font-family: monospace;
+    -fx-text-fill: -color-danger-fg;
+    -fx-background-color: -color-danger-subtle;
+    -fx-background-radius: 4;
+    -fx-padding: 0 4 0 4;
+}
 
 /* Mermaid diagram render (an ImageView, error label, or "rendering…" placeholder). */
 .md-mermaid { -fx-alignment: center; -fx-padding: 6 0 6 0; }
@@ -1447,6 +1480,12 @@
 .todo-panel .todo-refresh { -fx-padding: 2 6 2 6; -fx-background-radius: 4; }
 .todo-panel .todo-file-row { -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
 .todo-panel .todo-color-tag { -fx-background-radius: 2; -fx-border-color: -color-border-muted; -fx-border-radius: 2; }
+
+/* Markdown Lint tool window: a flat list of diagnostics with a severity dot. */
+.markdown-lint-panel .markdown-lint-summary { -fx-text-fill: -color-fg-muted; }
+.markdown-lint-panel .markdown-lint-tag { -fx-background-radius: 5; }
+.markdown-lint-panel .markdown-lint-tag.lint-error { -fx-background-color: -color-danger-fg; }
+.markdown-lint-panel .markdown-lint-tag.lint-warning { -fx-background-color: -color-warning-fg; }
 /* Hover tooltip on a TODO scrollbar-overview stripe mark (the matched line's text). */
 .todo-stripe-tooltip {
     -fx-font-family: "JetBrains Mono", "Consolas", monospace;

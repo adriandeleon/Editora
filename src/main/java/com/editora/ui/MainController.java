@@ -272,6 +272,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     private TodoPanel todoPanel;
     private ToolWindow todoToolWindow;
     private final com.editora.todo.TodoService todoService = new com.editora.todo.TodoService();
+    private MarkdownLintPanel markdownLintPanel;
+    private ToolWindow markdownLintToolWindow;
+    private final com.editora.editor.MarkdownLintService markdownLintService =
+            new com.editora.editor.MarkdownLintService();
     private QuickOpen<NoteEntry> notesPalette;
     private QuickOpen<NoteEntry> notesSearchPalette;
     /** Session-only Simple-UI override from the {@code --simple} CLI flag; OR'd with the saved setting. */
@@ -545,12 +549,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyLocalHistory(); // Local File History tool window availability + list (on by default)
         applyNotesSupport(); // hide Personal Notes UI when disabled (default)
         applyMermaidSupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
+        applyMathSupport(); // LaTeX math rendering (off by default)
         applyHttpClientSupport(); // configure ijhttp; .http run glyphs off when disabled (default)
         applyHtmlPreviewSupport(); // HTML "open in browser" control off when disabled (default)
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
         applyLspSupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
         applyDebugSupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on jdtls)
         applyTodoHighlight(); // compile TODO/FIXME patterns + highlight (on by default)
+        applyMarkdownLint(); // push Markdown-lint enabled state to buffers (on by default)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
@@ -1463,6 +1469,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         searchService.shutdown();
         todoService.shutdown();
+        markdownLintService.shutdown();
         mermaidService.shutdown();
         htmlPreviewService.shutdown(); // stop the HTML-preview HTTP server + worker
         stopMcpIfOwner(); // stop the MCP server if this window owns it
@@ -2325,6 +2332,25 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         todoToolWindow = new ToolWindow(
                 "todo", tr("toolwindow.todo"), ToolWindow.Side.BOTTOM, Icons::todo, todoPanel, "tool.todo");
+        markdownLintPanel = new MarkdownLintPanel(new MarkdownLintPanel.Actions() {
+            @Override
+            public void open(java.nio.file.Path file, int line, int col) {
+                openPath(file);
+                Platform.runLater(() -> gotoInFile(file, line, col));
+            }
+
+            @Override
+            public void refresh() {
+                runMarkdownLintScan();
+            }
+        });
+        markdownLintToolWindow = new ToolWindow(
+                "markdownLint",
+                tr("toolwindow.markdownLint"),
+                ToolWindow.Side.BOTTOM,
+                Icons::warning,
+                markdownLintPanel,
+                "tool.markdownLint");
         problemsPanel = new ProblemsPanel(this::openAndGoto);
         problemsToolWindow = new ToolWindow(
                 "problems",
@@ -2373,6 +2399,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(fileInfoToolWindow);
         toolWindows.register(searchToolWindow);
         toolWindows.register(todoToolWindow);
+        toolWindows.register(markdownLintToolWindow);
         toolWindows.register(problemsToolWindow);
         toolWindows.register(runToolWindow);
         toolWindows.setAvailable(runToolWindow, false); // shown only when the active file is a compact source
@@ -2603,6 +2630,17 @@ public class MainController implements com.editora.mcp.McpBridge {
      * fall back to plain code. Runs at startup and on every settings apply (mirrors
      * {@link #applyGitSupport}).
      */
+    /** Reconciles LaTeX math rendering with its setting + the app theme; re-renders open previews. */
+    private void applyMathSupport() {
+        com.editora.editor.MathImages.configure(config.getSettings().isMathSupport(), appThemeDark());
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null && b.hasPreview()) {
+                b.refreshPreview();
+            }
+        }
+    }
+
     private void applyMermaidSupport() {
         Settings s = config.getSettings();
         boolean on = s.isMermaidSupport();
@@ -5466,6 +5504,42 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.toggle(todoToolWindow);
     }
 
+    // --- Markdown lint ---------------------------------------------------------------------------
+
+    /** Whether Markdown linting is effective (the setting; the per-buffer gate adds Markdown + non-huge). */
+    private boolean markdownLintEnabled() {
+        return config.getSettings().isMarkdownLint();
+    }
+
+    /** Pushes the Markdown-lint enabled state to every buffer (init + each settings apply). */
+    private void applyMarkdownLint() {
+        boolean on = markdownLintEnabled();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null) {
+                b.setMarkdownLintEnabled(on);
+            }
+        }
+        if (markdownLintToolWindow != null && markdownLintPanel != null && toolWindows.isOpen(markdownLintToolWindow)) {
+            runMarkdownLintScan();
+        }
+    }
+
+    /** Lints the active Markdown buffer once and fills the Lint tool window (off-thread). */
+    private void runMarkdownLintScan() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isMarkdown() || !markdownLintEnabled()) {
+            markdownLintPanel.setResults(null, java.util.List.of());
+            return;
+        }
+        markdownLintService.validate(b.getContent(), diags -> markdownLintPanel.setResults(b.getPath(), diags));
+    }
+
+    /** Toggles the Markdown Lint tool window; opening it auto-scans via {@code focusFirstItem}. */
+    private void toggleMarkdownLintWindow() {
+        toolWindows.toggle(markdownLintToolWindow);
+    }
+
     /** Quick-add a highlight pattern from the palette (name → regex); full editing is in Settings. */
     private void promptAddTodoPattern() {
         promptText(tr("todo.addPattern.title"), tr("todo.addPattern.nameLabel"), "", name -> {
@@ -6848,6 +6922,18 @@ public class MainController implements com.editora.mcp.McpBridge {
                 multiCaretEnabled()); // multiple cursors + Alt+drag column selection (off in Simple UI mode)
         buffer.setMermaidValidator((text, cb) -> mermaidService.validate(text, cb));
         buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
+        // Markdown linting: the overlay gets the diagnostics; the Lint tool window mirrors them live when
+        // this buffer is the active one and the window is open.
+        buffer.setMarkdownLintValidator((text, cb) -> markdownLintService.validate(text, diags -> {
+            cb.accept(diags);
+            if (activeBuffer() == buffer
+                    && markdownLintToolWindow != null
+                    && toolWindows.isOpen(markdownLintToolWindow)) {
+                markdownLintPanel.setResults(buffer.getPath(), diags);
+            }
+        }));
+        buffer.setMarkdownLintEnabled(markdownLintEnabled());
+        buffer.setImageDropHandler(files -> insertDroppedImages(buffer, files)); // drag image → assets/ + ![](…)
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
         buffer.setDebugHoverEvaluator((expr, cb) -> dapManager.evaluateHover(expr, debugFrameId, cb));
         // LSP: debounced didChange sink, async completion source, then open+activate if eligible.
@@ -8192,6 +8278,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         EditorBuffer b = activeBuffer();
+        if (b != null && tryMarkdownImagePaste(b)) { // a clipboard image → save to assets/ + insert ![](…)
+            deactivateMark();
+            return;
+        }
+        if (b != null && b.trySmartLinkPaste()) { // a clipboard URL over a selection → [selection](url)
+            deactivateMark();
+            setStatus(tr("status.markdown.linkPasted"));
+            return;
+        }
         if (b != null && b.multiCaretPaste()) { // distribute clipboard lines one per caret
             deactivateMark();
             setStatus(tr("status.pasted"));
@@ -8204,6 +8299,100 @@ public class MainController implements com.editora.mcp.McpBridge {
         area.paste();
         deactivateMark();
         setStatus(tr("status.pasted"));
+    }
+
+    // --- Markdown image paste / drop -------------------------------------------------------------
+
+    /** If the clipboard holds an image and the active buffer is a saved local Markdown file, save it under
+     *  {@code assets/} and insert {@code ![](…)}. Returns true if it handled (or claimed) the paste. */
+    private boolean tryMarkdownImagePaste(EditorBuffer b) {
+        if (!b.isMarkdown() || !b.isEditable()) {
+            return false;
+        }
+        if (!javafx.scene.input.Clipboard.getSystemClipboard().hasImage()) {
+            return false;
+        }
+        if (!isLocalBuffer(b) || b.getPath() == null) {
+            setStatus(tr("status.markdown.imageNeedsSave"));
+            return true; // claim it: a raw image can't be pasted as text anyway
+        }
+        javafx.scene.image.Image img =
+                javafx.scene.input.Clipboard.getSystemClipboard().getImage();
+        if (img == null) {
+            return false;
+        }
+        try {
+            java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
+            java.nio.file.Path assets = baseDir.resolve(com.editora.editor.MarkdownImagePaste.ASSETS_DIR);
+            java.nio.file.Files.createDirectories(assets);
+            String name = com.editora.editor.MarkdownImagePaste.uniqueFileName(
+                    n -> java.nio.file.Files.exists(assets.resolve(n)), "pasted-image", "png");
+            java.nio.file.Path target = assets.resolve(name);
+            writeFxImageToPng(img, target);
+            String rel = com.editora.editor.MarkdownImagePaste.relativePath(baseDir, target);
+            b.insertAtCaret(com.editora.editor.MarkdownImagePaste.snippet(rel, ""));
+            setStatus(tr("status.markdown.imagePasted", rel));
+        } catch (Exception ex) {
+            setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
+        }
+        return true;
+    }
+
+    /** Copies dropped image files into the Markdown file's {@code assets/} dir and inserts a link for each. */
+    private void insertDroppedImages(EditorBuffer b, java.util.List<java.io.File> files) {
+        if (b.getPath() == null || !isLocalBuffer(b)) {
+            setStatus(tr("status.markdown.imageNeedsSave"));
+            return;
+        }
+        try {
+            java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
+            java.nio.file.Path assets = baseDir.resolve(com.editora.editor.MarkdownImagePaste.ASSETS_DIR);
+            java.nio.file.Files.createDirectories(assets);
+            StringBuilder out = new StringBuilder();
+            for (java.io.File f : files) {
+                String ext = extensionOf(f.getName());
+                String base = stripExtension(f.getName());
+                String name = com.editora.editor.MarkdownImagePaste.uniqueFileName(
+                        n -> java.nio.file.Files.exists(assets.resolve(n)), base, ext);
+                java.nio.file.Path target = assets.resolve(name);
+                java.nio.file.Files.copy(f.toPath(), target);
+                String rel = com.editora.editor.MarkdownImagePaste.relativePath(baseDir, target);
+                if (out.length() > 0) {
+                    out.append('\n');
+                }
+                out.append(com.editora.editor.MarkdownImagePaste.snippet(rel, base));
+            }
+            b.insertAtCaret(out.toString());
+            setStatus(tr("status.markdown.imageDropped", files.size()));
+        } catch (Exception ex) {
+            setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
+        }
+    }
+
+    private static String extensionOf(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot > 0 && dot < name.length() - 1 ? name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT) : "png";
+    }
+
+    private static String stripExtension(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
+    }
+
+    /** Writes a JavaFX {@code Image} to a PNG via headless Java2D (no {@code javafx.swing} dependency). */
+    private static void writeFxImageToPng(javafx.scene.image.Image img, java.nio.file.Path target)
+            throws java.io.IOException {
+        int w = (int) Math.round(img.getWidth());
+        int h = (int) Math.round(img.getHeight());
+        java.awt.image.BufferedImage bi =
+                new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        javafx.scene.image.PixelReader reader = img.getPixelReader();
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                bi.setRGB(x, y, reader.getArgb(x, y));
+            }
+        }
+        javax.imageio.ImageIO.write(bi, "png", target.toFile());
     }
 
     @FXML
@@ -10714,6 +10903,40 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** Exports the active Markdown buffer's rendered preview to a standalone HTML file. */
+    private void exportPreviewHtml() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isMarkdown()) {
+            setStatus(tr("status.html.notMarkdown"));
+            return;
+        }
+        java.io.File f = chooseHtmlDestination(bufferBaseName(b));
+        if (f == null) {
+            return;
+        }
+        try {
+            String base = bufferBaseName(b);
+            int dot = base.lastIndexOf('.');
+            String title = dot > 0 ? base.substring(0, dot) : base;
+            String html = com.editora.editor.MarkdownHtmlExport.toHtml(
+                    b.getContent(), title, config.getSettings().isMathSupport());
+            java.nio.file.Files.writeString(f.toPath(), html);
+            setStatus(tr("status.html.exported", f.toString()));
+        } catch (Exception ex) {
+            setStatus(tr("status.html.exportFailed", String.valueOf(ex.getMessage())));
+        }
+    }
+
+    /** A Save dialog defaulting to {@code <base-without-ext>.html}. */
+    private java.io.File chooseHtmlDestination(String base) {
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle(tr("dialog.htmlExport.title"));
+        int dot = base == null ? -1 : base.lastIndexOf('.');
+        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + ".html");
+        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("HTML", "*.html"));
+        return chooser.showSaveDialog(stage);
+    }
+
     /**
      * The buffer's file name — from its on-disk path when saved, else its suggested display name, else a
      * default. Drives the syntax-highlighting grammar lookup and the default export file name (PDF, Mermaid).
@@ -10988,10 +11211,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyGitBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
         applyNotesSupport();
         applyMermaidSupport();
+        applyMathSupport();
         applyHttpClientSupport();
         applyHtmlPreviewSupport();
         applyMcpSupport();
         applyTodoHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
+        applyMarkdownLint(); // push Markdown-lint enabled state to every buffer
         applyAutoSave();
         applyAutocomplete();
         applyMultiCaret();
@@ -12004,6 +12229,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("editor.setIndentStyle", this::chooseIndentStyle));
         registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
         registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));
+        registry.register(Command.of("preview.exportHtml", this::exportPreviewHtml));
         registry.register(Command.of("editor.print", this::printCode));
         registry.register(Command.of("preview.print", this::printPreview));
         registry.register(Command.of("mermaid.export", () -> ifMermaid(this::exportMermaid)));
@@ -12137,6 +12363,27 @@ public class MainController implements com.editora.mcp.McpBridge {
                         v -> config.getSettings().setTodoHighlight(v),
                         this::applyTodoHighlight)));
         registry.register(Command.of("todo.addPattern", this::promptAddTodoPattern));
+        registry.register(Command.of("tool.markdownLint", this::toggleMarkdownLintWindow));
+        registry.register(Command.of("markdownLint.refresh", () -> {
+            if (!toolWindows.isOpen(markdownLintToolWindow)) {
+                toolWindows.toggle(markdownLintToolWindow);
+            }
+            runMarkdownLintScan();
+        }));
+        registry.register(Command.of(
+                "view.toggleMarkdownLint",
+                () -> toggleSetting(
+                        "view.toggleMarkdownLint",
+                        () -> config.getSettings().isMarkdownLint(),
+                        v -> config.getSettings().setMarkdownLint(v),
+                        this::applyMarkdownLint)));
+        registry.register(Command.of(
+                "view.toggleMath",
+                () -> toggleSetting(
+                        "view.toggleMath",
+                        () -> config.getSettings().isMathSupport(),
+                        v -> config.getSettings().setMathSupport(v),
+                        this::applyMathSupport)));
         registry.register(Command.of("nav.aceJump", this::startAceJump));
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
         registry.register(Command.of("file.run", this::runActiveFile));

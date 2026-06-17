@@ -38,6 +38,7 @@
         <!-- 1.7.2, not 2.0.0: 2.0.0's module-info exports an empty package (com.github.weisj.jsvg.provider)
              which jlink rejects in the native `dist` build ("exported package not present"). -->
         <jsvg.version>1.7.2</jsvg.version>
+        <jlatexmath.version>1.0.7</jlatexmath.version>
         <pdfbox.version>3.0.5</pdfbox.version>
         <lucene.version>10.2.2</lucene.version>
         <javadiffutils.version>4.12</javadiffutils.version>
@@ -133,6 +134,26 @@
             <version>${commonmark.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-yaml-front-matter</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-footnotes</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-heading-anchor</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-ins</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.nibor.autolink</groupId>
             <artifactId>autolink</artifactId>
             <version>${autolink.version}</version>
@@ -144,6 +165,14 @@
             <groupId>com.github.weisj</groupId>
             <artifactId>jsvg</artifactId>
             <version>${jsvg.version}</version>
+        </dependency>
+        <!-- JLaTeXMath: pure-Java LaTeX math rendering for the Markdown preview/PDF. Renders to a
+             java.awt BufferedImage (headless Java2D, like the JSVG path) → JavaFX Image. Automatic module
+             (filename-derived name: jlatexmath); moditect injects a descriptor for the jlink dist build. -->
+        <dependency>
+            <groupId>org.scilab.forge</groupId>
+            <artifactId>jlatexmath</artifactId>
+            <version>${jlatexmath.version}</version>
         </dependency>
         <!-- Apache PDFBox: PDF export (code/Markdown). Pulls pdfbox-io + fontbox + commons-logging
              (all automatic modules — patched by moditect for the jlink dist build). The optional
@@ -616,6 +645,18 @@
                                     </artifact>
                                     <moduleInfo>
                                         <name>io.github.javadiffutils</name>
+                                    </moduleInfo>
+                                </module>
+                                <!-- JLaTeXMath (math rendering): automatic module, requires java.desktop.
+                                     jdeps generates a clean descriptor; not signed (no signature-strip). -->
+                                <module>
+                                    <artifact>
+                                        <groupId>org.scilab.forge</groupId>
+                                        <artifactId>jlatexmath</artifactId>
+                                        <version>${jlatexmath.version}</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>jlatexmath</name>
                                     </moduleInfo>
                                 </module>
                                 <!-- Apache MINA SSHD (SFTP remote files): the combined sshd-osgi bundle

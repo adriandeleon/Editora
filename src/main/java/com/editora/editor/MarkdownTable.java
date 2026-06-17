@@ -132,6 +132,182 @@ public final class MarkdownTable {
         return out.toString();
     }
 
+    /** The result of a table navigation: the (reflowed) block text and the caret offset within it. */
+    public record Nav(String block, int caret) {}
+
+    /**
+     * Tab/Shift-Tab navigation within a table {@code block}. Reflows the block and returns the caret offset
+     * (within the reflowed block) at the next/previous cell's content. Forward past the last cell appends a
+     * new row. Returns {@code null} when the block is not a GFM table (no delimiter row).
+     */
+    public static Nav tab(String block, int caretInBlock, boolean forward) {
+        String[] lines = block.split("\n", -1);
+        int delim = delimiterIndex(lines);
+        if (delim < 0) {
+            return null;
+        }
+        int li = lineIndexAt(block, caretInBlock);
+        int lineStart = lineStartOffset(block, li);
+        int ci = cellIndexAt(lines[li], caretInBlock - lineStart);
+
+        int targetLine = li;
+        int targetCell = ci;
+        String working = block;
+        if (forward) {
+            if (ci + 1 < cellCount(lines[li])) {
+                targetCell = ci + 1;
+            } else {
+                int next = nextNonDelim(lines, li, delim);
+                if (next >= 0) {
+                    targetLine = next;
+                    targetCell = 0;
+                } else {
+                    working = block + "\n" + emptyRow(columnCount(lines));
+                    targetLine = working.split("\n", -1).length - 1;
+                    targetCell = 0;
+                }
+            }
+        } else {
+            if (ci - 1 >= 0) {
+                targetCell = ci - 1;
+            } else {
+                int prev = prevNonDelim(lines, li, delim);
+                if (prev < 0) {
+                    return new Nav(reflow(block), caretInBlock); // already at the first cell
+                }
+                targetLine = prev;
+                targetCell = Math.max(0, cellCount(lines[prev]) - 1);
+            }
+        }
+        String reflowed = reflow(working);
+        return new Nav(reflowed, cellContentOffset(reflowed, targetLine, targetCell));
+    }
+
+    /**
+     * Enter within a table: if the caret is on the last row, append a new empty row and put the caret in its
+     * first cell. Returns {@code null} otherwise (caller does a normal newline).
+     */
+    public static Nav enter(String block, int caretInBlock) {
+        String[] lines = block.split("\n", -1);
+        if (delimiterIndex(lines) < 0) {
+            return null;
+        }
+        int li = lineIndexAt(block, caretInBlock);
+        if (li != lines.length - 1) {
+            return null; // only the last row adds a row; mid-table Enter is a normal split
+        }
+        String working = block + "\n" + emptyRow(columnCount(lines));
+        String reflowed = reflow(working);
+        int newLine = reflowed.split("\n", -1).length - 1;
+        return new Nav(reflowed, cellContentOffset(reflowed, newLine, 0));
+    }
+
+    private static int delimiterIndex(String[] lines) {
+        for (int i = 0; i < lines.length; i++) {
+            if (isDelimiterRow(lines[i])) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int columnCount(String[] lines) {
+        int n = 0;
+        for (String line : lines) {
+            n = Math.max(n, cellCount(line));
+        }
+        return n;
+    }
+
+    private static String emptyRow(int ncol) {
+        StringBuilder sb = new StringBuilder("|");
+        for (int c = 0; c < Math.max(1, ncol); c++) {
+            sb.append("  |");
+        }
+        return sb.toString();
+    }
+
+    /** Number of cells in a row (segments between pipes, excluding the empty leading/trailing slots). */
+    private static int cellCount(String line) {
+        return splitCells(line).size();
+    }
+
+    private static int lineIndexAt(String block, int caret) {
+        int c = Math.max(0, Math.min(caret, block.length()));
+        int idx = 0;
+        for (int i = 0; i < c; i++) {
+            if (block.charAt(i) == '\n') {
+                idx++;
+            }
+        }
+        return idx;
+    }
+
+    private static int lineStartOffset(String block, int lineIndex) {
+        int offset = 0;
+        for (int i = 0; i < lineIndex; i++) {
+            offset = block.indexOf('\n', offset) + 1;
+        }
+        return offset;
+    }
+
+    /** Which cell column {@code col} falls in (0-based), counting pipes before it. */
+    private static int cellIndexAt(String line, int col) {
+        boolean leadingPipe = line.strip().startsWith("|");
+        int pipesBefore = 0;
+        for (int i = 0; i < Math.min(col, line.length()); i++) {
+            if (line.charAt(i) == '|') {
+                pipesBefore++;
+            }
+        }
+        int ci = leadingPipe ? pipesBefore - 1 : pipesBefore;
+        return Math.max(0, Math.min(ci, Math.max(0, cellCount(line) - 1)));
+    }
+
+    /** Absolute offset (within the reflowed block) of the start of cell {@code cell} on line {@code line}. */
+    private static int cellContentOffset(String block, int line, int cell) {
+        int lineStart = lineStartOffset(block, line);
+        String text = lineAt(block, line);
+        int pipes = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '|') {
+                if (pipes == cell) {
+                    int content = i + 1;
+                    while (content < text.length() && text.charAt(content) == ' ') {
+                        content++;
+                    }
+                    return lineStart + content;
+                }
+                pipes++;
+            }
+        }
+        return lineStart + text.length();
+    }
+
+    private static String lineAt(String block, int line) {
+        int start = lineStartOffset(block, line);
+        int end = block.indexOf('\n', start);
+        return end < 0 ? block.substring(start) : block.substring(start, end);
+    }
+
+    private static int nextNonDelim(String[] lines, int from, int delim) {
+        for (int i = from + 1; i < lines.length; i++) {
+            if (i != delim) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int prevNonDelim(String[] lines, int from, int delim) {
+        for (int i = from - 1; i >= 0; i--) {
+            if (i != delim) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private static List<String> splitCells(String line) {
         String t = line.strip();
         if (t.startsWith("|")) {

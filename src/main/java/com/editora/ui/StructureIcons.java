@@ -20,6 +20,7 @@ final class StructureIcons {
     private static final String METHOD = "M18 4H6v2l6.5 6L6 18v2h12v-3h-7l5-5-5-5h7z"; // functions
     private static final String FIELD = "M12 8a4 4 0 100 8 4 4 0 000-8z"; // member dot (filled circle)
     private static final String MODULE = "M20 8h-3V4H3v16h18V8zM5 6h10v2H5zM5 10h14v8H5z"; // package/box
+    private static final String HEADING = "M5 4v16h2v-7h6v7h2V4h-2v7H7V4z"; // an "H" (Markdown heading)
     private static final String DOT = "M9 9h6v6H9z"; // neutral square
 
     /** A fresh glyph Node for {@code kind} (the lowercased SymbolKind id). */
@@ -36,6 +37,7 @@ final class StructureIcons {
             case "method", "function", "constructor", "operator", "event" -> METHOD;
             case "field", "property", "variable", "constant", "key" -> FIELD;
             case "module", "namespace", "package", "file" -> MODULE;
+            case "heading" -> HEADING;
             default -> DOT;
         };
     }

@@ -147,6 +147,8 @@ public class SettingsWindow {
     private CheckBox simpleModeCheck;
     private CheckBox toolStripeCheck;
     private CheckBox markdownFormatBarCheck;
+    private CheckBox markdownLintCheck;
+    private CheckBox mathSupportCheck;
     private CheckBox editorConfigCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
@@ -624,6 +626,8 @@ public class SettingsWindow {
         simpleModeCheck = viewCheck(tr("settings.simpleMode"), Settings::setSimpleMode);
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
         markdownFormatBarCheck = viewCheck(tr("settings.markdownFormatBar"), Settings::setMarkdownFormatBar);
+        markdownLintCheck = viewCheck(tr("settings.markdownLint"), Settings::setMarkdownLint);
+        mathSupportCheck = viewCheck(tr("settings.mathSupport"), Settings::setMathSupport);
         editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
         todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
@@ -1145,6 +1149,8 @@ public class SettingsWindow {
                 markdown,
                 markdownFormatBarCheck,
                 "markdown format bar selection bold italic toolbar floating");
+        row(p, Category.EDITOR, markdown, markdownLintCheck, "markdown lint linting warnings squiggles rules");
+        row(p, Category.EDITOR, markdown, mathSupportCheck, "markdown math latex katex formula equation dollar");
         Label todoHl = section(p, tr("settings.section.todo"));
         row(p, Category.EDITOR, todoHl, todoHighlightCheck, "todo fixme highlight patterns tags comments annotations");
         row(p, Category.EDITOR, todoHl, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
@@ -2622,6 +2628,8 @@ public class SettingsWindow {
             templateAuthorField.setText(settings.getAuthorNameRaw());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
+            markdownLintCheck.setSelected(settings.isMarkdownLint());
+            mathSupportCheck.setSelected(settings.isMathSupport());
             editorConfigCheck.setSelected(settings.isEditorConfigSupport());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             rebuildTodoRows();
@@ -3096,6 +3104,8 @@ public class SettingsWindow {
             simpleModeCheck.setSelected(s.isSimpleMode());
             toolStripeCheck.setSelected(s.isShowToolStripe());
             markdownFormatBarCheck.setSelected(s.isMarkdownFormatBar());
+            markdownLintCheck.setSelected(s.isMarkdownLint());
+            mathSupportCheck.setSelected(s.isMathSupport());
             editorConfigCheck.setSelected(s.isEditorConfigSupport());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             rebuildTodoRows();

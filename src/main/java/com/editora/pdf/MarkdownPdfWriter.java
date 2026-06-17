@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.MathImages;
+import com.editora.editor.MathSpans;
 import com.editora.mermaid.Mermaid;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -153,7 +155,10 @@ public final class MarkdownPdfWriter {
             if (n instanceof Heading h) {
                 heading(h, left);
             } else if (n instanceof Paragraph p) {
-                if (isBlockImage(p)) {
+                String displayMath = MathImages.isEnabled() ? soleDisplayMath(p) : null;
+                if (displayMath != null) {
+                    blockMath(displayMath, left, p);
+                } else if (isBlockImage(p)) {
                     image((Image) p.getFirstChild(), left);
                 } else {
                     paragraph(p, left, BODY);
@@ -298,6 +303,20 @@ public final class MarkdownPdfWriter {
                 }
             }
             codeBlock(source, left);
+        }
+
+        void blockMath(String latex, float left, Paragraph fallback) throws IOException {
+            byte[] png = MathImages.renderPng(latex, true, 30f, false); // PDF is always light
+            if (png != null) {
+                try {
+                    drawImage(PDImageXObject.createFromByteArray(doc, png, "math"), left);
+                    return;
+                } catch (IOException ignored) {
+                    // fall through to text rendering
+                }
+            }
+            paragraph(fallback, left, BODY);
+            y -= PARA_GAP;
         }
 
         void image(Image node, float left) throws IOException {
@@ -561,6 +580,27 @@ public final class MarkdownPdfWriter {
     private static boolean isBlockImage(Paragraph p) {
         Node c = p.getFirstChild();
         return c instanceof Image && c.getNext() == null;
+    }
+
+    /** If paragraph {@code p} is exactly one {@code $$…$$} display-math span, its LaTeX; else null. */
+    private static String soleDisplayMath(Paragraph p) {
+        StringBuilder sb = new StringBuilder();
+        for (Node c = p.getFirstChild(); c != null; c = c.getNext()) {
+            if (c instanceof Text t) {
+                sb.append(t.getLiteral());
+            } else {
+                return null;
+            }
+        }
+        String trimmed = sb.toString().strip();
+        List<MathSpans.Span> spans = MathSpans.find(trimmed);
+        if (spans.size() == 1) {
+            MathSpans.Span s = spans.get(0);
+            if (s.display() && s.start() == 0 && s.end() == trimmed.length()) {
+                return s.latex();
+            }
+        }
+        return null;
     }
 
     private static boolean isMermaid(String info) {
