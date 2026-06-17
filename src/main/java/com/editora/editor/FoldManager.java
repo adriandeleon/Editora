@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.function.DoubleSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
@@ -23,6 +24,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
@@ -110,6 +112,16 @@ public final class FoldManager {
     private IntFunction<String> changeClass = i -> null;
     /** Hunk text (unified diff) for a line's change bar hover tooltip, or {@code null} for none. */
     private IntFunction<String> changeTooltip = i -> null;
+
+    /** Whether the IntelliJ-style blame "Annotate" column is shown (reserve the leftmost annotation slot). */
+    private BooleanSupplier blameEnabled = () -> false;
+    /** Per-line blame annotation (author/date/tooltip/heatmap bg/hash), or {@code null} for an empty row. */
+    private IntFunction<BlameInfo> blameInfo = i -> null;
+    /** Fixed pixel width of the annotation column (computed once from the widest annotation), so the
+     *  line numbers stay aligned regardless of which row is built. */
+    private DoubleSupplier blameColumnWidth = () -> 0;
+    /** Invoked when the user clicks a line's blame annotation (shows that line's commit). */
+    private IntConsumer onBlameClick = i -> {};
 
     /** Digit width the gutter line numbers were last padded to; re-pad visible rows when it changes. */
     private int lastLineDigits = 1;
@@ -302,6 +314,21 @@ public final class FoldManager {
         this.changeBarsEnabled = enabled == null ? () -> false : enabled;
         this.changeClass = classFor == null ? i -> null : classFor;
         this.changeTooltip = tooltipFor == null ? i -> null : tooltipFor;
+    }
+
+    /**
+     * Wires the IntelliJ-style blame "Annotate" gutter column (leftmost): {@code enabled} reserves the
+     * fixed-width annotation slot on every row while blame is on, {@code infoFor} supplies a line's
+     * author/date/tooltip/heatmap-bg/hash (or {@code null} for a blank row), {@code columnWidth} is the
+     * stable column width (so line numbers don't jitter as rows recycle), and {@code onClick} shows that
+     * line's commit when the annotation is clicked.
+     */
+    public void setBlameHooks(
+            BooleanSupplier enabled, IntFunction<BlameInfo> infoFor, DoubleSupplier columnWidth, IntConsumer onClick) {
+        this.blameEnabled = enabled == null ? () -> false : enabled;
+        this.blameInfo = infoFor == null ? i -> null : infoFor;
+        this.blameColumnWidth = columnWidth == null ? () -> 0 : columnWidth;
+        this.onBlameClick = onClick == null ? i -> {} : onClick;
     }
 
     public Optional<Region> regionStartingAt(int line) {
@@ -563,6 +590,14 @@ public final class FoldManager {
             }
         });
 
+        // Blame "Annotate" column (leftmost, IntelliJ-style): a fixed-width per-line author + date with an
+        // age-heatmap background tint, a hover tooltip (full commit), and click → show that line's commit.
+        // The slot is reserved on every row while blame is on, so toggling it shifts the editor right as a
+        // block (like IntelliJ) and the line numbers stay aligned.
+        if (blameEnabled.getAsBoolean()) {
+            box.getChildren().add(buildBlameSlot(idx));
+        }
+
         // Breakpoint strip (leftmost), reserved on every row only while debugging is enabled. Clicking
         // anywhere in the strip toggles a breakpoint and consumes the event, so it never also triggers the
         // gutter's bookmark-toggle click. The red dot is drawn only on breakpointed lines.
@@ -700,6 +735,52 @@ public final class FoldManager {
             box.getChildren().add(bar);
         }
         return box;
+    }
+
+    /**
+     * Builds the leftmost blame "Annotate" cell for a row: a fixed-width author (left, ellipsized) + date
+     * (right) with an age-heatmap background, a full-commit hover tooltip, and click → show that line's
+     * commit. A blank slot of the same width is returned for an empty / not-yet-loaded row so the column
+     * width — and thus the line-number alignment — stays constant across rows.
+     */
+    private Node buildBlameSlot(int idx) {
+        double w = Math.max(0, blameColumnWidth.getAsDouble());
+        HBox slot = new HBox();
+        slot.getStyleClass().add("blame-slot");
+        slot.setMinWidth(w);
+        slot.setPrefWidth(w);
+        slot.setMaxWidth(w);
+        slot.setMaxHeight(Double.MAX_VALUE);
+        slot.setAlignment(Pos.CENTER_LEFT);
+        BlameInfo info = blameInfo.apply(idx);
+        if (info == null || info.isEmpty()) {
+            return slot; // reserve the column on blank/unloaded rows so nothing shifts
+        }
+        if (info.bg() != null && !info.bg().isBlank()) {
+            slot.setStyle("-fx-background-color: " + info.bg() + ";");
+        }
+        Label author = new Label(info.author());
+        author.getStyleClass().add("blame-author");
+        author.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(author, Priority.ALWAYS);
+        Label date = new Label(info.date());
+        date.getStyleClass().add("blame-date");
+        slot.getChildren().addAll(author, date);
+        if (info.tooltip() != null && !info.tooltip().isBlank()) {
+            Tooltip tip = new Tooltip(info.tooltip());
+            tip.getStyleClass().add("blame-tooltip");
+            tip.setShowDelay(javafx.util.Duration.millis(400));
+            Tooltip.install(slot, tip);
+        }
+        slot.setCursor(Cursor.HAND);
+        final int blameIdx = idx;
+        slot.setOnMouseClicked(e -> {
+            if (e.getButton() == MouseButton.PRIMARY) {
+                onBlameClick.accept(blameIdx);
+                e.consume(); // don't also toggle a bookmark via the gutter box click
+            }
+        });
+        return slot;
     }
 
     /** A small bookmark glyph for the gutter (Material "bookmark"); colored via the {@code .bookmark-marker}

@@ -91,6 +91,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Git blame is now an IntelliJ-style "Annotate" gutter column instead of a single inline annotation.**
+  Turning on blame (`M-g a`, or Settings → Git) now shows a per-line column on the left of the editor —
+  author and commit date on **every** line, with an age-heatmap background (recent commits tinted warmer,
+  older ones faded), a hover tooltip with the full commit (author / date / relative time / message / hash),
+  and click to open that line's commit. This replaces the previous GitLens-style annotation that only
+  appeared after the current caret line. Same toggle and setting; only the active file is annotated, and the
+  blame still runs once per file off the UI thread (no per-keystroke cost).
+
 - **Tool windows and status segments now follow the active file's capabilities.** The **Problems** stripe
   button shows only when the active file is served by a language server; the **Debug** stripe button only for
   a debuggable file (Java/Python/JS) or while a debug session is live; and the **Git Log** stripe button plus
