@@ -54,6 +54,8 @@ public class SharedConfig {
     private ConnectionStore connectionStore = new ConnectionStore();
     /** Plugin enable-state (id → enabled), stored in {@code plugins.json} — see {@link PluginStore}. */
     private PluginStore pluginStore = new PluginStore();
+    /** Saved keyboard macros (app-global, not per-project), stored in {@code macros.json} — see {@link MacroStore}. */
+    private MacroStore macroStore = new MacroStore();
     /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
     private final java.util.Set<String> userDictionary = new java.util.LinkedHashSet<>();
     /** The shared projects index ({@code projects.json}) — one source of truth across all windows. */
@@ -93,6 +95,7 @@ public class SharedConfig {
         loadNotes();
         loadConnections();
         loadPlugins();
+        loadMacros();
         loadUserDictionary();
     }
 
@@ -164,6 +167,10 @@ public class SharedConfig {
         return configDir.resolve(ConfigManager.PLUGINS_FILE_NAME);
     }
 
+    public Path getMacrosFile() {
+        return configDir.resolve(ConfigManager.MACROS_FILE_NAME);
+    }
+
     /** The plugin install root: {@code <configDir>/plugins} (each plugin lives in its own subdirectory). */
     public Path getPluginsDir() {
         return configDir.resolve(ConfigManager.PLUGINS_DIR_NAME);
@@ -190,6 +197,29 @@ public class SharedConfig {
             json.writeValue(getPluginsFile().toFile(), pluginStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write plugins to " + getPluginsFile(), e);
+        }
+    }
+
+    // --- keyboard macros (app-global) ---
+
+    public MacroStore getMacroStore() {
+        return macroStore;
+    }
+
+    private void loadMacros() {
+        if (Files.exists(getMacrosFile())) {
+            macroStore = ConfigMigrations.readVersioned(getMacrosFile(), json, new MacroStore(), ConfigSchema.MACROS);
+        } else {
+            macroStore = new MacroStore();
+        }
+    }
+
+    public void saveMacros() {
+        try {
+            Files.createDirectories(configDir);
+            json.writeValue(getMacrosFile().toFile(), macroStore);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write macros to " + getMacrosFile(), e);
         }
     }
 

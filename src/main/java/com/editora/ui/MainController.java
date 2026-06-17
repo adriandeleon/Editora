@@ -76,6 +76,8 @@ import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LanguageRegistry;
 import com.editora.editor.SpellDictionaries;
 import com.editora.editor.TabContent;
+import com.editora.macro.Macro;
+import com.editora.macro.MacroService;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 
@@ -179,6 +181,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ConfigManager config;
     private CommandRegistry registry;
     private KeymapManager keymap;
+    /** Per-window keyboard-macro recorder/player coordinator (shares the saved-macro store across windows). */
+    private MacroService macroService;
+
     private CommandPalette palette;
     private FindReplaceBar findBar;
     private StatusBar statusBar;
@@ -393,6 +398,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Button toolbarRestoreButton;
     /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
     private boolean markActive;
+    /** Cycle state for {@code move-to-window-line-top-bottom} (M-r): center → top → bottom. */
+    private int windowLineCycle = -1;
     /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
     private boolean checkingExternalChanges;
 
@@ -441,6 +448,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.config = config;
         this.registry = registry;
         this.keymap = keymap;
+        this.macroService = new MacroService(config);
+        // Record every executed command into an in-progress macro (the service no-ops unless recording).
+        registry.setExecutionListener(macroService::onCommand);
         this.snippets = new com.editora.snippet.SnippetManager(config);
         this.templates = new com.editora.template.TemplateRegistry(config);
         this.completion = new com.editora.completion.CompletionEngine(snippets, config::getUserDictionary);
@@ -1475,6 +1485,10 @@ public class MainController implements com.editora.mcp.McpBridge {
      * closes that window and returns focus to the editor (instead of starting the go-to prefix).
      */
     public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
+        // Record literally-typed characters into an in-progress macro (no-op unless recording).
+        if (macroService != null) {
+            dispatcher.setTypedListener(macroService::onTypedChar);
+        }
         dispatcher.setPreDispatch((token, target) -> {
             if (!"M-g".equals(token)) {
                 return false;
@@ -11442,6 +11456,162 @@ public class MainController implements com.editora.mcp.McpBridge {
         area.requestFocus();
     }
 
+    /**
+     * Applies a pure {@link com.editora.editor.EmacsEdits} caret-based edit (backward-kill-word, the
+     * case-word commands, join-line, the whitespace commands, open-line, kill-whole-line, …) to the
+     * active editable buffer. Mirrors {@link #transpose} / {@link #lineOp}.
+     */
+    private void emacsEdit(java.util.function.BiFunction<String, Integer, com.editora.editor.EmacsEdits.Edit> op) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        com.editora.editor.EmacsEdits.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        if (edit == null) {
+            return;
+        }
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        deactivateMark();
+        area.requestFocus();
+    }
+
+    /** Emacs {@code upcase-region} (`C-x C-u`) / {@code downcase-region} (`C-x C-l`): case the selection. */
+    private void emacsCaseRegion(boolean upper) {
+        if (!activeEditable()) {
+            return;
+        }
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        var sel = area.getSelection();
+        com.editora.editor.EmacsEdits.Edit edit = upper
+                ? com.editora.editor.EmacsEdits.upcaseRegion(area.getText(), sel.getStart(), sel.getEnd())
+                : com.editora.editor.EmacsEdits.downcaseRegion(area.getText(), sel.getStart(), sel.getEnd());
+        if (edit == null) {
+            return; // no selection / already the target case
+        }
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        deactivateMark();
+        area.requestFocus();
+    }
+
+    /** Emacs structural caret motion (forward/backward-sexp, beginning/end-of-defun); honors the mark. */
+    private void sexpMove(java.util.function.BiFunction<String, Integer, Integer> nav) {
+        moveAndFollow(a -> a.moveTo(nav.apply(a.getText(), a.getCaretPosition()), selPolicy()));
+    }
+
+    /** Emacs {@code mark-sexp} (`C-M-SPC`): select the balanced expression after the caret. */
+    private void markSexp() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int caret = area.getCaretPosition();
+        int end = com.editora.editor.SexpNav.forward(area.getText(), caret);
+        if (end <= caret) {
+            return;
+        }
+        area.selectRange(caret, end);
+        markActive = true;
+        area.requestFollowCaret();
+    }
+
+    /** Emacs {@code mark-paragraph} (`M-h`): select the paragraph (blank-line delimited) around the caret. */
+    private void markParagraph() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int[] bounds = com.editora.editor.SexpNav.paragraphBounds(area.getText(), area.getCaretPosition());
+        if (bounds[0] >= bounds[1]) {
+            return;
+        }
+        area.selectRange(bounds[0], bounds[1]);
+        markActive = true;
+        area.requestFollowCaret();
+    }
+
+    /** Emacs {@code kill-sexp} (`C-M-k`): delete the balanced expression after the caret. */
+    private void killSexp() {
+        emacsEdit((text, caret) -> {
+            int end = com.editora.editor.SexpNav.forward(text, caret);
+            return end > caret ? new com.editora.editor.EmacsEdits.Edit(caret, end, "", caret) : null;
+        });
+    }
+
+    /**
+     * Emacs {@code zap-to-char} (`M-z`): read one more character, then delete from the caret up to and
+     * including its next occurrence. The character is captured via a one-shot {@code KEY_TYPED} filter
+     * on the focused area (interactive, like AceJump — the span computation is the pure, tested
+     * {@link com.editora.editor.EmacsEdits#zapToChar}).
+     */
+    private void zapToChar() {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        setStatus(tr("status.zapToChar"));
+        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, new javafx.event.EventHandler<>() {
+            @Override
+            public void handle(javafx.scene.input.KeyEvent e) {
+                area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
+                e.consume();
+                String ch = e.getCharacter();
+                if (ch == null || ch.isEmpty() || ch.charAt(0) < ' ') {
+                    setStatus(""); // Escape / no printable character: cancel
+                    return;
+                }
+                com.editora.editor.EmacsEdits.Edit edit =
+                        com.editora.editor.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch.charAt(0));
+                if (edit == null) {
+                    setStatus(tr("status.zapNotFound", ch));
+                    return;
+                }
+                area.replaceText(edit.from(), edit.to(), edit.replacement());
+                area.moveTo(edit.caret());
+                deactivateMark();
+                setStatus("");
+            }
+        });
+    }
+
+    /**
+     * Emacs {@code move-to-window-line-top-bottom} (`M-r`): cycle the caret through the center, top,
+     * and bottom visible lines of the editor window on successive presses.
+     */
+    private void moveToWindowLine() {
+        CodeArea a = activeArea();
+        if (a == null) {
+            return;
+        }
+        try {
+            int first = a.firstVisibleParToAllParIndex();
+            int last = a.lastVisibleParToAllParIndex();
+            windowLineCycle = (windowLineCycle + 1) % 3;
+            int target =
+                    switch (windowLineCycle) {
+                        case 0 -> (first + last) / 2; // center
+                        case 1 -> first; // top
+                        default -> last; // bottom
+                    };
+            a.moveTo(a.getAbsolutePosition(target, 0), selPolicy());
+            a.requestFollowCaret();
+        } catch (RuntimeException ignored) {
+            // Viewport not laid out yet — nothing to move to.
+        }
+    }
+
     /** Emacs {@code fill-paragraph} (`M-q`): re-wrap the paragraph at the caret to the fill column. */
     private void fillParagraph() {
         applyFill((text, b) -> com.editora.editor.Filler.fillParagraph(
@@ -11665,6 +11835,158 @@ public class MainController implements com.editora.mcp.McpBridge {
         return file == null ? null : file.toPath();
     }
 
+    // --- Keyboard macros (record / replay / save / run) ---
+
+    private void macroStartRecording() {
+        if (macroService.isRecording()) {
+            setStatus(tr("status.macro.alreadyRecording"));
+            return;
+        }
+        macroService.startRecording();
+        setStatus(tr("status.macro.recording"));
+    }
+
+    private void macroStopRecording() {
+        if (!macroService.isRecording()) {
+            setStatus(tr("status.macro.notRecording"));
+            return;
+        }
+        int n = macroService.stopRecording();
+        setStatus(tr("status.macro.recorded", n));
+    }
+
+    private void macroReplayLast(int times) {
+        if (macroService.isRecording()) {
+            macroStopRecording(); // C-x e while still defining: finalize, then play (Emacs behavior)
+        }
+        if (!macroService.hasLast()) {
+            setStatus(tr("status.macro.none"));
+            return;
+        }
+        macroService.replayLast(times, id -> registry.run(id), this::macroTypeText);
+        setStatus(times == 1 ? tr("status.macro.replayed") : tr("status.macro.replayedN", times));
+    }
+
+    private void macroReplayLastN() {
+        if (macroService.isRecording()) {
+            macroStopRecording();
+        }
+        if (!macroService.hasLast()) {
+            setStatus(tr("status.macro.none"));
+            return;
+        }
+        promptText(tr("command.macro.replayLastN"), tr("palette.macro.countPrompt"), "1", s -> {
+            int times = parsePositiveInt(s, 1);
+            macroReplayLast(times);
+        });
+    }
+
+    private void macroNameAndSave() {
+        if (macroService.isRecording()) {
+            macroStopRecording();
+        }
+        if (!macroService.hasLast()) {
+            setStatus(tr("status.macro.none"));
+            return;
+        }
+        promptText(tr("command.macro.nameAndSave"), tr("palette.macro.namePrompt"), "", name -> {
+            if (name == null || name.isBlank()) {
+                return;
+            }
+            Macro m = macroService.saveLast(name);
+            if (m != null) {
+                refreshSavedMacroCommandsAllWindows();
+                setStatus(tr("status.macro.saved", m.name()));
+            }
+        });
+    }
+
+    private void macroRunSaved() {
+        if (macroService.saved().isEmpty()) {
+            setStatus(tr("status.macro.noSaved"));
+            return;
+        }
+        QuickOpen<Macro> picker = new QuickOpen<>(
+                tr("command.macro.runSaved"),
+                tr("palette.macro.runPrompt"),
+                () -> new java.util.ArrayList<>(macroService.saved()),
+                Macro::name,
+                m -> tr("palette.macro.stepCount", m.steps().size()),
+                m -> macroService.run(m.name(), 1, id -> registry.run(id), this::macroTypeText));
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    private void macroDeleteSaved() {
+        if (macroService.saved().isEmpty()) {
+            setStatus(tr("status.macro.noSaved"));
+            return;
+        }
+        QuickOpen<Macro> picker = new QuickOpen<>(
+                tr("command.macro.deleteSaved"),
+                tr("palette.macro.deletePrompt"),
+                () -> new java.util.ArrayList<>(macroService.saved()),
+                Macro::name,
+                m -> tr("palette.macro.stepCount", m.steps().size()),
+                m -> {
+                    if (macroService.delete(m.name())) {
+                        refreshSavedMacroCommandsAllWindows();
+                        setStatus(tr("status.macro.deleted", m.name()));
+                    }
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Replay TEXT steps through the active buffer's typing path (auto-close / auto-indent reproduced). */
+    private void macroTypeText(String text) {
+        EditorBuffer b = activeBuffer();
+        if (b != null) {
+            b.typeString(text);
+        }
+    }
+
+    /** Registers one {@code macro.run.<slug>} command per saved macro (palette- and key-bindable). */
+    private void registerSavedMacroCommands() {
+        for (Macro m : macroService.saved()) {
+            String name = m.name();
+            registry.register(Command.of(
+                    MacroService.commandIdFor(name),
+                    name,
+                    () -> macroService.run(name, 1, id -> registry.run(id), this::macroTypeText)));
+        }
+    }
+
+    /** Drops stale {@code macro.run.*} commands and re-registers the current saved set (this window). */
+    void refreshSavedMacroCommands() {
+        java.util.List<String> stale = new java.util.ArrayList<>();
+        for (Command c : registry.all()) {
+            if (c.id().startsWith("macro.run.")) {
+                stale.add(c.id());
+            }
+        }
+        stale.forEach(registry::remove);
+        registerSavedMacroCommands();
+    }
+
+    /** After the saved-macro set changes, re-register the synthetic commands in every open window. */
+    private void refreshSavedMacroCommandsAllWindows() {
+        if (windowManager != null) {
+            windowManager.broadcastMacrosChanged();
+        } else {
+            refreshSavedMacroCommands();
+        }
+    }
+
+    private static int parsePositiveInt(String s, int fallback) {
+        try {
+            int n = Integer.parseInt(s == null ? "" : s.trim());
+            return n > 0 ? n : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
     private void registerCommands() {
         registry.register(Command.of("file.new", this::onNew));
         registry.register(Command.of("window.new", () -> {
@@ -11674,6 +11996,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         }));
         registry.register(Command.of("file.open", this::onOpen));
         registry.register(Command.of("file.find", () -> fileFinder.show(stage)));
+        // --- Keyboard macros ---
+        registry.register(Command.of("macro.startRecording", this::macroStartRecording));
+        registry.register(Command.of("macro.stopRecording", this::macroStopRecording));
+        registry.register(Command.of("macro.replayLast", () -> macroReplayLast(1)));
+        registry.register(Command.of("macro.replayLastN", this::macroReplayLastN));
+        registry.register(Command.of("macro.nameAndSave", this::macroNameAndSave));
+        registry.register(Command.of("macro.runSaved", this::macroRunSaved));
+        registry.register(Command.of("macro.deleteSaved", this::macroDeleteSaved));
+        registerSavedMacroCommands(); // one macro.run.<slug> per persisted macro (palette- + key-bindable)
         // Project commands no-op when project support is disabled (fully gated).
         registry.register(Command.of("project.open", () -> {
             if (projectsEnabled()) {
@@ -12220,6 +12551,37 @@ public class MainController implements com.editora.mcp.McpBridge {
                     a.deleteText(caret, nextWordBoundary(a.getText(), caret));
                 })));
         registry.register(Command.of("edit.killLine", () -> withArea(this::killLine)));
+        // Additional Emacs editing/movement commands (kill-ring features remain deferred).
+        registry.register(
+                Command.of("edit.backwardKillWord", () -> emacsEdit(com.editora.editor.EmacsEdits::backwardKillWord)));
+        registry.register(Command.of("edit.upcaseWord", () -> emacsEdit(com.editora.editor.EmacsEdits::upcaseWord)));
+        registry.register(
+                Command.of("edit.downcaseWord", () -> emacsEdit(com.editora.editor.EmacsEdits::downcaseWord)));
+        registry.register(
+                Command.of("edit.capitalizeWord", () -> emacsEdit(com.editora.editor.EmacsEdits::capitalizeWord)));
+        registry.register(Command.of("edit.upcaseRegion", () -> emacsCaseRegion(true)));
+        registry.register(Command.of("edit.downcaseRegion", () -> emacsCaseRegion(false)));
+        registry.register(Command.of(
+                "edit.deleteIndentation", () -> emacsEdit(com.editora.editor.EmacsEdits::deleteIndentation)));
+        registry.register(Command.of(
+                "edit.deleteHorizontalSpace", () -> emacsEdit(com.editora.editor.EmacsEdits::deleteHorizontalSpace)));
+        registry.register(
+                Command.of("edit.justOneSpace", () -> emacsEdit(com.editora.editor.EmacsEdits::justOneSpace)));
+        registry.register(
+                Command.of("edit.deleteBlankLines", () -> emacsEdit(com.editora.editor.EmacsEdits::deleteBlankLines)));
+        registry.register(Command.of("edit.openLine", () -> emacsEdit(com.editora.editor.EmacsEdits::openLine)));
+        registry.register(
+                Command.of("edit.killWholeLine", () -> emacsEdit(com.editora.editor.EmacsEdits::killWholeLine)));
+        registry.register(Command.of("edit.zapToChar", this::zapToChar));
+        registry.register(Command.of("edit.killSexp", this::killSexp));
+        registry.register(Command.of("edit.markSexp", this::markSexp));
+        registry.register(Command.of("edit.markParagraph", this::markParagraph));
+        registry.register(Command.of("nav.forwardSexp", () -> sexpMove(com.editora.editor.SexpNav::forward)));
+        registry.register(Command.of("nav.backwardSexp", () -> sexpMove(com.editora.editor.SexpNav::backward)));
+        registry.register(
+                Command.of("nav.beginningOfDefun", () -> sexpMove(com.editora.editor.SexpNav::beginningOfDefun)));
+        registry.register(Command.of("nav.endOfDefun", () -> sexpMove(com.editora.editor.SexpNav::endOfDefun)));
+        registry.register(Command.of("nav.moveToWindowLine", this::moveToWindowLine));
     }
 
     private void killLine(CodeArea a) {

@@ -62,6 +62,8 @@ module com.editora {
             com.fasterxml.jackson.databind; // RemoteConnection record in connections.json
     opens com.editora.todo to
             com.fasterxml.jackson.databind; // TodoPattern POJO in settings.toml (todoPatterns array)
+    opens com.editora.macro to
+            com.fasterxml.jackson.databind; // Macro/MacroStep records in macros.json
     // Jackson reflects on the snippet JSON DTO (SnippetManager.Dto). The bundled snippet *resources*
     // need no opens — our own SnippetManager reads them via Class.getResourceAsStream.
     opens com.editora.snippet to
