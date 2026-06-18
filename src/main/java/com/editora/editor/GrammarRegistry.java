@@ -191,6 +191,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.apt-sources", "apt-sources");
         scopeToResource.put("source.interfaces", "interfaces");
         scopeToResource.put("source.debian-changelog", "debian-changelog");
+        scopeToResource.put("source.log", "log");
 
         // file extension -> scope name
         mapExtensions("source.java", "java");
@@ -247,6 +248,8 @@ public final class GrammarRegistry {
                 "nspawn");
         // XDG desktop entries (.desktop) and KDE .directory files.
         mapExtensions("source.desktop", "desktop", "directory");
+        // Server/application log files.
+        mapExtensions("source.log", "log");
         // dotenv (.env / .env.*), Caddyfile, crontab (.cron), git/ssh config, fstab, hosts are all
         // name/location-determined and handled by ConfigFileType (see scopeForFileName), not by extension.
     }

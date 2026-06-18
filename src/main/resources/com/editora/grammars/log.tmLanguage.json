@@ -1,0 +1,48 @@
+{
+  "name": "Log",
+  "scopeName": "source.log",
+  "fileTypes": ["log"],
+  "patterns": [
+    {
+      "comment": "Leading date/time stamp (ISO-8601, yyyy-MM-dd HH:mm:ss[.fff], syslog Mon dd HH:mm:ss).",
+      "match": "^\\s*\\[?(?:\\d{4}[-/]\\d{2}[-/]\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d{1,9})?(?:Z|[+-]\\d{2}:?\\d{2})?|[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}|\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d{1,9})?)\\]?",
+      "name": "constant.other.timestamp.log"
+    },
+    {
+      "comment": "ERROR / FATAL family (uppercase only, to avoid colouring the word in a message body).",
+      "match": "\\b(?:ERROR|ERR|SEVERE|FATAL|CRITICAL|CRIT|ALERT|EMERG|EMERGENCY|PANIC|FAILURE|FAIL)\\b",
+      "name": "markup.error.log"
+    },
+    {
+      "match": "\\b(?:WARN|WARNING)\\b",
+      "name": "markup.warning.log"
+    },
+    {
+      "match": "\\b(?:INFO|INFORMATION|NOTICE)\\b",
+      "name": "markup.info.log"
+    },
+    {
+      "match": "\\b(?:DEBUG|FINE|CONFIG)\\b",
+      "name": "markup.debug.log"
+    },
+    {
+      "match": "\\b(?:TRACE|FINEST|FINER|VERBOSE)\\b",
+      "name": "markup.trace.log"
+    },
+    {
+      "comment": "A Java exception class + message on a stack-trace header line.",
+      "match": "\\b(?:[a-zA-Z_$][\\w$]*\\.)+[A-Z][\\w$]*(?:Exception|Error|Throwable)\\b",
+      "name": "markup.error.log"
+    },
+    {
+      "comment": "Quoted strings.",
+      "match": "\"[^\"]*\"",
+      "name": "string.quoted.double.log"
+    },
+    {
+      "comment": "Numbers (durations, counts, ids).",
+      "match": "\\b\\d+(?:\\.\\d+)?\\b",
+      "name": "constant.numeric.log"
+    }
+  ]
+}

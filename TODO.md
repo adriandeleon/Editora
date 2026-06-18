@@ -3,6 +3,15 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Server log viewer — `.log` files get level highlighting (ERROR/WARN/INFO/DEBUG/TRACE, inline +
+      size-independent left-edge bar), **Follow tail** (`tail -f`, floating toggle, auto-scroll), **open-the-
+      tail** for huge logs (read-only, last N MB), and **live level + regex filtering** (filter-as-you-type;
+      regex with a literal-substring fallback; stack traces inherit their record's level). Detects
+      Logback/Log4j/JUL/syslog/nginx/structured/zerolog + access-log status. Logs open in View mode. On by
+      default (Settings → Editor → Logs; `View: Toggle Log Viewer`); palette `Log: Toggle Follow` /
+      `Filter by Level` / `Filter by Pattern` / `Clear Filter` / `View as Log`.
+      *Deferred: tailing remote (SFTP) logs, multi-file merged tail, a dedicated Logs tool window,
+      timestamp-range filtering, jump-to-next-error navigation*
 - [x] Markdown support improvements — preview **CommonMark extensions** (YAML front matter, footnotes,
       heading anchors, `++inserted++`); **heading outline** in the Structure tool window; **Markdown lint**
       (squiggles + tool window; `View: Toggle Markdown Lint`, on by default); **image paste & drag-drop**

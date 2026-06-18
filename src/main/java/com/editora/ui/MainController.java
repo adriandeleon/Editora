@@ -547,6 +547,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyMathSupport(); // LaTeX math rendering (off by default)
         applyHttpClientSupport(); // configure ijhttp; .http run glyphs off when disabled (default)
         applyHtmlPreviewSupport(); // HTML "open in browser" control off when disabled (default)
+        applyLogViewerSupport(); // log-viewer control + level overlay (default on for .log files)
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
         applyLspSupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
         applyDebugSupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on jdtls)
@@ -1180,7 +1181,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 localHistoryEnabled(),
                 mcpEnabled(),
                 pluginsEnabled(),
-                externalToolsEnabled());
+                externalToolsEnabled(),
+                logViewerEnabled());
     }
 
     /**
@@ -1496,6 +1498,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         markdownLintService.shutdown();
         mermaidService.shutdown();
         htmlPreviewService.shutdown(); // stop the HTML-preview HTTP server + worker
+        logTailService.shutdown(); // stop any log tail-follow poll thread
         stopMcpIfOwner(); // stop the MCP server if this window owns it
         pdfService.shutdown();
         printService.shutdown();
@@ -2074,6 +2077,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 lspProblems.remove(closed.getPath());
                                 refreshProblems();
                             }
+                            stopLogFollow(closed); // cancel any tail-follow poll for this buffer
+                            logBars.remove(closed);
+                            logLoadOffset.remove(closed);
                             closed.dispose();
                         }
                     }
@@ -2816,6 +2822,249 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else if (!want && has) {
             buffer.setHtmlPreviewControl(null);
         }
+    }
+
+    // --- Log viewer ----------------------------------------------------------------------------------
+
+    private final com.editora.logviewer.LogTailService logTailService = new com.editora.logviewer.LogTailService();
+    /** Per-buffer byte offset at which a Follow resumes (load-time EOF, or the tail offset for a huge log). */
+    private final java.util.Map<EditorBuffer, Long> logLoadOffset = new java.util.IdentityHashMap<>();
+    /** Active {@code tail -f} handles, keyed by buffer. */
+    private final java.util.Map<EditorBuffer, com.editora.logviewer.LogTailService.Handle> logFollows =
+            new java.util.IdentityHashMap<>();
+    /** The floating control attached to each log buffer (so error/teardown can reset its Follow toggle). */
+    private final java.util.Map<EditorBuffer, LogControlBar> logBars = new java.util.IdentityHashMap<>();
+
+    /** Whether the log viewer is active (default-on setting, suppressed in Simple UI mode). */
+    boolean logViewerEnabled() {
+        return config.getSettings().isLogViewer() && !simpleModeActive();
+    }
+
+    private boolean isLogFile(Path file) {
+        return file != null
+                && "log"
+                        .equals(com.editora.editor.LanguageRegistry.forFileName(
+                                file.getFileName().toString()));
+    }
+
+    /**
+     * Reconciles the log viewer with its setting (mirrors {@link #applyHtmlPreviewSupport}): (un)attaches the
+     * floating control + level overlay on log buffers and stops any follow when disabled. Runs at startup and
+     * on every settings apply.
+     */
+    private void applyLogViewerSupport() {
+        boolean on = logViewerEnabled();
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b == null) {
+                continue;
+            }
+            ensureLogControl(b);
+            b.setLogHighlightEnabled(on && b.isLog());
+            if (!on) {
+                stopLogFollow(b);
+            }
+        }
+    }
+
+    /** Attaches/removes the floating log control so it shows only on log buffers with the feature on. */
+    private void ensureLogControl(EditorBuffer buffer) {
+        boolean want = logViewerEnabled() && buffer.isLog();
+        boolean has = buffer.hasLogControl();
+        if (want && !has) {
+            LogControlBar bar = new LogControlBar(
+                    following -> toggleLogFollow(buffer, following),
+                    (min, regex) -> applyLogFilter(buffer, min, regex));
+            logBars.put(buffer, bar);
+            buffer.setLogControl(bar);
+            buffer.setLogHighlightEnabled(true);
+        } else if (!want && has) {
+            buffer.setLogControl(null);
+            logBars.remove(buffer);
+            stopLogFollow(buffer);
+            buffer.setLogHighlightEnabled(false);
+        }
+    }
+
+    private void toggleLogFollow(EditorBuffer buffer, boolean follow) {
+        if (follow) {
+            startLogFollow(buffer);
+        } else {
+            stopLogFollow(buffer);
+            setStatus(tr("status.log.followStopped"));
+        }
+    }
+
+    private void startLogFollow(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null || !com.editora.vfs.Vfs.isLocal(file)) {
+            setStatus(tr("status.log.followUnavailable"));
+            LogControlBar bar = logBars.get(buffer);
+            if (bar != null) {
+                bar.setFollowing(false);
+            }
+            return;
+        }
+        stopLogFollow(buffer);
+        long start = logLoadOffset.getOrDefault(buffer, fileSize(file));
+        buffer.setLogFollowing(true);
+        com.editora.logviewer.LogTailService.Handle handle =
+                logTailService.follow(file, start, new com.editora.logviewer.LogTailService.Listener() {
+                    @Override
+                    public void appended(String text) {
+                        buffer.appendLogText(text);
+                    }
+
+                    @Override
+                    public void rotated(String fullText) {
+                        buffer.resetLogContent(fullText);
+                    }
+
+                    @Override
+                    public void error(String message) {
+                        logFollows.remove(buffer);
+                        buffer.setLogFollowing(false);
+                        LogControlBar bar = logBars.get(buffer);
+                        if (bar != null) {
+                            bar.setFollowing(false);
+                        }
+                        setStatus(tr("status.log.followError", message));
+                    }
+                });
+        logFollows.put(buffer, handle);
+        setStatus(tr("status.log.following"));
+    }
+
+    private void stopLogFollow(EditorBuffer buffer) {
+        com.editora.logviewer.LogTailService.Handle handle = logFollows.remove(buffer);
+        if (handle != null) {
+            handle.stop();
+        }
+        buffer.setLogFollowing(false);
+        Path file = buffer.getPath();
+        if (file != null && com.editora.vfs.Vfs.isLocal(file)) {
+            try {
+                logLoadOffset.put(buffer, com.editora.logviewer.LogTail.sizeOf(file)); // resume from EOF on a restart
+            } catch (IOException ignored) {
+                // keep the prior offset
+            }
+        }
+    }
+
+    /** Applies a level floor + regex (case-insensitive) to the active log buffer; reports a bad regex. */
+    private void applyLogFilter(EditorBuffer buffer, com.editora.logviewer.LogLevel min, String regexText) {
+        // The query is a case-insensitive regex, falling back to a literal substring when it isn't valid one
+        // (so a partial regex typed live, or a plain string with metacharacters, still filters).
+        java.util.regex.Pattern pattern =
+                regexText == null ? null : com.editora.logviewer.LogFilter.compileFilter(regexText.strip());
+        buffer.applyLogFilter(min, pattern);
+        setStatus(min == null && pattern == null ? tr("status.log.filterCleared") : tr("status.log.filtered"));
+    }
+
+    // --- Log viewer commands (palette + the floating control share these) ---
+
+    private void logToggleFollow() {
+        ifLog(() -> {
+            EditorBuffer b = activeBuffer();
+            boolean now = !b.isLogFollowing();
+            toggleLogFollow(b, now);
+            LogControlBar bar = logBars.get(b);
+            if (bar != null) {
+                bar.setFollowing(now && b.isLogFollowing());
+            }
+        });
+    }
+
+    private void logViewAsLog() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            return;
+        }
+        if (!logViewerEnabled()) {
+            setStatus(tr("status.log.disabled"));
+            return;
+        }
+        b.setLogViewForced(true);
+        ensureLogControl(b);
+        setStatus(tr("status.log.viewAsLog"));
+    }
+
+    private void logSetLevelFilter() {
+        ifLog(() -> {
+            EditorBuffer b = activeBuffer();
+            java.util.List<String> labels = java.util.List.of(
+                    tr("log.level.all"),
+                    tr("log.level.trace"),
+                    tr("log.level.debug"),
+                    tr("log.level.info"),
+                    tr("log.level.warn"),
+                    tr("log.level.error"));
+            com.editora.logviewer.LogLevel[] levels = {
+                null,
+                com.editora.logviewer.LogLevel.TRACE,
+                com.editora.logviewer.LogLevel.DEBUG,
+                com.editora.logviewer.LogLevel.INFO,
+                com.editora.logviewer.LogLevel.WARN,
+                com.editora.logviewer.LogLevel.ERROR
+            };
+            QuickOpen<String> picker = new QuickOpen<>(
+                    tr("log.level.pick"), tr("log.level.prompt"), () -> labels, s -> s, s -> "", choice -> {
+                        int idx = labels.indexOf(choice);
+                        applyLogFilter(b, idx <= 0 ? null : levels[idx], currentRegexText(b));
+                    });
+            picker.setOverlayHost(overlayHost);
+            picker.show(stage);
+        });
+    }
+
+    private void logSetRegexFilter() {
+        ifLog(() -> {
+            EditorBuffer b = activeBuffer();
+            promptText(tr("log.filter.title"), tr("log.filter.label"), "", text -> {
+                LogControlBar bar = logBars.get(b);
+                com.editora.logviewer.LogLevel min = bar != null ? bar.selectedLevel() : b.getLogMinLevel();
+                applyLogFilter(b, min, text);
+            });
+        });
+    }
+
+    private void logClearFilter() {
+        ifLog(() -> {
+            EditorBuffer b = activeBuffer();
+            applyLogFilter(b, null, null);
+            LogControlBar bar = logBars.get(b);
+            if (bar != null) {
+                bar.clearFilterControls();
+            }
+        });
+    }
+
+    private String currentRegexText(EditorBuffer buffer) {
+        LogControlBar bar = logBars.get(buffer);
+        return bar == null ? null : bar.regexText();
+    }
+
+    /** Runs {@code action} only when the active buffer is a log buffer and the feature is on. */
+    private void ifLog(Runnable action) {
+        EditorBuffer b = activeBuffer();
+        if (!logViewerEnabled()) {
+            setStatus(tr("status.log.disabled"));
+        } else if (b == null || !b.isLog()) {
+            setStatus(tr("status.log.notLog"));
+        } else {
+            action.run();
+        }
+    }
+
+    private void toggleLogViewer() {
+        Settings s = config.getSettings();
+        s.setLogViewer(!s.isLogViewer());
+        requestSave();
+        applyLogViewerSupport();
+        if (settingsWindow != null) {
+            settingsWindow.syncLogViewerCheck();
+        }
+        setStatus(tr(s.isLogViewer() ? "status.log.enabled" : "status.log.disabledEcho"));
     }
 
     /** The menu/label for a browser; localizes the System Default entry, else uses the browser's name. */
@@ -7035,6 +7284,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         syncBufferLsp(buffer);
         ensurePreviewControls(buffer);
         ensureHtmlPreviewControl(buffer); // the floating "open in browser" globe (HTML buffers, feature on)
+        ensureLogControl(buffer); // the floating Follow / level / regex control (log buffers, feature on)
         Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
         updateTabMeta(tab, buffer); // replaces the default text/icon with the buffer header (drag handle, pin, dirty)
         buffer.dirtyProperty().addListener((obs, was, now) -> {
@@ -7354,7 +7604,19 @@ public class MainController implements com.editora.mcp.McpBridge {
             mtime = lastModifiedMillis(file);
         }
         buffer.setDiskSnapshot(mtime, size); // baseline for external-change detection
+        boolean isLog = logViewerEnabled() && isLogFile(file) && com.editora.vfs.Vfs.isLocal(file);
         if (size >= EditorBuffer.HUGE_FILE_BYTES) {
+            if (isLog) {
+                // A huge log opens at its END (the tail is what matters) instead of the first chunk.
+                com.editora.logviewer.LogTail.Tail tail =
+                        com.editora.logviewer.LogTail.readTail(file, EditorBuffer.HUGE_FILE_BYTES);
+                buffer.setContent(tail.text());
+                buffer.setReadOnly(true);
+                logLoadOffset.put(buffer, tail.offset()); // follow resumes from the true EOF
+                return file.getFileName() + " — very large log (" + StatusBar.formatSize(size)
+                        + "): read-only, showing last "
+                        + StatusBar.formatSize(tail.text().length());
+            }
             String content = readCapped(file, (int) EditorBuffer.HUGE_FILE_BYTES);
             buffer.setContent(content);
             buffer.setReadOnly(true);
@@ -7362,6 +7624,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                     + "): read-only, showing first " + StatusBar.formatSize(content.length());
         }
         buffer.setContent(readWithCharset(buffer, file));
+        if (isLog) {
+            logLoadOffset.put(buffer, size); // EOF at load — a later Follow streams only newer lines
+        }
         if (size >= EditorBuffer.LARGE_FILE_BYTES) {
             buffer.setLargeFile(true);
             return largeFileNote(file);
@@ -7561,6 +7826,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setPath(file);
         ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
         ensureHtmlPreviewControl(buffer); // a save-as to .html now gets the "open in browser" globe
+        ensureLogControl(buffer); // a save-as to .log now gets the log control + level overlay
         boolean ok = writeBuffer(buffer, file);
         Tab tab = tabFor(buffer);
         if (tab != null) {
@@ -7933,6 +8199,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     buffer.setPath(target); // re-detects language/grammar
                     ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
                     ensureHtmlPreviewControl(buffer); // a rename to/from .html flips the browser globe
+                    ensureLogControl(buffer); // a rename to/from .log flips the log control
                     // Migrate state keyed by the absolute path string.
                     var folded = config.getWorkspaceState().getFoldedRegions();
                     List<Integer> folds = folded.remove(old.toString());
@@ -9687,7 +9954,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         boolean persisted = config.getWorkspaceState().getReadOnlyFiles().contains(file.toString());
-        if (shouldOpenReadOnly(persisted, Files.isWritable(file))) {
+        // Log files open in View mode by default — the log viewer is for reading, and follow-tail still
+        // appends programmatically while read-only — but the "Enable Editing" banner lets the user opt in.
+        boolean logDefault = logViewerEnabled() && buffer.isLog();
+        if (shouldOpenReadOnly(persisted, Files.isWritable(file)) || logDefault) {
             buffer.setViewMode(true);
         }
     }
@@ -11191,6 +11461,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyMathSupport();
         applyHttpClientSupport();
         applyHtmlPreviewSupport();
+        applyLogViewerSupport();
         applyMcpSupport();
         applyTodoHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
         applyMarkdownLint(); // push Markdown-lint enabled state to every buffer
@@ -12301,6 +12572,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("htmlPreview.open", () -> ifHtmlPreview(this::htmlPreviewOpen)));
         registry.register(Command.of("htmlPreview.openIn", () -> ifHtmlPreview(this::htmlPreviewOpenIn)));
         registry.register(Command.of("view.toggleHtmlPreview", this::toggleHtmlPreviewSupport));
+        registry.register(Command.of("log.toggleFollow", this::logToggleFollow));
+        registry.register(Command.of("log.viewAsLog", this::logViewAsLog));
+        registry.register(Command.of("log.setLevelFilter", this::logSetLevelFilter));
+        registry.register(Command.of("log.setRegexFilter", this::logSetRegexFilter));
+        registry.register(Command.of("log.clearFilter", this::logClearFilter));
+        registry.register(Command.of("view.toggleLogViewer", this::toggleLogViewer));
         registry.register(Command.of("mcp.copyEndpoint", () -> ifMcp(this::copyMcpEndpoint)));
         registry.register(Command.of("view.toggleMcp", this::toggleMcpSupport));
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));

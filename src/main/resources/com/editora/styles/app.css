@@ -494,6 +494,21 @@
 .html-preview-toggle:hover { -fx-opacity: 1; }
 .html-preview-toggle:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
 
+/* Floating log-viewer control (Follow / level / regex), top-right of a .log editor. */
+.log-controls {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 2 4 2 4;
+    -fx-opacity: 0.94;
+}
+.log-controls:hover { -fx-opacity: 1; }
+.log-controls .log-follow .toolbar-icon { -fx-fill: -color-fg-muted; }
+.log-controls .log-follow:selected { -fx-background-color: -color-accent-muted; }
+.log-controls .log-follow:selected .toolbar-icon { -fx-fill: -color-accent-fg; }
+.log-controls .log-filter-field { -fx-font-size: 11px; }
+
 /* The preview's −/+ zoom control (top-left of the preview pane). */
 .md-zoom {
     -fx-background-color: -color-bg-subtle;

@@ -127,7 +127,9 @@ public final class LanguageRegistry {
             Map.entry("desktop", "desktop"),
             Map.entry("directory", "desktop"),
             // Java/INI-style .properties (highlighted with the INI grammar; see GrammarRegistry).
-            Map.entry("properties", "properties"));
+            Map.entry("properties", "properties"),
+            // Server/application logs — the log viewer skins these (level highlighting, tail-follow).
+            Map.entry("log", "log"));
 
     private LanguageRegistry() {}
 
