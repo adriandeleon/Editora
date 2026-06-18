@@ -199,7 +199,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private QuickOpen<ToolWindow> toolWindowPalette;
     private QuickOpen<BookmarkEntry> bookmarkPalette;
     private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
-    private QuickOpen<com.editora.web.Browsers.Browser> htmlBrowserPalette; // HTML preview: pick a browser
     private com.editora.snippet.SnippetManager snippets;
     private com.editora.template.TemplateRegistry templates;
     /** Shared across windows (owned by WindowManager); plugin classes load once, instances are per-window. */
@@ -286,10 +285,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     // --- Git (native-CLI integration; off-thread via GitService) ---
     private final com.editora.git.GitService gitService = new com.editora.git.GitService();
     private final com.editora.mermaid.MermaidService mermaidService = new com.editora.mermaid.MermaidService();
-    // HTML Live Preview: a loopback HttpServer + detected-browser launch (off when disabled, default).
-    private final com.editora.web.HtmlPreviewService htmlPreviewService =
-            new com.editora.web.HtmlPreviewService(this::openExternalUrl);
-    private java.util.List<com.editora.web.Browsers.Browser> htmlBrowsers = java.util.List.of();
     // MCP server: a single app-wide loopback HTTP endpoint exposing live editor state + the command
     // registry to an LLM agent. Static so only the first window with the feature on starts it (the
     // setting is shared); that window's controller is the bridge. (Multi-window caveat: if the owner
@@ -546,7 +541,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
         applyMathSupport(); // LaTeX math rendering (off by default)
         applyHttpClientSupport(); // configure ijhttp; .http run glyphs off when disabled (default)
-        applyHtmlPreviewSupport(); // HTML "open in browser" control off when disabled (default)
+        htmlPreview.applySupport(); // HTML "open in browser" control off when disabled (default)
         logViewer.applySupport(); // log-viewer control + level overlay (default on for .log files)
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
         applyLspSupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
@@ -1177,7 +1172,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 s.isMermaidSupport(),
                 lspEnabled(),
                 httpEnabled(),
-                htmlPreviewEnabled(),
+                htmlPreview.isEnabled(),
                 localHistoryEnabled(),
                 mcpEnabled(),
                 pluginsEnabled(),
@@ -1286,7 +1281,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         notesPalette.setOverlayHost(overlayHost);
         notesSearchPalette.setOverlayHost(overlayHost);
         snippetPalette.setOverlayHost(overlayHost);
-        htmlBrowserPalette.setOverlayHost(overlayHost);
         projectPicker.setOverlayHost(overlayHost);
         fileFinder.setOverlayHost(overlayHost);
         folderFinder.setOverlayHost(overlayHost);
@@ -1497,7 +1491,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         todoService.shutdown();
         markdownLintService.shutdown();
         mermaidService.shutdown();
-        htmlPreviewService.shutdown(); // stop the HTML-preview HTTP server + worker
+        htmlPreview.shutdown(); // stop the HTML-preview HTTP server + worker
         logViewer.shutdown(); // stop any log tail-follow poll thread
         stopMcpIfOwner(); // stop the MCP server if this window owns it
         pdfService.shutdown();
@@ -1640,18 +1634,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                     EditorBuffer b = activeBuffer();
                     if (b != null) {
                         b.insertSnippet(s);
-                    }
-                });
-        htmlBrowserPalette = new QuickOpen<>(
-                tr("htmlPreview.pickBrowser"),
-                tr("htmlPreview.pickBrowser.prompt"),
-                () -> new ArrayList<>(htmlBrowsers),
-                this::browserLabel,
-                b -> "",
-                b -> {
-                    EditorBuffer active = activeBuffer();
-                    if (active != null && active.isHtml()) {
-                        previewActiveHtml(active, b);
                     }
                 });
         fileFinder = new FileFinder(this::finderStartDir, this::findFileChosen);
@@ -2784,43 +2766,65 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- HTML Live Preview (serve via a loopback HttpServer + open in a detected browser) ---------
 
-    /** Whether the HTML Live Preview feature is enabled in Settings (default off). */
-    private boolean htmlPreviewEnabled() {
-        return config.getSettings().isHtmlPreviewSupport();
-    }
+    /** The HTML Live Preview feature; see {@link HtmlPreviewCoordinator}. */
+    private final HtmlPreviewCoordinator htmlPreview = new HtmlPreviewCoordinator(new HtmlPreviewCoordinator.Host() {
+        @Override
+        public Settings settings() {
+            return config.getSettings();
+        }
 
-    /**
-     * Reconciles the HTML Live Preview feature with its setting (mirrors {@link #applyMermaidSupport}):
-     * (un)attaches the floating "open in browser" globe on open HTML buffers, detects installed browsers
-     * when enabled, and stops the HTTP server when disabled. Runs at startup and on every settings apply.
-     */
-    private void applyHtmlPreviewSupport() {
-        boolean on = htmlPreviewEnabled();
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null) {
-                ensureHtmlPreviewControl(b);
+        @Override
+        public void forEachBuffer(java.util.function.Consumer<EditorBuffer> action) {
+            for (Tab tab : tabPane.getTabs()) {
+                EditorBuffer b = bufferOf(tab);
+                if (b != null) {
+                    action.accept(b);
+                }
             }
         }
-        if (on) {
-            htmlPreviewService.detectBrowsers(list -> htmlBrowsers = list);
-        } else {
-            htmlBrowsers = java.util.List.of();
-            htmlPreviewService.stopServer(); // stop serving + clear the preview; the service stays reusable
-        }
-    }
 
-    /** Attaches/removes the floating browser globe so it shows only on local HTML buffers with the feature on. */
-    private void ensureHtmlPreviewControl(EditorBuffer buffer) {
-        boolean want = htmlPreviewEnabled() && buffer.isHtml() && isLocalBuffer(buffer);
-        boolean has = buffer.hasHtmlPreviewControl();
-        if (want && !has) {
-            buffer.setHtmlPreviewControl(
-                    new HtmlPreviewToggle(() -> htmlBrowsers, this::browserLabel, b -> previewActiveHtml(buffer, b)));
-        } else if (!want && has) {
-            buffer.setHtmlPreviewControl(null);
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
         }
-    }
+
+        @Override
+        public boolean isLocalBuffer(EditorBuffer buffer) {
+            return MainController.this.isLocalBuffer(buffer);
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public void save() {
+            config.save();
+        }
+
+        @Override
+        public void syncSettingsWindow() {
+            if (settingsWindow != null) {
+                settingsWindow.syncHtmlPreviewCheck();
+            }
+        }
+
+        @Override
+        public OverlayHost overlayHost() {
+            return overlayHost;
+        }
+
+        @Override
+        public javafx.stage.Window window() {
+            return stage;
+        }
+
+        @Override
+        public void openExternalUrl(String url) {
+            MainController.this.openExternalUrl(url);
+        }
+    });
 
     // --- Log viewer ----------------------------------------------------------------------------------
 
@@ -2889,91 +2893,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             MainController.this.promptText(title, label, initial, onAccept);
         }
     });
-
-    /** The menu/label for a browser; localizes the System Default entry, else uses the browser's name. */
-    private String browserLabel(com.editora.web.Browsers.Browser browser) {
-        return com.editora.web.Browsers.SYSTEM_DEFAULT.equals(browser.id())
-                ? tr("htmlPreview.systemDefault")
-                : browser.displayName();
-    }
-
-    /** Serves {@code buffer}'s file (live text) and opens it in {@code browser}; remembers the choice. */
-    private void previewActiveHtml(EditorBuffer buffer, com.editora.web.Browsers.Browser browser) {
-        Path file = buffer.getPath();
-        if (file == null) {
-            setStatus(tr("status.htmlPreview.unsaved")); // need a file on disk so relative assets resolve
-            return;
-        }
-        config.getSettings().setHtmlPreviewBrowser(browser.id());
-        config.save();
-        setStatus(tr("status.htmlPreview.opening", browserLabel(browser)));
-        htmlPreviewService.preview(file, buffer::getContent, browser, r -> {
-            if (r.ok()) {
-                setStatus(tr("status.htmlPreview.opened", r.url()));
-            } else {
-                setStatus(tr("status.htmlPreview.failed", r.message() == null ? "" : r.message()));
-            }
-        });
-    }
-
-    /** The last-used browser (from Settings), else System Default, else the first detected. */
-    private com.editora.web.Browsers.Browser lastUsedBrowser() {
-        String id = config.getSettings().getHtmlPreviewBrowser();
-        for (com.editora.web.Browsers.Browser b : htmlBrowsers) {
-            if (b.id().equals(id)) {
-                return b;
-            }
-        }
-        for (com.editora.web.Browsers.Browser b : htmlBrowsers) {
-            if (com.editora.web.Browsers.SYSTEM_DEFAULT.equals(b.id())) {
-                return b;
-            }
-        }
-        return htmlBrowsers.isEmpty()
-                ? new com.editora.web.Browsers.Browser(com.editora.web.Browsers.SYSTEM_DEFAULT, "System Default")
-                : htmlBrowsers.get(0);
-    }
-
-    /** {@code htmlPreview.open}: open the active HTML file in the last-used / default browser. */
-    private void htmlPreviewOpen() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isHtml()) {
-            setStatus(tr("status.htmlPreview.notHtml"));
-            return;
-        }
-        previewActiveHtml(b, lastUsedBrowser());
-    }
-
-    /** {@code htmlPreview.openIn}: pick a detected browser, then open the active HTML file in it. */
-    private void htmlPreviewOpenIn() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isHtml()) {
-            setStatus(tr("status.htmlPreview.notHtml"));
-            return;
-        }
-        htmlBrowserPalette.show(stage);
-    }
-
-    /** {@code view.toggleHtmlPreview}: flip the feature, re-apply, re-sync the Settings checkbox. */
-    private void toggleHtmlPreviewSupport() {
-        Settings s = config.getSettings();
-        s.setHtmlPreviewSupport(!s.isHtmlPreviewSupport());
-        config.save();
-        applyHtmlPreviewSupport();
-        if (settingsWindow != null) {
-            settingsWindow.syncHtmlPreviewCheck();
-        }
-        setStatus(tr("status.toggle.htmlPreview", tr(s.isHtmlPreviewSupport() ? "common.on" : "common.off")));
-    }
-
-    /** Runs {@code action} only when HTML Live Preview is enabled; otherwise reports it (no-op). */
-    private void ifHtmlPreview(Runnable action) {
-        if (htmlPreviewEnabled()) {
-            action.run();
-        } else {
-            setStatus(tr("statusbar.tip.htmlPreviewDisabled"));
-        }
-    }
 
     // --- MCP server (loopback HTTP, exposes editor state + commands to an LLM agent) --------------
 
@@ -7018,13 +6937,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAddNoteHandler(this::addNoteFromContext);
         buffer.setNotesEnabled(notesEnabled());
         buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
-        // HTML Live Preview: the debounced edit pulse reloads the browser, but only while this file is the
-        // one currently served (and the feature is on) — see applyHtmlPreviewSupport / ensureHtmlPreviewControl.
-        buffer.setHtmlPreviewDirtyListener(() -> {
-            if (htmlPreviewEnabled() && htmlPreviewService.isPreviewing(buffer.getPath())) {
-                htmlPreviewService.notifyChanged();
-            }
-        });
+        // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
+        buffer.setHtmlPreviewDirtyListener(() -> htmlPreview.onBufferEdited(buffer));
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
         buffer.setPreviewExportPdfHandler(this::exportPreviewPdf); // preview right-click menu
         buffer.setPreviewPrintHandler(this::printPreview);
@@ -7106,7 +7020,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::lspGotoDefinition, this::lspFindReferences, this::lspShowHover, this::formatDocument);
         syncBufferLsp(buffer);
         ensurePreviewControls(buffer);
-        ensureHtmlPreviewControl(buffer); // the floating "open in browser" globe (HTML buffers, feature on)
+        htmlPreview.ensureControl(buffer); // the floating "open in browser" globe (HTML buffers, feature on)
         logViewer.ensureControl(buffer); // the floating Follow / level / regex control (log buffers, feature on)
         Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
         updateTabMeta(tab, buffer); // replaces the default text/icon with the buffer header (drag handle, pin, dirty)
@@ -7648,7 +7562,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         buffer.setPath(file);
         ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
-        ensureHtmlPreviewControl(buffer); // a save-as to .html now gets the "open in browser" globe
+        htmlPreview.ensureControl(buffer); // a save-as to .html now gets the "open in browser" globe
         logViewer.ensureControl(buffer); // a save-as to .log now gets the log control + level overlay
         boolean ok = writeBuffer(buffer, file);
         Tab tab = tabFor(buffer);
@@ -8021,7 +7935,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                     buffer.setPath(target); // re-detects language/grammar
                     ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
-                    ensureHtmlPreviewControl(buffer); // a rename to/from .html flips the browser globe
+                    htmlPreview.ensureControl(buffer); // a rename to/from .html flips the browser globe
                     logViewer.ensureControl(buffer); // a rename to/from .log flips the log control
                     // Migrate state keyed by the absolute path string.
                     var folded = config.getWorkspaceState().getFoldedRegions();
@@ -11286,7 +11200,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyRipgrepSupport();
         applyMathSupport();
         applyHttpClientSupport();
-        applyHtmlPreviewSupport();
+        htmlPreview.applySupport();
         logViewer.applySupport();
         applyMcpSupport();
         applyTodoHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
@@ -12395,9 +12309,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("editor.print", this::printCode));
         registry.register(Command.of("preview.print", this::printPreview));
         registry.register(Command.of("mermaid.export", () -> ifMermaid(this::exportMermaid)));
-        registry.register(Command.of("htmlPreview.open", () -> ifHtmlPreview(this::htmlPreviewOpen)));
-        registry.register(Command.of("htmlPreview.openIn", () -> ifHtmlPreview(this::htmlPreviewOpenIn)));
-        registry.register(Command.of("view.toggleHtmlPreview", this::toggleHtmlPreviewSupport));
+        registry.register(Command.of("htmlPreview.open", htmlPreview::open));
+        registry.register(Command.of("htmlPreview.openIn", htmlPreview::openIn));
+        registry.register(Command.of("view.toggleHtmlPreview", htmlPreview::toggle));
         registry.register(Command.of("log.toggleFollow", logViewer::toggleFollowCommand));
         registry.register(Command.of("log.viewAsLog", logViewer::viewAsLog));
         registry.register(Command.of("log.setLevelFilter", logViewer::setLevelFilter));
