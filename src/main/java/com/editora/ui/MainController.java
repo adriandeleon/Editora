@@ -284,7 +284,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private String activeRemoteAuthority; // the connection backing the mounted remote root
     // --- Git (native-CLI integration; off-thread via GitService) ---
     private final com.editora.git.GitService gitService = new com.editora.git.GitService();
-    private final com.editora.mermaid.MermaidService mermaidService = new com.editora.mermaid.MermaidService();
     // MCP server: a single app-wide loopback HTTP endpoint exposing live editor state + the command
     // registry to an LLM agent. Static so only the first window with the feature on starts it (the
     // setting is shared); that window's controller is the bridge. (Multi-window caveat: if the owner
@@ -294,9 +293,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
     private final com.editora.diff.DiffService diffService = new com.editora.diff.DiffService();
-    private boolean mermaidSupportApplied;
-    private com.editora.mermaid.MermaidService.Availability mermaidAvail =
-            new com.editora.mermaid.MermaidService.Availability(false, false);
     /** HTTP Client: the ijhttp façade, the response tool window, and whether ijhttp was detected. */
     private final com.editora.http.HttpClientService httpService = new com.editora.http.HttpClientService();
 
@@ -475,7 +471,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 config,
                 toolWindows,
                 gitService,
-                mermaidService,
+                mermaid.service(),
                 lspManager,
                 dapManager,
                 this::onSettingsApplied,
@@ -537,7 +533,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyGitSupport(); // hide Git UI when disabled (default)
         applyLocalHistory(); // Local File History tool window availability + list (on by default)
         applyNotesSupport(); // hide Personal Notes UI when disabled (default)
-        applyMermaidSupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
+        mermaid.applySupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
         applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
         applyMathSupport(); // LaTeX math rendering (off by default)
         applyHttpClientSupport(); // configure ijhttp; .http run glyphs off when disabled (default)
@@ -1490,7 +1486,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         searchService.shutdown();
         todoService.shutdown();
         markdownLintService.shutdown();
-        mermaidService.shutdown();
+        mermaid.shutdown();
         htmlPreview.shutdown(); // stop the HTML-preview HTTP server + worker
         logViewer.shutdown(); // stop any log tail-follow poll thread
         stopMcpIfOwner(); // stop the MCP server if this window owns it
@@ -2638,18 +2634,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** Whether the Mermaid feature is enabled in Settings (default off). */
-    private boolean mermaidEnabled() {
-        return config.getSettings().isMermaidSupport();
-    }
-
-    /**
-     * Reconciles the Mermaid feature with its setting. Pushes the configured mmdc/maid paths + the
-     * current preview theme + the enabled flag into the service and the editor preview façade, and on
-     * any change re-renders open Markdown/diagram previews so {@code ```mermaid} blocks (re)appear or
-     * fall back to plain code. Runs at startup and on every settings apply (mirrors
-     * {@link #applyGitSupport}).
-     */
     /** Reconciles LaTeX math rendering with its setting + the app theme; re-renders open previews. */
     private void applyMathSupport() {
         com.editora.editor.MathImages.configure(config.getSettings().isMathSupport(), appThemeDark());
@@ -2661,39 +2645,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    private void applyMermaidSupport() {
-        Settings s = config.getSettings();
-        boolean on = s.isMermaidSupport();
-        mermaidService.setPaths(s.getMmdcPath(), s.getMaidPath());
-        com.editora.editor.MermaidImages.configure(
-                on, mermaidService.mmdcCommand(), mermaidService.maidCommand(), appThemeDark());
-        // (Un)wire the preview toggle on open .mmd buffers as the feature flips, restore their saved mode
-        // when enabling, and re-render every preview so ```mermaid blocks switch between diagram and code
-        // (and re-theme on an app-theme change, which also routes through here).
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b == null) {
-                continue;
-            }
-            ensurePreviewControls(b);
-            if (on && b.isDiagram()) {
-                restoreMarkdownMode(b);
-            }
-            b.refreshPreview();
-        }
-        mermaidSupportApplied = on;
-        // Detect the tools (cached), then gate live linting (needs maid) + autocomplete (needs mmdc).
-        if (on) {
-            mermaidService.detect(avail -> {
-                mermaidAvail = avail;
-                applyMermaidGating();
-            });
-        } else {
-            mermaidAvail = new com.editora.mermaid.MermaidService.Availability(false, false);
-            applyMermaidGating();
-        }
-    }
-
     /** Last rg command probed + whether it was found, so a repeated apply doesn't re-spawn {@code rg --version}. */
     private java.util.List<String> ripgrepProbedCommand = null;
 
@@ -2702,7 +2653,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /**
      * Configures the Find-in-Files backend: ripgrep when the setting is on AND rg is detected on PATH, else
      * the built-in Java walker. Detection runs off the FX thread (it spawns {@code rg --version}); cached per
-     * command. Run at init + on every settings apply, mirroring {@link #applyMermaidSupport}.
+     * command. Run at init + on every settings apply, mirroring {@link MermaidCoordinator#applySupport}.
      */
     private void applyRipgrepSupport() {
         Settings s = config.getSettings();
@@ -2743,26 +2694,65 @@ public class MainController implements com.editora.mcp.McpBridge {
         t.start();
     }
 
-    /** Re-applies the tool-detection-dependent gates: per-buffer maid linting + mermaid autocomplete. */
-    private void applyMermaidGating() {
-        boolean on = mermaidEnabled();
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null) {
-                b.setMermaidLintEnabled(on && mermaidAvail.maid());
+    // --- Mermaid (mmdc render/export + maid lint) ----------------------------------------------------
+
+    /** The Mermaid feature (diagram render/export, live lint, autocomplete gating); see {@link MermaidCoordinator}. */
+    private final MermaidCoordinator mermaid = new MermaidCoordinator(new MermaidCoordinator.Host() {
+        @Override
+        public Settings settings() {
+            return config.getSettings();
+        }
+
+        @Override
+        public boolean appThemeDark() {
+            return MainController.this.appThemeDark();
+        }
+
+        @Override
+        public void forEachBuffer(java.util.function.Consumer<EditorBuffer> action) {
+            for (Tab tab : tabPane.getTabs()) {
+                EditorBuffer b = bufferOf(tab);
+                if (b != null) {
+                    action.accept(b);
+                }
             }
         }
-        applyAutocomplete();
-    }
 
-    /** Runs {@code action} only when Mermaid is enabled; otherwise reports it (no-op command/key). */
-    private void ifMermaid(Runnable action) {
-        if (mermaidEnabled()) {
-            action.run();
-        } else {
-            setStatus(tr("statusbar.tip.mermaidDisabled"));
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
         }
-    }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public void ensurePreviewControls(EditorBuffer buffer) {
+            MainController.this.ensurePreviewControls(buffer);
+        }
+
+        @Override
+        public void restoreMarkdownMode(EditorBuffer buffer) {
+            MainController.this.restoreMarkdownMode(buffer);
+        }
+
+        @Override
+        public void applyAutocomplete() {
+            MainController.this.applyAutocomplete();
+        }
+
+        @Override
+        public String bufferBaseName(EditorBuffer buffer) {
+            return MainController.this.bufferBaseName(buffer);
+        }
+
+        @Override
+        public javafx.stage.Window window() {
+            return stage;
+        }
+    });
 
     // --- HTML Live Preview (serve via a loopback HttpServer + open in a detected browser) ---------
 
@@ -3152,7 +3142,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Reconciles the HTTP Client feature with its setting (mirrors {@link #applyMermaidSupport}):
+     * Reconciles the HTTP Client feature with its setting (mirrors {@link MermaidCoordinator#applySupport}):
      * configures the ijhttp command, detects it (cached, async), then gates the request ▶ glyphs +
      * the response tool window. Runs at startup and on every settings apply.
      */
@@ -3929,7 +3919,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Reconciles the LSP feature with its setting (mirrors {@link #applyMermaidSupport}). Configures the
+     * Reconciles the LSP feature with its setting (mirrors {@link MermaidCoordinator#applySupport}). Configures the
      * manager + Problems window, then (when enabled) detects the server and gates per-buffer LSP. Runs at
      * init and on every settings apply.
      */
@@ -6951,11 +6941,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                 acs.isAutocomplete(),
                 acs.isAutocompleteProse(),
                 acs.isAutocompleteSnippets(),
-                effectiveMermaidAutocomplete());
+                mermaid.effectiveAutocomplete());
         buffer.setMultiCaretEnabled(
                 multiCaretEnabled()); // multiple cursors + Alt+drag column selection (off in Simple UI mode)
-        buffer.setMermaidValidator((text, cb) -> mermaidService.validate(text, cb));
-        buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
+        mermaid.wireBuffer(buffer); // live maid validator + initial lint state
         // Markdown linting: the overlay gets the diagnostics; the Lint tool window mirrors them live when
         // this buffer is the active one and the window is open.
         buffer.setMarkdownLintValidator((text, cb) -> markdownLintService.validate(text, diags -> {
@@ -9748,7 +9737,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.setViewModeControl(null);
         }
         // Keep live linting in step when a Save As / rename flips the buffer to/from .mmd.
-        buffer.setMermaidLintEnabled(mermaidEnabled() && mermaidAvail.maid());
+        mermaid.refreshLint(buffer);
     }
 
     /** Restores a Markdown file's saved view mode after it is opened (and its toggle is wired). */
@@ -10784,44 +10773,6 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Exports the active Mermaid diagram (.mmd file) to SVG/PNG/PDF via mmdc. Asks for a destination
      * (format inferred from the chosen extension), renders off-thread, and reports the result.
      */
-    private void exportMermaid() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isDiagram()) {
-            setStatus(tr("status.mermaid.notDiagram"));
-            return;
-        }
-        String source = b.getContent();
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.mermaidExport.title"));
-        String base = bufferBaseName(b);
-        int dot = base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : base) + ".svg");
-        chooser.getExtensionFilters()
-                .addAll(
-                        new javafx.stage.FileChooser.ExtensionFilter("SVG", "*.svg"),
-                        new javafx.stage.FileChooser.ExtensionFilter("PNG", "*.png"),
-                        new javafx.stage.FileChooser.ExtensionFilter("PDF", "*.pdf"));
-        java.io.File f = chooser.showSaveDialog(stage);
-        if (f == null) {
-            return;
-        }
-        setStatus(tr("status.mermaid.exporting"));
-        mermaidService.export(source, f.toPath(), appThemeDark(), r -> {
-            if (r.ok()) {
-                setStatus(tr("status.mermaid.exported", f.toString()));
-            } else {
-                String msg = r.message();
-                setStatus(tr("status.mermaid.exportFailed", msg));
-                Alert err = new Alert(Alert.AlertType.ERROR);
-                err.initOwner(stage);
-                err.setTitle(tr("dialog.mermaidExport.title"));
-                err.setHeaderText(tr("status.mermaid.exportFailed", ""));
-                err.setContentText(msg);
-                err.showAndWait();
-            }
-        });
-    }
-
     /**
      * Exports the active buffer's source text to a syntax-highlighted, light-themed PDF (any text file).
      * Honors the Settings toggles (line numbers, syntax highlighting) + page size. Runs off the FX thread.
@@ -10867,15 +10818,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         setStatus(tr("status.pdf.exporting"));
         if (b.isDiagram()) {
-            mermaidService.export(
+            mermaid.exportDiagram(
                     b.getContent(),
                     f.toPath(),
-                    appThemeDark(),
                     r -> reportPdf(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message()), f));
         } else {
             java.nio.file.Path baseDir =
                     b.getPath() == null ? null : b.getPath().getParent();
-            java.util.List<String> mmdc = mermaidEnabled() ? mermaidService.mmdcCommand() : null;
+            java.util.List<String> mmdc = mermaid.mmdcCommandOrNull();
             pdfService.exportMarkdown(
                     b.getContent(),
                     baseDir,
@@ -11011,7 +10961,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         setStatus(tr("status.print.preparing"));
         if (b.isDiagram()) {
-            java.util.List<String> mmdc = mermaidEnabled() ? mermaidService.mmdcCommand() : null;
+            java.util.List<String> mmdc = mermaid.mmdcCommandOrNull();
             printService.prepareMermaid(
                     b.getContent(), mmdc, appThemeDark(), prepared -> openPrintPreview(job, prepared));
         } else {
@@ -11196,7 +11146,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyLocalHistory(); // re-gate the Local File History tool window + refresh its list
         applyGitBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
         applyNotesSupport();
-        applyMermaidSupport();
+        mermaid.applySupport();
         applyRipgrepSupport();
         applyMathSupport();
         applyHttpClientSupport();
@@ -11243,7 +11193,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Pushes the autocomplete settings (master + per-source) to every open buffer. */
     private void applyAutocomplete() {
         Settings s = config.getSettings();
-        boolean mermaidAc = effectiveMermaidAutocomplete();
+        boolean mermaidAc = mermaid.effectiveAutocomplete();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
@@ -11252,13 +11202,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 buffer.setCompletionDocEnabled(s.isCompletionDoc());
             }
         }
-    }
-
-    /** Mermaid autocomplete is effective only with the master toggle, its own toggle, the feature on,
-     *  and the mmdc CLI detected. */
-    private boolean effectiveMermaidAutocomplete() {
-        Settings s = config.getSettings();
-        return s.isAutocomplete() && s.isAutocompleteMermaid() && s.isMermaidSupport() && mermaidAvail.mmdc();
     }
 
     /**
@@ -12191,7 +12134,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleMermaid",
                         () -> config.getSettings().isMermaidSupport(),
                         v -> config.getSettings().setMermaidSupport(v),
-                        this::applyMermaidSupport)));
+                        mermaid::applySupport)));
         registry.register(Command.of(
                 "view.toggleHttpClient",
                 () -> toggleSetting(
@@ -12269,14 +12212,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "mermaid.setMmdcCommand",
                         () -> config.getSettings().getMmdcPath(),
                         v -> config.getSettings().setMmdcPath(v),
-                        this::applyMermaidSupport)));
+                        mermaid::applySupport)));
         registry.register(Command.of(
                 "mermaid.setMaidCommand",
                 () -> promptStringSetting(
                         "mermaid.setMaidCommand",
                         () -> config.getSettings().getMaidPath(),
                         v -> config.getSettings().setMaidPath(v),
-                        this::applyMermaidSupport)));
+                        mermaid::applySupport)));
         registry.register(Command.of(
                 "plugins.toggleRequireSignature",
                 () -> toggleSetting(
@@ -12308,7 +12251,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("preview.exportHtml", this::exportPreviewHtml));
         registry.register(Command.of("editor.print", this::printCode));
         registry.register(Command.of("preview.print", this::printPreview));
-        registry.register(Command.of("mermaid.export", () -> ifMermaid(this::exportMermaid)));
+        registry.register(Command.of("mermaid.export", mermaid::export));
         registry.register(Command.of("htmlPreview.open", htmlPreview::open));
         registry.register(Command.of("htmlPreview.openIn", htmlPreview::openIn));
         registry.register(Command.of("view.toggleHtmlPreview", htmlPreview::toggle));
