@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Performance: lazy-attach feature overlays (developer-facing).** Each editor buffer no longer eagerly
+  builds the five overlays that are inert for most files — find-match highlight, log-level, Mermaid-lint,
+  LSP-diagnostic, and AceJump. They're constructed (Canvas + scroll/edit subscriptions) only on first
+  activation and inserted in their original z-order, so a buffer with LSP off, no diagram, not a log, and
+  never searched/ace-jumped allocates none of them. Cuts per-buffer memory and per-pulse listener fan-out
+  when many tabs are open; no behavior change. Covered by a new headless-FX test (`LazyOverlayFxTest`).
+
 ### Added
 
 - **Server log viewer.** Opening a `.log` file now gets log-aware treatment: **level highlighting** (ERROR/
