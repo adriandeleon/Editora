@@ -38,4 +38,19 @@ class BlameHeatmapTest {
         double b = BlameHeatmap.intensity(160, 100, 200);
         assertTrue(a < b, "newer commit must have a higher intensity");
     }
+
+    @Test
+    void heatmapColorIsAWarmRgbaWhoseOpacityGrowsWithNewness() {
+        // Newer (higher intensity) → higher alpha; light/dark use different base colors.
+        assertEquals("rgba(240,165,70,0.040)", BlameHeatmap.heatmapColor(0.0, false));
+        assertEquals("rgba(240,165,70,0.340)", BlameHeatmap.heatmapColor(1.0, false));
+        assertEquals("rgba(255,190,90,0.050)", BlameHeatmap.heatmapColor(0.0, true));
+        assertEquals("rgba(255,190,90,0.300)", BlameHeatmap.heatmapColor(1.0, true));
+    }
+
+    @Test
+    void heatmapColorClampsIntensity() {
+        assertEquals(BlameHeatmap.heatmapColor(0.0, false), BlameHeatmap.heatmapColor(-1.0, false));
+        assertEquals(BlameHeatmap.heatmapColor(1.0, false), BlameHeatmap.heatmapColor(2.0, false));
+    }
 }

@@ -13,6 +13,21 @@ public final class HttpResponseFormat {
 
     private HttpResponseFormat() {}
 
+    /** File extension (with leading dot) to save a response body under, inferred from its content type. */
+    public static String extensionFor(String contentType) {
+        String ct = contentType == null ? "" : contentType.toLowerCase(java.util.Locale.ROOT);
+        if (ct.contains("json")) {
+            return ".json";
+        }
+        if (ct.contains("html")) {
+            return ".html";
+        }
+        if (ct.contains("xml")) {
+            return ".xml";
+        }
+        return ".txt";
+    }
+
     public static String render(HttpResult r) {
         if (r.failed()) {
             return "⚠  " + r.error();

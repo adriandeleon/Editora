@@ -3224,23 +3224,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         EditorBuffer buffer = new EditorBuffer();
-        buffer.setDisplayName("response" + responseExt(r.contentType()));
+        buffer.setDisplayName("response" + com.editora.http.HttpResponseFormat.extensionFor(r.contentType()));
         addBuffer(buffer, true);
         buffer.setContent(com.editora.http.HttpResponseFormat.prettyBody(r.body(), r.contentType()));
-    }
-
-    private static String responseExt(String contentType) {
-        String ct = contentType == null ? "" : contentType.toLowerCase(java.util.Locale.ROOT);
-        if (ct.contains("json")) {
-            return ".json";
-        }
-        if (ct.contains("html")) {
-            return ".html";
-        }
-        if (ct.contains("xml")) {
-            return ".xml";
-        }
-        return ".txt";
     }
 
     /** Copies the response viewer's selected request as a {@code curl} command (palette command). */
@@ -5334,28 +5320,37 @@ public class MainController implements com.editora.mcp.McpBridge {
                 ClipboardContent content = new ClipboardContent();
                 content.putString(hash);
                 Clipboard.getSystemClipboard().setContent(content);
-                setStatus(tr("status.git.copiedHash", shortHash(hash)));
+                setStatus(tr("status.git.copiedHash", com.editora.git.GitFormat.shortHash(hash)));
             }
 
             @Override
             public void checkout(String hash) {
-                gitMutate(tr("status.git.checkedOut", shortHash(hash)), "checkout", hash);
+                gitMutate(tr("status.git.checkedOut", com.editora.git.GitFormat.shortHash(hash)), "checkout", hash);
             }
 
             @Override
             public void reset(String hash, String mode) {
-                gitMutate(tr("status.git.reset", mode, shortHash(hash)), "reset", "--" + mode, hash);
+                gitMutate(
+                        tr("status.git.reset", mode, com.editora.git.GitFormat.shortHash(hash)),
+                        "reset",
+                        "--" + mode,
+                        hash);
                 Platform.runLater(MainController.this::checkExternalChanges);
             }
 
             @Override
             public void revert(String hash) {
-                gitMutate(tr("status.git.reverted", shortHash(hash)), "revert", "--no-edit", hash);
+                gitMutate(
+                        tr("status.git.reverted", com.editora.git.GitFormat.shortHash(hash)),
+                        "revert",
+                        "--no-edit",
+                        hash);
             }
 
             @Override
             public void cherryPick(String hash) {
-                gitMutate(tr("status.git.cherryPicked", shortHash(hash)), "cherry-pick", hash);
+                gitMutate(
+                        tr("status.git.cherryPicked", com.editora.git.GitFormat.shortHash(hash)), "cherry-pick", hash);
             }
 
             @Override
@@ -5369,11 +5364,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 });
             }
         };
-    }
-
-    /** A short 7-char hash for status messages. */
-    private static String shortHash(String hash) {
-        return hash == null ? "" : hash.substring(0, Math.min(7, hash.length()));
     }
 
     /** Opens the Git Log tool window showing the whole-repo history. */
@@ -5412,9 +5402,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         String name = repoRel.substring(repoRel.lastIndexOf('/') + 1);
         openDiff(
-                tr("diff.title.commitFile", name, shortHash(hash)),
+                tr("diff.title.commitFile", name, com.editora.git.GitFormat.shortHash(hash)),
                 tr("diff.side.parent"),
-                tr("diff.title.vsCommitShort", shortHash(hash)),
+                tr("diff.title.vsCommitShort", com.editora.git.GitFormat.shortHash(hash)),
                 name,
                 name,
                 cb -> gitService.show(currentRepoRoot, hash + "~1:" + repoRel, cb),
@@ -5665,20 +5655,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                     shortHash);
             double intensity = com.editora.git.BlameHeatmap.intensity(bl.epochSeconds(), min, max);
             out.add(new com.editora.editor.BlameInfo(
-                    shortAuthor(bl.author()), date, tooltip, heatmapColor(intensity, dark), bl.hash()));
+                    com.editora.git.GitFormat.shortAuthor(bl.author()),
+                    date,
+                    tooltip,
+                    com.editora.git.BlameHeatmap.heatmapColor(intensity, dark),
+                    bl.hash()));
         }
         return out;
-    }
-
-    /** Compact author for the narrow annotation column: the first name (first whitespace-delimited token);
-     *  the full name stays in the hover tooltip. Falls back to the whole string when there's no space. */
-    private static String shortAuthor(String author) {
-        if (author == null) {
-            return "";
-        }
-        String trimmed = author.strip();
-        int sp = trimmed.indexOf(' ');
-        return sp > 0 ? trimmed.substring(0, sp) : trimmed;
     }
 
     /** ISO {@code yyyy-MM-dd} commit date for the annotation column (technical, not localized). */
@@ -5687,17 +5670,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 .atZone(java.time.ZoneId.systemDefault())
                 .toLocalDate()
                 .toString();
-    }
-
-    /** IntelliJ-style age-heatmap tint: a warm background whose opacity scales with the commit's newness
-     *  ({@code intensity} 0=oldest → 1=newest), toned down on dark themes so it doesn't overpower the text. */
-    private static String heatmapColor(double intensity, boolean dark) {
-        double t = Math.max(0.0, Math.min(1.0, intensity));
-        double alpha = (dark ? 0.05 : 0.04) + (dark ? 0.25 : 0.30) * t;
-        int r = dark ? 255 : 240;
-        int g = dark ? 190 : 165;
-        int b = dark ? 90 : 70;
-        return String.format(java.util.Locale.ROOT, "rgba(%d,%d,%d,%.3f)", r, g, b, alpha);
     }
 
     /** Localized "N days ago"-style label from the pure {@link com.editora.git.RelativeTime} bucketing. */

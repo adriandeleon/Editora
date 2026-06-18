@@ -27,4 +27,18 @@ public final class BlameHeatmap {
         }
         return Math.min(t, 1.0);
     }
+
+    /**
+     * Age-heatmap tint as an {@code rgba(...)} string: a warm background whose opacity scales with
+     * {@code intensity} ({@code 0}=oldest → {@code 1}=newest, clamped), toned down on dark themes so it
+     * doesn't overpower the text.
+     */
+    public static String heatmapColor(double intensity, boolean dark) {
+        double t = Math.max(0.0, Math.min(1.0, intensity));
+        double alpha = (dark ? 0.05 : 0.04) + (dark ? 0.25 : 0.30) * t;
+        int r = dark ? 255 : 240;
+        int g = dark ? 190 : 165;
+        int b = dark ? 90 : 70;
+        return String.format(java.util.Locale.ROOT, "rgba(%d,%d,%d,%.3f)", r, g, b, alpha);
+    }
 }
