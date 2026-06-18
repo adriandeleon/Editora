@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: extract Mermaid into a `MermaidCoordinator` (developer-facing).** The third feature coordinator
+  peeled off `MainController`: the `mmdc`/`maid` service, the detected-tool availability, and the
+  apply/gating/export logic now live in `ui/MermaidCoordinator`, behind a narrow `Host` interface. The few
+  mermaid reads other features need are exposed as coordinator methods (`mmdcCommandOrNull()` for PDF/print,
+  `effectiveAutocomplete()` for the completion config, `exportDiagram()` for PDF export). Behavior is
+  identical; covered by a new `MermaidCoordinatorFxTest` against a fake `Host`. Continues de-godding
+  `MainController` one feature at a time.
+
 - **Refactor: extract HTML Live Preview into an `HtmlPreviewCoordinator` (developer-facing).** The second
   feature coordinator peeled off `MainController` (after `LogViewerCoordinator`): the loopback HTTP server,
   the detected-browser list, and the browser picker now live in `ui/HtmlPreviewCoordinator`, reaching the
