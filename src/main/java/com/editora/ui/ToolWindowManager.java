@@ -245,7 +245,7 @@ public class ToolWindowManager {
 
     /** Whether the stripe button should be present: the user keeps it visible AND it isn't context-hidden. */
     private boolean shouldShowButton(ToolWindow tw) {
-        return isVisible(tw) && !unavailable.contains(tw);
+        return ToolWindowVisibility.buttonShown(isVisible(tw), unavailable.contains(tw));
     }
 
     /**
@@ -374,8 +374,8 @@ public class ToolWindowManager {
     }
 
     private void setStripeShown(Pane stripe) {
-        boolean shown =
-                stripesEnabled && !zenHidesStripes && !stripe.getChildren().isEmpty();
+        boolean shown = ToolWindowVisibility.stripeShown(
+                stripesEnabled, zenHidesStripes, stripe.getChildren().isEmpty());
         stripe.setVisible(shown);
         stripe.setManaged(shown);
     }
