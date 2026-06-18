@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   toolbar-restore/Zen-exit buttons, tab pinning + Close-Others/Close-All, and command-palette feature gating.
   FX tests are tagged `fx` (run the pure suite alone with `-DexcludedGroups=fx`). No change to the app, the
   `dist`/`fatjar` builds, or `module-info` — Monocle is never shipped.
+- **Window/tool-window decision logic extracted + unit-tested (developer-facing).** The multi-window
+  restore-set / primary-window / orphan-session-GC logic (where a quit-vs-close drain bug once lived) moved
+  into the pure `ui/WindowKeys`, and the tool-window stripe/button visibility rules into `ui/ToolWindowVisibility`;
+  `WindowManager`/`ToolWindowManager` now delegate to them. No behavior change.
 
 - **External Tools (IntelliJ-style).** Define your own CLI commands in **Settings → External Tools** and run
   them on the current file/buffer. Command and arguments support `$Name$` macros (`$FilePath$`, `$FileDir$`,

@@ -103,7 +103,6 @@ public class WindowManager {
         Settings settings = shared.getSettings();
         boolean projectsOn = settings.isProjectSupport();
         ProjectManager pm = projects();
-        LinkedHashSet<String> toOpen = new LinkedHashSet<>(pm.openProjectIds());
         Project cli = null;
         if (projectsOn && projectArg != null) {
             Path root = Path.of(projectArg).toAbsolutePath().normalize();
@@ -112,27 +111,17 @@ public class WindowManager {
                     : root.getFileName().toString();
             cli = pm.createOrGet(name, root);
             pm.save();
-            toOpen.add(cli.id());
         }
-        // Restore the no-project windows (the global "" window + any untitled "New Window"s) regardless of
-        // the Projects feature; project windows restore only when Projects are enabled. So a project id in
-        // the saved set is dropped when Projects are off, but multiple plain windows still come back.
-        if (!projectsOn) {
-            toOpen.removeIf(key -> !key.isEmpty() && !key.startsWith(UNTITLED_PREFIX));
-        }
-        if (toOpen.isEmpty()) {
-            toOpen.add(""); // nothing remembered ⇒ open the global window
-        }
-        String primary = cli != null
-                ? cli.id()
-                : toOpen.contains("")
-                        ? ""
-                        : (pm.active() != null && toOpen.contains(pm.active().id()))
-                                ? pm.active().id()
-                                : toOpen.iterator().next();
+        String cliId = cli == null ? null : cli.id();
+        // The no-project windows (global "" + untitled "New Window"s) always restore; project windows only
+        // when Projects are enabled. The restore set + primary-window choice are the pure, unit-tested
+        // WindowKeys helpers (a quit-vs-close drain bug once lived in this logic).
+        LinkedHashSet<String> toOpen = WindowKeys.restoreKeys(pm.openProjectIds(), projectsOn, cliId);
+        String primary = WindowKeys.primaryKey(
+                cliId, toOpen, pm.active() == null ? null : pm.active().id());
 
         for (String key : toOpen) {
-            boolean untitled = key.startsWith(UNTITLED_PREFIX);
+            boolean untitled = WindowKeys.isUntitled(key);
             Project project = (key.isEmpty() || untitled) ? null : findProject(key);
             if (!key.isEmpty() && !untitled && project == null) {
                 continue; // a stale id (project deleted out from under the open set)
@@ -181,9 +170,6 @@ public class WindowManager {
         return stage;
     }
 
-    /** Prefix marking an "untitled" no-project window key ({@code untitled:<uuid>}); see {@link #newWindow()}. */
-    private static final String UNTITLED_PREFIX = "untitled:";
-
     /**
      * Opens a brand-new editor window not tied to any project (the palette "New Window" command). Unlike
      * {@link #openOrFocusGlobal()} (which focuses the single global window), this always <em>builds</em> a
@@ -194,7 +180,7 @@ public class WindowManager {
      */
     public Stage newWindow() {
         String uuid = java.util.UUID.randomUUID().toString().substring(0, 8);
-        String key = UNTITLED_PREFIX + uuid;
+        String key = WindowKeys.UNTITLED_PREFIX + uuid;
         Stage stage = buildWindow(key, null, untitledStateFile(key), List.of(), false, null, false);
         projects().markOpen(key);
         setActiveAndSave(key);
@@ -208,7 +194,7 @@ public class WindowManager {
 
     /** The session file for an {@code untitled:<uuid>} window key. */
     private Path untitledStateFile(String key) {
-        return windowsDir().resolve(key.substring(UNTITLED_PREFIX.length()) + ".json");
+        return windowsDir().resolve(WindowKeys.untitledSessionFileName(key));
     }
 
     /** Opens (or focuses) {@code project}'s window. A null/empty-id project routes to the global window. */
@@ -531,22 +517,20 @@ public class WindowManager {
         if (!java.nio.file.Files.isDirectory(dir)) {
             return;
         }
-        java.util.Set<String> keep = new java.util.HashSet<>();
-        for (String k : openKeys) {
-            if (k.startsWith(UNTITLED_PREFIX)) {
-                keep.add(k.substring(UNTITLED_PREFIX.length()) + ".json");
-            }
-        }
         try (var stream = java.nio.file.Files.list(dir)) {
-            stream.filter(p -> p.getFileName().toString().endsWith(".json"))
-                    .filter(p -> !keep.contains(p.getFileName().toString()))
-                    .forEach(p -> {
-                        try {
-                            java.nio.file.Files.deleteIfExists(p);
-                        } catch (java.io.IOException ignored) {
-                            // leave it; a later launch retries
-                        }
-                    });
+            java.util.List<Path> files = stream.toList();
+            java.util.List<String> names =
+                    files.stream().map(p -> p.getFileName().toString()).toList();
+            java.util.Set<String> orphans = WindowKeys.orphanSessionFiles(openKeys, names);
+            for (Path p : files) {
+                if (orphans.contains(p.getFileName().toString())) {
+                    try {
+                        java.nio.file.Files.deleteIfExists(p);
+                    } catch (java.io.IOException ignored) {
+                        // leave it; a later launch retries
+                    }
+                }
+            }
         } catch (java.io.IOException ignored) {
             // best-effort cleanup
         }
