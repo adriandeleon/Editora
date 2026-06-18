@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **External Tools (IntelliJ-style).** Define your own CLI commands in **Settings → External Tools** and run
+  them on the current file/buffer. Command and arguments support `$Name$` macros (`$FilePath$`, `$FileDir$`,
+  `$FileName$`, `$FileNameWithoutExtension$`, `$SelectedText$`, `$LineNumber$`, `$ColumnNumber$`,
+  `$ProjectFileDir$`), and a tool can pipe the **selection** or **whole buffer** to the command's stdin. Each
+  tool chooses what happens with its output: show it in a read-only **console** tool window, **replace the
+  selection**, **replace the whole buffer** (undoable), or **insert at the caret** — so the same feature
+  covers both "run a command and see the output" and text transforms (formatters/filters like `jq`, `sort`,
+  `sed`). Every defined tool becomes its own palette command (and is bindable to a key via Settings →
+  Keymaps); there's also **External Tools: Run…** (a picker) and **Rerun Last**. Tools run off the UI thread
+  with a 2-minute timeout. Available by default (the tool list is empty until you add one) and disabled in
+  Simple UI mode.
+
 - **Markdown support improvements.** A broad set of upgrades to the Markdown experience:
   - **More CommonMark extensions** in the preview — **YAML front matter** (rendered as a metadata block),
     **footnotes**, **heading anchors**, and **`++inserted++`** text, on top of the existing GFM tables /

@@ -56,6 +56,16 @@ public final class ProcessRunner {
      * environment (on top of the inherited environment + {@code LC_ALL=C}).
      */
     public static Result run(Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
+        return run(workingDir, timeout, command, extraEnv, null);
+    }
+
+    /**
+     * As {@link #run(Path, Duration, List, Map)} but, when {@code stdin != null}, writes it (UTF-8) to the
+     * child's standard input on a daemon thread and then <b>closes</b> stdin so a filter (e.g. {@code jq}/
+     * {@code wc}) sees EOF and terminates. Used by the External Tools feature.
+     */
+    public static Result run(
+            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
         // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
         // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
         // child env we set below — so without this, mmdc/npx still wouldn't be found.
@@ -70,6 +80,21 @@ public final class ProcessRunner {
             process = pb.start();
         } catch (IOException e) {
             return new Result(-1, "", e.getMessage() == null ? "failed to start" : e.getMessage());
+        }
+        // Feed stdin (if any) on a daemon thread, closing it so the child sees EOF; broken-pipe is ignored
+        // (the child may exit before reading everything). A large buffer can't stall the caller this way.
+        if (stdin != null) {
+            Thread stdinWriter = new Thread(
+                    () -> {
+                        try (java.io.OutputStream os = process.getOutputStream()) {
+                            os.write(stdin.getBytes(StandardCharsets.UTF_8));
+                        } catch (IOException ignored) {
+                            // child closed stdin early / exited — nothing to do
+                        }
+                    },
+                    "proc-stdin");
+            stdinWriter.setDaemon(true);
+            stdinWriter.start();
         }
         // Drain stderr on a side thread while we read stdout, so neither pipe can fill and stall.
         ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
