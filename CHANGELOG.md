@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ripgrep backend for Find in Files.** When [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) is
+  installed, project-wide **Find in Files** uses it for a much faster, `.gitignore`-aware search; otherwise the
+  built-in walker is used unchanged. It's automatic (on when `rg` is detected) and falls back silently when rg
+  is absent, the regex is one rg can't compile, or the project is remote (SFTP). Unsaved edits in open buffers
+  still win (their in-memory text is searched). Configurable in **Settings → Search** (toggle + command path +
+  a found/not-found status) and via the palette (`Toggle Ripgrep Search`, `Set Ripgrep Command…`). No new
+  dependency — `rg` is an external tool resolved on PATH.
+
 - **Headless-JavaFX test harness (developer-facing).** `ui/` controller behavior is now covered by real,
   headless FX tests — TestFX over a self-built JavaFX 25 Monocle backend (vendored in `m2-repo`, test scope
   only), so they run on CI with no display/xvfb. Tests lock down Zen mode hiding/restoring chrome,

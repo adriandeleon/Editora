@@ -73,6 +73,7 @@ public class SettingsWindow {
         APPLICATION(tr("settings.cat.application"), false),
         GIT(tr("settings.cat.git"), false),
         MERMAID(tr("settings.cat.mermaid"), false),
+        SEARCH(tr("settings.cat.search"), false),
         HTTP_CLIENT(tr("settings.cat.httpClient"), false),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), false),
         HTML_PREVIEW(tr("settings.cat.htmlPreview"), false),
@@ -181,6 +182,12 @@ public class SettingsWindow {
     private TextField maidPathField;
     private TextField templateAuthorField;
     private Label mermaidStatusLabel;
+    private CheckBox ripgrepCheck;
+    private TextField ripgrepCommandField;
+    private Label ripgrepStatusLabel;
+    /** Injected probe (MainController): runs {@code rg --version} off-thread, delivers found/not-found on FX. */
+    private java.util.function.Consumer<java.util.function.Consumer<Boolean>> ripgrepProbe;
+
     private com.editora.plugin.PluginManager pluginManager; // shared, injected after construction
     private CheckBox pluginCheck;
     private CheckBox pluginRequireSigCheck;
@@ -690,6 +697,20 @@ public class SettingsWindow {
             refreshMermaidStatus();
         });
 
+        ripgrepCheck = new CheckBox(tr("settings.search.useRipgrep"));
+        ripgrepCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setRipgrepSearch(now);
+            apply();
+            refreshRipgrepStatus();
+        });
+        ripgrepCommandField = new TextField();
+        ripgrepCommandField.setPromptText(com.editora.search.Ripgrep.DEFAULT_COMMAND);
+        ripgrepCommandField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setRipgrepCommand(now);
+            apply();
+            refreshRipgrepStatus();
+        });
+
         httpCheck = new CheckBox(tr("settings.httpClient.enable"));
         httpCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setHttpClientSupport(now);
@@ -880,6 +901,7 @@ public class SettingsWindow {
         pages.put(Category.APPLICATION, applicationPage());
         pages.put(Category.GIT, gitPage());
         pages.put(Category.MERMAID, mermaidPage());
+        pages.put(Category.SEARCH, searchPage());
         pages.put(Category.HTTP_CLIENT, httpClientPage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
         pages.put(Category.HTML_PREVIEW, htmlPreviewPage());
@@ -1378,6 +1400,27 @@ public class SettingsWindow {
         hint.setWrapText(true);
         hint.setMaxWidth(440);
         row(p, Category.GIT, null, hint, "git version control vcs enable");
+        return p;
+    }
+
+    private VBox searchPage() {
+        VBox p = page(tr("settings.cat.search"));
+        ripgrepStatusLabel = new Label(tr("settings.search.checking"));
+        ripgrepStatusLabel.getStyleClass().add("settings-git-status");
+        ripgrepStatusLabel.setWrapText(true);
+        ripgrepStatusLabel.setMaxWidth(440);
+        row(p, Category.SEARCH, null, ripgrepStatusLabel, "search ripgrep rg found installed not found");
+        row(p, Category.SEARCH, null, ripgrepCheck, "search ripgrep rg find in files fast");
+        row(
+                p,
+                Category.SEARCH,
+                null,
+                exePathRow(tr("settings.search.ripgrepPath"), ripgrepCommandField),
+                "search ripgrep rg path executable command");
+        Label hint = note(tr("settings.search.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.SEARCH, null, hint, "search ripgrep rg gitignore find in files");
         return p;
     }
 
@@ -2242,6 +2285,31 @@ public class SettingsWindow {
         });
     }
 
+    /** Injected by MainController: probes {@code rg} off-thread, delivering found/not-found on the FX thread. */
+    public void setRipgrepProbe(java.util.function.Consumer<java.util.function.Consumer<Boolean>> probe) {
+        this.ripgrepProbe = probe;
+    }
+
+    private void refreshRipgrepStatus() {
+        if (ripgrepStatusLabel == null || ripgrepProbe == null) {
+            return;
+        }
+        ripgrepStatusLabel.getStyleClass().setAll("settings-git-status");
+        ripgrepStatusLabel.setText(tr("settings.search.checking"));
+        ripgrepProbe.accept(this::syncRipgrepStatus);
+    }
+
+    /** Update the Settings → Search status label green/red, like the Git/Mermaid status labels. */
+    public void syncRipgrepStatus(boolean found) {
+        if (ripgrepStatusLabel == null) {
+            return;
+        }
+        ripgrepStatusLabel
+                .getStyleClass()
+                .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+        ripgrepStatusLabel.setText(found ? tr("settings.search.found") : tr("settings.search.notFound"));
+    }
+
     /** Re-checks each debug adapter's availability (java plugin jar / debugpy / js-debug+node) and colors
      *  its status label green/red, like the LSP/Mermaid status. java locate is cheap; python/js probe a
      *  subprocess off-thread and call back on the FX thread. */
@@ -2848,6 +2916,9 @@ public class SettingsWindow {
             mmdcPathField.setText(settings.getMmdcPath());
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
+            ripgrepCheck.setSelected(settings.isRipgrepSearch());
+            ripgrepCommandField.setText(settings.getRipgrepCommand());
+            refreshRipgrepStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             mcpCheck.setSelected(settings.isMcpSupport());

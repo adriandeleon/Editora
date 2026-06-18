@@ -491,6 +491,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
         this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk, this::uninstallPlugin);
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
+        this.settingsWindow.setRipgrepProbe(this::probeRipgrep); // Settings → Search found/not-found status
         this.settingsWindow.setOnKeymapChanged(this::reloadKeymap); // picker/combo → live keymap switch
         this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
             @Override
@@ -542,6 +543,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyLocalHistory(); // Local File History tool window availability + list (on by default)
         applyNotesSupport(); // hide Personal Notes UI when disabled (default)
         applyMermaidSupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
+        applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
         applyMathSupport(); // LaTeX math rendering (off by default)
         applyHttpClientSupport(); // configure ijhttp; .http run glyphs off when disabled (default)
         applyHtmlPreviewSupport(); // HTML "open in browser" control off when disabled (default)
@@ -2704,6 +2706,55 @@ public class MainController implements com.editora.mcp.McpBridge {
             mermaidAvail = new com.editora.mermaid.MermaidService.Availability(false, false);
             applyMermaidGating();
         }
+    }
+
+    /** Last rg command probed + whether it was found, so a repeated apply doesn't re-spawn {@code rg --version}. */
+    private java.util.List<String> ripgrepProbedCommand = null;
+
+    private volatile boolean ripgrepAvailable = false;
+
+    /**
+     * Configures the Find-in-Files backend: ripgrep when the setting is on AND rg is detected on PATH, else
+     * the built-in Java walker. Detection runs off the FX thread (it spawns {@code rg --version}); cached per
+     * command. Run at init + on every settings apply, mirroring {@link #applyMermaidSupport}.
+     */
+    private void applyRipgrepSupport() {
+        Settings s = config.getSettings();
+        java.util.List<String> cmd = com.editora.search.Ripgrep.command(s.getRipgrepCommand());
+        boolean enabled = s.isRipgrepSearch();
+        if (cmd.equals(ripgrepProbedCommand)) {
+            searchService.setBackend(enabled && ripgrepAvailable, cmd);
+            return;
+        }
+        Thread t = new Thread(
+                () -> {
+                    boolean ok = com.editora.search.Ripgrep.detect(cmd);
+                    Platform.runLater(() -> {
+                        ripgrepProbedCommand = cmd;
+                        ripgrepAvailable = ok;
+                        searchService.setBackend(s.isRipgrepSearch() && ok, cmd);
+                        if (settingsWindow != null) {
+                            settingsWindow.syncRipgrepStatus(ok);
+                        }
+                    });
+                },
+                "rg-detect");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Probe rg availability off-thread for the current command, delivering the result on the FX thread. */
+    private void probeRipgrep(java.util.function.Consumer<Boolean> onResult) {
+        java.util.List<String> cmd =
+                com.editora.search.Ripgrep.command(config.getSettings().getRipgrepCommand());
+        Thread t = new Thread(
+                () -> {
+                    boolean ok = com.editora.search.Ripgrep.detect(cmd);
+                    Platform.runLater(() -> onResult.accept(ok));
+                },
+                "rg-detect");
+        t.setDaemon(true);
+        t.start();
     }
 
     /** Re-applies the tool-detection-dependent gates: per-buffer maid linting + mermaid autocomplete. */
@@ -11136,6 +11187,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyGitBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
         applyNotesSupport();
         applyMermaidSupport();
+        applyRipgrepSupport();
         applyMathSupport();
         applyHttpClientSupport();
         applyHtmlPreviewSupport();
@@ -12186,6 +12238,20 @@ public class MainController implements com.editora.mcp.McpBridge {
                         10000,
                         v -> config.getSettings().setHistoryMaxTotalMb(v),
                         this::applyLocalHistory)));
+        registry.register(Command.of(
+                "view.toggleRipgrep",
+                () -> toggleSetting(
+                        "view.toggleRipgrep",
+                        () -> config.getSettings().isRipgrepSearch(),
+                        v -> config.getSettings().setRipgrepSearch(v),
+                        this::applyRipgrepSupport)));
+        registry.register(Command.of(
+                "search.setRipgrepCommand",
+                () -> promptStringSetting(
+                        "search.setRipgrepCommand",
+                        () -> config.getSettings().getRipgrepCommand(),
+                        v -> config.getSettings().setRipgrepCommand(v),
+                        this::applyRipgrepSupport)));
         registry.register(Command.of(
                 "mermaid.setMmdcCommand",
                 () -> promptStringSetting(
