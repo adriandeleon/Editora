@@ -464,26 +464,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Project commands (incl. the Project tool window) are hidden from the palette unless project
         // support is enabled.
         // Project + Git commands are hidden from the palette unless their feature is enabled.
-        this.palette = new CommandPalette(
-                registry,
-                keymap,
-                c -> (config.getSettings().isProjectSupport()
-                                || (!c.id().startsWith("project.") && !c.id().equals("tool.project")))
-                        && (gitEnabled()
-                                || (!c.id().startsWith("git.")
-                                        && !c.id().equals("tool.commit")
-                                        && !c.id().equals("tool.gitLog")))
-                        && (config.getSettings().isNotesSupport()
-                                || (!c.id().startsWith("notes.") && !c.id().equals("tool.notes")))
-                        && (config.getSettings().isMermaidSupport() || !c.id().startsWith("mermaid."))
-                        && (lspEnabled() || (!c.id().startsWith("lsp.") && !c.id().equals("tool.problems")))
-                        && (httpEnabled() || (!c.id().startsWith("http.") && !c.id().equals("tool.http")))
-                        && (htmlPreviewEnabled() || !c.id().startsWith("htmlPreview."))
-                        && (localHistoryEnabled() || !c.id().equals("tool.fileHistory"))
-                        && (mcpEnabled() || !c.id().startsWith("mcp."))
-                        && (pluginsEnabled() || !c.id().startsWith("plugins."))
-                        && (externalToolsEnabled()
-                                || (!c.id().startsWith("externalTool.") && !c.id().equals("tool.externalTools"))));
+        // A command whose feature is off is hidden from the palette (see Chrome.paletteVisible, which is
+        // pure + unit-tested); paletteGates() snapshots the live feature-enabled state per filter call.
+        this.palette = new CommandPalette(registry, keymap, c -> Chrome.paletteVisible(c.id(), paletteGates()));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -1149,19 +1132,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         // leaks into another (Zen lives in this window's WorkspaceState, not in Settings).
         boolean zen = zenActive();
         boolean simple = simpleModeActive();
-        toolBar.setVisible(s.isShowToolbar() && !zen);
-        toolBar.setManaged(s.isShowToolbar() && !zen);
-        statusBar.setVisible(s.isShowStatusBar() && !zen);
-        statusBar.setManaged(s.isShowStatusBar() && !zen);
+        // Effective visibility (Chrome, pure + unit-tested): a saved pref AND not hidden by Zen/Simple.
+        boolean toolbarOn = Chrome.toolbar(s.isShowToolbar(), zen);
+        toolBar.setVisible(toolbarOn);
+        toolBar.setManaged(toolbarOn);
+        boolean statusOn = Chrome.statusBar(s.isShowStatusBar(), zen);
+        statusBar.setVisible(statusOn);
+        statusBar.setManaged(statusOn);
         // The tab header is collapsed via a style class (see app.css) rather than visible/managed:
         // the TabPane skin owns the header node, so toggling a CSS class is the supported way.
         tabPane.getStyleClass().remove("no-tab-header");
-        if (!s.isShowTabBar() || zen) {
+        if (!Chrome.tabBar(s.isShowTabBar(), zen)) {
             tabPane.getStyleClass().add("no-tab-header");
         }
-        breadcrumb.setEnabled(s.isShowBreadcrumb() && !simple && !zen);
+        breadcrumb.setEnabled(Chrome.breadcrumb(s.isShowBreadcrumb(), zen, simple));
         // Tool stripes (UI only): hidden stripes still let tool windows open via keybinding/palette.
-        toolWindows.setStripesEnabled(s.isShowToolStripe() && !simple && !zen);
+        toolWindows.setStripesEnabled(Chrome.toolStripes(s.isShowToolStripe(), zen, simple));
         applySimpleMode();
         updateZenButton();
         updateToolbarRestoreButton();
@@ -1175,6 +1161,23 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** True when this window is in distraction-free Zen mode (per-window state, never a shared pref). */
     private boolean zenActive() {
         return config.getWorkspaceState().isZenMode();
+    }
+
+    /** Snapshot of which optional features are effectively enabled, for {@link Chrome#paletteVisible}. */
+    private Chrome.PaletteGates paletteGates() {
+        Settings s = config.getSettings();
+        return new Chrome.PaletteGates(
+                s.isProjectSupport(),
+                gitEnabled(),
+                s.isNotesSupport(),
+                s.isMermaidSupport(),
+                lspEnabled(),
+                httpEnabled(),
+                htmlPreviewEnabled(),
+                localHistoryEnabled(),
+                mcpEnabled(),
+                pluginsEnabled(),
+                externalToolsEnabled());
     }
 
     /**
@@ -11060,16 +11063,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Simple UI mode additionally removes the whole gutter + minimap. Both are effective overlays.
         boolean zen = zenActive();
         boolean simple = simpleModeActive();
-        buffer.setColumnRulerVisible(s.isShowColumnRuler() && !zen);
+        buffer.setColumnRulerVisible(Chrome.columnRuler(s.isShowColumnRuler(), zen));
         buffer.setNoteIndicatorsVisible(s.isNotesSupport() && s.isShowNoteIndicators());
-        buffer.setLineHighlightOn(s.isHighlightCurrentLine() && !zen);
-        buffer.setLineNumbersVisible(s.isShowLineNumbers() && !simple && !zen);
-        buffer.setMinimapVisible(s.isShowMinimap() && !simple && !zen);
-        buffer.setGutterVisible(!simple); // Simple mode removes the entire gutter strip
+        buffer.setLineHighlightOn(Chrome.lineHighlight(s.isHighlightCurrentLine(), zen));
+        buffer.setLineNumbersVisible(Chrome.lineNumbers(s.isShowLineNumbers(), zen, simple));
+        buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
+        buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
         }
-        buffer.setWhitespaceVisible(s.isShowWhitespace() && !zen);
+        buffer.setWhitespaceVisible(Chrome.whitespace(s.isShowWhitespace(), zen));
         buffer.setTabSize(s.getTabSize());
         buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
         buffer.setMinimapColors(

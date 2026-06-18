@@ -1,0 +1,120 @@
+package com.editora.ui;
+
+import com.editora.ui.Chrome.PaletteGates;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/** Pure chrome decisions: effective visibility under Zen/Simple overlays + palette command gating. */
+class ChromeTest {
+
+    // --- effective visibility: a saved pref shows only when neither overlay hides it ---
+
+    @Test
+    void zenHidesEveryChromeAndViewOption() {
+        boolean zen = true;
+        boolean simple = false;
+        assertFalse(Chrome.toolbar(true, zen));
+        assertFalse(Chrome.statusBar(true, zen));
+        assertFalse(Chrome.tabBar(true, zen));
+        assertFalse(Chrome.breadcrumb(true, zen, simple));
+        assertFalse(Chrome.toolStripes(true, zen, simple));
+        assertFalse(Chrome.columnRuler(true, zen));
+        assertFalse(Chrome.lineHighlight(true, zen));
+        assertFalse(Chrome.whitespace(true, zen));
+        assertFalse(Chrome.lineNumbers(true, zen, simple));
+        assertFalse(Chrome.minimap(true, zen, simple));
+    }
+
+    @Test
+    void simpleHidesItsSubsetButLeavesTheBars() {
+        boolean zen = false;
+        boolean simple = true;
+        // Simple keeps the toolbar / status bar / tab bar (only Zen hides those)...
+        assertTrue(Chrome.toolbar(true, zen));
+        assertTrue(Chrome.statusBar(true, zen));
+        assertTrue(Chrome.tabBar(true, zen));
+        // ...but hides the breadcrumb, tool stripes, line numbers, minimap, and the whole gutter.
+        assertFalse(Chrome.breadcrumb(true, zen, simple));
+        assertFalse(Chrome.toolStripes(true, zen, simple));
+        assertFalse(Chrome.lineNumbers(true, zen, simple));
+        assertFalse(Chrome.minimap(true, zen, simple));
+        assertFalse(Chrome.gutter(simple));
+        // Ruler / line highlight / whitespace are Zen-only, so Simple leaves them on.
+        assertTrue(Chrome.columnRuler(true, zen));
+        assertTrue(Chrome.lineHighlight(true, zen));
+        assertTrue(Chrome.whitespace(true, zen));
+    }
+
+    @Test
+    void withNoOverlayTheSavedPrefPassesThrough() {
+        assertTrue(Chrome.toolbar(true, false));
+        assertFalse(Chrome.toolbar(false, false)); // user turned the toolbar off → still off
+        assertTrue(Chrome.lineNumbers(true, false, false));
+        assertFalse(Chrome.lineNumbers(false, false, false));
+        assertTrue(Chrome.gutter(false)); // gutter present unless Simple mode
+    }
+
+    // --- palette command gating ---
+
+    private static PaletteGates allOn() {
+        return new PaletteGates(true, true, true, true, true, true, true, true, true, true, true);
+    }
+
+    private static PaletteGates allOff() {
+        return new PaletteGates(false, false, false, false, false, false, false, false, false, false, false);
+    }
+
+    @Test
+    void everythingVisibleWhenAllFeaturesEnabled() {
+        PaletteGates g = allOn();
+        for (String id : new String[] {
+            "git.commit", "tool.commit", "tool.gitLog", "lsp.gotoDefinition", "tool.problems",
+            "http.runRequest", "tool.http", "externalTool.run", "tool.externalTools", "project.open",
+            "tool.project", "notes.add", "tool.notes", "mermaid.export", "htmlPreview.open",
+            "tool.fileHistory", "mcp.start", "plugins.browse", "file.save"
+        }) {
+            assertTrue(Chrome.paletteVisible(id, g), id + " should be visible when all features are on");
+        }
+    }
+
+    @Test
+    void disabledFeatureHidesItsCommandsByPrefixAndExactToolId() {
+        PaletteGates off = allOff();
+        // prefix-matched
+        assertFalse(Chrome.paletteVisible("git.push", off));
+        assertFalse(Chrome.paletteVisible("lsp.findReferences", off));
+        assertFalse(Chrome.paletteVisible("externalTool.run.jq", off));
+        assertFalse(Chrome.paletteVisible("plugins.browse", off));
+        // exact tool-window ids
+        assertFalse(Chrome.paletteVisible("tool.commit", off));
+        assertFalse(Chrome.paletteVisible("tool.gitLog", off));
+        assertFalse(Chrome.paletteVisible("tool.problems", off));
+        assertFalse(Chrome.paletteVisible("tool.http", off));
+        assertFalse(Chrome.paletteVisible("tool.externalTools", off));
+        assertFalse(Chrome.paletteVisible("tool.fileHistory", off));
+        assertFalse(Chrome.paletteVisible("tool.project", off));
+        assertFalse(Chrome.paletteVisible("tool.notes", off));
+    }
+
+    @Test
+    void unrelatedAndOtherToolCommandsStayVisibleWhenAFeatureIsOff() {
+        PaletteGates off = allOff();
+        assertTrue(Chrome.paletteVisible("file.save", off));
+        assertTrue(Chrome.paletteVisible("edit.cut", off));
+        assertTrue(Chrome.paletteVisible("tool.run", off)); // not a gated tool window
+        assertTrue(Chrome.paletteVisible("tool.bookmarks", off));
+    }
+
+    @Test
+    void onlyTheDisabledFeatureIsFiltered() {
+        // git off, everything else on → only git.* / commit / gitLog hidden
+        PaletteGates gitOff = new PaletteGates(true, false, true, true, true, true, true, true, true, true, true);
+        assertFalse(Chrome.paletteVisible("git.commit", gitOff));
+        assertFalse(Chrome.paletteVisible("tool.gitLog", gitOff));
+        assertTrue(Chrome.paletteVisible("lsp.hover", gitOff));
+        assertTrue(Chrome.paletteVisible("tool.http", gitOff));
+        assertTrue(Chrome.paletteVisible("externalTool.run", gitOff));
+    }
+}
