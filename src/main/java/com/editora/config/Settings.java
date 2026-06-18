@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 36;
+    public static final int SCHEMA_VERSION = 37;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -145,6 +145,10 @@ public class Settings {
     private String mmdcPath = "";
     /** Path to the maid (probelabs/maid linter) executable; blank = resolve "maid" on PATH. */
     private String maidPath = "";
+    /** Use ripgrep to accelerate Find in Files when it's detected on PATH (default on; falls back otherwise). */
+    private boolean ripgrepSearch = true;
+    /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
+    private String ripgrepCommand = "";
     /** HTTP Client support (run {@code .http} requests via the JetBrains {@code ijhttp} CLI): off by default. */
     private boolean httpClientSupport = false;
     /** The {@code ijhttp} command/path; blank = resolve {@code ijhttp} on PATH. */
@@ -742,6 +746,22 @@ public class Settings {
 
     public void setMaidPath(String maidPath) {
         this.maidPath = maidPath == null ? "" : maidPath;
+    }
+
+    public boolean isRipgrepSearch() {
+        return ripgrepSearch;
+    }
+
+    public void setRipgrepSearch(boolean ripgrepSearch) {
+        this.ripgrepSearch = ripgrepSearch;
+    }
+
+    public String getRipgrepCommand() {
+        return ripgrepCommand == null ? "" : ripgrepCommand;
+    }
+
+    public void setRipgrepCommand(String ripgrepCommand) {
+        this.ripgrepCommand = ripgrepCommand == null ? "" : ripgrepCommand;
     }
 
     public boolean isLspSupport() {
