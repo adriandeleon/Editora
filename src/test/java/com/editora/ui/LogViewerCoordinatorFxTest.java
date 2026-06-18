@@ -34,7 +34,7 @@ class LogViewerCoordinatorFxTest {
     }
 
     /** A minimal Host: a Settings object, a simple-mode flag, a buffer list, and call counters. */
-    private static final class FakeHost implements LogViewerCoordinator.Host {
+    private static final class FakeHost extends CoordinatorHostStub {
         final Settings settings = new Settings();
         boolean simpleMode = false;
         final List<EditorBuffer> buffers = new ArrayList<>();

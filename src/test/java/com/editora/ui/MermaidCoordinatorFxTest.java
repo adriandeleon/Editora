@@ -33,7 +33,7 @@ class MermaidCoordinatorFxTest {
         FxTestSupport.bootToolkit();
     }
 
-    private static final class FakeHost implements MermaidCoordinator.Host {
+    private static final class FakeHost extends CoordinatorHostStub {
         final Settings settings = new Settings();
         final List<EditorBuffer> buffers = new ArrayList<>();
         EditorBuffer active;

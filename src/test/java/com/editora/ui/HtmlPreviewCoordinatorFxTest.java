@@ -31,7 +31,7 @@ class HtmlPreviewCoordinatorFxTest {
         FxTestSupport.bootToolkit();
     }
 
-    private static final class FakeHost implements HtmlPreviewCoordinator.Host {
+    private static final class FakeHost extends CoordinatorHostStub {
         final Settings settings = new Settings();
         final List<EditorBuffer> buffers = new ArrayList<>();
         boolean local = true;

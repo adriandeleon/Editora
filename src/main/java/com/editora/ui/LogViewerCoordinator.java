@@ -5,10 +5,7 @@ import java.nio.file.Path;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 import java.util.regex.Pattern;
-
-import javafx.stage.Window;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
@@ -33,35 +30,7 @@ import static com.editora.i18n.Messages.tr;
  */
 final class LogViewerCoordinator {
 
-    /** The window services the coordinator needs — implemented by {@code MainController} (or a test fake). */
-    interface Host {
-        Settings settings();
-
-        boolean simpleModeActive();
-
-        /** Applies {@code action} to every open editor buffer (skipping non-buffer tabs). */
-        void forEachBuffer(Consumer<EditorBuffer> action);
-
-        /** The active editor buffer, or {@code null} for a non-buffer/Welcome tab. */
-        EditorBuffer activeBuffer();
-
-        void setStatus(String message);
-
-        long fileSize(Path file);
-
-        void requestSave();
-
-        /** Re-syncs an open Settings window's log-viewer checkbox after the setting flips via the palette. */
-        void syncSettingsWindow();
-
-        OverlayHost overlayHost();
-
-        Window window();
-
-        void promptText(String title, String label, String initial, Consumer<String> onAccept);
-    }
-
-    private final Host host;
+    private final CoordinatorHost host;
     private final LogTailService logTailService = new LogTailService();
     /** Per-buffer byte offset at which a Follow resumes (load-time EOF, or the tail offset for a huge log). */
     private final Map<EditorBuffer, Long> logLoadOffset = new IdentityHashMap<>();
@@ -70,7 +39,7 @@ final class LogViewerCoordinator {
     /** The floating control attached to each log buffer (so error/teardown can reset its Follow toggle). */
     private final Map<EditorBuffer, LogControlBar> logBars = new IdentityHashMap<>();
 
-    LogViewerCoordinator(Host host) {
+    LogViewerCoordinator(CoordinatorHost host) {
         this.host = host;
     }
 
