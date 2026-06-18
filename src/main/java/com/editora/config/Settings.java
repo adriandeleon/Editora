@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 37;
+    public static final int SCHEMA_VERSION = 38;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -157,6 +157,8 @@ public class Settings {
     private boolean htmlPreviewSupport = false;
     /** The last-used browser id for the HTML preview ({@code ""} until the user picks one). */
     private String htmlPreviewBrowser = "";
+    /** Server-log viewer (level highlighting + tail-follow + huge-log tail load) for {@code .log} files: on by default. */
+    private boolean logViewer = true;
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
      *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
     private boolean mcpSupport = false;
@@ -356,6 +358,14 @@ public class Settings {
 
     public boolean isHtmlPreviewSupport() {
         return htmlPreviewSupport;
+    }
+
+    public boolean isLogViewer() {
+        return logViewer;
+    }
+
+    public void setLogViewer(boolean logViewer) {
+        this.logViewer = logViewer;
     }
 
     public void setHtmlPreviewSupport(boolean htmlPreviewSupport) {

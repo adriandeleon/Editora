@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Server log viewer.** Opening a `.log` file now gets log-aware treatment: **level highlighting** (ERROR/
+  WARN/INFO/DEBUG/TRACE coloured inline and as a left-edge bar that works even on huge files where syntax
+  highlighting is off), **Follow tail** (`tail -f` — a floating toggle streams new lines as the file grows on
+  disk and auto-scrolls to the bottom), **open-the-tail** for very large logs (a multi-GB log opens read-only
+  at its *end* instead of its start), and **live level + regex filtering** (a floating control narrows the
+  view to e.g. `WARN+` or lines matching a pattern as you type — the query is a case-insensitive regex that
+  falls back to a literal substring when it isn't valid one; a stack trace inherits its record's level so it
+  stays visible).
+  Detection covers Logback/Log4j, `java.util.logging`, syslog, nginx, structured `level=…`/JSON logs, zerolog,
+  and Apache/Nginx access logs (5xx→error, 4xx→warn). Log files **open in View mode** (read-only with an
+  Enable-Editing banner) by default, since they're for reading — follow still streams while read-only.
+  On by default for `.log` files (**Settings → Editor →
+  Logs**, or `View: Toggle Log Viewer`); the rest is per-buffer via the floating control or the palette
+  (`Log: Toggle Follow`, `Log: Filter by Level`, `Log: Filter by Pattern`, `Log: Clear Filter`,
+  `Log: View as Log`). No new dependency.
+
 - **Ripgrep backend for Find in Files.** When [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) is
   installed, project-wide **Find in Files** uses it for a much faster, `.gitignore`-aware search; otherwise the
   built-in walker is used unchanged. It's automatic (on when `rg` is detected) and falls back silently when rg

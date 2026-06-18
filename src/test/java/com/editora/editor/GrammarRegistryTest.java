@@ -41,6 +41,14 @@ class GrammarRegistryTest {
     }
 
     @Test
+    void logGrammarLoads() {
+        // Loads the bundled log.tmLanguage.json end-to-end (JSON parse + Oniguruma compile).
+        assertNotNull(GrammarRegistry.shared().forLanguageName("log"));
+        assertNotNull(GrammarRegistry.shared().forFileName("server.log"));
+        assertNotNull(GrammarRegistry.shared().forFileName("/var/log/app.log"));
+    }
+
+    @Test
     void linuxConfigGrammarsLoad() {
         // Each loads end-to-end (JSON parse + Oniguruma compile) and resolves by name/extension.
         assertNotNull(GrammarRegistry.shared().forLanguageName("desktop"));

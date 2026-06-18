@@ -59,11 +59,11 @@ class ChromeTest {
     // --- palette command gating ---
 
     private static PaletteGates allOn() {
-        return new PaletteGates(true, true, true, true, true, true, true, true, true, true, true);
+        return new PaletteGates(true, true, true, true, true, true, true, true, true, true, true, true);
     }
 
     private static PaletteGates allOff() {
-        return new PaletteGates(false, false, false, false, false, false, false, false, false, false, false);
+        return new PaletteGates(false, false, false, false, false, false, false, false, false, false, false, false);
     }
 
     @Test
@@ -110,11 +110,21 @@ class ChromeTest {
     @Test
     void onlyTheDisabledFeatureIsFiltered() {
         // git off, everything else on → only git.* / commit / gitLog hidden
-        PaletteGates gitOff = new PaletteGates(true, false, true, true, true, true, true, true, true, true, true);
+        PaletteGates gitOff = new PaletteGates(true, false, true, true, true, true, true, true, true, true, true, true);
         assertFalse(Chrome.paletteVisible("git.commit", gitOff));
         assertFalse(Chrome.paletteVisible("tool.gitLog", gitOff));
         assertTrue(Chrome.paletteVisible("lsp.hover", gitOff));
         assertTrue(Chrome.paletteVisible("tool.http", gitOff));
         assertTrue(Chrome.paletteVisible("externalTool.run", gitOff));
+    }
+
+    @Test
+    void logCommandsHiddenWhenLogViewerOff() {
+        // log off, everything else on → only log.* hidden; the master toggle (view.*) stays visible.
+        PaletteGates logOff = new PaletteGates(true, true, true, true, true, true, true, true, true, true, true, false);
+        assertFalse(Chrome.paletteVisible("log.toggleFollow", logOff));
+        assertFalse(Chrome.paletteVisible("log.setLevelFilter", logOff));
+        assertTrue(Chrome.paletteVisible("view.toggleLogViewer", logOff)); // enable toggle is never gated
+        assertTrue(Chrome.paletteVisible("log.toggleFollow", allOn()));
     }
 }

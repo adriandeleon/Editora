@@ -78,6 +78,15 @@ Emacs-style keymap or a fuzzy command palette.
   round-tripped on read and save), `max_line_length` (drives the column ruler), and on-save
   `trim_trailing_whitespace` / `insert_final_newline`. On by default; toggle via Settings → Editor or the
   "View: Toggle EditorConfig" palette command.
+- **Server log viewer** — `.log` files get severity highlighting (ERROR/WARN/INFO/DEBUG/TRACE, both inline
+  and as a left-edge bar that works even on huge logs), a floating **Follow** toggle (`tail -f` — streams new
+  lines as the file grows and auto-scrolls), **open-the-tail** for very large logs (opens read-only at the
+  end), and **live level + regex filtering** (filter as you type by a level floor and a regex — or a literal
+  substring when it isn't valid regex; a stack trace inherits its record's level so it stays visible).
+  Detects Logback/Log4j, `java.util.logging`, syslog, nginx, structured/JSON, zerolog, and access logs. Logs
+  open in **View mode** (read-only with an "Enable Editing" banner) by default — follow still streams while
+  read-only. On by default (Settings → Editor → Logs, "View: Toggle Log Viewer"); `Log: Toggle Follow` / `Filter by Level` /
+  `Filter by Pattern` / `Clear Filter` / `View as Log` in the palette.
 - **Auto-close & matching brackets** — typing `([{`/quotes inserts the matching closer (type over it to
   skip, wrap a selection by typing a bracket/quote around it, Backspace clears an empty pair); the
   bracket matching the one next to the caret is highlighted.

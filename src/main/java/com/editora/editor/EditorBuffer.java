@@ -40,6 +40,8 @@ import javafx.scene.text.Font;
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionEngine;
 import com.editora.completion.CompletionProvider;
+import com.editora.logviewer.LogFilter;
+import com.editora.logviewer.LogLevel;
 import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetParser;
@@ -138,6 +140,22 @@ public class EditorBuffer implements TabContent {
     private Node viewModeControl;
     /** The floating "open in browser" control overlaid top-right (injected for HTML buffers). */
     private Node htmlPreviewControl;
+    /** The floating log-viewer control overlaid top-right (Follow / level / regex; injected for log buffers). */
+    private Node logControl;
+    /** Forces log-viewer mode on a buffer whose extension isn't {@code .log} ("View as Log"). */
+    private boolean logViewForced;
+    /** While a log filter is active, the complete unfiltered text (the area shows only matching lines). */
+    private String logFullText;
+
+    private boolean logFiltered;
+    private LogLevel logMinLevel;
+    private java.util.regex.Pattern logRegex;
+    /** Inherited level at the end of {@link #logFullText}, so an appended chunk filters with the right carry. */
+    private LogLevel logCarry;
+    /** While following ({@code tail -f}), each append auto-scrolls to the bottom. */
+    private boolean logFollowing;
+    /** Max characters kept in a following log buffer before the oldest lines are trimmed (bounds memory). */
+    private static final int LOG_FOLLOW_CAP = 12 * 1024 * 1024;
     /** Fired from the debounced edit pulse while this is an HTML buffer (drives HTML live-preview reload). */
     private Runnable htmlPreviewDirtyListener;
     /** Active debounced subscription driving live preview re-render (null when not previewing). */
@@ -253,6 +271,7 @@ public class EditorBuffer implements TabContent {
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
+    private final LogHighlightOverlay logOverlay = new LogHighlightOverlay(area);
     private final InlineValuesOverlay inlineValues = new InlineValuesOverlay(area);
     /** Per-line blame for the IntelliJ-style gutter "Annotate" column; null = blame off. */
     private java.util.List<BlameInfo> blameLines;
@@ -959,6 +978,7 @@ public class EditorBuffer implements TabContent {
                         noteOverlay,
                         searchOverlay,
                         todoOverlay,
+                        logOverlay,
                         whitespace,
                         spellOverlay,
                         lintOverlay,
@@ -1020,6 +1040,10 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setBottomAnchor(todoOverlay, 0d);
         AnchorPane.setLeftAnchor(todoOverlay, 0d);
         AnchorPane.setRightAnchor(todoOverlay, Minimap.WIDTH);
+        AnchorPane.setTopAnchor(logOverlay, 0d);
+        AnchorPane.setBottomAnchor(logOverlay, 0d);
+        AnchorPane.setLeftAnchor(logOverlay, 0d);
+        AnchorPane.setRightAnchor(logOverlay, Minimap.WIDTH);
         AnchorPane.setTopAnchor(aceJump, 0d);
         AnchorPane.setBottomAnchor(aceJump, 0d);
         AnchorPane.setLeftAnchor(aceJump, 0d);
@@ -2226,6 +2250,163 @@ public class EditorBuffer implements TabContent {
         return htmlPreviewControl != null;
     }
 
+    // --- Log viewer ----------------------------------------------------------------------------------
+
+    /** Whether this is a log buffer: a {@code .log} file (language {@code "log"}) or forced "View as Log". */
+    public boolean isLog() {
+        return "log".equals(language) || logViewForced;
+    }
+
+    /** Forces (or clears) log-viewer mode on a buffer whose extension isn't {@code .log}; rebuilds the host. */
+    public void setLogViewForced(boolean forced) {
+        if (this.logViewForced == forced) {
+            return;
+        }
+        this.logViewForced = forced;
+        rebuildViewHost();
+    }
+
+    /** Overlays the log control (Follow / level / regex) top-right of the code pane; {@code null} removes it. */
+    public void setLogControl(Node control) {
+        if (logControl != null && logControl != control) {
+            removeCornerControl(logControl);
+        }
+        this.logControl = control;
+        rebuildViewHost();
+    }
+
+    /** Whether the floating log control is currently attached. */
+    public boolean hasLogControl() {
+        return logControl != null;
+    }
+
+    /** Turns the size-independent level overlay on/off (controller gates on the feature + {@link #isLog()}). */
+    public void setLogHighlightEnabled(boolean on) {
+        logOverlay.setActive(on && isLog());
+    }
+
+    /** Whether a level/regex filter is currently narrowing the visible lines. */
+    public boolean isLogFiltered() {
+        return logFiltered;
+    }
+
+    /** Whether the buffer is auto-scrolling as the file grows ({@code tail -f}). */
+    public boolean isLogFollowing() {
+        return logFollowing;
+    }
+
+    public void setLogFollowing(boolean following) {
+        this.logFollowing = following;
+        if (following) {
+            scrollToLogBottom();
+        }
+    }
+
+    /**
+     * Narrows the visible lines to those whose (inherited) level is at least {@code minLevel} and which
+     * match {@code regex}; passing {@code null}/{@code null} clears the filter and restores the full text.
+     * The full text is retained so a later clear (or an appended tail) re-derives correctly.
+     */
+    public void applyLogFilter(LogLevel minLevel, java.util.regex.Pattern regex) {
+        if (minLevel == null && regex == null) {
+            if (logFiltered) {
+                String full = logFullText;
+                logFiltered = false;
+                logFullText = null;
+                logMinLevel = null;
+                logRegex = null;
+                logCarry = null;
+                replaceLogText(full);
+            }
+            return;
+        }
+        String source = logFiltered ? logFullText : area.getText();
+        logFullText = source;
+        logFiltered = true;
+        logMinLevel = minLevel;
+        logRegex = regex;
+        logCarry = LogFilter.endCarry(source, null);
+        replaceLogText(LogFilter.filter(source, minLevel, regex, null));
+    }
+
+    /** The current level floor of the active filter (null when unfiltered or no floor). */
+    public LogLevel getLogMinLevel() {
+        return logMinLevel;
+    }
+
+    /**
+     * Appends {@code text} read from the file's tail. While a filter is active the full text is grown and
+     * only the matching subset is shown; otherwise the text is appended directly. Auto-scrolls to the
+     * bottom while following, and trims the oldest lines past {@link #LOG_FOLLOW_CAP} to bound memory.
+     */
+    public void appendLogText(String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        if (logFiltered) {
+            String add = LogFilter.filter(text, logMinLevel, logRegex, logCarry);
+            logCarry = LogFilter.endCarry(text, logCarry);
+            logFullText = logFullText + text;
+            if (!add.isEmpty()) {
+                appendToArea(logFullText, add); // grow the full text; show the matches
+            }
+        } else {
+            appendToArea(null, text);
+        }
+        if (logFollowing) {
+            scrollToLogBottom();
+        }
+    }
+
+    /** Replaces the whole buffer with {@code fullText} (e.g. on log rotation), keeping any active filter. */
+    public void resetLogContent(String fullText) {
+        String full = fullText == null ? "" : fullText;
+        if (logFiltered) {
+            logFullText = full;
+            logCarry = LogFilter.endCarry(full, null);
+            replaceLogText(LogFilter.filter(full, logMinLevel, logRegex, null));
+        } else {
+            replaceLogText(full);
+        }
+        if (logFollowing) {
+            scrollToLogBottom();
+        }
+    }
+
+    /** Programmatically replaces the area text (the buffer is read-only to the user, but code may write). */
+    private void replaceLogText(String text) {
+        area.replaceText(text == null ? "" : text); // the overlay redraws off the resulting plain-change
+        scrollToLogBottom();
+    }
+
+    private void appendToArea(String newFullForTrim, String displayAppend) {
+        area.appendText(displayAppend);
+        trimLogIfOversized();
+        if (newFullForTrim != null && newFullForTrim.length() > LOG_FOLLOW_CAP) {
+            logFullText = newFullForTrim.substring(newFullForTrim.length() - LOG_FOLLOW_CAP);
+        }
+    }
+
+    /** Drops the oldest lines once the displayed text exceeds the follow cap (keeps memory bounded). */
+    private void trimLogIfOversized() {
+        int len = area.getLength();
+        if (len <= LOG_FOLLOW_CAP) {
+            return;
+        }
+        int cut = len - LOG_FOLLOW_CAP;
+        // Round up to the next line start so we never leave a half line at the top.
+        int nl = area.getText().indexOf('\n', cut);
+        int end = nl < 0 ? cut : nl + 1;
+        area.deleteText(0, Math.min(end, len));
+    }
+
+    private void scrollToLogBottom() {
+        int total = area.getParagraphs().size();
+        if (total > 0) {
+            area.showParagraphAtBottom(total - 1);
+        }
+    }
+
     /** Injects the debounced HTML-edit listener (fires the live-preview reload); {@code null} disables it. */
     public void setHtmlPreviewDirtyListener(Runnable listener) {
         this.htmlPreviewDirtyListener = listener;
@@ -2729,6 +2910,7 @@ public class EditorBuffer implements TabContent {
     private void detachViewModeControl() {
         removeCornerControl(viewModeControl);
         removeCornerControl(htmlPreviewControl);
+        removeCornerControl(logControl);
     }
 
     private void removeCornerControl(Node control) {
@@ -2746,6 +2928,7 @@ public class EditorBuffer implements TabContent {
     private void attachControlToCodePane() {
         placeCornerControl(viewModeControl);
         placeCornerControl(htmlPreviewControl);
+        placeCornerControl(logControl);
     }
 
     private void placeCornerControl(Node control) {

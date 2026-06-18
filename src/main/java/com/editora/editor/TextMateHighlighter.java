@@ -348,6 +348,25 @@ public final class TextMateHighlighter {
         if (scope.startsWith("support")) {
             return "type";
         }
+        // Log-viewer levels + timestamps (only the bundled source.log grammar emits these scopes).
+        if (scope.startsWith("markup.error") || scope.startsWith("markup.fatal")) {
+            return "log-error";
+        }
+        if (scope.startsWith("markup.warning")) {
+            return "log-warn";
+        }
+        if (scope.startsWith("markup.info")) {
+            return "log-info";
+        }
+        if (scope.startsWith("markup.debug")) {
+            return "log-debug";
+        }
+        if (scope.startsWith("markup.trace")) {
+            return "log-trace";
+        }
+        if (scope.startsWith("constant.other.timestamp")) {
+            return "log-timestamp";
+        }
         if (scope.startsWith("markup.bold")) {
             return "bold";
         }

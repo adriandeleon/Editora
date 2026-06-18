@@ -152,6 +152,7 @@ public class SettingsWindow {
     private CheckBox markdownLintCheck;
     private CheckBox mathSupportCheck;
     private CheckBox editorConfigCheck;
+    private CheckBox logViewerCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
     /** Working copy of the External Tools list, edited live by the master-detail page. */
@@ -642,6 +643,7 @@ public class SettingsWindow {
         markdownLintCheck = viewCheck(tr("settings.markdownLint"), Settings::setMarkdownLint);
         mathSupportCheck = viewCheck(tr("settings.mathSupport"), Settings::setMathSupport);
         editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
+        logViewerCheck = viewCheck(tr("settings.logViewer"), Settings::setLogViewer);
         todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
 
@@ -1148,6 +1150,13 @@ public class SettingsWindow {
                 indent,
                 editorConfigCheck,
                 "editorconfig indent style size charset end of line trailing whitespace final newline");
+        Label logs = section(p, tr("settings.section.logs"));
+        row(
+                p,
+                Category.EDITOR,
+                logs,
+                logViewerCheck,
+                "log viewer server logs tail follow level highlighting filter apache spring boot");
         Label completion = section(p, tr("settings.section.completion"));
         row(p, Category.EDITOR, completion, autocompleteCheck, "autocomplete completion suggestions enable popup");
         HBox proseRow = new HBox(autocompleteProseCheck);
@@ -3310,6 +3319,19 @@ public class SettingsWindow {
         }
     }
 
+    public void syncLogViewerCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            logViewerCheck.setSelected(config.getSettings().isLogViewer());
+        } finally {
+            loading = prev;
+        }
+    }
+
     /** Re-syncs the autocomplete checkboxes to the current settings (used after a palette toggle). */
     public void syncAutocompleteChecks() {
         if (!built) {
@@ -3375,6 +3397,7 @@ public class SettingsWindow {
             markdownLintCheck.setSelected(s.isMarkdownLint());
             mathSupportCheck.setSelected(s.isMathSupport());
             editorConfigCheck.setSelected(s.isEditorConfigSupport());
+            logViewerCheck.setSelected(s.isLogViewer());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             rebuildTodoRows();
             indentStyleCombo.setValue(s.getIndentStyle());
