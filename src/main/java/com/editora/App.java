@@ -54,6 +54,9 @@ public class App extends Application {
                 : new ConfigManager(devFlag(rawArgs));
         Settings settings = bootstrap.load();
         SharedConfig shared = bootstrap.shared();
+        // Flush any pending off-thread settings/session writes on exit, covering paths where persistSession()
+        // doesn't run (the normal quit already flushes via its blocking config.save()).
+        Runtime.getRuntime().addShutdownHook(new Thread(shared::flushWrites, "config-flush"));
         // Mirror captured logs to a session file in the config dir so a packaged build's log survives a
         // crash and can be attached to a bug report (the in-memory capture was installed in main()).
         com.editora.ui.DebugLog.attachFile(shared.getConfigDir());

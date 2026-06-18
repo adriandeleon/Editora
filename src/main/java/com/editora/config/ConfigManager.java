@@ -2,7 +2,6 @@ package com.editora.config;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -320,14 +319,35 @@ public class ConfigManager {
     }
 
     /** Writes the shared preferences ({@code settings.toml}) and this window's session-state file. */
+    /** Writes preferences + this window's session state synchronously (blocks until both are on disk). */
     public void save() {
-        shared.saveSettings();
+        shared.enqueueSettings();
+        enqueueWorkspace();
+        shared.flushWrites();
+    }
+
+    /**
+     * Writes preferences + session state <em>off the FX thread</em>: a consistent snapshot is serialized on
+     * the caller thread (the FX thread is single-threaded, so this needs no locking), then written by the
+     * shared {@link ConfigWriter}. Used by the frequent, coalesced in-session save
+     * ({@code MainController.requestSave}); {@link #save()} is the durable (blocking) form for quit / one-off
+     * actions / export.
+     */
+    public void saveAsync() {
+        shared.enqueueSettings();
+        enqueueWorkspace();
+    }
+
+    /** Queues this window's session state ({@code workspace-state.json}, possibly in a project sub-dir). */
+    private void enqueueWorkspace() {
+        shared.writer().enqueue(workspaceStateFile, workspaceBytes());
+    }
+
+    private byte[] workspaceBytes() {
         try {
-            // The workspace-state file may live in a sub-dir (a project's state file).
-            Files.createDirectories(workspaceStateFile.getParent());
-            json.writeValue(workspaceStateFile.toFile(), workspaceState);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to write session state to " + workspaceStateFile, e);
+            return json.writeValueAsBytes(workspaceState);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new UncheckedIOException("Failed to serialize session state for " + workspaceStateFile, e);
         }
     }
 
