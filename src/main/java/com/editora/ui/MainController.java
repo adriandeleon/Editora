@@ -3778,14 +3778,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Whether two paths refer to the same file (normalized absolute comparison; null-safe). */
     private static boolean samePath(Path a, Path b) {
-        if (a == null || b == null) {
-            return false;
-        }
-        try {
-            return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize());
-        } catch (RuntimeException e) {
-            return a.equals(b);
-        }
+        return com.editora.config.PathKeys.sameNormalized(a, b);
     }
 
     /** Resumes and stops at the active buffer's caret line via a one-shot temporary breakpoint. */
@@ -5751,7 +5744,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The per-file key used in the history bucket (absolute path string). */
     private static String historyKey(Path file) {
-        return file.toAbsolutePath().normalize().toString();
+        return com.editora.config.PathKeys.normalizedKey(file);
     }
 
     /**
@@ -8129,21 +8122,12 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  {@link java.nio.file.ProviderMismatchException} when compared to a local path) and a network
      *  {@code toRealPath()} for remote files. */
     private static String pathKey(Path p) {
-        return com.editora.vfs.Vfs.isRemote(p)
-                ? com.editora.vfs.Vfs.toStorableString(p)
-                : canonicalPath(p).toString();
+        return com.editora.config.PathKeys.key(p);
     }
 
-    /** A path for cross-source identity comparison: the real (symlink-resolved) path when it exists,
-     *  else the absolute-normalized form. A language server reports diagnostics under the file's
-     *  <em>canonical</em> URI (e.g. {@code /private/tmp/…} for a {@code /tmp/…} symlink on macOS); a buffer
-     *  keeps the path as opened, so matching by {@code normalize()} alone misses it and drops diagnostics. */
+    /** @see com.editora.config.PathKeys#canonical(Path) */
     static Path canonicalPath(Path p) {
-        try {
-            return p.toRealPath();
-        } catch (java.io.IOException | RuntimeException e) {
-            return p.toAbsolutePath().normalize();
-        }
+        return com.editora.config.PathKeys.canonical(p);
     }
 
     @FXML
@@ -10388,15 +10372,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Canonical-path key for a buffer's notes in the store (cheap; no content hashing). */
     private static String noteKey(EditorBuffer buffer) {
-        Path p = buffer.getPath();
-        if (p == null) {
-            return "";
-        }
-        try {
-            return p.toRealPath().toString();
-        } catch (IOException e) {
-            return p.toAbsolutePath().normalize().toString();
-        }
+        return com.editora.config.PathKeys.canonicalKey(buffer.getPath());
     }
 
     private Tab tabForKey(String fileKey) {
@@ -10488,19 +10464,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private static String findNoteKeyByIdentity(
             Map<String, List<com.editora.config.PersonalNote>> map, com.editora.config.FileIdentity id) {
-        if (id == null) {
-            return null;
-        }
-        for (var entry : map.entrySet()) {
-            for (com.editora.config.PersonalNote n : entry.getValue()) {
-                com.editora.config.FileIdentity.Match m = com.editora.config.FileIdentity.match(n.file(), id);
-                if (m == com.editora.config.FileIdentity.Match.CONTENT_HASH
-                        || m == com.editora.config.FileIdentity.Match.CANONICAL_PATH) {
-                    return entry.getKey();
-                }
-            }
-        }
-        return null;
+        return com.editora.config.PathKeys.findKeyByIdentity(map, id);
     }
 
     /** "Add Personal Note" (context menu / command): captures the selection/caret anchor, prompts for a body. */
