@@ -47,6 +47,7 @@
         <moditect.version>1.2.2.Final</moditect.version>
         <spotless.version>3.6.0</spotless.version>
         <palantir.version>2.92.0</palantir.version>
+        <jacoco.version>0.8.13</jacoco.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
         <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
@@ -343,6 +344,30 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+            </plugin>
+            <!-- Test coverage (JaCoCo): the on-the-fly agent instruments the unit tests and a report is
+                 generated after the `test` phase (HTML + XML under target/site/jacoco/). Report-only for
+                 now — no coverage gate — so `mvn test`/`verify` are unaffected beyond writing the report.
+                 jacoco wires its agent into surefire via the `argLine` property (surefire sets none). -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <!-- Code style: Palantir Java Format (a lambda-friendly, 120-col fork of
                  google-java-format) enforced via Spotless. `mvn spotless:apply` formats the tree;
