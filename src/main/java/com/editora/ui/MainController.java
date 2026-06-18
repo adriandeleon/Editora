@@ -75,6 +75,7 @@ import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LanguageRegistry;
 import com.editora.editor.SpellDictionaries;
 import com.editora.editor.TabContent;
+import com.editora.editor.TextNav;
 import com.editora.macro.Macro;
 import com.editora.macro.MacroService;
 import org.fxmisc.richtext.CodeArea;
@@ -11694,114 +11695,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Absolute offset of the first non-whitespace char on the caret's line (Emacs M-m). */
-    private static int backToIndentation(CodeArea a) {
-        int par = a.getCurrentParagraph();
-        String line = a.getParagraph(par).getText();
-        int col = 0;
-        while (col < line.length() && (line.charAt(col) == ' ' || line.charAt(col) == '\t')) {
-            col++;
-        }
-        return a.getAbsolutePosition(par, col);
-    }
-
-    /**
-     * Target column for a "smart" line start (C-a): the first non-whitespace column — the beginning of
-     * the line's <em>text</em> — or column 0 when the caret is already there (so a second press toggles
-     * to the true line start). Pure for unit testing.
-     */
-    static int smartLineStartColumn(String lineText, int caretCol) {
-        int indent = 0;
-        while (indent < lineText.length() && (lineText.charAt(indent) == ' ' || lineText.charAt(indent) == '\t')) {
-            indent++;
-        }
-        return caretCol == indent ? 0 : indent;
-    }
-
-    /** Absolute offset for the smart line start on the caret's current line (see {@link #smartLineStartColumn}). */
-    private static int smartLineStart(CodeArea a) {
-        int par = a.getCurrentParagraph();
-        int col = smartLineStartColumn(a.getParagraph(par).getText(), a.getCaretColumn());
-        return a.getAbsolutePosition(par, col);
-    }
-
-    /** Start of the blank line below the current block, or document end (Emacs M-}). */
-    private static int forwardParagraph(CodeArea a) {
-        int n = a.getParagraphs().size();
-        int p = a.getCurrentParagraph() + 1;
-        while (p < n && a.getParagraph(p).getText().isBlank()) {
-            p++; // skip blank lines we're sitting on
-        }
-        while (p < n && !a.getParagraph(p).getText().isBlank()) {
-            p++; // through the text block
-        }
-        return p >= n ? a.getLength() : a.getAbsolutePosition(p, 0);
-    }
-
-    /** Start of the blank line above the current block, or document start (Emacs M-{). */
-    private static int backwardParagraph(CodeArea a) {
-        int p = a.getCurrentParagraph() - 1;
-        while (p >= 0 && a.getParagraph(p).getText().isBlank()) {
-            p--;
-        }
-        while (p >= 0 && !a.getParagraph(p).getText().isBlank()) {
-            p--;
-        }
-        return p < 0 ? 0 : a.getAbsolutePosition(p, 0);
-    }
-
-    /** Offset at the start of the next sentence after {@code caret} (Emacs M-e). */
-    private static int forwardSentence(String text, int caret) {
-        int n = text.length();
-        int i = caret;
-        while (i < n) {
-            char c = text.charAt(i++);
-            if (isSentenceEnd(c)) {
-                while (i < n
-                        && (text.charAt(i) == '"'
-                                || text.charAt(i) == '\''
-                                || text.charAt(i) == ')'
-                                || text.charAt(i) == ']')) {
-                    i++; // closing quotes/brackets stay with the sentence
-                }
-                if (i >= n || Character.isWhitespace(text.charAt(i))) {
-                    while (i < n && Character.isWhitespace(text.charAt(i))) {
-                        i++;
-                    }
-                    return i;
-                }
-            }
-        }
-        return n;
-    }
-
-    /** Offset at the start of the sentence containing/just before {@code caret} (Emacs M-a). */
-    private static int backwardSentence(String text, int caret) {
-        int i = caret - 1;
-        while (i >= 0 && Character.isWhitespace(text.charAt(i))) {
-            i--; // skip whitespace immediately before the caret
-        }
-        // If we're sitting right after a terminator (caret already at a sentence start), skip it so
-        // repeated presses keep moving back instead of landing on the same spot.
-        while (i >= 0 && isSentenceEnd(text.charAt(i))) {
-            i--;
-        }
-        while (i >= 0 && !isSentenceEnd(text.charAt(i))) {
-            i--; // back over the sentence body to the previous sentence's terminator
-        }
-        if (i < 0) {
-            return 0;
-        }
-        int j = i + 1;
-        while (j < text.length() && Character.isWhitespace(text.charAt(j))) {
-            j++;
-        }
-        return j;
-    }
-
-    private static boolean isSentenceEnd(char c) {
-        return c == '.' || c == '!' || c == '?';
-    }
-
     /** Scrolls so the caret's line is vertically centered in the viewport (Emacs C-l, center). */
     private void recenterCaret() {
         CodeArea a = activeArea();
@@ -12671,7 +12564,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
         // a second press toggles to the true line start (column 0).
         registry.register(Command.of(
-                "nav.lineStart", () -> moveAndFollow(a -> a.moveTo(smartLineStart(a), selPolicy()))));
+                "nav.lineStart",
+                () -> moveAndFollow(
+                        a -> a.moveTo(TextNav.smartLineStart(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of("nav.lineEnd", () -> moveAndFollow(a -> a.lineEnd(selPolicy()))));
         registry.register(Command.of("nav.docStart", () -> moveAndFollow(a -> a.start(selPolicy()))));
         registry.register(Command.of("nav.docEnd", () -> moveAndFollow(a -> a.end(selPolicy()))));
@@ -12700,17 +12595,25 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }));
         registry.register(Command.of(
-                "nav.backToIndentation", () -> moveAndFollow(a -> a.moveTo(backToIndentation(a), selPolicy()))));
+                "nav.backToIndentation",
+                () -> moveAndFollow(
+                        a -> a.moveTo(TextNav.backToIndentation(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of(
-                "nav.paragraphForward", () -> moveAndFollow(a -> a.moveTo(forwardParagraph(a), selPolicy()))));
+                "nav.paragraphForward",
+                () -> moveAndFollow(
+                        a -> a.moveTo(TextNav.forwardParagraph(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of(
-                "nav.paragraphBackward", () -> moveAndFollow(a -> a.moveTo(backwardParagraph(a), selPolicy()))));
+                "nav.paragraphBackward",
+                () -> moveAndFollow(
+                        a -> a.moveTo(TextNav.backwardParagraph(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of(
                 "nav.sentenceForward",
-                () -> moveAndFollow(a -> a.moveTo(forwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
+                () -> moveAndFollow(
+                        a -> a.moveTo(TextNav.forwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of(
                 "nav.sentenceBackward",
-                () -> moveAndFollow(a -> a.moveTo(backwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
+                () -> moveAndFollow(
+                        a -> a.moveTo(TextNav.backwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
         registry.register(Command.of("nav.recenter", this::recenterCaret));
         registry.register(Command.of("edit.setMark", this::setMark));
         registry.register(Command.of("edit.exchangePointAndMark", this::exchangePointAndMark));
