@@ -197,10 +197,10 @@ A backlog of planned features and improvements. Unordered within each section.
       Gzip'd content-addressed blobs + a per-project index under `<configDir>/history/`, deduped, with
       configurable retention (revisions/file, age, size/project). On by default; local-only; off in Simple UI
 - [x] Detect external file changes — prompt to reload when a file changes on disk (focus-regain / tab switch)
-- [ ] Auto-reload modified files
+- [x] Auto-reload modified files
 - [x] Remote file editing support — SSH/SFTP: browse/open/edit/save remote files; saved connections
       (metadata only); local-process features auto-disable for remote (see "Recently shipped")
-- [ ] Log mode support
+- [x] Log mode support
 
 ## Keybindings
 - [x] Complete emacs movement/text manipulation keybindings — backward-kill-word (`M-DEL`),
@@ -227,8 +227,8 @@ A backlog of planned features and improvements. Unordered within each section.
       everywhere a file is listed: tabs, Project tree, Open-Files/Recent pickers, Switcher, file/folder finders
 - [x] "Current Folder" explorer — with no project open, the Project tool window roots at the active file's
       folder and follows the focused tab
-- [ ] Upgrade breadcrumbs support — _partial:_ Reveal in File Manager / Open Terminal Here on a crumb
-- [ ] Fix Zen mode
+- [x] Upgrade breadcrumbs support — _partial:_ Reveal in File Manager / Open Terminal Here on a crumb
+- [x] Fix Zen mode
 - [~] Font ligatures (Fira Code / JetBrains Mono `=>`, `!=`, …) — **not feasible on the current stack.**
       Programming ligatures are OpenType contextual alternates (`calt`), and JavaFX exposes no
       feature-control API (no `-fx-font-feature-settings`, no `Font` method) — it only auto-shapes
@@ -254,7 +254,7 @@ A backlog of planned features and improvements. Unordered within each section.
   are size-bounded and a non-default registry host is flagged. See `docs/plugins.md`.
   *Deferred: sandboxing, hot reload, gutter-marker contributions, GitHub-API/per-repo discovery,
   per-plugin/TOFU signing, auto-update.*
-- [ ] External Tools support
+- [x] External Tools support
 - [x] MCP support — a minimal **Model Context Protocol** server embedded in the editor (loopback HTTP +
       bearer-token auth) so an LLM agent (Claude Code, …) can observe state + drive the command registry.
       Six tools: `list_open_files`, `read_buffer`, `get_diagnostics`, `find_in_files`, `list_commands`,
@@ -262,7 +262,6 @@ A backlog of planned features and improvements. Unordered within each section.
       (click to copy the connection command). Off by default behind a security-notice dialog
       (Settings → MCP Server; `view.toggleMcp` / `mcp.copyEndpoint`). No new dependency (`jdk.httpserver`).
       (Next: more tools, resources/prompts, stdio transport.)
-- [ ] Headless support
 
 ## Packaging
 - [ ] Sign native installers
