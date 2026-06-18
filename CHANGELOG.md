@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: extract HTML Live Preview into an `HtmlPreviewCoordinator` (developer-facing).** The second
+  feature coordinator peeled off `MainController` (after `LogViewerCoordinator`): the loopback HTTP server,
+  the detected-browser list, and the browser picker now live in `ui/HtmlPreviewCoordinator`, reaching the
+  window only through a narrow `Host` interface (an anonymous adapter in `MainController` + one-line
+  delegations at the call sites). Behavior is identical; covered by a new `HtmlPreviewCoordinatorFxTest`
+  against a fake `Host`. Continues de-godding `MainController` one feature at a time.
+
 - **Refactor: extract the log viewer into a `LogViewerCoordinator` (developer-facing).** The first
   *feature coordinator* split out of the ~13k-line `MainController`: the server-log-viewer state (tail
   service + per-buffer follow/offset/control maps) and all its logic now live in `ui/LogViewerCoordinator`,
