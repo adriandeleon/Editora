@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the coordinator against a hand-written fake `Host`. This establishes the template for de-godding
   `MainController` one feature at a time.
 
+- **Upgraded to JavaFX 26 + enabled the macOS Metal rendering pipeline.** On Apple silicon (e.g. M-series), the
+  deprecated es2/OpenGL backend JavaFX 25 used could render parts of the UI as blank/garbled rectangles in the
+  packaged app (the file breadcrumb and tool-window stripe icons). JavaFX 26 adds the Metal pipeline, now
+  selected first on macOS (`-Dprism.order=mtl,es2,sw`; es2/sw fallback). Windows keeps Direct3D, Linux keeps
+  es2 — the pipeline order is set per-OS. The JDK stays 25 (JavaFX 26 runs on JDK 24+).
+
 - **Performance: config writes happen off the JavaFX thread (developer-facing).** The frequent, coalesced
   in-session save (`requestSave` — fired by settings toggles, view changes, tab/fold changes) now serializes
   a consistent snapshot on the FX thread and writes it on a dedicated `config-writer` daemon thread, instead
@@ -28,7 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JVM-shutdown flush block until written, and all settings/session writes funnel through the one writer
   queue, so an async write can never land after and clobber a durable one. No behavior change; covered by a
   new unit test (`ConfigWriterTest`).
-
 - **Performance: lazy-attach feature overlays (developer-facing).** Each editor buffer no longer eagerly
   builds the five overlays that are inert for most files — find-match highlight, log-level, Mermaid-lint,
   LSP-diagnostic, and AceJump. They're constructed (Canvas + scroll/edit subscriptions) only on first
