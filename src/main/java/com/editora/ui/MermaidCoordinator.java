@@ -7,7 +7,6 @@ import java.util.function.Consumer;
 
 import javafx.scene.control.Alert;
 import javafx.stage.FileChooser;
-import javafx.stage.Window;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
@@ -27,38 +26,11 @@ import static com.editora.i18n.Messages.tr;
  */
 final class MermaidCoordinator {
 
-    /** The window services the coordinator needs — implemented by {@code MainController} (or a test fake). */
-    interface Host {
-        Settings settings();
-
-        /** Whether the app/editor theme is dark (mermaid renders a dark-themed diagram to match). */
-        boolean appThemeDark();
-
-        void forEachBuffer(Consumer<EditorBuffer> action);
-
-        EditorBuffer activeBuffer();
-
-        void setStatus(String message);
-
-        /** (Un)wires the floating preview toggle on a buffer (markdown/diagram) — preview machinery. */
-        void ensurePreviewControls(EditorBuffer buffer);
-
-        /** Restores a diagram buffer's saved preview mode (EDITOR/SPLIT/PREVIEW). */
-        void restoreMarkdownMode(EditorBuffer buffer);
-
-        /** Re-pushes the autocomplete settings to every buffer (mermaid autocomplete depends on mmdc). */
-        void applyAutocomplete();
-
-        String bufferBaseName(EditorBuffer buffer);
-
-        Window window();
-    }
-
-    private final Host host;
+    private final CoordinatorHost host;
     private final MermaidService service = new MermaidService();
     private MermaidService.Availability avail = new MermaidService.Availability(false, false);
 
-    MermaidCoordinator(Host host) {
+    MermaidCoordinator(CoordinatorHost host) {
         this.host = host;
     }
 

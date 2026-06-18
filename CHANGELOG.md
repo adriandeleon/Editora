@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: a shared `CoordinatorHost` for the feature coordinators (developer-facing).** The three feature
+  coordinators (log viewer / HTML preview / Mermaid) had a bespoke ~60-line anonymous `Host` adapter each in
+  `MainController`. They now share one `ui/CoordinatorHost` interface and a single `MainController.Services`
+  adapter, dropping the per-feature boilerplate — and future coordinators reuse it for free (zero adapter
+  code). Test fakes extend a no-op `CoordinatorHostStub` and override only what they exercise. No behavior
+  change; full suite green.
+
 - **Refactor: extract Mermaid into a `MermaidCoordinator` (developer-facing).** The third feature coordinator
   peeled off `MainController`: the `mmdc`/`maid` service, the detected-tool availability, and the
   apply/gating/export logic now live in `ui/MermaidCoordinator`, behind a narrow `Host` interface. The few

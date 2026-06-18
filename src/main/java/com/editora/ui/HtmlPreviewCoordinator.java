@@ -3,9 +3,6 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
-
-import javafx.stage.Window;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
@@ -24,39 +21,12 @@ import static com.editora.i18n.Messages.tr;
  */
 final class HtmlPreviewCoordinator {
 
-    /** The window services the coordinator needs — implemented by {@code MainController} (or a test fake). */
-    interface Host {
-        Settings settings();
-
-        void forEachBuffer(Consumer<EditorBuffer> action);
-
-        EditorBuffer activeBuffer();
-
-        /** Whether {@code buffer} is a local-filesystem file (HTML preview serves sibling assets from disk). */
-        boolean isLocalBuffer(EditorBuffer buffer);
-
-        void setStatus(String message);
-
-        /** Durable config save (persists the last-used browser / the feature toggle). */
-        void save();
-
-        /** Re-syncs an open Settings window's HTML-preview checkbox after the toggle flips via the palette. */
-        void syncSettingsWindow();
-
-        OverlayHost overlayHost();
-
-        Window window();
-
-        /** Opens {@code url} via the platform's default handler (passed to the preview server). */
-        void openExternalUrl(String url);
-    }
-
-    private final Host host;
+    private final CoordinatorHost host;
     private final HtmlPreviewService service;
     private List<Browser> browsers = List.of();
     private QuickOpen<Browser> browserPalette; // built lazily on first "Open in…"
 
-    HtmlPreviewCoordinator(Host host) {
+    HtmlPreviewCoordinator(CoordinatorHost host) {
         this.host = host;
         this.service = new HtmlPreviewService(host::openExternalUrl);
     }

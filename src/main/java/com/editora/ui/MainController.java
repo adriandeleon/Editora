@@ -2694,73 +2694,26 @@ public class MainController implements com.editora.mcp.McpBridge {
         t.start();
     }
 
-    // --- Mermaid (mmdc render/export + maid lint) ----------------------------------------------------
+    // --- Feature coordinators (each peeled off MainController; share one CoordinatorHost adapter) -----
 
-    /** The Mermaid feature (diagram render/export, live lint, autocomplete gating); see {@link MermaidCoordinator}. */
-    private final MermaidCoordinator mermaid = new MermaidCoordinator(new MermaidCoordinator.Host() {
+    /** One shared adapter handed to every feature coordinator (replaces a per-feature anonymous Host). */
+    private final CoordinatorHost coordinatorHost = new Services();
+
+    /** Implements {@link CoordinatorHost} by delegating to this controller's private helpers. */
+    private final class Services implements CoordinatorHost {
         @Override
         public Settings settings() {
             return config.getSettings();
+        }
+
+        @Override
+        public boolean simpleModeActive() {
+            return MainController.this.simpleModeActive();
         }
 
         @Override
         public boolean appThemeDark() {
             return MainController.this.appThemeDark();
-        }
-
-        @Override
-        public void forEachBuffer(java.util.function.Consumer<EditorBuffer> action) {
-            for (Tab tab : tabPane.getTabs()) {
-                EditorBuffer b = bufferOf(tab);
-                if (b != null) {
-                    action.accept(b);
-                }
-            }
-        }
-
-        @Override
-        public EditorBuffer activeBuffer() {
-            return MainController.this.activeBuffer();
-        }
-
-        @Override
-        public void setStatus(String message) {
-            MainController.this.setStatus(message);
-        }
-
-        @Override
-        public void ensurePreviewControls(EditorBuffer buffer) {
-            MainController.this.ensurePreviewControls(buffer);
-        }
-
-        @Override
-        public void restoreMarkdownMode(EditorBuffer buffer) {
-            MainController.this.restoreMarkdownMode(buffer);
-        }
-
-        @Override
-        public void applyAutocomplete() {
-            MainController.this.applyAutocomplete();
-        }
-
-        @Override
-        public String bufferBaseName(EditorBuffer buffer) {
-            return MainController.this.bufferBaseName(buffer);
-        }
-
-        @Override
-        public javafx.stage.Window window() {
-            return stage;
-        }
-    });
-
-    // --- HTML Live Preview (serve via a loopback HttpServer + open in a detected browser) ---------
-
-    /** The HTML Live Preview feature; see {@link HtmlPreviewCoordinator}. */
-    private final HtmlPreviewCoordinator htmlPreview = new HtmlPreviewCoordinator(new HtmlPreviewCoordinator.Host() {
-        @Override
-        public Settings settings() {
-            return config.getSettings();
         }
 
         @Override
@@ -2789,70 +2742,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void save() {
-            config.save();
-        }
-
-        @Override
-        public void syncSettingsWindow() {
-            if (settingsWindow != null) {
-                settingsWindow.syncHtmlPreviewCheck();
-            }
-        }
-
-        @Override
-        public OverlayHost overlayHost() {
-            return overlayHost;
-        }
-
-        @Override
-        public javafx.stage.Window window() {
-            return stage;
-        }
-
-        @Override
-        public void openExternalUrl(String url) {
-            MainController.this.openExternalUrl(url);
-        }
-    });
-
-    // --- Log viewer ----------------------------------------------------------------------------------
-
-    /** The server-log-viewer feature (level highlighting, tail-follow, filtering); see {@link LogViewerCoordinator}. */
-    private final LogViewerCoordinator logViewer = new LogViewerCoordinator(new LogViewerCoordinator.Host() {
-        @Override
-        public Settings settings() {
-            return config.getSettings();
-        }
-
-        @Override
-        public boolean simpleModeActive() {
-            return MainController.this.simpleModeActive();
-        }
-
-        @Override
-        public void forEachBuffer(java.util.function.Consumer<EditorBuffer> action) {
-            for (Tab tab : tabPane.getTabs()) {
-                EditorBuffer b = bufferOf(tab);
-                if (b != null) {
-                    action.accept(b);
-                }
-            }
-        }
-
-        @Override
-        public EditorBuffer activeBuffer() {
-            return MainController.this.activeBuffer();
-        }
-
-        @Override
-        public void setStatus(String message) {
-            MainController.this.setStatus(message);
-        }
-
-        @Override
         public long fileSize(Path file) {
             return MainController.this.fileSize(file);
+        }
+
+        @Override
+        public String bufferBaseName(EditorBuffer buffer) {
+            return MainController.this.bufferBaseName(buffer);
         }
 
         @Override
@@ -2861,10 +2757,41 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void save() {
+            config.save();
+        }
+
+        @Override
         public void syncSettingsWindow() {
             if (settingsWindow != null) {
-                settingsWindow.syncLogViewerCheck();
+                settingsWindow.syncAll();
             }
+        }
+
+        @Override
+        public void applyAutocomplete() {
+            MainController.this.applyAutocomplete();
+        }
+
+        @Override
+        public void ensurePreviewControls(EditorBuffer buffer) {
+            MainController.this.ensurePreviewControls(buffer);
+        }
+
+        @Override
+        public void restoreMarkdownMode(EditorBuffer buffer) {
+            MainController.this.restoreMarkdownMode(buffer);
+        }
+
+        @Override
+        public void openExternalUrl(String url) {
+            MainController.this.openExternalUrl(url);
+        }
+
+        @Override
+        public void promptText(
+                String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+            MainController.this.promptText(title, label, initial, onAccept);
         }
 
         @Override
@@ -2876,13 +2803,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         public javafx.stage.Window window() {
             return stage;
         }
+    }
 
-        @Override
-        public void promptText(
-                String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
-            MainController.this.promptText(title, label, initial, onAccept);
-        }
-    });
+    // --- Mermaid (mmdc render/export + maid lint) ----------------------------------------------------
+
+    /** The Mermaid feature (diagram render/export, live lint, autocomplete gating); see {@link MermaidCoordinator}. */
+    private final MermaidCoordinator mermaid = new MermaidCoordinator(coordinatorHost);
+
+    // --- HTML Live Preview (serve via a loopback HttpServer + open in a detected browser) ---------
+
+    /** The HTML Live Preview feature; see {@link HtmlPreviewCoordinator}. */
+    private final HtmlPreviewCoordinator htmlPreview = new HtmlPreviewCoordinator(coordinatorHost);
+
+    // --- Log viewer ----------------------------------------------------------------------------------
+
+    /** The server-log-viewer feature (level highlighting, tail-follow, filtering); see {@link LogViewerCoordinator}. */
+    private final LogViewerCoordinator logViewer = new LogViewerCoordinator(coordinatorHost);
 
     // --- MCP server (loopback HTTP, exposes editor state + commands to an LLM agent) --------------
 
