@@ -11,10 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Headless-JavaFX test harness (developer-facing).** `ui/` controller behavior is now covered by real,
   headless FX tests — TestFX over a self-built JavaFX 25 Monocle backend (vendored in `m2-repo`, test scope
-  only), so they run on CI with no display/xvfb. First tests lock down Zen mode hiding/restoring chrome,
-  Simple-mode toolbar stripping, chrome-visibility prefs, and the tab/buffer lifecycle. FX tests are tagged
-  `fx` (run the pure suite alone with `-DexcludedGroups=fx`). No change to the app, the `dist`/`fatjar` builds,
-  or `module-info` — Monocle is never shipped.
+  only), so they run on CI with no display/xvfb. Tests lock down Zen mode hiding/restoring chrome,
+  Simple-mode toolbar stripping, chrome-visibility prefs, the tab/buffer lifecycle, the floating
+  toolbar-restore/Zen-exit buttons, tab pinning + Close-Others/Close-All, and command-palette feature gating.
+  FX tests are tagged `fx` (run the pure suite alone with `-DexcludedGroups=fx`). No change to the app, the
+  `dist`/`fatjar` builds, or `module-info` — Monocle is never shipped.
 
 - **External Tools (IntelliJ-style).** Define your own CLI commands in **Settings → External Tools** and run
   them on the current file/buffer. Command and arguments support `$Name$` macros (`$FilePath$`, `$FileDir$`,
