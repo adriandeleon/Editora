@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -1145,22 +1144,24 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  they don't reserve layout space). Cheap: two visibility flags + one layout pass. */
     private void applyChromeVisibility() {
         Settings s = config.getSettings();
-        toolBar.setVisible(s.isShowToolbar());
-        toolBar.setManaged(s.isShowToolbar());
-        statusBar.setVisible(s.isShowStatusBar());
-        statusBar.setManaged(s.isShowStatusBar());
+        // Zen and Simple are per-window effective overlays: they hide chrome without mutating the shared
+        // saved prefs, so the prefs return untouched when the mode is left, and one window's Zen never
+        // leaks into another (Zen lives in this window's WorkspaceState, not in Settings).
+        boolean zen = zenActive();
+        boolean simple = simpleModeActive();
+        toolBar.setVisible(s.isShowToolbar() && !zen);
+        toolBar.setManaged(s.isShowToolbar() && !zen);
+        statusBar.setVisible(s.isShowStatusBar() && !zen);
+        statusBar.setManaged(s.isShowStatusBar() && !zen);
         // The tab header is collapsed via a style class (see app.css) rather than visible/managed:
         // the TabPane skin owns the header node, so toggling a CSS class is the supported way.
         tabPane.getStyleClass().remove("no-tab-header");
-        if (!s.isShowTabBar()) {
+        if (!s.isShowTabBar() || zen) {
             tabPane.getStyleClass().add("no-tab-header");
         }
-        // Breadcrumb + tool stripes are also hidden by Simple UI mode (effective value preserves the saved
-        // prefs, which return when Simple mode is turned off).
-        boolean simple = simpleModeActive();
-        breadcrumb.setEnabled(s.isShowBreadcrumb() && !simple);
+        breadcrumb.setEnabled(s.isShowBreadcrumb() && !simple && !zen);
         // Tool stripes (UI only): hidden stripes still let tool windows open via keybinding/palette.
-        toolWindows.setStripesEnabled(s.isShowToolStripe() && !simple);
+        toolWindows.setStripesEnabled(s.isShowToolStripe() && !simple && !zen);
         applySimpleMode();
         updateZenButton();
         updateToolbarRestoreButton();
@@ -1169,6 +1170,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** True when Simple UI mode is active (the saved setting OR the session-only {@code --simple} flag). */
     private boolean simpleModeActive() {
         return config.getSettings().isSimpleMode() || cliSimpleOverride;
+    }
+
+    /** True when this window is in distraction-free Zen mode (per-window state, never a shared pref). */
+    private boolean zenActive() {
+        return config.getWorkspaceState().isZenMode();
     }
 
     /**
@@ -8964,55 +8970,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         setZenMode(!config.getWorkspaceState().isZenMode());
     }
 
-    // Keys for the pre-Zen view/chrome snapshot (WorkspaceState.preZenView).
-    private static final String ZEN_RULER = "columnRuler";
-    private static final String ZEN_LINE_HIGHLIGHT = "lineHighlight";
-    private static final String ZEN_LINE_NUMBERS = "lineNumbers";
-    private static final String ZEN_MINIMAP = "minimap";
-    private static final String ZEN_WHITESPACE = "whitespace";
-    private static final String ZEN_TOOLBAR = "toolbar";
-    private static final String ZEN_STATUS_BAR = "statusBar";
-    private static final String ZEN_TAB_BAR = "tabBar";
-    private static final String ZEN_BREADCRUMB = "breadcrumb";
-
     /**
-     * Enters/leaves distraction-free Zen mode. Entering snapshots the user's view/chrome prefs and the
-     * open tool windows, then turns those prefs off — so while in Zen the normal toggles still work
-     * and can re-enable individual items (e.g. line numbers or the status bar); leaving Zen restores
-     * the snapshot exactly. Idempotent.
+     * Enters/leaves distraction-free Zen mode for <b>this window only</b>. Zen is a per-window
+     * <em>effective overlay</em> (like Simple UI mode): it lives in this window's {@link WorkspaceState}
+     * and is folded into {@link #applyChromeVisibility}/{@link #applyViewSettings} via {@link #zenActive()},
+     * so it hides the chrome + editor view options <em>without mutating the shared, app-wide
+     * {@link Settings}</em>. Leaving Zen therefore restores the user's saved prefs exactly (nothing was
+     * changed), and one window being in Zen never affects another. Open tool windows are closed on enter
+     * and reopened on leave (a per-window UI snapshot, not a pref). Idempotent.
      */
     void setZenMode(boolean on) {
         WorkspaceState ws = config.getWorkspaceState();
         if (ws.isZenMode() == on) {
             return;
         }
-        Settings s = config.getSettings();
         if (on) {
-            Map<String, Boolean> snap = new LinkedHashMap<>();
-            snap.put(ZEN_RULER, s.isShowColumnRuler());
-            snap.put(ZEN_LINE_HIGHLIGHT, s.isHighlightCurrentLine());
-            snap.put(ZEN_LINE_NUMBERS, s.isShowLineNumbers());
-            snap.put(ZEN_MINIMAP, s.isShowMinimap());
-            snap.put(ZEN_WHITESPACE, s.isShowWhitespace());
-            snap.put(ZEN_TOOLBAR, s.isShowToolbar());
-            snap.put(ZEN_STATUS_BAR, s.isShowStatusBar());
-            snap.put(ZEN_TAB_BAR, s.isShowTabBar());
-            snap.put(ZEN_BREADCRUMB, s.isShowBreadcrumb());
-            ws.setPreZenView(snap);
             ws.setPreZenToolWindows(toolWindows.closeAllOpen());
-            setZenViewSettings(s, false);
-        } else {
-            Map<String, Boolean> snap = ws.getPreZenView();
-            s.setShowColumnRuler(snap.getOrDefault(ZEN_RULER, true));
-            s.setHighlightCurrentLine(snap.getOrDefault(ZEN_LINE_HIGHLIGHT, true));
-            s.setShowLineNumbers(snap.getOrDefault(ZEN_LINE_NUMBERS, true));
-            s.setShowMinimap(snap.getOrDefault(ZEN_MINIMAP, true));
-            s.setShowWhitespace(snap.getOrDefault(ZEN_WHITESPACE, false));
-            s.setShowToolbar(snap.getOrDefault(ZEN_TOOLBAR, true));
-            s.setShowStatusBar(snap.getOrDefault(ZEN_STATUS_BAR, true));
-            s.setShowTabBar(snap.getOrDefault(ZEN_TAB_BAR, true));
-            s.setShowBreadcrumb(snap.getOrDefault(ZEN_BREADCRUMB, false));
-            ws.getPreZenView().clear();
         }
         ws.setZenMode(on);
         toolWindows.setZenStripesHidden(on);
@@ -9021,23 +8994,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             ws.getPreZenToolWindows().clear();
         }
         applyChromeVisibility();
-        applyViewSettingsToAllBuffers(s);
+        applyViewSettingsToAllBuffers(config.getSettings());
         requestSave();
         // When entering Zen the status bar is hidden, so this is mostly seen on exit.
         setStatus(tr("status.toggle.zen", tr(on ? "common.on" : "common.off")));
-    }
-
-    /** Sets the five editor view options and the chrome toggles (bars + breadcrumb) to {@code value}. */
-    private void setZenViewSettings(Settings s, boolean value) {
-        s.setShowColumnRuler(value);
-        s.setHighlightCurrentLine(value);
-        s.setShowLineNumbers(value);
-        s.setShowMinimap(value);
-        s.setShowWhitespace(value);
-        s.setShowToolbar(value);
-        s.setShowStatusBar(value);
-        s.setShowTabBar(value);
-        s.setShowBreadcrumb(value);
     }
 
     private void toggleToolbar() {
@@ -11096,17 +11056,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         Settings s = config.getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
         buffer.setFont(s.getFontFamily(), effectiveFont);
-        buffer.setColumnRulerVisible(s.isShowColumnRuler());
+        // Zen mode (per window) hides the distraction-free view options without clobbering the saved prefs;
+        // Simple UI mode additionally removes the whole gutter + minimap. Both are effective overlays.
+        boolean zen = zenActive();
+        boolean simple = simpleModeActive();
+        buffer.setColumnRulerVisible(s.isShowColumnRuler() && !zen);
         buffer.setNoteIndicatorsVisible(s.isNotesSupport() && s.isShowNoteIndicators());
-        buffer.setLineHighlightOn(s.isHighlightCurrentLine());
-        boolean simple = simpleModeActive(); // Simple UI mode hides the whole gutter + minimap (without
-        buffer.setLineNumbersVisible(s.isShowLineNumbers() && !simple); // clobbering the saved prefs)
-        buffer.setMinimapVisible(s.isShowMinimap() && !simple);
+        buffer.setLineHighlightOn(s.isHighlightCurrentLine() && !zen);
+        buffer.setLineNumbersVisible(s.isShowLineNumbers() && !simple && !zen);
+        buffer.setMinimapVisible(s.isShowMinimap() && !simple && !zen);
         buffer.setGutterVisible(!simple); // Simple mode removes the entire gutter strip
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
         }
-        buffer.setWhitespaceVisible(s.isShowWhitespace());
+        buffer.setWhitespaceVisible(s.isShowWhitespace() && !zen);
         buffer.setTabSize(s.getTabSize());
         buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
         buffer.setMinimapColors(
