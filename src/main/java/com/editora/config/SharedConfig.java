@@ -40,6 +40,8 @@ public class SharedConfig {
     private final Path configDir;
     /** Whether this instance was started in dev mode ({@code --dev}); surfaced in the UI (toolbar badge). */
     private final boolean dev;
+    /** Performs settings/session writes off the FX thread (async for the frequent path, flush for durable). */
+    private final ConfigWriter writer = new ConfigWriter();
 
     private Settings settings = new Settings();
     /** Global bookmarks (all files/projects), stored in {@code bookmarks.json} — see {@link BookmarkStore}. */
@@ -103,14 +105,33 @@ public class SharedConfig {
         return settings;
     }
 
-    /** Writes preferences to {@code settings.toml}. Called by every window's {@link ConfigManager#save()}. */
+    /** Writes preferences to {@code settings.toml} synchronously (serialize now, then block until written). */
     public void saveSettings() {
+        enqueueSettings();
+        writer.flush();
+    }
+
+    /** The shared off-thread writer (settings + session state route through it; see {@link ConfigWriter}). */
+    ConfigWriter writer() {
+        return writer;
+    }
+
+    /** Serializes the current preferences and queues a write to {@code settings.toml} (non-blocking). */
+    void enqueueSettings() {
+        writer.enqueue(getSettingsFile(), settingsBytes());
+    }
+
+    private byte[] settingsBytes() {
         try {
-            Files.createDirectories(configDir);
-            toml.writeValue(getSettingsFile().toFile(), settings);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to write settings to " + getSettingsFile(), e);
+            return toml.writeValueAsBytes(settings);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new UncheckedIOException("Failed to serialize settings", e);
         }
+    }
+
+    /** Blocks until all queued settings/session writes have landed (a durable save, an export, or exit). */
+    public void flushWrites() {
+        writer.flush();
     }
 
     /**
@@ -118,6 +139,7 @@ public class SharedConfig {
      * and returns the created file. Backs up whichever config dir is in use.
      */
     public Path exportConfig() throws IOException {
+        writer.flush(); // make sure any pending async settings/session write is on disk before zipping
         Path home = Path.of(System.getProperty("user.home"));
         return ConfigExporter.export(
                 configDir,
