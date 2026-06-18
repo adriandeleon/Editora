@@ -48,6 +48,12 @@
         <spotless.version>3.6.0</spotless.version>
         <palantir.version>2.92.0</palantir.version>
         <jacoco.version>0.8.13</jacoco.version>
+        <testfx.version>4.0.18</testfx.version>
+        <!-- Self-built headless Glass backend for JavaFX 25 (no upstream org.testfx:openjfx-monocle
+             targets JFX 25 — it stops at 21.0.2). Built from the OpenJFX 25 monocle sources and
+             vendored in the in-project m2-repo (see <repositories>); test scope only, never shipped.
+             To rebuild: see the Monocle note in CLAUDE.md (Packaging). -->
+        <monocle.version>25</monocle.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
         <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
@@ -313,6 +319,28 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- Headless-JavaFX test harness (test scope only; never shipped). TestFX drives the
+             toolkit lifecycle; Monocle (self-built for JFX 25, vendored in m2-repo) is the headless
+             Glass backend so FX tests run with no display/xvfb on CI. See CLAUDE.md (Tests). -->
+        <dependency>
+            <groupId>org.testfx</groupId>
+            <artifactId>testfx-core</artifactId>
+            <version>${testfx.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testfx</groupId>
+            <artifactId>testfx-junit5</artifactId>
+            <version>${testfx.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.adriandeleon</groupId>
+            <artifactId>openjfx-monocle</artifactId>
+            <version>${monocle.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -344,6 +372,24 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+                <configuration>
+                    <!-- Run tests on the CLASSPATH (unnamed module), not the module path: the headless-FX
+                         harness (TestFX + the vendored Monocle) expects classpath, and reflective reads of
+                         private @FXML nodes need setAccessible to work freely. -->
+                    <useModulePath>false</useModulePath>
+                    <!-- @{argLine} preserves JaCoCo's injected agent (it sets the `argLine` property); a plain
+                         <argLine> would clobber coverage. Keep the token first. -->
+                    <argLine>@{argLine}</argLine>
+                    <!-- Headless JavaFX via Monocle's Headless Glass platform — no display/xvfb needed. -->
+                    <systemPropertyVariables>
+                        <testfx.robot>glass</testfx.robot>
+                        <testfx.headless>true</testfx.headless>
+                        <glass.platform>Monocle</glass.platform>
+                        <monocle.platform>Headless</monocle.platform>
+                        <prism.order>sw</prism.order>
+                        <java.awt.headless>true</java.awt.headless>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
             <!-- Test coverage (JaCoCo): the on-the-fly agent instruments the unit tests and a report is
                  generated after the `test` phase (HTML + XML under target/site/jacoco/).
