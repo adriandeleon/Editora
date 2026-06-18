@@ -8461,11 +8461,14 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean configSavePending;
 
     /**
-     * Coalesces config writes to one per FX pulse. Many actions (especially a single Settings apply,
-     * which runs ~10 field setters back-to-back) call {@code config.save()} several times in the same
-     * pulse, each re-serializing the whole settings + workspace-state to disk. This collapses such a
-     * burst into a single write at the end of the pulse — negligible delay, no data-loss risk (the
-     * durable flush on quit goes through {@link #persistSession()}'s direct {@code config.save()}).
+     * Coalesces config writes to one per FX pulse and performs the disk I/O <em>off</em> the FX thread.
+     * Many actions (especially a single Settings apply, which runs ~10 field setters back-to-back) request
+     * a save several times in the same pulse; this collapses such a burst into a single end-of-pulse
+     * {@code saveAsync()} — which serializes a consistent snapshot on the FX thread, then writes it on the
+     * shared {@code ConfigWriter}'s daemon thread (further coalesced per file). No data-loss risk: the
+     * durable flush on quit goes through {@link #persistSession()}'s blocking {@code config.save()}, and all
+     * settings/session writes funnel through the one ordered writer queue, so an async write can never land
+     * after and clobber that durable one.
      */
     private void requestSave() {
         if (configSavePending) {
@@ -8474,7 +8477,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         configSavePending = true;
         Platform.runLater(() -> {
             configSavePending = false;
-            config.save();
+            config.saveAsync();
         });
     }
 
