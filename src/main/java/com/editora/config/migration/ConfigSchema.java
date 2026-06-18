@@ -72,7 +72,8 @@ public enum ConfigSchema {
                     Map.entry(31, (Migration) ConfigMigrations::identity), // v31→32: + semanticHighlight
                     Map.entry(32, (Migration) ConfigMigrations::identity), // v32→33: + todoHighlight/todoPatterns
                     Map.entry(33, (Migration) ConfigMigrations::identity), // v33→34: + markdownLint
-                    Map.entry(34, (Migration) ConfigMigrations::identity))), // v34→35: + mathSupport
+                    Map.entry(34, (Migration) ConfigMigrations::identity), // v34→35: + mathSupport
+                    Map.entry(35, (Migration) ConfigMigrations::identity))), // v35→36: + externalTools (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

@@ -74,6 +74,7 @@ public class SettingsWindow {
         GIT(tr("settings.cat.git"), false),
         MERMAID(tr("settings.cat.mermaid"), false),
         HTTP_CLIENT(tr("settings.cat.httpClient"), false),
+        EXTERNAL_TOOLS(tr("settings.cat.externalTools"), false),
         HTML_PREVIEW(tr("settings.cat.htmlPreview"), false),
         MCP(tr("settings.cat.mcp"), false),
         LSP(tr("settings.cat.lsp"), false),
@@ -152,6 +153,11 @@ public class SettingsWindow {
     private CheckBox editorConfigCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
+    /** Working copy of the External Tools list, edited live by the master-detail page. */
+    private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
+            javafx.collections.FXCollections.observableArrayList();
+
+    private boolean loadingExternalTool = false;
     private CheckBox multiCaretCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
@@ -875,6 +881,7 @@ public class SettingsWindow {
         pages.put(Category.GIT, gitPage());
         pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.HTTP_CLIENT, httpClientPage());
+        pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
         pages.put(Category.HTML_PREVIEW, htmlPreviewPage());
         pages.put(Category.MCP, mcpPage());
         pages.put(Category.LSP, lspPage());
@@ -1409,6 +1416,196 @@ public class SettingsWindow {
         hint.setMaxWidth(440);
         row(p, Category.HTTP_CLIENT, null, hint, "http rest request response built-in client");
         return p;
+    }
+
+    private VBox externalToolsPage() {
+        VBox p = page(tr("settings.cat.externalTools"));
+        row(
+                p,
+                Category.EXTERNAL_TOOLS,
+                null,
+                externalToolsEditor(),
+                "external tools command cli macro stdin output console run formatter filter");
+        Label macros = note(tr("settings.externalTool.macrosHelp"));
+        macros.setWrapText(true);
+        macros.setMaxWidth(460);
+        row(p, Category.EXTERNAL_TOOLS, null, macros, "external tools macros filepath selection linenumber");
+        return p;
+    }
+
+    /** Master-detail editor: a list of tools on the left, a form for the selected tool on the right. */
+    private javafx.scene.Node externalToolsEditor() {
+        externalToolItems.setAll(copyTools(config.getSettings().getExternalTools()));
+
+        ListView<com.editora.externaltool.ExternalTool> list = new ListView<>(externalToolItems);
+        list.setPrefSize(170, 220);
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(com.editora.externaltool.ExternalTool t, boolean empty) {
+                super.updateItem(t, empty);
+                setText(
+                        empty || t == null
+                                ? null
+                                : (t.getName().isBlank() ? tr("settings.externalTool.unnamed") : t.getName()));
+            }
+        });
+
+        TextField name = new TextField();
+        TextField command = new TextField();
+        TextField arguments = new TextField();
+        TextField workingDir = new TextField();
+        workingDir.setPromptText(tr("settings.externalTool.workingDirPrompt"));
+        ComboBox<com.editora.externaltool.ExternalTool.StdinSource> stdin =
+                new ComboBox<>(javafx.collections.FXCollections.observableArrayList(
+                        com.editora.externaltool.ExternalTool.StdinSource.values()));
+        stdin.setConverter(enumConverter(s -> tr("externalTool.stdin." + s.name())));
+        ComboBox<com.editora.externaltool.ExternalTool.OutputTarget> output =
+                new ComboBox<>(javafx.collections.FXCollections.observableArrayList(
+                        com.editora.externaltool.ExternalTool.OutputTarget.values()));
+        output.setConverter(enumConverter(o -> tr("externalTool.output." + o.name())));
+        CheckBox enabled = new CheckBox(tr("settings.externalTool.enabled"));
+
+        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
+        form.setHgap(8);
+        form.setVgap(6);
+        formRow(form, 0, tr("settings.externalTool.name"), name);
+        formRow(form, 1, tr("settings.externalTool.command"), command);
+        formRow(form, 2, tr("settings.externalTool.arguments"), arguments);
+        formRow(form, 3, tr("settings.externalTool.workingDir"), workingDir);
+        formRow(form, 4, tr("settings.externalTool.stdin"), stdin);
+        formRow(form, 5, tr("settings.externalTool.output"), output);
+        form.add(enabled, 1, 6);
+        form.setDisable(true);
+        HBox.setHgrow(form, Priority.ALWAYS);
+
+        Runnable commit = () -> {
+            com.editora.externaltool.ExternalTool t = list.getSelectionModel().getSelectedItem();
+            if (t == null || loadingExternalTool) {
+                return;
+            }
+            t.setName(name.getText());
+            t.setCommand(command.getText());
+            t.setArguments(arguments.getText());
+            t.setWorkingDir(workingDir.getText());
+            if (stdin.getValue() != null) {
+                t.setStdin(stdin.getValue());
+            }
+            if (output.getValue() != null) {
+                t.setOutput(output.getValue());
+            }
+            t.setEnabled(enabled.isSelected());
+            list.refresh();
+            persistExternalTools();
+        };
+        // Combos + checkbox apply immediately; text fields commit on Enter / focus-loss (the todoRow idiom).
+        stdin.valueProperty().addListener((o, a, b) -> commit.run());
+        output.valueProperty().addListener((o, a, b) -> commit.run());
+        enabled.selectedProperty().addListener((o, a, b) -> commit.run());
+        java.util.function.Consumer<TextField> wire = tf -> {
+            tf.setOnAction(e -> commit.run());
+            tf.focusedProperty().addListener((o, was, now) -> {
+                if (!now) {
+                    commit.run();
+                }
+            });
+        };
+        wire.accept(name);
+        wire.accept(command);
+        wire.accept(arguments);
+        wire.accept(workingDir);
+
+        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            loadingExternalTool = true;
+            try {
+                form.setDisable(now == null);
+                name.setText(now == null ? "" : now.getName());
+                command.setText(now == null ? "" : now.getCommand());
+                arguments.setText(now == null ? "" : now.getArguments());
+                workingDir.setText(now == null ? "" : now.getWorkingDir());
+                stdin.setValue(now == null ? null : now.getStdin());
+                output.setValue(now == null ? null : now.getOutput());
+                enabled.setSelected(now != null && now.isEnabled());
+            } finally {
+                loadingExternalTool = false;
+            }
+        });
+
+        Button add = new Button(tr("settings.externalTool.add"));
+        add.setOnAction(e -> {
+            com.editora.externaltool.ExternalTool t = new com.editora.externaltool.ExternalTool(
+                    tr("settings.externalTool.newName"),
+                    "",
+                    "",
+                    "",
+                    com.editora.externaltool.ExternalTool.StdinSource.NONE,
+                    com.editora.externaltool.ExternalTool.OutputTarget.CONSOLE,
+                    true);
+            externalToolItems.add(t);
+            persistExternalTools();
+            list.getSelectionModel().select(t);
+        });
+        Button remove = new Button(tr("settings.externalTool.remove"));
+        remove.setOnAction(e -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i >= 0) {
+                externalToolItems.remove(i);
+                persistExternalTools();
+            }
+        });
+        HBox buttons = new HBox(6, add, remove);
+        VBox left = new VBox(6, list, buttons);
+
+        if (!externalToolItems.isEmpty()) {
+            list.getSelectionModel().select(0);
+        }
+        HBox box = new HBox(12, left, form);
+        box.setAlignment(Pos.TOP_LEFT);
+        return box;
+    }
+
+    /** Deep-copies the persisted tools so the working list edits independently until persisted. */
+    private static java.util.List<com.editora.externaltool.ExternalTool> copyTools(
+            java.util.List<com.editora.externaltool.ExternalTool> src) {
+        java.util.List<com.editora.externaltool.ExternalTool> out = new java.util.ArrayList<>();
+        for (com.editora.externaltool.ExternalTool t : src) {
+            out.add(new com.editora.externaltool.ExternalTool(
+                    t.getName(),
+                    t.getCommand(),
+                    t.getArguments(),
+                    t.getWorkingDir(),
+                    t.getStdin(),
+                    t.getOutput(),
+                    t.isEnabled()));
+        }
+        return out;
+    }
+
+    private void persistExternalTools() {
+        config.getSettings().setExternalTools(new java.util.ArrayList<>(externalToolItems));
+        apply();
+    }
+
+    private static <T> StringConverter<T> enumConverter(java.util.function.Function<T, String> label) {
+        return new StringConverter<>() {
+            @Override
+            public String toString(T value) {
+                return value == null ? "" : label.apply(value);
+            }
+
+            @Override
+            public T fromString(String s) {
+                return null;
+            }
+        };
+    }
+
+    private void formRow(javafx.scene.layout.GridPane form, int rowIndex, String labelText, javafx.scene.Node field) {
+        Label l = new Label(labelText);
+        form.add(l, 0, rowIndex);
+        form.add(field, 1, rowIndex);
+        if (field instanceof javafx.scene.layout.Region r) {
+            r.setMinWidth(220);
+        }
     }
 
     private VBox htmlPreviewPage() {

@@ -344,6 +344,14 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private RunPanel runPanel;
     private ToolWindow runToolWindow;
+    /** External Tools: user-defined CLI commands run on the active file/buffer. */
+    private final com.editora.externaltool.ExternalToolService externalToolService =
+            new com.editora.externaltool.ExternalToolService();
+
+    private ExternalToolPanel externalToolPanel;
+    private ToolWindow externalToolToolWindow;
+    /** The last external tool run, for {@code externalTool.rerunLast}. */
+    private com.editora.externaltool.ExternalTool lastExternalTool;
     /** Debug (DAP): drives Java debugging layered on the jdtls LSP session. */
     private final com.editora.dap.DapManager dapManager = new com.editora.dap.DapManager(lspManager);
 
@@ -474,7 +482,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                         && (htmlPreviewEnabled() || !c.id().startsWith("htmlPreview."))
                         && (localHistoryEnabled() || !c.id().equals("tool.fileHistory"))
                         && (mcpEnabled() || !c.id().startsWith("mcp."))
-                        && (pluginsEnabled() || !c.id().startsWith("plugins.")));
+                        && (pluginsEnabled() || !c.id().startsWith("plugins."))
+                        && (externalToolsEnabled()
+                                || (!c.id().startsWith("externalTool.") && !c.id().equals("tool.externalTools"))));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -1435,8 +1445,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void onSettingsApplied(Settings settings) {
         if (windowManager != null) {
             windowManager.broadcastSettingsApplied(); // re-applies to every window, including this one
+            windowManager.broadcastExternalToolsChanged(); // re-sync externalTool.run.* after a Settings edit
         } else {
             applyViewSettingsToAllBuffers(settings);
+            refreshExternalToolCommands();
         }
     }
 
@@ -2387,6 +2399,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         httpToolWindow = new ToolWindow(
                 "http", tr("toolwindow.http"), ToolWindow.Side.BOTTOM, Icons::httpClient, httpPanel, "tool.http");
+        externalToolPanel = new ExternalToolPanel();
+        externalToolPanel.setOnLink(this::openRunLink); // double-clicked path in output → jump
+        externalToolToolWindow = new ToolWindow(
+                "externalTool",
+                tr("toolwindow.externalTools"),
+                ToolWindow.Side.BOTTOM,
+                Icons::tools,
+                externalToolPanel,
+                "tool.externalTools");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
@@ -2407,6 +2428,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.setAvailable(debugToolWindow, false); // shown only while debugging is enabled
         toolWindows.register(httpToolWindow);
         toolWindows.setAvailable(httpToolWindow, false); // shown only for a .http file with the feature on
+        toolWindows.register(externalToolToolWindow);
         dapManager.setListener(dapListener());
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
     }
@@ -11987,6 +12009,184 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    // --- External Tools (user-defined CLI commands run on the active file/buffer) ---
+
+    /** True when External Tools are available (always, except in Simple UI mode — the list is empty by default). */
+    private boolean externalToolsEnabled() {
+        return !simpleModeActive();
+    }
+
+    /** Captures the macro/stdin context from the active buffer (file fields empty for an unsaved buffer). */
+    private com.editora.externaltool.ToolContext buildToolContext() {
+        EditorBuffer b = activeBuffer();
+        Path projectRoot = windowProject != null ? Path.of(windowProject.root()) : null;
+        if (b == null) {
+            String proj = projectRoot != null ? projectRoot.toString() : "";
+            return new com.editora.externaltool.ToolContext("", "", "", "", "", 1, 1, proj, "");
+        }
+        Path path = b.getPath();
+        String filePath = "";
+        String fileDir = "";
+        String fileName = "";
+        String baseName = "";
+        if (path != null) {
+            filePath = path.toAbsolutePath().toString();
+            Path parent = path.toAbsolutePath().getParent();
+            fileDir = parent == null ? "" : parent.toString();
+            fileName = path.getFileName().toString();
+            int dot = fileName.lastIndexOf('.');
+            baseName = dot > 0 ? fileName.substring(0, dot) : fileName;
+        }
+        var area = b.getArea();
+        String projectFileDir = projectRoot != null ? projectRoot.toString() : fileDir;
+        return new com.editora.externaltool.ToolContext(
+                filePath,
+                fileDir,
+                fileName,
+                baseName,
+                area.getSelectedText(),
+                area.getCurrentParagraph() + 1,
+                area.getCaretColumn() + 1,
+                projectFileDir,
+                b.getContent());
+    }
+
+    /** Default working directory for a tool with a blank workingDir: the file's parent, else the project root. */
+    private Path defaultToolDir() {
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.getPath() != null) {
+            Path parent = b.getPath().toAbsolutePath().getParent();
+            if (parent != null) {
+                return parent;
+            }
+        }
+        return windowProject != null ? Path.of(windowProject.root()) : null;
+    }
+
+    /** Runs an external tool against the active buffer; applies its output per the tool's {@code OutputTarget}. */
+    private void runExternalTool(com.editora.externaltool.ExternalTool tool) {
+        if (!externalToolsEnabled() || tool == null) {
+            return;
+        }
+        var inv = com.editora.externaltool.ToolInvocation.of(tool, buildToolContext(), defaultToolDir());
+        if (inv.isEmpty()) {
+            setStatus(tr("status.externalTool.noCommand", tool.getName()));
+            return;
+        }
+        lastExternalTool = tool;
+        setStatus(tr("status.externalTool.running", tool.getName()));
+        externalToolService.run(
+                inv, com.editora.externaltool.ExternalToolService.DEFAULT_TIMEOUT, r -> applyToolResult(tool, inv, r));
+    }
+
+    /** Applies a finished tool's result on the FX thread (console / replace selection / buffer / insert). */
+    private void applyToolResult(
+            com.editora.externaltool.ExternalTool tool,
+            com.editora.externaltool.ToolInvocation inv,
+            com.editora.process.ProcessRunner.Result r) {
+        if (tool.getOutput() == com.editora.externaltool.ExternalTool.OutputTarget.CONSOLE) {
+            toolWindows.open(externalToolToolWindow, true);
+            externalToolPanel.show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
+            setStatus(
+                    r.ok()
+                            ? tr("status.externalTool.done", tool.getName())
+                            : tr("status.externalTool.failed", tool.getName(), r.message()));
+            return;
+        }
+        // Text-target modes: apply stdout only on success; otherwise surface the error in the console.
+        if (!r.ok() || r.out().isEmpty()) {
+            toolWindows.open(externalToolToolWindow, true);
+            externalToolPanel.show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
+            setStatus(tr("status.externalTool.failed", tool.getName(), r.message()));
+            return;
+        }
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isEditable()) {
+            setStatus(tr("status.externalTool.notEditable"));
+            return;
+        }
+        var area = b.getArea();
+        switch (tool.getOutput()) {
+            case REPLACE_BUFFER -> area.replaceText(r.out());
+            case REPLACE_SELECTION -> area.replaceSelection(stripOneTrailingNewline(r.out()));
+            case INSERT_AT_CARET -> area.insertText(area.getCaretPosition(), stripOneTrailingNewline(r.out()));
+            default -> {}
+        }
+        setStatus(tr("status.externalTool.done", tool.getName()));
+    }
+
+    /** CLI tools usually append a trailing newline; drop one for selection/caret inserts (not whole-buffer). */
+    private static String stripOneTrailingNewline(String s) {
+        if (s.endsWith("\r\n")) {
+            return s.substring(0, s.length() - 2);
+        }
+        if (s.endsWith("\n") || s.endsWith("\r")) {
+            return s.substring(0, s.length() - 1);
+        }
+        return s;
+    }
+
+    private void runExternalToolPicker() {
+        if (!externalToolsEnabled()) {
+            return;
+        }
+        java.util.List<com.editora.externaltool.ExternalTool> tools = enabledExternalTools();
+        if (tools.isEmpty()) {
+            setStatus(tr("status.externalTool.none"));
+            return;
+        }
+        QuickOpen<com.editora.externaltool.ExternalTool> picker = new QuickOpen<>(
+                tr("command.externalTool.run"),
+                tr("palette.externalTool.runPrompt"),
+                () -> new java.util.ArrayList<>(enabledExternalTools()),
+                com.editora.externaltool.ExternalTool::getName,
+                t -> tr("externalTool.output." + t.getOutput().name()),
+                this::runExternalTool);
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    private void rerunLastExternalTool() {
+        if (lastExternalTool == null) {
+            setStatus(tr("status.externalTool.noLast"));
+            return;
+        }
+        runExternalTool(lastExternalTool);
+    }
+
+    private java.util.List<com.editora.externaltool.ExternalTool> enabledExternalTools() {
+        java.util.List<com.editora.externaltool.ExternalTool> out = new java.util.ArrayList<>();
+        for (com.editora.externaltool.ExternalTool t : config.getSettings().getExternalTools()) {
+            if (t.isEnabled() && !t.getName().isBlank()) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    /** Registers one {@code externalTool.run.<slug>} command per enabled tool (palette- and key-bindable). */
+    private void registerExternalToolCommands() {
+        for (com.editora.externaltool.ExternalTool t : enabledExternalTools()) {
+            com.editora.externaltool.ExternalTool tool = t;
+            registry.register(Command.of(
+                    com.editora.externaltool.ExternalTool.commandIdFor(t.getName()),
+                    t.getName(),
+                    () -> runExternalTool(tool)));
+        }
+    }
+
+    /** Drops stale {@code externalTool.run.*} commands and re-registers the current set (this window). */
+    void refreshExternalToolCommands() {
+        java.util.List<String> stale = new java.util.ArrayList<>();
+        for (Command c : registry.all()) {
+            if (c.id().startsWith("externalTool.run.")) {
+                stale.add(c.id());
+            }
+        }
+        stale.forEach(registry::remove);
+        registerExternalToolCommands();
+    }
+
     private void registerCommands() {
         registry.register(Command.of("file.new", this::onNew));
         registry.register(Command.of("window.new", () -> {
@@ -12005,6 +12205,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("macro.runSaved", this::macroRunSaved));
         registry.register(Command.of("macro.deleteSaved", this::macroDeleteSaved));
         registerSavedMacroCommands(); // one macro.run.<slug> per persisted macro (palette- + key-bindable)
+        // --- External Tools ---
+        registry.register(Command.of("externalTool.run", this::runExternalToolPicker));
+        registry.register(Command.of("externalTool.rerunLast", this::rerunLastExternalTool));
+        registerExternalToolCommands(); // one externalTool.run.<slug> per enabled tool (palette- + key-bindable)
         // Project commands no-op when project support is disabled (fully gated).
         registry.register(Command.of("project.open", () -> {
             if (projectsEnabled()) {
@@ -12391,6 +12595,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("run.rerun", this::rerunLast));
         registry.register(Command.of("run.stop", this::stopRun));
         registry.register(Command.of("tool.run", () -> toolWindows.toggle(runToolWindow)));
+        registry.register(Command.of("tool.externalTools", () -> toolWindows.toggle(externalToolToolWindow)));
         // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
         registry.register(Command.of("http.runRequest", () -> ifHttp(this::runHttpRequestAtCaret)));
         registry.register(Command.of("http.runFile", () -> ifHttp(this::runHttpFile)));

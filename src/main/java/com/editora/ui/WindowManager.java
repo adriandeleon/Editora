@@ -330,6 +330,13 @@ public class WindowManager {
         }
     }
 
+    /** Re-registers the synthetic {@code externalTool.run.*} commands in every window after the set changed. */
+    public void broadcastExternalToolsChanged() {
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller.refreshExternalToolCommands();
+        }
+    }
+
     /**
      * Rebuilds the shared keymap from scratch — base keymap ({@code Settings.keymap}, with the macOS
      * {@code .mac} variant when present) → user overrides → enabled plugins' keymap overrides — mirroring

@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 35;
+    public static final int SCHEMA_VERSION = 36;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -89,6 +89,8 @@ public class Settings {
     private boolean todoHighlight = true;
     /** The highlight patterns (regex + color); defaults to TODO (amber) + FIXME (red). */
     private java.util.List<com.editora.todo.TodoPattern> todoPatterns = com.editora.todo.TodoPatterns.defaults();
+
+    private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
     /** Lint Markdown buffers (squiggles + the Markdown Lint tool window). */
     private boolean markdownLint = true;
     /** Render LaTeX math ({@code $…$} / {@code $$…$$}) in the Markdown preview/PDF. Off by default
@@ -530,6 +532,14 @@ public class Settings {
 
     public void setTodoPatterns(java.util.List<com.editora.todo.TodoPattern> todoPatterns) {
         this.todoPatterns = todoPatterns;
+    }
+
+    public java.util.List<com.editora.externaltool.ExternalTool> getExternalTools() {
+        return externalTools == null ? java.util.List.of() : externalTools;
+    }
+
+    public void setExternalTools(java.util.List<com.editora.externaltool.ExternalTool> externalTools) {
+        this.externalTools = externalTools;
     }
 
     public String getSpellLanguage() {
