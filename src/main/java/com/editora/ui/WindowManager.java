@@ -460,6 +460,18 @@ public class WindowManager {
         }
     }
 
+    /**
+     * Visible for tests (the headless-FX harness): build a real, no-project ("global") window through the
+     * normal {@link #buildWindow} path and return its controller, so {@code ui/} tests can assert real
+     * controller behaviour (Zen/chrome/tab lifecycle) without an {@code Application} launch. Mirrors a
+     * default global window: no project, default session file, no Zen/Simple/new-file. See {@code
+     * FxWindowFixture} and the Tests note in CLAUDE.md.
+     */
+    MainController buildWindowForTest() {
+        buildWindow("", null, null, List.of(), false, null, false);
+        return windows.get(windows.size() - 1).controller();
+    }
+
     // --- helpers ---
 
     /**
