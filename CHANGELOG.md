@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Upgraded to JavaFX 26 + enabled the macOS Metal rendering pipeline.** On Apple silicon (e.g. M-series), the
+  deprecated es2/OpenGL backend JavaFX 25 used could render parts of the UI as blank/garbled rectangles in the
+  packaged app (the file breadcrumb and tool-window stripe icons). JavaFX 26 adds the Metal pipeline, now
+  selected first on macOS (`-Dprism.order=mtl,es2,sw`; es2/sw fallback). Windows keeps Direct3D, Linux keeps
+  es2 — the pipeline order is set per-OS. The JDK stays 25 (JavaFX 26 runs on JDK 24+).
 - **Performance: lazy-attach feature overlays (developer-facing).** Each editor buffer no longer eagerly
   builds the five overlays that are inert for most files — find-match highlight, log-level, Mermaid-lint,
   LSP-diagnostic, and AceJump. They're constructed (Canvas + scroll/edit subscriptions) only on first
