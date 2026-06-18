@@ -271,7 +271,7 @@ public class EditorBuffer implements TabContent {
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
-    private final LogHighlightOverlay logOverlay = new LogHighlightOverlay(area);
+    private LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
     private final InlineValuesOverlay inlineValues = new InlineValuesOverlay(area);
     /** Per-line blame for the IntelliJ-style gutter "Annotate" column; null = blame off. */
     private java.util.List<BlameInfo> blameLines;
@@ -282,9 +282,9 @@ public class EditorBuffer implements TabContent {
      *  in {@code app.css} so the measured column width matches what's actually drawn (not the editor font). */
     private static final double BLAME_FONT_SIZE = 10;
 
-    private final MermaidLintOverlay lintOverlay = new MermaidLintOverlay(area);
+    private MermaidLintOverlay lintOverlay; // lazily attached — see lintOverlay()
     private final MarkdownLintOverlay mdLintOverlay = new MarkdownLintOverlay(area);
-    private final LspDiagnosticOverlay lspOverlay = new LspDiagnosticOverlay(area);
+    private LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable. */
     private final DiagnosticStripe diagnosticStripe = new DiagnosticStripe(area);
     /** TODO/highlight overview stripe over the scrollbar (beside the diagnostic stripe). */
@@ -312,14 +312,14 @@ public class EditorBuffer implements TabContent {
     /** Fired (FX thread) when the runnable status flips, so the controller refreshes the Run button. */
     private Runnable onRunnableChanged = () -> {};
 
-    private final SearchHighlightOverlay searchOverlay = new SearchHighlightOverlay(area);
+    private SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
     /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text. */
     private final TodoHighlightOverlay todoOverlay = new TodoHighlightOverlay(area);
     /** Injected matcher (compiled patterns) + on/off gate; null/false = no highlight. */
     private TodoMatcher todoMatcher;
 
     private boolean todoEnabled;
-    private final AceJumpOverlay aceJump = new AceJumpOverlay(area);
+    private AceJumpOverlay aceJump; // lazily attached — see aceJump()
     /** Async maid validator (text, callback) injected by the controller; null = no linting. */
     private java.util.function.BiConsumer<
                     String, java.util.function.Consumer<java.util.List<com.editora.mermaid.MaidOutput.Diagnostic>>>
@@ -976,20 +976,17 @@ public class EditorBuffer implements TabContent {
                 .addAll(
                         scrollPane,
                         noteOverlay,
-                        searchOverlay,
                         todoOverlay,
-                        logOverlay,
                         whitespace,
                         spellOverlay,
-                        lintOverlay,
                         mdLintOverlay,
-                        lspOverlay,
                         inlineValues,
-                        aceJump,
                         minimap,
                         diagnosticStripe,
                         todoStripe,
                         columnRuler);
+        // searchOverlay / logOverlay / lintOverlay / lspOverlay / aceJump are attached lazily on first
+        // activation (see their getters) so an off-feature buffer never builds their Canvas/subscriptions.
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -1009,22 +1006,14 @@ public class EditorBuffer implements TabContent {
         spellOverlay.setChecker(spellChecker);
         spellOverlay.setProseMode(isProse());
         spellOverlay.setMarkdown(isMarkdown()); // skip fenced ``` code blocks from spell check
-        AnchorPane.setTopAnchor(lintOverlay, 0d);
-        AnchorPane.setBottomAnchor(lintOverlay, 0d);
-        AnchorPane.setLeftAnchor(lintOverlay, 0d);
-        AnchorPane.setRightAnchor(lintOverlay, Minimap.WIDTH);
-        installLintHover(area);
+        installLintHover(area); // hover reads lintOverlay only while mermaid lint is active (lazily attached)
         AnchorPane.setTopAnchor(mdLintOverlay, 0d);
         AnchorPane.setBottomAnchor(mdLintOverlay, 0d);
         AnchorPane.setLeftAnchor(mdLintOverlay, 0d);
         AnchorPane.setRightAnchor(mdLintOverlay, Minimap.WIDTH);
         installMarkdownLintHover(area);
         installImageDrop(area);
-        AnchorPane.setTopAnchor(lspOverlay, 0d);
-        AnchorPane.setBottomAnchor(lspOverlay, 0d);
-        AnchorPane.setLeftAnchor(lspOverlay, 0d);
-        AnchorPane.setRightAnchor(lspOverlay, Minimap.WIDTH);
-        installLspHover(area);
+        installLspHover(area); // hover reads lspOverlay only while LSP is active (lazily attached)
         // Inline debugger values share the text rectangle, mouse-transparent (active only while
         // execution is suspended in this file).
         AnchorPane.setTopAnchor(inlineValues, 0d);
@@ -1032,22 +1021,10 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setLeftAnchor(inlineValues, 0d);
         AnchorPane.setRightAnchor(inlineValues, Minimap.WIDTH);
         installDebugHover(area);
-        AnchorPane.setTopAnchor(searchOverlay, 0d);
-        AnchorPane.setBottomAnchor(searchOverlay, 0d);
-        AnchorPane.setLeftAnchor(searchOverlay, 0d);
-        AnchorPane.setRightAnchor(searchOverlay, Minimap.WIDTH);
         AnchorPane.setTopAnchor(todoOverlay, 0d);
         AnchorPane.setBottomAnchor(todoOverlay, 0d);
         AnchorPane.setLeftAnchor(todoOverlay, 0d);
         AnchorPane.setRightAnchor(todoOverlay, Minimap.WIDTH);
-        AnchorPane.setTopAnchor(logOverlay, 0d);
-        AnchorPane.setBottomAnchor(logOverlay, 0d);
-        AnchorPane.setLeftAnchor(logOverlay, 0d);
-        AnchorPane.setRightAnchor(logOverlay, Minimap.WIDTH);
-        AnchorPane.setTopAnchor(aceJump, 0d);
-        AnchorPane.setBottomAnchor(aceJump, 0d);
-        AnchorPane.setLeftAnchor(aceJump, 0d);
-        AnchorPane.setRightAnchor(aceJump, Minimap.WIDTH);
         AnchorPane.setTopAnchor(noteOverlay, 0d);
         AnchorPane.setBottomAnchor(noteOverlay, 0d);
         AnchorPane.setLeftAnchor(noteOverlay, 0d);
@@ -1364,6 +1341,64 @@ public class EditorBuffer implements TabContent {
         return focusedArea;
     }
 
+    // --- Lazily-attached feature overlays --------------------------------------------------------------
+    // These overlays are inert for most buffers (LSP off, not a diagram, not a log, never searched/ace-jumped),
+    // so they are built + wired only on first activation rather than per buffer. Each is inserted just below a
+    // fixed eager sibling to preserve the z-order of the original construction.
+
+    /** Attaches {@code overlay} to the editor pane just below {@code below}, with the standard text-rect anchors. */
+    private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, javafx.scene.Node below) {
+        AnchorPane.setTopAnchor(overlay, 0d);
+        AnchorPane.setBottomAnchor(overlay, 0d);
+        AnchorPane.setLeftAnchor(overlay, 0d);
+        AnchorPane.setRightAnchor(overlay, Minimap.WIDTH);
+        int idx = root.getChildren().indexOf(below);
+        if (idx < 0) {
+            idx = root.getChildren().indexOf(minimap); // fallback: just under the minimap
+        }
+        if (idx < 0) {
+            root.getChildren().add(overlay);
+        } else {
+            root.getChildren().add(idx, overlay);
+        }
+        return overlay;
+    }
+
+    private SearchHighlightOverlay searchOverlay() {
+        if (searchOverlay == null) {
+            searchOverlay = attachLazyOverlay(new SearchHighlightOverlay(area), todoOverlay);
+        }
+        return searchOverlay;
+    }
+
+    private LogHighlightOverlay logOverlay() {
+        if (logOverlay == null) {
+            logOverlay = attachLazyOverlay(new LogHighlightOverlay(area), whitespace);
+        }
+        return logOverlay;
+    }
+
+    private MermaidLintOverlay lintOverlay() {
+        if (lintOverlay == null) {
+            lintOverlay = attachLazyOverlay(new MermaidLintOverlay(area), mdLintOverlay);
+        }
+        return lintOverlay;
+    }
+
+    private LspDiagnosticOverlay lspOverlay() {
+        if (lspOverlay == null) {
+            lspOverlay = attachLazyOverlay(new LspDiagnosticOverlay(area), inlineValues);
+        }
+        return lspOverlay;
+    }
+
+    private AceJumpOverlay aceJump() {
+        if (aceJump == null) {
+            aceJump = attachLazyOverlay(new AceJumpOverlay(area), minimap);
+        }
+        return aceJump;
+    }
+
     /**
      * Highlights all find matches ({@code [start,end)} offset pairs) behind the text, emphasizing the
      * match at {@code activeIndex}. No-op in large-file mode (the find bar still selects the current
@@ -1373,12 +1408,14 @@ public class EditorBuffer implements TabContent {
         if (largeFile) {
             return;
         }
-        searchOverlay.setMatches(matches, activeIndex);
+        searchOverlay().setMatches(matches, activeIndex);
     }
 
     /** Clears the find-match highlight overlay. */
     public void clearSearchMatches() {
-        searchOverlay.setMatches(java.util.List.of(), -1);
+        if (searchOverlay != null) {
+            searchOverlay.setMatches(java.util.List.of(), -1);
+        }
     }
 
     /** Enables/disables the TODO-pattern highlight for this buffer and re-scans (the controller pushes the
@@ -1414,7 +1451,7 @@ public class EditorBuffer implements TabContent {
 
     /** Starts AceJump: the next typed character labels its visible occurrences to jump the caret. */
     public void startAceJump() {
-        aceJump.start();
+        aceJump().start();
     }
 
     /** The node to place in the scene: the read-only banner (when shown) above the editor view. */
@@ -1492,7 +1529,9 @@ public class EditorBuffer implements TabContent {
     /** Turns live linting on/off for this buffer (controller gates on mermaid enabled + maid detected). */
     public void setMermaidLintEnabled(boolean on) {
         this.mermaidLintEnabled = on && isDiagram();
-        lintOverlay.setActive(this.mermaidLintEnabled);
+        if (this.mermaidLintEnabled || lintOverlay != null) {
+            lintOverlay().setActive(this.mermaidLintEnabled);
+        }
         if (this.mermaidLintEnabled) {
             scheduleMermaidLint();
         }
@@ -1502,13 +1541,15 @@ public class EditorBuffer implements TabContent {
         if (!mermaidLintEnabled || !isDiagram() || hugeFile || mermaidValidator == null) {
             return;
         }
-        mermaidValidator.accept(area.getText(), lintOverlay::setDiagnostics);
+        mermaidValidator.accept(area.getText(), lintOverlay()::setDiagnostics);
     }
 
     /** Shows the maid message(s) in a tooltip when hovering a squiggled span (overlay is mouse-transparent). */
     private void installLintHover(CodeArea a) {
         a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (!mermaidLintEnabled || lintOverlay.diagnostics().isEmpty()) {
+            if (!mermaidLintEnabled
+                    || lintOverlay == null
+                    || lintOverlay.diagnostics().isEmpty()) {
                 if (lintTooltip != null) {
                     lintTooltip.hide();
                 }
@@ -1893,11 +1934,15 @@ public class EditorBuffer implements TabContent {
         // to map + render (the Problems tree, minimap + scrollbar stripes), freezing the editor. largeFile
         // is implied by hugeFile (see setReadOnly), so this single guard covers both.
         this.lspActive = on && isLspLanguage() && !largeFile;
-        lspOverlay.setActive(this.lspActive);
+        if (this.lspActive || lspOverlay != null) {
+            lspOverlay().setActive(this.lspActive);
+        }
         // The minimap stripes only draw while LSP is active for this file, regardless of any stale list.
         minimap.setDiagnosticsEnabled(this.lspActive);
         if (!this.lspActive) {
-            lspOverlay.setDiagnostics(java.util.List.of());
+            if (lspOverlay != null) {
+                lspOverlay.setDiagnostics(java.util.List.of());
+            }
             minimap.setDiagnostics(java.util.List.of());
             diagnosticStripe.setDiagnostics(java.util.List.of());
         }
@@ -1910,7 +1955,9 @@ public class EditorBuffer implements TabContent {
 
     /** Pushes the latest diagnostics for this buffer into the overlay + minimap/scrollbar stripes. */
     public void setLspDiagnostics(java.util.List<LspDiagnostic> diagnostics) {
-        lspOverlay.setDiagnostics(diagnostics);
+        if (lspActive || lspOverlay != null) {
+            lspOverlay().setDiagnostics(diagnostics);
+        }
         minimap.setDiagnostics(diagnostics);
         diagnosticStripe.setDiagnostics(diagnostics);
     }
@@ -2030,7 +2077,7 @@ public class EditorBuffer implements TabContent {
     /** Shows the LSP diagnostic message(s) in a tooltip when hovering a squiggled span. */
     private void installLspHover(CodeArea a) {
         a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (!lspActive || lspOverlay.diagnostics().isEmpty()) {
+            if (!lspActive || lspOverlay == null || lspOverlay.diagnostics().isEmpty()) {
                 if (lspTooltip != null) {
                     lspTooltip.hide();
                 }
@@ -2282,7 +2329,10 @@ public class EditorBuffer implements TabContent {
 
     /** Turns the size-independent level overlay on/off (controller gates on the feature + {@link #isLog()}). */
     public void setLogHighlightEnabled(boolean on) {
-        logOverlay.setActive(on && isLog());
+        boolean want = on && isLog();
+        if (want || logOverlay != null) {
+            logOverlay().setActive(want);
+        }
     }
 
     /** Whether a level/regex filter is currently narrowing the visible lines. */
