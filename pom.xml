@@ -19,8 +19,15 @@
              ignored when maven.build.timestamp is filtered into a resource directly. -->
         <maven.build.timestamp.format>yyyy-MM-dd HH:mm:ss 'UTC'</maven.build.timestamp.format>
         <build.timestamp>${maven.build.timestamp}</build.timestamp>
-        <javafx.version>25</javafx.version>
+        <!-- JavaFX 26 (runs on JDK 24+, we stay on JDK 25) — adds the macOS Metal Prism pipeline
+             (com.sun.prism.mtl), enabled per-OS via ${prism.order} below. -->
+        <javafx.version>26.0.1</javafx.version>
         <javafx.plugin.version>0.0.8</javafx.plugin.version>
+        <!-- Prism pipeline order (passed as -Dprism.order to both javafx:run and the packaged app). Set
+             per-OS in the os-* profiles: mac=mtl,es2,sw (Metal, the M-series rendering fix; es2/sw fallback),
+             windows=d3d,es2,sw (keep Direct3D), linux=es2,sw. This generic default applies to profile-less
+             builds (e.g. plain `mvn test`, which doesn't render anyway). -->
+        <prism.pipeline>es2,sw</prism.pipeline>
         <!-- Personal fork of RichTextFX (adds multiple cursors + column/box selection).
              groupId io.github.adriandeleon, vendored in the in-project m2-repo (see <repositories>).
              Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
@@ -49,11 +56,11 @@
         <palantir.version>2.92.0</palantir.version>
         <jacoco.version>0.8.13</jacoco.version>
         <testfx.version>4.0.18</testfx.version>
-        <!-- Self-built headless Glass backend for JavaFX 25 (no upstream org.testfx:openjfx-monocle
-             targets JFX 25 — it stops at 21.0.2). Built from the OpenJFX 25 monocle sources and
+        <!-- Self-built headless Glass backend, version-matched to JavaFX (no upstream org.testfx:openjfx-monocle
+             targets JFX 26 — it stops at 21.0.2). Built from the OpenJFX 26 monocle sources and
              vendored in the in-project m2-repo (see <repositories>); test scope only, never shipped.
-             To rebuild: see the Monocle note in CLAUDE.md (Packaging). -->
-        <monocle.version>25</monocle.version>
+             Rebuild it whenever JavaFX is bumped — see the Monocle note in CLAUDE.md (Packaging). -->
+        <monocle.version>26</monocle.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
         <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
@@ -524,6 +531,10 @@
                     <mainClass>com.editora/com.editora.App</mainClass>
                     <options>
                         <option>--enable-native-access=javafx.graphics</option>
+                        <!-- Prism pipeline order, per-OS (see the os-* profiles): macOS gets Metal first
+                             (es2/sw fallback), Windows keeps Direct3D, Linux es2. Mirrors the dist build so
+                             dev == prod; on macOS this is what fixes the M-series es2 RTT glitches. -->
+                        <option>-Dprism.order=${prism.pipeline}</option>
                         <!-- Match the packaged app's Prism texture caps (see the dist profile). -->
                         <option>-Dprism.maxvram=2G</option>
                         <option>-Dprism.maxTextureSize=16384</option>
@@ -844,13 +855,17 @@
     </build>
 
     <profiles>
-        <!-- OS-activated profiles select the native installer type for the `dist` build. -->
+        <!-- OS-activated profiles select the native installer type + the Prism pipeline order for the `dist`
+             build and `javafx:run` (auto-activated by the build OS). -->
         <profile>
             <id>os-mac</id>
             <activation><os><family>mac</family></os></activation>
             <properties>
                 <jpackage.type>DMG</jpackage.type>
                 <jpackage.icon>${project.basedir}/branding/editora.icns</jpackage.icon>
+                <!-- Metal first (JavaFX 26): fixes the es2/OpenGL RTT glitches on Apple silicon (M-series);
+                     es2/sw remain as fallbacks if Metal ever fails to init. -->
+                <prism.pipeline>mtl,es2,sw</prism.pipeline>
             </properties>
         </profile>
         <profile>
@@ -859,6 +874,8 @@
             <properties>
                 <jpackage.type>MSI</jpackage.type>
                 <jpackage.icon>${project.basedir}/branding/editora.ico</jpackage.icon>
+                <!-- Keep Direct3D first on Windows (Metal is macOS-only); es2/sw fallback. -->
+                <prism.pipeline>d3d,es2,sw</prism.pipeline>
             </properties>
         </profile>
         <profile>
@@ -867,6 +884,8 @@
             <properties>
                 <jpackage.type>DEB</jpackage.type>
                 <jpackage.icon>${project.basedir}/branding/editora.png</jpackage.icon>
+                <!-- es2 first on Linux (no Metal/Direct3D there); sw fallback. -->
+                <prism.pipeline>es2,sw</prism.pipeline>
             </properties>
         </profile>
 
@@ -991,6 +1010,11 @@
                                              are harmless ceilings, not reservations. -->
                                         <javaOption>-Dprism.maxvram=2G</javaOption>
                                         <javaOption>-Dprism.maxTextureSize=16384</javaOption>
+                                        <!-- Prism pipeline order, per-OS (see the os-* profiles): macOS =
+                                             mtl,es2,sw (JavaFX 26 Metal — fixes the es2/OpenGL RTT glitches on
+                                             Apple silicon; es2/sw fallback), Windows = d3d,es2,sw, Linux =
+                                             es2,sw. Metal is opt-in in JFX 26, so this degrades safely. -->
+                                        <javaOption>-Dprism.order=${prism.pipeline}</javaOption>
                                         <!-- Heap/GC footprint. With no -Xmx, jpackage inherits the
                                              default ergonomic max heap (~1/4 of physical RAM), which on
                                              a high-RAM machine balloons to many GB and lets GC-driven RSS
@@ -1016,14 +1040,10 @@
 
                                         <!-- ===== Opt-in tunings below: DEVICE-TEST per platform on the
                                              release matrix before enabling. They touch correctness (heap
-                                             layout / the render backend), so they don't ship by default. =====
-
-                                        macOS Metal render pipeline (Apple deprecated the OpenGL/es2 backend
-                                        JavaFX otherwise uses on macOS). Lower overhead on Apple Silicon and
-                                        the forward path; this app is overlay-heavy (minimap, whitespace,
-                                        ruler, diagnostic/search canvases) so it should benefit. Newer code
-                                        path — verify rendering on a real Mac before shipping. macOS only:
-                                        <javaOption>-Dprism.order=mtl,es2,sw</javaOption>
+                                             layout), so they don't ship by default. =====
+                                             (The macOS Metal pipeline is now ENABLED above via the per-OS
+                                             ${prism.pipeline} — JavaFX 26 added it; it fixed the M-series
+                                             es2 rendering glitches.)
 
                                         Compact object headers (JDK 25, still experimental): shrinks every
                                         object header 12 -> 8 bytes, ~10-20% live-heap reduction. An editor
