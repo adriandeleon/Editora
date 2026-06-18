@@ -56,13 +56,12 @@ public class WorkspaceState {
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
     private String httpEnvironment = "";
 
-    // --- Zen (distraction-free) mode. Entering Zen snapshots the user's view/chrome prefs into
-    //     preZenView (key -> value) and the open tool windows into preZenToolWindows, then turns
-    //     those prefs off — so while in Zen the normal toggles can re-enable individual items, and
-    //     leaving Zen restores the snapshot exactly. ---
+    // --- Zen (distraction-free) mode (per window). zenMode is a per-window effective overlay folded into
+    //     the chrome/view-settings application (MainController.zenActive) — it hides chrome WITHOUT mutating
+    //     the shared Settings prefs, so leaving Zen restores them untouched. Entering Zen also closes the
+    //     open tool windows, snapshotting their ids into preZenToolWindows to reopen on exit. ---
     private boolean zenMode;
     private List<String> preZenToolWindows = new ArrayList<>();
-    private Map<String, Boolean> preZenView = new LinkedHashMap<>();
 
     /** Files open at last exit, in tab order. */
     private List<OpenFile> openFiles = new ArrayList<>();
@@ -258,14 +257,6 @@ public class WorkspaceState {
 
     public void setPreZenToolWindows(List<String> preZenToolWindows) {
         this.preZenToolWindows = preZenToolWindows == null ? new ArrayList<>() : preZenToolWindows;
-    }
-
-    public Map<String, Boolean> getPreZenView() {
-        return preZenView;
-    }
-
-    public void setPreZenView(Map<String, Boolean> preZenView) {
-        this.preZenView = preZenView == null ? new LinkedHashMap<>() : preZenView;
     }
 
     public List<OpenFile> getOpenFiles() {

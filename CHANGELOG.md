@@ -215,6 +215,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Zen mode is now per-window and restores chrome reliably.** Zen mode used to hide the toolbar, status
+  bar, tab bar, breadcrumb, and editor view options by flipping the *shared, app-wide* view preferences and
+  snapshotting/restoring them — so entering Zen in one window changed every window (and the saved settings),
+  and the restore could desync. Zen is now a **per-window effective overlay** (like Simple UI mode): it lives
+  in the window's own session state and is layered on top of the saved prefs without mutating them, so one
+  window can be in Zen while another isn't, leaving Zen always restores exactly what was showing, and your
+  saved view preferences are never touched.
+
 - **Git menu items are hidden/disabled when there's no VCS.** The tab right-click menu no longer shows
   **Compare with HEAD** and **Git: Show File History** when the file isn't under Git (feature off, or not
   inside a repo) — only "Compare With…" (which isn't a Git action) remains. The Project tool window's **Git**
