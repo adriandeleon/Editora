@@ -148,6 +148,7 @@ public class SettingsWindow {
     private CheckBox breadcrumbCheck;
     private CheckBox simpleModeCheck;
     private CheckBox toolStripeCheck;
+    private CheckBox projectHiddenCheck;
     private CheckBox markdownFormatBarCheck;
     private CheckBox markdownLintCheck;
     private CheckBox mathSupportCheck;
@@ -639,6 +640,7 @@ public class SettingsWindow {
         breadcrumbCheck = viewCheck(tr("settings.showBreadcrumb"), Settings::setShowBreadcrumb);
         simpleModeCheck = viewCheck(tr("settings.simpleMode"), Settings::setSimpleMode);
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
+        projectHiddenCheck = viewCheck(tr("settings.projectShowHidden"), Settings::setProjectShowHidden);
         markdownFormatBarCheck = viewCheck(tr("settings.markdownFormatBar"), Settings::setMarkdownFormatBar);
         markdownLintCheck = viewCheck(tr("settings.markdownLint"), Settings::setMarkdownLint);
         mathSupportCheck = viewCheck(tr("settings.mathSupport"), Settings::setMathSupport);
@@ -2437,6 +2439,9 @@ public class SettingsWindow {
         p.getChildren().add(toolStripeCheck);
         p.getChildren().add(note(tr("settings.toolWindows.stripeNote")));
 
+        // Project tree: show hidden (dot) files/folders.
+        p.getChildren().add(projectHiddenCheck);
+
         List<Runnable> moveRefreshers = new ArrayList<>();
         Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
         for (ToolWindow tw : toolWindows.getRegisteredToolWindows()) {
@@ -2901,6 +2906,7 @@ public class SettingsWindow {
             simpleModeCheck.setSelected(settings.isSimpleMode());
             templateAuthorField.setText(settings.getAuthorNameRaw());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
+            projectHiddenCheck.setSelected(settings.isProjectShowHidden());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
             markdownLintCheck.setSelected(settings.isMarkdownLint());
             mathSupportCheck.setSelected(settings.isMathSupport());
@@ -3391,6 +3397,7 @@ public class SettingsWindow {
             toolbarCheck.setSelected(s.isShowToolbar());
             statusBarCheck.setSelected(s.isShowStatusBar());
             tabBarCheck.setSelected(s.isShowTabBar());
+            projectHiddenCheck.setSelected(s.isProjectShowHidden());
             breadcrumbCheck.setSelected(s.isShowBreadcrumb());
             simpleModeCheck.setSelected(s.isSimpleMode());
             toolStripeCheck.setSelected(s.isShowToolStripe());

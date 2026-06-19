@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 38;
+    public static final int SCHEMA_VERSION = 39;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -113,6 +113,8 @@ public class Settings {
     private int autoSaveDelayMillis = 1000;
     /** Projects feature: off by default — hides all project UI/commands until enabled. */
     private boolean projectSupport = false;
+    /** Show hidden (dot) files and folders in the Project tool window's tree + filter search. Off by default. */
+    private boolean projectShowHidden = false;
     /** Git integration: on by default — the status-bar VCS segment, Commit tool window, gutter change bars,
      *  and Git commands/keybindings. Self-gates on detection: when {@code git} isn't on PATH it stays inert
      *  (so this is effectively "on when Git is installed"). */
@@ -660,6 +662,14 @@ public class Settings {
 
     public void setProjectSupport(boolean projectSupport) {
         this.projectSupport = projectSupport;
+    }
+
+    public boolean isProjectShowHidden() {
+        return projectShowHidden;
+    }
+
+    public void setProjectShowHidden(boolean projectShowHidden) {
+        this.projectShowHidden = projectShowHidden;
     }
 
     public boolean isGitSupport() {
