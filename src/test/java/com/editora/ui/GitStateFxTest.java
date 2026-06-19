@@ -43,9 +43,15 @@ class GitStateFxTest {
         }
     }
 
+    /** The {@link GitCoordinator} now owns the state machine; reach it on the controller for the asserts. */
+    private Object git() throws Exception {
+        return FxTestSupport.field(fx.controller, "git");
+    }
+
     private void applyGitState(GitService.RepoState state) throws Exception {
-        FxTestSupport.runOnFx(() ->
-                FxTestSupport.call(fx.controller, "applyGitState", new Class<?>[] {GitService.RepoState.class}, state));
+        Object git = git();
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.call(git, "applyState", new Class<?>[] {GitService.RepoState.class}, state));
     }
 
     private static GitService.RepoState repo(Path root, String branch, String upstream, int ahead, int behind) {
@@ -58,9 +64,9 @@ class GitStateFxTest {
         Path root = Path.of("/work/repo");
         applyGitState(repo(root, "main", "origin/main", 2, 1));
 
-        assertEquals(root, FxTestSupport.field(fx.controller, "currentRepoRoot"));
-        assertEquals("main", FxTestSupport.field(fx.controller, "currentBranchName"));
-        assertEquals("origin/main", FxTestSupport.field(fx.controller, "currentUpstream"));
+        assertEquals(root, FxTestSupport.field(git(), "repoRoot"));
+        assertEquals("main", FxTestSupport.field(git(), "branchName"));
+        assertEquals("origin/main", FxTestSupport.field(git(), "upstream"));
     }
 
     @Test
@@ -69,19 +75,20 @@ class GitStateFxTest {
         applyGitState(repo(Path.of("/work/repo"), "main", "origin/main", 0, 0));
         applyGitState(GitService.RepoState.NONE);
 
-        assertNull(FxTestSupport.field(fx.controller, "currentRepoRoot"), "NONE clears the repo root");
-        assertEquals("", FxTestSupport.field(fx.controller, "currentBranchName"));
-        assertEquals("", FxTestSupport.field(fx.controller, "currentUpstream"));
+        assertNull(FxTestSupport.field(git(), "repoRoot"), "NONE clears the repo root");
+        assertEquals("", FxTestSupport.field(git(), "branchName"));
+        assertEquals("", FxTestSupport.field(git(), "upstream"));
     }
 
     @Test
     void applyGitSupportOffClearsRepoState() throws Exception {
         applyGitState(repo(Path.of("/work/repo"), "develop", "origin/develop", 0, 0));
         fx.shared.getSettings().setGitSupport(false);
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(fx.controller, "applyGitSupport"));
+        Object git = git();
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(git, "applySupport"));
 
-        assertNull(FxTestSupport.field(fx.controller, "currentRepoRoot"), "disabling Git clears the repo root");
-        assertEquals("", FxTestSupport.field(fx.controller, "currentBranchName"));
+        assertNull(FxTestSupport.field(git(), "repoRoot"), "disabling Git clears the repo root");
+        assertEquals("", FxTestSupport.field(git(), "branchName"));
 
         fx.shared.getSettings().setGitSupport(true); // restore for any later test ordering
     }

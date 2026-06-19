@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: extract the stateful Git core into a `GitCoordinator` (developer-facing).** Under the net added
+  in the previous step, the engine of the Git integration moves out of `MainController` into
+  `ui/GitCoordinator`: the `GitService` CLI facade, the repo state (root / branch / upstream), and the
+  state machine that keeps the status bar, the Commit / Log tool windows, and the active buffer's gutter
+  change bars in sync (`isEnabled`/`isAvailable`/`ifEnabled`/`applySupport`/`refresh`/`applyState`/
+  `afterMutation`/`contextPath`). It reaches the window through the shared `CoordinatorHost` plus a small
+  git-specific `WindowOps` (status-bar/tool-window/blame/diff surfaces). The user-facing Git **operations**
+  (commit, branch, log, blame, stash, clone, diff) stay in `MainController` and reach the engine via
+  `git.service()` / `git.repoRoot()`. No behavior change; `GitStateFxTest` re-pointed at the new home with
+  the same assertions, full suite green.
+
 - **Refactor: a characterization-test net + pure helpers for the Git integration (developer-facing).** First
   step of the Git extraction (the largest, least-tested subsystem): before moving any stateful code, this
   adds a safety net — `GitStateFxTest` drives the `applyGitState`/`applyGitSupport` core directly with a
