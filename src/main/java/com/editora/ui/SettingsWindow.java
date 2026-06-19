@@ -68,6 +68,7 @@ public class SettingsWindow {
     private enum Category {
         APPEARANCE(tr("settings.cat.appearance"), false),
         EDITOR(tr("settings.cat.editor"), false),
+        MARKDOWN(tr("settings.cat.markdown"), false),
         TOOL_WINDOWS(tr("settings.cat.toolWindows"), false),
         SPELL_CHECK(tr("settings.cat.spellCheck"), false),
         APPLICATION(tr("settings.cat.application"), false),
@@ -156,6 +157,7 @@ public class SettingsWindow {
     private CheckBox logViewerCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
+    private javafx.scene.layout.FlowPane markdownLintRulesBox;
     /** Working copy of the External Tools list, edited live by the master-detail page. */
     private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
             javafx.collections.FXCollections.observableArrayList();
@@ -900,6 +902,7 @@ public class SettingsWindow {
     private void buildPages() {
         pages.put(Category.APPEARANCE, appearancePage());
         pages.put(Category.EDITOR, editorPage());
+        pages.put(Category.MARKDOWN, markdownPage());
         pages.put(Category.TOOL_WINDOWS, toolWindowsPage());
         pages.put(Category.SPELL_CHECK, spellPage());
         pages.put(Category.APPLICATION, applicationPage());
@@ -1182,15 +1185,6 @@ public class SettingsWindow {
                 completion,
                 semanticHighlightCheck,
                 "semantic highlighting lsp tokens types parameters fields deprecated");
-        Label markdown = section(p, tr("settings.section.markdown"));
-        row(
-                p,
-                Category.EDITOR,
-                markdown,
-                markdownFormatBarCheck,
-                "markdown format bar selection bold italic toolbar floating");
-        row(p, Category.EDITOR, markdown, markdownLintCheck, "markdown lint linting warnings squiggles rules");
-        row(p, Category.EDITOR, markdown, mathSupportCheck, "markdown math latex katex formula equation dollar");
         Label todoHl = section(p, tr("settings.section.todo"));
         row(p, Category.EDITOR, todoHl, todoHighlightCheck, "todo fixme highlight patterns tags comments annotations");
         row(p, Category.EDITOR, todoHl, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
@@ -1214,6 +1208,67 @@ public class SettingsWindow {
                 labeled(tr("settings.pdf.pageSize"), pdfPageSizeCombo),
                 "pdf export page size letter a4 paper");
         return p;
+    }
+
+    /** The Markdown settings page: editing (format bar), preview/PDF (math), and linting (enable + per-rule). */
+    private Region markdownPage() {
+        VBox p = page(tr("settings.cat.markdown"));
+        Label editing = section(p, tr("settings.section.markdownEditing"));
+        row(
+                p,
+                Category.MARKDOWN,
+                editing,
+                markdownFormatBarCheck,
+                "markdown format bar selection bold italic toolbar floating");
+        Label preview = section(p, tr("settings.section.markdownPreview"));
+        row(p, Category.MARKDOWN, preview, mathSupportCheck, "markdown math latex katex formula equation dollar");
+        Label lint = section(p, tr("settings.section.markdownLint"));
+        row(p, Category.MARKDOWN, lint, markdownLintCheck, "markdown lint linting warnings squiggles rules");
+        row(
+                p,
+                Category.MARKDOWN,
+                lint,
+                markdownLintRulesEditor(),
+                "markdown lint rules MD009 MD040 MD034 disable enable per-rule checklist");
+        return p;
+    }
+
+    /** The Markdown-lint per-rule checklist: one checkbox per rule (checked = enabled). Toggling writes the
+     *  disabled rule codes to {@code Settings.markdownLintDisabledRules} and applies live. */
+    private javafx.scene.Node markdownLintRulesEditor() {
+        markdownLintRulesBox = new javafx.scene.layout.FlowPane(12, 4);
+        rebuildMarkdownLintRules();
+        return markdownLintRulesBox;
+    }
+
+    private void rebuildMarkdownLintRules() {
+        if (markdownLintRulesBox == null) {
+            return;
+        }
+        markdownLintRulesBox.getChildren().clear();
+        java.util.Set<String> disabled = new java.util.HashSet<>();
+        for (String c : config.getSettings().getMarkdownLintDisabledRules()) {
+            if (c != null) {
+                disabled.add(c.strip().toUpperCase(java.util.Locale.ROOT));
+            }
+        }
+        for (com.editora.editor.MarkdownLint.Rule rule : com.editora.editor.MarkdownLint.RULES) {
+            String code = rule.code();
+            CheckBox cb = new CheckBox(code);
+            cb.setSelected(!disabled.contains(code));
+            cb.setTooltip(new Tooltip(tr("mdlint.rule." + code)));
+            cb.selectedProperty().addListener((o, was, on) -> {
+                java.util.List<String> list =
+                        new java.util.ArrayList<>(config.getSettings().getMarkdownLintDisabledRules());
+                list.removeIf(c -> code.equalsIgnoreCase(c));
+                if (!on) {
+                    list.add(code);
+                }
+                config.getSettings().setMarkdownLintDisabledRules(list);
+                apply();
+            });
+            markdownLintRulesBox.getChildren().add(cb);
+        }
     }
 
     /** The TODO/highlight pattern editor: one row per pattern (enabled / name / regex / color / case) plus
@@ -2914,6 +2969,7 @@ public class SettingsWindow {
             logViewerCheck.setSelected(settings.isLogViewer());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             rebuildTodoRows();
+            rebuildMarkdownLintRules();
             multiCaretCheck.setSelected(settings.isMultiCaret());
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
@@ -3408,6 +3464,7 @@ public class SettingsWindow {
             logViewerCheck.setSelected(s.isLogViewer());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             rebuildTodoRows();
+            rebuildMarkdownLintRules();
             indentStyleCombo.setValue(s.getIndentStyle());
             multiCaretCheck.setSelected(s.isMultiCaret());
             projectsCheck.setSelected(s.isProjectSupport());

@@ -14,7 +14,9 @@ A backlog of planned features and improvements. Unordered within each section.
       timestamp-range filtering, jump-to-next-error navigation*
 - [x] Markdown support improvements — preview **CommonMark extensions** (YAML front matter, footnotes,
       heading anchors, `++inserted++`); **heading outline** in the Structure tool window; **Markdown lint**
-      (squiggles + tool window; `View: Toggle Markdown Lint`, on by default); **image paste & drag-drop**
+      (squiggles + tool window; `View: Toggle Markdown Lint`, on by default — now a wider markdownlint rule
+      set with per-rule config, inline `markdownlint-disable` comments, `.markdownlint.json` discovery,
+      scrollbar/minimap overview stripes, and `Markdown Lint: Fix Issues` auto-fix); **image paste & drag-drop**
       (into a sibling `assets/` folder); **smart link paste** (URL over a selection → `[sel](url)`); **table
       cell navigation** (Tab/Shift-Tab between cells, Enter adds a row, reflow); **LaTeX math** via
       JLaTeXMath (inline `$…$` + display `$$…$$` in the preview and PDF, off by default — `View: Toggle Math

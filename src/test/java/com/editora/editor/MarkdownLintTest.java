@@ -81,4 +81,70 @@ class MarkdownLintTest {
         assertTrue(MarkdownLint.lint(null).isEmpty());
         assertTrue(MarkdownLint.lint("").isEmpty());
     }
+
+    @Test
+    void md001HeadingIncrement() {
+        assertTrue(has("# A\n\n### C\n", "MD001"));
+        assertFalse(has("# A\n\n## B\n", "MD001"));
+    }
+
+    @Test
+    void md010HardTabs() {
+        assertTrue(has("text\twith tab\n", "MD010"));
+        assertFalse(has("text with spaces\n", "MD010"));
+    }
+
+    @Test
+    void md022HeadingsSurroundedByBlanks() {
+        assertTrue(has("# A\ntext\n", "MD022")); // heading not followed by a blank line
+        assertFalse(has("# A\n\ntext\n", "MD022"));
+    }
+
+    @Test
+    void md023HeadingIndent() {
+        assertTrue(has("  ## Indented\n", "MD023"));
+        assertFalse(has("## Flush\n", "MD023"));
+    }
+
+    @Test
+    void md026HeadingTrailingPunctuation() {
+        assertTrue(has("# Title.\n", "MD026"));
+        assertTrue(has("## Done! ##\n", "MD026")); // closing-hash form
+        assertFalse(has("# Title\n", "MD026"));
+    }
+
+    @Test
+    void md031FencedCodeSurroundedByBlanks() {
+        assertTrue(has("text\n\n```java\ncode\n```\ntext\n", "MD031")); // no blank after the fence
+        assertFalse(has("text\n\n```java\ncode\n```\n\ntext\n", "MD031"));
+    }
+
+    @Test
+    void md034BareUrl() {
+        assertTrue(has("See https://example.com here.\n", "MD034"));
+        assertFalse(has("See [x](https://example.com) here.\n", "MD034"));
+        assertFalse(has("See <https://example.com> here.\n", "MD034"));
+    }
+
+    @Test
+    void md041FirstLineHeading() {
+        assertTrue(has("Not a heading\n", "MD041"));
+        assertFalse(has("# Heading\n", "MD041"));
+        assertFalse(has("---\ntitle: x\n---\n\n# Heading\n", "MD041")); // front matter is skipped
+    }
+
+    @Test
+    void perRuleDisabledSuppressesEmission() {
+        assertFalse(MarkdownLint.lint("#Heading\n", Set.of("MD018")).stream()
+                .anyMatch(d -> d.code().equals("MD018")));
+    }
+
+    @Test
+    void inlineDisableDirectiveSuppresses() {
+        assertFalse(MarkdownLint.lint("<!-- markdownlint-disable MD018 -->\n#Heading\n").stream()
+                .anyMatch(d -> d.code().equals("MD018")));
+        assertFalse(MarkdownLint.lint("<!-- markdownlint-disable-next-line MD018 -->\n#Heading\n").stream()
+                .anyMatch(d -> d.code().equals("MD018")));
+        assertTrue(has("#Heading\n", "MD018")); // still flagged without the directive
+    }
 }

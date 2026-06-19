@@ -289,6 +289,8 @@ public class EditorBuffer implements TabContent {
     private final DiagnosticStripe diagnosticStripe = new DiagnosticStripe(area);
     /** TODO/highlight overview stripe over the scrollbar (beside the diagnostic stripe). */
     private final TodoStripe todoStripe = new TodoStripe(area);
+    /** Markdown-lint overview stripe over the scrollbar (beside the TODO/diagnostic stripes). */
+    private final MarkdownLintStripe mdLintStripe = new MarkdownLintStripe(area);
     /** Files above this size are never scanned for compact-source detection (keeps it off the hot path). */
     private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
     /** Whether the Run affordance is enabled at all (gated by the LSP feature setting). */
@@ -983,6 +985,7 @@ public class EditorBuffer implements TabContent {
                         inlineValues,
                         minimap,
                         diagnosticStripe,
+                        mdLintStripe,
                         todoStripe,
                         columnRuler);
         // searchOverlay / logOverlay / lintOverlay / lspOverlay / aceJump are attached lazily on first
@@ -1043,6 +1046,10 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setBottomAnchor(todoStripe, 0d);
         AnchorPane.setRightAnchor(todoStripe, 0d);
         todoStripe.setOnActivate(this::jumpToLine);
+        AnchorPane.setTopAnchor(mdLintStripe, 0d);
+        AnchorPane.setBottomAnchor(mdLintStripe, 0d);
+        AnchorPane.setRightAnchor(mdLintStripe, 0d);
+        mdLintStripe.setOnActivate(this::jumpToLine);
     }
 
     /** Moves the caret to the start of {@code line} (0-based), scrolls it into view, and focuses the editor. */
@@ -1611,8 +1618,13 @@ public class EditorBuffer implements TabContent {
     public void setMarkdownLintEnabled(boolean on) {
         this.markdownLintEnabled = on && isMarkdown() && !hugeFile;
         mdLintOverlay.setActive(this.markdownLintEnabled);
+        minimap.setLintEnabled(this.markdownLintEnabled);
+        updateMarkdownLintStripe();
         if (this.markdownLintEnabled) {
             scheduleMarkdownLint();
+        } else {
+            mdLintStripe.setDiagnostics(java.util.List.of());
+            minimap.setLintMarks(java.util.List.of());
         }
     }
 
@@ -1620,7 +1632,14 @@ public class EditorBuffer implements TabContent {
         if (!markdownLintEnabled || !isMarkdown() || hugeFile || markdownLintValidator == null) {
             return;
         }
-        markdownLintValidator.accept(area.getText(), mdLintOverlay::setDiagnostics);
+        markdownLintValidator.accept(area.getText(), this::applyMarkdownLintDiagnostics);
+    }
+
+    /** Pushes fresh lint diagnostics to the squiggle overlay + the scrollbar stripe + the minimap ticks. */
+    private void applyMarkdownLintDiagnostics(java.util.List<MarkdownLint.Diagnostic> diags) {
+        mdLintOverlay.setDiagnostics(diags);
+        mdLintStripe.setDiagnostics(diags);
+        minimap.setLintMarks(diags);
     }
 
     /** Shows the lint message(s) in a tooltip when hovering a squiggled span (overlay is mouse-transparent). */
@@ -2022,15 +2041,27 @@ public class EditorBuffer implements TabContent {
         boolean minimapShown = minimapVisible && !largeFile;
         AnchorPane.setRightAnchor(diagnosticStripe, minimapShown ? Minimap.WIDTH : 0d);
         diagnosticStripe.setActive(lspActive);
+        updateMarkdownLintStripe();
+    }
+
+    /** Positions the Markdown-lint overview stripe beside the diagnostic stripe (shifted left by its width
+     *  when LSP is also active — never the case for a Markdown buffer, but kept general). */
+    private void updateMarkdownLintStripe() {
+        boolean minimapShown = minimapVisible && !largeFile;
+        double base = minimapShown ? Minimap.WIDTH : 0d;
+        AnchorPane.setRightAnchor(mdLintStripe, base + (lspActive ? DiagnosticStripe.WIDTH : 0d));
+        mdLintStripe.setActive(markdownLintEnabled && !largeFile);
         updateTodoStripe();
     }
 
     /** Positions the TODO overview stripe over the scrollbar: at the edge (inside the minimap when shown),
-     *  shifted left by the diagnostic stripe's width when that one is also active, so they sit side by side. */
+     *  shifted left by the diagnostic + lint stripes' widths when those are active, so they sit side by side. */
     private void updateTodoStripe() {
         boolean minimapShown = minimapVisible && !largeFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
-        AnchorPane.setRightAnchor(todoStripe, base + (lspActive ? DiagnosticStripe.WIDTH : 0d));
+        double offset = (lspActive ? DiagnosticStripe.WIDTH : 0d)
+                + (markdownLintEnabled && !largeFile ? MarkdownLintStripe.WIDTH : 0d);
+        AnchorPane.setRightAnchor(todoStripe, base + offset);
         todoStripe.setActive(todoEnabled && !largeFile);
     }
 

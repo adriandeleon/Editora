@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Markdown lint, substantially expanded.** The Markdown linter now covers more of the markdownlint rule
+  set — MD001 (heading-level increment), MD010 (hard tabs), MD022 (headings surrounded by blank lines),
+  MD023 (heading indent), MD026 (heading trailing punctuation), MD031 (fenced code surrounded by blank
+  lines), MD034 (bare URLs), and MD041 (first line should be a top-level heading) — joining the existing
+  MD009/012/018/019/025/040/047/052. New capabilities:
+  - **Per-rule configuration.** Turn individual rules off in *Settings → Markdown* (a per-rule
+    checklist) or via the `markdownLint.toggleRule` palette picker; persisted in `settings.toml`
+    (`markdownLintDisabledRules`, schema 39→40).
+  - **Inline disable comments.** `<!-- markdownlint-disable [MDxxx] -->` / `enable` / `disable-line` /
+    `disable-next-line` are honored, matching markdownlint.
+  - **`.markdownlint.json` discovery.** The nearest config file (walking up from the file) is merged into
+    the disabled-rule set (`{"MD013": false}` / `{"default": false}` forms).
+  - **Auto-fix.** `markdownLint.fix` (palette) corrects the safely-mechanical issues in the active file
+    (trailing whitespace, tabs→spaces, blank-line runs, heading-marker spacing, heading indent, heading
+    trailing punctuation, final newline) as one undoable edit.
+  - **Overview stripe + minimap ticks.** Lint warnings now appear as an IntelliJ-style stripe over the
+    scrollbar (click to jump, hover for the rule + message) and as ticks on the minimap, beside the TODO
+    and LSP-diagnostic stripes.
+  - **Dedicated Settings page.** The Markdown options (format bar, math preview, lint enable + per-rule
+    checklist) moved out of *Editor* into their own *Settings → Markdown* page.
+
+- **Export to HTML opens the result in a tab.** After *Preview: Export to HTML* writes the file, the
+  generated `.html` now opens in a new editor tab (re-selecting it if already open).
+
 - **Project tool window can show hidden files.** A new *Settings → Tool Windows → "Show hidden files in the
   project tree"* checkbox (and the `view.toggleProjectHidden` palette command) reveals dot-files/folders in
   the project tree and its filter search. Off by default. Persisted in `settings.toml` (schema 38→39).

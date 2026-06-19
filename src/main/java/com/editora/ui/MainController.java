@@ -5240,12 +5240,123 @@ public class MainController implements com.editora.mcp.McpBridge {
             markdownLintPanel.setResults(null, java.util.List.of());
             return;
         }
-        markdownLintService.validate(b.getContent(), diags -> markdownLintPanel.setResults(b.getPath(), diags));
+        markdownLintService.validate(
+                b.getContent(),
+                effectiveMarkdownLintDisabled(b),
+                diags -> markdownLintPanel.setResults(b.getPath(), diags));
     }
 
     /** Toggles the Markdown Lint tool window; opening it auto-scans via {@code focusFirstItem}. */
     private void toggleMarkdownLintWindow() {
         toolWindows.toggle(markdownLintToolWindow);
+    }
+
+    /** A cached parse of one {@code .markdownlint.json} (keyed by path, invalidated by mtime). */
+    private record MarkdownLintConfigEntry(long mtime, java.util.Set<String> disabled) {}
+
+    private final java.util.Map<java.nio.file.Path, MarkdownLintConfigEntry> markdownLintConfigCache =
+            new java.util.HashMap<>();
+
+    /** The rule codes disabled for {@code buffer}: the Settings list ∪ the nearest {@code .markdownlint.json}. */
+    private java.util.Set<String> effectiveMarkdownLintDisabled(EditorBuffer buffer) {
+        java.util.Set<String> off = new java.util.HashSet<>();
+        for (String code : config.getSettings().getMarkdownLintDisabledRules()) {
+            if (code != null && !code.isBlank()) {
+                off.add(code.strip().toUpperCase(java.util.Locale.ROOT));
+            }
+        }
+        java.nio.file.Path path = buffer == null ? null : buffer.getPath();
+        if (path != null && com.editora.vfs.Vfs.isLocal(path)) {
+            off.addAll(markdownLintConfigDisabled(path));
+        }
+        return off;
+    }
+
+    /** Walks up from {@code file} for the nearest {@code .markdownlint.json} and returns the rules it disables. */
+    private java.util.Set<String> markdownLintConfigDisabled(java.nio.file.Path file) {
+        java.nio.file.Path dir = file.getParent();
+        while (dir != null) {
+            java.nio.file.Path cfg = dir.resolve(".markdownlint.json");
+            if (java.nio.file.Files.isRegularFile(cfg)) {
+                try {
+                    long mtime = java.nio.file.Files.getLastModifiedTime(cfg).toMillis();
+                    MarkdownLintConfigEntry cached = markdownLintConfigCache.get(cfg);
+                    if (cached == null || cached.mtime() != mtime) {
+                        java.util.Set<String> rules = com.editora.editor.MarkdownLintConfig.disabledRules(
+                                java.nio.file.Files.readString(cfg));
+                        cached = new MarkdownLintConfigEntry(mtime, rules);
+                        markdownLintConfigCache.put(cfg, cached);
+                    }
+                    return cached.disabled();
+                } catch (java.io.IOException e) {
+                    return java.util.Set.of();
+                }
+            }
+            dir = dir.getParent();
+        }
+        return java.util.Set.of();
+    }
+
+    /** Applies the safe-to-automate Markdown-lint fixes to the active buffer (undoable). */
+    private void fixMarkdownLint() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isMarkdown()) {
+            setStatus(tr("status.markdownLint.notMarkdown"));
+            return;
+        }
+        if (!markdownLintEnabled()) {
+            setStatus(tr("status.markdownLint.off"));
+            return;
+        }
+        String text = b.getContent();
+        String fixed = com.editora.editor.MarkdownLintFix.fix(
+                text, effectiveMarkdownLintDisabled(b), config.getSettings().getTabSize());
+        if (fixed.equals(text)) {
+            setStatus(tr("status.markdownLint.fixNone"));
+            return;
+        }
+        b.getArea().replaceText(fixed); // whole-document replace (undoable)
+        setStatus(tr("status.markdownLint.fixed"));
+    }
+
+    /** Picker to enable/disable an individual Markdown-lint rule (writes Settings + re-lints live). */
+    private void chooseMarkdownLintRule() {
+        chooseSetting(
+                "markdownLint.toggleRule",
+                () -> com.editora.editor.MarkdownLint.RULES.stream()
+                        .map(com.editora.editor.MarkdownLint.Rule::code)
+                        .toList(),
+                code -> {
+                    boolean on = !markdownLintRuleDisabled(code);
+                    String name = tr("mdlint.rule." + code);
+                    return (on ? "✓ " : "✗ ") + code + " — " + name;
+                },
+                this::toggleMarkdownLintRule);
+    }
+
+    private boolean markdownLintRuleDisabled(String code) {
+        for (String c : config.getSettings().getMarkdownLintDisabledRules()) {
+            if (code.equalsIgnoreCase(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void toggleMarkdownLintRule(String code) {
+        java.util.List<String> list =
+                new java.util.ArrayList<>(config.getSettings().getMarkdownLintDisabledRules());
+        boolean wasDisabled = list.removeIf(c -> code.equalsIgnoreCase(c));
+        if (!wasDisabled) {
+            list.add(code);
+        }
+        config.getSettings().setMarkdownLintDisabledRules(list);
+        requestSave();
+        applyMarkdownLint(); // re-kicks every buffer's validator (new disabled set) + refreshes the panel
+        if (settingsWindow != null) {
+            settingsWindow.syncAll();
+        }
+        setStatus(tr(wasDisabled ? "status.markdownLint.ruleEnabled" : "status.markdownLint.ruleDisabled", code));
     }
 
     /** Quick-add a highlight pattern from the palette (name → regex); full editing is in Settings. */
@@ -6518,14 +6629,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         mermaid.wireBuffer(buffer); // live maid validator + initial lint state
         // Markdown linting: the overlay gets the diagnostics; the Lint tool window mirrors them live when
         // this buffer is the active one and the window is open.
-        buffer.setMarkdownLintValidator((text, cb) -> markdownLintService.validate(text, diags -> {
-            cb.accept(diags);
-            if (activeBuffer() == buffer
-                    && markdownLintToolWindow != null
-                    && toolWindows.isOpen(markdownLintToolWindow)) {
-                markdownLintPanel.setResults(buffer.getPath(), diags);
-            }
-        }));
+        buffer.setMarkdownLintValidator((text, cb) ->
+                markdownLintService.validate(text, effectiveMarkdownLintDisabled(buffer), diags -> {
+                    cb.accept(diags);
+                    if (activeBuffer() == buffer
+                            && markdownLintToolWindow != null
+                            && toolWindows.isOpen(markdownLintToolWindow)) {
+                        markdownLintPanel.setResults(buffer.getPath(), diags);
+                    }
+                }));
         buffer.setMarkdownLintEnabled(markdownLintEnabled());
         buffer.setImageDropHandler(files -> insertDroppedImages(buffer, files)); // drag image → assets/ + ![](…)
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
@@ -10503,6 +10615,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     b.getContent(), title, config.getSettings().isMathSupport());
             java.nio.file.Files.writeString(f.toPath(), html);
             setStatus(tr("status.html.exported", f.toString()));
+            openPath(f.toPath()); // show the generated HTML in a tab
         } catch (Exception ex) {
             setStatus(tr("status.html.exportFailed", String.valueOf(ex.getMessage())));
         }
@@ -12057,6 +12170,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isMarkdownLint(),
                         v -> config.getSettings().setMarkdownLint(v),
                         this::applyMarkdownLint)));
+        registry.register(Command.of("markdownLint.fix", this::fixMarkdownLint));
+        registry.register(Command.of("markdownLint.toggleRule", this::chooseMarkdownLintRule));
         registry.register(Command.of(
                 "view.toggleMath",
                 () -> toggleSetting(
