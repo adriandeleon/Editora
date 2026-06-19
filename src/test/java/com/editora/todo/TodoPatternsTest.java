@@ -15,6 +15,8 @@ class TodoPatternsTest {
         assertEquals(2, d.size());
         assertEquals("TODO", d.get(0).getName());
         assertEquals("FIXME", d.get(1).getName());
+        assertTrue(d.get(0).isCaseSensitive(), "defaults are case-sensitive");
+        assertTrue(d.get(1).isCaseSensitive(), "defaults are case-sensitive");
         assertEquals(2, TodoPatterns.compile(d).size());
     }
 
