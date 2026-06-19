@@ -4438,11 +4438,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         statusBar.setGitBranch(status.branch(), status.ahead(), status.behind());
         gitPanel.setStatus(status);
         if (b != null && b.getPath() != null) {
-            java.util.Map<Integer, String> classes = new java.util.HashMap<>();
-            state.changes().forEach((line, type) -> classes.put(line, type.cssClass()));
             // An empty map still marks the buffer as tracked (reserves the slot); hunk text feeds the
             // change-bar hover tooltip.
-            b.setChangeBars(classes, state.hunks());
+            b.setChangeBars(com.editora.git.GitChangeBars.cssClassesByLine(state.changes()), state.hunks());
         }
         refreshBlame(b); // inline blame for the active file (no-op + clears when blame is off)
     }
@@ -4460,22 +4458,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (root == null) {
             return;
         }
-        Path absRoot = root.toAbsolutePath();
         EditorBuffer active = activeBuffer();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buf = bufferOf(tab);
-            if (buf == null || buf == active || buf.getPath() == null || buf.isLargeFile()) {
-                continue; // active buffer is handled by refreshGit(); skip non-file/huge buffers
+            // The active buffer is handled by refreshGit(); skip non-file/huge buffers + files outside this repo.
+            if (buf == null
+                    || !com.editora.git.GitChangeBars.shouldRediff(
+                            buf.getPath(), root, buf == active, buf.isLargeFile())) {
+                continue;
             }
-            Path p = buf.getPath().toAbsolutePath();
-            if (!p.startsWith(absRoot)) {
-                continue; // only files inside the affected repo
-            }
-            gitService.diff(root, p, diff -> {
-                java.util.Map<Integer, String> classes = new java.util.HashMap<>();
-                diff.changes().forEach((line, type) -> classes.put(line, type.cssClass()));
-                buf.setChangeBars(classes, diff.hunks());
-            });
+            gitService.diff(
+                    root,
+                    buf.getPath().toAbsolutePath(),
+                    diff -> buf.setChangeBars(
+                            com.editora.git.GitChangeBars.cssClassesByLine(diff.changes()), diff.hunks()));
         }
         refreshOpenDiffs(); // a commit/stage/checkout changes HEAD/index/working → re-diff open diff tabs
     }

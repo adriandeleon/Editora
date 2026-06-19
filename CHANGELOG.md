@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: a characterization-test net + pure helpers for the Git integration (developer-facing).** First
+  step of the Git extraction (the largest, least-tested subsystem): before moving any stateful code, this
+  adds a safety net — `GitStateFxTest` drives the `applyGitState`/`applyGitSupport` core directly with a
+  synthetic `RepoState` and pins the repo-root/branch/upstream state machine, and a new pure, unit-tested
+  `git/GitChangeBars` (the diff→CSS-class mapping + the background-buffer re-diff predicate) dedups the gutter
+  change-bar logic at its two call sites. No behavior change; sets up the subsequent `GitCoordinator`
+  extraction under the net.
+
 - **Refactor: extract the HTTP Client into an `HttpClientCoordinator` (developer-facing).** The fourth (and
   most window-entangled) feature coordinator peeled off `MainController`: the request runner, the response
   tool-window panel, response-tab opening, clipboard curl import/export, and `.env` scanning move to
