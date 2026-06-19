@@ -11,6 +11,7 @@ import com.editora.config.NoteStore;
 import com.editora.config.PluginStore;
 import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
+import com.editora.config.SearchHistory;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
 
@@ -87,6 +88,7 @@ public enum ConfigSchema {
     CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of()),
     PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
     HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of()),
+    SEARCH_HISTORY(SearchHistory.SCHEMA_VERSION, 1, Map.of()),
     MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;

@@ -117,8 +117,10 @@ Emacs-style keymap or a fuzzy command palette.
   editor right-click menu). Off by default; per-server command + enable in *Settings → LSP*.
 - **Search** — incremental find bar (`C-s`/`C-r`) with regex, case, and whole-word toggles, a match
   count, and live highlight-all; **Find in Files** (`C-S-f`) across the project + open buffers with
-  replace-in-files and a results tool window (`M-6`); and **AceJump** (`M-g j`) — type a character, then
-  a label, to fly the caret to any on-screen occurrence.
+  include/exclude file globs, query history, regex capture-group replace (`$1`), and a results tool
+  window (`M-6`, on the right, with a *ripgrep* badge when that faster `.gitignore`-aware backend is
+  active); and **AceJump** (`M-g j`) — type a character, then a label, to fly the caret to any on-screen
+  occurrence.
 - **Run a file from a gutter ▶** — a green play glyph runs a Java 25 compact-source file
   (`java <file>`), a Python script (`python3`), or a shell script (`bash`); output streams into a Run
   tool window (`M-9`) with clickable stack traces, stdin, and per-file program arguments. Gated by the

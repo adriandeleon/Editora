@@ -67,4 +67,39 @@ class MultiFileSearchTest {
                 MultiFileSearch.matchesInText("cat cats category cat", new SearchQuery("cat", true, false, true));
         assertEquals(2, ms.size()); // only the standalone "cat"s
     }
+
+    private static SearchQuery rx(String t) {
+        return new SearchQuery(t, false, true, false); // regex, case-insensitive, not whole-word
+    }
+
+    @Test
+    void regexReplaceSupportsCaptureGroups() {
+        MultiFileSearch.ReplaceResult r =
+                MultiFileSearch.replaceAll("FooService BarService", rx("(\\w+)Service"), "$1Client");
+        assertEquals("FooClient BarClient", r.text());
+        assertEquals(2, r.count());
+    }
+
+    @Test
+    void regexReplaceWholeMatchGroupZero() {
+        MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll("a1 b2", rx("\\w\\d"), "[$0]");
+        assertEquals("[a1] [b2]", r.text());
+        assertEquals(2, r.count());
+    }
+
+    @Test
+    void literalReplaceLeavesDollarUntouched() {
+        // Non-regex: a "$1" in the replacement is inserted verbatim (no group interpretation).
+        MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll("foo foo", q("foo"), "$1");
+        assertEquals("$1 $1", r.text());
+        assertEquals(2, r.count());
+    }
+
+    @Test
+    void regexBadGroupReferenceIsAGracefulNoOp() {
+        // $2 referenced but the pattern has only one group → leave the text unchanged, count 0.
+        MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll("foo", rx("(foo)"), "$2");
+        assertEquals("foo", r.text());
+        assertEquals(0, r.count());
+    }
 }

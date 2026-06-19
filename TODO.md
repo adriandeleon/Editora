@@ -166,6 +166,7 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Regex search — regex + case-sensitive + whole-word toggles in the find bar
 - [x] Multi-file search — Find in Files (`C-S-f`): project + open buffers, off-thread, with replace-in-files
 - [x] Search results panel — Search Results tool window (`M-6`), grouped by file, Enter/double-click to jump
+- [x] Find in Files extras — include/exclude globs, query history (editable combo), regex `$1` replace, ripgrep badge, bold file names, right-side default
 - [x] Highlight all matches — every match highlighted live in the editor (current one accented)
 - [x] AceJump support — `M-g j`: type a char, then a label, to jump the caret to any on-screen occurrence
 
