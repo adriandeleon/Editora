@@ -2457,6 +2457,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Detect a *user* open/close of the HTTP window (vs. our own auto show/hide, guarded by
         // httpAutoMutating) so a manual close is remembered per .http buffer and a manual open clears it.
         toolWindows.setStateListener((tw, opened) -> {
+            if (tw == gitLogToolWindow) {
+                // Refresh the log whenever the window is opened — via the stripe button (which toggles
+                // directly, bypassing showGitLog) or a command. open() only fires this on a real open.
+                if (opened && git.isEnabled()) {
+                    loadGitLog(gitLogFilter);
+                }
+                return;
+            }
             if (tw != httpToolWindow || httpAutoMutating) {
                 return;
             }
@@ -5075,10 +5083,23 @@ public class MainController implements com.editora.mcp.McpBridge {
         };
     }
 
+    /**
+     * Opens the Git Log tool window with the given filter (null = whole repo). A fresh open triggers the
+     * load via the tool-window state listener; if the window is already open (no state change, so no
+     * listener), the log is refreshed explicitly — so opening always shows current history.
+     */
+    private void openGitLog(Path filter) {
+        gitLogFilter = filter;
+        boolean wasOpen = toolWindows.isOpen(gitLogToolWindow);
+        toolWindows.open(gitLogToolWindow);
+        if (wasOpen) {
+            loadGitLog(filter);
+        }
+    }
+
     /** Opens the Git Log tool window showing the whole-repo history. */
     private void showGitLog() {
-        loadGitLog(null);
-        toolWindows.open(gitLogToolWindow);
+        openGitLog(null);
     }
 
     /** Opens the Git Log filtered to the active file's history. */
@@ -5088,8 +5109,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.diff.noFile"));
             return;
         }
-        loadGitLog(b.getPath());
-        toolWindows.open(gitLogToolWindow);
+        openGitLog(b.getPath());
     }
 
     /** Loads up to 200 commits (whole-repo when {@code file} is null, else that file's history). */
@@ -5534,8 +5554,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.diff.noFile"));
             return;
         }
-        loadGitLog(file);
-        toolWindows.open(gitLogToolWindow);
+        openGitLog(file);
     }
 
     /** Project-tree Git ▸ Stage File for {@code file}: {@code git add -- <relpath>}. */
