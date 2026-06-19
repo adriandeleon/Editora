@@ -2752,11 +2752,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void refreshBlame(EditorBuffer buffer) {
-            MainController.this.refreshBlame(buffer);
-        }
-
-        @Override
         public void refreshOpenDiffs() {
             MainController.this.refreshOpenDiffs();
         }
@@ -5230,110 +5225,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     // --- Git blame annotations (IntelliJ-style gutter column) ------------------------------------
-
-    /** Whether blame annotations are effectively on (Git enabled + the setting + not Simple mode). */
-    private boolean gitBlameEnabled() {
-        return git.isEnabled() && config.getSettings().isGitBlameInline();
-    }
-
-    /** Pushes blame to the active buffer (and clears it everywhere else); runs on init / settings apply /
-     *  tab switch / git mutation. Only the focused buffer is annotated (blame is one git call per file). */
-    private void applyGitBlame() {
-        EditorBuffer active = activeBuffer();
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null && b != active) {
-                b.setBlame(null);
-            }
-        }
-        refreshBlame(active);
-    }
-
-    /** Fetches blame for {@code b} off-thread and pushes formatted annotations (or clears when ineligible). */
-    private void refreshBlame(EditorBuffer b) {
-        if (b == null) {
-            return;
-        }
-        if (!gitBlameEnabled()
-                || b.getPath() == null
-                || b.isLargeFile()
-                || !isLocalBuffer(b)
-                || git.repoRoot() == null) {
-            b.setBlame(null);
-            return;
-        }
-        Path file = b.getPath();
-        git.service().blame(git.repoRoot(), file, lines -> {
-            if (activeBuffer() != b) {
-                return; // the user switched tabs while blame ran
-            }
-            b.setBlame(toBlameInfos(lines));
-        });
-    }
-
-    /** Maps git blame into the per-line annotation column (author + date, full-commit tooltip, age-heatmap
-     *  background). The heatmap is scaled across this file's oldest→newest committed lines and tinted for
-     *  the current theme. Uncommitted lines get a label only (no heatmap, no commit to open). */
-    private List<com.editora.editor.BlameInfo> toBlameInfos(List<com.editora.git.BlameParser.BlameLine> lines) {
-        long now = System.currentTimeMillis() / 1000L;
-        long min = Long.MAX_VALUE;
-        long max = Long.MIN_VALUE;
-        for (com.editora.git.BlameParser.BlameLine bl : lines) {
-            if (!bl.uncommitted()) {
-                min = Math.min(min, bl.epochSeconds());
-                max = Math.max(max, bl.epochSeconds());
-            }
-        }
-        boolean dark = appThemeDark();
-        List<com.editora.editor.BlameInfo> out = new java.util.ArrayList<>(lines.size());
-        for (com.editora.git.BlameParser.BlameLine bl : lines) {
-            if (bl.uncommitted()) {
-                String label = tr("blame.uncommitted");
-                out.add(new com.editora.editor.BlameInfo(label, "", label, "", ""));
-                continue;
-            }
-            String date = blameDate(bl.epochSeconds());
-            String shortHash = bl.hash().substring(0, Math.min(8, bl.hash().length()));
-            String tooltip = tr(
-                    "blame.tooltip",
-                    bl.author(),
-                    date,
-                    relativeTimeLabel(bl.epochSeconds(), now),
-                    bl.summary(),
-                    shortHash);
-            double intensity = com.editora.git.BlameHeatmap.intensity(bl.epochSeconds(), min, max);
-            out.add(new com.editora.editor.BlameInfo(
-                    com.editora.git.GitFormat.shortAuthor(bl.author()),
-                    date,
-                    tooltip,
-                    com.editora.git.BlameHeatmap.heatmapColor(intensity, dark),
-                    bl.hash()));
-        }
-        return out;
-    }
-
-    /** ISO {@code yyyy-MM-dd} commit date for the annotation column (technical, not localized). */
-    private static String blameDate(long epochSeconds) {
-        return java.time.Instant.ofEpochSecond(epochSeconds)
-                .atZone(java.time.ZoneId.systemDefault())
-                .toLocalDate()
-                .toString();
-    }
-
-    /** Localized "N days ago"-style label from the pure {@link com.editora.git.RelativeTime} bucketing. */
-    private String relativeTimeLabel(long epochSeconds, long nowSeconds) {
-        com.editora.git.RelativeTime.Span span = com.editora.git.RelativeTime.of(epochSeconds, nowSeconds);
-        long v = span.value();
-        return switch (span.unit()) {
-            case NOW -> tr("blame.now");
-            case MINUTES -> tr("blame.minutesAgo", v);
-            case HOURS -> tr("blame.hoursAgo", v);
-            case DAYS -> tr("blame.daysAgo", v);
-            case WEEKS -> tr("blame.weeksAgo", v);
-            case MONTHS -> tr("blame.monthsAgo", v);
-            case YEARS -> tr("blame.yearsAgo", v);
-        };
-    }
+    // The annotation engine (eligibility, off-thread fetch, blame→BlameInfo mapping) lives in
+    // GitCoordinator; the click→commit-diff actions (blameShowCommit/onGutterBlameClick) stay below
+    // since they open a diff tab. applyGitBlame is reached via git.applyBlame().
 
     // --- Local File History --------------------------------------------------------------------
 
@@ -5536,7 +5430,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             Settings s = config.getSettings();
             s.setGitBlameInline(!s.isGitBlameInline());
             requestSave();
-            applyGitBlame();
+            git.applyBlame();
             settingsWindow.syncGitBlameCheck();
             setStatus(tr("status.toggle.gitBlame", tr(s.isGitBlameInline() ? "common.on" : "common.off")));
         });
@@ -10760,7 +10654,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyProjectSupport();
         git.applySupport();
         applyLocalHistory(); // re-gate the Local File History tool window + refresh its list
-        applyGitBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
+        git.applyBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
         applyNotesSupport();
         mermaid.applySupport();
         applyRipgrepSupport();

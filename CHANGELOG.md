@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: move inline Git blame into the `GitCoordinator` (developer-facing).** The blame annotation
+  engine — eligibility (`isBlameEnabled`), the off-thread per-file fetch (`applyBlame`/`refreshBlame`), and
+  the blame→`BlameInfo` mapping (author/date label, full-commit tooltip, age-heatmap tint) — moves out of
+  `MainController` into `GitCoordinator`, where `applyState` now drives it directly. That **removes the
+  `WindowOps.refreshBlame` Host hop** added when the engine was extracted: the coordinator owns blame end to
+  end and needs nothing new from the window (only the shared `CoordinatorHost`). The click→commit-diff
+  actions (`blameShowCommit`/`onGutterBlameClick`) stay in `MainController` since they open a diff tab. No
+  behavior change; full suite green.
+
 - **Refactor: extract the stateful Git core into a `GitCoordinator` (developer-facing).** Under the net added
   in the previous step, the engine of the Git integration moves out of `MainController` into
   `ui/GitCoordinator`: the `GitService` CLI facade, the repo state (root / branch / upstream), and the

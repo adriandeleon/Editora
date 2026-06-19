@@ -1,11 +1,20 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
 
+import com.editora.editor.BlameInfo;
 import com.editora.editor.EditorBuffer;
+import com.editora.git.BlameHeatmap;
+import com.editora.git.BlameParser;
 import com.editora.git.GitChangeBars;
+import com.editora.git.GitFormat;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
+import com.editora.git.RelativeTime;
 import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
@@ -13,13 +22,15 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The stateful core of the Git integration: it owns the {@link GitService} (the off-thread CLI facade) plus
  * the current repo state (root / branch / upstream) and the state machine that keeps the status bar, the
- * Commit / Log tool windows, and the active buffer's gutter change bars in sync with what's on disk.
+ * Commit / Log tool windows, the active buffer's gutter change bars, and its inline blame annotations in
+ * sync with what's on disk.
  *
- * <p>{@code MainController} keeps the user-facing Git <em>operations</em> (commit, branch, log, blame, stash,
- * clone, diff) and reaches into this coordinator for the shared engine: {@link #service()} for the CLI
- * facade and {@link #repoRoot()} for the active repo. Everything the engine needs from the window goes
- * through the shared {@link CoordinatorHost} (settings, simple-mode gate, active buffer, status echo,
- * per-buffer iteration) plus a small git-specific {@link WindowOps} for the surfaces it drives.
+ * <p>{@code MainController} keeps the user-facing Git <em>operations</em> (commit, branch, log, blame
+ * click→commit-diff, stash, clone, diff) and reaches into this coordinator for the shared engine:
+ * {@link #service()} for the CLI facade and {@link #repoRoot()} for the active repo. Everything the engine
+ * needs from the window goes through the shared {@link CoordinatorHost} (settings, simple-mode gate, active
+ * buffer, theme brightness, per-buffer iteration) plus a small git-specific {@link WindowOps} for the
+ * surfaces it drives.
  *
  * <p>The {@code applyState}/{@code applySupport} state machine is pinned by {@code GitStateFxTest}.
  */
@@ -36,9 +47,6 @@ final class GitCoordinator {
         void setGitLogWindowAvailable(boolean available);
 
         void setGitPanelStatus(GitStatus status);
-
-        /** Refreshes (or clears) the active buffer's inline blame; no-op when blame is off. */
-        void refreshBlame(EditorBuffer buffer);
 
         /** Re-diffs any open diff tabs (a mutation moved HEAD/index/working). */
         void refreshOpenDiffs();
@@ -194,7 +202,7 @@ final class GitCoordinator {
             // change-bar hover tooltip.
             b.setChangeBars(GitChangeBars.cssClassesByLine(state.changes()), state.hunks());
         }
-        ops.refreshBlame(b); // inline blame for the active file (no-op + clears when blame is off)
+        refreshBlame(b); // inline blame for the active file (no-op + clears when blame is off)
     }
 
     /**
@@ -230,5 +238,106 @@ final class GitCoordinator {
 
     void shutdown() {
         service.shutdown();
+    }
+
+    // --- Inline blame annotations (IntelliJ-style gutter column) ---------------------------------
+
+    /** Whether blame annotations are effectively on (Git enabled + the setting + not Simple mode). */
+    boolean isBlameEnabled() {
+        return isEnabled() && host.settings().isGitBlameInline();
+    }
+
+    /** Pushes blame to the active buffer (and clears it everywhere else); runs on init / settings apply /
+     *  tab switch / git mutation. Only the focused buffer is annotated (blame is one git call per file). */
+    void applyBlame() {
+        EditorBuffer active = host.activeBuffer();
+        host.forEachBuffer(b -> {
+            if (b != active) {
+                b.setBlame(null);
+            }
+        });
+        refreshBlame(active);
+    }
+
+    /** Fetches blame for {@code b} off-thread and pushes formatted annotations (or clears when ineligible). */
+    void refreshBlame(EditorBuffer b) {
+        if (b == null) {
+            return;
+        }
+        if (!isBlameEnabled() || b.getPath() == null || b.isLargeFile() || !host.isLocalBuffer(b) || repoRoot == null) {
+            b.setBlame(null);
+            return;
+        }
+        Path file = b.getPath();
+        service.blame(repoRoot, file, lines -> {
+            if (host.activeBuffer() != b) {
+                return; // the user switched tabs while blame ran
+            }
+            b.setBlame(toBlameInfos(lines));
+        });
+    }
+
+    /** Maps git blame into the per-line annotation column (author + date, full-commit tooltip, age-heatmap
+     *  background). The heatmap is scaled across this file's oldest→newest committed lines and tinted for
+     *  the current theme. Uncommitted lines get a label only (no heatmap, no commit to open). */
+    private List<BlameInfo> toBlameInfos(List<BlameParser.BlameLine> lines) {
+        long now = System.currentTimeMillis() / 1000L;
+        long min = Long.MAX_VALUE;
+        long max = Long.MIN_VALUE;
+        for (BlameParser.BlameLine bl : lines) {
+            if (!bl.uncommitted()) {
+                min = Math.min(min, bl.epochSeconds());
+                max = Math.max(max, bl.epochSeconds());
+            }
+        }
+        boolean dark = host.appThemeDark();
+        List<BlameInfo> out = new ArrayList<>(lines.size());
+        for (BlameParser.BlameLine bl : lines) {
+            if (bl.uncommitted()) {
+                String label = tr("blame.uncommitted");
+                out.add(new BlameInfo(label, "", label, "", ""));
+                continue;
+            }
+            String date = blameDate(bl.epochSeconds());
+            String shortHash = bl.hash().substring(0, Math.min(8, bl.hash().length()));
+            String tooltip = tr(
+                    "blame.tooltip",
+                    bl.author(),
+                    date,
+                    relativeTimeLabel(bl.epochSeconds(), now),
+                    bl.summary(),
+                    shortHash);
+            double intensity = BlameHeatmap.intensity(bl.epochSeconds(), min, max);
+            out.add(new BlameInfo(
+                    GitFormat.shortAuthor(bl.author()),
+                    date,
+                    tooltip,
+                    BlameHeatmap.heatmapColor(intensity, dark),
+                    bl.hash()));
+        }
+        return out;
+    }
+
+    /** ISO {@code yyyy-MM-dd} commit date for the annotation column (technical, not localized). */
+    private static String blameDate(long epochSeconds) {
+        return Instant.ofEpochSecond(epochSeconds)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+                .toString();
+    }
+
+    /** Localized "N days ago"-style label from the pure {@link RelativeTime} bucketing. */
+    private static String relativeTimeLabel(long epochSeconds, long nowSeconds) {
+        RelativeTime.Span span = RelativeTime.of(epochSeconds, nowSeconds);
+        long v = span.value();
+        return switch (span.unit()) {
+            case NOW -> tr("blame.now");
+            case MINUTES -> tr("blame.minutesAgo", v);
+            case HOURS -> tr("blame.hoursAgo", v);
+            case DAYS -> tr("blame.daysAgo", v);
+            case WEEKS -> tr("blame.weeksAgo", v);
+            case MONTHS -> tr("blame.monthsAgo", v);
+            case YEARS -> tr("blame.yearsAgo", v);
+        };
     }
 }
