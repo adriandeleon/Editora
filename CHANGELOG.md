@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Plugin API: `needsBuffer` opt-out for tool windows.** Plugin tool windows are gated on an open editor
+  buffer by default (they act on the active editor), but a new `registerToolWindow(…, icon, needsBuffer)`
+  overload lets a self-contained tool window (scratchpad, calculator, color picker, …) pass
+  `needsBuffer = false` so its stripe button stays available on every tab, including Welcome. The existing
+  overloads are unchanged (they default to `needsBuffer = true`).
+
 - **Markdown lint, substantially expanded.** The Markdown linter now covers more of the markdownlint rule
   set — MD001 (heading-level increment), MD010 (hard tabs), MD022 (headings surrounded by blank lines),
   MD023 (heading indent), MD026 (heading trailing punctuation), MD031 (fenced code surrounded by blank

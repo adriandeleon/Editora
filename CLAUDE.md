@@ -212,8 +212,11 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   tracked in `MainController.pluginToolWindows` and its stripe button is gated on an open editor buffer
   (`toolWindows.setAvailable(tw, activeBuffer() != null)` at registration + in `updateBufferToolWindows()`,
   alongside the built-in Structure/File-Info/TODO windows) — plugins act on the active editor, so they're
-  hidden on a non-buffer tab (e.g. Welcome). (A buffer-less plugin tool window, like a scratchpad, is also
-  hidden there; there's no per-plugin "needs no buffer" opt-out yet.) Declarative **assets**: `SnippetManager.addExtraSourceDir`/
+  hidden on a non-buffer tab (e.g. Welcome). **Opt-out:** the full
+  `registerToolWindow(id,title,side,content,commandId,icon,needsBuffer)` overload takes a `needsBuffer` flag
+  (the icon/no-icon overloads are `default`s delegating with `true`); a plugin passes `false` for a
+  self-contained tool window (scratchpad/calculator/…) so it's **not** added to `pluginToolWindows` and stays
+  available on every tab. Declarative **assets**: `SnippetManager.addExtraSourceDir`/
   `TemplateRegistry.addExtraSourceDir` (generalized extra-source-dir lists, cache-clearing) merge a plugin's
   `snippets/`/`templates/` into the registries (`reload()`d once after applying). **Enabled set** lives in
   `<configDir>/plugins.json` (`config/PluginStore`, schema-versioned via `ConfigSchema.PLUGINS`, owned by

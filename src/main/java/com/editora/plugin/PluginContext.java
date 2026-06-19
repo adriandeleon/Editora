@@ -26,7 +26,9 @@ public interface PluginContext {
     /**
      * Registers a dockable tool window with the given content node + a toggle command id, using the default
      * plugin (jigsaw) stripe icon. Equivalent to {@link #registerToolWindow(String, String, ToolWindowSide,
-     * Region, String, Supplier)} with a {@code null} icon.
+     * Region, String, Supplier)} with a {@code null} icon. The stripe is gated on an open editor buffer
+     * ({@code needsBuffer = true}); use {@link #registerToolWindow(String, String, ToolWindowSide, Region,
+     * String, Supplier, boolean)} to opt out.
      */
     default void registerToolWindow(String id, String title, ToolWindowSide side, Region content, String commandId) {
         registerToolWindow(id, title, side, content, commandId, null);
@@ -38,9 +40,34 @@ public interface PluginContext {
      * {@code toolbar-icon} style class (which the app theme colors for light/dark). It is invoked per window
      * and per repaint, so it <em>must</em> return a new node each call (a node can have only one parent). A
      * {@code null} supplier, or one that returns {@code null}, falls back to the default plugin (jigsaw) icon.
+     * The stripe is gated on an open editor buffer ({@code needsBuffer = true}); use
+     * {@link #registerToolWindow(String, String, ToolWindowSide, Region, String, Supplier, boolean)} to opt out.
+     */
+    default void registerToolWindow(
+            String id, String title, ToolWindowSide side, Region content, String commandId, Supplier<Node> icon) {
+        registerToolWindow(id, title, side, content, commandId, icon, true);
+    }
+
+    /**
+     * Full form. {@code needsBuffer} controls whether the tool window's stripe button is gated on an open
+     * editor buffer:
+     *
+     * <ul>
+     *   <li>{@code true} (the default of the other overloads) — the tool window acts on the active editor, so
+     *       its stripe is hidden on a non-buffer tab (e.g. the Welcome page), matching the built-in
+     *       Structure / File-Info / TODO windows.
+     *   <li>{@code false} — a self-contained tool window (a scratchpad, a calculator, a color picker, …) that
+     *       should stay available regardless of the active tab.
+     * </ul>
      */
     void registerToolWindow(
-            String id, String title, ToolWindowSide side, Region content, String commandId, Supplier<Node> icon);
+            String id,
+            String title,
+            ToolWindowSide side,
+            Region content,
+            String commandId,
+            Supplier<Node> icon,
+            boolean needsBuffer);
 
     /** Adds an item to the editor's right-click menu; the action receives the {@link ActiveEditor}. */
     void addEditorMenuItem(String label, Consumer<ActiveEditor> action);

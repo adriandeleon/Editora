@@ -976,7 +976,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 com.editora.plugin.ToolWindowSide side,
                 javafx.scene.layout.Region content,
                 String commandId,
-                java.util.function.Supplier<javafx.scene.Node> icon) {
+                java.util.function.Supplier<javafx.scene.Node> icon,
+                boolean needsBuffer) {
             String twId = fullId(id);
             String cmd = commandId == null || commandId.isBlank() ? twId : fullId(commandId);
             ToolWindow.Side s =
@@ -995,8 +996,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                     };
             ToolWindow tw = new ToolWindow(twId, title == null ? twId : title, s, iconFactory, content, cmd);
             toolWindows.register(tw);
-            pluginToolWindows.add(tw);
-            toolWindows.setAvailable(tw, activeBuffer() != null); // gate on an open buffer to act on
+            if (needsBuffer) {
+                // Acts on the active editor — track it so updateBufferToolWindows() keeps its stripe gated on
+                // an open buffer (hidden on a non-buffer tab like Welcome).
+                pluginToolWindows.add(tw);
+                toolWindows.setAvailable(tw, activeBuffer() != null);
+            }
+            // needsBuffer == false: a self-contained tool window (scratchpad, calculator, …) — never gated.
             registry.register(
                     com.editora.command.Command.of(cmd, title == null ? twId : title, () -> toolWindows.toggle(tw)));
         }
