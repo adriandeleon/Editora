@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Local History, closer to IntelliJ.** Three additions to the File History tool window:
+  **selective restore** — the snapshot-vs-current diff is now editable on the current side, so the
+  apply-chevrons copy individual fragments from a revision back into the file (undoable) instead of only a
+  whole-file revert; **named snapshots** — a "Put Label" command (`history.putLabel`) records a labeled
+  point in time (shown bold in the list, even when the content is unchanged); and **search + recent
+  changes** — a filter field over the revision list (by label/reason/time) plus a `history.recentChanges`
+  picker of the most recent revisions across the whole project. (`history/index.json` schema 1→2, additive.)
+- **Local History: folder view + recover a deleted file.** Right-click a folder in the Project tool window →
+  **Show Local History** lists every file under it that has recorded revisions, with **deleted** files badged;
+  a revision's "Restore This Version" writes it back to disk (recreating the file). Deleting a file from the
+  project tree now snapshots it into history first, so an accidental delete is recoverable. (Recovery covers
+  files deleted in Editora or that already had edit history — not files deleted by an external tool that were
+  never opened.)
+
 ### Changed
 
 - **De-duplicated the plugin examples.** The full plugin catalog lives canonically in the

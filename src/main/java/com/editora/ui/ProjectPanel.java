@@ -58,6 +58,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final BiConsumer<Path, Path> onFileRenamed;
     private final Consumer<Path> onFileDeleted;
     private final java.util.function.Predicate<Path> isModified;
+    /** Injected by MainController: snapshot a regular file into Local History just before it's deleted. */
+    private Consumer<Path> onBeforeDelete = p -> {};
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
     private Consumer<Path> onNewFromTemplate;
     /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
@@ -601,6 +603,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.onNewFromTemplate = onNewFromTemplate;
     }
 
+    /** Injects a hook called with a regular file just before it's deleted (to snapshot it into Local History). */
+    public void setOnBeforeDelete(Consumer<Path> onBeforeDelete) {
+        this.onBeforeDelete = onBeforeDelete == null ? p -> {} : onBeforeDelete;
+    }
+
     /** Injects the "Reveal in File Manager" handler ({@code (path, isDirectory)}) for the cell menu. */
     public void setOnReveal(BiConsumer<Path, Boolean> onReveal) {
         this.onReveal = onReveal;
@@ -658,6 +665,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         confirm.setHeaderText(null);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
+        }
+        if (Files.isRegularFile(path)) {
+            onBeforeDelete.accept(path); // snapshot into Local History so the file can be recovered
         }
         try {
             Files.delete(path);
@@ -870,6 +880,16 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     localHistory.setDisable(!fileActions.localHistoryEnabled());
                     git.setDisable(!fileActions.gitAvailable()); // grey out the Git submenu when there's no VCS
                 });
+            }
+            // On a folder: Local History shows the folder-history view (files under it, incl. deleted).
+            if (fileActions != null && isDir) {
+                Path dir = treeItem.getValue();
+                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+                MenuItem folderHistory = new MenuItem(tr("project.menu.localHistory"));
+                folderHistory.setGraphic(Icons.history());
+                folderHistory.setOnAction(e -> fileActions.showLocalHistory(dir));
+                menu.getItems().add(folderHistory);
+                menu.setOnShowing(e -> folderHistory.setDisable(!fileActions.localHistoryEnabled()));
             }
             return menu;
         }

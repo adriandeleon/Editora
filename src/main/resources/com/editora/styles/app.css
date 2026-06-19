@@ -1682,6 +1682,19 @@
 .search-panel .tree-cell.search-file-row {
     -fx-font-weight: bold;
 }
+/* Local History: a manual "Put Label" name shown bold/accent ahead of a revision's timestamp. */
+.history-panel .history-label {
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-accent-fg;
+}
+.history-panel .history-filter {
+    -fx-font-size: 11px;
+}
+/* Folder-history mode: a deleted file's row is struck through + muted. */
+.history-panel .tree-cell.history-deleted-file {
+    -fx-strikethrough: true;
+    -fx-text-fill: -color-fg-muted;
+}
 .search-backend-badge {
     -fx-font-size: 10px;
     -fx-text-fill: -color-fg-muted;

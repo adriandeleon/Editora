@@ -89,7 +89,8 @@ public enum ConfigSchema {
     NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of()),
     CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of()),
     PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
-    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2 added the per-revision label (additive; absent rows default to "").
+    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     SEARCH_HISTORY(SearchHistory.SCHEMA_VERSION, 1, Map.of()),
     MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of());
 
