@@ -241,16 +241,16 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   install-from-disk, and Settings → Plugins **Registry URL** field + **Browse / Install-from-file / per-plugin
   Remove** buttons (`SettingsWindow.setPluginActions` injected by `MainController`). Commands `plugins.browse`/
   `plugins.installFromDisk` (palette-filtered when plugins off); `MainController.onPluginInstalled` enables the
-  id in `PluginStore` + `savePlugins` + `syncPluginsCheck`; `uninstallPlugin` deletes `plugins/<id>/`. Sample
-  registry: `examples/editora-plugins-registry/`. **No new dependency** (`java.net.http` already required).
-  **Example plugins** (all under `examples/`, each with a generic `build.sh` that reads the id from
-  `plugin.json` and emits `<id>.zip` + its sha): `example-plugin` (every extension point), `lorem-ipsum-plugin`,
-  `text-tools-plugin` (selection/document transforms via `setText`), `insert-tools-plugin` (UUID/timestamp),
-  `scratchpad-plugin` (a persistent tool window using `dataDir()`), `format-runner-plugin` (external formatter
-  via `ProcessBuilder` stdin→stdout → `setText`), `encode-tools-plugin` (Base64/URL/HTML/ROT13/hex),
-  `hash-tools-plugin` (MD5/SHA-1/SHA-256), `markdown-toc-plugin` (insert a TOC from headings), and
-  `regex-tester-plugin` (a live regex tester tool window). All are published in the live
-  `adriandeleon/editora-plugins` registry (which also carries each plugin's source under `plugins/<id>/`).
+  id in `PluginStore` + `savePlugins` + `syncPluginsCheck`; `uninstallPlugin` deletes `plugins/<id>/`. **No new
+  dependency** (`java.net.http` already required). **Example plugin:** the editor repo keeps a single
+  in-tree reference, `examples/example-plugin/` (a complete Java + declarative plugin exercising every
+  extension point, with a generic `build.sh` that reads the id from `plugin.json` and emits `<id>.zip` + its
+  sha) — this is the SDK example `docs/plugins.md` walks through. **The full plugin catalog (and the live,
+  signed `index.json` registry) lives in the separate `adriandeleon/editora-plugins` repo** under
+  `plugins/<id>/` — text/encode/hash/json tools, scratchpad, format-runner, regex-tester, markdown-toc,
+  color-picker, word-count, calculator, run-task, slug-tools, open-on-github, box-banner, etc. They were
+  *not* kept duplicated under `examples/` (that copy had already drifted); add or update a real plugin in the
+  registry repo, not here.
   **Security:** consent + integrity + authenticity. (1) *Consent* — `MainController.confirmEnablePlugin` shows a
   **capability disclosure** (jar? declared external commands + argv? keybinding remaps? via
   `pluginCapabilitySummary`) before *enabling* at every arming point (install, install-from-file, the Settings
