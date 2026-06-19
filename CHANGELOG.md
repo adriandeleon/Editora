@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Find/Replace bar buttons disable when there's no search term.** Prev, Next, Replace, Replace-All, and
+  the case/regex/whole-word toggles are now disabled while the Find field is empty — nothing they do is
+  meaningful without a query (an empty *replacement* still works as "delete matches").
+
 - **Buffer-only tool windows are hidden when there's no buffer to act on.** The Structure, File Information,
   TODO, Markdown Lint, and External Tools stripe buttons no longer show on the Welcome page (or other
   non-buffer tabs) — they now gate their availability on an actionable active editor buffer (Markdown Lint

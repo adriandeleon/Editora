@@ -80,6 +80,18 @@ public class FindReplaceBar extends HBox {
         replaceAll.setOnAction(e -> replaceAll());
         close.setOnAction(e -> hideBar());
 
+        // Disable everything that acts on the find query while the Find field is empty — navigation
+        // (Prev/Next), replace (Replace/All), and the match-option toggles (case/regex/whole-word) all
+        // need something to search for.
+        javafx.beans.binding.BooleanBinding noQuery = findField.textProperty().isEmpty();
+        prev.disableProperty().bind(noQuery);
+        next.disableProperty().bind(noQuery);
+        replace.disableProperty().bind(noQuery);
+        replaceAll.disableProperty().bind(noQuery);
+        caseSensitive.disableProperty().bind(noQuery);
+        regex.disableProperty().bind(noQuery);
+        wholeWord.disableProperty().bind(noQuery);
+
         findField.setOnAction(e -> findNext());
         findField.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ESCAPE) {
