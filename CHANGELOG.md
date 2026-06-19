@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tool windows that act on the active file now hide on non-buffer tabs.** The **Git Commit** and **Git Log**
+  stripe buttons — and **plugin** tool windows (e.g. GnuPG, the Regex tester) — only appear when there's an
+  open editor buffer to act on; on the Welcome tab (or any non-buffer tab) they're hidden, matching how the
+  Structure/File-Info/TODO windows already behave. Commit/Log additionally stay gated on being inside a repo.
+
 - **Find/Replace bar buttons disable when there's no search term.** Prev, Next, Replace, Replace-All, and
   the case/regex/whole-word toggles are now disabled while the Find field is empty — nothing they do is
   meaningful without a query (an empty *replacement* still works as "delete matches").
