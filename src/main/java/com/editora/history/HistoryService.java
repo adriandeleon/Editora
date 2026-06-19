@@ -54,15 +54,35 @@ public final class HistoryService {
             RetentionPolicy policy,
             long now,
             Consumer<List<HistoryRevision>> onUpdated) {
+        snapshot(file, content, reason, "", false, existing, policy, now, onUpdated);
+    }
+
+    /**
+     * Records a snapshot, optionally carrying a user {@code label} and {@code force}-ing a revision even when
+     * the content is unchanged. {@code force = true} is used for "Put Label" so a label always marks a point
+     * in time (the blob is content-addressed, so a same-sha row costs only the index entry). With
+     * {@code force = false} an unchanged content is skipped and {@code onUpdated} is <b>not</b> called.
+     */
+    public void snapshot(
+            Path file,
+            String content,
+            String reason,
+            String label,
+            boolean force,
+            List<HistoryRevision> existing,
+            RetentionPolicy policy,
+            long now,
+            Consumer<List<HistoryRevision>> onUpdated) {
         List<HistoryRevision> snapshot = existing == null ? List.of() : new ArrayList<>(existing);
         exec.submit(() -> {
             String sha = HistoryBlobStore.sha256(content);
-            if (HistoryRetention.isDuplicate(snapshot, sha)) {
+            if (!force && HistoryRetention.isDuplicate(snapshot, sha)) {
                 return; // unchanged since the last revision — skip
             }
             blobs.put(content, sha);
             long size = content.getBytes(StandardCharsets.UTF_8).length;
-            HistoryRevision rev = new HistoryRevision(file.toString(), now, size, sha, reason);
+            HistoryRevision rev =
+                    new HistoryRevision(file.toString(), now, size, sha, reason, label == null ? "" : label);
             List<HistoryRevision> updated = new ArrayList<>(snapshot.size() + 1);
             updated.add(rev); // newest-first
             updated.addAll(snapshot);

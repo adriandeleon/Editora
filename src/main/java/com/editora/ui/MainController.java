@@ -2130,6 +2130,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectPanel = new ProjectPanel(
                 this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
+        projectPanel.setOnBeforeDelete(this::captureBeforeDelete); // snapshot to Local History before delete
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
         projectPanel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         projectPanel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
@@ -5467,8 +5468,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (!localHistoryEnabled() || buffer == null || buffer.getPath() == null || !isLocalBuffer(buffer)) {
             return;
         }
-        Path file = buffer.getPath();
-        String content = buffer.getContent();
+        recordHistoryFor(buffer.getPath(), buffer.getContent(), reason, "", false);
+    }
+
+    /**
+     * Records a snapshot of arbitrary {@code content} for {@code file} (not necessarily an open buffer — e.g.
+     * a manual label, or a file captured at delete time), folding the pruned result into the per-project
+     * bucket + persisting + GCing. {@code force} bypasses the unchanged-content skip (used by "Put Label" so a
+     * label always marks a point); {@code label} is the user name ({@code ""} for automatic revisions).
+     */
+    private void recordHistoryFor(Path file, String content, String reason, String label, boolean force) {
+        if (!localHistoryEnabled() || file == null || content == null || !com.editora.vfs.Vfs.isLocal(file)) {
+            return;
+        }
         String key = historyKey(file);
         List<HistoryRevision> existing = config.getHistory().getOrDefault(key, List.of());
         Settings s = config.getSettings();
@@ -5476,7 +5488,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         var policy = new com.editora.history.HistoryRetention.RetentionPolicy(
                 s.getHistoryMaxPerFile(), maxAgeMillis, (long) Math.max(0, s.getHistoryMaxTotalMb()) * 1024L * 1024L);
         long now = System.currentTimeMillis();
-        historyService.snapshot(file, content, reason, existing, policy, now, updated -> {
+        historyService.snapshot(file, content, reason, label, force, existing, policy, now, updated -> {
             java.util.Map<String, List<HistoryRevision>> bucket = config.getHistory();
             bucket.put(key, updated);
             // Enforce the per-project byte budget across the whole bucket, then persist + GC.
@@ -5511,6 +5523,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             public void restore(HistoryRevision revision) {
                 restoreHistory(revision);
             }
+
+            @Override
+            public void restoreToDisk(HistoryRevision revision) {
+                restoreRevisionToDisk(revision);
+            }
         };
     }
 
@@ -5532,20 +5549,117 @@ public class MainController implements com.editora.mcp.McpBridge {
     // --- Project tree "Show Local History" / "Git" submenu (act on a tree path, not the active tab) ---
 
     /**
-     * Project-tree "Show Local History": opens {@code file} (the Local History tool window is keyed to the
-     * active buffer) then shows its history. No-op for a folder / when the feature is off / a remote file.
+     * Project-tree "Show Local History": for a file, opens it (the tool window is keyed to the active buffer)
+     * then shows its history; for a folder, shows the folder-history view (files under it + deleted files).
      */
     private void showLocalHistoryForPath(Path file) {
         if (!localHistoryEnabled()) {
             setStatus(tr("status.history.disabled"));
             return;
         }
-        if (file == null || Files.isDirectory(file) || !com.editora.vfs.Vfs.isLocal(file)) {
+        if (file == null || !com.editora.vfs.Vfs.isLocal(file)) {
             setStatus(tr("status.history.noFile"));
+            return;
+        }
+        if (Files.isDirectory(file)) {
+            showFolderHistory(file);
             return;
         }
         openPath(file); // makes it the active buffer, which the history tool window tracks
         showLocalHistory();
+    }
+
+    /** Shows the folder-history view: every file under {@code folder} with recorded revisions (incl. deleted). */
+    private void showFolderHistory(Path folder) {
+        if (fileHistoryToolWindow == null) {
+            return;
+        }
+        var folderRevs = com.editora.history.HistoryQueries.folderRevisions(config.getHistory(), historyKey(folder));
+        java.util.List<FileHistoryPanel.FileGroup> groups = new java.util.ArrayList<>();
+        for (var e : folderRevs.entrySet()) {
+            Path p = Path.of(e.getKey());
+            String display = folder.relativize(p).toString();
+            boolean deleted = !Files.exists(p);
+            groups.add(new FileHistoryPanel.FileGroup(e.getKey(), display, deleted, e.getValue()));
+        }
+        if (groups.isEmpty()) {
+            setStatus(tr("status.history.folderEmpty", folder.getFileName()));
+            return;
+        }
+        fileHistoryPanel.setFolderHistory(folder.getFileName().toString(), groups);
+        toolWindows.setAvailable(fileHistoryToolWindow, true);
+        toolWindows.open(fileHistoryToolWindow);
+    }
+
+    /**
+     * Folder-history restore: writes {@code revision}'s content back to its own path, recreating a deleted file
+     * (parent dirs created); confirms first when the file still exists. Then opens it + refreshes the tree.
+     */
+    private void restoreRevisionToDisk(HistoryRevision revision) {
+        if (revision == null || revision.path().isBlank()) {
+            return;
+        }
+        Path file = Path.of(revision.path());
+        if (Files.exists(file)) {
+            Alert confirm = new Alert(
+                    Alert.AlertType.CONFIRMATION,
+                    tr("history.restoreOverwrite", file.getFileName()),
+                    ButtonType.OK,
+                    ButtonType.CANCEL);
+            confirm.initOwner(stage);
+            confirm.setTitle(tr("history.menu.restore"));
+            confirm.setHeaderText(null);
+            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                return;
+            }
+        }
+        historyService.content(revision, text -> {
+            if (text == null) {
+                setStatus(tr("status.history.restoreFailed", file.getFileName()));
+                return;
+            }
+            try {
+                if (file.getParent() != null) {
+                    Files.createDirectories(file.getParent());
+                }
+                Files.writeString(file, text);
+            } catch (IOException e) {
+                setStatus(tr("status.history.restoreFailed", file.getFileName()));
+                return;
+            }
+            openPath(file);
+            projectPanel.refreshTree();
+            setStatus(tr("status.history.restored", file.getFileName()));
+        });
+    }
+
+    /** Snapshots {@code file}'s on-disk content into Local History just before it's deleted (in-app delete). */
+    private void captureBeforeDelete(Path file) {
+        if (!localHistoryEnabled() || file == null || !com.editora.vfs.Vfs.isLocal(file)) {
+            return;
+        }
+        String content = readTextForHistory(file);
+        if (content != null) {
+            recordHistoryFor(file, content, HistoryRevision.REASON_DELETE, "", true);
+        }
+    }
+
+    /** Reads a local file as text for a history snapshot; null for a non-existent/binary/oversize/unreadable file. */
+    private String readTextForHistory(Path file) {
+        try {
+            if (!Files.isRegularFile(file) || Files.size(file) > EditorBuffer.LARGE_FILE_BYTES) {
+                return null;
+            }
+            byte[] bytes = Files.readAllBytes(file);
+            for (byte b : bytes) {
+                if (b == 0) {
+                    return null; // looks binary — skip
+                }
+            }
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */
@@ -5570,7 +5684,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 git.repoRoot().relativize(file.toAbsolutePath()).toString());
     }
 
-    /** Opens a read-only diff of {@code revision} (left) vs the active file's current text (right). */
+    /**
+     * Opens a diff of {@code revision} (left, the snapshot) vs the active file's current text (right). The
+     * current side is editable so the diff's apply-chevrons let you copy individual fragments from the
+     * snapshot back into the file (IntelliJ-style selective restore) — undoable via the diff toolbar; the
+     * panel's "Restore This Version" still does the whole-file revert.
+     */
     private void openLocalHistoryDiff(HistoryRevision revision) {
         EditorBuffer b = activeBuffer();
         if (b == null || b.getPath() == null || revision == null) {
@@ -5586,7 +5705,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 name,
                 cb -> historyService.content(revision, text -> cb.accept(text == null ? "" : text)),
                 cb -> cb.accept(currentTextOf(target)),
-                DiffViewerPane.EditableSide.NONE,
+                DiffViewerPane.EditableSide.RIGHT,
                 target);
     }
 
@@ -5605,6 +5724,82 @@ public class MainController implements com.editora.mcp.McpBridge {
             applyToLocal(target, text);
             setStatus(tr("status.history.restored", target.getFileName()));
         });
+    }
+
+    /**
+     * "Put Label": prompts for a name and records a labeled snapshot of the active file's current content
+     * (forced, so a label always marks a point in time even if the content is unchanged).
+     */
+    private void putHistoryLabel() {
+        if (!localHistoryEnabled()) {
+            setStatus(tr("status.history.disabled"));
+            return;
+        }
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null || !isLocalBuffer(b)) {
+            setStatus(tr("status.history.noFile"));
+            return;
+        }
+        Path file = b.getPath();
+        String content = b.getContent(); // snapshot the state at the moment the command was invoked
+        promptText(tr("history.label.title"), tr("history.label.prompt"), "", name -> {
+            String label = name == null ? "" : name.strip();
+            if (label.isEmpty()) {
+                return;
+            }
+            recordHistoryFor(file, content, HistoryRevision.REASON_LABEL, label, true);
+            setStatus(tr("status.history.labeled", label));
+        });
+    }
+
+    /** "Recent Changes": a cross-file picker of the active project's most recent revisions, newest-first. */
+    private void showRecentChanges() {
+        if (!localHistoryEnabled()) {
+            setStatus(tr("status.history.disabled"));
+            return;
+        }
+        QuickOpen<HistoryRevision> picker = new QuickOpen<>(
+                tr("history.recent.title"),
+                tr("history.recent.prompt"),
+                () -> com.editora.history.HistoryQueries.recent(config.getHistory(), 200),
+                this::recentChangeLabel,
+                HistoryRevision::path,
+                this::openRecentChange);
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Picker row text for a recent revision: {@code fileName · time · label-or-reason}. */
+    private String recentChangeLabel(HistoryRevision r) {
+        String name = Path.of(r.path()).getFileName().toString();
+        String tag = r.label() != null && !r.label().isBlank() ? r.label() : historyReasonLabel(r.reason());
+        return name + "  ·  " + historyTime(r.timestamp()) + "  ·  " + tag;
+    }
+
+    /** Opens the file behind a recent revision and shows its File History. */
+    private void openRecentChange(HistoryRevision r) {
+        if (r == null) {
+            return;
+        }
+        openPath(Path.of(r.path()));
+        showLocalHistory();
+    }
+
+    /** Localized capture-reason label (mirrors {@code FileHistoryPanel.reasonLabel} for cross-file pickers). */
+    static String historyReasonLabel(String reason) {
+        return switch (reason == null ? "" : reason) {
+            case HistoryRevision.REASON_AUTOSAVE -> tr("history.reason.autosave");
+            case HistoryRevision.REASON_EXTERNAL -> tr("history.reason.external");
+            case HistoryRevision.REASON_LABEL -> tr("history.reason.label");
+            case HistoryRevision.REASON_DELETE -> tr("history.reason.delete");
+            default -> tr("history.reason.save");
+        };
+    }
+
+    private static String historyTime(long epochMillis) {
+        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                .format(java.time.LocalDateTime.ofInstant(
+                        java.time.Instant.ofEpochMilli(epochMillis), java.time.ZoneId.systemDefault()));
     }
 
     /** The current text of {@code file}: the open buffer's live text when open, else the on-disk content. */
@@ -12300,6 +12495,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         // History / Log, blame, and stash (Core-trio parity with IntelliJ/VSCode).
         registry.register(Command.of("tool.gitLog", () -> git.ifEnabled(this::showGitLog)));
         registry.register(Command.of("tool.fileHistory", this::showLocalHistory));
+        registry.register(Command.of("history.putLabel", this::putHistoryLabel));
+        registry.register(Command.of("history.recentChanges", this::showRecentChanges));
         registry.register(Command.of("git.fileHistory", () -> git.ifEnabled(this::showFileHistory)));
         registry.register(Command.of("git.toggleBlame", this::toggleGitBlame));
         registry.register(Command.of("git.blameShowCommit", () -> git.ifEnabled(this::blameShowCommit)));
