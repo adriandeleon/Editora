@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: extract the HTTP Client into an `HttpClientCoordinator` (developer-facing).** The fourth (and
+  most window-entangled) feature coordinator peeled off `MainController`: the request runner, the response
+  tool-window panel, response-tab opening, clipboard curl import/export, and `.env` scanning move to
+  `ui/HttpClientCoordinator`. It takes the shared `CoordinatorHost` **plus** a small `WindowOps` extension
+  (open a tab / open-toggle the tool window / re-gate the run affordance / persist the selected environment);
+  `MainController` keeps only the `ToolWindow` registration + availability plumbing. Thanks to the shared
+  host, this dropped ~210 lines from `MainController` (vs ~60 for the earlier ones). Behavior is identical;
+  covered by a new `HttpClientCoordinatorFxTest` against fake host + ops.
+
 - **Refactor: a shared `CoordinatorHost` for the feature coordinators (developer-facing).** The three feature
   coordinators (log viewer / HTML preview / Mermaid) had a bespoke ~60-line anonymous `Host` adapter each in
   `MainController`. They now share one `ui/CoordinatorHost` interface and a single `MainController.Services`
