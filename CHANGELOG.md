@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Git Log tool window refreshes when opened.** Opening it — via the stripe icon (which toggles the
+  window directly) or a command — now reloads the commit history, so it no longer shows stale commits from a
+  previous open. (Opening via the stripe button previously bypassed the load entirely.)
+
 - **Tool windows that act on the active file now hide on non-buffer tabs.** The **Git Commit** and **Git Log**
   stripe buttons — and **plugin** tool windows (e.g. GnuPG, the Regex tester) — only appear when there's an
   open editor buffer to act on; on the Welcome tab (or any non-buffer tab) they're hidden, matching how the
