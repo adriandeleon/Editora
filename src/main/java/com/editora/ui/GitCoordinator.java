@@ -109,6 +109,19 @@ final class GitCoordinator {
         }
     }
 
+    /**
+     * Guard shared by every repo-only operation: when there's no active repo, echoes the standard
+     * "not a repo" / "git not installed" status and returns {@code true} so the caller early-returns.
+     * Returns {@code false} (no echo) when a repo is present.
+     */
+    boolean reportIfNoRepo() {
+        if (repoRoot != null) {
+            return false;
+        }
+        host.setStatus(tr(service.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        return true;
+    }
+
     /** The path whose repo drives the Git UI: the active file, else the active project root, else null. */
     Path contextPath() {
         EditorBuffer b = host.activeBuffer();
