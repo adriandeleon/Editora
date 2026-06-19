@@ -293,10 +293,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
     private final com.editora.diff.DiffService diffService = new com.editora.diff.DiffService();
-    /** HTTP Client: the ijhttp façade, the response tool window, and whether ijhttp was detected. */
-    private final com.editora.http.HttpClientService httpService = new com.editora.http.HttpClientService();
-
-    private HttpClientPanel httpPanel;
+    /** HTTP Client: the {@code .http} request runner + response tool window; see {@link HttpClientCoordinator}. */
     private ToolWindow httpToolWindow;
     /** LSP: manager (one server per workspace root), the Problems window, and the latest diagnostics. */
     private final com.editora.lsp.LspManager lspManager =
@@ -536,7 +533,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         mermaid.applySupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
         applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
         applyMathSupport(); // LaTeX math rendering (off by default)
-        applyHttpClientSupport(); // configure ijhttp; .http run glyphs off when disabled (default)
+        httpClient.applySupport(); // .http run glyphs + response window off when disabled (default)
         htmlPreview.applySupport(); // HTML "open in browser" control off when disabled (default)
         logViewer.applySupport(); // log-viewer control + level overlay (default on for .log files)
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
@@ -1167,7 +1164,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 s.isNotesSupport(),
                 s.isMermaidSupport(),
                 lspEnabled(),
-                httpEnabled(),
+                httpClient.isEnabled(),
                 htmlPreview.isEnabled(),
                 localHistoryEnabled(),
                 mcpEnabled(),
@@ -2380,19 +2377,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         debugToolWindow = new ToolWindow(
                 "debug", tr("toolwindow.debug"), ToolWindow.Side.BOTTOM, Icons::debug, debugPanel, "tool.debug");
-        httpPanel = new HttpClientPanel(
-                this::saveHttpResponse,
-                this::copyHttpAsCurl,
-                this::openHttpResponseInTab,
-                config.getSettings().getFontFamily(),
-                Math.max(1, (int) Math.round(config.getSettings().getFontSize()
-                        * config.getSettings().getFontZoom())));
-        httpPanel.setOnEnvironmentChanged(env -> {
-            config.getWorkspaceState().setHttpEnvironment(env);
-            config.save();
-        });
         httpToolWindow = new ToolWindow(
-                "http", tr("toolwindow.http"), ToolWindow.Side.BOTTOM, Icons::httpClient, httpPanel, "tool.http");
+                "http",
+                tr("toolwindow.http"),
+                ToolWindow.Side.BOTTOM,
+                Icons::httpClient,
+                httpClient.panel(),
+                "tool.http");
         externalToolPanel = new ExternalToolPanel();
         externalToolPanel.setOnLink(this::openRunLink); // double-clicked path in output → jump
         externalToolToolWindow = new ToolWindow(
@@ -2820,6 +2811,47 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The server-log-viewer feature (level highlighting, tail-follow, filtering); see {@link LogViewerCoordinator}. */
     private final LogViewerCoordinator logViewer = new LogViewerCoordinator(coordinatorHost);
 
+    // --- HTTP Client (.http request runner + response tool window) -----------------------------------
+
+    /** The HTTP Client feature; see {@link HttpClientCoordinator}. Takes the shared host + http-specific ops. */
+    private final HttpClientCoordinator httpClient =
+            new HttpClientCoordinator(coordinatorHost, new HttpClientCoordinator.WindowOps() {
+                @Override
+                public void openTab(EditorBuffer buffer) {
+                    addBuffer(buffer, true);
+                }
+
+                @Override
+                public void openToolWindow(boolean focus) {
+                    if (focus) {
+                        toolWindows.open(httpToolWindow, true);
+                    } else {
+                        toolWindows.open(httpToolWindow);
+                    }
+                }
+
+                @Override
+                public void toggleToolWindow() {
+                    toolWindows.toggle(httpToolWindow);
+                }
+
+                @Override
+                public void updateRunGating() {
+                    updateRunButton();
+                }
+
+                @Override
+                public String savedEnvironment() {
+                    return config.getWorkspaceState().getHttpEnvironment();
+                }
+
+                @Override
+                public void persistEnvironment(String env) {
+                    config.getWorkspaceState().setHttpEnvironment(env);
+                    config.save();
+                }
+            });
+
     // --- MCP server (loopback HTTP, exposes editor state + commands to an LLM agent) --------------
 
     private boolean mcpEnabled() {
@@ -2828,7 +2860,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Reconciles the MCP server with its setting (mirrors {@link #applyHttpClientSupport}). Starts the
+     * Reconciles the MCP server with its setting (mirrors {@link HttpClientCoordinator#applySupport}). Starts the
      * single app-wide loopback server when first enabled (this window becomes its bridge), or stops it
      * when disabled. Runs at startup and on every settings apply.
      */
@@ -3059,246 +3091,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
         return null;
-    }
-
-    // --- HTTP Client (.http via ijhttp) ----------------------------------------------------------
-
-    private boolean httpEnabled() {
-        // Simple UI mode disables the HTTP client entirely (without changing the saved setting).
-        return config.getSettings().isHttpClientSupport() && !simpleModeActive();
-    }
-
-    /** Runs {@code action} only when the HTTP Client is enabled; otherwise reports it. */
-    private void ifHttp(Runnable action) {
-        if (httpEnabled()) {
-            action.run();
-        } else {
-            setStatus(tr("statusbar.tip.httpDisabled"));
-        }
-    }
-
-    /**
-     * Reconciles the HTTP Client feature with its setting (mirrors {@link MermaidCoordinator#applySupport}):
-     * configures the ijhttp command, detects it (cached, async), then gates the request ▶ glyphs +
-     * the response tool window. Runs at startup and on every settings apply.
-     */
-    private void applyHttpClientSupport() {
-        boolean on = httpEnabled(); // effective: off in Simple UI mode
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null) {
-                b.setHttpEnabled(on);
-            }
-        }
-        Settings s = config.getSettings();
-        httpPanel.setEditorFont(s.getFontFamily(), Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom())));
-        updateRunButton(); // re-gate the HTTP tool window on the active buffer
-    }
-
-    /** Runs the request at the caret line of the active {@code .http} buffer (palette command). */
-    private void runHttpRequestAtCaret() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isHttpFile()) {
-            setStatus(tr("status.http.noRequest"));
-            return;
-        }
-        runHttpRequest(b, b.getArea().getCurrentParagraph());
-    }
-
-    /** Executes the request containing {@code line} with the built-in HTTP client, shows the response. */
-    private void runHttpRequest(EditorBuffer buffer, int line) {
-        if (!httpEnabled()) {
-            setStatus(tr("statusbar.tip.httpDisabled"));
-            return;
-        }
-        if (buffer == null || buffer.getPath() == null) {
-            setStatus(tr("status.http.saveFirst"));
-            return;
-        }
-        String text = buffer.getContent();
-        int index = com.editora.http.HttpFile.requestIndexAt(text, line);
-        if (index < 0) {
-            setStatus(tr("status.http.noRequest"));
-            return;
-        }
-        com.editora.http.HttpFile.Request req =
-                com.editora.http.HttpFile.parse(text).get(index);
-        com.editora.http.HttpFile.Parsed parsed = com.editora.http.HttpFile.parseRequest(req);
-        String label = parsed.method() + " " + parsed.url();
-        startHttpRun(label);
-        java.nio.file.Path baseDir = buffer.getPath().toAbsolutePath().getParent();
-        httpService.run(parsed, httpVariables(buffer, text), baseDir, ex -> finishHttpRun(label, ex));
-    }
-
-    /** Runs every request in the active {@code .http} file sequentially (palette command). */
-    private void runHttpFile() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isHttpFile()) {
-            setStatus(tr("status.http.noRequest"));
-            return;
-        }
-        if (!httpEnabled()) {
-            setStatus(tr("statusbar.tip.httpDisabled"));
-            return;
-        }
-        if (b.getPath() == null) {
-            setStatus(tr("status.http.saveFirst"));
-            return;
-        }
-        String text = b.getContent();
-        java.util.List<com.editora.http.HttpFile.Parsed> reqs = com.editora.http.HttpFile.parse(text).stream()
-                .map(r -> com.editora.http.HttpFile.parseRequest(r))
-                .toList();
-        if (reqs.isEmpty()) {
-            setStatus(tr("status.http.noRequest"));
-            return;
-        }
-        String label = b.getPath().getFileName().toString();
-        startHttpRun(label);
-        java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-        httpService.runAll(reqs, httpVariables(b, text), baseDir, exchanges -> {
-            httpPanel.showExchanges(exchanges);
-            boolean allOk = exchanges.stream().allMatch(ex -> ex.result().ok());
-            setStatus(allOk ? tr("status.http.done", label) : tr("status.http.failed", exchanges.size()));
-        });
-    }
-
-    private void startHttpRun(String label) {
-        toolWindows.open(httpToolWindow);
-        httpPanel.started(label);
-        setStatus(tr("status.http.running", label));
-    }
-
-    private void finishHttpRun(String label, com.editora.http.HttpExchange ex) {
-        httpPanel.showExchanges(java.util.List.of(ex));
-        com.editora.http.HttpResult r = ex.result();
-        setStatus(r.failed() || !r.ok() ? tr("status.http.failed", r.status()) : tr("status.http.done", label));
-    }
-
-    /** Copies {@code ex}'s (resolved) request as a {@code curl} command to the clipboard. */
-    private void copyHttpAsCurl(com.editora.http.HttpExchange ex) {
-        String curl = com.editora.http.CurlExport.toCurl(ex.method(), ex.url(), ex.headers(), ex.requestBody());
-        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-        cc.putString(curl);
-        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
-        setStatus(tr("status.http.curlCopied"));
-    }
-
-    /** Opens {@code ex}'s response body in a new (untitled) editor tab, highlighted by content type. */
-    private void openHttpResponseInTab(com.editora.http.HttpExchange ex) {
-        com.editora.http.HttpResult r = ex.result();
-        if (r.failed()) {
-            setStatus(tr("status.http.noResponse"));
-            return;
-        }
-        EditorBuffer buffer = new EditorBuffer();
-        buffer.setDisplayName("response" + com.editora.http.HttpResponseFormat.extensionFor(r.contentType()));
-        addBuffer(buffer, true);
-        buffer.setContent(com.editora.http.HttpResponseFormat.prettyBody(r.body(), r.contentType()));
-    }
-
-    /** Copies the response viewer's selected request as a {@code curl} command (palette command). */
-    private void copyActiveHttpAsCurl() {
-        com.editora.http.HttpExchange ex = httpPanel.getSelectedExchange();
-        if (ex == null) {
-            setStatus(tr("status.http.noResponse"));
-            return;
-        }
-        copyHttpAsCurl(ex);
-    }
-
-    /** Opens the response viewer's selected response in a new editor tab (palette command). */
-    private void openActiveHttpResponseInTab() {
-        com.editora.http.HttpExchange ex = httpPanel.getSelectedExchange();
-        if (ex == null) {
-            setStatus(tr("status.http.noResponse"));
-            return;
-        }
-        openHttpResponseInTab(ex);
-    }
-
-    /** Converts a {@code curl} command on the clipboard into a request block, appending it to the active
-     *  {@code .http} buffer (or a new one). */
-    private void importCurlFromClipboard() {
-        String clip = javafx.scene.input.Clipboard.getSystemClipboard().getString();
-        if (clip == null || clip.isBlank() || !clip.contains("curl")) {
-            setStatus(tr("status.http.notCurl"));
-            return;
-        }
-        String request = com.editora.http.CurlImport.toHttpRequest(clip.strip());
-        EditorBuffer b = activeBuffer();
-        if (b != null && b.isHttpFile() && b.isEditable()) {
-            String snippet = (b.getArea().getLength() == 0 ? "" : "\n") + "###\n" + request + "\n";
-            b.getArea().insertText(b.getArea().getLength(), snippet);
-            b.getArea().moveTo(b.getArea().getLength());
-        } else {
-            EditorBuffer nb = new EditorBuffer();
-            nb.setDisplayName("requests.http");
-            addBuffer(nb, true);
-            nb.setContent(request);
-        }
-        setStatus(tr("status.http.curlImported"));
-    }
-
-    /** The resolved variable map for a {@code .http} buffer: the selected environment's vars (public +
-     *  private env files) overlaid with the file's {@code @var} declarations. */
-    private java.util.Map<String, String> httpVariables(EditorBuffer buffer, String text) {
-        java.nio.file.Path dir = buffer.getPath().toAbsolutePath().getParent();
-        String env = httpPanel.getSelectedEnvironment();
-        java.util.Map<String, String> envVars = new java.util.LinkedHashMap<>();
-        envVars.putAll(httpEnvVars(dir == null ? null : dir.resolve("http-client.env.json"), env));
-        envVars.putAll(httpEnvVars(dir == null ? null : dir.resolve("http-client.private.env.json"), env));
-        return com.editora.http.HttpVars.resolve(
-                envVars, com.editora.http.HttpFile.fileVariablePairs(text), java.time.LocalDateTime.now());
-    }
-
-    private java.util.Map<String, String> httpEnvVars(java.nio.file.Path file, String env) {
-        if (file == null || env == null || env.isEmpty() || !java.nio.file.Files.exists(file)) {
-            return java.util.Map.of();
-        }
-        try {
-            return com.editora.http.HttpEnv.variables(java.nio.file.Files.readString(file), env);
-        } catch (java.io.IOException e) {
-            return java.util.Map.of();
-        }
-    }
-
-    /** The environment names declared in the {@code .http} file's directory (for the picker). */
-    private java.util.List<String> httpEnvironmentNames(java.nio.file.Path dir) {
-        if (dir == null) {
-            return java.util.List.of();
-        }
-        java.nio.file.Path env = dir.resolve("http-client.env.json");
-        if (!java.nio.file.Files.exists(env)) {
-            return java.util.List.of();
-        }
-        try {
-            return com.editora.http.HttpEnv.environmentNames(java.nio.file.Files.readString(env));
-        } catch (java.io.IOException e) {
-            return java.util.List.of();
-        }
-    }
-
-    /** Saves the current HTTP response text to a chosen file. */
-    private void saveHttpResponse() {
-        String text = httpPanel.getResponseText();
-        if (text == null || text.isEmpty()) {
-            setStatus(tr("status.http.noResponse"));
-            return;
-        }
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle(tr("dialog.saveResponse.title"));
-        chooser.setInitialFileName("response.txt");
-        java.nio.file.Path file = pathOf(chooser.showSaveDialog(stage));
-        if (file == null) {
-            return;
-        }
-        try {
-            java.nio.file.Files.writeString(file, text);
-            setStatus(tr("status.http.saved", file.getFileName()));
-        } catch (java.io.IOException e) {
-            setStatus(tr("status.http.saveFailed", e.getMessage()));
-        }
     }
 
     // --- Debugging (DAP) integration -----------------------------------------------------------
@@ -6854,8 +6646,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean local = isLocalBuffer(buffer); // remote (SFTP) files can't run a local process
         buffer.setRunEnabled(lspEnabled() && local); // the Run affordance is gated by the LSP feature
         buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
-        buffer.setHttpRunHandler(line -> runHttpRequest(buffer, line)); // .http request ▶
-        buffer.setHttpEnabled(httpEnabled() && local);
+        buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
+        buffer.setHttpEnabled(httpClient.isEnabled() && local);
         // Debugging: the leftmost breakpoint gutter strip + persistence + live re-send to a session
         // (only for debuggable languages — java/python/javascript).
         buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
@@ -8416,14 +8208,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (runToolWindow != null) {
             toolWindows.setAvailable(runToolWindow, runnable);
         }
-        boolean httpActive = http && httpEnabled();
+        boolean httpActive = http && httpClient.isEnabled();
         if (httpToolWindow != null) {
             toolWindows.setAvailable(httpToolWindow, httpActive);
         }
-        if (httpActive && buffer.getPath() != null) {
-            java.nio.file.Path dir = buffer.getPath().toAbsolutePath().getParent();
-            httpPanel.setEnvironments(
-                    httpEnvironmentNames(dir), config.getWorkspaceState().getHttpEnvironment());
+        if (httpActive) {
+            httpClient.refreshEnvironments(buffer);
         }
     }
 
@@ -11085,7 +10875,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         mermaid.applySupport();
         applyRipgrepSupport();
         applyMathSupport();
-        applyHttpClientSupport();
+        httpClient.applySupport();
         htmlPreview.applySupport();
         logViewer.applySupport();
         applyMcpSupport();
@@ -12077,7 +11867,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleHttpClient",
                         () -> config.getSettings().isHttpClientSupport(),
                         v -> config.getSettings().setHttpClientSupport(v),
-                        this::applyHttpClientSupport)));
+                        httpClient::applySupport)));
         registry.register(Command.of(
                 "view.toggleDebug",
                 () -> toggleSetting(
@@ -12354,14 +12144,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.run", () -> toolWindows.toggle(runToolWindow)));
         registry.register(Command.of("tool.externalTools", () -> toolWindows.toggle(externalToolToolWindow)));
         // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
-        registry.register(Command.of("http.runRequest", () -> ifHttp(this::runHttpRequestAtCaret)));
-        registry.register(Command.of("http.runFile", () -> ifHttp(this::runHttpFile)));
-        registry.register(
-                Command.of("http.selectEnvironment", () -> ifHttp(() -> toolWindows.open(httpToolWindow, true))));
-        registry.register(Command.of("http.importCurl", () -> ifHttp(this::importCurlFromClipboard)));
-        registry.register(Command.of("http.copyAsCurl", () -> ifHttp(this::copyActiveHttpAsCurl)));
-        registry.register(Command.of("http.openResponseInTab", () -> ifHttp(this::openActiveHttpResponseInTab)));
-        registry.register(Command.of("tool.http", () -> ifHttp(() -> toolWindows.toggle(httpToolWindow))));
+        registry.register(Command.of("http.runRequest", httpClient::runRequestAtCaret));
+        registry.register(Command.of("http.runFile", httpClient::runFile));
+        registry.register(Command.of("http.selectEnvironment", httpClient::selectEnvironment));
+        registry.register(Command.of("http.importCurl", httpClient::importCurl));
+        registry.register(Command.of("http.copyAsCurl", httpClient::copyActiveAsCurl));
+        registry.register(Command.of("http.openResponseInTab", httpClient::openActiveResponseInTab));
+        registry.register(Command.of("tool.http", httpClient::toggleToolWindow));
         // Debugging (DAP). Gated by the "Enable Java debugging" setting (default off).
         registry.register(Command.of("debug.start", () -> ifDebug(this::debugStart)));
         registry.register(Command.of("debug.stop", () -> ifDebug(dapManager::stop)));
