@@ -368,6 +368,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ToolWindow commitToolWindow;
     private GitLogPanel gitLogPanel;
     private ToolWindow gitLogToolWindow;
+    /**
+     * Tool windows contributed by plugins. They act on the active editor (via {@code ActiveEditor}), so —
+     * like the built-in buffer tool windows — their stripe button is gated on an open buffer in
+     * {@link #updateBufferToolWindows()} (a non-buffer tab like Welcome has nothing for them to act on).
+     */
+    private final java.util.List<ToolWindow> pluginToolWindows = new java.util.ArrayList<>();
     /** The path the Git Log is currently filtered to (file history), or null for the whole repo. */
     private Path gitLogFilter;
     /** Local File History: snapshots local files on save/auto-save/external reload (off-thread). */
@@ -989,6 +995,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     };
             ToolWindow tw = new ToolWindow(twId, title == null ? twId : title, s, iconFactory, content, cmd);
             toolWindows.register(tw);
+            pluginToolWindows.add(tw);
+            toolWindows.setAvailable(tw, activeBuffer() != null); // gate on an open buffer to act on
             registry.register(
                     com.editora.command.Command.of(cmd, title == null ? twId : title, () -> toolWindows.toggle(tw)));
         }
@@ -2799,12 +2807,14 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void setCommitWindowAvailable(boolean available) {
-            toolWindows.setAvailable(commitToolWindow, available);
+            // Also require an open buffer: these act on the active file/tab, so they hide on Welcome
+            // (and any non-buffer tab) even inside a repo.
+            toolWindows.setAvailable(commitToolWindow, available && activeBuffer() != null);
         }
 
         @Override
         public void setGitLogWindowAvailable(boolean available) {
-            toolWindows.setAvailable(gitLogToolWindow, available);
+            toolWindows.setAvailable(gitLogToolWindow, available && activeBuffer() != null);
         }
 
         @Override
@@ -8197,6 +8207,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (externalToolToolWindow != null) {
             toolWindows.setAvailable(externalToolToolWindow, buffer && externalToolsEnabled());
+        }
+        // Plugin tool windows act on the active editor — gate them on an open buffer too.
+        for (ToolWindow tw : pluginToolWindows) {
+            toolWindows.setAvailable(tw, buffer);
+        }
+        // Git Commit / Git Log act on the active file's repo — hide on a non-buffer tab (e.g. Welcome).
+        // When a buffer IS open, leave them to the Git coordinator's in-repo gating (don't force-show).
+        if (!buffer) {
+            if (commitToolWindow != null) {
+                toolWindows.setAvailable(commitToolWindow, false);
+            }
+            if (gitLogToolWindow != null) {
+                toolWindows.setAvailable(gitLogToolWindow, false);
+            }
         }
     }
 
