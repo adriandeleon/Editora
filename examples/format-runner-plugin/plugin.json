@@ -1,6 +1,0 @@
-{
-  "id": "format-runner",
-  "name": "Format Runner",
-  "version": "1.0.0",
-  "main": "com.example.editora.format.FormatRunnerPlugin"
-}

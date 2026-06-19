@@ -283,9 +283,9 @@ Emacs-style keymap or a fuzzy command palette.
   (*Require signed plugins*, default on, blocks an unsigned/unverified registry); downloads are
   **SHA-256-verified** over HTTPS with bounded reads; and a **capability-disclosure** confirm (does it run
   code? which external commands? which keybindings?) is shown before any plugin is enabled. Signing proves
-  *who* published — not a sandbox. See [`docs/plugins.md`](docs/plugins.md),
-  [`examples/example-plugin/`](examples/example-plugin/), and
-  [`examples/editora-plugins-registry/`](examples/editora-plugins-registry/).
+  *who* published — not a sandbox. See [`docs/plugins.md`](docs/plugins.md), the reference
+  [`examples/example-plugin/`](examples/example-plugin/), and the live registry (every plugin's source +
+  a signed `index.json`) at [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins).
 - **MCP server** _(Beta)_ — embed a [Model Context Protocol](https://modelcontextprotocol.io) server in the
   running editor so an LLM agent (Claude Code, etc.) can observe live editor state and drive the command
   registry. A small **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** exposes six tools —
@@ -332,7 +332,9 @@ file…* for a local `.zip`). Each plugin's full source is in that repo under `p
 | **Task Runner** | Run a shell task (`npm`/`make`/…) in the file's directory and stream output. |
 
 > Plugins run with **full trust** (no sandbox) — only install ones you trust. To build your own, see
-> [`docs/plugins.md`](docs/plugins.md) and the worked examples under [`examples/`](examples/).
+> [`docs/plugins.md`](docs/plugins.md), the reference [`examples/example-plugin/`](examples/example-plugin/),
+> and the source of every plugin above in the
+> [editora-plugins](https://github.com/adriandeleon/editora-plugins) repo.
 
 ## Requirements
 

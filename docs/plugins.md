@@ -114,19 +114,12 @@ delegation. There is **no `ServiceLoader`, no `ModuleLayer`** — compile your p
 
 ## Building a plugin
 
-See [`examples/example-plugin/`](../examples/example-plugin/) — a complete plugin exercising every
-extension point, with a `build.sh` that compiles against Editora's API + JavaFX, packages the jar, and
-produces a distributable `example.zip` (+ its SHA-256). More real, single-purpose examples:
-[`lorem-ipsum-plugin`](../examples/lorem-ipsum-plugin/) (text generator),
-[`text-tools-plugin`](../examples/text-tools-plugin/) (selection/document transforms),
-[`insert-tools-plugin`](../examples/insert-tools-plugin/) (UUID/timestamp inserters),
-[`scratchpad-plugin`](../examples/scratchpad-plugin/) (a persistent tool window),
-[`format-runner-plugin`](../examples/format-runner-plugin/) (run an external formatter — the
-external-command pattern),
-[`encode-tools-plugin`](../examples/encode-tools-plugin/) (Base64/URL/HTML/ROT13/hex),
-[`hash-tools-plugin`](../examples/hash-tools-plugin/) (MD5/SHA-1/SHA-256),
-[`markdown-toc-plugin`](../examples/markdown-toc-plugin/) (insert a TOC from headings), and
-[`regex-tester-plugin`](../examples/regex-tester-plugin/) (a live regex tester tool window).
+See [`examples/example-plugin/`](../examples/example-plugin/) — a complete reference plugin exercising
+every extension point, with a `build.sh` that compiles against Editora's API + JavaFX, packages the jar,
+and produces a distributable `example.zip` (+ its SHA-256). For more, real single-purpose plugins (text
+transforms, hashing, a scratchpad tool window, an external-formatter runner, a live regex tester, …) — each
+with complete source — see the catalog in the registry repo
+[adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) under `plugins/<id>/`.
 
 ## Installing plugins
 
@@ -183,7 +176,9 @@ To publish a plugin:
 3. Add an entry to `index.json` with the release-asset `download` URL and the `sha256` from step 1
    (the zip stores timestamps, so its hash changes per rebuild — use the value for the asset you upload).
 
-A ready-to-host sample registry is in [`examples/editora-plugins-registry/`](../examples/editora-plugins-registry/).
+The live registry — a complete, working `index.json` (signed) plus every plugin's source — is
+[adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) (Editora's baked-in
+default); use it as the template for your own.
 `download` + the registry URL must be **HTTPS**; entries needing a newer Editora than yours are shown but
 not installable (`minEditoraVersion`).
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **De-duplicated the plugin examples.** The full plugin catalog lives canonically in the
+  [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) repo (source +
+  signed registry index), so the editor repo no longer keeps copies under `examples/` — those had
+  already drifted from the registry. Only `examples/example-plugin/` remains as the in-tree SDK
+  reference; `docs/plugins.md`, the README, and `CLAUDE.md` now point the catalog at the registry repo.
+
 ### Added
 
 - **Markdown lint, substantially expanded.** The Markdown linter now covers more of the markdownlint rule
