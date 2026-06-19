@@ -1431,6 +1431,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Re-applies preferences + the editor theme to this window after a Settings change in any window. */
     public void reapplyAfterSharedSettingsChange(Settings settings) {
         applyViewSettingsToAllBuffers(settings);
+        updateBufferToolWindows(); // a feature toggle (Markdown lint, external tools, …) may re-gate a window
         // The keymap may have switched (it's shared); refresh every chord hint so none stays frozen to the
         // old keymap. Cheap (~25 tooltips + one palette/welcome relabel) and only on a settings/keymap apply.
         refreshToolbarTooltips();
@@ -2030,6 +2031,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateLspStatusBar(); // show/hide the "LSP: <server>" segment + Problems window for the new file
             updateDebugAvailability(); // show the Debug window only for a debuggable file (or a live session)
             updateRunButton(); // show the Run button only for a compact source file
+            updateBufferToolWindows(); // hide buffer-only tool windows when there's no actionable buffer
             refreshLocalHistory(); // re-gate + reload the Local File History list for the new active file
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
@@ -2436,6 +2438,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(httpToolWindow);
         toolWindows.setAvailable(httpToolWindow, false); // shown only for a .http file with the feature on
         toolWindows.register(externalToolToolWindow);
+        updateBufferToolWindows(); // hide buffer-only windows until there's an actionable buffer (no Welcome flash)
         // Detect a *user* open/close of the HTTP window (vs. our own auto show/hide, guarded by
         // httpAutoMutating) so a manual close is remembered per .http buffer and a manual open clears it.
         toolWindows.setStateListener((tw, opened) -> {
@@ -8053,6 +8056,34 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (httpActive) {
             httpClient.refreshEnvironments(buffer);
+        }
+    }
+
+    /**
+     * Gates the stripe buttons of tool windows whose content comes from the <b>active editor buffer</b>, so
+     * they only advertise themselves when there is something to act on — hidden on the Welcome page and other
+     * non-buffer tabs (mirroring how Run/Debug/HTTP/Commit already gate their buttons). Structure / File
+     * Information / TODO need any buffer; Markdown Lint additionally needs a Markdown buffer (with the feature
+     * on); External Tools needs a buffer and to not be in Simple mode. Uses transient
+     * {@code setAvailable} (never persisted), so the user's show/hide preference is preserved.
+     */
+    private void updateBufferToolWindows() {
+        EditorBuffer b = activeBuffer();
+        boolean buffer = b != null;
+        if (structureToolWindow != null) {
+            toolWindows.setAvailable(structureToolWindow, buffer);
+        }
+        if (fileInfoToolWindow != null) {
+            toolWindows.setAvailable(fileInfoToolWindow, buffer);
+        }
+        if (todoToolWindow != null) {
+            toolWindows.setAvailable(todoToolWindow, buffer);
+        }
+        if (markdownLintToolWindow != null) {
+            toolWindows.setAvailable(markdownLintToolWindow, buffer && b.isMarkdown() && markdownLintEnabled());
+        }
+        if (externalToolToolWindow != null) {
+            toolWindows.setAvailable(externalToolToolWindow, buffer && externalToolsEnabled());
         }
     }
 

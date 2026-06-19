@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Buffer-only tool windows are hidden when there's no buffer to act on.** The Structure, File Information,
+  TODO, Markdown Lint, and External Tools stripe buttons no longer show on the Welcome page (or other
+  non-buffer tabs) — they now gate their availability on an actionable active editor buffer (Markdown Lint
+  additionally needs a Markdown buffer; External Tools needs a buffer and non-Simple mode), mirroring how
+  Run / Debug / HTTP / Commit already gate their buttons.
+
 - **Settings → Editor → "Enable log viewer" checkbox now reflects the actual setting.** It was omitted from
   the Settings window's `load()` (the value was only synced in `syncViewChecks()`, which `load()` doesn't
   call), so the box always rendered unchecked even though the log viewer was on. The feature itself was
