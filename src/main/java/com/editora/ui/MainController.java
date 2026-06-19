@@ -291,6 +291,17 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final com.editora.diff.DiffService diffService = new com.editora.diff.DiffService();
     /** HTTP Client: the {@code .http} request runner + response tool window; see {@link HttpClientCoordinator}. */
     private ToolWindow httpToolWindow;
+    /** True while we programmatically auto-show/hide the HTTP window, so the state listener ignores it. */
+    private boolean httpAutoMutating;
+    /** True while the session is being restored (tabs fill per pulse); HTTP auto-show is suppressed until it
+     *  completes, then reconciled once — opening a tool window mid-restore mis-sizes it in the SplitPane. */
+    private boolean restoringSession;
+    /** A right-side tool window we displaced to auto-show HTTP, restored when we auto-hide it (null if none). */
+    private ToolWindow httpDisplacedRight;
+    /** {@code .http} buffers whose HTTP window the user closed manually — suppresses auto-show for them.
+     *  Weak keys so a closed buffer drops out without manual cleanup. */
+    private final java.util.Set<EditorBuffer> httpUserClosed =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
     /** LSP: manager (one server per workspace root), the Problems window, and the latest diagnostics. */
     private final com.editora.lsp.LspManager lspManager =
             new com.editora.lsp.LspManager(this::onLspDiagnostics, this::onLspServerStatus);
@@ -2390,7 +2401,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         httpToolWindow = new ToolWindow(
                 "http",
                 tr("toolwindow.http"),
-                ToolWindow.Side.BOTTOM,
+                ToolWindow.Side.RIGHT,
                 Icons::httpClient,
                 httpClient.panel(),
                 "tool.http");
@@ -2425,6 +2436,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(httpToolWindow);
         toolWindows.setAvailable(httpToolWindow, false); // shown only for a .http file with the feature on
         toolWindows.register(externalToolToolWindow);
+        // Detect a *user* open/close of the HTTP window (vs. our own auto show/hide, guarded by
+        // httpAutoMutating) so a manual close is remembered per .http buffer and a manual open clears it.
+        toolWindows.setStateListener((tw, opened) -> {
+            if (tw != httpToolWindow || httpAutoMutating) {
+                return;
+            }
+            EditorBuffer b = activeBuffer();
+            if (b == null || !b.isHttpFile()) {
+                return;
+            }
+            if (opened) {
+                httpUserClosed.remove(b); // a manual open re-enables auto-show for this buffer
+            } else {
+                httpUserClosed.add(b); // a manual close suppresses auto-show until the user reopens it
+            }
+        });
         dapManager.setListener(dapListener());
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
     }
@@ -6196,6 +6223,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * background file can't freeze startup. Tab order and pinning are preserved.
      */
     public void openInitialBuffer() {
+        restoringSession = true; // suppress HTTP auto-show until the (pulse-paced) restore finishes
         WorkspaceState state = config.getWorkspaceState();
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
         for (WorkspaceState.OpenFile f : state.getOpenFiles()) {
@@ -6319,6 +6347,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (r != null) {
             Platform.runLater(r);
         }
+        // The session is fully restored now — re-enable HTTP auto-show and reconcile once for the active
+        // buffer (the layout is settled, so the panel sizes correctly, unlike a mid-restore open).
+        restoringSession = false;
+        applyHttpAutoToolWindow();
     }
 
     /** Activates {@code dir} as the active project (startup-safe; no open buffers to confirm). */
@@ -8017,11 +8049,62 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         boolean httpActive = http && httpClient.isEnabled();
         if (httpToolWindow != null) {
-            toolWindows.setAvailable(httpToolWindow, httpActive);
+            applyHttpAutoToolWindow();
         }
         if (httpActive) {
             httpClient.refreshEnvironments(buffer);
         }
+    }
+
+    /**
+     * Auto-shows the HTTP tool window for a {@code .http} buffer and auto-hides it otherwise. Showing it
+     * displaces (and later restores) any other right-side window. A user's manual close is remembered per
+     * buffer ({@link #httpUserClosed}) so it isn't re-shown until they reopen it; an automatic close (leaving
+     * the buffer) is not remembered, so returning re-shows it. All our open/close run under
+     * {@link #httpAutoMutating} so the state listener doesn't mistake them for user actions.
+     *
+     * <p>Deferred to a {@code Platform.runLater} so the SplitPane add + divider positioning land on a
+     * settled layout pulse (the tool-window {@code open}/{@code close} idiom) rather than mid-tab-switch —
+     * adding a right-side panel synchronously during the selection event mis-sized it; the active buffer is
+     * re-read inside in case the user switched again before it runs.
+     */
+    private void applyHttpAutoToolWindow() {
+        if (restoringSession) {
+            return; // restore() + persistence handle the initial open; reconciled in runPendingAfterRestore
+        }
+        Platform.runLater(() -> {
+            if (httpToolWindow == null || restoringSession) {
+                return;
+            }
+            EditorBuffer b = activeBuffer();
+            boolean httpActive = b != null && b.isHttpFile() && httpClient.isEnabled();
+            httpAutoMutating = true;
+            try {
+                toolWindows.setAvailable(httpToolWindow, httpActive); // false also closes it if open
+                if (httpActive) {
+                    if (!toolWindows.isOpen(httpToolWindow) && !httpUserClosed.contains(b)) {
+                        httpDisplacedRight = openRightWindowExcept(httpToolWindow);
+                        toolWindows.open(httpToolWindow, false); // don't steal focus from the editor
+                    }
+                } else if (httpDisplacedRight != null) {
+                    // We left the .http buffer (setAvailable already closed HTTP) — restore what we displaced.
+                    toolWindows.open(httpDisplacedRight, false);
+                    httpDisplacedRight = null;
+                }
+            } finally {
+                httpAutoMutating = false;
+            }
+        });
+    }
+
+    /** The tool window currently open on the RIGHT side other than {@code except}, or null. */
+    private ToolWindow openRightWindowExcept(ToolWindow except) {
+        for (ToolWindow tw : toolWindows.getOpenToolWindows()) {
+            if (tw != except && toolWindows.currentSide(tw) == ToolWindow.Side.RIGHT) {
+                return tw;
+            }
+        }
+        return null;
     }
 
     /**

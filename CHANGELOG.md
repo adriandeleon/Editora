@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTTP tool window auto-shows for `.http` files.** Opening (or switching to) a `.http` buffer now
+  automatically opens the HTTP Client tool window, which **defaults to the right** side. Switching to
+  another tab auto-hides it (restoring any right-side window it displaced) and returning re-opens it; a
+  **manual close is remembered per file** — once you close it for a `.http` buffer it stays closed until
+  you reopen it (running a request or toggling it back on re-enables auto-show).
+
 - **Find in Files improvements.** The Find-in-Files tool window (`C-S-f`, `M-6`) gains: **include/exclude
   file globs** (comma-separated, `.gitignore`-style — e.g. include `*.java, src/**`, exclude `**/test/**`),
   applied by ripgrep (`-g`/`-g !`) and by the Java-walker fallback + open-buffer overlay alike; **query
