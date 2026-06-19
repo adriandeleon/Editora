@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: centralize the "no repo" guard on the `GitCoordinator` (developer-facing).** Every repo-only
+  Git operation opened with the same four-line guard — `if (repoRoot == null) { echo "not a repo" / "git not
+  installed"; return; }` — duplicated 11×. It's now one engine method, `git.reportIfNoRepo()`, and each call
+  site is a one-liner (`if (git.reportIfNoRepo()) return;`). The status string lives in exactly one place.
+  Pure consolidation, no behavior change; full suite green.
+
 - **Refactor: move inline Git blame into the `GitCoordinator` (developer-facing).** The blame annotation
   engine — eligibility (`isBlameEnabled`), the off-thread per-file fetch (`applyBlame`/`refreshBlame`), and
   the blame→`BlameInfo` mapping (author/date label, full-commit tooltip, age-heatmap tint) — moves out of

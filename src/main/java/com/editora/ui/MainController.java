@@ -4519,8 +4519,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.diff.noFile"));
             return;
         }
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         String rel = com.editora.git.GitService.repoRelative(git.repoRoot(), path);
@@ -4580,8 +4579,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.diff.noFile"));
             return;
         }
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         String rel = com.editora.git.GitService.repoRelative(git.repoRoot(), b.getPath());
@@ -4719,8 +4717,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void gitOp(String successMessage, String... args) {
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         git.service()
@@ -4866,8 +4863,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void newBranch() {
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
@@ -4893,8 +4889,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void gitSync(String label, String... args) {
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         setStatus(tr("status.gitRunning", label));
@@ -4919,8 +4914,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * (matching {@code push.autoSetupRemote}). Subsequent pushes use the tracked upstream.
      */
     private void gitPush() {
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         if (git.upstream().isBlank() && !git.branchName().isBlank()) {
@@ -5030,7 +5024,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         gitLogFilter = file;
         if (git.repoRoot() == null) {
             gitLogPanel.setLog(List.of(), null);
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+            git.reportIfNoRepo(); // echoes "not a repo" / "git not installed"
             return;
         }
         String name = file != null ? file.getFileName().toString() : null;
@@ -5057,8 +5051,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** A history mutation (checkout/reset/revert/cherry-pick/branch): run, report, refresh + reload log. */
     private void gitMutate(String successMessage, String... args) {
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         git.service()
@@ -5467,8 +5460,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Stashes the working tree (optionally with a message). */
     private void gitStash() {
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         promptText(tr("stash.prompt.title"), tr("stash.prompt.label"), "", msg -> {
@@ -5510,8 +5502,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void chooseStash(String title, java.util.function.Consumer<com.editora.git.StashParser.StashEntry> onPick) {
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         git.service().stashList(git.repoRoot(), stashes -> {
@@ -5533,8 +5524,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void gitMutateStash(String successMessage, String... args) {
-        if (git.repoRoot() == null) {
-            setStatus(tr(git.service().gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        if (git.reportIfNoRepo()) {
             return;
         }
         git.service()
