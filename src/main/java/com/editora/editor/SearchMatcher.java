@@ -92,12 +92,23 @@ public final class SearchMatcher {
         return out;
     }
 
-    private static List<int[]> regexMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
-        String pattern = wholeWord ? "\\b(?:" + query + ")\\b" : query;
-        Pattern p;
+    /**
+     * Compiles the regex query exactly as {@link #matches} does (whole-word wrapped in a non-capturing
+     * group so user capture groups keep their numbers), or {@code null} on a bad pattern. Shared with
+     * {@code MultiFileSearch.replaceAll}'s capture-group replace so the two can't diverge.
+     */
+    public static Pattern compileRegex(String query, boolean caseSensitive, boolean wholeWord) {
+        String pattern = wholeWord ? "\\b(?:" + (query == null ? "" : query) + ")\\b" : (query == null ? "" : query);
         try {
-            p = Pattern.compile(pattern, caseSensitive ? 0 : Pattern.CASE_INSENSITIVE);
+            return Pattern.compile(pattern, caseSensitive ? 0 : Pattern.CASE_INSENSITIVE);
         } catch (PatternSyntaxException e) {
+            return null;
+        }
+    }
+
+    private static List<int[]> regexMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
+        Pattern p = compileRegex(query, caseSensitive, wholeWord);
+        if (p == null) {
             return List.of();
         }
         List<int[]> out = new ArrayList<>();

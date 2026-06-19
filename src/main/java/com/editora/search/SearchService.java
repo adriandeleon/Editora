@@ -70,17 +70,31 @@ public final class SearchService {
      * and posts the {@link Outcome} on the FX thread, unless a newer search has since started.
      */
     public void search(SearchQuery query, Path scopeRoot, Map<Path, String> openContents, Consumer<Outcome> onResult) {
+        search(query, scopeRoot, openContents, List.of(), List.of(), onResult);
+    }
+
+    /** As above, plus include/exclude globs (Find-in-Files panel) applied to both backends + open buffers. */
+    public void search(
+            SearchQuery query,
+            Path scopeRoot,
+            Map<Path, String> openContents,
+            List<String> include,
+            List<String> exclude,
+            Consumer<Outcome> onResult) {
         long g = gen.incrementAndGet();
         Map<Path, String> open = openContents == null ? Map.of() : Map.copyOf(openContents);
+        List<String> inc = include == null ? List.of() : List.copyOf(include);
+        List<String> exc = exclude == null ? List.of() : List.copyOf(exclude);
         exec.submit(() -> {
-            Outcome outcome = run(query, scopeRoot, open);
+            Outcome outcome = run(query, scopeRoot, open, inc, exc);
             if (g == gen.get()) {
                 Platform.runLater(() -> onResult.accept(outcome));
             }
         });
     }
 
-    private Outcome run(SearchQuery query, Path scopeRoot, Map<Path, String> open) {
+    private Outcome run(
+            SearchQuery query, Path scopeRoot, Map<Path, String> open, List<String> include, List<String> exclude) {
         if (query == null || query.text() == null || query.text().isEmpty()) {
             return new Outcome(List.of(), 0, 0, false);
         }
@@ -89,18 +103,18 @@ public final class SearchService {
         // walker on a pattern/IO error (exit 2) or if it failed to launch (null), so nothing regresses.
         List<FileResult> disk = null;
         if (haveRoot && useRipgrep && Vfs.isLocal(scopeRoot)) {
-            disk = ripgrepDisk(query, scopeRoot);
+            disk = ripgrepDisk(query, scopeRoot, include, exclude);
         }
         if (disk == null) {
-            disk = haveRoot ? walkDisk(query, scopeRoot) : new ArrayList<>();
+            disk = haveRoot ? walkDisk(query, scopeRoot, include, exclude) : new ArrayList<>();
         }
-        return overlay(disk, query, open);
+        return overlay(disk, query, open, scopeRoot, include, exclude);
     }
 
     /** On-disk search via ripgrep, paths resolved to absolute. Returns null to signal "fall back to the walker". */
-    private List<FileResult> ripgrepDisk(SearchQuery query, Path root) {
+    private List<FileResult> ripgrepDisk(SearchQuery query, Path root, List<String> include, List<String> exclude) {
         List<String> cmd = new ArrayList<>(rgCommand);
-        cmd.addAll(RipgrepArgs.build(query, true, MAX_FILE_BYTES)); // respect .gitignore (rg default)
+        cmd.addAll(RipgrepArgs.build(query, include, exclude, true, MAX_FILE_BYTES)); // respect .gitignore (rg default)
         cmd.add(".");
         ProcessRunner.Result r;
         try {
@@ -119,12 +133,16 @@ public final class SearchService {
         return out;
     }
 
-    /** On-disk search via the built-in walker (dot-dir/oversize/binary skipping). */
-    private List<FileResult> walkDisk(SearchQuery query, Path root) {
+    /** On-disk search via the built-in walker (dot-dir/oversize/binary skipping + include/exclude globs). */
+    private List<FileResult> walkDisk(SearchQuery query, Path root, List<String> include, List<String> exclude) {
         Set<Path> candidates = new LinkedHashSet<>();
         collect(root, candidates);
+        boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> out = new ArrayList<>();
         for (Path file : candidates) {
+            if (filtering && !Globs.accept(relativize(root, file), include, exclude)) {
+                continue;
+            }
             String content = readText(file);
             if (content == null || content.indexOf('\0') >= 0) {
                 continue; // unreadable or binary
@@ -137,22 +155,49 @@ public final class SearchService {
         return out;
     }
 
+    /** Root-relative, '/'-separated path for glob matching; falls back to the file name if not under root. */
+    private static String relativize(Path root, Path file) {
+        Path abs = file.toAbsolutePath().normalize();
+        if (root != null) {
+            try {
+                return root.toAbsolutePath()
+                        .normalize()
+                        .relativize(abs)
+                        .toString()
+                        .replace('\\', '/');
+            } catch (IllegalArgumentException ignored) {
+                // different root — fall through
+            }
+        }
+        return abs.getFileName().toString();
+    }
+
     /**
      * Overlay open buffers on the on-disk results (their in-memory text wins for any open path, and open
      * files outside the root are included), then sort by path and apply the match cap.
      */
-    private Outcome overlay(List<FileResult> disk, SearchQuery query, Map<Path, String> open) {
+    private Outcome overlay(
+            List<FileResult> disk,
+            SearchQuery query,
+            Map<Path, String> open,
+            Path root,
+            List<String> include,
+            List<String> exclude) {
         Set<Path> openKeys = new HashSet<>();
         for (Path p : open.keySet()) {
             openKeys.add(p.toAbsolutePath().normalize());
         }
+        boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> all = new ArrayList<>();
         for (FileResult fr : disk) {
             if (!openKeys.contains(fr.file().toAbsolutePath().normalize())) {
-                all.add(fr); // a disk hit not shadowed by an open buffer
+                all.add(fr); // a disk hit not shadowed by an open buffer (already glob-filtered)
             }
         }
         for (Map.Entry<Path, String> e : open.entrySet()) {
+            if (filtering && !Globs.accept(relativize(root, e.getKey()), include, exclude)) {
+                continue; // open buffer excluded by the include/exclude globs
+            }
             String content = e.getValue();
             if (content == null || content.indexOf('\0') >= 0) {
                 continue;

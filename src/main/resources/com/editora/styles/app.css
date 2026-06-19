@@ -1677,3 +1677,15 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;
 }
+
+/* Find in Files: bold file-header rows + the ripgrep backend badge. */
+.search-panel .tree-cell.search-file-row {
+    -fx-font-weight: bold;
+}
+.search-backend-badge {
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 3px;
+    -fx-padding: 0 4 0 4;
+}

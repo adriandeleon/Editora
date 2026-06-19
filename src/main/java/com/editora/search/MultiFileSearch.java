@@ -43,7 +43,11 @@ public final class MultiFileSearch {
         return out;
     }
 
-    /** Replaces every match of {@code q} in {@code text} with {@code replacement} (literal insertion). */
+    /**
+     * Replaces every match of {@code q} in {@code text}. In regex mode the replacement supports
+     * capture-group references ({@code $1}/{@code ${name}}, with {@code \} escapes); in literal mode
+     * {@code $}/{@code \} are inserted verbatim. A bad group reference is a graceful no-op (text unchanged).
+     */
     public static ReplaceResult replaceAll(String text, SearchQuery q, String replacement) {
         if (text == null) {
             return new ReplaceResult("", 0);
@@ -53,6 +57,16 @@ public final class MultiFileSearch {
             return new ReplaceResult(text, 0);
         }
         String repl = replacement == null ? "" : replacement;
+        if (q.regex()) {
+            java.util.regex.Pattern p = SearchMatcher.compileRegex(q.text(), q.caseSensitive(), q.wholeWord());
+            if (p != null) {
+                try {
+                    return new ReplaceResult(p.matcher(text).replaceAll(repl), matches.size());
+                } catch (RuntimeException badReplacementRef) {
+                    return new ReplaceResult(text, 0); // invalid $-group reference → leave the text untouched
+                }
+            }
+        }
         StringBuilder sb = new StringBuilder(text.length());
         int i = 0;
         for (int[] m : matches) {

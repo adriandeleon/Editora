@@ -390,6 +390,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean checkingExternalChanges;
 
     private RecentFiles recentFiles;
+    /** Persistent Find-in-Files query history (backs the query combo's dropdown). */
+    private com.editora.config.SearchHistory searchHistory;
     /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
     private WelcomePane welcomePane;
     /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
@@ -1309,6 +1311,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void setupRecentFiles() {
         recentFiles = new RecentFiles(config.getConfigDir());
+        searchHistory = new com.editora.config.SearchHistory(config.getConfigDir());
+        if (searchPanel != null) {
+            searchPanel.setHistory(searchHistory.getList()); // bind the query combo's dropdown to history
+        }
         recentButton.setGraphic(Icons.recent());
         recentButton.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
         recentButton.setTooltip(new Tooltip(tr("tooltip.recent")));
@@ -2291,14 +2297,21 @@ public class MainController implements com.editora.mcp.McpBridge {
                 "tool.fileHistory");
         searchPanel = new SearchPanel(new SearchPanel.Actions() {
             @Override
-            public void search(com.editora.search.SearchQuery query) {
-                runFileSearch(query);
+            public void search(com.editora.search.SearchQuery query, String includeGlobs, String excludeGlobs) {
+                runFileSearch(query, includeGlobs, excludeGlobs);
             }
 
             @Override
-            public void openMatch(java.nio.file.Path file, int line, int col) {
+            public void openMatch(java.nio.file.Path file, int line, int col, boolean focusEditor) {
                 openPath(file);
-                Platform.runLater(() -> gotoInFile(file, line, col));
+                Platform.runLater(() -> {
+                    gotoInFile(file, line, col, focusEditor);
+                    // A preview (single click / keyboard selection) keeps focus in the results so the user
+                    // can keep arrowing — openPath/gotoInFile would otherwise have grabbed editor focus.
+                    if (!focusEditor && searchPanel != null) {
+                        searchPanel.focusResults();
+                    }
+                });
             }
 
             @Override
@@ -2308,9 +2321,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                     java.util.List<java.nio.file.Path> files) {
                 replaceInFiles(query, replacement, files);
             }
+
+            @Override
+            public void recordSearch(String query) {
+                if (searchHistory != null) {
+                    searchHistory.add(query);
+                }
+            }
         });
         searchToolWindow = new ToolWindow(
-                "search", tr("toolwindow.search"), ToolWindow.Side.BOTTOM, Icons::find, searchPanel, "tool.search");
+                "search", tr("toolwindow.search"), ToolWindow.Side.RIGHT, Icons::find, searchPanel, "tool.search");
         todoPanel = new TodoPanel(new TodoPanel.Actions() {
             @Override
             public void openMatch(java.nio.file.Path file, int line, int col) {
@@ -2410,7 +2430,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Runs a multi-file search: open buffers (in-memory) + the active project root, results to the panel. */
-    private void runFileSearch(com.editora.search.SearchQuery query) {
+    private void runFileSearch(com.editora.search.SearchQuery query, String includeGlobs, String excludeGlobs) {
         java.util.Map<java.nio.file.Path, String> open = new java.util.HashMap<>();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer b = bufferOf(tab);
@@ -2426,7 +2446,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             root = java.nio.file.Path.of(windowProject.root());
         }
         setStatus(tr("search.searching"));
-        searchService.search(query, root, open, outcome -> {
+        java.util.List<String> include = com.editora.search.Globs.split(includeGlobs);
+        java.util.List<String> exclude = com.editora.search.Globs.split(excludeGlobs);
+        searchService.search(query, root, open, include, exclude, outcome -> {
             searchPanel.setResults(outcome);
             setStatus(
                     outcome.totalMatches() == 0
@@ -2529,7 +2551,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
         setStatus(tr("search.replaced", total, changedFiles));
-        runFileSearch(query); // refresh the results panel
+        searchPanel.refresh(); // re-run with the panel's current query + globs to refresh the results
     }
 
     private Region placeholder(String text) {
@@ -2575,7 +2597,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         java.util.List<String> cmd = com.editora.search.Ripgrep.command(s.getRipgrepCommand());
         boolean enabled = s.isRipgrepSearch();
         if (cmd.equals(ripgrepProbedCommand)) {
-            searchService.setBackend(enabled && ripgrepAvailable, cmd);
+            boolean effective = enabled && ripgrepAvailable;
+            searchService.setBackend(effective, cmd);
+            if (searchPanel != null) {
+                searchPanel.setBackendActive(effective);
+            }
             return;
         }
         Thread t = new Thread(
@@ -2584,7 +2610,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     Platform.runLater(() -> {
                         ripgrepProbedCommand = cmd;
                         ripgrepAvailable = ok;
-                        searchService.setBackend(s.isRipgrepSearch() && ok, cmd);
+                        boolean effective = s.isRipgrepSearch() && ok;
+                        searchService.setBackend(effective, cmd);
+                        if (searchPanel != null) {
+                            searchPanel.setBackendActive(effective);
+                        }
                         if (settingsWindow != null) {
                             settingsWindow.syncRipgrepStatus(ok);
                         }
@@ -6308,6 +6338,11 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Selects the tab for {@code file} (if open) and moves the caret to a 1-based line/column. */
     private void gotoInFile(Path file, int line1, int col1) {
+        gotoInFile(file, line1, col1, true);
+    }
+
+    /** Jumps to {@code file}:{@code line1}:{@code col1}; {@code focusEditor} false leaves focus where it is. */
+    private void gotoInFile(Path file, int line1, int col1, boolean focusEditor) {
         Tab tab = tabForPath(file);
         if (tab == null) {
             return;
@@ -6334,7 +6369,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // Viewport not ready; ignore.
             }
         });
-        area.requestFocus();
+        if (focusEditor) {
+            area.requestFocus();
+        }
     }
 
     /** Loads a restored tab's content, large-file mode, folds, and caret (the tab already exists). */

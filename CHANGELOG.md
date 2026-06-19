@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Find in Files improvements.** The Find-in-Files tool window (`C-S-f`, `M-6`) gains: **include/exclude
+  file globs** (comma-separated, `.gitignore`-style — e.g. include `*.java, src/**`, exclude `**/test/**`),
+  applied by ripgrep (`-g`/`-g !`) and by the Java-walker fallback + open-buffer overlay alike; **query
+  history** (the query field is now an editable dropdown of recent searches, persisted in
+  `search-history.json`); **regex capture groups in replace** (`$1`/`${name}` in regex mode via
+  `Matcher.replaceAll`, with a bad-reference guard; literal mode still inserts `$` verbatim); a **ripgrep
+  badge** shown in the panel when that backend is the active one; **bold file-name** rows in the results
+  tree; **single-click / keyboard selection opens the match** (a focus-keeping preview, like the Structure
+  tool window — double-click / Enter still dives into the editor); and the window now **defaults to the
+  right** side (existing sessions keep their saved position).
+
 ### Changed
 
 - **Refactor: extract the `git push` argv decision into a pure, tested `GitService.pushArgs` (developer-facing).**
