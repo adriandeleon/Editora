@@ -2905,6 +2905,7 @@ public class SettingsWindow {
             markdownLintCheck.setSelected(settings.isMarkdownLint());
             mathSupportCheck.setSelected(settings.isMathSupport());
             editorConfigCheck.setSelected(settings.isEditorConfigSupport());
+            logViewerCheck.setSelected(settings.isLogViewer());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             rebuildTodoRows();
             multiCaretCheck.setSelected(settings.isMultiCaret());

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Settings → Editor → "Enable log viewer" checkbox now reflects the actual setting.** It was omitted from
+  the Settings window's `load()` (the value was only synced in `syncViewChecks()`, which `load()` doesn't
+  call), so the box always rendered unchecked even though the log viewer was on. The feature itself was
+  unaffected — only the checkbox display.
+
 ### Changed
 
 - **More features on out of the box (new installs only).** The default `settings.toml` now enables:
