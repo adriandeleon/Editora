@@ -163,10 +163,14 @@ Emacs-style keymap or a fuzzy command palette.
   make `[selection](url)`), and **table editing** with **Tab** / **Shift-Tab** to move between cells and
   **Enter** to add a row (reflowing as you go) — alongside the existing format bar and smart list/heading
   editing.
-- **Markdown lint** — high-confidence rules (trailing whitespace, blank-line runs, heading-marker spacing,
-  multiple H1, fenced blocks missing a language, missing final newline, broken reference links) shown as
-  inline squiggles with hover messages and listed in a **Markdown Lint** tool window. On by default;
-  toggle with "View: Toggle Markdown Lint".
+- **Markdown lint** — a markdownlint-style rule set (heading-level increment, hard tabs, trailing
+  whitespace, blank-line runs, heading-marker spacing/indent/trailing-punctuation, headings & fenced code
+  surrounded by blank lines, multiple H1, first-line H1, fenced blocks missing a language, bare URLs,
+  missing final newline, broken reference links) shown as inline squiggles with hover messages, a
+  scrollbar **overview stripe** + minimap ticks, and a **Markdown Lint** tool window. Disable individual
+  rules in Settings (or with `<!-- markdownlint-disable MDxxx -->` comments / a `.markdownlint.json`),
+  and **auto-fix** the mechanical issues with "Markdown Lint: Fix Issues". On by default; toggle with
+  "View: Toggle Markdown Lint".
 - **LaTeX math** — render inline `$…$` and display `$$…$$` math in the preview (and block formulas in PDF
   export) via the pure-Java **JLaTeXMath**, with GitHub-style delimiter rules so prose dollar amounts are
   left alone. **On by default** — toggle under *Settings → Editor → Render LaTeX math* or with

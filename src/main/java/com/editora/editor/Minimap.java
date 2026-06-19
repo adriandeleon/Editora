@@ -60,6 +60,12 @@ final class Minimap extends Region {
 
     private boolean todoEnabled;
 
+    /** Markdown-lint warnings drawn as right-edge stripes (Markdown buffers have no LSP diagnostics, so
+     *  the right edge is free); never cached. */
+    private java.util.List<MarkdownLint.Diagnostic> lintMarks = java.util.List.of();
+
+    private boolean lintEnabled;
+
     private static final Color ERROR_STRIPE = Color.web("#e5484d");
     private static final Color WARNING_STRIPE = Color.web("#e2a03f");
     private static final Color INFO_STRIPE = Color.web("#4c8eda");
@@ -128,6 +134,21 @@ final class Minimap extends Region {
             return;
         }
         this.todoEnabled = enabled;
+        repaintStripes();
+    }
+
+    /** Sets the Markdown-lint warnings drawn as right-edge stripes; a cheap stripe-only repaint. */
+    void setLintMarks(java.util.List<MarkdownLint.Diagnostic> marks) {
+        this.lintMarks = marks == null ? java.util.List.of() : marks;
+        repaintStripes();
+    }
+
+    /** Enables/disables the lint stripes (driven by Markdown-lint-on for this buffer); a cheap repaint. */
+    void setLintEnabled(boolean enabled) {
+        if (this.lintEnabled == enabled) {
+            return;
+        }
+        this.lintEnabled = enabled;
         repaintStripes();
     }
 
@@ -227,6 +248,7 @@ final class Minimap extends Region {
         }
         drawViewport(g, w, h, total, rowHeight);
         drawDiagnosticStripes(g, w, h, total, rowHeight);
+        drawLintStripes(g, w, h, total, rowHeight);
         drawTodoStripes(g, h, total, rowHeight);
     }
 
@@ -254,6 +276,7 @@ final class Minimap extends Region {
         double rowHeight = rowHeight(h, total);
         drawViewport(g, w, h, total, rowHeight);
         drawDiagnosticStripes(g, w, h, total, rowHeight);
+        drawLintStripes(g, w, h, total, rowHeight);
         drawTodoStripes(g, h, total, rowHeight);
     }
 
@@ -306,6 +329,20 @@ final class Minimap extends Region {
             case WARNING -> WARNING_STRIPE;
             default -> INFO_STRIPE;
         };
+    }
+
+    /** Draws Markdown-lint warnings as amber stripes on the right edge (no LSP diagnostics on Markdown). */
+    private void drawLintStripes(GraphicsContext g, double w, double h, int total, double rowHeight) {
+        if (!lintEnabled || lintMarks.isEmpty() || total == 0) {
+            return;
+        }
+        double x = w - STRIPE_WIDTH;
+        double markH = Math.max(2.0, rowHeight);
+        g.setFill(WARNING_STRIPE);
+        for (MarkdownLint.Diagnostic d : lintMarks) {
+            double y = clamp(d.line() - 1, total) * rowHeight;
+            g.fillRect(x, Math.min(y, h - markH), STRIPE_WIDTH, markH);
+        }
     }
 
     /** Draws TODO/highlight matches as colored stripes on the LEFT edge (each in its pattern's color). */

@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 39;
+    public static final int SCHEMA_VERSION = 40;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -93,6 +93,8 @@ public class Settings {
     private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
     /** Lint Markdown buffers (squiggles + the Markdown Lint tool window). */
     private boolean markdownLint = true;
+    /** Markdown-lint rule codes ({@code MDxxx}) the user has turned off; empty = all rules enabled. */
+    private java.util.List<String> markdownLintDisabledRules = new java.util.ArrayList<>();
     /** Render LaTeX math ({@code $…$} / {@code $$…$$}) in the Markdown preview/PDF. On by default. */
     private boolean mathSupport = true;
 
@@ -533,6 +535,15 @@ public class Settings {
 
     public void setMarkdownLint(boolean markdownLint) {
         this.markdownLint = markdownLint;
+    }
+
+    public java.util.List<String> getMarkdownLintDisabledRules() {
+        return markdownLintDisabledRules;
+    }
+
+    public void setMarkdownLintDisabledRules(java.util.List<String> markdownLintDisabledRules) {
+        this.markdownLintDisabledRules =
+                markdownLintDisabledRules == null ? new java.util.ArrayList<>() : markdownLintDisabledRules;
     }
 
     public boolean isMathSupport() {

@@ -26,9 +26,16 @@ public final class MarkdownLintService {
 
     /** Lints {@code source} off-thread; delivers diagnostics on the FX thread (latest request wins). */
     public void validate(String source, Consumer<List<MarkdownLint.Diagnostic>> onResult) {
+        validate(source, java.util.Set.of(), onResult);
+    }
+
+    /** As {@link #validate(String, Consumer)} but with a set of rule codes to suppress. */
+    public void validate(
+            String source, java.util.Set<String> disabled, Consumer<List<MarkdownLint.Diagnostic>> onResult) {
         long mine = gen.incrementAndGet();
+        java.util.Set<String> off = disabled == null ? java.util.Set.of() : java.util.Set.copyOf(disabled);
         exec.submit(() -> {
-            List<MarkdownLint.Diagnostic> diags = MarkdownLint.lint(source);
+            List<MarkdownLint.Diagnostic> diags = MarkdownLint.lint(source, off);
             if (mine == gen.get()) {
                 Platform.runLater(() -> {
                     if (mine == gen.get()) {
