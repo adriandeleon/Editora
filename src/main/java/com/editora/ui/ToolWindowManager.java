@@ -63,6 +63,10 @@ public class ToolWindowManager {
      *  repo). Transient — never persisted, so it doesn't clobber the user's show/hide setting. */
     private final java.util.Set<ToolWindow> unavailable = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
+    /** Optional observer notified after a tool window opens ({@code true}) or closes ({@code false}); lets a
+     *  controller distinguish a user toggle from its own programmatic open/close (e.g. HTTP auto-show). */
+    private java.util.function.BiConsumer<ToolWindow, Boolean> stateListener;
+
     /** When true (Zen mode), all side stripes are force-hidden regardless of their buttons. */
     private boolean zenHidesStripes;
     /** User setting: when false the tool stripes are hidden (UI only — windows still open via keys/palette). */
@@ -119,6 +123,11 @@ public class ToolWindowManager {
             }
         }
         return false;
+    }
+
+    /** Registers an observer notified after any tool window opens (true) / closes (false). */
+    public void setStateListener(java.util.function.BiConsumer<ToolWindow, Boolean> listener) {
+        this.stateListener = listener;
     }
 
     public void register(ToolWindow tw) {
@@ -469,6 +478,9 @@ public class ToolWindowManager {
         }
         stripeButtons.get(tw).pseudoClassStateChanged(OPEN, true);
         persist();
+        if (stateListener != null) {
+            stateListener.accept(tw, true);
+        }
         // Move focus into the freshly shown panel and select its first item (deferred until it's laid
         // out). Skipped on session restore so a restored-open tool window doesn't steal startup focus.
         if (focus && tw.getContent() instanceof ToolWindowContent content) {
@@ -511,6 +523,9 @@ public class ToolWindowManager {
         openBySide.remove(side, tw);
         stripeButtons.get(tw).pseudoClassStateChanged(OPEN, false);
         persist();
+        if (stateListener != null) {
+            stateListener.accept(tw, false);
+        }
     }
 
     private void openById(String id) {
