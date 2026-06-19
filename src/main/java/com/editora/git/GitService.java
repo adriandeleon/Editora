@@ -337,6 +337,22 @@ public final class GitService {
         return r.relativize(f).toString().replace('\\', '/');
     }
 
+    /**
+     * The {@code git push} argv for the current branch. A brand-new branch has no upstream, so a bare
+     * {@code git push} fails; in that case we push with {@code --set-upstream origin <branch>} so the
+     * first push "just works" (matching {@code push.autoSetupRemote}). Subsequent pushes (an upstream is
+     * already tracked) use a plain {@code push}. A blank/unknown branch name also falls back to a plain
+     * {@code push} — we never emit {@code --set-upstream origin} with an empty branch. Pure — unit-tested.
+     */
+    public static String[] pushArgs(String branch, String upstream) {
+        boolean noUpstream = upstream == null || upstream.isBlank();
+        boolean haveBranch = branch != null && !branch.isBlank();
+        if (noUpstream && haveBranch) {
+            return new String[] {"push", "--set-upstream", "origin", branch};
+        }
+        return new String[] {"push"};
+    }
+
     // --- branches --------------------------------------------------------------------------------
 
     /**

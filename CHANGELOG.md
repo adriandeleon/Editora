@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor: extract the `git push` argv decision into a pure, tested `GitService.pushArgs` (developer-facing).**
+  The first-push-of-an-upstream-less-branch logic (`--set-upstream origin <branch>` so the first push "just
+  works", else a plain `push`) — including the guard that a blank/detached branch never emits
+  `--set-upstream origin <empty>` — moved out of `MainController.gitPush` into a pure static helper with a
+  focused `GitPushArgsTest` (6 cases). No behavior change; the decision is now unit-covered instead of buried
+  in the UI layer.
+
 - **Refactor: centralize the "no repo" guard on the `GitCoordinator` (developer-facing).** Every repo-only
   Git operation opened with the same four-line guard — `if (repoRoot == null) { echo "not a repo" / "git not
   installed"; return; }` — duplicated 11×. It's now one engine method, `git.reportIfNoRepo()`, and each call

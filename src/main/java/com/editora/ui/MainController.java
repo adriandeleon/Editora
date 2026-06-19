@@ -4909,19 +4909,15 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Pushes the current branch. A brand-new branch has no upstream, so {@code git push} alone fails;
-     * in that case we push with {@code --set-upstream origin <branch>} so the first push "just works"
-     * (matching {@code push.autoSetupRemote}). Subsequent pushes use the tracked upstream.
+     * Pushes the current branch. The argv decision (first push of an upstream-less branch →
+     * {@code --set-upstream origin <branch>}, else a plain {@code push}) is the pure, unit-tested
+     * {@link com.editora.git.GitService#pushArgs}.
      */
     private void gitPush() {
         if (git.reportIfNoRepo()) {
             return;
         }
-        if (git.upstream().isBlank() && !git.branchName().isBlank()) {
-            gitSync(tr("gitlabel.push"), "push", "--set-upstream", "origin", git.branchName());
-        } else {
-            gitSync(tr("gitlabel.push"), "push");
-        }
+        gitSync(tr("gitlabel.push"), com.editora.git.GitService.pushArgs(git.branchName(), git.upstream()));
     }
 
     // --- Git Log / History tool window -----------------------------------------------------------
