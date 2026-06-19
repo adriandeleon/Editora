@@ -378,6 +378,11 @@ show it.
 
 ## Contributing
 
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow, and the **developer documentation** in
+[`docs/`](docs/README.md) — architecture, the conventions a change must follow, performance rules, an
+extension cookbook (add a command / LSP server / grammar / tool window / overlay), and build/test/release
+guides. (User-facing docs live in the separate website repo; `docs/` is for contributors.)
+
 All Java is auto-formatted with [Palantir Java Format](https://github.com/palantir/palantir-java-format)
 (a lambda-friendly, 120-column fork of google-java-format), enforced by the
 [Spotless](https://github.com/diffplug/spotless) Maven plugin. **Run `./mvnw spotless:apply` before
@@ -395,8 +400,10 @@ Two conventions the build checks for:
 - **Every action is a command.** User-facing features are registered in the command registry so they
   appear in the command palette (`M-x`); toolbar buttons and keybindings dispatch through commands too.
 
-Tests cover pure logic only (`./mvnw test`) — there is no GUI/toolkit test harness, so verify
-interactive behavior by running the app (`./mvnw javafx:run`).
+Tests are mostly pure logic, plus a headless-FX (TestFX + Monocle) harness for toolkit-bound behavior —
+run all with `./mvnw test`, or the pure suite alone with `./mvnw test -DexcludedGroups=fx`. `./mvnw verify`
+also enforces the Spotless check and the JaCoCo per-package coverage floors. See
+[`docs/testing.md`](docs/testing.md).
 
 ## Releases
 
