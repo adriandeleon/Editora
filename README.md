@@ -169,13 +169,13 @@ Emacs-style keymap or a fuzzy command palette.
   toggle with "View: Toggle Markdown Lint".
 - **LaTeX math** — render inline `$…$` and display `$$…$$` math in the preview (and block formulas in PDF
   export) via the pure-Java **JLaTeXMath**, with GitHub-style delimiter rules so prose dollar amounts are
-  left alone. **Off by default** — enable under *Settings → Editor → Render LaTeX math* or with
+  left alone. **On by default** — toggle under *Settings → Editor → Render LaTeX math* or with
   "View: Toggle Math Rendering".
 - **Mermaid diagrams** — render Mermaid in the preview (standalone `.mmd` files and ` ```mermaid `
   fenced blocks inside Markdown), export a diagram to **SVG / PNG / PDF**, get live `maid` linting with
   inline error squiggles, and keyword + snippet autocomplete in `.mmd` files. Uses the external
   **mmdc** (mermaid-cli) to render/export and **maid** to lint (configure their commands in Settings).
-  **Off by default** — enable under *Settings → Mermaid*.
+  **On by default** when the `mmdc` CLI is found (inert otherwise) — toggle under *Settings → Mermaid*.
 - **Export to PDF** — export the active file as a real, *searchable* PDF: source code with syntax
   highlighting and optional line numbers (always a light theme), the **Markdown** preview as native
   vector text (headings, lists, tables, images, embedded diagrams), or a standalone Mermaid `.mmd`
@@ -225,7 +225,7 @@ Emacs-style keymap or a fuzzy command palette.
   soft in-editor highlight, and a hover tooltip mark each note (toggle via *Settings → Editor → Show note
   indicators*). The **Personal Notes** tool window (`M-5`) groups them per file with a filter and
   edit/resolve/delete; `M-g n` jumps across files and notes export to JSON. Stored per project in
-  `notes.json`. Separate from bookmarks — both coexist in the gutter. **Off by default** — turn it on
+  `notes.json`. Separate from bookmarks — both coexist in the gutter. **On by default** — toggle
   under *Settings → Application → Enable Personal Notes*.
 - **Git** _(Beta)_ — uses your installed `git` (no bundled library). The status bar shows the current branch with
   ahead/behind counts (click to switch branches); the gutter draws change bars vs `HEAD` (added /
@@ -237,7 +237,7 @@ Emacs-style keymap or a fuzzy command palette.
   diff, right-click to Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame**
   (`M-g a`, GitLens-style) annotates the current line with "author, time ago • summary" (toggle in
   *Settings → Git*, off by default). **Stash** push / pop / apply / drop from the palette or the branch
-  dropdown. All off the UI thread; hidden when not in a repo or when `git` isn't on `PATH`.
+  dropdown. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
 - **Diff viewer & merge** _(Beta)_ — compare files in a dedicated tab: side-by-side or unified, with word-level
   intra-line highlights, prev/next-change navigation, apply-a-hunk / apply-all (undoable), live refresh,
   and patch export. Diff against `HEAD` (`C-x v =`), another commit, or any other file; a separate
@@ -257,10 +257,10 @@ Emacs-style keymap or a fuzzy command palette.
   …), **request chaining** (reference an earlier request's response), **multipart** and external-file bodies,
   **environment files** (`http-client.env.json` + a `$shared` section) with a picker, **Basic/Digest auth**
   shorthand, automatic URL encoding, response-to-file redirects, per-request directives, run-whole-file, and
-  saving the response. Off by default (*Settings → HTTP Client*).
+  saving the response. On by default (*Settings → HTTP Client*).
 - **HTML live preview** _(Beta)_ — a floating browser icon on any HTML file opens it in a detected desktop
   browser (Safari, Chrome, Firefox, Edge, or the system default), served over a tiny **loopback** web server
-  so its CSS/JS/images load. The page **reloads live as you type** (unsaved edits included). Off by default
+  so its CSS/JS/images load. The page **reloads live as you type** (unsaved edits included). On by default
   (*Settings → HTML Preview*); no external tool — it uses the JDK's built-in HTTP server.
 - **Remote files (SFTP)** _(Beta)_ — connect to a server over SSH/SFTP (*Remote: Connect to SFTP…*) and edit its
   files as if they were local: the remote folder mounts in the Project tool window, and open/edit/save go

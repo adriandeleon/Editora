@@ -45,11 +45,11 @@ public final class TodoPatterns {
         return out;
     }
 
-    /** The built-in defaults: TODO (amber) and FIXME (red), both whole-word and case-insensitive. */
+    /** The built-in defaults: TODO (amber) and FIXME (red), both whole-word and case-sensitive. */
     public static List<TodoPattern> defaults() {
         List<TodoPattern> list = new ArrayList<>();
-        list.add(new TodoPattern("TODO", "\\bTODO\\b", "#E5C07B", false, true));
-        list.add(new TodoPattern("FIXME", "\\bFIXME\\b", "#E06C75", false, true));
+        list.add(new TodoPattern("TODO", "\\bTODO\\b", "#E5C07B", true, true));
+        list.add(new TodoPattern("FIXME", "\\bFIXME\\b", "#E06C75", true, true));
         return list;
     }
 }

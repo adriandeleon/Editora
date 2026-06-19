@@ -29,8 +29,10 @@ class TodoScannerTest {
     }
 
     @Test
-    void caseInsensitiveByDefault() {
-        List<TodoMatch> m = TodoScanner.scan("a todo here", defaults());
+    void caseSensitiveByDefault() {
+        // The built-in defaults match exact-case only: lowercase "todo" is not a hit, "TODO" is.
+        assertTrue(TodoScanner.scan("a todo here", defaults()).isEmpty());
+        List<TodoMatch> m = TodoScanner.scan("a TODO here", defaults());
         assertEquals(1, m.size());
         assertEquals("TODO", m.get(0).patternName());
     }

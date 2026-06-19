@@ -52,9 +52,9 @@ public class Settings {
     private boolean showLineNumbers = true;
     private boolean showMinimap = true;
     private boolean showWhitespace = false;
-    /** Personal Notes feature: off by default — hides the tool window, commands, gutter/highlight, and
-     *  the editor "Add Personal Note" menu items until enabled. */
-    private boolean notesSupport = false;
+    /** Personal Notes feature: on by default — the tool window, commands, gutter/highlight, and the editor
+     *  "Add Personal Note" menu items. */
+    private boolean notesSupport = true;
     /** Personal Notes gutter markers + in-editor highlight; on by default (only effective when
      *  {@link #notesSupport} is on). */
     private boolean showNoteIndicators = true;
@@ -93,14 +93,13 @@ public class Settings {
     private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
     /** Lint Markdown buffers (squiggles + the Markdown Lint tool window). */
     private boolean markdownLint = true;
-    /** Render LaTeX math ({@code $…$} / {@code $$…$$}) in the Markdown preview/PDF. Off by default
-     *  ({@code $} is common in prose, so this is opt-in). */
-    private boolean mathSupport = false;
+    /** Render LaTeX math ({@code $…$} / {@code $$…$$}) in the Markdown preview/PDF. On by default. */
+    private boolean mathSupport = true;
 
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
-    private boolean showBreadcrumb = false;
+    private boolean showBreadcrumb = true;
     /** Show the tool stripes (the side icon bars). UI only — tool windows still open via keys/palette.
      *  Hiding the stripe takes precedence over each tool window's individual visibility. */
     private boolean showToolStripe = true;
@@ -114,9 +113,10 @@ public class Settings {
     private int autoSaveDelayMillis = 1000;
     /** Projects feature: off by default — hides all project UI/commands until enabled. */
     private boolean projectSupport = false;
-    /** Git integration: off by default — hides the status-bar VCS segment, Commit tool window, gutter
-     *  change bars, and Git commands/keybindings until enabled. */
-    private boolean gitSupport = false;
+    /** Git integration: on by default — the status-bar VCS segment, Commit tool window, gutter change bars,
+     *  and Git commands/keybindings. Self-gates on detection: when {@code git} isn't on PATH it stays inert
+     *  (so this is effectively "on when Git is installed"). */
+    private boolean gitSupport = true;
     /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
      *  ("author, N days ago • summary") after the caret line. */
     private boolean gitBlameInline = false;
@@ -138,9 +138,10 @@ public class Settings {
     /** Require the registry index to be signed by the bundled key before installing (default on; turn off
      *  to use an unsigned or custom registry). */
     private boolean pluginRequireSignature = true;
-    /** Mermaid diagram support: off by default — needs the external mmdc (render/export) and maid
-     *  (validation) CLIs. Renders .mmd files and ```mermaid Markdown blocks in the preview. */
-    private boolean mermaidSupport = false;
+    /** Mermaid diagram support: on by default — renders .mmd files and ```mermaid Markdown blocks in the
+     *  preview. Self-gates on detection: needs the external mmdc (render/export) and maid (validation) CLIs,
+     *  so it stays inert until mmdc is found (effectively "on when the mermaid CLI is found"). */
+    private boolean mermaidSupport = true;
     /** Path to the mmdc (mermaid-cli) executable; blank = resolve "mmdc" on PATH. */
     private String mmdcPath = "";
     /** Path to the maid (probelabs/maid linter) executable; blank = resolve "maid" on PATH. */
@@ -149,12 +150,12 @@ public class Settings {
     private boolean ripgrepSearch = true;
     /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
     private String ripgrepCommand = "";
-    /** HTTP Client support (run {@code .http} requests via the JetBrains {@code ijhttp} CLI): off by default. */
-    private boolean httpClientSupport = false;
+    /** HTTP Client support (run {@code .http} requests via the built-in JDK HTTP client): on by default. */
+    private boolean httpClientSupport = true;
     /** The {@code ijhttp} command/path; blank = resolve {@code ijhttp} on PATH. */
     private String ijhttpCommand = "";
-    /** HTML Live Preview (serve an HTML file over a loopback HttpServer + open it in a browser): off by default. */
-    private boolean htmlPreviewSupport = false;
+    /** HTML Live Preview (serve an HTML file over a loopback HttpServer + open it in a browser): on by default. */
+    private boolean htmlPreviewSupport = true;
     /** The last-used browser id for the HTML preview ({@code ""} until the user picks one). */
     private String htmlPreviewBrowser = "";
     /** Server-log viewer (level highlighting + tail-follow + huge-log tail load) for {@code .log} files: on by default. */

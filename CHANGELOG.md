@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **More features on out of the box (new installs only).** The default `settings.toml` now enables:
+  **Breadcrumbs**, **Personal Notes**, **Git integration** (self-gating — inert until `git` is on PATH, so
+  effectively "on when Git is installed"), **HTML Live Preview**, the **HTTP Client**, **Render LaTeX math**
+  in Markdown, and **Mermaid diagrams** (self-gating — inert until the `mmdc` CLI is found). The server-log
+  viewer was already on. The built-in **TODO/FIXME highlight patterns are now case-sensitive** (the
+  uppercase/lowercase check is on), so only `TODO`/`FIXME` match, not `todo`/`fixme`. These are *defaults* for
+  a fresh config — existing `settings.toml` files keep their saved values; flip any of these in *Settings* or
+  via the palette toggles.
+
 ### Added
 
 - **HTTP tool window auto-shows for `.http` files.** Opening (or switching to) a `.http` buffer now
