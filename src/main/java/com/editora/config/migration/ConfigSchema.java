@@ -76,7 +76,8 @@ public enum ConfigSchema {
                     Map.entry(34, (Migration) ConfigMigrations::identity), // v34→35: + mathSupport
                     Map.entry(35, (Migration) ConfigMigrations::identity), // v35→36: + externalTools (additive)
                     Map.entry(36, (Migration) ConfigMigrations::identity), // v36→37: + ripgrepSearch/Command
-                    Map.entry(37, (Migration) ConfigMigrations::identity))), // v37→38: + logViewer (additive)
+                    Map.entry(37, (Migration) ConfigMigrations::identity), // v37→38: + logViewer (additive)
+                    Map.entry(38, (Migration) ConfigMigrations::identity))), // v38→39: + projectShowHidden
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

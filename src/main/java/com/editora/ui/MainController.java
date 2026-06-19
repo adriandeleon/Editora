@@ -1758,6 +1758,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Shows/hides all project UI per the "Enable projects" setting: toolbar icon + combo, tool window. */
     private void applyProjectSupport() {
+        projectPanel.setShowHidden(config.getSettings().isProjectShowHidden()); // hidden-files toggle (init + apply)
         boolean on = projectsEnabled();
         // Turning projects off just hides the project chrome — each window keeps editing its open files
         // (windows no longer share one session that could be "stranded"). On the next launch with projects
@@ -11733,6 +11734,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         v -> config.getSettings().setEditorConfigSupport(v),
                         this::applyEditorConfigSupport)));
         registry.register(Command.of("editorConfig.openActive", this::openActiveEditorConfig));
+        registry.register(Command.of(
+                "view.toggleProjectHidden",
+                () -> toggleSetting(
+                        "view.toggleProjectHidden",
+                        () -> config.getSettings().isProjectShowHidden(),
+                        v -> config.getSettings().setProjectShowHidden(v),
+                        () -> projectPanel.setShowHidden(config.getSettings().isProjectShowHidden()))));
         registry.register(Command.of(
                 "view.toggleNoteIndicators",
                 () -> toggleSetting(

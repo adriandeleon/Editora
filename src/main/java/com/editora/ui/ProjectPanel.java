@@ -124,6 +124,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private Path root;
     private boolean filtering;
     private boolean loading;
+    /** Show hidden (dot) files/folders in the tree + filter search. Toggled from Settings. */
+    private boolean showHidden;
 
     public ProjectPanel(
             Consumer<Path> onOpenFile,
@@ -270,6 +272,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         return root;
     }
 
+    /** Show/hide hidden (dot) files and folders; rebuilds the tree when the value changes. */
+    public void setShowHidden(boolean showHidden) {
+        if (this.showHidden == showHidden) {
+            return;
+        }
+        this.showHidden = showHidden;
+        if (root != null) {
+            rebuildBody(); // recreate the tree (PathItems capture the flag) with the new visibility
+        }
+    }
+
     /** Rebuilds the body: placeholder (no project), filtered flat results, or the lazy tree. */
     private void rebuildBody() {
         long gen = searchGen.incrementAndGet(); // invalidate any in-flight search
@@ -280,18 +293,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         String q = filterField.getText().trim();
         if (q.isEmpty()) {
             filtering = false;
-            PathItem rootItem = new PathItem(root);
+            PathItem rootItem = new PathItem(root, showHidden);
             rootItem.setExpanded(true);
             tree.setRoot(rootItem);
         } else {
             filtering = true;
             // Walk off the FX thread (up to MAX_VISIT entries); apply results back under the gen guard.
             Path searchRoot = root;
+            boolean includeHidden = showHidden;
             TreeItem<Path> pending = new TreeItem<>(root);
             pending.setExpanded(true);
             tree.setRoot(pending);
             searchExecutor.submit(() -> {
-                List<Path> matches = search(searchRoot, q);
+                List<Path> matches = search(searchRoot, q, includeHidden);
                 Platform.runLater(() -> {
                     if (gen != searchGen.get()) {
                         return; // a newer query (or a tree switch) superseded this one
@@ -421,7 +435,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Bounded project-wide filename search: dot-dirs skipped, capped on entries visited and matches. */
-    private static List<Path> search(Path root, String query) {
+    private static List<Path> search(Path root, String query, boolean includeHidden) {
         String q = query.toLowerCase(Locale.ROOT);
         List<Path> matches = new ArrayList<>();
         int[] visited = {0};
@@ -433,7 +447,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) {
-                            if (!dir.equals(root)
+                            if (!includeHidden
+                                    && !dir.equals(root)
                                     && dir.getFileName().toString().startsWith(".")) {
                                 return FileVisitResult.SKIP_SUBTREE; // skip .git, etc.
                             }
@@ -443,7 +458,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes a) {
                             String name = file.getFileName().toString();
-                            if (!name.startsWith(".")
+                            if ((includeHidden || !name.startsWith("."))
                                     && name.toLowerCase(Locale.ROOT).contains(q)) {
                                 matches.add(file);
                             }
@@ -690,9 +705,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private static final class PathItem extends TreeItem<Path> {
         private boolean loaded;
         private Boolean leaf;
+        private final boolean showHidden;
 
-        PathItem(Path path) {
+        PathItem(Path path, boolean showHidden) {
             super(path);
+            this.showHidden = showHidden;
         }
 
         @Override
@@ -709,8 +726,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 loaded = true;
                 if (Files.isDirectory(getValue())) {
                     List<TreeItem<Path>> kids = new ArrayList<>();
-                    for (Path child : listDir(getValue())) {
-                        kids.add(new PathItem(child));
+                    for (Path child : listDir(getValue(), showHidden)) {
+                        kids.add(new PathItem(child, showHidden));
                     }
                     super.getChildren().setAll(kids);
                 }
@@ -725,13 +742,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Directory children: directories first then files, case-insensitive; dotfiles hidden; empty on error. */
-    private static List<Path> listDir(Path dir) {
+    /** Directory children: directories first then files, case-insensitive; dotfiles hidden unless
+     *  {@code includeHidden}; empty on error. */
+    private static List<Path> listDir(Path dir, boolean includeHidden) {
         List<Path> dirs = new ArrayList<>();
         List<Path> files = new ArrayList<>();
         try (Stream<Path> entries = Files.list(dir)) {
             entries.forEach(p -> {
-                if (p.getFileName().toString().startsWith(".")) {
+                if (!includeHidden && p.getFileName().toString().startsWith(".")) {
                     return;
                 }
                 (Files.isDirectory(p) ? dirs : files).add(p);

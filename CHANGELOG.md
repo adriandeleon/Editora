@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Project tool window can show hidden files.** A new *Settings → Tool Windows → "Show hidden files in the
+  project tree"* checkbox (and the `view.toggleProjectHidden` palette command) reveals dot-files/folders in
+  the project tree and its filter search. Off by default. Persisted in `settings.toml` (schema 38→39).
+
 ### Fixed
 
 - **Find/Replace bar buttons disable when there's no search term.** Prev, Next, Replace, Replace-All, and
