@@ -78,6 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Opening a large source file no longer freezes the UI.** Computing fold regions on open recreated a gutter
+  graphic for *every* fold header in the file (thousands, for a big file like a 12k-line Java source) on the
+  JavaFX thread, blocking it for several seconds. The fold recompute now only refreshes the chevrons of
+  currently-visible rows — offscreen rows get the correct fold state when the gutter factory builds them on
+  scroll — cutting the per-open cost from seconds to a few milliseconds.
+
 - **Breadcrumb dropdown uses the same file icons as the Project tool window.** The folder dropdown on a
   breadcrumb crumb now shows per-type file glyphs (and the boxed folder icon) via `FileIcons`, instead of a
   single generic file icon — matching the Project tree.
