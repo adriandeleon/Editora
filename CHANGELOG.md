@@ -78,6 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Structure tool window no longer jumps the editor back while navigating.** A language server that
+  re-announces readiness repeatedly (jdtls re-sends `language/status` "ServiceReady" on workspace events)
+  re-pushed the same document symbols, rebuilding the outline tree, resetting the selection to the first
+  row, and snapping the editor back to the top of the file as you clicked around. Re-pushing an unchanged
+  outline is now a no-op, and a genuine rebuild preserves the symbol you had selected.
 - **Java LSP (jdtls) now initializes reliably; completion works.** jdtls was launched without a `-data`
   workspace, so every project shared one default Eclipse workspace and deadlocked on its `.lock` (contending
   with a leaked previous run or another editor) — the server never finished `initialize`, leaving the
