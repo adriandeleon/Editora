@@ -1,0 +1,9 @@
+2026-06-20 09:01:00 ERROR Unhandled exception
+java.lang.NullPointerException: items is null
+	at demo.Sample.count(Sample.java:14)
+	at demo.Main.run(Main.java:9)
+Traceback (most recent call last):
+  File "/app/server.py", line 42, in handle
+    return self.process(req)
+ValueError: bad input
+    at /srv/app/index.js:88:13

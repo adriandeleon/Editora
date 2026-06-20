@@ -114,4 +114,52 @@ class SnippetManagerTest {
         assertTrue(m.forLanguage("java").size() > 0); // bundled still load
         assertNotNull(m.byPrefix("java", "main"));
     }
+
+    // --- Settings → Snippets management (saveUserSnippets / userSnippets / userSnippetLanguages) ---
+
+    @Test
+    void saveUserSnippetsRoundTripsAndIsLive(@TempDir Path dir) throws Exception {
+        SnippetManager m = manager(dir);
+        m.saveUserSnippets(
+                "java", java.util.List.of(new Snippet("Logger", "logx", "log.info(\"$1\");$0", "log call", "java")));
+
+        // Round-trips through the user file (file order, single prefix).
+        java.util.List<Snippet> user = m.userSnippets("java");
+        assertEquals(1, user.size());
+        assertEquals("Logger", user.get(0).name());
+        assertEquals("logx", user.get(0).prefix());
+        assertEquals("log.info(\"$1\");$0", user.get(0).body());
+
+        // The file exists and the snippet is live (saveUserSnippets clears the cache).
+        assertTrue(Files.isReadable(m.userFile("java")));
+        assertNotNull(m.byPrefix("java", "logx"));
+        assertNotNull(m.byPrefix("java", "main")); // bundled still present
+    }
+
+    @Test
+    void userSnippetOverridesBundledOnPrefixClash(@TempDir Path dir) throws Exception {
+        SnippetManager m = manager(dir);
+        m.saveUserSnippets("java", java.util.List.of(new Snippet("MyMain", "main", "// mine", "", "java")));
+        Snippet s = m.byPrefix("java", "main");
+        assertNotNull(s);
+        assertEquals("// mine", s.body()); // user wins over the bundled "main"
+    }
+
+    @Test
+    void blankNamedSnippetsAreNotWritten(@TempDir Path dir) throws Exception {
+        SnippetManager m = manager(dir);
+        m.saveUserSnippets(
+                "go",
+                java.util.List.of(new Snippet("keep", "k", "body", "", "go"), new Snippet("  ", "x", "y", "", "go")));
+        assertEquals(1, m.userSnippets("go").size());
+    }
+
+    @Test
+    void userSnippetLanguagesListsSavedFiles(@TempDir Path dir) throws Exception {
+        SnippetManager m = manager(dir);
+        assertTrue(m.userSnippetLanguages().isEmpty());
+        m.saveUserSnippets("python", java.util.List.of(new Snippet("p", "p", "pass", "", "python")));
+        m.saveUserSnippets("global", java.util.List.of(new Snippet("g", "g", "x", "", "global")));
+        assertEquals(java.util.List.of("global", "python"), m.userSnippetLanguages()); // sorted
+    }
 }

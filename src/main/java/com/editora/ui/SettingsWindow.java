@@ -68,6 +68,7 @@ public class SettingsWindow {
     private enum Category {
         APPEARANCE(tr("settings.cat.appearance"), false),
         EDITOR(tr("settings.cat.editor"), false),
+        SNIPPETS(tr("settings.cat.snippets"), false),
         MARKDOWN(tr("settings.cat.markdown"), false),
         TOOL_WINDOWS(tr("settings.cat.toolWindows"), false),
         SPELL_CHECK(tr("settings.cat.spellCheck"), false),
@@ -163,6 +164,14 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingExternalTool = false;
+    /** Shared snippet manager (injected after construction); backs the Snippets management page. */
+    private com.editora.snippet.SnippetManager snippetManager;
+    /** Working copy of the user snippets for the language selected on the Snippets page. */
+    private final javafx.collections.ObservableList<com.editora.snippet.Snippet> snippetItems =
+            javafx.collections.FXCollections.observableArrayList();
+
+    private boolean loadingSnippet = false;
+    private String currentSnippetLang = "global";
     private CheckBox multiCaretCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
@@ -308,6 +317,17 @@ public class SettingsWindow {
      */
     public void setPluginManager(com.editora.plugin.PluginManager pluginManager) {
         this.pluginManager = pluginManager;
+    }
+
+    /** Injects the shared {@link com.editora.snippet.SnippetManager} backing the Snippets management page. */
+    public void setSnippetManager(com.editora.snippet.SnippetManager snippetManager) {
+        this.snippetManager = snippetManager;
+    }
+
+    /** Opens Settings focused on the Snippets page (the {@code snippets.manage} command). */
+    public void showSnippets(Window owner) {
+        show(owner);
+        sidebar.getSelectionModel().select(Category.SNIPPETS);
     }
 
     /** Wires the Plugins-page actions to the controller (browse registry / install zip / uninstall). */
@@ -902,6 +922,7 @@ public class SettingsWindow {
     private void buildPages() {
         pages.put(Category.APPEARANCE, appearancePage());
         pages.put(Category.EDITOR, editorPage());
+        pages.put(Category.SNIPPETS, snippetsPage());
         pages.put(Category.MARKDOWN, markdownPage());
         pages.put(Category.TOOL_WINDOWS, toolWindowsPage());
         pages.put(Category.SPELL_CHECK, spellPage());
@@ -1525,6 +1546,204 @@ public class SettingsWindow {
         hint.setMaxWidth(440);
         row(p, Category.HTTP_CLIENT, null, hint, "http rest request response built-in client");
         return p;
+    }
+
+    /** Languages offered in the Snippets-page picker (editable, so any language id can also be typed). */
+    private static final java.util.List<String> SNIPPET_LANGUAGES = java.util.List.of(
+            "global",
+            "java",
+            "javascript",
+            "typescript",
+            "python",
+            "go",
+            "rust",
+            "c",
+            "cpp",
+            "csharp",
+            "kotlin",
+            "php",
+            "ruby",
+            "lua",
+            "html",
+            "css",
+            "json",
+            "yaml",
+            "xml",
+            "toml",
+            "sql",
+            "shell",
+            "powershell",
+            "batchfile",
+            "groovy",
+            "ini",
+            "markdown",
+            "mermaid",
+            "dockerfile",
+            "terraform");
+
+    private VBox snippetsPage() {
+        VBox p = page(tr("settings.cat.snippets"));
+        row(p, Category.SNIPPETS, null, snippetsEditor(), "snippets user prefix trigger expansion tab stops body");
+        Label help = note(tr("settings.snippet.help"));
+        help.setWrapText(true);
+        help.setMaxWidth(460);
+        row(p, Category.SNIPPETS, null, help, "snippets help tab stop placeholder variable");
+        return p;
+    }
+
+    /** Master-detail editor: a language picker + the user's snippets for it on the left, a form on the right. */
+    private javafx.scene.Node snippetsEditor() {
+        // Language picker (editable): the curated list, plus any languages that already have a user file.
+        java.util.LinkedHashSet<String> langs = new java.util.LinkedHashSet<>(SNIPPET_LANGUAGES);
+        if (snippetManager != null) {
+            langs.addAll(snippetManager.userSnippetLanguages());
+        }
+        ComboBox<String> language = new ComboBox<>(javafx.collections.FXCollections.observableArrayList(langs));
+        language.setEditable(true);
+        language.setValue(currentSnippetLang);
+
+        ListView<com.editora.snippet.Snippet> list = new ListView<>(snippetItems);
+        list.setPrefSize(170, 240);
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(com.editora.snippet.Snippet s, boolean empty) {
+                super.updateItem(s, empty);
+                setText(
+                        empty || s == null
+                                ? null
+                                : (s.name() == null || s.name().isBlank() ? tr("settings.snippet.unnamed") : s.name()));
+            }
+        });
+
+        TextField name = new TextField();
+        TextField prefix = new TextField();
+        prefix.setPromptText(tr("settings.snippet.prefixPrompt"));
+        TextField description = new TextField();
+        javafx.scene.control.TextArea body = new javafx.scene.control.TextArea();
+        body.setPrefRowCount(8);
+        body.getStyleClass().add("snippet-body");
+
+        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
+        form.setHgap(8);
+        form.setVgap(6);
+        formRow(form, 0, tr("settings.snippet.name"), name);
+        formRow(form, 1, tr("settings.snippet.prefix"), prefix);
+        formRow(form, 2, tr("settings.snippet.description"), description);
+        formRow(form, 3, tr("settings.snippet.body"), body);
+        javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
+        form.setDisable(true);
+        HBox.setHgrow(form, Priority.ALWAYS);
+
+        Runnable commit = () -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i < 0 || loadingSnippet) {
+                return;
+            }
+            com.editora.snippet.Snippet updated = new com.editora.snippet.Snippet(
+                    name.getText().trim(),
+                    prefix.getText().trim(),
+                    body.getText(),
+                    description.getText().trim(),
+                    currentSnippetLang);
+            loadingSnippet = true; // replacing at the same index keeps selection; don't reload the fields
+            try {
+                snippetItems.set(i, updated);
+            } finally {
+                loadingSnippet = false;
+            }
+            list.refresh();
+            saveSnippets();
+        };
+        // Single-line fields commit on Enter / focus-loss; the body commits on focus-loss (Enter = newline).
+        java.util.function.Consumer<TextField> wire = tf -> {
+            tf.setOnAction(e -> commit.run());
+            tf.focusedProperty().addListener((o, was, now) -> {
+                if (!now) {
+                    commit.run();
+                }
+            });
+        };
+        wire.accept(name);
+        wire.accept(prefix);
+        wire.accept(description);
+        body.focusedProperty().addListener((o, was, now) -> {
+            if (!now) {
+                commit.run();
+            }
+        });
+
+        // Load the form when a *different* row is selected (selectedIndex, so an in-place commit set() is silent).
+        list.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> {
+            int i = now == null ? -1 : now.intValue();
+            com.editora.snippet.Snippet s = i >= 0 && i < snippetItems.size() ? snippetItems.get(i) : null;
+            loadingSnippet = true;
+            try {
+                form.setDisable(s == null);
+                name.setText(s == null ? "" : s.name());
+                prefix.setText(s == null ? "" : s.prefix());
+                description.setText(s == null ? "" : s.description());
+                body.setText(s == null ? "" : s.body());
+            } finally {
+                loadingSnippet = false;
+            }
+        });
+
+        Runnable loadLang = () -> {
+            String v = language.getValue();
+            currentSnippetLang = v == null || v.isBlank() ? "global" : v.trim();
+            loadingSnippet = true;
+            try {
+                snippetItems.setAll(
+                        snippetManager == null ? java.util.List.of() : snippetManager.userSnippets(currentSnippetLang));
+            } finally {
+                loadingSnippet = false;
+            }
+            list.getSelectionModel().clearSelection();
+            if (!snippetItems.isEmpty()) {
+                list.getSelectionModel().select(0);
+            } else {
+                form.setDisable(true);
+            }
+        };
+        language.valueProperty().addListener((o, a, b) -> loadLang.run());
+
+        Button add = new Button(tr("settings.snippet.add"));
+        add.setOnAction(e -> {
+            com.editora.snippet.Snippet s =
+                    new com.editora.snippet.Snippet(tr("settings.snippet.newName"), "", "", "", currentSnippetLang);
+            snippetItems.add(s);
+            saveSnippets();
+            list.getSelectionModel().select(snippetItems.size() - 1);
+            name.requestFocus();
+            name.selectAll();
+        });
+        Button remove = new Button(tr("settings.snippet.remove"));
+        remove.setOnAction(e -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i >= 0) {
+                snippetItems.remove(i);
+                saveSnippets();
+            }
+        });
+        HBox buttons = new HBox(6, add, remove);
+        VBox left = new VBox(6, labeled(tr("settings.snippet.language"), language), list, buttons);
+
+        loadLang.run();
+        HBox box = new HBox(12, left, form);
+        box.setAlignment(Pos.TOP_LEFT);
+        return box;
+    }
+
+    private void saveSnippets() {
+        if (snippetManager == null) {
+            return;
+        }
+        try {
+            snippetManager.saveUserSnippets(currentSnippetLang, new java.util.ArrayList<>(snippetItems));
+        } catch (java.io.IOException e) {
+            new Alert(Alert.AlertType.ERROR, tr("settings.snippet.saveFailed", e.getMessage()), ButtonType.OK)
+                    .showAndWait();
+        }
     }
 
     private VBox externalToolsPage() {

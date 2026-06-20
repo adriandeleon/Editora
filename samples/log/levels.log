@@ -1,0 +1,6 @@
+2026-06-20 09:00:01 TRACE startup beginning
+2026-06-20 09:00:02 DEBUG loading config
+2026-06-20 09:00:03 INFO  server listening on :8080
+2026-06-20 09:00:05 WARN  cache miss for key=42
+2026-06-20 09:00:06 ERROR failed to connect to db
+2026-06-20 09:00:07 FATAL shutting down
