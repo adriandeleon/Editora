@@ -71,16 +71,33 @@ public class aot_build {
             System.out.println("[aot] stripped runtime bin/: " + imageJava.getParent());
         }
 
-        // --- 3) deliver: copy (APP_IMAGE) or wrap into an installer ---
+        // --- 3) deliver: copy (APP_IMAGE) or wrap into one or more installers ---
+        // `type` may be a comma list (e.g. "DEB,RPM" on Linux) — train once, wrap each. Per-type
+        // failures are non-fatal so a flaky RPM can't sink the DEB; only an all-failed result (or a
+        // single-type platform's failure) fails the build.
         Files.createDirectories(destDir);
         Path imageRoot = imageRoot(imageDir, appName, win); // Editora.app (mac) or Editora dir
-        if ("APP_IMAGE".equalsIgnoreCase(type)) {
+        if ("APP_IMAGE".equalsIgnoreCase(type.trim())) {
             Path out = destDir.resolve(imageRoot.getFileName());
             deleteRecursive(out);
             copyRecursive(imageRoot, out);
             System.out.println("[aot] app image -> " + out);
         } else {
-            wrapInstaller(imageRoot, appName, appVer, type, icon, destDir); // fails the build on error
+            int ok = 0, attempted = 0;
+            for (String one : type.split(",")) {
+                one = one.trim();
+                if (one.isEmpty()) continue;
+                attempted++;
+                if (wrapInstaller(imageRoot, appName, appVer, one, icon, destDir)) ok++;
+            }
+            if (attempted > 0 && ok == 0) {
+                System.err.println("[aot] every installer wrap failed — failing the build");
+                System.exit(1);
+            }
+            if (ok < attempted) {
+                System.out.println("[aot] " + ok + "/" + attempted
+                        + " installers built; the rest failed (see log above)");
+            }
         }
     }
 
@@ -119,8 +136,9 @@ public class aot_build {
         }
     }
 
-    /** jpackage --app-image <image> --type <installer> ... (build JDK's jpackage). Fails on error. */
-    private static void wrapInstaller(Path imageRoot, String appName, String appVer, String type,
+    /** jpackage --app-image <image> --type <installer> ... (build JDK's jpackage). Returns true on
+     *  success; the caller decides whether a failure is fatal (it is for a single-type platform). */
+    private static boolean wrapInstaller(Path imageRoot, String appName, String appVer, String type,
                                       String icon, Path destDir) throws Exception {
         boolean win = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
         Path jpackage = Path.of(System.getProperty("java.home"), "bin", win ? "jpackage.exe" : "jpackage");
@@ -152,10 +170,11 @@ public class aot_build {
         Process p = new ProcessBuilder(cmd).inheritIO().start();
         int code = p.waitFor();
         if (code != 0) {
-            System.err.println("[aot] jpackage installer wrap failed with exit " + code);
-            System.exit(code); // the installer is the real deliverable — fail the build
+            System.err.println("[aot] jpackage " + type + " wrap failed with exit " + code);
+            return false;
         }
-        System.out.println("[aot] installer -> " + destDir);
+        System.out.println("[aot] installer -> " + destDir + " (" + type + ")");
+        return true;
     }
 
     // ---- helpers ----

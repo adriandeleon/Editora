@@ -872,7 +872,11 @@
             <id>os-linux</id>
             <activation><os><name>Linux</name></os></activation>
             <properties>
-                <jpackage.type>DEB</jpackage.type>
+                <!-- Build both Debian and RPM packages from the one trained app image (the aot_build
+                     helper wraps each comma-separated type). RPM needs rpmbuild on the runner — see
+                     release.yml. A per-type wrap failure is non-fatal, so a missing rpmbuild can't
+                     sink the .deb. -->
+                <jpackage.type>DEB,RPM</jpackage.type>
                 <jpackage.icon>${project.basedir}/branding/editora.png</jpackage.icon>
                 <!-- es2 first on Linux (no Metal/Direct3D there); sw fallback. -->
                 <prism.pipeline>es2,sw</prism.pipeline>
