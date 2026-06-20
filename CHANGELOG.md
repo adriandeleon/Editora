@@ -78,6 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breadcrumb dropdown uses the same file icons as the Project tool window.** The folder dropdown on a
+  breadcrumb crumb now shows per-type file glyphs (and the boxed folder icon) via `FileIcons`, instead of a
+  single generic file icon — matching the Project tree.
+
 - **The Git Log tool window refreshes when opened.** Opening it — via the stripe icon (which toggles the
   window directly) or a command — now reloads the commit history, so it no longer shows stale commits from a
   previous open. (Opening via the stripe button previously bypassed the load entirely.)
