@@ -162,4 +162,19 @@ class SnippetManagerTest {
         m.saveUserSnippets("global", java.util.List.of(new Snippet("g", "g", "x", "", "global")));
         assertEquals(java.util.List.of("global", "python"), m.userSnippetLanguages()); // sorted
     }
+
+    @Test
+    void bundledSnippetsReturnsTheShippedSetWithoutUserEntries(@TempDir Path dir) throws Exception {
+        SnippetManager m = manager(dir);
+        // The shipped java snippets are listed (so the Settings page isn't empty) — and a user override is
+        // NOT part of bundledSnippets (that's the user file's job).
+        java.util.List<Snippet> bundled = m.bundledSnippets("java");
+        assertTrue(bundled.size() > 1, "expected shipped java snippets");
+        assertTrue(bundled.stream().anyMatch(s -> "main".equals(s.prefix())));
+
+        m.saveUserSnippets("java", java.util.List.of(new Snippet("MyMain", "main", "// mine", "", "java")));
+        assertTrue(
+                m.bundledSnippets("java").stream().noneMatch(s -> "MyMain".equals(s.name())),
+                "bundledSnippets must not include user entries");
+    }
 }
