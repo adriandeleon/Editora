@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Command docs now open the version-matched page.** The command palette's "open docs" (C-h) now links to
+  `…/docs/v-<appVersion>/commands/<command-id>`, matching the website's new versioned docs layout, so each
+  build opens the docs for the version that's actually running.
+
 - **De-duplicated the plugin examples.** The full plugin catalog lives canonically in the
   [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) repo (source +
   signed registry index), so the editor repo no longer keeps copies under `examples/` — those had
