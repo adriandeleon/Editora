@@ -127,13 +127,15 @@ final class LanguageServerSession implements LanguageClient {
         try {
             ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
             pb.directory(root.toFile());
-            // Discard the server's stderr. Nothing drains it, so an undrained PIPE (the default) fills
-            // its ~64 KB OS buffer on a chatty server (jdtls logs heavily) and the server blocks writing
-            // to it — deadlocking mid-startup with no diagnostics ever published. LSP traffic is on stdout.
-            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
             ProcessRunner.applyStandardEnv(pb);
             process = pb.start();
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
+            // Drain the server's stderr on a daemon thread (LSP traffic is on stdout). It MUST be drained —
+            // an undrained PIPE fills its ~64 KB OS buffer on a chatty server (jdtls logs heavily) and the
+            // server blocks writing, deadlocking mid-startup. Capturing it to the Debug Log (instead of the
+            // old Redirect.DISCARD) surfaces *why* a server fails to come up (missing JDK, lock, bad command)
+            // — otherwise that's invisible. Capped so a chatty server can't flood the log.
+            drainStderr(process);
             Launcher<LanguageServer> launcher = LSPLauncher.createClientLauncher(
                     this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
@@ -147,6 +149,38 @@ final class LanguageServerSession implements LanguageClient {
             return false;
         }
     }
+
+    /**
+     * Reads {@code p}'s stderr to EOF on a daemon thread so the OS pipe never fills (which would block the
+     * server mid-startup), logging the first {@value #STDERR_LOG_CAP} lines to the Debug Log so a failed
+     * launch is diagnosable. Past the cap it keeps draining but stops logging.
+     */
+    private void drainStderr(Process p) {
+        Thread t = new Thread(
+                () -> {
+                    int logged = 0;
+                    try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(
+                            p.getErrorStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = r.readLine()) != null) {
+                            if (logged < STDERR_LOG_CAP) {
+                                LOG.info("[" + command.get(0) + " stderr] " + line);
+                                if (++logged == STDERR_LOG_CAP) {
+                                    LOG.info("[" + command.get(0) + " stderr] …(further output suppressed)");
+                                }
+                            }
+                            // keep reading past the cap so the pipe drains and the server never blocks.
+                        }
+                    } catch (java.io.IOException ignored) {
+                        // stream closed (server exited) — nothing more to drain.
+                    }
+                },
+                "lsp-stderr-" + command.get(0));
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static final int STDERR_LOG_CAP = 200;
 
     private void sendInitialize() {
         InitializeParams ip = new InitializeParams();

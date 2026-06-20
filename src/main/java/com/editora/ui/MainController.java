@@ -3707,6 +3707,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void applyLspSupport() {
         Settings s = config.getSettings();
         boolean on = lspEnabled(); // effective: off in Simple UI mode
+        // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
+        // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
+        lspManager.setJdtlsWorkspaceBase(config.getConfigDir().resolve("jdtls-workspaces"));
         lspManager.configure(
                 on,
                 java.util.Map.ofEntries(

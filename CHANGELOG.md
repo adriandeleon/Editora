@@ -78,6 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java LSP (jdtls) now initializes reliably; completion works.** jdtls was launched without a `-data`
+  workspace, so every project shared one default Eclipse workspace and deadlocked on its `.lock` (contending
+  with a leaked previous run or another editor) — the server never finished `initialize`, leaving the
+  status-bar loading bar spinning forever and autocomplete dead. Each project root now gets its own jdtls
+  workspace under `<config>/jdtls-workspaces/<hash>` (its index persists across sessions, so later opens are
+  faster). A user-supplied `-data` in the configured command is respected. A language server's **stderr** is
+  also now captured into the Debug Log (it was discarded), so when a server fails to start the reason —
+  missing JDK, a locked workspace, a bad command — is finally visible.
+
 - **Opening a large source file no longer freezes the UI.** Computing fold regions on open recreated a gutter
   graphic for *every* fold header in the file (thousands, for a big file like a 12k-line Java source) on the
   JavaFX thread, blocking it for several seconds. The fold recompute now only refreshes the chevrons of

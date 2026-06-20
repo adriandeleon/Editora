@@ -184,4 +184,30 @@ class LspServerRegistryTest {
         assertEquals(List.of(), LspServerRegistry.tokenize("   "));
         assertEquals(List.of(), LspServerRegistry.tokenize(null));
     }
+
+    @Test
+    void withDataDirAppendsWorkspaceArgUnlessAlreadyPresent() {
+        var base = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), LspServerRegistry.JAVA_ROOT_MARKERS);
+        assertEquals(
+                List.of("jdtls", "-data", "/ws/abc"),
+                LspServerRegistry.withDataDir(base, "/ws/abc").command());
+
+        // A command that already specifies -data (user-customized) is left untouched.
+        var custom = new LspServerRegistry.ServerSpec(
+                "java", List.of("jdtls", "-data", "/mine"), LspServerRegistry.JAVA_ROOT_MARKERS);
+        assertEquals(custom, LspServerRegistry.withDataDir(custom, "/ws/abc"));
+        // Null/blank dir is a no-op.
+        assertEquals(base, LspServerRegistry.withDataDir(base, null));
+        assertEquals(base, LspServerRegistry.withDataDir(base, "  "));
+    }
+
+    @Test
+    void workspaceDirNameIsStablePerRootAndDistinctAcrossRoots() {
+        java.nio.file.Path a = java.nio.file.Path.of("/home/u/projA");
+        String na = LspServerRegistry.workspaceDirName(a);
+        assertEquals(na, LspServerRegistry.workspaceDirName(a)); // stable for the same root
+        assertEquals(16, na.length());
+        assertTrue(na.matches("[0-9a-f]{16}")); // filesystem-safe hex
+        assertFalse(na.equals(LspServerRegistry.workspaceDirName(java.nio.file.Path.of("/home/u/projB"))));
+    }
 }
