@@ -214,12 +214,15 @@ public class FileBreadcrumb extends StackPane {
             }
         }
         for (Path d : dirs) {
-            MenuItem mi = new MenuItem(d.getFileName().toString(), Icons.project());
+            // Match the Project tool window's icons (FileIcons.boxed folder + per-type file glyphs).
+            MenuItem mi = new MenuItem(d.getFileName().toString(), FileIcons.boxed(Icons.project()));
             mi.setOnAction(e -> navigateInto(d, anchor));
             menu.getItems().add(mi);
         }
         for (Path f : files) {
-            MenuItem mi = new MenuItem(f.getFileName().toString(), Icons.fileSheet());
+            MenuItem mi = new MenuItem(
+                    f.getFileName().toString(),
+                    FileIcons.forFileName(f.getFileName().toString()));
             mi.setOnAction(e -> onOpenFile.accept(f));
             menu.getItems().add(mi);
         }
