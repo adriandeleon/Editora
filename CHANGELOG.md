@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Headless FX tests now use JavaFX 26's built-in headless platform.** The `@Tag("fx")` harness boots over
+  the Headless Glass platform that ships inside `javafx.graphics` (`-Dglass.platform=Headless`) instead of the
+  self-built Monocle backend. The vendored `openjfx-monocle` jar (and the rebuild-on-every-JavaFX-bump ritual it
+  required) are gone — nothing extra to download or maintain, and the backend can no longer go stale on a JavaFX
+  bump. Test-scope only; no runtime, packaging, or `module-info` impact. The harness only uses TestFX to boot the
+  toolkit (never the robot), so the prototype platform's input/rendering limits don't apply.
+
 - **Command docs now open the version-matched page.** The command palette's "open docs" (C-h) now links to
   `…/docs/v-<appVersion>/commands/<command-id>`, matching the website's new versioned docs layout, so each
   build opens the docs for the version that's actually running.

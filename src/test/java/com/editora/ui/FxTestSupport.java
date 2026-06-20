@@ -14,9 +14,9 @@ import org.testfx.api.FxToolkit;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
- * Shared plumbing for the headless-JavaFX tests (tagged {@code fx}). Boots the toolkit once via the
- * vendored Monocle backend (no display/xvfb), runs work on the FX thread, and reads private
- * {@code @FXML} nodes by reflection (tests run on the classpath as the unnamed module, so
+ * Shared plumbing for the headless-JavaFX tests (tagged {@code fx}). Boots the toolkit once via
+ * JavaFX 26's built-in Headless Glass platform (no display/xvfb), runs work on the FX thread, and
+ * reads private {@code @FXML} nodes by reflection (tests run on the classpath as the unnamed module, so
  * {@code setAccessible} is unrestricted).
  *
  * <p>Mirrors the prerequisites {@code App.start} sets up before building any window: register fonts,
@@ -33,7 +33,7 @@ final class FxTestSupport {
         if (booted) {
             return;
         }
-        FxToolkit.registerPrimaryStage(); // starts the Monocle Headless Glass platform
+        FxToolkit.registerPrimaryStage(); // starts the built-in Headless Glass platform (-Dglass.platform=Headless)
         runOnFx(() -> {
             Fonts.load();
             Messages.init("en");
