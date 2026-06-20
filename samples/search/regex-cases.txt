@@ -1,0 +1,4 @@
+phone: 555-123-4567
+email: someone@example.com
+multibyte café — café (verify ripgrep column mapping on the é)
+word boundary: cat catalog scatter

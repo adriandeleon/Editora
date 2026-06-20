@@ -1,0 +1,7 @@
+shared header
+<<<<<<< HEAD
+our version of the line
+=======
+their version of the line
+>>>>>>> feature-branch
+shared footer

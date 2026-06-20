@@ -1,0 +1,16 @@
+### Get a post
+GET https://jsonplaceholder.typicode.com/posts/1
+Accept: application/json
+
+### Create a post
+POST https://jsonplaceholder.typicode.com/posts
+Content-Type: application/json
+
+{
+  "title": "{{title}}",
+  "userId": 1
+}
+
+### Uses an env + a fake token (never a real secret)
+GET https://api.example.com/me
+Authorization: Bearer {{token}}

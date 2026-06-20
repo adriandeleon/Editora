@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sample corpus for manual feature testing.** A new top-level `samples/` folder holds small, curated
+  text samples organized by feature (syntax per language, folding, indent, markdown, mermaid, todo, spell,
+  search, editorconfig, http, log, diff, encodings) — open the relevant file to smoke-test a feature.
+  `samples/README.md` is the manifest; `SamplesCorpusTest` keeps it in sync with the files on disk. Large
+  perf inputs are generated on demand by `java scripts/GenSamples.java` (git-ignored, never committed), and a
+  scoped `.gitattributes` preserves the encoding/EOL samples verbatim.
+
 - **Syntax highlighting for common project config files.** `.editorconfig` (INI), `.gitignore` (and other
   `.*ignore` files, via a new `ignore` grammar), `mvnw`/`gradlew` (shell), and Eclipse `.classpath`/`.project`
   (XML) are now recognized by name and highlighted — wired through the shared `ConfigFileType` resolver so the

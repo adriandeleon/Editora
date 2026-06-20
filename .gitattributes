@@ -1,0 +1,6 @@
+# Sample corpus: preserve bytes verbatim and keep it out of language stats / diffs.
+# The encoding/EOL samples MUST NOT be normalized by git (autocrlf, eol, BOM
+# stripping) — that would destroy exactly what they exercise.
+samples/encodings/** -text
+samples/diff/conflict.txt -text
+samples/** linguist-vendored

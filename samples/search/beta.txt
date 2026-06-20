@@ -1,0 +1,3 @@
+another needle in the second file
+shared TERM appears here too
+case Needle vs needle

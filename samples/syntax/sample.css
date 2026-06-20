@@ -1,0 +1,13 @@
+:root {
+  --accent: #3b82f6;
+}
+
+.button {
+  color: var(--accent);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+}
+
+.button:hover {
+  filter: brightness(1.1);
+}
