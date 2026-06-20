@@ -528,6 +528,11 @@ public class EditorBuffer implements TabContent {
         area.getStyleClass().add("editor-area");
         area.setWrapText(false);
         area.setUndoManager(boundedUndoManager(area));
+        // Word/line-level undo: end the current undo group after an edit that finishes a word or line, so
+        // one C-z undoes a word/line rather than the whole typing burst (the idle break is built into the
+        // manager via UndoMerge.PAUSE). Subscribe AFTER setUndoManager so the manager records the change
+        // first; both views share the document, so this one subscription covers edits made in either.
+        area.plainTextChanges().subscribe(c -> breakUndoGroupIfBoundary(c.getInserted(), c.getRemoved()));
         area.setLineHighlighterFill(lineHighlightColor);
         // Track the earliest changed line immediately (the debounced stream below drops intermediate
         // emissions, so the dirty start must be accumulated here), then re-highlight after a pause.
@@ -3127,9 +3132,22 @@ public class EditorBuffer implements TabContent {
     /** A fixed-size undo manager so undo history can't grow without bound. */
     private static UndoManager<?> boundedUndoManager(CodeArea a) {
         UndoManagerFactory factory = UndoManagerFactory.fixedSizeHistoryFactory(UNDO_HISTORY);
+        // Pass UndoMerge.PAUSE as the preventMergeDelay: edits more than that apart start a new undo
+        // group (idle break), giving word/line-level undo together with the token break below.
         return a.isPreserveStyle()
-                ? UndoUtils.richTextUndoManager(a, factory)
-                : UndoUtils.plainTextUndoManager(a, factory);
+                ? UndoUtils.richTextUndoManager(a, factory, UndoMerge.PAUSE)
+                : UndoUtils.plainTextUndoManager(a, factory, UndoMerge.PAUSE);
+    }
+
+    /** Ends the current undo group at a word/line boundary (see {@link UndoMerge}); no-op for huge files. */
+    private void breakUndoGroupIfBoundary(String inserted, String removed) {
+        if (largeFile || !UndoMerge.breakAfter(inserted, removed)) {
+            return;
+        }
+        area.getUndoManager().preventMerge();
+        if (area2 != null) {
+            area2.getUndoManager().preventMerge(); // the split views share the document + each record it
+        }
     }
 
     /** Toggle the highlight on the line containing the caret. */

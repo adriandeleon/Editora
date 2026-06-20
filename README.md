@@ -88,6 +88,7 @@ Emacs-style keymap or a fuzzy command palette.
   open in **View mode** (read-only with an "Enable Editing" banner) by default — follow still streams while
   read-only. On by default (Settings → Editor → Logs, "View: Toggle Log Viewer"); `Log: Toggle Follow` / `Filter by Level` /
   `Filter by Pattern` / `Clear Filter` / `View as Log` in the palette.
+- **Word/line-level undo** — undo/redo breaks at word, whitespace, and newline boundaries (and after a typing pause), so one undo removes a word or line rather than a whole typing burst.
 - **Auto-close & matching brackets** — typing `([{`/quotes inserts the matching closer (type over it to
   skip, wrap a selection by typing a bracket/quote around it, Backspace clears an empty pair); the
   bracket matching the one next to the caret is highlighted.

@@ -165,7 +165,8 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Column select support — column/block selection (overlay + column-aware edits)
 - [x] Multiple cursors support — VS Code–style multi-caret (add at next occurrence / above / below) +
       Alt-drag column selection (personal RichTextFX fork); see "Recently shipped"
-- [ ] Advanced Undo/Redo support
+- [ ] Advanced Undo/Redo support — *word/line-level undo coalescing shipped (boundary + idle breaks); an
+      undo tree (branch recovery) and a visual undo-history panel are the remaining pieces*
 - [x] Spell check support — Lucene Hunspell, red squiggles, suggestions, user dictionary, en_US/en_GB
 - [x] Private comments/notes — see **Personal Notes** under "Recently shipped"
 
