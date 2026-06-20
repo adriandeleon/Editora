@@ -32,16 +32,16 @@ jobs:
           java-version: '25'
           cache: maven
 
-      # The -Pdist build trains a full-GUI AOT cache (see scripts/aot_build.java + pom.xml). On a
-      # headless Linux runner that needs a virtual X display + JavaFX's GTK/GL runtime libs; the
-      # helper auto-wraps the training run in xvfb-run when DISPLAY is unset. If any of this is
-      # missing the training degrades gracefully (the app just ships without the cache), so this
-      # step is a best-effort enabler, not a hard dependency. macOS/Windows runners need nothing.
-      - name: Install virtual display for AOT training (Linux)
+      # Linux build deps:
+      #  - xvfb + GTK/GL libs: the -Pdist build trains a full-GUI AOT cache (scripts/aot_build.java),
+      #    and on a headless runner JavaFX needs a virtual X display; the helper auto-wraps training in
+      #    xvfb-run when DISPLAY is unset. Best-effort — training degrades gracefully if it's missing.
+      #  - rpm: provides rpmbuild so jpackage can build the .rpm (the Linux leg ships .deb AND .rpm).
+      - name: Install Linux build deps (virtual display + rpmbuild)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libgl1 libxxf86vm1
+          sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libgl1 libxxf86vm1 rpm
 
       - name: Build native installer (-Pdist)
         shell: bash
