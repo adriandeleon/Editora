@@ -192,6 +192,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.interfaces", "interfaces");
         scopeToResource.put("source.debian-changelog", "debian-changelog");
         scopeToResource.put("source.log", "log");
+        scopeToResource.put("source.ignore", "ignore"); // .gitignore / .dockerignore / .npmignore / …
 
         // file extension -> scope name
         mapExtensions("source.java", "java");

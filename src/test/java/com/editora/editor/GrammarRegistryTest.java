@@ -85,6 +85,19 @@ class GrammarRegistryTest {
     }
 
     @Test
+    void projectConfigFilesResolveToGrammars() {
+        // .editorconfig -> INI grammar; .gitignore -> the in-house ignore grammar; mvnw -> shell;
+        // .classpath/.project -> XML. Each resolves to a loadable grammar (parse + Oniguruma compile).
+        assertNotNull(GrammarRegistry.shared().forFileName(".editorconfig"));
+        assertNotNull(GrammarRegistry.shared().forLanguageName("ignore"));
+        assertNotNull(GrammarRegistry.shared().forFileName(".gitignore"));
+        assertNotNull(GrammarRegistry.shared().forFileName(".dockerignore"));
+        assertNotNull(GrammarRegistry.shared().forFileName("mvnw"));
+        assertNotNull(GrammarRegistry.shared().forFileName(".classpath"));
+        assertNotNull(GrammarRegistry.shared().forFileName(".project"));
+    }
+
+    @Test
     void debianGrammarsLoad() {
         // In-house deb822 / apt-sources / interfaces / debian-changelog grammars load end-to-end.
         assertNotNull(GrammarRegistry.shared().forLanguageName("deb822"));

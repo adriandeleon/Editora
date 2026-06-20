@@ -94,6 +94,25 @@ class ConfigFileTypeTest {
     }
 
     @Test
+    void projectConfigFilesMapToReusableGrammars() {
+        // .editorconfig is INI-style.
+        assertEquals("ini", ConfigFileType.resolve(".editorconfig"));
+        assertEquals("ini", ConfigFileType.resolve("/proj/.editorconfig"));
+        // Ignore files share one syntax (any dotfile ending in "ignore").
+        assertEquals("ignore", ConfigFileType.resolve(".gitignore"));
+        assertEquals("ignore", ConfigFileType.resolve(".dockerignore"));
+        assertEquals("ignore", ConfigFileType.resolve("/proj/sub/.npmignore"));
+        // Maven/Gradle wrapper scripts are POSIX shell.
+        assertEquals("shell", ConfigFileType.resolve("mvnw"));
+        assertEquals("shell", ConfigFileType.resolve("/proj/gradlew"));
+        // Eclipse project metadata is XML.
+        assertEquals("xml", ConfigFileType.resolve(".classpath"));
+        assertEquals("xml", ConfigFileType.resolve("/proj/.project"));
+        // mvnw.cmd stays a batch file (matched by extension elsewhere, not special here).
+        assertNull(ConfigFileType.resolve("mvnw.cmd"));
+    }
+
+    @Test
     void nullAndOrdinaryFilesAreNotSpecial() {
         assertNull(ConfigFileType.resolve(null));
         assertNull(ConfigFileType.resolve(""));

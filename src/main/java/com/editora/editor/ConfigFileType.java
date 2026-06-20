@@ -101,6 +101,24 @@ public final class ConfigFileType {
         if ((lower.equals("changelog") && hasAncestor(norm, "debian")) || lower.equals("changelog.debian")) {
             return "debian-changelog";
         }
+        // .editorconfig — INI-style key/value sections.
+        if (lower.equals(".editorconfig")) {
+            return "ini";
+        }
+        // Ignore files share one glob/comment syntax: .gitignore, .dockerignore, .npmignore,
+        // .eslintignore, .prettierignore, .vscodeignore, ... (any dotfile ending in "ignore").
+        if (lower.startsWith(".") && lower.endsWith("ignore")) {
+            return "ignore";
+        }
+        // Maven/Gradle wrapper launchers are POSIX shell scripts (the .cmd/.bat siblings map to batchfile
+        // via their extension).
+        if (lower.equals("mvnw") || lower.equals("gradlew")) {
+            return "shell";
+        }
+        // Eclipse project metadata is XML.
+        if (lower.equals(".classpath") || lower.equals(".project")) {
+            return "xml";
+        }
         return null;
     }
 
