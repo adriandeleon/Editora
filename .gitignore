@@ -49,3 +49,6 @@ Thumbs.db
 
 # Generated large/perf samples (created by scripts/GenSamples.java)
 /samples/perf/
+
+# Corpus log samples are intentionally tracked (the global *.log above would drop them)
+!/samples/log/*.log

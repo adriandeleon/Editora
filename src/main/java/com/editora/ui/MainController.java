@@ -487,6 +487,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
         this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk, this::uninstallPlugin);
+        this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
         this.settingsWindow.setRipgrepProbe(this::probeRipgrep); // Settings → Search found/not-found status
         this.settingsWindow.setOnKeymapChanged(this::reloadKeymap); // picker/combo → live keymap switch
@@ -12331,6 +12332,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.snippetsReloaded"));
         }));
         registry.register(Command.of("snippets.editUser", this::editUserSnippets));
+        registry.register(Command.of("snippets.manage", () -> settingsWindow.showSnippets(stage)));
         registry.register(Command.of("view.splitVertical", this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", this::onSplitHorizontal));
         registry.register(Command.of("view.unsplit", this::unsplit));

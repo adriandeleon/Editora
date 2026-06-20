@@ -87,8 +87,94 @@ public final class SnippetManager {
 
     /** The user snippet file for a language (may not exist yet); used by the "Edit User Snippets" command. */
     public Path userFile(String language) {
-        String lang = language == null || language.isBlank() ? GLOBAL : language;
-        return config.getConfigDir().resolve("snippets").resolve(lang + ".json");
+        return config.getConfigDir().resolve("snippets").resolve(norm(language) + ".json");
+    }
+
+    private static String norm(String language) {
+        return language == null || language.isBlank() ? GLOBAL : language;
+    }
+
+    /**
+     * The user's own snippets for {@code language} (just {@code <configDir>/snippets/<lang>.json}, not the
+     * bundled or plugin sources), in file order — for the Settings → Snippets management UI. A snippet with
+     * multiple triggers is collapsed to its first prefix (the editor manages one trigger per snippet).
+     */
+    public synchronized List<Snippet> userSnippets(String language) {
+        String lang = norm(language);
+        List<Snippet> out = new ArrayList<>();
+        Path file = userFile(lang);
+        if (!Files.isReadable(file)) {
+            return out;
+        }
+        try (InputStream in = Files.newInputStream(file)) {
+            Map<String, Dto> map = mapper.readValue(in, new TypeReference<Map<String, Dto>>() {});
+            map.forEach((name, dto) -> {
+                if (dto == null) {
+                    return;
+                }
+                List<String> ps = prefixes(dto.prefix);
+                out.add(new Snippet(
+                        name,
+                        ps.isEmpty() ? "" : ps.get(0),
+                        joinText(dto.body, "\n"),
+                        joinText(dto.description, " "),
+                        lang));
+            });
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Failed to read user snippets " + file, e);
+        }
+        return out;
+    }
+
+    /**
+     * Writes {@code snippets} as the user snippet file for {@code language} (VS Code shape:
+     * {@code {name: {prefix, body, description}}}), creating {@code snippets/} as needed, then drops the
+     * cache so the change is live. Blank-named entries are skipped; a blank description is omitted.
+     */
+    public synchronized void saveUserSnippets(String language, List<Snippet> snippets) throws IOException {
+        String lang = norm(language);
+        Path file = userFile(lang);
+        Files.createDirectories(file.getParent());
+        LinkedHashMap<String, LinkedHashMap<String, String>> out = new LinkedHashMap<>();
+        for (Snippet s : snippets) {
+            if (s == null || s.name() == null || s.name().isBlank()) {
+                continue;
+            }
+            LinkedHashMap<String, String> entry = new LinkedHashMap<>();
+            entry.put("prefix", s.prefix() == null ? "" : s.prefix());
+            entry.put("body", s.body() == null ? "" : s.body());
+            if (s.description() != null && !s.description().isBlank()) {
+                entry.put("description", s.description());
+            }
+            out.put(s.name(), entry);
+        }
+        byte[] bytes = mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(out);
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.write(tmp, bytes);
+        Files.move(
+                tmp,
+                file,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        cache.remove(lang); // forLanguage(lang) re-reads; global is independent
+    }
+
+    /** Languages that currently have a user snippet file (the basenames under {@code snippets/}), sorted. */
+    public synchronized List<String> userSnippetLanguages() {
+        Path dir = config.getConfigDir().resolve("snippets");
+        List<String> out = new ArrayList<>();
+        if (Files.isDirectory(dir)) {
+            try (java.util.stream.Stream<Path> s = Files.list(dir)) {
+                s.map(p -> p.getFileName().toString())
+                        .filter(n -> n.endsWith(".json"))
+                        .map(n -> n.substring(0, n.length() - ".json".length()))
+                        .sorted()
+                        .forEach(out::add);
+            } catch (IOException e) {
+                LOG.log(Level.WARNING, "Failed to list user snippet languages", e);
+            }
+        }
+        return out;
     }
 
     private List<Snippet> load(String language) {

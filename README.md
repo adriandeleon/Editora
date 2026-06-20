@@ -73,6 +73,7 @@ Emacs-style keymap or a fuzzy command palette.
   tags for XML/HTML); Enter between a matching pair opens an indented stanza; typing a closing
   bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred per file, or forced
   globally via Settings → Editor → "Indent style" (Detect / Spaces / Tabs).
+- **Snippets** — VS Code/TextMate snippets with tab stops, placeholders, choices, and variables; manage your own per-language snippets in **Settings → Snippets** (or `Snippets: Manage Snippets…`), saved under `<configDir>/snippets/`.
 - **EditorConfig** — honors a project's `.editorconfig` (nearest-directory-wins, walking up to `root`):
   indent style/size and `tab_width`, `end_of_line`, `charset` (utf-8, utf-8-bom, latin1, utf-16le/be —
   round-tripped on read and save), `max_line_length` (drives the column ruler), and on-save

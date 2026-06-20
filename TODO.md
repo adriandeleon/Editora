@@ -194,7 +194,9 @@ A backlog of planned features and improvements. Unordered within each section.
       under "Recently shipped"
 
 ## Snippets
-- [ ] GUI for Snippet management
+- [x] GUI for Snippet management — Settings → Snippets: a master-detail editor (language picker +
+      per-language user-snippet list + name/trigger/description/body form), saving to
+      `<configDir>/snippets/<lang>.json`. Palette `Snippets: Manage Snippets…` (`snippets.manage`)
 
 ## Files & version control
 - [x] Git support — native CLI (branch/status, gutter change bars, commit workflow, fetch/pull/push)

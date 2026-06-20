@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Snippet management GUI.** A new Settings → Snippets page edits your user snippets per language (and `global`): pick a language, add/edit/remove snippets with a name / trigger / description / body form, saved to `<configDir>/snippets/<lang>.json` and applied live. Opens via the palette `Snippets: Manage Snippets…` (`snippets.manage`); the raw-JSON `Edit User Snippets` command still works.
+
 - **Sample corpus for manual feature testing.** A new top-level `samples/` folder holds small, curated
   text samples organized by feature (syntax per language, folding, indent, markdown, mermaid, todo, spell,
   search, editorconfig, http, log, diff, encodings) — open the relevant file to smoke-test a feature.
