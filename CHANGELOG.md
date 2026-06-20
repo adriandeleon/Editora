@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Word/line-level undo.** Undo no longer collapses an entire typing burst into one step — one `C-z` now undoes a word or line. The undo manager starts a new group at word/whitespace/newline boundaries and after a short typing pause (idle break), matching VS Code/IntelliJ. (First of a planned undo arc; an undo tree and a history panel are next.)
+
 - **Snippet management GUI.** A new Settings → Snippets page edits your user snippets per language (and `global`): pick a language, add/edit/remove snippets with a name / trigger / description / body form, saved to `<configDir>/snippets/<lang>.json` and applied live. Opens via the palette `Snippets: Manage Snippets…` (`snippets.manage`); the raw-JSON `Edit User Snippets` command still works.
 
 - **Sample corpus for manual feature testing.** A new top-level `samples/` folder holds small, curated
