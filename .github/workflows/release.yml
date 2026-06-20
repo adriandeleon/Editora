@@ -47,6 +47,16 @@ jobs:
         shell: bash
         run: ./mvnw -B --no-transfer-progress -Pdist -DskipTests package
 
+      # Portable single-file Linux build from the AOT-trained app-image (no sandbox — host tools work;
+      # see scripts/build-appimage.sh). Best-effort: continue-on-error so a flaky appimagetool / FUSE /
+      # network hiccup can't sink the .deb/.rpm/.jar release. Runs before staging so the .AppImage is
+      # picked up from target/dist.
+      - name: Build AppImage (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        shell: bash
+        run: scripts/build-appimage.sh target/aot-image/Editora branding/editora.png target/dist
+
       # Runnable fat jar for this runner's platform (JavaFX natives are host-specific, so each
       # runner produces its own jar — a single all-platforms jar isn't possible, see pom.xml).
       - name: Build fat jar (-Pfatjar)
