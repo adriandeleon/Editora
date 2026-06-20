@@ -1,0 +1,26 @@
+{
+  "name": "ignore",
+  "scopeName": "source.ignore",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.ignore",
+      "match": "^\\s*#.*$"
+    },
+    {
+      "name": "keyword.operator.negation.ignore",
+      "match": "^\\s*!"
+    },
+    {
+      "name": "keyword.operator.glob.ignore",
+      "match": "\\*\\*|[*?]"
+    },
+    {
+      "name": "constant.character.range.ignore",
+      "match": "\\[[^\\]]*\\]"
+    },
+    {
+      "name": "punctuation.separator.path.ignore",
+      "match": "/"
+    }
+  ]
+}

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Syntax highlighting for common project config files.** `.editorconfig` (INI), `.gitignore` (and other
+  `.*ignore` files, via a new `ignore` grammar), `mvnw`/`gradlew` (shell), and Eclipse `.classpath`/`.project`
+  (XML) are now recognized by name and highlighted — wired through the shared `ConfigFileType` resolver so the
+  grammar and language registries stay in sync.
+
 - **Local History, closer to IntelliJ.** Three additions to the File History tool window:
   **selective restore** — the snapshot-vs-current diff is now editable on the current side, so the
   apply-chevrons copy individual fragments from a revision back into the file (undoable) instead of only a
