@@ -402,7 +402,8 @@ Two conventions the build checks for:
 - **Every action is a command.** User-facing features are registered in the command registry so they
   appear in the command palette (`M-x`); toolbar buttons and keybindings dispatch through commands too.
 
-Tests are mostly pure logic, plus a headless-FX (TestFX + Monocle) harness for toolkit-bound behavior —
+Tests are mostly pure logic, plus a headless-FX harness for toolkit-bound behavior (TestFX over JavaFX 26's
+built-in headless platform, no display/xvfb) —
 run all with `./mvnw test`, or the pure suite alone with `./mvnw test -DexcludedGroups=fx`. `./mvnw verify`
 also enforces the Spotless check and the JaCoCo per-package coverage floors. See
 [`docs/testing.md`](docs/testing.md).

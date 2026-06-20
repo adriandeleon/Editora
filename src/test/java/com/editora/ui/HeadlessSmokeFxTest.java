@@ -17,12 +17,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * P0 smoke test: proves the JavaFX toolkit boots and a scene graph can be built headlessly via the
- * vendored Monocle backend (no display/xvfb). If this is green, the harness works. Tagged {@code fx}
- * so the pure suite can exclude it with {@code -DexcludedGroups=fx}.
+ * P0 smoke test: proves the JavaFX toolkit boots and a scene graph can be built headlessly via
+ * JavaFX 26's built-in Headless Glass platform ({@code -Dglass.platform=Headless}, no display/xvfb,
+ * no Monocle jar). If this is green, the harness works. Tagged {@code fx} so the pure suite can
+ * exclude it with {@code -DexcludedGroups=fx}.
  */
 @Tag("fx")
-class MonocleSmokeFxTest {
+class HeadlessSmokeFxTest {
 
     @BeforeAll
     static void bootToolkit() throws Exception {

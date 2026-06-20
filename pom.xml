@@ -56,11 +56,6 @@
         <palantir.version>2.92.0</palantir.version>
         <jacoco.version>0.8.13</jacoco.version>
         <testfx.version>4.0.18</testfx.version>
-        <!-- Self-built headless Glass backend, version-matched to JavaFX (no upstream org.testfx:openjfx-monocle
-             targets JFX 26 — it stops at 21.0.2). Built from the OpenJFX 26 monocle sources and
-             vendored in the in-project m2-repo (see <repositories>); test scope only, never shipped.
-             Rebuild it whenever JavaFX is bumped — see the Monocle note in CLAUDE.md (Packaging). -->
-        <monocle.version>26</monocle.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
         <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
@@ -327,9 +322,10 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Headless-JavaFX test harness (test scope only; never shipped). TestFX drives the
-             toolkit lifecycle; Monocle (self-built for JFX 25, vendored in m2-repo) is the headless
-             Glass backend so FX tests run with no display/xvfb on CI. See CLAUDE.md (Tests). -->
+        <!-- Headless-JavaFX test harness (test scope only; never shipped). TestFX drives only the
+             toolkit lifecycle (FxToolkit); the headless Glass backend is JavaFX 26's built-in Headless
+             platform (-Dglass.platform=Headless in surefire), so FX tests run with no display/xvfb and
+             no Monocle jar on CI. See CLAUDE.md (Tests). -->
         <dependency>
             <groupId>org.testfx</groupId>
             <artifactId>testfx-core</artifactId>
@@ -340,12 +336,6 @@
             <groupId>org.testfx</groupId>
             <artifactId>testfx-junit5</artifactId>
             <version>${testfx.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.github.adriandeleon</groupId>
-            <artifactId>openjfx-monocle</artifactId>
-            <version>${monocle.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -381,18 +371,18 @@
                 <version>3.5.2</version>
                 <configuration>
                     <!-- Run tests on the CLASSPATH (unnamed module), not the module path: the headless-FX
-                         harness (TestFX + the vendored Monocle) expects classpath, and reflective reads of
-                         private @FXML nodes need setAccessible to work freely. -->
+                         harness (TestFX) expects classpath, and reflective reads of private @FXML nodes
+                         need setAccessible to work freely. -->
                     <useModulePath>false</useModulePath>
                     <!-- @{argLine} preserves JaCoCo's injected agent (it sets the `argLine` property); a plain
                          <argLine> would clobber coverage. Keep the token first. -->
                     <argLine>@{argLine}</argLine>
-                    <!-- Headless JavaFX via Monocle's Headless Glass platform — no display/xvfb needed. -->
+                    <!-- Headless JavaFX via the built-in Headless Glass platform (JavaFX 26+, part of
+                         javafx.graphics — no Monocle jar, no display/xvfb needed). The harness only uses
+                         TestFX's FxToolkit to boot the toolkit lifecycle; it never drives the robot, so the
+                         robot/input limitations of the prototype headless platform don't apply. -->
                     <systemPropertyVariables>
-                        <testfx.robot>glass</testfx.robot>
-                        <testfx.headless>true</testfx.headless>
-                        <glass.platform>Monocle</glass.platform>
-                        <monocle.platform>Headless</monocle.platform>
+                        <glass.platform>Headless</glass.platform>
                         <prism.order>sw</prism.order>
                         <java.awt.headless>true</java.awt.headless>
                     </systemPropertyVariables>
