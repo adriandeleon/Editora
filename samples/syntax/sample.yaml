@@ -1,0 +1,8 @@
+name: sample
+version: 1.0.0
+list:
+  - one
+  - two
+nested:
+  flag: true
+  count: 3

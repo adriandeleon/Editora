@@ -405,6 +405,12 @@ run all with `./mvnw test`, or the pure suite alone with `./mvnw test -Dexcluded
 also enforces the Spotless check and the JaCoCo per-package coverage floors. See
 [`docs/testing.md`](docs/testing.md).
 
+For **manual** smoke-testing and demos there's a curated, feature-organized sample corpus under
+[`samples/`](samples/README.md) (syntax per language, folding, markdown, mermaid, todo, spell, search,
+editorconfig, http, log, diff, encodings — open the relevant file to exercise a feature). Large perf
+inputs are generated on demand by `java scripts/GenSamples.java` (a JDK 25 compact source file;
+git-ignored output, not committed).
+
 ## Releases
 
 Tagged releases publish native installers **and runnable fat jars** to

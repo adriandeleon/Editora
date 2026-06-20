@@ -1,0 +1,8 @@
+title = "sample"
+
+[owner]
+name = "Editora"
+
+[deps]
+serde = { version = "1.0", features = ["derive"] }
+list = [1, 2, 3]

@@ -46,3 +46,6 @@ buildNumber.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated large/perf samples (created by scripts/GenSamples.java)
+/samples/perf/
