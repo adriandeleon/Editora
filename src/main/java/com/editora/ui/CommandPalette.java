@@ -43,8 +43,13 @@ public class CommandPalette {
     private static final boolean IS_MAC =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
-    /** Base URL for per-command documentation on the website; the command id is appended. */
-    private static final String DOCS_BASE = "https://editora-project.dev/docs/commands/";
+    /**
+     * Base URL for per-command documentation on the website; the command id is appended. The docs are
+     * versioned per app release ({@code /docs/v-<appVersion>/commands/<command-id>}), so the running
+     * version's docs are opened.
+     */
+    private static final String DOCS_BASE =
+            com.editora.AppInfo.HOMEPAGE + "/docs/v-" + com.editora.AppInfo.VERSION + "/commands/";
 
     private final CommandRegistry registry;
     private final KeymapManager keymap;
