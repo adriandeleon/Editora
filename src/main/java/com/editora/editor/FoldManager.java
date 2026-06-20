@@ -237,8 +237,20 @@ public final class FoldManager {
         changed.removeIf(line -> oldStarts.contains(line) && map.containsKey(line));
         byStart = map;
         int total = area.getParagraphs().size();
+        // Only recreate the gutter graphics for changed fold-start lines that are *currently visible*; the
+        // graphic factory reads the (now-updated) byStart when it lazily builds offscreen rows on scroll,
+        // so recreating them eagerly is wasted work — and recreating thousands at once (e.g. the initial
+        // recompute of a large file, which marks every fold header changed) froze the FX thread for seconds.
+        int first = 0;
+        int last = -1;
+        try {
+            first = Math.max(0, area.firstVisibleParToAllParIndex());
+            last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
+        } catch (RuntimeException notLaidOutYet) {
+            last = -1; // no viewport yet (e.g. during open) — the factory builds correct graphics on layout
+        }
         for (int line : changed) {
-            if (line >= 0 && line < total) {
+            if (line >= first && line <= last) {
                 area.recreateParagraphGraphic(line);
             }
         }
