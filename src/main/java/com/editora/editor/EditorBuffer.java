@@ -1333,8 +1333,14 @@ public class EditorBuffer implements TabContent {
             return;
         }
         String lower = word.toLowerCase(java.util.Locale.ROOT);
-        spellUserWords.add(lower);
+        // Persist FIRST. The callback (ConfigManager.addUserWord) adds the word to the shared dictionary set
+        // and writes dictionary.txt — but it only writes when the word is newly added to that set, and
+        // spellUserWords *is* that shared set. Adding here first would make the callback see the word as
+        // already present and silently skip the file write (the word then works this session but never
+        // persists). Let the callback add + persist; the local add below is a no-op when shared, and only
+        // matters when no persist callback is wired.
         onAddToDictionary.accept(lower);
+        spellUserWords.add(lower);
         spellOverlay.refresh();
     }
 

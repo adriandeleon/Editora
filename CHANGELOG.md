@@ -78,6 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **"Add to Dictionary" now persists to `dictionary.txt`.** The added word was applied for the current
+  session but never written to disk, so it reappeared as misspelled after a restart. The buffer added the
+  word to the shared dictionary set before calling the persist callback, and `addUserWord` only writes the
+  file when the word is newly added to that (same) set — so the write was always skipped. The word is now
+  persisted on the first add.
 - **Structure tool window no longer jumps the editor back while navigating.** A language server that
   re-announces readiness repeatedly (jdtls re-sends `language/status` "ServiceReady" on workspace events)
   re-pushed the same document symbols, rebuilding the outline tree, resetting the selection to the first
