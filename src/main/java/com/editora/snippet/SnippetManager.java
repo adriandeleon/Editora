@@ -127,6 +127,37 @@ public final class SnippetManager {
     }
 
     /**
+     * The bundled (shipped) snippets for {@code language} — only the classpath resource, not the user file
+     * or plugins. Shown read-only in the Settings → Snippets page; editing one writes a user override. A
+     * multi-trigger snippet is collapsed to its first prefix (as in {@link #userSnippets}).
+     */
+    public synchronized List<Snippet> bundledSnippets(String language) {
+        String lang = norm(language);
+        List<Snippet> out = new ArrayList<>();
+        try (InputStream in = SnippetManager.class.getResourceAsStream("/com/editora/snippets/" + lang + ".json")) {
+            if (in == null) {
+                return out;
+            }
+            Map<String, Dto> map = mapper.readValue(in, new TypeReference<Map<String, Dto>>() {});
+            map.forEach((name, dto) -> {
+                if (dto == null) {
+                    return;
+                }
+                List<String> ps = prefixes(dto.prefix);
+                out.add(new Snippet(
+                        name,
+                        ps.isEmpty() ? "" : ps.get(0),
+                        joinText(dto.body, "\n"),
+                        joinText(dto.description, " "),
+                        lang));
+            });
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Failed to read bundled snippets for " + lang, e);
+        }
+        return out;
+    }
+
+    /**
      * Writes {@code snippets} as the user snippet file for {@code language} (VS Code shape:
      * {@code {name: {prefix, body, description}}}), creating {@code snippets/} as needed, then drops the
      * cache so the change is live. Blank-named entries are skipped; a blank description is omitted.

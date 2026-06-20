@@ -166,9 +166,12 @@ public class SettingsWindow {
     private boolean loadingExternalTool = false;
     /** Shared snippet manager (injected after construction); backs the Snippets management page. */
     private com.editora.snippet.SnippetManager snippetManager;
-    /** Working copy of the user snippets for the language selected on the Snippets page. */
+    /** Working copy of the snippets (bundled + user) for the language selected on the Snippets page. */
     private final javafx.collections.ObservableList<com.editora.snippet.Snippet> snippetItems =
             javafx.collections.FXCollections.observableArrayList();
+    /** Names of the shown snippets that are user-owned (a user file entry or an override of a bundled one);
+     *  the rest are read-only bundled snippets. Only these are written back to {@code <lang>.json}. */
+    private final java.util.Set<String> snippetUserNames = new java.util.HashSet<>();
 
     private boolean loadingSnippet = false;
     private String currentSnippetLang = "global";
@@ -1603,15 +1606,29 @@ public class SettingsWindow {
         language.setValue(currentSnippetLang);
 
         ListView<com.editora.snippet.Snippet> list = new ListView<>(snippetItems);
-        list.setPrefSize(170, 240);
+        list.setPrefSize(190, 240);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(com.editora.snippet.Snippet s, boolean empty) {
                 super.updateItem(s, empty);
-                setText(
-                        empty || s == null
-                                ? null
-                                : (s.name() == null || s.name().isBlank() ? tr("settings.snippet.unnamed") : s.name()));
+                if (empty || s == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                Label nm =
+                        new Label(s.name() == null || s.name().isBlank() ? tr("settings.snippet.unnamed") : s.name());
+                HBox.setHgrow(nm, Priority.ALWAYS);
+                nm.setMaxWidth(Double.MAX_VALUE);
+                HBox cell = new HBox(6, nm);
+                cell.setAlignment(Pos.CENTER_LEFT);
+                if (!snippetUserNames.contains(s.name())) { // a read-only bundled snippet (until edited)
+                    Label tag = new Label(tr("settings.snippet.bundledTag"));
+                    tag.getStyleClass().add("snippet-bundled-tag");
+                    cell.getChildren().add(tag);
+                }
+                setText(null);
+                setGraphic(cell);
             }
         });
 
@@ -1645,13 +1662,14 @@ public class SettingsWindow {
                     body.getText(),
                     description.getText().trim(),
                     currentSnippetLang);
+            snippetUserNames.add(updated.name()); // editing a bundled snippet makes it a user override
             loadingSnippet = true; // replacing at the same index keeps selection; don't reload the fields
             try {
                 snippetItems.set(i, updated);
             } finally {
                 loadingSnippet = false;
             }
-            list.refresh();
+            list.refresh(); // re-render so the "(bundled)" tag drops off the now-overridden row
             saveSnippets();
         };
         // Single-line fields commit on Enter / focus-loss; the body commits on focus-loss (Enter = newline).
@@ -1693,8 +1711,7 @@ public class SettingsWindow {
             currentSnippetLang = v == null || v.isBlank() ? "global" : v.trim();
             loadingSnippet = true;
             try {
-                snippetItems.setAll(
-                        snippetManager == null ? java.util.List.of() : snippetManager.userSnippets(currentSnippetLang));
+                snippetItems.setAll(mergedSnippetsForCurrentLang());
             } finally {
                 loadingSnippet = false;
             }
@@ -1711,6 +1728,7 @@ public class SettingsWindow {
         add.setOnAction(e -> {
             com.editora.snippet.Snippet s =
                     new com.editora.snippet.Snippet(tr("settings.snippet.newName"), "", "", "", currentSnippetLang);
+            snippetUserNames.add(s.name());
             snippetItems.add(s);
             saveSnippets();
             list.getSelectionModel().select(snippetItems.size() - 1);
@@ -1718,12 +1736,24 @@ public class SettingsWindow {
             name.selectAll();
         });
         Button remove = new Button(tr("settings.snippet.remove"));
+        // Remove only affects user snippets/overrides; a pristine bundled row can't be deleted (it's shipped).
+        remove.disableProperty()
+                .bind(javafx.beans.binding.Bindings.createBooleanBinding(
+                        () -> {
+                            com.editora.snippet.Snippet s =
+                                    list.getSelectionModel().getSelectedItem();
+                            return s == null || !snippetUserNames.contains(s.name());
+                        },
+                        list.getSelectionModel().selectedItemProperty()));
         remove.setOnAction(e -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                snippetItems.remove(i);
-                saveSnippets();
+            com.editora.snippet.Snippet s = list.getSelectionModel().getSelectedItem();
+            if (s == null || !snippetUserNames.contains(s.name())) {
+                return;
             }
+            snippetUserNames.remove(s.name());
+            snippetItems.remove(s);
+            saveSnippets();
+            loadLang.run(); // re-derive: a removed override reverts to its bundled snippet
         });
         HBox buttons = new HBox(6, add, remove);
         VBox left = new VBox(6, labeled(tr("settings.snippet.language"), language), list, buttons);
@@ -1734,12 +1764,48 @@ public class SettingsWindow {
         return box;
     }
 
+    /**
+     * The snippets shown for the current language: the bundled (shipped) ones, with any user file entries
+     * overriding the bundled one of the same name and net-new user snippets appended. Rebuilds
+     * {@link #snippetUserNames} (the names that are user-owned and therefore writable / removable).
+     */
+    private java.util.List<com.editora.snippet.Snippet> mergedSnippetsForCurrentLang() {
+        snippetUserNames.clear();
+        if (snippetManager == null) {
+            return java.util.List.of();
+        }
+        java.util.LinkedHashMap<String, com.editora.snippet.Snippet> userByName = new java.util.LinkedHashMap<>();
+        for (com.editora.snippet.Snippet u : snippetManager.userSnippets(currentSnippetLang)) {
+            userByName.put(u.name(), u);
+            snippetUserNames.add(u.name());
+        }
+        java.util.List<com.editora.snippet.Snippet> merged = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (com.editora.snippet.Snippet b : snippetManager.bundledSnippets(currentSnippetLang)) {
+            merged.add(userByName.getOrDefault(b.name(), b)); // user override wins; else the read-only bundled
+            seen.add(b.name());
+        }
+        for (com.editora.snippet.Snippet u : userByName.values()) {
+            if (seen.add(u.name())) {
+                merged.add(u); // a user snippet with no bundled counterpart
+            }
+        }
+        return merged;
+    }
+
     private void saveSnippets() {
         if (snippetManager == null) {
             return;
         }
+        // Persist only user-owned snippets (overrides + net-new) — never copy the shipped bundled ones.
+        java.util.List<com.editora.snippet.Snippet> userOnly = new java.util.ArrayList<>();
+        for (com.editora.snippet.Snippet s : snippetItems) {
+            if (snippetUserNames.contains(s.name())) {
+                userOnly.add(s);
+            }
+        }
         try {
-            snippetManager.saveUserSnippets(currentSnippetLang, new java.util.ArrayList<>(snippetItems));
+            snippetManager.saveUserSnippets(currentSnippetLang, userOnly);
         } catch (java.io.IOException e) {
             new Alert(Alert.AlertType.ERROR, tr("settings.snippet.saveFailed", e.getMessage()), ButtonType.OK)
                     .showAndWait();

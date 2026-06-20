@@ -1707,3 +1707,10 @@
 .undo-history-panel { -fx-padding: 0; }
 .undo-history-time { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; -fx-font-size: 0.85em; }
 .undo-history-preview { -fx-text-fill: -color-fg-default; }
+
+/* Settings → Snippets: a "(bundled)" tag on read-only shipped snippets */
+.snippet-bundled-tag {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.8em;
+    -fx-font-style: italic;
+}
