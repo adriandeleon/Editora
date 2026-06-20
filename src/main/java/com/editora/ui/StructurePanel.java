@@ -386,13 +386,48 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
         sortNodes(roots);
         rebuildKindFilter();
-        // A rebuild reselects the first row; that must not move the editor caret.
+        // A rebuild rebuilds the tree (applyFilter selects row 0); that must not move the editor caret,
+        // and it should keep the user on the symbol they had selected rather than snapping to the top.
+        StructureNode prevSelection = selectedNodeValue();
         suppressNavigation = true;
         try {
             applyFilter(filterField.getText());
+            reselect(prevSelection);
         } finally {
             suppressNavigation = false;
         }
+    }
+
+    /** The {@link StructureNode} currently selected in the tree (a real symbol with a line), or {@code null}. */
+    private StructureNode selectedNodeValue() {
+        TreeItem<StructureNode> sel = tree.getSelectionModel().getSelectedItem();
+        StructureNode v = sel == null ? null : sel.getValue();
+        return v != null && v.line() >= 0 ? v : null;
+    }
+
+    /** Re-selects the tree row matching {@code target} (by line + label) after a rebuild; no-op if absent. */
+    private void reselect(StructureNode target) {
+        if (target == null || tree.getRoot() == null) {
+            return;
+        }
+        TreeItem<StructureNode> match = findItem(tree.getRoot(), target);
+        if (match != null) {
+            tree.getSelectionModel().select(match);
+        }
+    }
+
+    private static TreeItem<StructureNode> findItem(TreeItem<StructureNode> node, StructureNode target) {
+        StructureNode v = node.getValue();
+        if (v != null && v.line() == target.line() && java.util.Objects.equals(v.label(), target.label())) {
+            return node;
+        }
+        for (TreeItem<StructureNode> child : node.getChildren()) {
+            TreeItem<StructureNode> found = findItem(child, target);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /**
@@ -401,6 +436,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      */
     public void setLspSymbols(EditorBuffer forBuffer, List<SymbolNode> symbols) {
         if (forBuffer != buffer) {
+            return;
+        }
+        // Skip the rebuild when the outline is unchanged. A server can re-announce readiness repeatedly
+        // (jdtls re-sends language/status "ServiceReady" on indexing/workspace events), and each one
+        // re-fetches the same document symbols — rebuilding would reset the selection to row 0 and can
+        // jump the editor back to the top while the user is navigating. SymbolNode is a record, so this
+        // is deep value equality. (attach() already built the initial tree, so this never skips first paint.)
+        if (java.util.Objects.equals(symbols, lspSymbols)) {
             return;
         }
         this.lspSymbols = symbols;
