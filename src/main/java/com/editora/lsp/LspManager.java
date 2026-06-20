@@ -58,6 +58,8 @@ public final class LspManager {
     private final Map<String, String> commands = new ConcurrentHashMap<>();
     /** serverId → last availability probe (invalidated when that server's command changes). */
     private final Map<String, Boolean> availableCache = new ConcurrentHashMap<>();
+    /** Base dir for jdtls's per-project {@code -data} workspaces (see {@link #setJdtlsWorkspaceBase}). */
+    private volatile Path jdtlsWorkspaceBase;
 
     public LspManager(BiConsumer<Path, List<LspDiagnostic>> onDiagnostics, BiConsumer<String, String> onStatus) {
         this.onDiagnostics = onDiagnostics == null ? (p, d) -> {} : onDiagnostics;
@@ -91,6 +93,16 @@ public final class LspManager {
 
     public boolean isEnabled() {
         return enabled;
+    }
+
+    /**
+     * Base directory under which jdtls gets a dedicated per-project workspace (via {@code -data}). Without
+     * this, jdtls falls back to a single shared default workspace that deadlocks on its {@code .lock} when
+     * two project roots — or a leaked previous run — contend for it, so the server never finishes
+     * {@code initialize} (loading bar spins forever, no completion). Injected once at startup.
+     */
+    public void setJdtlsWorkspaceBase(Path base) {
+        this.jdtlsWorkspaceBase = base;
     }
 
     /** Sets the java-debug plugin bundle jar(s) injected into the java server's {@code initialize} so
@@ -208,6 +220,18 @@ public final class LspManager {
             LspServerRegistry.ServerSpec spec = LspServerRegistry.specFor(languageId, commands);
             if (spec == null) {
                 return null;
+            }
+            // jdtls: give each project root its own Eclipse workspace (-data) so it never deadlocks on the
+            // shared default workspace's .lock. Created on demand; jdtls reuses it across sessions (its index
+            // persists, so subsequent opens are faster).
+            if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && jdtlsWorkspaceBase != null) {
+                Path ws = jdtlsWorkspaceBase.resolve(LspServerRegistry.workspaceDirName(root));
+                try {
+                    Files.createDirectories(ws);
+                    spec = LspServerRegistry.withDataDir(spec, ws.toString());
+                } catch (java.io.IOException e) {
+                    // Couldn't create the workspace dir — fall back to the default (better than not starting).
+                }
             }
             // Per-server initializationOptions:
             //  - jdtls gets the java-debug plugin bundle (when debugging is on) so it registers the

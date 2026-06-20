@@ -1,5 +1,6 @@
 package com.editora.lsp;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,48 @@ public final class LspServerRegistry {
 
     /** A resolved server launch spec: which server, the argv to launch, and its root markers. */
     public record ServerSpec(String serverId, List<String> command, List<String> rootMarkers) {}
+
+    /** The {@code "java"} server id (jdtls) — used to special-case its dedicated workspace. */
+    public static final String JAVA_SERVER_ID = "java";
+
+    /**
+     * Returns a copy of {@code spec} with {@code -data <dataDir>} appended to its launch command, so jdtls
+     * uses a dedicated Eclipse workspace instead of the shared default (which deadlocks on its {@code .lock}
+     * when two roots — or a leaked previous run — contend for it). No-op if the command already specifies
+     * {@code -data} (a user-customized command wins) or {@code dataDir} is null.
+     */
+    public static ServerSpec withDataDir(ServerSpec spec, String dataDir) {
+        if (spec == null
+                || dataDir == null
+                || dataDir.isBlank()
+                || spec.command().contains("-data")) {
+            return spec;
+        }
+        List<String> cmd = new ArrayList<>(spec.command());
+        cmd.add("-data");
+        cmd.add(dataDir);
+        return new ServerSpec(spec.serverId(), List.copyOf(cmd), spec.rootMarkers());
+    }
+
+    /**
+     * A filesystem-safe, stable directory name for a project root's jdtls workspace: a hex SHA-256 of the
+     * root's absolute path (truncated). Distinct roots get distinct workspaces; the same root always reuses
+     * its workspace (so jdtls's index persists across sessions). Pure (no filesystem access).
+     */
+    public static String workspaceDirName(Path root) {
+        String key = root == null ? "" : root.toAbsolutePath().toString();
+        try {
+            byte[] h = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(key.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(16);
+            for (int i = 0; i < 8; i++) {
+                sb.append(Character.forDigit((h[i] >> 4) & 0xF, 16)).append(Character.forDigit(h[i] & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return Integer.toHexString(key.hashCode()); // SHA-256 is always present; defensive fallback
+        }
+    }
 
     /** Build files (and {@code .git}) that mark a Java project root, nearest-first when walking up. */
     public static final List<String> JAVA_ROOT_MARKERS =
