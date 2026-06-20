@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **File template management GUI.** A new Settings → Templates page lists your file templates — the **bundled (shipped) ones too**, tagged read-only — alongside your own. Editing a bundled template writes a user override to `<configDir>/templates/<id>.json` (the shipped one is never modified); add/remove your own with an id / name / description / language / file-name / body form. Opens via the palette `Templates: Manage File Templates…` (`template.manage`); multi-file templates are shown read-only (edit via `Edit User Templates`). The raw-JSON command still works. Both the Snippets and Templates pages also got a taller list and an explicit **Save** button (edits still auto-save on Enter/focus-loss).
+
 - **Undo History tool window** (`M-g u`) — an in-session timeline of document checkpoints captured as you edit (one per typing burst); double-click or Enter to jump back to any recent state (a single undoable restore). Finer-grained than save-based Local History, session-only, and disabled for very large files.
 
 - **Word/line-level undo.** Undo no longer collapses an entire typing burst into one step — one `C-z` now undoes a word or line. The undo manager starts a new group at word/whitespace/newline boundaries and after a short typing pause (idle break), matching VS Code/IntelliJ. (First of a planned undo arc; an undo tree and a history panel are next.)

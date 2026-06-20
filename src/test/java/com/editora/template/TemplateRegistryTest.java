@@ -86,4 +86,30 @@ class TemplateRegistryTest {
         assertNotNull(byId(r, "java-class")); // bundled still load
         assertNull(byId(r, "bad"));
     }
+
+    // --- Settings → Templates management (bundledTemplates / userTemplates / save / delete) ---
+
+    @Test
+    void bundledTemplatesAreListedAndExcludeUserEntries(@TempDir Path dir) throws Exception {
+        TemplateRegistry r = registry(dir);
+        assertTrue(r.bundledTemplates().size() >= 4, "expected the shipped templates");
+        assertTrue(r.bundledTemplates().stream().anyMatch(t -> t.id().equals("java-class")));
+        assertTrue(r.userTemplates().isEmpty());
+
+        r.saveUserTemplate(new Template("mine", "Mine", "", "java", "${n}.java", "// x", null));
+        assertTrue(r.bundledTemplates().stream().noneMatch(t -> t.id().equals("mine")));
+        assertEquals("mine", r.userTemplates().get(0).id());
+    }
+
+    @Test
+    void saveUserTemplateOverridesBundledById_andDeleteReverts(@TempDir Path dir) throws Exception {
+        TemplateRegistry r = registry(dir);
+        r.saveUserTemplate(new Template("java-class", "My Class", "", "java", "X.java", "// mine", null));
+        assertEquals("// mine", byId(r, "java-class").body()); // user override wins
+        assertTrue(Files.isReadable(r.userDir().resolve("java-class.json")));
+
+        r.deleteUserTemplate("java-class");
+        assertNotNull(byId(r, "java-class")); // bundled reappears
+        assertFalse(byId(r, "java-class").body().equals("// mine"));
+    }
 }

@@ -70,6 +70,82 @@ public final class TemplateRegistry {
         return config.getConfigDir().resolve("templates");
     }
 
+    /** The bundled (shipped) templates — only the classpath resources, not the user dir or plugins. Shown
+     *  read-only in the Settings → Templates page; editing one writes a user override of the same id. */
+    public synchronized List<Template> bundledTemplates() {
+        List<Template> out = new ArrayList<>();
+        for (String id : bundledIds()) {
+            Template t = readBundled(id);
+            if (t != null) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    /** The user's own templates ({@code <configDir>/templates/*.json}), id-keyed in file order. */
+    public synchronized List<Template> userTemplates() {
+        Map<String, Template> byId = new LinkedHashMap<>();
+        scanDir(userDir(), byId);
+        return new ArrayList<>(byId.values());
+    }
+
+    /**
+     * Writes {@code t} as the user template {@code <configDir>/templates/<id>.json} (creating the dir),
+     * then drops the cache so it's live. Single-file templates write {@code fileName}/{@code body};
+     * multi-file ones write a {@code files} array.
+     */
+    public synchronized void saveUserTemplate(Template t) throws IOException {
+        if (t == null || t.id() == null || t.id().isBlank()) {
+            return;
+        }
+        Files.createDirectories(userDir());
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        if (t.name() != null && !t.name().isBlank()) {
+            m.put("name", t.name());
+        }
+        if (t.description() != null && !t.description().isBlank()) {
+            m.put("description", t.description());
+        }
+        if (t.language() != null && !t.language().isBlank()) {
+            m.put("language", t.language());
+        }
+        if (t.isMultiFile()) {
+            List<Map<String, Object>> files = new ArrayList<>();
+            for (TemplateFile f : t.files()) {
+                LinkedHashMap<String, Object> fm = new LinkedHashMap<>();
+                fm.put("path", f.path());
+                fm.put("body", f.body());
+                files.add(fm);
+            }
+            m.put("files", files);
+        } else {
+            if (t.fileName() != null && !t.fileName().isBlank()) {
+                m.put("fileName", t.fileName());
+            }
+            m.put("body", t.body() == null ? "" : t.body());
+        }
+        byte[] bytes = mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(m);
+        Path file = userDir().resolve(t.id() + ".json");
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.write(tmp, bytes);
+        Files.move(
+                tmp,
+                file,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        cache = null;
+    }
+
+    /** Deletes the user template {@code <configDir>/templates/<id>.json} (reverting to bundled if any). */
+    public synchronized void deleteUserTemplate(String id) throws IOException {
+        if (id == null || id.isBlank()) {
+            return;
+        }
+        Files.deleteIfExists(userDir().resolve(id + ".json"));
+        cache = null;
+    }
+
     private List<Template> load() {
         Map<String, Template> byId = new LinkedHashMap<>();
         for (String id : bundledIds()) {
