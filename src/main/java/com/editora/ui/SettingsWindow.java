@@ -69,6 +69,7 @@ public class SettingsWindow {
         APPEARANCE(tr("settings.cat.appearance"), false),
         EDITOR(tr("settings.cat.editor"), false),
         SNIPPETS(tr("settings.cat.snippets"), false),
+        TEMPLATES(tr("settings.cat.templates"), false),
         MARKDOWN(tr("settings.cat.markdown"), false),
         TOOL_WINDOWS(tr("settings.cat.toolWindows"), false),
         SPELL_CHECK(tr("settings.cat.spellCheck"), false),
@@ -175,6 +176,15 @@ public class SettingsWindow {
 
     private boolean loadingSnippet = false;
     private String currentSnippetLang = "global";
+    /** Shared template registry (injected after construction); backs the Templates management page. */
+    private com.editora.template.TemplateRegistry templateRegistry;
+    /** Working copy of the templates (bundled + user) shown on the Templates page. */
+    private final javafx.collections.ObservableList<com.editora.template.Template> templateItems =
+            javafx.collections.FXCollections.observableArrayList();
+    /** Ids of the shown templates that are user-owned (writable / removable); the rest are read-only bundled. */
+    private final java.util.Set<String> templateUserIds = new java.util.HashSet<>();
+
+    private boolean loadingTemplate = false;
     private CheckBox multiCaretCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
@@ -331,6 +341,17 @@ public class SettingsWindow {
     public void showSnippets(Window owner) {
         show(owner);
         sidebar.getSelectionModel().select(Category.SNIPPETS);
+    }
+
+    /** Injects the shared {@link com.editora.template.TemplateRegistry} backing the Templates page. */
+    public void setTemplateRegistry(com.editora.template.TemplateRegistry registry) {
+        this.templateRegistry = registry;
+    }
+
+    /** Opens Settings focused on the Templates page (the {@code template.manage} command). */
+    public void showTemplates(Window owner) {
+        show(owner);
+        sidebar.getSelectionModel().select(Category.TEMPLATES);
     }
 
     /** Wires the Plugins-page actions to the controller (browse registry / install zip / uninstall). */
@@ -926,6 +947,7 @@ public class SettingsWindow {
         pages.put(Category.APPEARANCE, appearancePage());
         pages.put(Category.EDITOR, editorPage());
         pages.put(Category.SNIPPETS, snippetsPage());
+        pages.put(Category.TEMPLATES, templatesPage());
         pages.put(Category.MARKDOWN, markdownPage());
         pages.put(Category.TOOL_WINDOWS, toolWindowsPage());
         pages.put(Category.SPELL_CHECK, spellPage());
@@ -1606,7 +1628,8 @@ public class SettingsWindow {
         language.setValue(currentSnippetLang);
 
         ListView<com.editora.snippet.Snippet> list = new ListView<>(snippetItems);
-        list.setPrefSize(190, 240);
+        list.setPrefSize(200, 280);
+        VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(com.editora.snippet.Snippet s, boolean empty) {
@@ -1637,7 +1660,7 @@ public class SettingsWindow {
         prefix.setPromptText(tr("settings.snippet.prefixPrompt"));
         TextField description = new TextField();
         javafx.scene.control.TextArea body = new javafx.scene.control.TextArea();
-        body.setPrefRowCount(8);
+        body.setPrefRowCount(18);
         body.getStyleClass().add("snippet-body");
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
@@ -1757,9 +1780,21 @@ public class SettingsWindow {
         });
         HBox buttons = new HBox(6, add, remove);
         VBox left = new VBox(6, labeled(tr("settings.snippet.language"), language), list, buttons);
+        VBox.setVgrow(left, Priority.ALWAYS);
+
+        // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
+        Button save = new Button(tr("settings.save"));
+        save.setDefaultButton(false);
+        save.disableProperty().bind(form.disabledProperty());
+        save.setOnAction(e -> commit.run());
+        HBox saveRow = new HBox(save);
+        saveRow.setAlignment(Pos.CENTER_RIGHT);
+        VBox right = new VBox(8, form, saveRow);
+        VBox.setVgrow(form, Priority.ALWAYS);
+        HBox.setHgrow(right, Priority.ALWAYS);
 
         loadLang.run();
-        HBox box = new HBox(12, left, form);
+        HBox box = new HBox(12, left, right);
         box.setAlignment(Pos.TOP_LEFT);
         return box;
     }
@@ -1808,6 +1843,272 @@ public class SettingsWindow {
             snippetManager.saveUserSnippets(currentSnippetLang, userOnly);
         } catch (java.io.IOException e) {
             new Alert(Alert.AlertType.ERROR, tr("settings.snippet.saveFailed", e.getMessage()), ButtonType.OK)
+                    .showAndWait();
+        }
+    }
+
+    private VBox templatesPage() {
+        VBox p = page(tr("settings.cat.templates"));
+        row(p, Category.TEMPLATES, null, templatesEditor(), "templates file new from template scaffold bundled");
+        Label help = note(tr("settings.template.help"));
+        help.setWrapText(true);
+        help.setMaxWidth(460);
+        row(p, Category.TEMPLATES, null, help, "templates help variable cursor placeholder");
+        return p;
+    }
+
+    /** Master-detail editor: the templates (bundled + user) on the left, a form for the selected one. */
+    private javafx.scene.Node templatesEditor() {
+        ListView<com.editora.template.Template> list = new ListView<>(templateItems);
+        list.setPrefSize(200, 280);
+        VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(com.editora.template.Template t, boolean empty) {
+                super.updateItem(t, empty);
+                if (empty || t == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                Label nm = new Label(t.name() == null || t.name().isBlank() ? t.id() : t.name());
+                HBox.setHgrow(nm, Priority.ALWAYS);
+                nm.setMaxWidth(Double.MAX_VALUE);
+                HBox cell = new HBox(6, nm);
+                cell.setAlignment(Pos.CENTER_LEFT);
+                if (!templateUserIds.contains(t.id())) {
+                    Label tag = new Label(tr("settings.template.bundledTag"));
+                    tag.getStyleClass().add("snippet-bundled-tag");
+                    cell.getChildren().add(tag);
+                }
+                setText(null);
+                setGraphic(cell);
+            }
+        });
+
+        TextField id = new TextField();
+        TextField name = new TextField();
+        TextField description = new TextField();
+        TextField language = new TextField();
+        language.setPromptText(tr("settings.template.languagePrompt"));
+        TextField fileName = new TextField();
+        fileName.setPromptText(tr("settings.template.fileNamePrompt"));
+        javafx.scene.control.TextArea body = new javafx.scene.control.TextArea();
+        body.setPrefRowCount(18);
+        body.getStyleClass().add("snippet-body");
+
+        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
+        form.setHgap(8);
+        form.setVgap(6);
+        formRow(form, 0, tr("settings.template.id"), id);
+        formRow(form, 1, tr("settings.template.name"), name);
+        formRow(form, 2, tr("settings.template.description"), description);
+        formRow(form, 3, tr("settings.template.language"), language);
+        formRow(form, 4, tr("settings.template.fileName"), fileName);
+        formRow(form, 5, tr("settings.template.body"), body);
+        javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
+        form.setDisable(true);
+
+        Label multiFileNote = note(tr("settings.template.multiFileNote"));
+        multiFileNote.setWrapText(true);
+        multiFileNote.setMaxWidth(440);
+        multiFileNote.setVisible(false);
+        multiFileNote.setManaged(false);
+        VBox right = new VBox(6, form, multiFileNote);
+        HBox.setHgrow(right, Priority.ALWAYS);
+
+        Runnable commit = () -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i < 0 || loadingTemplate) {
+                return;
+            }
+            com.editora.template.Template cur = templateItems.get(i);
+            if (cur.isMultiFile() || id.getText().trim().isEmpty()) {
+                return; // multi-file templates are read-only here; an id is required
+            }
+            String newId = id.getText().trim();
+            com.editora.template.Template updated = new com.editora.template.Template(
+                    newId,
+                    name.getText().trim(),
+                    description.getText().trim(),
+                    language.getText().trim(),
+                    fileName.getText().trim(),
+                    body.getText(),
+                    null);
+            String oldId = cur.id();
+            if (!oldId.equals(newId) && templateUserIds.contains(oldId)) {
+                try {
+                    templateRegistry.deleteUserTemplate(oldId); // renamed: drop the old override file
+                } catch (java.io.IOException ignored) {
+                    // best-effort
+                }
+                templateUserIds.remove(oldId);
+            }
+            templateUserIds.add(newId); // editing a bundled template makes it a user override
+            loadingTemplate = true;
+            try {
+                templateItems.set(i, updated);
+            } finally {
+                loadingTemplate = false;
+            }
+            list.refresh();
+            saveTemplate(updated);
+        };
+        java.util.function.Consumer<TextField> wire = tf -> {
+            tf.setOnAction(e -> commit.run());
+            tf.focusedProperty().addListener((o, was, now) -> {
+                if (!now) {
+                    commit.run();
+                }
+            });
+        };
+        wire.accept(id);
+        wire.accept(name);
+        wire.accept(description);
+        wire.accept(language);
+        wire.accept(fileName);
+        body.focusedProperty().addListener((o, was, now) -> {
+            if (!now) {
+                commit.run();
+            }
+        });
+
+        list.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> {
+            int i = now == null ? -1 : now.intValue();
+            com.editora.template.Template t = i >= 0 && i < templateItems.size() ? templateItems.get(i) : null;
+            boolean multi = t != null && t.isMultiFile();
+            loadingTemplate = true;
+            try {
+                form.setDisable(t == null || multi); // multi-file templates are display-only in this form
+                id.setText(t == null ? "" : t.id());
+                name.setText(t == null ? "" : t.name());
+                description.setText(t == null ? "" : t.description());
+                language.setText(t == null ? "" : t.language());
+                fileName.setText(t == null || multi ? "" : t.fileName());
+                body.setText(t == null || multi ? "" : t.body());
+                multiFileNote.setVisible(multi);
+                multiFileNote.setManaged(multi);
+            } finally {
+                loadingTemplate = false;
+            }
+        });
+
+        Runnable loadTemplates = () -> {
+            loadingTemplate = true;
+            try {
+                templateItems.setAll(mergedTemplates());
+            } finally {
+                loadingTemplate = false;
+            }
+            list.getSelectionModel().clearSelection();
+            if (!templateItems.isEmpty()) {
+                list.getSelectionModel().select(0);
+            } else {
+                form.setDisable(true);
+            }
+        };
+
+        Button add = new Button(tr("settings.template.add"));
+        add.setOnAction(e -> {
+            java.util.Set<String> existing = new java.util.HashSet<>();
+            for (com.editora.template.Template t : templateItems) {
+                existing.add(t.id());
+            }
+            String base = "new-template";
+            String nid = base;
+            for (int n = 2; existing.contains(nid); n++) {
+                nid = base + "-" + n;
+            }
+            com.editora.template.Template t = new com.editora.template.Template(
+                    nid, tr("settings.template.newName"), "", "", "${name}.txt", "${cursor}", null);
+            templateUserIds.add(nid);
+            templateItems.add(t);
+            saveTemplate(t);
+            list.getSelectionModel().select(templateItems.size() - 1);
+            id.requestFocus();
+            id.selectAll();
+        });
+        Button remove = new Button(tr("settings.template.remove"));
+        // Only user templates/overrides can be removed; a pristine bundled template can't be deleted.
+        remove.disableProperty()
+                .bind(javafx.beans.binding.Bindings.createBooleanBinding(
+                        () -> {
+                            com.editora.template.Template t =
+                                    list.getSelectionModel().getSelectedItem();
+                            return t == null || !templateUserIds.contains(t.id());
+                        },
+                        list.getSelectionModel().selectedItemProperty()));
+        remove.setOnAction(e -> {
+            com.editora.template.Template t = list.getSelectionModel().getSelectedItem();
+            if (t == null || !templateUserIds.contains(t.id()) || templateRegistry == null) {
+                return;
+            }
+            try {
+                templateRegistry.deleteUserTemplate(t.id());
+            } catch (java.io.IOException ex) {
+                new Alert(Alert.AlertType.ERROR, tr("settings.template.saveFailed", ex.getMessage()), ButtonType.OK)
+                        .showAndWait();
+                return;
+            }
+            templateUserIds.remove(t.id());
+            templateItems.remove(t);
+            loadTemplates.run(); // re-derive: a removed override reverts to its bundled template
+        });
+        HBox buttons = new HBox(6, add, remove);
+        VBox left = new VBox(6, list, buttons);
+        VBox.setVgrow(left, Priority.ALWAYS);
+
+        // Explicit Save (edits also auto-save on Enter / focus-loss); disabled for a read-only row.
+        Button save = new Button(tr("settings.save"));
+        save.disableProperty().bind(form.disabledProperty());
+        save.setOnAction(e -> commit.run());
+        HBox saveRow = new HBox(save);
+        saveRow.setAlignment(Pos.CENTER_RIGHT);
+        right.getChildren().add(1, saveRow); // between the form and the multi-file note
+        VBox.setVgrow(form, Priority.ALWAYS);
+
+        loadTemplates.run();
+        HBox box = new HBox(12, left, right);
+        box.setAlignment(Pos.TOP_LEFT);
+        return box;
+    }
+
+    /**
+     * The templates shown: bundled (shipped) ones, with any user file override of the same id and net-new
+     * user templates appended. Rebuilds {@link #templateUserIds} (the ids that are user-owned/writable).
+     */
+    private java.util.List<com.editora.template.Template> mergedTemplates() {
+        templateUserIds.clear();
+        if (templateRegistry == null) {
+            return java.util.List.of();
+        }
+        java.util.LinkedHashMap<String, com.editora.template.Template> userById = new java.util.LinkedHashMap<>();
+        for (com.editora.template.Template u : templateRegistry.userTemplates()) {
+            userById.put(u.id(), u);
+            templateUserIds.add(u.id());
+        }
+        java.util.List<com.editora.template.Template> merged = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (com.editora.template.Template b : templateRegistry.bundledTemplates()) {
+            merged.add(userById.getOrDefault(b.id(), b));
+            seen.add(b.id());
+        }
+        for (com.editora.template.Template u : userById.values()) {
+            if (seen.add(u.id())) {
+                merged.add(u);
+            }
+        }
+        return merged;
+    }
+
+    private void saveTemplate(com.editora.template.Template t) {
+        if (templateRegistry == null) {
+            return;
+        }
+        try {
+            templateRegistry.saveUserTemplate(t);
+        } catch (java.io.IOException e) {
+            new Alert(Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK)
                     .showAndWait();
         }
     }

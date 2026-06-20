@@ -74,6 +74,7 @@ Emacs-style keymap or a fuzzy command palette.
   bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred per file, or forced
   globally via Settings → Editor → "Indent style" (Detect / Spaces / Tabs).
 - **Snippets** — VS Code/TextMate snippets with tab stops, placeholders, choices, and variables; manage your own per-language snippets in **Settings → Snippets** (or `Snippets: Manage Snippets…`), saved under `<configDir>/snippets/`.
+- **File templates** — "New File From Template" scaffolds; manage them in **Settings → Templates** (or `Templates: Manage File Templates…`) — the shipped templates are shown read-only and editing one saves a personal override under `<configDir>/templates/`.
 - **EditorConfig** — honors a project's `.editorconfig` (nearest-directory-wins, walking up to `root`):
   indent style/size and `tab_width`, `end_of_line`, `charset` (utf-8, utf-8-bom, latin1, utf-16le/be —
   round-tripped on read and save), `max_line_length` (drives the column ruler), and on-save

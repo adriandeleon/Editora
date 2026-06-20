@@ -490,6 +490,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
         this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk, this::uninstallPlugin);
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
+        this.settingsWindow.setTemplateRegistry(templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
         this.settingsWindow.setRipgrepProbe(this::probeRipgrep); // Settings → Search found/not-found status
         this.settingsWindow.setOnKeymapChanged(this::reloadKeymap); // picker/combo → live keymap switch
@@ -12316,6 +12317,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.templatesReloaded"));
         }));
         registry.register(Command.of("template.editUser", this::editUserTemplates));
+        registry.register(Command.of("template.manage", () -> settingsWindow.showTemplates(stage)));
         registry.register(Command.of("spell.setLanguage", this::chooseSpellLanguage));
         registry.register(Command.of("view.toggleToolbar", this::toggleToolbar));
         registry.register(Command.of("view.toggleStatusBar", this::toggleStatusBar));
