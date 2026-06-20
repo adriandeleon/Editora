@@ -560,6 +560,8 @@ public class EditorBuffer implements TabContent {
         });
         // TODO/highlight patterns: debounced re-scan for the in-editor highlight (no-op when off / huge file).
         area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> refreshTodoMarks());
+        // Undo History tool window: snapshot the document when editing settles (one checkpoint per burst).
+        area.multiPlainChanges().successionEnds(UndoMerge.PAUSE).subscribe(ignore -> captureUndoCheckpoint());
         // LSP document sync: debounced didChange notification (only while the buffer is LSP-managed) +
         // a debounced pull-diagnostics request (no-op unless the server uses the pull model). The pull is
         // here, not in lspChangeListener, so it fires once per debounce — not on every completion keystroke
@@ -3148,6 +3150,44 @@ public class EditorBuffer implements TabContent {
         if (area2 != null) {
             area2.getUndoManager().preventMerge(); // the split views share the document + each record it
         }
+    }
+
+    // --- Undo History (the Undo History tool window) ------------------------------------------------
+
+    /** Above this document size the Undo History is disabled (full-text snapshots would cost too much). */
+    private static final int UNDO_HISTORY_MAX_BYTES = 1_000_000;
+
+    private final UndoHistory undoHistory = new UndoHistory();
+    private Runnable onUndoHistoryChanged;
+
+    public UndoHistory getUndoHistory() {
+        return undoHistory;
+    }
+
+    /** Notified after a checkpoint is recorded, so the Undo History panel can refresh (active buffer only). */
+    public void setOnUndoHistoryChanged(Runnable r) {
+        this.onUndoHistoryChanged = r;
+    }
+
+    /** Snapshots the current document state into the history (no-op for huge/oversized files). */
+    public void captureUndoCheckpoint() {
+        if (largeFile || area.getLength() > UNDO_HISTORY_MAX_BYTES) {
+            return;
+        }
+        if (undoHistory.add(area.getText(), area.getCaretPosition(), System.currentTimeMillis())
+                && onUndoHistoryChanged != null) {
+            onUndoHistoryChanged.run();
+        }
+    }
+
+    /** Restores a checkpoint's document text + caret (a single undoable edit). */
+    public void restoreUndoCheckpoint(UndoHistory.Checkpoint c) {
+        if (c == null || !isEditable()) {
+            return;
+        }
+        area.replaceText(c.text());
+        area.moveTo(UndoHistory.clamp(c.caret(), area.getLength()));
+        area.requestFocus();
     }
 
     /** Toggle the highlight on the line containing the caret. */

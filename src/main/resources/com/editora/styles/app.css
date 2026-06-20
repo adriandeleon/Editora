@@ -1702,3 +1702,8 @@
     -fx-border-radius: 3px;
     -fx-padding: 0 4 0 4;
 }
+
+/* Undo History tool window */
+.undo-history-panel { -fx-padding: 0; }
+.undo-history-time { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; -fx-font-size: 0.85em; }
+.undo-history-preview { -fx-text-fill: -color-fg-default; }

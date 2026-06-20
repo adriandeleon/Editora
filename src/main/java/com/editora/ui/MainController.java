@@ -260,6 +260,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ToolWindow notesToolWindow;
     private ToolWindow fileInfoToolWindow;
     private FileInformationPanel fileInfoPanel;
+    private ToolWindow undoHistoryToolWindow;
+    private UndoHistoryPanel undoHistoryPanel;
     private StructurePanel structurePanel;
     private BookmarksPanel bookmarksPanel;
     private NotesPanel notesPanel;
@@ -2031,6 +2033,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
             fileInfoPanel.attach(buffer);
             structurePanel.attach(buffer);
+            undoHistoryPanel.attach(buffer);
             requestStructureSymbols(buffer); // upgrade the outline to LSP symbols when the server supports them
             statusBar.attach(buffer);
             breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
@@ -2260,6 +2263,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::about,
                 fileInfoPanel,
                 "tool.fileInformation");
+        undoHistoryPanel = new UndoHistoryPanel();
+        undoHistoryToolWindow = new ToolWindow(
+                "undoHistory",
+                tr("toolwindow.undoHistory"),
+                ToolWindow.Side.RIGHT,
+                Icons::history,
+                undoHistoryPanel,
+                "tool.undoHistory");
         gitPanel = new GitPanel(new GitPanel.Actions() {
             @Override
             public void open(String path) {
@@ -2444,6 +2455,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(fileHistoryToolWindow);
         toolWindows.setAvailable(fileHistoryToolWindow, false); // shown only for a local file with history on
         toolWindows.register(fileInfoToolWindow);
+        toolWindows.register(undoHistoryToolWindow);
         toolWindows.register(searchToolWindow);
         toolWindows.register(todoToolWindow);
         toolWindows.register(markdownLintToolWindow);
@@ -8423,6 +8435,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (fileInfoToolWindow != null) {
             toolWindows.setAvailable(fileInfoToolWindow, buffer);
         }
+        if (undoHistoryToolWindow != null) {
+            toolWindows.setAvailable(undoHistoryToolWindow, buffer);
+        }
         if (todoToolWindow != null) {
             toolWindows.setAvailable(todoToolWindow, buffer);
         }
@@ -12386,6 +12401,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }));
         registry.register(Command.of("tool.structure", () -> toolWindows.toggle(structureToolWindow)));
         registry.register(Command.of("tool.bookmarks", () -> toolWindows.toggle(bookmarksToolWindow)));
+        registry.register(Command.of("tool.undoHistory", () -> toolWindows.toggle(undoHistoryToolWindow)));
         registry.register(Command.of("tool.notes", () -> ifNotes(() -> toolWindows.toggle(notesToolWindow))));
         registry.register(Command.of("tool.fileInformation", () -> toolWindows.toggle(fileInfoToolWindow)));
         registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
