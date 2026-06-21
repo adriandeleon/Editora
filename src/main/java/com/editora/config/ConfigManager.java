@@ -170,6 +170,10 @@ public class ConfigManager {
         shared.removeConnection(id);
     }
 
+    public void setConnections(List<com.editora.vfs.RemoteConnection> conns) {
+        shared.setConnections(conns);
+    }
+
     public void saveConnections() {
         shared.saveConnections();
     }

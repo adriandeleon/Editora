@@ -1,8 +1,10 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -21,6 +23,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.RecentFiles;
 import com.editora.editor.TabContent;
+import com.editora.vfs.RemoteConnection;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -46,6 +49,10 @@ public final class WelcomePane extends Region implements TabContent {
     private final Consumer<String> openUrl;
     private final BooleanSupplier projectsEnabled;
     private final BooleanSupplier gitEnabled;
+    /** Saved SFTP sites (most-recent first); when empty the Remote Sites section is hidden. */
+    private final Supplier<List<RemoteConnection>> remoteSites;
+    /** Picking a site opens the connection form pre-filled for it. */
+    private final Consumer<RemoteConnection> onConnectRemote;
     /** Short build commit shown in the footer for dev builds; "" hides it (production). */
     private final String devCommit;
 
@@ -66,6 +73,8 @@ public final class WelcomePane extends Region implements TabContent {
             Consumer<String> openUrl,
             BooleanSupplier projectsEnabled,
             BooleanSupplier gitEnabled,
+            Supplier<List<RemoteConnection>> remoteSites,
+            Consumer<RemoteConnection> onConnectRemote,
             String devCommit) {
         this.registry = registry;
         this.keymap = keymap;
@@ -74,6 +83,8 @@ public final class WelcomePane extends Region implements TabContent {
         this.openUrl = openUrl;
         this.projectsEnabled = projectsEnabled;
         this.gitEnabled = gitEnabled;
+        this.remoteSites = remoteSites;
+        this.onConnectRemote = onConnectRemote;
         this.devCommit = devCommit == null ? "" : devCommit;
 
         getStyleClass().add("welcome-pane");
@@ -130,8 +141,32 @@ public final class WelcomePane extends Region implements TabContent {
                         section(tr("welcome.start")),
                         startActions(),
                         section(tr("welcome.recent")),
-                        recentList(),
-                        footer());
+                        recentList());
+        // Only show the Remote Sites section when there's at least one saved connection.
+        List<RemoteConnection> sites = remoteSites == null ? List.of() : remoteSites.get();
+        if (!sites.isEmpty()) {
+            content.getChildren().add(section(tr("welcome.remote")));
+            content.getChildren().add(remoteList(sites));
+        }
+        content.getChildren().add(footer());
+    }
+
+    /** A quick-connect list of saved SFTP sites; clicking one opens the prefilled connection form. */
+    private VBox remoteList(List<RemoteConnection> sites) {
+        VBox box = new VBox();
+        box.getStyleClass().add("welcome-recent");
+        for (RemoteConnection c : sites) {
+            Hyperlink link = new Hyperlink(c.displayLabel());
+            link.getStyleClass().add("welcome-link");
+            Label id = new Label(c.id());
+            id.getStyleClass().add("welcome-recent-dir");
+            HBox row = new HBox(8, link, id);
+            row.setAlignment(Pos.BASELINE_LEFT);
+            Tooltip.install(row, new Tooltip("sftp://" + c.id()));
+            link.setOnAction(e -> onConnectRemote.accept(c));
+            box.getChildren().add(row);
+        }
+        return box;
     }
 
     /** App version + home-page link, with the copyright + license beneath. */

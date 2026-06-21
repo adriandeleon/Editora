@@ -78,6 +78,7 @@ public class SettingsWindow {
         MERMAID(tr("settings.cat.mermaid"), false),
         SEARCH(tr("settings.cat.search"), false),
         HTTP_CLIENT(tr("settings.cat.httpClient"), false),
+        REMOTE(tr("settings.cat.remote"), false),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), false),
         HTML_PREVIEW(tr("settings.cat.htmlPreview"), false),
         MCP(tr("settings.cat.mcp"), false),
@@ -170,6 +171,12 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingExternalTool = false;
+
+    /** Working copy of the saved SFTP connections, edited live by the Remote master-detail page. */
+    private final javafx.collections.ObservableList<com.editora.vfs.RemoteConnection> remoteItems =
+            javafx.collections.FXCollections.observableArrayList();
+
+    private boolean loadingRemote = false;
     /** Shared snippet manager (injected after construction); backs the Snippets management page. */
     private com.editora.snippet.SnippetManager snippetManager;
     /** Working copy of the snippets (bundled + user) for the language selected on the Snippets page. */
@@ -966,6 +973,7 @@ public class SettingsWindow {
         pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.SEARCH, searchPage());
         pages.put(Category.HTTP_CLIENT, httpClientPage());
+        pages.put(Category.REMOTE, remotePage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
         pages.put(Category.HTML_PREVIEW, htmlPreviewPage());
         pages.put(Category.MCP, mcpPage());
@@ -2198,6 +2206,193 @@ public class SettingsWindow {
             new Alert(Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK)
                     .showAndWait();
         }
+    }
+
+    private VBox remotePage() {
+        VBox p = page(tr("settings.cat.remote"));
+        row(
+                p,
+                Category.REMOTE,
+                null,
+                remoteConnectionsEditor(),
+                "remote sftp ssh connection host user key password saved site server");
+        Label note = note(tr("settings.remote.note"));
+        note.setWrapText(true);
+        note.setMaxWidth(460);
+        row(p, Category.REMOTE, null, note, "remote secret password passphrase not stored security");
+        return p;
+    }
+
+    /** Master-detail editor for saved SFTP sites: a list on the left, a form for the selected site on the right. */
+    private javafx.scene.Node remoteConnectionsEditor() {
+        remoteItems.setAll(config.getConnections());
+
+        ListView<com.editora.vfs.RemoteConnection> list = new ListView<>(remoteItems);
+        list.setPrefSize(190, 220);
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(com.editora.vfs.RemoteConnection c, boolean empty) {
+                super.updateItem(c, empty);
+                setText(empty || c == null ? null : c.displayLabel());
+            }
+        });
+
+        TextField label = new TextField();
+        TextField host = new TextField();
+        host.setPromptText(tr("remote.hostPrompt"));
+        TextField port = new TextField();
+        TextField user = new TextField();
+        ComboBox<com.editora.vfs.RemoteConnection.AuthMethod> auth =
+                new ComboBox<>(javafx.collections.FXCollections.observableArrayList(
+                        com.editora.vfs.RemoteConnection.AuthMethod.values()));
+        auth.setConverter(enumConverter(m -> switch (m) {
+            case DEFAULT_KEYS -> tr("remote.auth.defaultKeys");
+            case KEY -> tr("remote.auth.key");
+            case PASSWORD -> tr("remote.auth.password");
+        }));
+        TextField keyPath = new TextField();
+        keyPath.setPromptText(tr("remote.keyPrompt"));
+        HBox.setHgrow(keyPath, Priority.ALWAYS);
+        Button keyBrowse = new Button(tr("dialog.clone.browse"));
+        keyBrowse.setOnAction(e -> {
+            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+            fc.setTitle(tr("remote.keyPrompt"));
+            java.io.File f = fc.showOpenDialog(keyBrowse.getScene().getWindow());
+            if (f != null) {
+                keyPath.setText(f.getAbsolutePath());
+            }
+        });
+        HBox keyRow = new HBox(6, keyPath, keyBrowse);
+        // The key-file row only applies to "Private key file" auth.
+        auth.valueProperty()
+                .addListener((o, a, b) -> keyRow.setDisable(b != com.editora.vfs.RemoteConnection.AuthMethod.KEY));
+
+        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
+        form.setHgap(8);
+        form.setVgap(6);
+        formRow(form, 0, tr("settings.remote.label"), label);
+        formRow(form, 1, tr("remote.host"), host);
+        formRow(form, 2, tr("remote.port"), port);
+        formRow(form, 3, tr("remote.user"), user);
+        formRow(form, 4, tr("remote.auth"), auth);
+        formRow(form, 5, tr("remote.key"), keyRow);
+        form.setDisable(true);
+        HBox.setHgrow(form, Priority.ALWAYS);
+
+        Runnable commit = () -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
+            if (cur == null || i < 0 || loadingRemote) {
+                return;
+            }
+            int portNum;
+            try {
+                portNum = Integer.parseInt(port.getText().strip());
+            } catch (NumberFormatException ex) {
+                portNum = 0; // the record coerces <= 0 to the default SFTP port
+            }
+            com.editora.vfs.RemoteConnection updated = new com.editora.vfs.RemoteConnection(
+                    host.getText().strip(),
+                    portNum,
+                    user.getText().strip(),
+                    auth.getValue() == null
+                            ? com.editora.vfs.RemoteConnection.AuthMethod.DEFAULT_KEYS
+                            : auth.getValue(),
+                    keyPath.getText().strip(),
+                    label.getText().strip(),
+                    cur.lastPath()); // preserve the remembered path; not edited here
+            remoteItems.set(i, updated);
+            list.refresh();
+            persistRemote();
+        };
+        auth.valueProperty().addListener((o, a, b) -> commit.run());
+        java.util.function.Consumer<TextField> wire = tf -> {
+            tf.setOnAction(e -> commit.run());
+            tf.focusedProperty().addListener((o, was, now) -> {
+                if (!now) {
+                    commit.run();
+                }
+            });
+        };
+        wire.accept(label);
+        wire.accept(host);
+        wire.accept(port);
+        wire.accept(user);
+        wire.accept(keyPath);
+
+        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            loadingRemote = true;
+            try {
+                form.setDisable(now == null);
+                label.setText(now == null ? "" : nullToEmpty(now.label()));
+                host.setText(now == null ? "" : nullToEmpty(now.host()));
+                port.setText(now == null ? "" : String.valueOf(now.port()));
+                user.setText(now == null ? "" : nullToEmpty(now.user()));
+                auth.setValue(now == null ? null : now.auth());
+                keyPath.setText(now == null ? "" : nullToEmpty(now.keyPath()));
+                keyRow.setDisable(now == null || now.auth() != com.editora.vfs.RemoteConnection.AuthMethod.KEY);
+            } finally {
+                loadingRemote = false;
+            }
+        });
+
+        Button add = new Button(tr("settings.remote.add"));
+        add.setOnAction(e -> {
+            com.editora.vfs.RemoteConnection c = new com.editora.vfs.RemoteConnection(
+                    "",
+                    com.editora.vfs.SftpUri.DEFAULT_PORT,
+                    System.getProperty("user.name", ""),
+                    com.editora.vfs.RemoteConnection.AuthMethod.DEFAULT_KEYS,
+                    "",
+                    tr("settings.remote.newName"),
+                    "");
+            remoteItems.add(c);
+            persistRemote();
+            list.getSelectionModel().select(c);
+        });
+        Button remove = new Button(tr("settings.remote.remove"));
+        remove.setOnAction(e -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i >= 0) {
+                remoteItems.remove(i);
+                persistRemote();
+            }
+        });
+        HBox buttons = new HBox(6, add, remove);
+        VBox left = new VBox(6, list, buttons);
+
+        // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
+        Button save = new Button(tr("settings.save"));
+        save.disableProperty().bind(form.disabledProperty());
+        save.setOnAction(e -> commit.run());
+        HBox saveRow = new HBox(save);
+        saveRow.setAlignment(Pos.CENTER_RIGHT);
+        VBox right = new VBox(8, form, saveRow);
+        VBox.setVgrow(form, Priority.ALWAYS);
+        HBox.setHgrow(right, Priority.ALWAYS);
+
+        if (!remoteItems.isEmpty()) {
+            list.getSelectionModel().select(0);
+        }
+        HBox box = new HBox(12, left, right);
+        box.setAlignment(Pos.TOP_LEFT);
+        return box;
+    }
+
+    private void persistRemote() {
+        config.setConnections(new java.util.ArrayList<>(remoteItems));
+        apply();
+    }
+
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
+    }
+
+    /** Opens Settings focused on the Remote page (the {@code remote.settings} command). */
+    public void showRemote(Window owner) {
+        show(owner);
+        sidebar.getSelectionModel().select(Category.REMOTE);
+        remoteItems.setAll(config.getConnections());
     }
 
     private VBox externalToolsPage() {

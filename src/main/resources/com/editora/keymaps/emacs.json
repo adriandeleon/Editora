@@ -97,6 +97,7 @@
   "M-g h": "tool.gitLog",
   "M-g l": "tool.fileHistory",
   "M-g u": "tool.undoHistory",
+  "M-g r": "tool.remote",
   "M-g a": "git.toggleBlame",
   "C-c i": "snippets.insert",
   "C-c C-n": "template.new",

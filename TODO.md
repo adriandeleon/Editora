@@ -79,9 +79,10 @@ A backlog of planned features and improvements. Unordered within each section.
       session-only override; saved preferences are untouched and restored on exit
 - [x] Remote file access (SFTP) — connect over SSH/SFTP and edit a server's files as if local: the remote
       folder mounts in the Project tool window, open/edit/save go straight over SFTP, saved connections
-      (metadata only) reconnect via a picker; local-process features (LSP/DAP/Git/Run/HTTP) auto-disable
-      for remote files. Off by default; built on Apache MINA SSHD (Remote: Connect / Saved Connections /
-      Open File / Disconnect)
+      (metadata only) reconnect via a picker, a Remote Sites tool window (M-g r), a Settings → Remote
+      management page, or a Welcome-page quick-connect list; local-process features (LSP/DAP/Git/Run/HTTP)
+      auto-disable for remote files. Off by default; built on Apache MINA SSHD (Remote: Connect / Saved
+      Connections / Manage Remote Sites / Open File / Disconnect)
 - [x] HTTP Client (`.http`/`.rest` files) — a green ▶ on every request runs it with the built-in JDK
       HTTP client; response (status/headers/pretty-JSON/timing) in an HTTP Client tool window (`M-0`) with a
       highlighted viewer, history, Copy/Import as cURL. Near IntelliJ parity: `{{var}}`/`@var` + dynamic vars

@@ -347,6 +347,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private ExternalToolPanel externalToolPanel;
     private ToolWindow externalToolToolWindow;
+    private RemoteConnectionsPanel remoteConnectionsPanel;
+    private ToolWindow remoteToolWindow;
     /** The last external tool run, for {@code externalTool.rerunLast}. */
     private com.editora.externaltool.ExternalTool lastExternalTool;
     /** Debug (DAP): drives Java debugging layered on the jdtls LSP session. */
@@ -1369,6 +1371,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::openExternalUrl,
                 this::projectsEnabled,
                 git::isEnabled,
+                config::getConnections, // saved SFTP sites (most-recent first); empty hides the section
+                this::connectRemote, // pick a site → prefilled connect form
                 config.isDev() ? com.editora.AppInfo.gitCommit() : ""); // build commit shown only in --dev
     }
 
@@ -2445,6 +2449,30 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::tools,
                 externalToolPanel,
                 "tool.externalTools");
+        remoteConnectionsPanel =
+                new RemoteConnectionsPanel(config::getConnections, new RemoteConnectionsPanel.Actions() {
+                    @Override
+                    public void connect(com.editora.vfs.RemoteConnection c) {
+                        connectRemote(c);
+                    }
+
+                    @Override
+                    public void remove(com.editora.vfs.RemoteConnection c) {
+                        config.removeConnection(c.id());
+                    }
+
+                    @Override
+                    public void newConnection() {
+                        connectRemote();
+                    }
+                });
+        remoteToolWindow = new ToolWindow(
+                "remote",
+                tr("toolwindow.remote"),
+                ToolWindow.Side.LEFT,
+                Icons::remote,
+                remoteConnectionsPanel,
+                "tool.remote");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
@@ -2468,6 +2496,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(httpToolWindow);
         toolWindows.setAvailable(httpToolWindow, false); // shown only for a .http file with the feature on
         toolWindows.register(externalToolToolWindow);
+        toolWindows.register(remoteToolWindow); // always available — saved connections don't need a buffer
         updateBufferToolWindows(); // hide buffer-only windows until there's an actionable buffer (no Welcome flash)
         // Detect a *user* open/close of the HTTP window (vs. our own auto show/hide, guarded by
         // httpAutoMutating) so a manual close is remembered per .http buffer and a manual open clears it.
@@ -6231,6 +6260,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void mountRemote(com.editora.vfs.RemoteConnection conn, Path root) {
         activeRemoteAuthority = conn.id();
         config.putConnection(conn); // remember the connection (metadata only — no secret) for next time
+        remoteConnectionsPanel.refresh(); // surface the just-used site at the top of the list
         projectPanel.setRoot(root);
         toolWindows.open(projectToolWindow);
         setStatus(tr("status.remote.connected", conn.displayLabel()));
@@ -12418,6 +12448,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.undoHistory", () -> toolWindows.toggle(undoHistoryToolWindow)));
         registry.register(Command.of("tool.notes", () -> ifNotes(() -> toolWindows.toggle(notesToolWindow))));
         registry.register(Command.of("tool.fileInformation", () -> toolWindows.toggle(fileInfoToolWindow)));
+        registry.register(Command.of("tool.remote", () -> {
+            remoteConnectionsPanel.refresh();
+            toolWindows.toggle(remoteToolWindow);
+        }));
         registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
         registry.register(Command.of("search.inFiles", this::openSearchInFiles));
         registry.register(Command.of("tool.todo", this::toggleTodoWindow));
@@ -12512,6 +12546,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("remote.connect", this::connectRemote));
         registry.register(Command.of("remote.openFile", this::openRemoteFile));
         registry.register(Command.of("remote.manageConnections", this::manageRemoteConnections));
+        registry.register(Command.of("remote.settings", () -> settingsWindow.showRemote(stage)));
         registry.register(Command.of("remote.disconnect", this::disconnectRemote));
         registry.register(Command.of("git.clone", () -> git.ifEnabled(this::gitClone)));
         registry.register(Command.of("git.commit", () -> git.ifEnabled(this::gitCommitFocus)));

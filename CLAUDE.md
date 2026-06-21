@@ -155,7 +155,18 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   picker; on success **mounts the remote folder as the Project tree root** via `projectPanel.setRoot` +
   opens the Project tool window, and `config.putConnection`s it), `remote.manageConnections` (a `QuickOpen`
   over saved connections → re-opens the form pre-filled), `remote.openFile` (an `sftp://` URI →
-  `Vfs.parseStorable` → `openPath`), `remote.disconnect` (restores the local project root). A remote buffer
+  `Vfs.parseStorable` → `openPath`), `remote.disconnect` (restores the local project root). **Saved sites get
+  three visible surfaces** (all over the same `connections.json` most-recent-first list — no schema/secret
+  change): a **Remote Sites tool window** (`ui/RemoteConnectionsPanel`, id `remote`, `Side.LEFT`, `Icons::remote`,
+  `tool.remote`/`M-g r`, *not* buffer-gated — a flat `ListView` of saved sites; double-click/Enter or the
+  New/Connect/Remove bar → `connectRemote(c)`/`removeConnection`/`connectRemote()`, refreshed on open + after a
+  mount); a **Settings → Remote master-detail page** (`SettingsWindow.remoteConnectionsEditor`, mirroring the
+  External Tools page — list + label/host/port/user/auth/key-path form editing the immutable `RemoteConnection`
+  record via `remoteItems.set(i, …)`, persisted through the new `ConfigManager.setConnections(list)` →
+  `SharedConfig` whole-list replace; opened by `remote.settings` → `showRemote`); and a **Welcome-page "Remote
+  Sites" quick-connect list** (`WelcomePane.remoteList`, shown only when non-empty, each row → `connectRemote(c)`).
+  All three open the **prefilled connect form** on pick (so the secret is still prompted), never a silent
+  reconnect. A remote buffer
   opens with a remote `Path`, so plain Save → `writeBuffer` → `Files.writeString` writes back over SFTP, no
   dialog; `saveAs` is guarded for remote. Recent files round-trip the `sftp://` URI (`Vfs.toStorableString`;
   a remote entry resolves only once its connection is open). **Dependency:** Apache **MINA SSHD**

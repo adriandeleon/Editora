@@ -273,9 +273,11 @@ Emacs-style keymap or a fuzzy command palette.
 - **Remote files (SFTP)** _(Beta)_ — connect to a server over SSH/SFTP (*Remote: Connect to SFTP…*) and edit its
   files as if they were local: the remote folder mounts in the Project tool window, and open/edit/save go
   straight over SFTP. Authenticates with your default `~/.ssh` keys, a chosen key file, or a password;
-  saved connections (metadata only — never a password) reconnect via a picker. Features that need a local
-  process (language servers, debugging, Git, Run, the HTTP client) auto-disable for remote files. Off by
-  default; built on Apache MINA SSHD.
+  saved connections (metadata only — never a password) reconnect via a picker, a **Remote Sites** tool window
+  (`M-g r`), a **Settings → Remote** management page (add/edit/remove sites), or a quick-connect list on the
+  Welcome page — each reopens the connection form pre-filled. Features that need a local process (language
+  servers, debugging, Git, Run, the HTTP client) auto-disable for remote files. Off by default; built on
+  Apache MINA SSHD.
 - **Plugins** — extend Editora without forking it. A plugin is a folder under `<configDir>/plugins/<id>/`
   with a `plugin.json` manifest plus, optionally, a Java jar and asset dirs. A **Java SPI**
   (`com.editora.plugin.Plugin`) can add palette commands, keybindings, dockable tool windows, editor
