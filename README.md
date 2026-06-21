@@ -20,6 +20,8 @@ A keyboard-driven, cross-platform programmer's text editor built with **JDK 25**
 **JavaFX 26**, [**RichTextFX**](https://github.com/FXMisc/RichTextFX) and **Maven**. Every action is a registered command, reachable by an
 Emacs-style keymap or a fuzzy command palette.
 
+Editora is built with the help of AI coding tools.
+
 🌐 **Website:** [editora-project.dev](https://editora-project.dev) — features, docs, blog, and downloads
 (source: [adriandeleon/editora-website](https://github.com/adriandeleon/editora-website)).
 
