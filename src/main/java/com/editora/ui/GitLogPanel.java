@@ -137,6 +137,12 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         files.getItems().setAll(commitFiles);
     }
 
+    /** The hash of the currently-selected commit, or {@code null} when none is selected (backs the palette commands). */
+    public String selectedHash() {
+        Commit c = commits.getSelectionModel().getSelectedItem();
+        return c == null ? null : c.hash();
+    }
+
     private void openSelectedFile() {
         Commit c = commits.getSelectionModel().getSelectedItem();
         CommitFile f = files.getSelectionModel().getSelectedItem();

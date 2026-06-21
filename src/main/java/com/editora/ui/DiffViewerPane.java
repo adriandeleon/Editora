@@ -300,6 +300,25 @@ public final class DiffViewerPane implements TabContent {
         return s;
     }
 
+    /** Palette-command entry points mirroring the diff toolbar (act on the active diff tab). */
+    public void toggleViewMode() {
+        toggleView();
+    }
+
+    public void applyAllChanges() {
+        if (editableSide != EditableSide.NONE) {
+            applyAll(); // no-op on a read-only diff (no editable side / onApply)
+        }
+    }
+
+    public void goNextChange() {
+        nextChange();
+    }
+
+    public void goPreviousChange() {
+        prevChange();
+    }
+
     private void toggleView() {
         unified = !unified;
         updateToggleButton();

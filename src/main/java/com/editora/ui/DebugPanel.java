@@ -568,6 +568,22 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /** Palette-command entry points mirroring the panel's own controls. */
+    public void addWatch() {
+        addWatchPrompt();
+    }
+
+    public void setSelectedValue() {
+        setValuePrompt(); // no-ops unless a settable leaf variable is selected
+    }
+
+    /** Focuses the evaluate (REPL) field so the user can type an expression (enabled only while suspended). */
+    public void focusEvaluate() {
+        if (!evalInput.isDisabled()) {
+            evalInput.requestFocus();
+        }
+    }
+
     /** Appends program/console output (trimmed to a cap), auto-scrolling to the bottom. */
     public void appendOutput(String text, String category) {
         if (text == null) {

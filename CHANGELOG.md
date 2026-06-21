@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Command-palette parity for actions that were UI-only.** Every remaining click-only action now also has a registered, keybindable palette command:
+  - **Git Log** commit operations (Checkout / New Branch / Revert / Cherry-Pick / Reset… / Copy Hash) → `git.log.*`, acting on the selected commit.
+  - **Debugger** data inspection → `debug.evaluate` (open console + focus the eval field) / `debug.addWatch` / `debug.setValue`.
+  - **Diff viewer** toolbar → `diff.toggleView` (unified ↔ side-by-side) / `diff.applyAll` / `diff.nextChange` / `diff.previousChange`, acting on the active diff tab.
+  - **Find/Replace bar** → `find.next` / `find.previous` / `find.replaceCurrent` / `find.replaceAll` (open the bar if it's closed).
+  - **Git** working-file ops → `git.unstageFile` / `git.discardFile` (active file; discard confirms first), mirroring the existing `git.stageFile`.
+  - **Console Clear** → `run.clear` / `externalTool.clearOutput`.
 - **Macros management in Settings.** A new **Settings → Macros** page lists your saved keyboard macros and lets you rename them, edit/reorder/remove their steps (add command or text steps), delete them, and assign a keybinding inline — all in one place.
 - **Snippet & template body editors got syntax highlighting + Emacs keys.** The Snippets and File Templates pages in Settings now edit the body in a real code editor (RichTextFX `CodeArea`) with live syntax highlighting for the chosen language and basic Emacs caret movement (`C-a`/`C-e`/`C-f`/`C-b`/`C-n`/`C-p`/`M-f`/`M-b`/`C-d`/`C-k`), instead of a plain text box. Also fixed the form-field labels that could collapse to “…” on the Snippets/Templates/External-Tools pages.
 - **Reorganized the Settings window.** The flat 22-item sidebar is now grouped into five sections (General · Editor · Languages & Tools · Version Control · System) with non-selectable headers and indented items. The overloaded *Editor* page was split (Code Completion and TODO are their own pages), the *Application* grab-bag became **Interface** (window chrome + Simple/Zen modes) and **Workspace** (projects, notes, local history), HTTP Client + HTML Preview merged into **Web**, and the author field moved to Templates. Search now also hides empty group headers. Every setting is preserved — only the organization and presentation changed.

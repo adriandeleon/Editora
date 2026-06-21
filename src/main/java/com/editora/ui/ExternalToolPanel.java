@@ -40,10 +40,7 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
         status.getStyleClass().add("run-status");
         status.setText(tr("externalTool.idle"));
         Button clear = new Button(tr("run.clear"));
-        clear.setOnAction(e -> {
-            output.clear();
-            status.setText(tr("externalTool.idle"));
-        });
+        clear.setOnAction(e -> clearConsole());
 
         HBox header = new HBox(8, status, spacer(), clear);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -59,6 +56,12 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
 
     public void setOnLink(Consumer<StackTraceLinks.Link> onLink) {
         this.onLink = onLink;
+    }
+
+    /** Clears the output console (the Clear button + the {@code externalTool.clearOutput} palette command). */
+    public void clearConsole() {
+        output.clear();
+        status.setText(tr("externalTool.idle"));
     }
 
     /** Shows one tool run's output: a header (name + command), then stdout, then stderr, then the status line. */
