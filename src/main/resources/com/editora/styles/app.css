@@ -1714,3 +1714,9 @@
     -fx-font-size: 0.8em;
     -fx-font-style: italic;
 }
+
+/* Remote Sites tool window (saved SFTP connections). */
+.remote-panel { -fx-padding: 0; }
+.remote-panel .remote-name { -fx-font-weight: bold; }
+.remote-panel .remote-id { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
+.remote-panel .remote-empty { -fx-text-fill: -color-fg-muted; -fx-padding: 8; }
