@@ -3020,6 +3020,10 @@ public class SettingsWindow {
         if (field instanceof javafx.scene.layout.Region r) {
             r.setMinWidth(220);
         }
+        // A tall multi-line body would otherwise centre its label; align it to the top of the field instead.
+        if (field instanceof CodeArea) {
+            javafx.scene.layout.GridPane.setValignment(l, javafx.geometry.VPos.TOP);
+        }
     }
 
     /** Re-highlights a snippet/template body {@link CodeArea} for {@code languageName} (plain for global/unknown). */
@@ -3046,33 +3050,54 @@ public class SettingsWindow {
         }
     }
 
-    /** Installs basic Emacs caret movement on a settings-scene {@link CodeArea} (no global KeyDispatcher there). */
+    /** Installs basic Emacs caret movement on a settings-scene {@link CodeArea} (no global KeyDispatcher there).
+     *  Uses absolute-offset {@code moveTo}/{@code deleteText} (robust across RichTextFX versions); each action is
+     *  guarded so the key is always consumed (no fall-through to the default behaviour) even at a boundary. */
     private static void installEmacsKeys(CodeArea area) {
-        var clear = org.fxmisc.richtext.NavigationActions.SelectionPolicy.CLEAR;
         area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
             boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown();
             boolean alt = e.isAltDown() && !e.isControlDown() && !e.isMetaDown() && !e.isShiftDown();
+            if (!ctrl && !alt) {
+                return;
+            }
+            int caret = area.getCaretPosition();
+            int len = area.getLength();
+            String text = area.getText();
             if (ctrl) {
                 switch (e.getCode()) {
-                    case A -> consume(e, () -> area.lineStart(clear));
-                    case E -> consume(e, () -> area.lineEnd(clear));
-                    case F -> consume(e, () -> area.nextChar(clear));
-                    case B -> consume(e, () -> area.previousChar(clear));
+                    case A -> consume(e, () -> area.moveTo(area.getCurrentParagraph(), 0));
+                    case E ->
+                        consume(e, () -> {
+                            int par = area.getCurrentParagraph();
+                            area.moveTo(par, area.getParagraphLength(par));
+                        });
+                    case F ->
+                        consume(e, () -> {
+                            if (caret < len) {
+                                area.moveTo(caret + 1);
+                            }
+                        });
+                    case B ->
+                        consume(e, () -> {
+                            if (caret > 0) {
+                                area.moveTo(caret - 1);
+                            }
+                        });
                     case N -> consume(e, () -> emacsMoveLine(area, 1));
                     case P -> consume(e, () -> emacsMoveLine(area, -1));
                     case D ->
                         consume(e, () -> {
-                            if (area.getCaretPosition() < area.getLength()) {
-                                area.deleteNextChar();
+                            if (caret < len) {
+                                area.deleteText(caret, caret + 1);
                             }
                         });
                     case K -> consume(e, () -> emacsKillLine(area));
                     default -> {}
                 }
-            } else if (alt) {
+            } else {
                 switch (e.getCode()) {
-                    case F -> consume(e, () -> area.wordBreaksForwards(1, clear));
-                    case B -> consume(e, () -> area.wordBreaksBackwards(1, clear));
+                    case F -> consume(e, () -> area.moveTo(nextWordBoundary(text, caret)));
+                    case B -> consume(e, () -> area.moveTo(prevWordBoundary(text, caret)));
                     default -> {}
                 }
             }
@@ -3080,7 +3105,11 @@ public class SettingsWindow {
     }
 
     private static void consume(javafx.scene.input.KeyEvent e, Runnable action) {
-        action.run();
+        try {
+            action.run();
+        } catch (RuntimeException ignored) {
+            // A move/delete at a boundary must not crash key handling.
+        }
         e.consume();
     }
 
@@ -3093,13 +3122,36 @@ public class SettingsWindow {
     }
 
     private static void emacsKillLine(CodeArea area) {
-        int par = area.getCurrentParagraph();
-        if (area.getCaretColumn() < area.getParagraphLength(par)) {
-            area.lineEnd(org.fxmisc.richtext.NavigationActions.SelectionPolicy.EXTEND);
-            area.replaceSelection("");
-        } else if (area.getCaretPosition() < area.getLength()) {
-            area.deleteNextChar(); // at end-of-line: join the next line up
+        int caret = area.getCaretPosition();
+        int rest = area.getParagraphLength(area.getCurrentParagraph()) - area.getCaretColumn();
+        if (rest > 0) {
+            area.deleteText(caret, caret + rest); // kill to end of line
+        } else if (caret < area.getLength()) {
+            area.deleteText(caret, caret + 1); // at end-of-line: join the next line up
         }
+    }
+
+    /** Offset of the end of the next word at/after {@code i} (Emacs M-f). Pure. */
+    private static int nextWordBoundary(String s, int i) {
+        int n = s.length();
+        while (i < n && !Character.isLetterOrDigit(s.charAt(i))) {
+            i++;
+        }
+        while (i < n && Character.isLetterOrDigit(s.charAt(i))) {
+            i++;
+        }
+        return i;
+    }
+
+    /** Offset of the start of the previous word at/before {@code i} (Emacs M-b). Pure. */
+    private static int prevWordBoundary(String s, int i) {
+        while (i > 0 && !Character.isLetterOrDigit(s.charAt(i - 1))) {
+            i--;
+        }
+        while (i > 0 && Character.isLetterOrDigit(s.charAt(i - 1))) {
+            i--;
+        }
+        return i;
     }
 
     private VBox mcpPage() {
