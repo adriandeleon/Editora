@@ -78,7 +78,8 @@ public enum ConfigSchema {
                     Map.entry(36, (Migration) ConfigMigrations::identity), // v36→37: + ripgrepSearch/Command
                     Map.entry(37, (Migration) ConfigMigrations::identity), // v37→38: + logViewer (additive)
                     Map.entry(38, (Migration) ConfigMigrations::identity), // v38→39: + projectShowHidden
-                    Map.entry(39, (Migration) ConfigMigrations::identity))), // v39→40: + markdownLintDisabledRules
+                    Map.entry(39, (Migration) ConfigMigrations::identity), // v39→40: + markdownLintDisabledRules
+                    Map.entry(40, (Migration) ConfigMigrations::identity))), // v40→41: + personalDictionary (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

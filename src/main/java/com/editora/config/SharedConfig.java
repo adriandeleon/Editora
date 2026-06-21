@@ -344,6 +344,31 @@ public class SharedConfig {
         }
     }
 
+    /** Removes a word from the user dictionary and rewrites {@code dictionary.txt}; no-op if absent. */
+    public void removeUserWord(String word) {
+        if (word == null) {
+            return;
+        }
+        String w = word.strip().toLowerCase(java.util.Locale.ROOT);
+        if (userDictionary.remove(w)) {
+            rewriteUserDictionary();
+        }
+    }
+
+    /** Rewrites {@code dictionary.txt} from the in-memory set (one word per line); non-fatal on failure. */
+    private void rewriteUserDictionary() {
+        try {
+            Files.createDirectories(configDir);
+            StringBuilder sb = new StringBuilder();
+            for (String w : userDictionary) {
+                sb.append(w).append(System.lineSeparator());
+            }
+            Files.writeString(getUserDictionaryFile(), sb.toString());
+        } catch (IOException e) {
+            // non-fatal: the in-memory set still applies for this session
+        }
+    }
+
     private void loadUserDictionary() {
         userDictionary.clear();
         Path file = getUserDictionaryFile();

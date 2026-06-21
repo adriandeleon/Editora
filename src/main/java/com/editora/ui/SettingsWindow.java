@@ -145,6 +145,11 @@ public class SettingsWindow {
     private CheckBox semanticHighlightCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
+    /** The Personal Dictionary list on the Spell Check page; refreshed from {@code dictionary.txt} on show. */
+    private ListView<String> dictionaryList;
+    /** "Enable personal dictionary" checkbox (Settings.personalDictionary). */
+    private CheckBox dictEnableCheck;
+
     private CheckBox toolbarCheck;
     private CheckBox statusBarCheck;
     private CheckBox tabBarCheck;
@@ -656,6 +661,11 @@ public class SettingsWindow {
             if (spellLanguageCombo != null) {
                 spellLanguageCombo.setDisable(!now);
             }
+            apply();
+        });
+        dictEnableCheck = new CheckBox(tr("settings.dict.enable"));
+        dictEnableCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setPersonalDictionary(now);
             apply();
         });
         spellLanguageCombo = new ComboBox<>();
@@ -1439,7 +1449,84 @@ public class SettingsWindow {
                 null,
                 labeled(tr("settings.language"), spellLanguageCombo),
                 "spell language dictionary english spanish french");
+        Label dict = section(p, tr("settings.dict.title"));
+        row(p, Category.SPELL_CHECK, dict, dictEnableCheck, "personal dictionary enable on off honor words");
+        row(p, Category.SPELL_CHECK, dict, dictionaryEditor(), "personal dictionary words add remove custom ignore");
+        Label dictNote = note(tr("settings.dict.note"));
+        dictNote.setWrapText(true);
+        dictNote.setMaxWidth(440);
+        row(p, Category.SPELL_CHECK, dict, dictNote, "dictionary.txt file location global");
         return p;
+    }
+
+    /** A simple editor for the global personal dictionary ({@code dictionary.txt}): list + add/remove. */
+    private javafx.scene.Node dictionaryEditor() {
+        dictionaryList = new ListView<>();
+        dictionaryList.setPrefSize(280, 220);
+        dictionaryList.setPlaceholder(new Label(tr("settings.dict.empty")));
+        refreshDictionaryList();
+
+        TextField input = new TextField();
+        input.setPromptText(tr("settings.dict.prompt"));
+        HBox.setHgrow(input, Priority.ALWAYS);
+        Button add = new Button(tr("settings.dict.add"));
+        Runnable doAdd = () -> {
+            String w = input.getText().strip().toLowerCase(java.util.Locale.ROOT);
+            if (!w.isEmpty()) {
+                config.addUserWord(w);
+                input.clear();
+                refreshDictionaryList();
+                dictionaryList.getSelectionModel().select(w);
+            }
+            input.requestFocus();
+        };
+        add.setOnAction(e -> doAdd.run());
+        input.setOnAction(e -> doAdd.run());
+
+        Button remove = new Button(tr("settings.dict.remove"));
+        remove.disableProperty()
+                .bind(dictionaryList.getSelectionModel().selectedItemProperty().isNull());
+        remove.setOnAction(e -> {
+            String sel = dictionaryList.getSelectionModel().getSelectedItem();
+            if (sel != null) {
+                config.removeUserWord(sel);
+                refreshDictionaryList();
+            }
+        });
+
+        HBox addRow = new HBox(6, input, add);
+        addRow.setAlignment(Pos.CENTER_LEFT);
+        VBox box = new VBox(6, dictionaryList, addRow, new HBox(6, remove));
+        box.setMaxWidth(440);
+        return box;
+    }
+
+    /** Reloads the Personal Dictionary list from the shared user-word set (sorted), preserving selection. */
+    private void refreshDictionaryList() {
+        if (dictionaryList == null) {
+            return;
+        }
+        java.util.List<String> words = new java.util.ArrayList<>(config.getUserDictionary());
+        java.util.Collections.sort(words);
+        String sel = dictionaryList.getSelectionModel().getSelectedItem();
+        dictionaryList.getItems().setAll(words);
+        if (sel != null && words.contains(sel)) {
+            dictionaryList.getSelectionModel().select(sel);
+        }
+    }
+
+    /** Re-syncs the "Enable personal dictionary" checkbox after a palette toggle. */
+    public void syncPersonalDictionaryCheck() {
+        if (dictEnableCheck != null) {
+            dictEnableCheck.setSelected(config.getSettings().isPersonalDictionary());
+        }
+    }
+
+    /** Opens Settings focused on the Spell Check page (the {@code spell.manageDictionary} command). */
+    public void showSpellCheck(Window owner) {
+        show(owner);
+        sidebar.getSelectionModel().select(Category.SPELL_CHECK);
+        refreshDictionaryList();
     }
 
     private VBox applicationPage() {
@@ -3496,6 +3583,7 @@ public class SettingsWindow {
     private void load() {
         loading = true;
         try {
+            refreshDictionaryList(); // pick up words added elsewhere (e.g. "Add to Dictionary") since last open
             Settings settings = config.getSettings();
             if (!fontFamily.getItems().contains(settings.getFontFamily())) {
                 fontFamily.getItems().add(0, settings.getFontFamily());
@@ -3538,6 +3626,7 @@ public class SettingsWindow {
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
             spellCheckBox.setSelected(settings.isSpellCheck());
+            dictEnableCheck.setSelected(settings.isPersonalDictionary());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
             spellLanguageCombo.setDisable(!settings.isSpellCheck());
             toolbarCheck.setSelected(settings.isShowToolbar());

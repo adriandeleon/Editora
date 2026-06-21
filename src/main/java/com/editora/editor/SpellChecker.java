@@ -19,6 +19,7 @@ public final class SpellChecker {
 
     private final Set<String> userWords; // shared, persisted (ConfigManager)
     private final Set<String> ignored = new HashSet<>(); // per-session "Ignore" choices
+    private volatile boolean userWordsEnabled = true; // honor the personal dictionary (Settings toggle)
     private volatile String langId;
 
     public SpellChecker(String langId, Set<String> userWords) {
@@ -41,6 +42,15 @@ public final class SpellChecker {
         return SpellDictionaries.ifReady(langId).isPresent();
     }
 
+    /** Whether the personal dictionary (user words) is honored; off re-flags those words. */
+    public void setUserWordsEnabled(boolean enabled) {
+        this.userWordsEnabled = enabled;
+    }
+
+    public boolean isUserWordsEnabled() {
+        return userWordsEnabled;
+    }
+
     /** Adds a word to the per-session ignore set (not persisted). */
     public void ignore(String word) {
         if (word != null && !word.isBlank()) {
@@ -55,7 +65,7 @@ public final class SpellChecker {
             return false;
         }
         String lower = word.toLowerCase(Locale.ROOT);
-        if (userWords.contains(lower) || ignored.contains(lower)) {
+        if ((userWordsEnabled && userWords.contains(lower)) || ignored.contains(lower)) {
             return false;
         }
         Hunspell h = SpellDictionaries.ifReady(langId).orElse(null);

@@ -119,6 +119,21 @@ class SpellCheckerTest {
     }
 
     @Test
+    void personalDictionaryToggleGatesUserWords() {
+        assumeTrue(SpellDictionaries.buildBlocking("en_US").isPresent(), "en_US dictionary should build");
+        SpellChecker c = new SpellChecker("en_US", Set.of("editora"));
+
+        assertTrue(c.isUserWordsEnabled());
+        assertFalse(c.isMisspelled("editora")); // honored by default
+
+        c.setUserWordsEnabled(false);
+        assertTrue(c.isMisspelled("editora")); // off → the user word is flagged again
+
+        c.setUserWordsEnabled(true);
+        assertFalse(c.isMisspelled("editora")); // back on → honored
+    }
+
+    @Test
     void buildsBundledSpanishAndFrench() {
         assumeTrue(SpellDictionaries.buildBlocking("es").isPresent(), "es dictionary should build");
         SpellChecker es = new SpellChecker("es", Set.of());

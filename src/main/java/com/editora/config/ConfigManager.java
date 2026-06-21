@@ -182,6 +182,10 @@ public class ConfigManager {
         shared.addUserWord(word);
     }
 
+    public void removeUserWord(String word) {
+        shared.removeUserWord(word);
+    }
+
     /**
      * Personal Notes (canonical file path -> notes) for <em>this window's</em> project — bucket chosen by
      * the current session file, exactly like {@link #getBookmarks()}. Persist changes with {@link #saveNotes()}.
