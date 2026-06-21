@@ -64,37 +64,59 @@ public class SettingsWindow {
     private static final double WIDTH = 989;
     private static final double HEIGHT = 784;
 
-    /** Settings categories shown in the sidebar. Placeholder pages are roadmap features (no settings yet). */
-    private enum Category {
-        APPEARANCE(tr("settings.cat.appearance"), false),
-        EDITOR(tr("settings.cat.editor"), false),
-        SNIPPETS(tr("settings.cat.snippets"), false),
-        TEMPLATES(tr("settings.cat.templates"), false),
-        MARKDOWN(tr("settings.cat.markdown"), false),
-        TOOL_WINDOWS(tr("settings.cat.toolWindows"), false),
-        SPELL_CHECK(tr("settings.cat.spellCheck"), false),
-        APPLICATION(tr("settings.cat.application"), false),
-        GIT(tr("settings.cat.git"), false),
-        MERMAID(tr("settings.cat.mermaid"), false),
-        SEARCH(tr("settings.cat.search"), false),
-        HTTP_CLIENT(tr("settings.cat.httpClient"), false),
-        REMOTE(tr("settings.cat.remote"), false),
-        EXTERNAL_TOOLS(tr("settings.cat.externalTools"), false),
-        HTML_PREVIEW(tr("settings.cat.htmlPreview"), false),
-        MCP(tr("settings.cat.mcp"), false),
-        LSP(tr("settings.cat.lsp"), false),
-        DEBUG(tr("settings.cat.debug"), false),
-        KEYMAPS(tr("settings.cat.keymaps"), false),
-        PLUGINS(tr("settings.cat.plugins"), false),
-        AI(tr("settings.cat.ai"), true),
-        ADVANCED(tr("settings.cat.advanced"), false);
+    /** Sidebar group headers; every {@link Category} belongs to exactly one, shown in declaration order. */
+    private enum Group {
+        GENERAL(tr("settings.group.general")),
+        EDITOR(tr("settings.group.editor")),
+        LANGUAGES_TOOLS(tr("settings.group.languagesTools")),
+        VERSION_CONTROL(tr("settings.group.versionControl")),
+        SYSTEM(tr("settings.group.system"));
 
         final String display;
-        final boolean placeholder;
 
-        Category(String display, boolean placeholder) {
+        Group(String display) {
             this.display = display;
-            this.placeholder = placeholder;
+        }
+    }
+
+    /** Settings categories shown in the sidebar, each grouped under a {@link Group} header (declaration order). */
+    private enum Category {
+        // General
+        APPEARANCE(tr("settings.cat.appearance"), Group.GENERAL),
+        INTERFACE(tr("settings.cat.interface"), Group.GENERAL),
+        WORKSPACE(tr("settings.cat.workspace"), Group.GENERAL),
+        TOOL_WINDOWS(tr("settings.cat.toolWindows"), Group.GENERAL),
+        // Editor
+        EDITOR(tr("settings.cat.editor"), Group.EDITOR),
+        COMPLETION(tr("settings.cat.completion"), Group.EDITOR),
+        SNIPPETS(tr("settings.cat.snippets"), Group.EDITOR),
+        TEMPLATES(tr("settings.cat.templates"), Group.EDITOR),
+        TODO(tr("settings.cat.todo"), Group.EDITOR),
+        SPELL_CHECK(tr("settings.cat.spellCheck"), Group.EDITOR),
+        SEARCH(tr("settings.cat.search"), Group.EDITOR),
+        // Languages & Tools
+        LSP(tr("settings.cat.lsp"), Group.LANGUAGES_TOOLS),
+        DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS),
+        MARKDOWN(tr("settings.cat.markdown"), Group.LANGUAGES_TOOLS),
+        MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS),
+        WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS),
+        EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
+        // Version control
+        GIT(tr("settings.cat.git"), Group.VERSION_CONTROL),
+        // System
+        KEYMAPS(tr("settings.cat.keymaps"), Group.SYSTEM),
+        MACROS(tr("settings.cat.macros"), Group.SYSTEM),
+        REMOTE(tr("settings.cat.remote"), Group.SYSTEM),
+        PLUGINS(tr("settings.cat.plugins"), Group.SYSTEM),
+        MCP(tr("settings.cat.mcp"), Group.SYSTEM),
+        ADVANCED(tr("settings.cat.advanced"), Group.SYSTEM);
+
+        final String display;
+        final Group group;
+
+        Category(String display, Group group) {
+            this.display = display;
+            this.group = group;
         }
     }
 
@@ -177,6 +199,17 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingRemote = false;
+
+    /** Working copies for the Macros master-detail page. */
+    private final javafx.collections.ObservableList<com.editora.macro.Macro> macroItems =
+            javafx.collections.FXCollections.observableArrayList();
+
+    private final javafx.collections.ObservableList<com.editora.macro.MacroStep> macroStepItems =
+            javafx.collections.FXCollections.observableArrayList();
+    private boolean loadingMacro = false;
+    private String macroOriginalName; // the saved name of the selected macro (to detect rename)
+    /** Re-registers the {@code macro.run.*} commands across windows after a Macros-page edit. */
+    private Runnable onMacrosChanged = () -> {};
     /** Shared snippet manager (injected after construction); backs the Snippets management page. */
     private com.editora.snippet.SnippetManager snippetManager;
     /** Working copy of the snippets (bundled + user) for the language selected on the Snippets page. */
@@ -287,13 +320,14 @@ public class SettingsWindow {
     private Spinner<Integer> autoSaveDelaySpinner;
 
     // --- shell ---
-    private ListView<Category> sidebar;
+    private ListView<Object> sidebar; // mixed rows: Group headers + Category items
     private ScrollPane contentScroll;
     private TextField searchField;
     private final Map<Category, Region> pages = new EnumMap<>(Category.class);
     private final List<SettingRow> rows = new ArrayList<>();
     private final List<Label> sectionLabels = new ArrayList<>();
     private final Set<Category> searchHiddenCats = EnumSet.noneOf(Category.class);
+    private final Set<Group> searchHiddenGroups = EnumSet.noneOf(Group.class);
 
     // --- live preview ---
     private CodeArea preview;
@@ -416,13 +450,13 @@ public class SettingsWindow {
 
         sidebar = new ListView<>();
         sidebar.getStyleClass().add("settings-sidebar");
-        sidebar.getItems().setAll(Category.values());
-        sidebar.setPrefWidth(180);
-        sidebar.setMinWidth(180);
+        sidebar.getItems().setAll(sidebarItems());
+        sidebar.setPrefWidth(190);
+        sidebar.setMinWidth(190);
         sidebar.setCellFactory(v -> new CategoryCell());
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
-            if (b != null) {
-                contentScroll.setContent(pages.get(b));
+            if (b instanceof Category cat) { // group headers aren't pages
+                contentScroll.setContent(pages.get(cat));
             }
         });
 
@@ -961,32 +995,35 @@ public class SettingsWindow {
     // --- pages -----------------------------------------------------------------------------------
 
     private void buildPages() {
+        // General
         pages.put(Category.APPEARANCE, appearancePage());
+        pages.put(Category.INTERFACE, interfacePage());
+        pages.put(Category.WORKSPACE, workspacePage());
+        pages.put(Category.TOOL_WINDOWS, toolWindowsPage());
+        // Editor
         pages.put(Category.EDITOR, editorPage());
+        pages.put(Category.COMPLETION, completionPage());
         pages.put(Category.SNIPPETS, snippetsPage());
         pages.put(Category.TEMPLATES, templatesPage());
-        pages.put(Category.MARKDOWN, markdownPage());
-        pages.put(Category.TOOL_WINDOWS, toolWindowsPage());
+        pages.put(Category.TODO, todoPage());
         pages.put(Category.SPELL_CHECK, spellPage());
-        pages.put(Category.APPLICATION, applicationPage());
-        pages.put(Category.GIT, gitPage());
-        pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.SEARCH, searchPage());
-        pages.put(Category.HTTP_CLIENT, httpClientPage());
-        pages.put(Category.REMOTE, remotePage());
-        pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
-        pages.put(Category.HTML_PREVIEW, htmlPreviewPage());
-        pages.put(Category.MCP, mcpPage());
+        // Languages & Tools
         pages.put(Category.LSP, lspPage());
         pages.put(Category.DEBUG, debugPage());
+        pages.put(Category.MARKDOWN, markdownPage());
+        pages.put(Category.MERMAID, mermaidPage());
+        pages.put(Category.WEB, webPage());
+        pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
+        // Version control
+        pages.put(Category.GIT, gitPage());
+        // System
         pages.put(Category.KEYMAPS, keymapsPage());
+        pages.put(Category.MACROS, macrosPage());
+        pages.put(Category.REMOTE, remotePage());
         pages.put(Category.PLUGINS, pluginsPage());
+        pages.put(Category.MCP, mcpPage());
         pages.put(Category.ADVANCED, advancedPage());
-        for (Category c : Category.values()) {
-            if (c.placeholder) {
-                pages.put(c, placeholderPage(c.display));
-            }
-        }
     }
 
     private VBox appearancePage() {
@@ -1150,10 +1187,19 @@ public class SettingsWindow {
     /** Commits a recorded chord sequence to a command, warning first if it steals another command's chord. */
     private void commitRecording(String commandId, String sequence) {
         recordingCommandId = null;
+        rebindWithConflictCheck(commandId, sequence);
+        refreshShortcuts();
+    }
+
+    /** Rebinds {@code commandId} to {@code sequence}, warning on a conflict; returns whether it bound. Shared
+     *  by the Keymaps shortcut editor and the inline Macros keybinding row. */
+    private boolean rebindWithConflictCheck(String commandId, String sequence) {
+        if (shortcutActions == null) {
+            return false;
+        }
         String seq = sequence.trim();
         if (seq.isEmpty()) {
-            refreshShortcuts();
-            return;
+            return false;
         }
         String other = shortcutActions.commandUsing(seq);
         if (other != null && !other.equals(commandId)) {
@@ -1171,12 +1217,328 @@ public class SettingsWindow {
             confirm.setTitle(tr("dialog.shortcut.conflict.title"));
             confirm.setHeaderText(null);
             if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
-                refreshShortcuts();
-                return;
+                return false;
             }
         }
         shortcutActions.rebind(commandId, seq);
-        refreshShortcuts();
+        return true;
+    }
+
+    /** Injects the cross-window macro re-register hook (→ {@code MainController}); used by the Macros page. */
+    public void setMacrosChangedHandler(Runnable handler) {
+        this.onMacrosChanged = handler == null ? () -> {} : handler;
+    }
+
+    private VBox macrosPage() {
+        VBox p = page(tr("settings.cat.macros"));
+        row(
+                p,
+                Category.MACROS,
+                null,
+                macrosEditor(),
+                "macros keyboard record replay steps rename delete keybinding command text");
+        Label note = note(tr("settings.macro.note"));
+        note.setWrapText(true);
+        note.setMaxWidth(460);
+        row(p, Category.MACROS, null, note, "macros record f3 f4 replay keybinding save");
+        return p;
+    }
+
+    /** Master-detail editor for saved keyboard macros: list on the left, a name/keybinding/steps form on the right. */
+    private javafx.scene.Node macrosEditor() {
+        macroItems.setAll(config.getMacroStore().macros);
+
+        ListView<com.editora.macro.Macro> list = new ListView<>(macroItems);
+        list.setPrefSize(200, 280);
+        list.setPlaceholder(note(tr("settings.macro.empty")));
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(com.editora.macro.Macro m, boolean empty) {
+                super.updateItem(m, empty);
+                setText(empty || m == null ? null : m.name() + "  (" + m.steps().size() + ")");
+            }
+        });
+
+        TextField name = new TextField();
+        HBox keybinding = new HBox(8);
+        keybinding.setAlignment(Pos.CENTER_LEFT);
+
+        ListView<com.editora.macro.MacroStep> steps = new ListView<>(macroStepItems);
+        steps.setPrefHeight(180);
+        steps.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(com.editora.macro.MacroStep s, boolean empty) {
+                super.updateItem(s, empty);
+                setText(empty || s == null ? null : macroStepLabel(s));
+            }
+        });
+        Label stepKind = new Label();
+        stepKind.setMinWidth(Region.USE_PREF_SIZE);
+        TextField stepValue = new TextField();
+        HBox.setHgrow(stepValue, Priority.ALWAYS);
+        stepValue.setDisable(true);
+        Runnable commitStep = () -> {
+            int i = steps.getSelectionModel().getSelectedIndex();
+            com.editora.macro.MacroStep cur = steps.getSelectionModel().getSelectedItem();
+            if (i < 0 || cur == null || loadingMacro) {
+                return;
+            }
+            macroStepItems.set(i, new com.editora.macro.MacroStep(cur.kind(), stepValue.getText()));
+        };
+        stepValue.setOnAction(e -> commitStep.run());
+        stepValue.focusedProperty().addListener((o, was, now) -> {
+            if (!now) {
+                commitStep.run();
+            }
+        });
+        steps.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            loadingMacro = true;
+            try {
+                stepValue.setDisable(now == null);
+                stepKind.setText(
+                        now == null
+                                ? ""
+                                : tr(now.isCommand() ? "settings.macro.kind.command" : "settings.macro.kind.text"));
+                stepValue.setText(now == null ? "" : now.value());
+            } finally {
+                loadingMacro = false;
+            }
+        });
+
+        Button stepUp = new Button("▲");
+        Button stepDown = new Button("▼");
+        stepUp.getStyleClass().addAll("flat", "reorder-button");
+        stepDown.getStyleClass().addAll("flat", "reorder-button");
+        stepUp.setOnAction(e -> moveStep(steps, -1));
+        stepDown.setOnAction(e -> moveStep(steps, 1));
+        Button stepRemove = new Button(tr("settings.macro.removeStep"));
+        stepRemove.setOnAction(e -> {
+            int i = steps.getSelectionModel().getSelectedIndex();
+            if (i >= 0) {
+                macroStepItems.remove(i);
+            }
+        });
+        Button addCmd = new Button(tr("settings.macro.addCommand"));
+        addCmd.setOnAction(e -> {
+            macroStepItems.add(com.editora.macro.MacroStep.command(""));
+            steps.getSelectionModel().selectLast();
+            stepValue.requestFocus();
+        });
+        Button addText = new Button(tr("settings.macro.addText"));
+        addText.setOnAction(e -> {
+            macroStepItems.add(com.editora.macro.MacroStep.text(""));
+            steps.getSelectionModel().selectLast();
+            stepValue.requestFocus();
+        });
+        HBox stepButtons = new HBox(6, addCmd, addText, spacer(), stepUp, stepDown, stepRemove);
+        stepButtons.setAlignment(Pos.CENTER_LEFT);
+
+        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
+        form.setHgap(8);
+        form.setVgap(6);
+        formRow(form, 0, tr("settings.macro.name"), name);
+        formRow(form, 1, tr("settings.macro.keybinding"), keybinding);
+        Label stepsLabel = new Label(tr("settings.macro.steps"));
+        stepsLabel.getStyleClass().add("settings-section");
+        VBox stepEditor = new VBox(6, stepsLabel, steps, new HBox(8, stepKind, stepValue), stepButtons);
+        VBox.setVgrow(steps, Priority.ALWAYS);
+        form.setDisable(true);
+        HBox.setHgrow(form, Priority.ALWAYS);
+
+        // Repopulates the inline keybinding row for the selected macro's command id.
+        java.util.function.Consumer<com.editora.macro.Macro> rebuildKeybinding = m -> {
+            keybinding.getChildren().clear();
+            if (m == null) {
+                return;
+            }
+            String cmdId = com.editora.macro.MacroService.commandIdFor(m.name());
+            String chord = currentChordFor(cmdId);
+            boolean bound = chord != null && !chord.isBlank();
+            Label chordLbl = new Label(bound ? chord : tr("settings.shortcuts.unbound"));
+            chordLbl.getStyleClass().add(bound ? "shortcut-chord" : "shortcut-unbound");
+            chordLbl.setMinWidth(150);
+            Button record = new Button(tr("settings.shortcuts.record"));
+            Button clear = new Button(tr("settings.shortcuts.reset"));
+            clear.setOnAction(e -> {
+                if (shortcutActions != null) {
+                    shortcutActions.reset(cmdId);
+                }
+                rebuildKeybindingFor(keybinding, m, steps);
+            });
+            record.setOnAction(e -> startMacroCapture(keybinding, cmdId, m, steps));
+            keybinding.getChildren().addAll(chordLbl, record, clear);
+        };
+        macroKeybindingRebuilders.put(keybinding, rebuildKeybinding);
+
+        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            loadingMacro = true;
+            try {
+                form.setDisable(now == null);
+                macroOriginalName = now == null ? null : now.name();
+                name.setText(now == null ? "" : now.name());
+                macroStepItems.setAll(now == null ? java.util.List.of() : now.steps());
+                rebuildKeybinding.accept(now);
+            } finally {
+                loadingMacro = false;
+            }
+        });
+
+        Button save = new Button(tr("settings.save"));
+        save.disableProperty().bind(form.disabledProperty());
+        save.setOnAction(e -> saveMacro(list, name.getText()));
+        Button delete = new Button(tr("settings.macro.delete"));
+        delete.disableProperty()
+                .bind(list.getSelectionModel().selectedItemProperty().isNull());
+        delete.setOnAction(e -> deleteMacro(list));
+        HBox formButtons = new HBox(8, delete, spacer(), save);
+        formButtons.setAlignment(Pos.CENTER_LEFT);
+
+        VBox right = new VBox(8, form, stepEditor, formButtons);
+        VBox.setVgrow(stepEditor, Priority.ALWAYS);
+        HBox.setHgrow(right, Priority.ALWAYS);
+        VBox left = new VBox(6, list);
+        VBox.setVgrow(list, Priority.ALWAYS);
+
+        if (!macroItems.isEmpty()) {
+            list.getSelectionModel().select(0);
+        }
+        HBox box = new HBox(12, left, right);
+        box.setAlignment(Pos.TOP_LEFT);
+        return box;
+    }
+
+    /** Maps a keybinding HBox to its rebuilder so {@code reset}/capture can repopulate it. */
+    private final java.util.Map<HBox, java.util.function.Consumer<com.editora.macro.Macro>> macroKeybindingRebuilders =
+            new java.util.HashMap<>();
+
+    private void rebuildKeybindingFor(
+            HBox keybinding, com.editora.macro.Macro m, ListView<com.editora.macro.MacroStep> steps) {
+        var rebuilder = macroKeybindingRebuilders.get(keybinding);
+        if (rebuilder != null) {
+            rebuilder.accept(m);
+        }
+    }
+
+    /** Swaps the keybinding row into a live chord-capture field, mirroring the Keymaps recorder. */
+    private void startMacroCapture(
+            HBox keybinding, String commandId, com.editora.macro.Macro m, ListView<com.editora.macro.MacroStep> steps) {
+        keybinding.getChildren().clear();
+        TextField capture = new TextField();
+        capture.setEditable(false);
+        capture.setPromptText(tr("settings.shortcuts.recording"));
+        capture.setPrefWidth(180);
+        StringBuilder seq = new StringBuilder();
+        capture.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            e.consume();
+            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
+                rebuildKeybindingFor(keybinding, m, steps);
+                return;
+            }
+            String token = com.editora.command.KeyDispatcher.chord(e);
+            if (token == null) {
+                return; // modifier-only press
+            }
+            if (seq.length() > 0) {
+                seq.append(' ');
+            }
+            seq.append(token);
+            capture.setText(seq.toString());
+        });
+        Button save = new Button(tr("settings.shortcuts.save"));
+        save.setOnAction(e -> {
+            rebindWithConflictCheck(commandId, seq.toString());
+            rebuildKeybindingFor(keybinding, m, steps);
+        });
+        Button cancel = new Button(tr("settings.shortcuts.cancel"));
+        cancel.setOnAction(e -> rebuildKeybindingFor(keybinding, m, steps));
+        keybinding.getChildren().addAll(capture, save, cancel);
+        javafx.application.Platform.runLater(capture::requestFocus);
+    }
+
+    private static void moveStep(ListView<com.editora.macro.MacroStep> steps, int delta) {
+        int i = steps.getSelectionModel().getSelectedIndex();
+        int j = i + delta;
+        if (i < 0 || j < 0 || j >= steps.getItems().size()) {
+            return;
+        }
+        com.editora.macro.MacroStep s = steps.getItems().remove(i);
+        steps.getItems().add(j, s);
+        steps.getSelectionModel().select(j);
+    }
+
+    private static String macroStepLabel(com.editora.macro.MacroStep s) {
+        if (s.isCommand()) {
+            return "⌘  " + (s.value() == null || s.value().isBlank() ? "…" : s.value());
+        }
+        String v = s.value() == null ? "" : s.value().replace("\n", "\\n").replace("\t", "\\t");
+        return "✎  \"" + v + "\"";
+    }
+
+    private String currentChordFor(String commandId) {
+        if (shortcutActions == null) {
+            return null;
+        }
+        for (Shortcut s : shortcutActions.rows()) {
+            if (s.id().equals(commandId)) {
+                return s.chord();
+            }
+        }
+        return null;
+    }
+
+    private void saveMacro(ListView<com.editora.macro.Macro> list, String rawName) {
+        String newName = rawName == null ? "" : rawName.trim();
+        if (newName.isEmpty() || macroOriginalName == null) {
+            return;
+        }
+        com.editora.config.MacroStore store = config.getMacroStore();
+        boolean renamed = !macroOriginalName.equals(newName);
+        if (renamed && store.find(newName) != null) {
+            Alert a = new Alert(Alert.AlertType.WARNING, tr("settings.macro.nameExists", newName), ButtonType.OK);
+            a.initOwner(stage);
+            a.setHeaderText(null);
+            a.showAndWait();
+            return;
+        }
+        String oldChord =
+                renamed ? currentChordFor(com.editora.macro.MacroService.commandIdFor(macroOriginalName)) : null;
+        com.editora.macro.Macro updated =
+                new com.editora.macro.Macro(newName, new java.util.ArrayList<>(macroStepItems));
+        if (renamed) {
+            store.remove(macroOriginalName);
+        }
+        store.put(updated);
+        config.saveMacros();
+        onMacrosChanged.run(); // re-register macro.run.* (incl. the renamed id) in every window
+        if (renamed && oldChord != null && !oldChord.isBlank() && shortcutActions != null) {
+            shortcutActions.rebind(com.editora.macro.MacroService.commandIdFor(newName), oldChord);
+            shortcutActions.reset(com.editora.macro.MacroService.commandIdFor(macroOriginalName));
+        }
+        macroItems.setAll(store.macros);
+        for (com.editora.macro.Macro m : macroItems) {
+            if (m.name().equals(newName)) {
+                list.getSelectionModel().select(m);
+                break;
+            }
+        }
+    }
+
+    private void deleteMacro(ListView<com.editora.macro.Macro> list) {
+        com.editora.macro.Macro sel = list.getSelectionModel().getSelectedItem();
+        if (sel == null) {
+            return;
+        }
+        com.editora.config.MacroStore store = config.getMacroStore();
+        if (shortcutActions != null) {
+            shortcutActions.reset(com.editora.macro.MacroService.commandIdFor(sel.name())); // drop its keybinding
+        }
+        store.remove(sel.name());
+        config.saveMacros();
+        onMacrosChanged.run();
+        macroItems.setAll(store.macros);
+        if (!macroItems.isEmpty()) {
+            list.getSelectionModel().select(0);
+        }
     }
 
     private VBox editorPage() {
@@ -1226,32 +1588,6 @@ public class SettingsWindow {
                 logs,
                 logViewerCheck,
                 "log viewer server logs tail follow level highlighting filter apache spring boot");
-        Label completion = section(p, tr("settings.section.completion"));
-        row(p, Category.EDITOR, completion, autocompleteCheck, "autocomplete completion suggestions enable popup");
-        HBox proseRow = new HBox(autocompleteProseCheck);
-        proseRow.setPadding(new Insets(0, 0, 0, 20));
-        row(p, Category.EDITOR, completion, proseRow, "autocomplete prose words dictionary ghost text spelling");
-        HBox snippetsRow = new HBox(autocompleteSnippetsCheck);
-        snippetsRow.setPadding(new Insets(0, 0, 0, 20));
-        row(p, Category.EDITOR, completion, snippetsRow, "autocomplete snippets popup templates");
-        HBox mermaidRow = new HBox(autocompleteMermaidCheck);
-        mermaidRow.setPadding(new Insets(0, 0, 0, 20));
-        row(p, Category.EDITOR, completion, mermaidRow, "autocomplete mermaid diagram keywords snippets mmd");
-        row(
-                p,
-                Category.EDITOR,
-                completion,
-                completionDocCheck,
-                "completion documentation quick doc popup javadoc ctrl q");
-        row(
-                p,
-                Category.EDITOR,
-                completion,
-                semanticHighlightCheck,
-                "semantic highlighting lsp tokens types parameters fields deprecated");
-        Label todoHl = section(p, tr("settings.section.todo"));
-        row(p, Category.EDITOR, todoHl, todoHighlightCheck, "todo fixme highlight patterns tags comments annotations");
-        row(p, Category.EDITOR, todoHl, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -1537,15 +1873,32 @@ public class SettingsWindow {
         refreshDictionaryList();
     }
 
-    private VBox applicationPage() {
-        VBox p = page(tr("settings.cat.application"));
+    /** GENERAL ▸ Interface: window-chrome visibility + the Simple/Zen minimal-UI modes. */
+    private VBox interfacePage() {
+        VBox p = page(tr("settings.cat.interface"));
         Label chrome = section(p, tr("settings.section.chrome"));
-        row(p, Category.APPLICATION, chrome, toolbarCheck, "toolbar buttons");
-        row(p, Category.APPLICATION, chrome, statusBarCheck, "status bar");
-        row(p, Category.APPLICATION, chrome, tabBarCheck, "tab bar tabs");
-        row(p, Category.APPLICATION, chrome, breadcrumbCheck, "breadcrumb file path");
-        row(p, Category.APPLICATION, chrome, simpleModeCheck, "simple minimal ui mode chrome distraction");
-        p.getChildren().add(note(tr("settings.simpleMode.note")));
+        row(p, Category.INTERFACE, chrome, toolbarCheck, "toolbar buttons chrome");
+        row(p, Category.INTERFACE, chrome, statusBarCheck, "status bar chrome");
+        row(p, Category.INTERFACE, chrome, tabBarCheck, "tab bar tabs chrome");
+        row(p, Category.INTERFACE, chrome, breadcrumbCheck, "breadcrumb file path chrome");
+        row(p, Category.INTERFACE, chrome, toolStripeCheck, "tool stripe tool windows buttons show hide");
+        Label stripeNote = note(tr("settings.toolWindows.stripeNote"));
+        stripeNote.setWrapText(true);
+        stripeNote.setMaxWidth(440);
+        row(p, Category.INTERFACE, chrome, stripeNote, "tool stripe tool windows precedence");
+        Label modes = section(p, tr("settings.section.modes"));
+        row(p, Category.INTERFACE, modes, simpleModeCheck, "simple minimal ui mode chrome distraction");
+        Label simpleNote = note(tr("settings.simpleMode.note"));
+        simpleNote.setWrapText(true);
+        simpleNote.setMaxWidth(440);
+        row(p, Category.INTERFACE, modes, simpleNote, "simple minimal ui mode");
+        row(p, Category.INTERFACE, modes, zenCheck, "zen distraction free focus mode");
+        return p;
+    }
+
+    /** GENERAL ▸ Workspace: project + personal-notes features and local file history. */
+    private VBox workspacePage() {
+        VBox p = page(tr("settings.cat.workspace"));
         Label features = section(p, tr("settings.section.features"));
         Label projectsInfo = new Label("ⓘ");
         projectsInfo.getStyleClass().add("info-badge");
@@ -1555,42 +1908,105 @@ public class SettingsWindow {
         Tooltip.install(projectsInfo, projectsTip);
         HBox projectsRow = new HBox(6, projectsCheck, projectsInfo);
         projectsRow.setAlignment(Pos.CENTER_LEFT);
-        row(p, Category.APPLICATION, features, projectsRow, "projects workspace folder");
-        row(p, Category.APPLICATION, features, notesCheck, "personal notes annotations enable feature");
-        row(p, Category.APPLICATION, features, zenCheck, "zen distraction free focus");
+        row(p, Category.WORKSPACE, features, projectsRow, "projects workspace folder");
+        row(p, Category.WORKSPACE, features, projectHiddenCheck, "project tree hidden dot files folders show");
+        row(p, Category.WORKSPACE, features, notesCheck, "personal notes annotations enable feature");
         Label history = section(p, tr("settings.section.localHistory"));
         row(
                 p,
-                Category.APPLICATION,
+                Category.WORKSPACE,
                 history,
                 localHistoryCheck,
                 "local file history snapshot version revision restore undo");
         row(
                 p,
-                Category.APPLICATION,
+                Category.WORKSPACE,
                 history,
                 labeled(tr("settings.history.maxPerFile"), historyMaxPerFileSpinner),
                 "local history max revisions per file limit retention");
         row(
                 p,
-                Category.APPLICATION,
+                Category.WORKSPACE,
                 history,
                 labeled(tr("settings.history.maxAgeDays"), historyMaxAgeSpinner),
                 "local history max age days retention prune");
         row(
                 p,
-                Category.APPLICATION,
+                Category.WORKSPACE,
                 history,
                 labeled(tr("settings.history.maxTotalMb"), historyMaxTotalSpinner),
                 "local history max total size megabytes project budget");
-        p.getChildren().add(note(tr("settings.history.note")));
-        Label templates = section(p, tr("settings.section.templates"));
+        Label histNote = note(tr("settings.history.note"));
+        histNote.setWrapText(true);
+        histNote.setMaxWidth(440);
+        row(p, Category.WORKSPACE, history, histNote, "local history retention");
+        return p;
+    }
+
+    /** EDITOR ▸ Code Completion: the autocomplete master + per-source sub-toggles, quick-doc, semantic tokens. */
+    private VBox completionPage() {
+        VBox p = page(tr("settings.cat.completion"));
+        Label completion = section(p, tr("settings.section.completion"));
+        row(p, Category.COMPLETION, completion, autocompleteCheck, "autocomplete completion suggestions enable popup");
+        HBox proseRow = new HBox(autocompleteProseCheck);
+        proseRow.setPadding(new Insets(0, 0, 0, 20));
+        row(p, Category.COMPLETION, completion, proseRow, "autocomplete prose words dictionary ghost text spelling");
+        HBox snippetsRow = new HBox(autocompleteSnippetsCheck);
+        snippetsRow.setPadding(new Insets(0, 0, 0, 20));
+        row(p, Category.COMPLETION, completion, snippetsRow, "autocomplete snippets popup templates");
+        HBox mermaidRow = new HBox(autocompleteMermaidCheck);
+        mermaidRow.setPadding(new Insets(0, 0, 0, 20));
+        row(p, Category.COMPLETION, completion, mermaidRow, "autocomplete mermaid diagram keywords snippets mmd");
         row(
                 p,
-                Category.APPLICATION,
-                templates,
-                labeled(tr("settings.authorName"), templateAuthorField),
-                "author name file templates new from template variable");
+                Category.COMPLETION,
+                completion,
+                completionDocCheck,
+                "completion documentation quick doc popup javadoc ctrl q");
+        row(
+                p,
+                Category.COMPLETION,
+                completion,
+                semanticHighlightCheck,
+                "semantic highlighting lsp tokens types parameters fields deprecated");
+        // Semantic highlighting comes from LSP: disable it (+ explain why) when LSP is off.
+        semanticHighlightCheck
+                .disableProperty()
+                .bind(lspCheck.selectedProperty().not());
+        Label semanticNote = note(tr("settings.semanticHighlight.lspNote"));
+        semanticNote.setWrapText(true);
+        semanticNote.setMaxWidth(440);
+        semanticNote.setPadding(new Insets(0, 0, 0, 20));
+        semanticNote.visibleProperty().bind(lspCheck.selectedProperty().not());
+        semanticNote.managedProperty().bind(semanticNote.visibleProperty());
+        p.getChildren().add(semanticNote); // not a search row, so filter() never fights the visibility binding
+        return p;
+    }
+
+    /** EDITOR ▸ TODO: in-editor TODO/FIXME highlighting + the per-pattern editor. */
+    private VBox todoPage() {
+        VBox p = page(tr("settings.cat.todo"));
+        Label todoHl = section(p, tr("settings.section.todo"));
+        row(p, Category.TODO, todoHl, todoHighlightCheck, "todo fixme highlight patterns tags comments annotations");
+        row(p, Category.TODO, todoHl, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
+        return p;
+    }
+
+    /** LANGUAGES & TOOLS ▸ Web: HTML live preview + the built-in HTTP client (merged). */
+    private VBox webPage() {
+        VBox p = page(tr("settings.cat.web"));
+        Label preview = section(p, tr("settings.section.htmlPreview"));
+        row(p, Category.WEB, preview, htmlPreviewCheck, "html live preview browser serve enable");
+        Label previewHint = note(tr("settings.htmlPreview.hint"));
+        previewHint.setWrapText(true);
+        previewHint.setMaxWidth(440);
+        row(p, Category.WEB, preview, previewHint, "html preview browser safari chrome firefox edge server localhost");
+        Label http = section(p, tr("settings.section.httpClient"));
+        row(p, Category.WEB, http, httpCheck, "http client rest request enable run send");
+        Label httpHint = note(tr("settings.httpClient.hint"));
+        httpHint.setWrapText(true);
+        httpHint.setMaxWidth(440);
+        row(p, Category.WEB, http, httpHint, "http rest request response built-in client");
         return p;
     }
 
@@ -1655,16 +2071,6 @@ public class SettingsWindow {
         hint.setWrapText(true);
         hint.setMaxWidth(440);
         row(p, Category.MERMAID, null, hint, "mermaid install npm mmdc maid cli");
-        return p;
-    }
-
-    private VBox httpClientPage() {
-        VBox p = page(tr("settings.cat.httpClient"));
-        row(p, Category.HTTP_CLIENT, null, httpCheck, "http client rest request enable run send");
-        Label hint = note(tr("settings.httpClient.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.HTTP_CLIENT, null, hint, "http rest request response built-in client");
         return p;
     }
 
@@ -1754,9 +2160,12 @@ public class SettingsWindow {
         TextField prefix = new TextField();
         prefix.setPromptText(tr("settings.snippet.prefixPrompt"));
         TextField description = new TextField();
-        javafx.scene.control.TextArea body = new javafx.scene.control.TextArea();
-        body.setPrefRowCount(18);
-        body.getStyleClass().add("snippet-body");
+        CodeArea body = new CodeArea();
+        body.getStyleClass().addAll("editor-area", "snippet-body");
+        body.setWrapText(true);
+        body.setPrefHeight(360);
+        installEmacsKeys(body); // basic C-a/C-e/C-f/C-b/C-n/C-p/M-f/M-b/C-d/C-k in the settings scene
+        body.plainTextChanges().subscribe(c -> highlightSnippetBody(body, currentSnippetLang));
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
         form.setHgap(8);
@@ -1766,6 +2175,7 @@ public class SettingsWindow {
         formRow(form, 2, tr("settings.snippet.description"), description);
         formRow(form, 3, tr("settings.snippet.body"), body);
         javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
+        javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
         form.setDisable(true);
         HBox.setHgrow(form, Priority.ALWAYS);
 
@@ -1818,7 +2228,7 @@ public class SettingsWindow {
                 name.setText(s == null ? "" : s.name());
                 prefix.setText(s == null ? "" : s.prefix());
                 description.setText(s == null ? "" : s.description());
-                body.setText(s == null ? "" : s.body());
+                body.replaceText(s == null ? "" : s.body()); // CodeArea has no setText
             } finally {
                 loadingSnippet = false;
             }
@@ -1944,11 +2354,19 @@ public class SettingsWindow {
 
     private VBox templatesPage() {
         VBox p = page(tr("settings.cat.templates"));
-        row(p, Category.TEMPLATES, null, templatesEditor(), "templates file new from template scaffold bundled");
+        Label author = section(p, tr("settings.section.templates"));
+        row(
+                p,
+                Category.TEMPLATES,
+                author,
+                labeled(tr("settings.authorName"), templateAuthorField),
+                "author name file templates new from template variable");
+        Label list = section(p, tr("settings.section.templatesList"));
+        row(p, Category.TEMPLATES, list, templatesEditor(), "templates file new from template scaffold bundled");
         Label help = note(tr("settings.template.help"));
         help.setWrapText(true);
         help.setMaxWidth(460);
-        row(p, Category.TEMPLATES, null, help, "templates help variable cursor placeholder");
+        row(p, Category.TEMPLATES, list, help, "templates help variable cursor placeholder");
         return p;
     }
 
@@ -1988,9 +2406,14 @@ public class SettingsWindow {
         language.setPromptText(tr("settings.template.languagePrompt"));
         TextField fileName = new TextField();
         fileName.setPromptText(tr("settings.template.fileNamePrompt"));
-        javafx.scene.control.TextArea body = new javafx.scene.control.TextArea();
-        body.setPrefRowCount(18);
-        body.getStyleClass().add("snippet-body");
+        CodeArea body = new CodeArea();
+        body.getStyleClass().addAll("editor-area", "snippet-body");
+        body.setWrapText(true);
+        body.setPrefHeight(360);
+        installEmacsKeys(body); // basic Emacs caret movement in the settings scene
+        body.plainTextChanges().subscribe(c -> highlightSnippetBody(body, language.getText()));
+        // Re-highlight when the template's language changes (even without a body edit).
+        language.textProperty().addListener((o, a, b) -> highlightSnippetBody(body, language.getText()));
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
         form.setHgap(8);
@@ -2002,6 +2425,7 @@ public class SettingsWindow {
         formRow(form, 4, tr("settings.template.fileName"), fileName);
         formRow(form, 5, tr("settings.template.body"), body);
         javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
+        javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
         form.setDisable(true);
 
         Label multiFileNote = note(tr("settings.template.multiFileNote"));
@@ -2080,7 +2504,7 @@ public class SettingsWindow {
                 description.setText(t == null ? "" : t.description());
                 language.setText(t == null ? "" : t.language());
                 fileName.setText(t == null || multi ? "" : t.fileName());
-                body.setText(t == null || multi ? "" : t.body());
+                body.replaceText(t == null || multi ? "" : t.body()); // CodeArea has no setText
                 multiFileNote.setVisible(multi);
                 multiFileNote.setManaged(multi);
             } finally {
@@ -2532,10 +2956,20 @@ public class SettingsWindow {
         HBox buttons = new HBox(6, add, remove);
         VBox left = new VBox(6, list, buttons);
 
+        // Explicit Save (edits also auto-save on Enter / focus-loss + combo/checkbox change).
+        Button save = new Button(tr("settings.save"));
+        save.disableProperty().bind(form.disabledProperty());
+        save.setOnAction(e -> commit.run());
+        HBox saveRow = new HBox(save);
+        saveRow.setAlignment(Pos.CENTER_RIGHT);
+        VBox right = new VBox(8, form, saveRow);
+        VBox.setVgrow(form, Priority.ALWAYS);
+        HBox.setHgrow(right, Priority.ALWAYS);
+
         if (!externalToolItems.isEmpty()) {
             list.getSelectionModel().select(0);
         }
-        HBox box = new HBox(12, left, form);
+        HBox box = new HBox(12, left, right);
         box.setAlignment(Pos.TOP_LEFT);
         return box;
     }
@@ -2578,6 +3012,9 @@ public class SettingsWindow {
 
     private void formRow(javafx.scene.layout.GridPane form, int rowIndex, String labelText, javafx.scene.Node field) {
         Label l = new Label(labelText);
+        // A Label's computed min width is just an ellipsis, so a tight GridPane collapses it to "…".
+        // Pin its min to its preferred (text) width so the field-row labels stay readable.
+        l.setMinWidth(Region.USE_PREF_SIZE);
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof javafx.scene.layout.Region r) {
@@ -2585,14 +3022,84 @@ public class SettingsWindow {
         }
     }
 
-    private VBox htmlPreviewPage() {
-        VBox p = page(tr("settings.cat.htmlPreview"));
-        row(p, Category.HTML_PREVIEW, null, htmlPreviewCheck, "html live preview browser serve enable");
-        Label hint = note(tr("settings.htmlPreview.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.HTML_PREVIEW, null, hint, "html preview browser safari chrome firefox edge server localhost");
-        return p;
+    /** Re-highlights a snippet/template body {@link CodeArea} for {@code languageName} (plain for global/unknown). */
+    private static void highlightSnippetBody(CodeArea area, String languageName) {
+        String text = area.getText();
+        IGrammar g = null;
+        if (languageName != null && !languageName.isBlank() && !"global".equals(languageName)) {
+            try {
+                g = GrammarRegistry.shared().forLanguageName(languageName);
+            } catch (RuntimeException ignored) {
+                // No grammar for this language: leave the body unstyled.
+            }
+        }
+        if (g == null) {
+            if (!text.isEmpty()) {
+                area.clearStyle(0, text.length());
+            }
+            return;
+        }
+        try {
+            area.setStyleSpans(0, TextMateHighlighter.compute(text, g));
+        } catch (RuntimeException ignored) {
+            // Tokenizer hiccup: keep the last styling rather than crash the editor.
+        }
+    }
+
+    /** Installs basic Emacs caret movement on a settings-scene {@link CodeArea} (no global KeyDispatcher there). */
+    private static void installEmacsKeys(CodeArea area) {
+        var clear = org.fxmisc.richtext.NavigationActions.SelectionPolicy.CLEAR;
+        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown();
+            boolean alt = e.isAltDown() && !e.isControlDown() && !e.isMetaDown() && !e.isShiftDown();
+            if (ctrl) {
+                switch (e.getCode()) {
+                    case A -> consume(e, () -> area.lineStart(clear));
+                    case E -> consume(e, () -> area.lineEnd(clear));
+                    case F -> consume(e, () -> area.nextChar(clear));
+                    case B -> consume(e, () -> area.previousChar(clear));
+                    case N -> consume(e, () -> emacsMoveLine(area, 1));
+                    case P -> consume(e, () -> emacsMoveLine(area, -1));
+                    case D ->
+                        consume(e, () -> {
+                            if (area.getCaretPosition() < area.getLength()) {
+                                area.deleteNextChar();
+                            }
+                        });
+                    case K -> consume(e, () -> emacsKillLine(area));
+                    default -> {}
+                }
+            } else if (alt) {
+                switch (e.getCode()) {
+                    case F -> consume(e, () -> area.wordBreaksForwards(1, clear));
+                    case B -> consume(e, () -> area.wordBreaksBackwards(1, clear));
+                    default -> {}
+                }
+            }
+        });
+    }
+
+    private static void consume(javafx.scene.input.KeyEvent e, Runnable action) {
+        action.run();
+        e.consume();
+    }
+
+    private static void emacsMoveLine(CodeArea area, int delta) {
+        int target = area.getCurrentParagraph() + delta;
+        if (target < 0 || target >= area.getParagraphs().size()) {
+            return;
+        }
+        area.moveTo(target, Math.min(area.getCaretColumn(), area.getParagraphLength(target)));
+    }
+
+    private static void emacsKillLine(CodeArea area) {
+        int par = area.getCurrentParagraph();
+        if (area.getCaretColumn() < area.getParagraphLength(par)) {
+            area.lineEnd(org.fxmisc.richtext.NavigationActions.SelectionPolicy.EXTEND);
+            area.replaceSelection("");
+        } else if (area.getCaretPosition() < area.getLength()) {
+            area.deleteNextChar(); // at end-of-line: join the next line up
+        }
     }
 
     private VBox mcpPage() {
@@ -3357,13 +3864,7 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.toolWindows"));
         Label hint = note(tr("settings.toolWindows.hint"));
         p.getChildren().add(hint);
-
-        // Show/hide the tool stripes (UI only). Takes precedence over the per-window toggles below.
-        p.getChildren().add(toolStripeCheck);
-        p.getChildren().add(note(tr("settings.toolWindows.stripeNote")));
-
-        // Project tree: show hidden (dot) files/folders.
-        p.getChildren().add(projectHiddenCheck);
+        // The tool-stripe toggle now lives on the Interface page; "show hidden files" on the Workspace page.
 
         List<Runnable> moveRefreshers = new ArrayList<>();
         Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
@@ -3547,14 +4048,6 @@ public class SettingsWindow {
         return p;
     }
 
-    private VBox placeholderPage(String title) {
-        VBox p = page(title);
-        Label soon = new Label(tr("settings.comingSoon"));
-        soon.getStyleClass().add("settings-coming-soon");
-        p.getChildren().add(soon);
-        return p;
-    }
-
     // --- page helpers ---
 
     private VBox page(String title) {
@@ -3594,6 +4087,12 @@ public class SettingsWindow {
         return l;
     }
 
+    private static Region spacer() {
+        Region r = new Region();
+        HBox.setHgrow(r, Priority.ALWAYS);
+        return r;
+    }
+
     // --- search ----------------------------------------------------------------------------------
 
     /** Whether {@code keywords} matches the search {@code query} (case-insensitive substring). Pure. */
@@ -3606,8 +4105,23 @@ public class SettingsWindow {
                         .contains(query.toLowerCase(Locale.ROOT).strip());
     }
 
+    /** The sidebar's row model: each group's header followed by its categories, in declaration order. */
+    private static List<Object> sidebarItems() {
+        List<Object> items = new ArrayList<>();
+        Group current = null;
+        for (Category c : Category.values()) {
+            if (c.group != current) {
+                items.add(c.group);
+                current = c.group;
+            }
+            items.add(c);
+        }
+        return items;
+    }
+
     private void filter(String query) {
         searchHiddenCats.clear();
+        searchHiddenGroups.clear();
         boolean searching = query != null && !query.isBlank();
         if (!searching) {
             rows.forEach(r -> setShown(r.node(), true));
@@ -3629,12 +4143,19 @@ public class SettingsWindow {
         }
         sectionLabels.forEach(s -> setShown(s, visibleSections.contains(s)));
         for (Category c : Category.values()) {
-            if (c.placeholder || !matched.contains(c)) {
+            if (!matched.contains(c)) {
                 searchHiddenCats.add(c);
             }
         }
+        for (Group g : Group.values()) {
+            boolean any = matched.stream().anyMatch(c -> c.group == g);
+            if (!any) {
+                searchHiddenGroups.add(g);
+            }
+        }
         sidebar.refresh();
-        Category sel = sidebar.getSelectionModel().getSelectedItem();
+        Object selObj = sidebar.getSelectionModel().getSelectedItem();
+        Category sel = (selObj instanceof Category c) ? c : null;
         if (!matched.isEmpty() && (sel == null || !matched.contains(sel))) {
             for (Category c : Category.values()) {
                 if (matched.contains(c)) {
@@ -3650,17 +4171,31 @@ public class SettingsWindow {
         node.setManaged(shown);
     }
 
-    private final class CategoryCell extends ListCell<Category> {
+    /** Renders a sidebar row: a {@link Group} as a non-selectable header, a {@link Category} as an item. */
+    private final class CategoryCell extends ListCell<Object> {
         @Override
-        protected void updateItem(Category item, boolean empty) {
+        protected void updateItem(Object item, boolean empty) {
             super.updateItem(item, empty);
+            getStyleClass().removeAll("settings-group-header", "settings-sidebar-item");
             if (empty || item == null) {
                 setText(null);
                 setDisable(false);
+                setMouseTransparent(false);
                 return;
             }
-            setText(item.display);
-            setDisable(searchHiddenCats.contains(item));
+            if (item instanceof Group g) {
+                setText(g.display);
+                getStyleClass().add("settings-group-header");
+                setMouseTransparent(true); // headers can't be selected
+                setFocusTraversable(false);
+                setDisable(searchHiddenGroups.contains(g));
+            } else {
+                Category c = (Category) item;
+                setText(c.display);
+                getStyleClass().add("settings-sidebar-item");
+                setMouseTransparent(false);
+                setDisable(searchHiddenCats.contains(c));
+            }
         }
     }
 

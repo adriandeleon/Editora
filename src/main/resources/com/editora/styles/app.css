@@ -1720,3 +1720,20 @@
 .remote-panel .remote-name { -fx-font-weight: bold; }
 .remote-panel .remote-id { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
 .remote-panel .remote-empty { -fx-text-fill: -color-fg-muted; -fx-padding: 8; }
+
+/* Settings: grouped sidebar — non-selectable group headers + indented category items. */
+.settings-sidebar .list-cell.settings-group-header {
+    -fx-font-size: 10.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 13 12 3 12;
+    -fx-opacity: 0.75;
+}
+.settings-sidebar .list-cell.settings-group-header:filled:selected {
+    -fx-background-color: transparent;
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-weight: bold;
+}
+.settings-sidebar .list-cell.settings-sidebar-item {
+    -fx-padding: 6 12 6 24;
+}

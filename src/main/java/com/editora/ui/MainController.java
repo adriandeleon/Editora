@@ -522,6 +522,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 resetAllShortcuts();
             }
         });
+        this.settingsWindow.setMacrosChangedHandler(
+                this::refreshSavedMacroCommandsAllWindows); // Macros page edits → re-register commands everywhere
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
