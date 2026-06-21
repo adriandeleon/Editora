@@ -285,6 +285,16 @@ public class FindReplaceBar extends HBox {
         replaceField.requestFocus();
     }
 
+    /** Replaces the current match (palette command). */
+    public void replaceCurrentMatch() {
+        replaceCurrent();
+    }
+
+    /** Replaces every match (palette command). */
+    public void replaceAllMatches() {
+        replaceAll();
+    }
+
     private void navigate(boolean forward) {
         EditorBuffer buffer = activeBuffer.get();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();

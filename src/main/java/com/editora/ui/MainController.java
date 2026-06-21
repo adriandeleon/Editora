@@ -371,6 +371,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private GitPanel gitPanel;
     private ToolWindow commitToolWindow;
     private GitLogPanel gitLogPanel;
+    private GitLogPanel.Actions gitLogOps; // reused by the git.log.* palette commands (act on the selected commit)
     private ToolWindow gitLogToolWindow;
     /**
      * Tool windows contributed by plugins. They act on the active editor (via {@code ActiveEditor}), so —
@@ -2330,7 +2331,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         gitPanel.setOnClone(this::gitClone);
         commitToolWindow = new ToolWindow(
                 "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
-        gitLogPanel = new GitLogPanel(gitLogActions());
+        gitLogPanel = new GitLogPanel(gitLogOps = gitLogActions());
         gitLogToolWindow = new ToolWindow(
                 "gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM, Icons::gitLog, gitLogPanel, "tool.gitLog");
         historyService = new com.editora.history.HistoryService(
@@ -5132,6 +5133,29 @@ public class MainController implements com.editora.mcp.McpBridge {
         };
     }
 
+    /** Runs {@code op} on the Git Log panel's selected commit, or reports that none is selected. Git-gated. */
+    private void withSelectedCommit(java.util.function.Consumer<String> op) {
+        git.ifEnabled(() -> {
+            String hash = gitLogPanel.selectedHash();
+            if (hash == null || hash.isBlank()) {
+                setStatus(tr("status.git.noCommitSelected"));
+                return;
+            }
+            op.accept(hash);
+        });
+    }
+
+    /** Asks for the reset mode (soft/mixed/hard) then resets the selected commit (the {@code git.log.reset} command). */
+    private void promptGitReset(String hash) {
+        javafx.scene.control.ChoiceDialog<String> d =
+                new javafx.scene.control.ChoiceDialog<>("mixed", java.util.List.of("soft", "mixed", "hard"));
+        d.initOwner(stage);
+        d.setTitle(tr("dialog.gitReset.title"));
+        d.setHeaderText(null);
+        d.setContentText(tr("dialog.gitReset.content"));
+        d.showAndWait().ifPresent(mode -> gitLogOps.reset(hash, mode));
+    }
+
     /**
      * Opens the Git Log tool window with the given filter (null = whole repo). A fresh open triggers the
      * load via the tool-window state listener; if the window is already open (no state change, so no
@@ -6364,6 +6388,78 @@ public class MainController implements com.editora.mcp.McpBridge {
                 "add",
                 "--",
                 git.repoRoot().relativize(file.toAbsolutePath()).toString());
+    }
+
+    /** Unstages the active file (palette `git.unstageFile`; mirrors {@link #gitStageActiveFile}). */
+    private void gitUnstageActiveFile() {
+        EditorBuffer b = activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file == null || git.repoRoot() == null) {
+            setStatus(tr("status.noGitFile"));
+            return;
+        }
+        gitOp(
+                "Unstaged " + file.getFileName(),
+                "reset",
+                "-q",
+                "HEAD",
+                "--",
+                git.repoRoot().relativize(file.toAbsolutePath()).toString());
+    }
+
+    /** Discards the active file's changes (palette `git.discardFile`; confirms first, tracked-file revert). */
+    private void gitDiscardActiveFile() {
+        EditorBuffer b = activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file == null || git.repoRoot() == null) {
+            setStatus(tr("status.noGitFile"));
+            return;
+        }
+        discardChanges(git.repoRoot().relativize(file.toAbsolutePath()).toString(), false);
+    }
+
+    /** Runs {@code op} on the active tab's diff viewer, or reports that no diff is focused. */
+    private void withActiveDiff(java.util.function.Consumer<DiffViewerPane> op) {
+        Tab t = tabPane.getSelectionModel().getSelectedItem();
+        if (t != null && t.getUserData() instanceof DiffViewerPane dp) {
+            op.accept(dp);
+        } else {
+            setStatus(tr("status.diff.noActiveDiff"));
+        }
+    }
+
+    private void findNextMatch() {
+        if (findBar.isShown()) {
+            findBar.findNext();
+        } else {
+            findBar.show(false);
+        }
+    }
+
+    private void findPreviousMatch() {
+        if (findBar.isShown()) {
+            findBar.findPrevious();
+        } else {
+            findBar.show(true);
+        }
+    }
+
+    private void findReplaceCurrentMatch() {
+        if (findBar.isShown()) {
+            findBar.replaceCurrentMatch();
+        } else {
+            findBar.show(false);
+            findBar.focusReplace();
+        }
+    }
+
+    private void findReplaceAllMatches() {
+        if (findBar.isShown()) {
+            findBar.replaceAllMatches();
+        } else {
+            findBar.show(false);
+            findBar.focusReplace();
+        }
     }
 
     /** Opens the Git tool window and focuses the commit message box. */
@@ -12075,6 +12171,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registerSavedMacroCommands(); // one macro.run.<slug> per persisted macro (palette- + key-bindable)
         // --- External Tools ---
         registry.register(Command.of("externalTool.run", this::runExternalToolPicker));
+        registry.register(Command.of("externalTool.clearOutput", () -> externalToolPanel.clearConsole()));
         registry.register(Command.of("externalTool.rerunLast", this::rerunLastExternalTool));
         registerExternalToolCommands(); // one externalTool.run.<slug> per enabled tool (palette- + key-bindable)
         // Project commands no-op when project support is disabled (fully gated).
@@ -12500,6 +12597,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("file.runWithArgs", this::runActiveFileWithArgs));
         registry.register(Command.of("run.rerun", this::rerunLast));
         registry.register(Command.of("run.stop", this::stopRun));
+        registry.register(Command.of("run.clear", () -> runPanel.clearConsole()));
         registry.register(Command.of("tool.run", () -> toolWindows.toggle(runToolWindow)));
         registry.register(Command.of("tool.externalTools", () -> toolWindows.toggle(externalToolToolWindow)));
         // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
@@ -12519,6 +12617,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("debug.pause", () -> ifDebug(dapManager::pause)));
         registry.register(Command.of("debug.runToCursor", () -> ifDebug(this::debugRunToCursor)));
         registry.register(Command.of("debug.jumpToLine", () -> ifDebug(this::debugJumpToLine)));
+        // Debugger data inspection (parity with the Debug panel's own controls).
+        registry.register(Command.of(
+                "debug.evaluate",
+                () -> ifDebug(() -> {
+                    toolWindows.open(debugToolWindow);
+                    debugPanel.focusEvaluate();
+                })));
+        registry.register(Command.of("debug.addWatch", () -> ifDebug(debugPanel::addWatch)));
+        registry.register(Command.of("debug.setValue", () -> ifDebug(debugPanel::setSelectedValue)));
         registry.register(Command.of("debug.stepOver", () -> ifDebug(dapManager::stepOver)));
         registry.register(Command.of("debug.stepInto", () -> ifDebug(dapManager::stepInto)));
         registry.register(Command.of("debug.stepOut", () -> ifDebug(dapManager::stepOut)));
@@ -12553,11 +12660,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("git.clone", () -> git.ifEnabled(this::gitClone)));
         registry.register(Command.of("git.commit", () -> git.ifEnabled(this::gitCommitFocus)));
         registry.register(Command.of("git.stageFile", () -> git.ifEnabled(this::gitStageActiveFile)));
+        registry.register(Command.of("git.unstageFile", () -> git.ifEnabled(this::gitUnstageActiveFile)));
+        registry.register(Command.of("git.discardFile", () -> git.ifEnabled(this::gitDiscardActiveFile)));
         registry.register(Command.of("git.switchBranch", () -> git.ifEnabled(this::chooseBranch)));
         registry.register(Command.of("git.newBranch", () -> git.ifEnabled(this::newBranch)));
         registry.register(Command.of("git.fetch", () -> git.ifEnabled(() -> gitSync("Fetch", "fetch", "--all"))));
         registry.register(Command.of("git.pull", () -> git.ifEnabled(() -> gitSync("Pull", "pull", "--ff-only"))));
         registry.register(Command.of("git.push", () -> git.ifEnabled(this::gitPush)));
+        // Git Log: act on the commit selected in the Git Log tool window (parity with its right-click menu).
+        registry.register(Command.of("git.log.checkout", () -> withSelectedCommit(gitLogOps::checkout)));
+        registry.register(Command.of("git.log.newBranch", () -> withSelectedCommit(gitLogOps::newBranch)));
+        registry.register(Command.of("git.log.revert", () -> withSelectedCommit(gitLogOps::revert)));
+        registry.register(Command.of("git.log.cherryPick", () -> withSelectedCommit(gitLogOps::cherryPick)));
+        registry.register(Command.of("git.log.reset", () -> withSelectedCommit(this::promptGitReset)));
+        registry.register(Command.of("git.log.copyHash", () -> withSelectedCommit(gitLogOps::copyHash)));
         registry.register(Command.of(
                 "git.refresh",
                 () -> git.ifEnabled(() -> {
@@ -12579,6 +12695,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Diff viewer + merge. The git-backed diffs are ifGit-gated; "Compare With…" and "Resolve
         // Conflicts" work on any file (no repo needed), so they are not gated.
         registry.register(Command.of("diff.vsHead", () -> git.ifEnabled(this::diffActiveVsHead)));
+        // Diff viewer toolbar actions (act on the active diff tab).
+        registry.register(Command.of("diff.toggleView", () -> withActiveDiff(DiffViewerPane::toggleViewMode)));
+        registry.register(Command.of("diff.applyAll", () -> withActiveDiff(DiffViewerPane::applyAllChanges)));
+        registry.register(Command.of("diff.nextChange", () -> withActiveDiff(DiffViewerPane::goNextChange)));
+        registry.register(Command.of("diff.previousChange", () -> withActiveDiff(DiffViewerPane::goPreviousChange)));
         registry.register(Command.of("diff.compareWith", this::compareActiveWithFile));
         registry.register(Command.of("diff.vsCommit", () -> git.ifEnabled(this::diffActiveVsCommit)));
         registry.register(Command.of("merge.resolve", this::resolveConflicts));
@@ -12587,6 +12708,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("find.show", this::findShowOrNext));
         registry.register(Command.of("find.showBackward", this::findShowOrPrevious));
         registry.register(Command.of("find.replace", this::showReplace));
+        registry.register(Command.of("find.next", this::findNextMatch));
+        registry.register(Command.of("find.previous", this::findPreviousMatch));
+        registry.register(Command.of("find.replaceCurrent", this::findReplaceCurrentMatch));
+        registry.register(Command.of("find.replaceAll", this::findReplaceAllMatches));
         registry.register(Command.of("edit.cut", this::onCut));
         registry.register(Command.of("edit.copy", this::onCopy));
         registry.register(Command.of("edit.paste", this::onPaste));

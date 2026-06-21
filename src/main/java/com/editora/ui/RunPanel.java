@@ -58,7 +58,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
             }
         });
         clearButton.setText(tr("run.clear"));
-        clearButton.setOnAction(e -> output.clear());
+        clearButton.setOnAction(e -> clearConsole());
 
         HBox header = new HBox(8, status, spacer(), clearButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -126,6 +126,11 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         status.setText(tr("run.idle"));
         stopButton.setDisable(true);
         input.setDisable(true);
+    }
+
+    /** Clears the console output (the Clear button + the {@code run.clear} palette command). */
+    public void clearConsole() {
+        output.clear();
     }
 
     /** A run started: clears the console, shows the command, enables Stop + the stdin field. */
