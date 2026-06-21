@@ -1737,3 +1737,12 @@
 .settings-sidebar .list-cell.settings-sidebar-item {
     -fx-padding: 6 12 6 24;
 }
+
+/* Snippet/Template body code editor in Settings: frame it like the form's text fields. */
+.snippet-body {
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 2;
+}
