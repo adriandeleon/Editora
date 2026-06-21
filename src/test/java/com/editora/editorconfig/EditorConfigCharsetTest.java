@@ -44,6 +44,17 @@ class EditorConfigCharsetTest {
     }
 
     @Test
+    void decodeKeepsContentWhenBomCharsetButNoBomOnDisk() {
+        // .editorconfig may declare charset=utf-8-bom for a file that doesn't actually have a BOM yet.
+        // decode must NOT strip the first 3 bytes in that case (that silently truncated real content).
+        byte[] noBom = "héllo".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals("héllo", EditorConfigCharset.decode(noBom, "utf-8-bom"));
+        // utf-16 declared but bytes are bare (no FF FE / FE FF) — first char must survive.
+        byte[] le = "A".getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+        assertEquals("A", EditorConfigCharset.decode(le, "utf-16le"));
+    }
+
+    @Test
     void displayNames() {
         assertEquals("UTF-8", EditorConfigCharset.displayName("utf-8"));
         assertEquals("UTF-8 BOM", EditorConfigCharset.displayName("utf-8-bom"));

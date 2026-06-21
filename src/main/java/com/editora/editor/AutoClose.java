@@ -61,7 +61,7 @@ public final class AutoClose {
         if (hasSelection && (isOpener(typed) || isQuote(typed))) {
             return new Decision(Action.WRAP_SELECTION, closerFor(typed));
         }
-        if ((isCloser(typed) || isQuote(typed)) && next == typed) {
+        if (!hasSelection && (isCloser(typed) || isQuote(typed)) && next == typed) {
             return new Decision(Action.SKIP_OVER, typed); // type over the existing closer/quote
         }
         if (isOpener(typed)) {

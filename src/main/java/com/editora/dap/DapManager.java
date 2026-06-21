@@ -434,15 +434,15 @@ public final class DapManager implements DapClient.Host {
             try {
                 Path out = java.nio.file.Files.createTempDirectory("editora-dap-");
                 out.toFile().deleteOnExit();
-                List<String> cmd =
-                        ProcessRunner.resolveExecutable(List.of("javac", "-g", "-d", out.toString(), file.toString()));
-                ProcessBuilder pb = new ProcessBuilder(cmd);
-                ProcessRunner.applyStandardEnv(pb);
-                pb.redirectErrorStream(true);
-                Process p = pb.start();
-                String log = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                if (p.waitFor() != 0) {
-                    fail("Compilation failed:\n" + log.strip());
+                // Route through ProcessRunner.run so the compile is bounded by a hard timeout (a hung javac
+                // would otherwise pin the single-threaded `io` executor and block every later DAP start/detect)
+                // and both pipes are drained concurrently (no fill-the-buffer deadlock).
+                ProcessRunner.Result r = ProcessRunner.run(
+                        null,
+                        java.time.Duration.ofSeconds(60),
+                        List.of("javac", "-g", "-d", out.toString(), file.toString()));
+                if (!r.ok()) {
+                    fail("Compilation failed:\n" + (r.out() + "\n" + r.err()).strip());
                     return;
                 }
                 String javaExec = firstOrNull(ProcessRunner.resolveExecutable(List.of("java")));

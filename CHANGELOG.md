@@ -58,6 +58,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files deleted in Editora or that already had edit history — not files deleted by an external tool that were
   never opened.)
 
+### Fixed
+
+- **EditorConfig BOM charset no longer truncates files on open.** When a project's `.editorconfig` declared `charset = utf-8-bom` (or `utf-16le`/`utf-16be`) but a file on disk had no actual byte-order mark, the first 2–3 content bytes were silently dropped on open — and saving re-added a BOM, corrupting the file. `EditorConfigCharset.decode` now strips the BOM only when the bytes really start with it.
+- **Typing a closing bracket over a selection no longer silently deletes it.** With text selected, typing `)`/`]`/`}` where the next character was that same bracket "typed over" it and discarded the selection without inserting anything. It now replaces the selection like normal typing. (`AutoClose.decide` gates skip-over on having no selection.)
+- **Regex "Replace All" now respects the whole-word toggle.** With both *Regex* and *Whole word* enabled, Replace All replaced every unbounded occurrence instead of the `\b`-bounded matches it had highlighted and counted. It now uses the same `SearchMatcher.compileRegex` as the search/highlight path.
+- **A hung `javac` can no longer freeze debugging.** The loose-Java compile-and-debug fallback now runs the compile through `ProcessRunner` with a 60-second timeout (and concurrent pipe draining), so a stuck compiler can't pin the single-threaded debug-adapter executor and block every later debug start.
+
 ### Changed
 
 - **Headless FX tests now use JavaFX 26's built-in headless platform.** The `@Tag("fx")` harness boots over

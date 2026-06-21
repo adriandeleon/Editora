@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import javafx.animation.PauseTransition;
 import javafx.geometry.Pos;
@@ -354,7 +353,9 @@ public class FindReplaceBar extends HBox {
                 status.accept(tr("find.badRegex", err));
                 return;
             }
-            Matcher m = Pattern.compile(query, caseSensitive.isSelected() ? 0 : Pattern.CASE_INSENSITIVE)
+            // Reuse the shared compiler so case + whole-word match the highlighted/counted matches
+            // (it wraps whole-word as \b(?:…)\b with a non-capturing group, preserving user group numbers).
+            Matcher m = SearchMatcher.compileRegex(query, caseSensitive.isSelected(), wholeWord.isSelected())
                     .matcher(text);
             StringBuffer sb = new StringBuffer();
             count = 0;

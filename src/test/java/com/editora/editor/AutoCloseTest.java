@@ -46,6 +46,16 @@ class AutoCloseTest {
     }
 
     @Test
+    void closerDoesNotSkipOverWithSelection() {
+        // With a selection, a typed closer must NOT skip-over (that silently dropped the selection);
+        // it falls through to NONE so RichTextFX replaces the selection normally.
+        assertEquals(Action.NONE, act('}', 'b', '}', true));
+        assertEquals(Action.NONE, act(')', 'x', ')', true));
+        // A quote with a selection still wraps it (the wrap branch runs before skip-over).
+        assertEquals(Action.WRAP_SELECTION, act('"', 'b', '"', true));
+    }
+
+    @Test
     void quotePairingHeuristics() {
         assertEquals(Action.INSERT_PAIR, act('"', ' ', ' ', false)); // open space → pair
         assertEquals(Action.INSERT_PAIR, act('"', '(', (char) 0, false));

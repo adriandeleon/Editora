@@ -66,10 +66,15 @@ public final class EditorConfigCharset {
         return null;
     }
 
-    /** Decodes {@code bytes} as {@code name}, dropping a leading BOM for BOM charsets. */
+    /**
+     * Decodes {@code bytes} as {@code name}, dropping a leading BOM only when the bytes <em>actually</em>
+     * begin with this charset's BOM. A BOM charset (e.g. {@code utf-8-bom}) declared in {@code .editorconfig}
+     * does not guarantee the on-disk file has a BOM, so skipping unconditionally would silently drop the
+     * first 2-3 real content bytes of a BOM-less file.
+     */
     public static String decode(byte[] bytes, String name) {
-        int skip = writesBom(name) ? bomFor(name).length : 0;
-        skip = Math.min(skip, bytes.length);
+        byte[] bom = bomFor(name);
+        int skip = bom.length > 0 && startsWith(bytes, bom) ? bom.length : 0;
         return new String(bytes, skip, bytes.length - skip, charsetFor(name));
     }
 
