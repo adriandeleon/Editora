@@ -437,6 +437,7 @@ public class EditorBuffer implements TabContent {
     private boolean spellCheckOn;
     private String spellLanguage = "en_US";
     private java.util.Set<String> spellUserWords = new java.util.HashSet<>();
+    private boolean spellUserWordsEnabled = true; // honor the personal dictionary (Settings.personalDictionary)
     private java.util.function.Consumer<String> onAddToDictionary = w -> {};
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
     private long highlightGen;
@@ -1013,6 +1014,7 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setLeftAnchor(spellOverlay, 0d);
         AnchorPane.setRightAnchor(spellOverlay, Minimap.WIDTH);
         spellChecker = new SpellChecker(spellLanguage, spellUserWords);
+        spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
         spellOverlay.setChecker(spellChecker);
         spellOverlay.setProseMode(isProse());
         spellOverlay.setMarkdown(isMarkdown()); // skip fenced ``` code blocks from spell check
@@ -3964,7 +3966,17 @@ public class EditorBuffer implements TabContent {
         }
         this.spellUserWords = words;
         spellChecker = new SpellChecker(spellLanguage, spellUserWords);
+        spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
         spellOverlay.setChecker(spellChecker);
+    }
+
+    /** Enables/disables the personal dictionary (user words); off re-flags those words. Repaints squiggles. */
+    public void setUserDictionaryEnabled(boolean enabled) {
+        spellUserWordsEnabled = enabled;
+        if (spellChecker != null) {
+            spellChecker.setUserWordsEnabled(enabled);
+            spellOverlay.refresh();
+        }
     }
 
     /** Called when the user picks "Add to Dictionary"; the controller persists the word. */
