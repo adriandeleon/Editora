@@ -187,7 +187,7 @@ public class SettingsWindow {
     private CheckBox logViewerCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
-    private javafx.scene.layout.FlowPane markdownLintRulesBox;
+    private VBox markdownLintRulesBox;
     /** Working copy of the External Tools list, edited live by the master-detail page. */
     private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
             javafx.collections.FXCollections.observableArrayList();
@@ -1636,7 +1636,7 @@ public class SettingsWindow {
     /** The Markdown-lint per-rule checklist: one checkbox per rule (checked = enabled). Toggling writes the
      *  disabled rule codes to {@code Settings.markdownLintDisabledRules} and applies live. */
     private javafx.scene.Node markdownLintRulesEditor() {
-        markdownLintRulesBox = new javafx.scene.layout.FlowPane(12, 4);
+        markdownLintRulesBox = new VBox(4);
         rebuildMarkdownLintRules();
         return markdownLintRulesBox;
     }
@@ -1652,11 +1652,21 @@ public class SettingsWindow {
                 disabled.add(c.strip().toUpperCase(java.util.Locale.ROOT));
             }
         }
+        // One row per rule: a checkbox whose label is the rule code (fixed-width so codes align) followed by
+        // a muted one-line description — a readable vertical list instead of a wrapping grid of bare codes.
         for (com.editora.editor.MarkdownLint.Rule rule : com.editora.editor.MarkdownLint.RULES) {
             String code = rule.code();
-            CheckBox cb = new CheckBox(code);
+            Label codeLabel = new Label(code);
+            codeLabel.getStyleClass().add("md-lint-code");
+            codeLabel.setMinWidth(58);
+            Label desc = new Label(tr("mdlint.rule." + code));
+            desc.getStyleClass().add("settings-hint");
+            HBox label = new HBox(8, codeLabel, desc);
+            label.setAlignment(Pos.CENTER_LEFT);
+
+            CheckBox cb = new CheckBox();
+            cb.setGraphic(label);
             cb.setSelected(!disabled.contains(code));
-            cb.setTooltip(new Tooltip(tr("mdlint.rule." + code)));
             cb.selectedProperty().addListener((o, was, on) -> {
                 java.util.List<String> list =
                         new java.util.ArrayList<>(config.getSettings().getMarkdownLintDisabledRules());

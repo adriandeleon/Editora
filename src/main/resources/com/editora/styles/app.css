@@ -1244,6 +1244,11 @@
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 8 0 0 0;
 }
+/* Markdown-lint per-rule list: the rule code (e.g. MD009) beside its muted description. */
+.md-lint-code {
+    -fx-font-weight: bold;
+    -fx-font-family: monospace;
+}
 .settings-coming-soon {
     -fx-text-fill: -color-fg-muted;
     -fx-font-style: italic;
