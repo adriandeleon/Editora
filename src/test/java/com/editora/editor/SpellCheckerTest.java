@@ -145,4 +145,13 @@ class SpellCheckerTest {
         assertFalse(fr.isMisspelled("bonjour"));
         assertTrue(fr.isMisspelled("bonjouur"));
     }
+
+    @Test
+    void buildsBundledMexicanSpanish() {
+        assertTrue(SpellDictionaries.available().contains("es_MX"), "es_MX should be registered");
+        assumeTrue(SpellDictionaries.buildBlocking("es_MX").isPresent(), "es_MX dictionary should build");
+        SpellChecker es = new SpellChecker("es_MX", Set.of());
+        assertFalse(es.isMisspelled("hola"));
+        assertTrue(es.isMisspelled("holaa"));
+    }
 }

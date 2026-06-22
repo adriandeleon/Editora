@@ -29,7 +29,7 @@ public final class SpellDictionaries {
     private static final String BASE = "/com/editora/dictionaries/";
     /** Bundled language ids (folder names). Only permissively-licensed dictionaries are shipped
      *  (SCOWL for English; es/fr used under the Mozilla Public License). */
-    private static final List<String> AVAILABLE = List.of("en_US", "en_GB", "es", "fr");
+    private static final List<String> AVAILABLE = List.of("en_US", "en_GB", "es", "es_MX", "fr");
 
     private static final Map<String, Hunspell> CACHE = new ConcurrentHashMap<>();
     private static final Set<String> BUILDING = ConcurrentHashMap.newKeySet();
