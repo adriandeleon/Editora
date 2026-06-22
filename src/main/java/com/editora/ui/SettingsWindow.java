@@ -5080,6 +5080,7 @@ public class SettingsWindow {
             case "en_US" -> tr("spell.lang.en_US");
             case "en_GB" -> tr("spell.lang.en_GB");
             case "es" -> tr("spell.lang.es");
+            case "es_MX" -> tr("spell.lang.es_MX");
             case "fr" -> tr("spell.lang.fr");
             default -> id;
         };

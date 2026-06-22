@@ -203,8 +203,9 @@ Bundled Hunspell dictionaries (under src/main/resources/com/editora/dictionaries
         License: permissive (SCOWL / wordlist.sourceforge.net).
         http://wordlist.sourceforge.net
 
-    es — Spanish (RLA / LibreOffice). The dictionary is offered under
-        "GPL-3.0 OR LGPL-3.0 OR MPL-1.1"; Editora redistributes it under the
+    es, es_MX — Spanish, Spain (es) and Mexico (es_MX), from the RLA /
+        LibreOffice project (Santiago Bosio). The dictionaries are offered under
+        "GPL-3.0 OR LGPL-3.0 OR MPL-1.1"; Editora redistributes them under the
         Mozilla Public License, Version 1.1.
         https://www.mozilla.org/MPL/1.1/
 
