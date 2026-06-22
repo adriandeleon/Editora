@@ -112,8 +112,10 @@ Editora is built with the help of AI coding tools.
 - **Spell checking** — red wavy underlines on misspelled words, with right-click suggestions,
   Add-to-Dictionary, and Ignore. Source files only check comments and string literals; plaintext and
   Markdown are checked in full. Toggle via "View: Toggle Spell Check"; choose a dictionary per file
-  ("Spell Check: Set Language…", ships English en_US/en_GB, Spanish, and French). Pure-Java (Apache
-  Lucene Hunspell).
+  ("Spell Check: Set Language…", ships English en_US/en_GB, Spanish, and French). A bundled
+  **technical-terms dictionary** (`config`, `async`, `middleware`, `kubernetes`, …) keeps code-adjacent
+  prose from being flagged — toggle it in Settings → Spell Check (default on). Pure-Java (Apache Lucene
+  Hunspell).
 - **Code intelligence (LSP)** _(Beta)_ — language smarts via the Language Server Protocol, with **21 servers**
   auto-detected on `PATH` (Java/JDT LS, TypeScript/JavaScript, Python/Pyright, Go, Rust, C/C++/clangd,
   C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML).

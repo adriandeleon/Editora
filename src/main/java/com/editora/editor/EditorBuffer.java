@@ -438,6 +438,7 @@ public class EditorBuffer implements TabContent {
     private String spellLanguage = "en_US";
     private java.util.Set<String> spellUserWords = new java.util.HashSet<>();
     private boolean spellUserWordsEnabled = true; // honor the personal dictionary (Settings.personalDictionary)
+    private boolean spellTechnicalEnabled = true; // honor the technical dictionary (Settings.technicalDictionary)
     private java.util.function.Consumer<String> onAddToDictionary = w -> {};
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
     private long highlightGen;
@@ -1015,6 +1016,7 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setRightAnchor(spellOverlay, Minimap.WIDTH);
         spellChecker = new SpellChecker(spellLanguage, spellUserWords);
         spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
+        spellChecker.setTechnicalWordsEnabled(spellTechnicalEnabled);
         spellOverlay.setChecker(spellChecker);
         spellOverlay.setProseMode(isProse());
         spellOverlay.setMarkdown(isMarkdown()); // skip fenced ``` code blocks from spell check
@@ -3967,6 +3969,7 @@ public class EditorBuffer implements TabContent {
         this.spellUserWords = words;
         spellChecker = new SpellChecker(spellLanguage, spellUserWords);
         spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
+        spellChecker.setTechnicalWordsEnabled(spellTechnicalEnabled);
         spellOverlay.setChecker(spellChecker);
     }
 
@@ -3975,6 +3978,15 @@ public class EditorBuffer implements TabContent {
         spellUserWordsEnabled = enabled;
         if (spellChecker != null) {
             spellChecker.setUserWordsEnabled(enabled);
+            spellOverlay.refresh();
+        }
+    }
+
+    /** Enables/disables the bundled technical dictionary; off re-flags those terms. Repaints squiggles. */
+    public void setTechnicalDictionaryEnabled(boolean enabled) {
+        spellTechnicalEnabled = enabled;
+        if (spellChecker != null) {
+            spellChecker.setTechnicalWordsEnabled(enabled);
             spellOverlay.refresh();
         }
     }

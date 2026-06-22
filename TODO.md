@@ -170,7 +170,7 @@ A backlog of planned features and improvements. Unordered within each section.
       Undo History tool window (`M-g u`: in-session checkpoints, jump-to-restore). *The undo tree (branch
       recovery) was deliberately not pursued — it would mean replacing RichTextFX's linear undo engine for a
       niche payoff; revisit if there's demand.*
-- [x] Spell check support — Lucene Hunspell, red squiggles, suggestions, user dictionary, en_US/en_GB
+- [x] Spell check support — Lucene Hunspell, red squiggles, suggestions, user dictionary, en_US/en_GB; bundled technical-terms dictionary (toggle in Settings)
 - [x] Private comments/notes — see **Personal Notes** under "Recently shipped"
 
 ## Search

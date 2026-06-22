@@ -8903,6 +8903,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.toggle.personalDictionary", tr(s.isPersonalDictionary() ? "common.on" : "common.off")));
     }
 
+    private void toggleTechnicalDictionary() {
+        Settings s = config.getSettings();
+        s.setTechnicalDictionary(!s.isTechnicalDictionary());
+        requestSave();
+        applyViewSettingsToAllBuffers(s);
+        settingsWindow.syncTechnicalDictionaryCheck();
+        setStatus(tr("status.toggle.technicalDictionary", tr(s.isTechnicalDictionary() ? "common.on" : "common.off")));
+    }
+
     private void toggleAutocomplete() {
         Settings s = config.getSettings();
         s.setAutocomplete(!s.isAutocomplete());
@@ -11193,6 +11202,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setSpellLanguage(spellLanguageFor(buffer)); // per-file override, else the global default
         buffer.setSpellCheckEnabled(s.isSpellCheck());
         buffer.setUserDictionaryEnabled(s.isPersonalDictionary());
+        buffer.setTechnicalDictionaryEnabled(s.isTechnicalDictionary());
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
         applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
     }
@@ -12460,6 +12470,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("spell.setLanguage", this::chooseSpellLanguage));
         registry.register(Command.of("spell.manageDictionary", () -> settingsWindow.showSpellCheck(stage)));
         registry.register(Command.of("view.togglePersonalDictionary", this::togglePersonalDictionary));
+        registry.register(Command.of("view.toggleTechnicalDictionary", this::toggleTechnicalDictionary));
         registry.register(Command.of("view.toggleToolbar", this::toggleToolbar));
         registry.register(Command.of("view.toggleStatusBar", this::toggleStatusBar));
         registry.register(Command.of("view.toggleTabBar", this::toggleTabBar));

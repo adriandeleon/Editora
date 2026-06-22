@@ -20,6 +20,7 @@ public final class SpellChecker {
     private final Set<String> userWords; // shared, persisted (ConfigManager)
     private final Set<String> ignored = new HashSet<>(); // per-session "Ignore" choices
     private volatile boolean userWordsEnabled = true; // honor the personal dictionary (Settings toggle)
+    private volatile boolean technicalWordsEnabled = true; // honor the bundled technical dictionary (Settings toggle)
     private volatile String langId;
 
     public SpellChecker(String langId, Set<String> userWords) {
@@ -51,6 +52,15 @@ public final class SpellChecker {
         return userWordsEnabled;
     }
 
+    /** Whether the bundled technical dictionary is honored; off re-flags those terms. */
+    public void setTechnicalWordsEnabled(boolean enabled) {
+        this.technicalWordsEnabled = enabled;
+    }
+
+    public boolean isTechnicalWordsEnabled() {
+        return technicalWordsEnabled;
+    }
+
     /** Adds a word to the per-session ignore set (not persisted). */
     public void ignore(String word) {
         if (word != null && !word.isBlank()) {
@@ -67,6 +77,9 @@ public final class SpellChecker {
         String lower = word.toLowerCase(Locale.ROOT);
         if ((userWordsEnabled && userWords.contains(lower)) || ignored.contains(lower)) {
             return false;
+        }
+        if (technicalWordsEnabled && TechnicalDictionary.contains(lower)) {
+            return false; // a bundled technical term (config, async, kubernetes, …)
         }
         Hunspell h = SpellDictionaries.ifReady(langId).orElse(null);
         if (h == null) {
