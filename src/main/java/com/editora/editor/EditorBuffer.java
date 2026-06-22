@@ -3261,8 +3261,20 @@ public class EditorBuffer implements TabContent {
     public void refreshGutter() {
         noteOverlay.refresh();
         area.setParagraphGraphicFactory(gutterVisible ? folds.gutterFactory(lineNumbersVisible) : null);
+        applyNoGutterStyle(area);
         if (area2 != null) {
             area2.setParagraphGraphicFactory(gutterVisible ? LineNumberFactory.get(area2) : null);
+            applyNoGutterStyle(area2);
+        }
+    }
+
+    /** With no gutter (Simple UI mode) the text would sit flush against the editor's left edge; the
+     *  {@code .no-gutter} class adds a small left padding so it doesn't. The gutter itself supplies that
+     *  inset when present, so the class is removed then. */
+    private void applyNoGutterStyle(CodeArea a) {
+        a.getStyleClass().remove("no-gutter");
+        if (!gutterVisible) {
+            a.getStyleClass().add("no-gutter");
         }
     }
 
