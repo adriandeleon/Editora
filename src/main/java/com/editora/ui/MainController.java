@@ -1420,6 +1420,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.projectKey = project == null ? "" : project.id();
         projectPanel.setRoot(project == null ? null : Path.of(project.root()));
         updateProjectFolderView(); // global ("No Project") window: show the active file's folder instead
+        refreshSearchScope(); // Find-in-Files scope label reflects this window's project (or current folder)
         refreshProjectPanelList();
         updateWindowTitle();
         // When a project window is freshly opened, show the Projects tool window so the file tree is
@@ -2046,6 +2047,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             statusBar.attach(buffer);
             breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
             updateProjectFolderView(); // global window: retarget the tree at the new file's folder
+            refreshSearchScope(); // Find-in-Files "current folder" tracks the active file
             if (AUTOSAVE_FOCUS.equals(autoSaveMode())) {
                 autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
             }
@@ -2538,13 +2540,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
             }
         }
-        // Scope to THIS window's project tree (else the "No Project" window scans only the open files).
-        // Use windowProject, not the global ProjectManager.active(), so a global window never inherits
-        // another window's project root.
-        java.nio.file.Path root = null;
-        if (windowProject != null && projectsEnabled()) {
-            root = java.nio.file.Path.of(windowProject.root());
-        }
+        // Scope to THIS window's project root, else the active file's folder ("Current Folder").
+        java.nio.file.Path root = searchScopeRoot();
+        refreshSearchScope(); // keep the toolbar's "searching in" label in step with what we search
         setStatus(tr("search.searching"));
         java.util.List<String> include = com.editora.search.Globs.split(includeGlobs);
         java.util.List<String> exclude = com.editora.search.Globs.split(excludeGlobs);
@@ -2557,12 +2555,47 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
+    /**
+     * The folder Find in Files searches on disk: this window's project root when a project is open, else the
+     * active file's parent folder ("Current Folder"). {@code null} (no project, no saved file) ⇒ only the
+     * open buffers are searched.
+     */
+    private java.nio.file.Path searchScopeRoot() {
+        if (windowProject != null && projectsEnabled()) {
+            return java.nio.file.Path.of(windowProject.root());
+        }
+        EditorBuffer b = activeBuffer();
+        if (b != null && b.getPath() != null) {
+            return b.getPath().toAbsolutePath().normalize().getParent();
+        }
+        return null;
+    }
+
+    /** Pushes the current search scope folder to the panel's "searching in" label (home-collapsed + tooltip). */
+    private void refreshSearchScope() {
+        if (searchPanel == null) {
+            return;
+        }
+        java.nio.file.Path root = searchScopeRoot();
+        if (root == null) {
+            searchPanel.setScope(tr("search.scopeOpenFiles"), null);
+            return;
+        }
+        String full = root.toString();
+        String home = System.getProperty("user.home", "");
+        String display = !home.isEmpty() && (full.equals(home) || full.startsWith(home + java.io.File.separator))
+                ? "~" + full.substring(home.length())
+                : full;
+        searchPanel.setScope(display, full);
+    }
+
     /** Toggles the Find-in-Files tool window: opens it (focusing its query field) when closed, closes it
      *  when already open — so the toolbar icon (and {@code C-S-f}) acts as an open/close toggle. */
     private void openSearchInFiles() {
         if (toolWindows.isOpen(searchToolWindow)) {
             toolWindows.close(searchToolWindow);
         } else {
+            refreshSearchScope(); // show the folder we'll search before the first query
             String selection = selectedLineForSearch();
             if (selection != null) {
                 searchPanel.setQuery(selection); // pre-fill (and run) from the editor selection
@@ -2698,7 +2731,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean enabled = s.isRipgrepSearch();
         if (cmd.equals(ripgrepProbedCommand)) {
             boolean effective = enabled && ripgrepAvailable;
-            searchService.setBackend(effective, cmd);
+            searchService.setBackend(effective, cmd, s.isSearchRespectGitignore());
             if (searchPanel != null) {
                 searchPanel.setBackendActive(effective);
             }
@@ -2711,7 +2744,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         ripgrepProbedCommand = cmd;
                         ripgrepAvailable = ok;
                         boolean effective = s.isRipgrepSearch() && ok;
-                        searchService.setBackend(effective, cmd);
+                        searchService.setBackend(effective, cmd, s.isSearchRespectGitignore());
                         if (searchPanel != null) {
                             searchPanel.setBackendActive(effective);
                         }
@@ -12386,6 +12419,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "search.setRipgrepCommand",
                         () -> config.getSettings().getRipgrepCommand(),
                         v -> config.getSettings().setRipgrepCommand(v),
+                        this::applyRipgrepSupport)));
+        registry.register(Command.of(
+                "view.toggleSearchGitignore",
+                () -> toggleSetting(
+                        "view.toggleSearchGitignore",
+                        () -> config.getSettings().isSearchRespectGitignore(),
+                        v -> config.getSettings().setSearchRespectGitignore(v),
                         this::applyRipgrepSupport)));
         registry.register(Command.of(
                 "mermaid.setMmdcCommand",

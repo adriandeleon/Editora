@@ -69,6 +69,8 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
     private final Label summary = new Label();
     /** Shown only when ripgrep is the effective Find-in-Files backend (set by the controller). */
     private final Label backendBadge = new Label("ripgrep");
+    /** The folder being searched (project root, or the current file's folder), set by the controller. */
+    private final Label scopeLabel = new Label();
 
     private final TreeView<Row> tree = new TreeView<>();
     private List<Path> lastFiles = List.of();
@@ -145,6 +147,17 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         HBox summaryRow = new HBox(6, summary, summarySpacer, backendBadge);
         summaryRow.setAlignment(Pos.CENTER_LEFT);
 
+        // The folder being searched (project root, or the current file's folder) — shown explicitly so the
+        // user always knows the scope. Set by the controller via setScope; ellipsized with a full-path tooltip.
+        Label scopePrefix = new Label(tr("search.scopeLabel"));
+        scopePrefix.getStyleClass().add("search-scope-prefix");
+        scopeLabel.getStyleClass().add("search-scope-path");
+        scopeLabel.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(scopeLabel, Priority.ALWAYS);
+        HBox scopeRow = new HBox(6, scopePrefix, scopeLabel);
+        scopeRow.setAlignment(Pos.CENTER_LEFT);
+        scopeRow.getStyleClass().add("search-scope-row");
+
         tree.setShowRoot(false);
         tree.setRoot(new TreeItem<>());
         tree.setCellFactory(t -> new RowCell());
@@ -167,7 +180,14 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         // arrow keys also work in the tree; text fields keep their own keys.
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
 
-        getChildren().addAll(queryRow, replaceRow, globsRow, summaryRow, tree);
+        getChildren().addAll(scopeRow, queryRow, replaceRow, globsRow, summaryRow, tree);
+    }
+
+    /** Sets the displayed search-scope folder. {@code display} is a friendly label (e.g. {@code ~/proj});
+     *  {@code fullPath} (nullable) is the hover tooltip with the absolute path. */
+    public void setScope(String display, String fullPath) {
+        scopeLabel.setText(display == null ? "" : display);
+        scopeLabel.setTooltip(fullPath == null || fullPath.isBlank() ? null : new Tooltip(fullPath));
     }
 
     /** Show/hide the "ripgrep" backend badge (the controller calls this from applyRipgrepSupport). */

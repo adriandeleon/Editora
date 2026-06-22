@@ -256,6 +256,7 @@ public class SettingsWindow {
     private TextField templateAuthorField;
     private Label mermaidStatusLabel;
     private CheckBox ripgrepCheck;
+    private CheckBox searchGitignoreCheck;
     private TextField ripgrepCommandField;
     private Label ripgrepStatusLabel;
     /** Injected probe (MainController): runs {@code rg --version} off-thread, delivers found/not-found on FX. */
@@ -810,6 +811,11 @@ public class SettingsWindow {
             config.getSettings().setRipgrepSearch(now);
             apply();
             refreshRipgrepStatus();
+        });
+        searchGitignoreCheck = new CheckBox(tr("settings.search.gitignore"));
+        searchGitignoreCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setSearchRespectGitignore(now);
+            apply();
         });
         ripgrepCommandField = new TextField();
         ripgrepCommandField.setPromptText(com.editora.search.Ripgrep.DEFAULT_COMMAND);
@@ -2070,6 +2076,13 @@ public class SettingsWindow {
                 null,
                 exePathRow(tr("settings.search.ripgrepPath"), ripgrepCommandField),
                 "search ripgrep rg path executable command");
+        Label exclude = section(p, tr("settings.search.exclusions"));
+        row(
+                p,
+                Category.SEARCH,
+                exclude,
+                searchGitignoreCheck,
+                "search exclude gitignore ignored target node_modules build dist folders files");
         Label hint = note(tr("settings.search.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
@@ -4483,6 +4496,7 @@ public class SettingsWindow {
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
             ripgrepCheck.setSelected(settings.isRipgrepSearch());
+            searchGitignoreCheck.setSelected(settings.isSearchRespectGitignore());
             ripgrepCommandField.setText(settings.getRipgrepCommand());
             refreshRipgrepStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
