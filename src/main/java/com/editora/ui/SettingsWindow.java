@@ -172,6 +172,8 @@ public class SettingsWindow {
     private ListView<String> dictionaryList;
     /** "Enable personal dictionary" checkbox (Settings.personalDictionary). */
     private CheckBox dictEnableCheck;
+    /** "Enable technical dictionary" checkbox (Settings.technicalDictionary). */
+    private CheckBox techDictEnableCheck;
 
     private CheckBox toolbarCheck;
     private CheckBox statusBarCheck;
@@ -707,6 +709,11 @@ public class SettingsWindow {
         dictEnableCheck = new CheckBox(tr("settings.dict.enable"));
         dictEnableCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setPersonalDictionary(now);
+            apply();
+        });
+        techDictEnableCheck = new CheckBox(tr("settings.dict.technical"));
+        techDictEnableCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setTechnicalDictionary(now);
             apply();
         });
         spellLanguageCombo = new ComboBox<>();
@@ -1804,6 +1811,12 @@ public class SettingsWindow {
                 labeled(tr("settings.language"), spellLanguageCombo),
                 "spell language dictionary english spanish french");
         Label dict = section(p, tr("settings.dict.title"));
+        row(
+                p,
+                Category.SPELL_CHECK,
+                dict,
+                techDictEnableCheck,
+                "technical dictionary terms programming code config async kubernetes enable on off");
         row(p, Category.SPELL_CHECK, dict, dictEnableCheck, "personal dictionary enable on off honor words");
         row(p, Category.SPELL_CHECK, dict, dictionaryEditor(), "personal dictionary words add remove custom ignore");
         Label dictNote = note(tr("settings.dict.note"));
@@ -1873,6 +1886,13 @@ public class SettingsWindow {
     public void syncPersonalDictionaryCheck() {
         if (dictEnableCheck != null) {
             dictEnableCheck.setSelected(config.getSettings().isPersonalDictionary());
+        }
+    }
+
+    /** Re-syncs the "Enable technical dictionary" checkbox after a palette toggle. */
+    public void syncTechnicalDictionaryCheck() {
+        if (techDictEnableCheck != null) {
+            techDictEnableCheck.setSelected(config.getSettings().isTechnicalDictionary());
         }
     }
 
@@ -4419,6 +4439,7 @@ public class SettingsWindow {
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
             spellCheckBox.setSelected(settings.isSpellCheck());
             dictEnableCheck.setSelected(settings.isPersonalDictionary());
+            techDictEnableCheck.setSelected(settings.isTechnicalDictionary());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
             spellLanguageCombo.setDisable(!settings.isSpellCheck());
             toolbarCheck.setSelected(settings.isShowToolbar());

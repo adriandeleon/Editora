@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 41;
+    public static final int SCHEMA_VERSION = 42;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -69,6 +69,8 @@ public class Settings {
     private boolean spellCheck = true;
     /** Honor the personal dictionary ({@code dictionary.txt}) during spell check; off re-flags those words. */
     private boolean personalDictionary = true;
+    /** Honor the bundled technical-terms dictionary during spell check; off re-flags those terms. */
+    private boolean technicalDictionary = true;
     /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
     private String spellLanguage = "en_US";
     /** Autocomplete master switch (gates all sources); on by default. */
@@ -473,6 +475,14 @@ public class Settings {
 
     public void setPersonalDictionary(boolean personalDictionary) {
         this.personalDictionary = personalDictionary;
+    }
+
+    public boolean isTechnicalDictionary() {
+        return technicalDictionary;
+    }
+
+    public void setTechnicalDictionary(boolean technicalDictionary) {
+        this.technicalDictionary = technicalDictionary;
     }
 
     public boolean isAutocomplete() {

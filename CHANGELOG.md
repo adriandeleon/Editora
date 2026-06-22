@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Technical-terms dictionary for spell check.** A bundled list of common programming / web / data / devops words that standard prose dictionaries flag as misspellings (`config`, `async`, `boolean`, `middleware`, `kubernetes`, `stdin`, `json`, …) is now accepted by the spell checker, so code-adjacent prose stops getting peppered with red squiggles. Toggle it in **Settings → Spell Check → "Enable technical dictionary"** (default **on**) or via the palette command `Toggle Technical Dictionary` (`view.toggleTechnicalDictionary`). It layers on top of the language dictionary and your personal dictionary, each independently switchable.
+
 - **Command-palette parity for actions that were UI-only.** Every remaining click-only action now also has a registered, keybindable palette command:
   - **Git Log** commit operations (Checkout / New Branch / Revert / Cherry-Pick / Reset… / Copy Hash) → `git.log.*`, acting on the selected commit.
   - **Debugger** data inspection → `debug.evaluate` (open console + focus the eval field) / `debug.addWatch` / `debug.setValue`.
