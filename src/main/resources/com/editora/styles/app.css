@@ -7,6 +7,11 @@
     -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-size: 14px;
 }
+/* Simple UI mode removes the gutter entirely; without it the text sits flush against the editor's
+   left edge, so add a small left padding (the gutter supplies this inset when it is present). */
+.editor-area.no-gutter {
+    -fx-padding: 0 0 0 6px;
+}
 
 .editor-area .text {
     -fx-fill: #24292f;
