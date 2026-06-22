@@ -4133,7 +4133,13 @@ public class SettingsWindow {
     // --- page helpers ---
 
     private VBox page(String title) {
-        Label heading = new Label(title);
+        // A Text node (with VISUAL bounds) rather than a Label: a JavaFX Label clips its text to the
+        // glyphs' logical (advance-based) bounds, which shaves the outer strokes of bold faces — the
+        // bold heading on every Settings page looked like it was missing slivers of letters. A Text node
+        // renders the full glyph ink and doesn't self-clip. Styled via .settings-page-title (Text honors
+        // -fx-font-* and -fx-fill).
+        javafx.scene.text.Text heading = new javafx.scene.text.Text(title);
+        heading.setBoundsType(javafx.scene.text.TextBoundsType.VISUAL);
         heading.getStyleClass().add("settings-page-title");
         VBox box = new VBox(10, heading);
         box.getStyleClass().add("settings-page");

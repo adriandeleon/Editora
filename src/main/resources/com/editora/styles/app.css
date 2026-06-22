@@ -1242,7 +1242,9 @@
 .settings-page-title {
     -fx-font-size: 17px;
     -fx-font-weight: bold;
-    -fx-padding: 0 0 4 0;
+    /* The heading is a Text node (see SettingsWindow.page) so the bold glyph ink isn't clipped. Text uses
+       -fx-fill (not -fx-text-fill); track the theme foreground so it works on light + dark themes. */
+    -fx-fill: -color-fg-default;
 }
 .settings-section {
     -fx-font-weight: bold;
