@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 42;
+    public static final int SCHEMA_VERSION = 43;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -158,6 +158,8 @@ public class Settings {
     private boolean ripgrepSearch = true;
     /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
     private String ripgrepCommand = "";
+    /** Exclude files/folders matched by the project's {@code .gitignore} from Find in Files (default on). */
+    private boolean searchRespectGitignore = true;
     /** HTTP Client support (run {@code .http} requests via the built-in JDK HTTP client): on by default. */
     private boolean httpClientSupport = true;
     /** The {@code ijhttp} command/path; blank = resolve {@code ijhttp} on PATH. */
@@ -814,6 +816,14 @@ public class Settings {
 
     public void setRipgrepCommand(String ripgrepCommand) {
         this.ripgrepCommand = ripgrepCommand == null ? "" : ripgrepCommand;
+    }
+
+    public boolean isSearchRespectGitignore() {
+        return searchRespectGitignore;
+    }
+
+    public void setSearchRespectGitignore(boolean searchRespectGitignore) {
+        this.searchRespectGitignore = searchRespectGitignore;
     }
 
     public boolean isLspSupport() {

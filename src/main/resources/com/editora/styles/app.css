@@ -1714,6 +1714,17 @@
     -fx-border-radius: 3px;
     -fx-padding: 0 4 0 4;
 }
+/* The "searching in: <folder>" row at the top of Find in Files. */
+.search-scope-row {
+    -fx-padding: 0 0 2 0;
+}
+.search-scope-prefix {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.search-scope-path {
+    -fx-font-size: 11px;
+}
 
 /* Undo History tool window */
 .undo-history-panel { -fx-padding: 0; }

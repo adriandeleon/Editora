@@ -125,7 +125,8 @@ Editora is built with the help of AI coding tools.
   editor right-click menu). Off by default; per-server command + enable in *Settings → LSP*.
 - **Search** — incremental find bar (`C-s`/`C-r`) with regex, case, and whole-word toggles, a match
   count, and live highlight-all; **Find in Files** (`C-S-f`) across the project + open buffers with
-  include/exclude file globs, query history, regex capture-group replace (`$1`), and a results tool
+  include/exclude file globs, query history, regex capture-group replace (`$1`), `.gitignore` exclusion
+  (skips `target/`, `node_modules/`, … by default — Settings → Search), and a results tool
   window (`M-6`, on the right, with a *ripgrep* badge when that faster `.gitignore`-aware backend is
   active); and **AceJump** (`M-g j`) — type a character, then a label, to fly the caret to any on-screen
   occurrence.

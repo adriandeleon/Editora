@@ -80,7 +80,9 @@ public enum ConfigSchema {
                     Map.entry(38, (Migration) ConfigMigrations::identity), // v38→39: + projectShowHidden
                     Map.entry(39, (Migration) ConfigMigrations::identity), // v39→40: + markdownLintDisabledRules
                     Map.entry(40, (Migration) ConfigMigrations::identity), // v40→41: + personalDictionary (additive)
-                    Map.entry(41, (Migration) ConfigMigrations::identity))), // v41→42: + technicalDictionary (additive)
+                    Map.entry(41, (Migration) ConfigMigrations::identity), // v41→42: + technicalDictionary (additive)
+                    Map.entry(42, (Migration)
+                            ConfigMigrations::identity))), // v42→43: + searchRespectGitignore (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

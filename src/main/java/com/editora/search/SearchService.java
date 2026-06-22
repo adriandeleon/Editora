@@ -55,12 +55,18 @@ public final class SearchService {
 
     private volatile List<String> rgCommand = List.of(Ripgrep.DEFAULT_COMMAND);
 
+    /** Exclude {@code .gitignore}d paths from search (ripgrep's default; the walker honors it via
+     *  {@link GitignoreFilter}). Off ⇒ rg gets {@code --no-ignore} and the walker skips the filter. */
+    private volatile boolean respectGitignore = true;
+
     /**
      * Selects the on-disk search backend: ripgrep when {@code useRipgrep} (and the root is local), else the
-     * built-in Java walker. The open-buffer overlay + caps are applied identically either way.
+     * built-in Java walker. {@code respectGitignore} excludes {@code .gitignore}d files/folders on both
+     * backends. The open-buffer overlay + caps are applied identically either way.
      */
-    public void setBackend(boolean useRipgrep, List<String> rgCommand) {
+    public void setBackend(boolean useRipgrep, List<String> rgCommand, boolean respectGitignore) {
         this.useRipgrep = useRipgrep;
+        this.respectGitignore = respectGitignore;
         this.rgCommand =
                 (rgCommand == null || rgCommand.isEmpty()) ? List.of(Ripgrep.DEFAULT_COMMAND) : List.copyOf(rgCommand);
     }
@@ -114,7 +120,7 @@ public final class SearchService {
     /** On-disk search via ripgrep, paths resolved to absolute. Returns null to signal "fall back to the walker". */
     private List<FileResult> ripgrepDisk(SearchQuery query, Path root, List<String> include, List<String> exclude) {
         List<String> cmd = new ArrayList<>(rgCommand);
-        cmd.addAll(RipgrepArgs.build(query, include, exclude, true, MAX_FILE_BYTES)); // respect .gitignore (rg default)
+        cmd.addAll(RipgrepArgs.build(query, include, exclude, respectGitignore, MAX_FILE_BYTES)); // off ⇒ --no-ignore
         cmd.add(".");
         ProcessRunner.Result r;
         try {
@@ -136,7 +142,8 @@ public final class SearchService {
     /** On-disk search via the built-in walker (dot-dir/oversize/binary skipping + include/exclude globs). */
     private List<FileResult> walkDisk(SearchQuery query, Path root, List<String> include, List<String> exclude) {
         Set<Path> candidates = new LinkedHashSet<>();
-        collect(root, candidates);
+        GitignoreFilter gitignore = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
+        collect(root, candidates, gitignore);
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> out = new ArrayList<>();
         for (Path file : candidates) {
@@ -229,7 +236,7 @@ public final class SearchService {
         return new Outcome(results, total, results.size(), truncated);
     }
 
-    private void collect(Path root, Set<Path> out) {
+    private void collect(Path root, Set<Path> out, GitignoreFilter gitignore) {
         try {
             int[] scanned = {0};
             Files.walkFileTree(
@@ -243,6 +250,9 @@ public final class SearchService {
                                     && dir.getFileName().toString().startsWith(".")) {
                                 return FileVisitResult.SKIP_SUBTREE; // .git, .idea, etc.
                             }
+                            if (gitignore.ignored(relativize(root, dir), true)) {
+                                return FileVisitResult.SKIP_SUBTREE; // target/, node_modules/, …
+                            }
                             return scanned[0] > MAX_FILES_SCANNED
                                     ? FileVisitResult.TERMINATE
                                     : FileVisitResult.CONTINUE;
@@ -254,7 +264,10 @@ public final class SearchService {
                                 return FileVisitResult.TERMINATE;
                             }
                             String name = file.getFileName().toString();
-                            if (!name.startsWith(".") && a.isRegularFile() && a.size() <= MAX_FILE_BYTES) {
+                            if (!name.startsWith(".")
+                                    && a.isRegularFile()
+                                    && a.size() <= MAX_FILE_BYTES
+                                    && !gitignore.ignored(relativize(root, file), false)) {
                                 out.add(file);
                             }
                             return FileVisitResult.CONTINUE;
