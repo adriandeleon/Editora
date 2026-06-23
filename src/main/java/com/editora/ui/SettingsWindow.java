@@ -2206,7 +2206,8 @@ public class SettingsWindow {
         CodeArea body = new CodeArea();
         body.getStyleClass().addAll("editor-area", "snippet-body");
         body.setWrapText(true);
-        body.setPrefHeight(360);
+        // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
+        body.setPrefHeight(180);
         installEmacsKeys(body); // basic C-a/C-e/C-f/C-b/C-n/C-p/M-f/M-b/C-d/C-k in the settings scene
         body.plainTextChanges().subscribe(c -> highlightSnippetBody(body, currentSnippetLang));
 
@@ -2452,7 +2453,8 @@ public class SettingsWindow {
         CodeArea body = new CodeArea();
         body.getStyleClass().addAll("editor-area", "snippet-body");
         body.setWrapText(true);
-        body.setPrefHeight(360);
+        // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
+        body.setPrefHeight(180);
         installEmacsKeys(body); // basic Emacs caret movement in the settings scene
         body.plainTextChanges().subscribe(c -> highlightSnippetBody(body, language.getText()));
         // Re-highlight when the template's language changes (even without a body edit).
