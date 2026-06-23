@@ -330,10 +330,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private ProblemsPanel problemsPanel;
     private ToolWindow problemsToolWindow;
-    /** Run: streams a Java 25 compact source file's output into the Run tool window. */
-    private final com.editora.run.RunService runService = new com.editora.run.RunService();
-
-    private RunPanel runPanel;
+    /** Run: streams a runnable file's output; see {@link RunCoordinator}. The tool window stays here. */
     private ToolWindow runToolWindow;
     /** External Tools: the feature coordinator owns the service/panel/commands (see {@link ExternalToolCoordinator}). */
     private ToolWindow externalToolToolWindow;
@@ -1516,7 +1513,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         stopMcpIfOwner(); // stop the MCP server if this window owns it
         pdfService.shutdown();
         printService.shutdown();
-        runService.stop();
+        runCoordinator.shutdown();
         autoSaveExecutor.shutdownNow();
         projectPanel.dispose(); // stop the project tree's filesystem watcher + its daemon thread
     }
@@ -2380,11 +2377,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::problems,
                 problemsPanel,
                 "tool.problems");
-        runPanel = new RunPanel(this::stopRun);
-        runPanel.setOnInput(runService::sendInput); // stdin field → the running process
-        runPanel.setOnLink(this::openRunLink); // double-clicked stack-trace line → jump
-        runToolWindow =
-                new ToolWindow("run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runPanel, "tool.run");
+        runToolWindow = new ToolWindow(
+                "run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runCoordinator.panel(), "tool.run");
         debugPanel = new DebugPanel(debugActions());
         debugPanel.setPrompt(this::promptText);
         debugPanel.setOnLink(this::openRunLink); // double-clicked stack-trace line → jump
@@ -2815,6 +2809,35 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                 }
             });
+
+    /** Run-a-file feature; owns the run service/console panel (the tool window + commands stay here). */
+    private final RunCoordinator runCoordinator = new RunCoordinator(coordinatorHost, new RunCoordinator.Ops() {
+        @Override
+        public void openToolWindow() {
+            toolWindows.open(runToolWindow);
+        }
+
+        @Override
+        public boolean saveBuffer(EditorBuffer buffer) {
+            return save(buffer);
+        }
+
+        @Override
+        public String programArgs(java.nio.file.Path path) {
+            return programArgsFor(path);
+        }
+
+        @Override
+        public void setProgramArgs(java.nio.file.Path path, String args) {
+            config.getWorkspaceState().getProgramArgs().put(path.toString(), args);
+            config.save();
+        }
+
+        @Override
+        public void openLink(com.editora.run.StackTraceLinks.Link link) {
+            openRunLink(link);
+        }
+    });
 
     // --- HTTP Client (.http request runner + response tool window) -----------------------------------
 
@@ -4202,8 +4225,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                     return b.getPath();
                 }
             }
-            if (lastRunFile != null && lastRunFile.getParent() != null) {
-                Path sibling = lastRunFile.getParent().resolve(name);
+            Path lastRunDir = runCoordinator.lastRunDir();
+            if (lastRunDir != null) {
+                Path sibling = lastRunDir.resolve(name);
                 if (java.nio.file.Files.isRegularFile(sibling)) {
                     return sibling;
                 }
@@ -6775,7 +6799,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 updateRunButton();
             }
         });
-        buffer.setRunHandler(this::runActiveFile); // "Run File" editor right-click item (runnable files)
+        buffer.setRunHandler(runCoordinator::runActiveFile); // "Run File" editor right-click item (runnable files)
         boolean local = isLocalBuffer(buffer); // remote (SFTP) files can't run a local process
         buffer.setRunEnabled(lspEnabled() && local); // the Run affordance is gated by the LSP feature
         buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
@@ -8491,143 +8515,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         return null;
     }
 
-    /**
-     * Runs the active runnable file — a compact Java source via the JDK source launcher ({@code java
-     * <file>}), a Python script ({@code python3 <file>}), or a shell script ({@code bash <file>}) —
-     * streaming output into the Run tool window.
-     * Saves first (a dirty file would run stale; an untitled one prompts Save-As), and refuses to start
-     * while a previous run is still alive.
-     */
-    private void runActiveFile() {
-        runActiveFile(false);
-    }
-
-    /** Prompts for program arguments (pre-filled with the file's remembered ones), then runs. */
-    private void runActiveFileWithArgs() {
-        runActiveFile(true);
-    }
-
-    /** Re-runs the most recent run (same file + argv) without touching the active tab. */
-    private void rerunLast() {
-        if (lastRunFile == null || lastRunCommand == null) {
-            setStatus(tr("status.run.noRerun"));
-            return;
-        }
-        if (runService.isRunning()) {
-            setStatus(tr("status.run.busy"));
-            return;
-        }
-        launchRun(lastRunFile, lastRunCommand);
-    }
-
-    /** The most recent launch, for {@code run.rerun}. */
-    private Path lastRunFile;
-
-    private java.util.List<String> lastRunCommand;
-
-    private void runActiveFile(boolean promptArgs) {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null || !buffer.isRunnable()) {
-            setStatus(tr("status.run.notCompact"));
-            return;
-        }
-        if ((buffer.isDirty() || buffer.getPath() == null) && !save(buffer)) {
-            return; // user cancelled Save-As, or the save failed — don't run stale/missing content
-        }
-        Path path = buffer.getPath();
-        if (path == null) {
-            return;
-        }
-        if (runService.isRunning()) {
-            setStatus(tr("status.run.busy"));
-            return;
-        }
-        boolean java = !buffer.isPython() && !buffer.isShell();
-        Runnable proceed = () -> {
-            String stored = programArgsFor(path);
-            if (promptArgs) {
-                promptText(tr("dialog.runArgs.title"), tr("dialog.runArgs.label"), stored, args -> {
-                    config.getWorkspaceState().getProgramArgs().put(path.toString(), args == null ? "" : args.strip());
-                    config.save();
-                    launchRun(path, buildRunCommand(buffer, path));
-                });
-            } else {
-                launchRun(path, buildRunCommand(buffer, path));
-            }
-        };
-        if (java) {
-            // Compact source files need the JDK 25+ source-file launcher; preflight so an older java
-            // on PATH yields a clear message instead of a cryptic launcher error. Cached after once.
-            runService.detectJavaMajor(major -> {
-                if (major > 0 && major < 25) {
-                    setStatus(tr("status.run.needJdk25", major));
-                    return;
-                }
-                proceed.run();
-            });
-        } else {
-            proceed.run();
-        }
-    }
-
-    /** The remembered program-arguments string for {@code path} ("" when none). */
+    /** The remembered program-arguments string for {@code path} ("" when none); shared with debug launches. */
     private String programArgsFor(Path path) {
         String s = config.getWorkspaceState().getProgramArgs().get(path.toString());
         return s == null ? "" : s;
-    }
-
-    /** The launcher argv for the buffer's language: interpreter + file + the remembered args. */
-    private java.util.List<String> buildRunCommand(EditorBuffer buffer, Path path) {
-        java.util.List<String> command = new java.util.ArrayList<>();
-        if (buffer.isPython()) {
-            command.add("python3");
-        } else if (buffer.isShell()) {
-            command.add("bash");
-        } else {
-            command.add("java");
-        }
-        command.add(path.toString());
-        command.addAll(com.editora.run.ProgramArgs.tokenize(programArgsFor(path)));
-        return command;
-    }
-
-    private void launchRun(Path path, java.util.List<String> command) {
-        lastRunFile = path;
-        lastRunCommand = command;
-        toolWindows.open(runToolWindow);
-        runPanel.started(path.getFileName().toString());
-        setStatus(tr("status.run.started", path.getFileName().toString()));
-        runService.run(path, command, new com.editora.run.RunService.Listener() {
-            @Override
-            public void onStart(String commandLine) {
-                runPanel.started(commandLine);
-            }
-
-            @Override
-            public void onOutput(String line, boolean stderr) {
-                runPanel.appendOutput(line, stderr);
-            }
-
-            @Override
-            public void onExit(int code) {
-                runPanel.finished(code);
-                setStatus(code == 0 ? tr("status.run.ok") : tr("status.run.exit", code));
-            }
-
-            @Override
-            public void onError(String message) {
-                runPanel.failed(message);
-                setStatus(tr("status.run.failed", message));
-            }
-        });
-    }
-
-    /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */
-    private void stopRun() {
-        if (runService.isRunning()) {
-            runService.stop();
-            setStatus(tr("status.run.stopped"));
-        }
     }
 
     @FXML
@@ -12166,11 +12057,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                         this::applyMathSupport)));
         registry.register(Command.of("nav.aceJump", this::startAceJump));
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
-        registry.register(Command.of("file.run", this::runActiveFile));
-        registry.register(Command.of("file.runWithArgs", this::runActiveFileWithArgs));
-        registry.register(Command.of("run.rerun", this::rerunLast));
-        registry.register(Command.of("run.stop", this::stopRun));
-        registry.register(Command.of("run.clear", () -> runPanel.clearConsole()));
+        registry.register(Command.of("file.run", runCoordinator::runActiveFile));
+        registry.register(Command.of("file.runWithArgs", runCoordinator::runActiveFileWithArgs));
+        registry.register(Command.of("run.rerun", runCoordinator::rerunLast));
+        registry.register(Command.of("run.stop", runCoordinator::stopRun));
+        registry.register(Command.of("run.clear", runCoordinator::clearConsole));
         registry.register(Command.of("tool.run", () -> toolWindows.toggle(runToolWindow)));
         registry.register(Command.of("tool.externalTools", () -> toolWindows.toggle(externalToolToolWindow)));
         // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
