@@ -492,6 +492,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
         this.settingsWindow.setPluginActions(this::browsePlugins, this::installPluginFromDisk, this::uninstallPlugin);
+        this.settingsWindow.setDictionaryActions(
+                this::openTechnicalDictionary, this::openPersonalDictionary); // Spell Check file links
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         this.settingsWindow.setTemplateRegistry(templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
@@ -7384,6 +7386,42 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Open a file by path; refreshes recent files and reports status. */
+    /** Opens the personal dictionary ({@code dictionary.txt}) in the editor, creating it empty if it doesn't
+     *  exist yet (so the link works even before any word is added). Backs the Settings → Spell Check link. */
+    private void openPersonalDictionary() {
+        Path file = config.getDictionaryFile();
+        try {
+            if (!Files.exists(file)) {
+                Files.writeString(file, "");
+            }
+        } catch (IOException e) {
+            setStatus(tr("status.dict.openFailed"));
+            return;
+        }
+        openPath(file);
+    }
+
+    /** Opens the bundled technical-terms dictionary in a read-only tab so the user can browse what it covers.
+     *  It's a classpath resource (inside the jar), so there's no on-disk path to open. */
+    private void openTechnicalDictionary() {
+        String text;
+        try (var in = MainController.class.getResourceAsStream("/com/editora/dictionaries/technical.txt")) {
+            if (in == null) {
+                setStatus(tr("status.dict.openFailed"));
+                return;
+            }
+            text = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            setStatus(tr("status.dict.openFailed"));
+            return;
+        }
+        EditorBuffer buffer = new EditorBuffer();
+        buffer.setDisplayName("technical.txt");
+        buffer.setContent(text);
+        addBuffer(buffer, true);
+        buffer.setViewMode(true); // read-only: it's the bundled list, not user-editable
+    }
+
     private void openPath(Path file) {
         Tab existing = tabForPath(file);
         if (existing != null) {

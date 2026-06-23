@@ -101,6 +101,11 @@ public class ConfigManager {
         return shared.getConfigDir();
     }
 
+    /** The personal-dictionary file (the user's added words, one per line). May not exist until a word is added. */
+    public Path getDictionaryFile() {
+        return getConfigDir().resolve(DICTIONARY_FILE_NAME);
+    }
+
     public Path exportConfig() throws IOException {
         return shared.exportConfig();
     }

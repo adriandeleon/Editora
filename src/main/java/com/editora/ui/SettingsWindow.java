@@ -129,6 +129,10 @@ public class SettingsWindow {
     private final Consumer<Path> onOpenFile;
     private final Runnable onExportConfig;
     private final Runnable onShowDebugLog;
+    /** Spell Check page: open the bundled technical dictionary (read-only) / the personal dictionary file. */
+    private Runnable onOpenTechnicalDictionary;
+
+    private Runnable onOpenPersonalDictionary;
     /** Security-notice confirm shown before the MCP checkbox enables the server; null = no gate. */
     private java.util.function.BooleanSupplier mcpConfirm;
 
@@ -385,6 +389,12 @@ public class SettingsWindow {
     /** Injects the shared {@link com.editora.snippet.SnippetManager} backing the Snippets management page. */
     public void setSnippetManager(com.editora.snippet.SnippetManager snippetManager) {
         this.snippetManager = snippetManager;
+    }
+
+    /** Injects the Spell Check page's "open dictionary file" actions (bundled technical / personal). */
+    public void setDictionaryActions(Runnable openTechnical, Runnable openPersonal) {
+        this.onOpenTechnicalDictionary = openTechnical;
+        this.onOpenPersonalDictionary = openPersonal;
     }
 
     /** Opens Settings focused on the Snippets page (the {@code snippets.manage} command). */
@@ -1838,6 +1848,30 @@ public class SettingsWindow {
                 null,
                 labeled(tr("settings.language"), spellLanguageCombo),
                 "spell language dictionary english spanish french");
+        // The two dictionary-file links, grouped together near the top (out of the checkbox/list flow).
+        Hyperlink techLink = new Hyperlink(tr("settings.dict.openTechnical"));
+        techLink.setTooltip(new Tooltip(tr("settings.dict.openTechnicalTip")));
+        techLink.setOnAction(e -> {
+            if (onOpenTechnicalDictionary != null) {
+                onOpenTechnicalDictionary.run();
+            }
+        });
+        Hyperlink personalLink = new Hyperlink(tr("settings.dict.openPersonal"));
+        personalLink.setTooltip(new Tooltip(tr("settings.dict.openPersonalTip")));
+        personalLink.setOnAction(e -> {
+            if (onOpenPersonalDictionary != null) {
+                onOpenPersonalDictionary.run();
+            }
+        });
+        HBox dictLinks = new HBox(16, techLink, personalLink);
+        dictLinks.setAlignment(Pos.CENTER_LEFT);
+        row(
+                p,
+                Category.SPELL_CHECK,
+                null,
+                dictLinks,
+                "dictionary open technical personal file dictionary.txt bundled terms");
+
         Label dict = section(p, tr("settings.dict.title"));
         row(
                 p,
