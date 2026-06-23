@@ -198,6 +198,11 @@ public class EditorBuffer implements TabContent {
     private boolean minimapVisible = true;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
     private boolean largeFile;
+    /** Intermediate "large source file" tier (below the 5 MB hard mode): the minimap and LSP are
+     *  disabled — but syntax highlighting and editing stay — so a very long single file (e.g. a
+     *  13k-line source) stays responsive. Triggered by line count at load (see {@code setHeavyFile});
+     *  toggleable per-buffer. {@code largeFile} implies the same minimap/LSP suppression. */
+    private boolean heavyFile;
     /** Huge-file mode: implies large-file mode plus read-only (no undo, not editable). */
     private boolean hugeFile;
     /** User "View mode": non-editable but keeps all normal editor features (separate from huge-file). */
@@ -1969,7 +1974,7 @@ public class EditorBuffer implements TabContent {
         // would flood the FX thread with a full-text didOpen and tens/hundreds of thousands of diagnostics
         // to map + render (the Problems tree, minimap + scrollbar stripes), freezing the editor. largeFile
         // is implied by hugeFile (see setReadOnly), so this single guard covers both.
-        this.lspActive = on && isLspLanguage() && !largeFile;
+        this.lspActive = on && isLspLanguage() && !largeFile && !heavyFile;
         if (this.lspActive || lspOverlay != null) {
             lspOverlay().setActive(this.lspActive);
         }
@@ -2055,7 +2060,7 @@ public class EditorBuffer implements TabContent {
      *  over the editor's vertical scrollbar: at the far-right edge when the minimap is hidden, else just
      *  inside the minimap (over the editor scrollbar, which ends at the minimap's left edge). */
     private void updateDiagnosticStripe() {
-        boolean minimapShown = minimapVisible && !largeFile;
+        boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         AnchorPane.setRightAnchor(diagnosticStripe, minimapShown ? Minimap.WIDTH : 0d);
         diagnosticStripe.setActive(lspActive);
         updateMarkdownLintStripe();
@@ -2064,7 +2069,7 @@ public class EditorBuffer implements TabContent {
     /** Positions the Markdown-lint overview stripe beside the diagnostic stripe (shifted left by its width
      *  when LSP is also active — never the case for a Markdown buffer, but kept general). */
     private void updateMarkdownLintStripe() {
-        boolean minimapShown = minimapVisible && !largeFile;
+        boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
         AnchorPane.setRightAnchor(mdLintStripe, base + (lspActive ? DiagnosticStripe.WIDTH : 0d));
         mdLintStripe.setActive(markdownLintEnabled && !largeFile);
@@ -2074,7 +2079,7 @@ public class EditorBuffer implements TabContent {
     /** Positions the TODO overview stripe over the scrollbar: at the edge (inside the minimap when shown),
      *  shifted left by the diagnostic + lint stripes' widths when those are active, so they sit side by side. */
     private void updateTodoStripe() {
-        boolean minimapShown = minimapVisible && !largeFile;
+        boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
         double offset = (lspActive ? DiagnosticStripe.WIDTH : 0d)
                 + (markdownLintEnabled && !largeFile ? MarkdownLintStripe.WIDTH : 0d);
@@ -3041,7 +3046,7 @@ public class EditorBuffer implements TabContent {
     }
 
     private double codePaneControlInset() {
-        return (minimapVisible && !largeFile) ? Minimap.WIDTH + 6 : 10;
+        return (minimapVisible && !largeFile && !heavyFile) ? Minimap.WIDTH + 6 : 10;
     }
 
     /** Keeps the control clear of the minimap when it toggles (no full view rebuild). */
@@ -3096,7 +3101,7 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setTopAnchor(minimap2, 0d);
         AnchorPane.setBottomAnchor(minimap2, 0d);
         AnchorPane.setRightAnchor(minimap2, 0d);
-        applyMinimap(scrollPane2, minimap2, minimapVisible && !largeFile);
+        applyMinimap(scrollPane2, minimap2, minimapVisible && !largeFile && !heavyFile);
     }
 
     /** Docks/undocks a minimap on the right of its scroll pane (shared by both split panes). */
@@ -3658,8 +3663,9 @@ public class EditorBuffer implements TabContent {
     /** Show/hide the minimap overview (on every split pane); reclaims its width for the editor when hidden. */
     public void setMinimapVisible(boolean visible) {
         this.minimapVisible = visible;
-        // Large files force the minimap off regardless of the user's setting (see setLargeFile).
-        boolean effective = visible && !largeFile;
+        // Large files (and the intermediate large-source tier) force the minimap off regardless of the
+        // user's setting (see setLargeFile / setHeavyFile).
+        boolean effective = visible && !largeFile && !heavyFile;
         applyMinimap(scrollPane, minimap, effective);
         AnchorPane.setRightAnchor(whitespace, effective ? Minimap.WIDTH : 0d);
         if (minimap2 != null) {
@@ -4031,6 +4037,27 @@ public class EditorBuffer implements TabContent {
         if (!large) {
             applyHighlighting(); // re-enable highlighting if we ever leave large-file mode
         }
+    }
+
+    /** Intermediate large-file tier: hides the minimap and (with the controller's help) disables LSP,
+     *  while keeping syntax highlighting + editing. Set at load by line count, or toggled per-buffer.
+     *  The controller re-runs its LSP sync after toggling so the session starts/stops accordingly. */
+    public void setHeavyFile(boolean heavy) {
+        if (this.heavyFile == heavy) {
+            return;
+        }
+        this.heavyFile = heavy;
+        setMinimapVisible(minimapVisible); // re-apply with the heavy-file guard
+        setLspActive(lspActive); // re-evaluate (forces off while heavy); controller re-syncs the session
+    }
+
+    public boolean isHeavyFile() {
+        return heavyFile;
+    }
+
+    /** The document's line (paragraph) count — used to decide the large-file tier at load. */
+    public int lineCount() {
+        return area.getParagraphs().size();
     }
 
     /**

@@ -4063,6 +4063,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 && path != null
                 && com.editora.vfs.Vfs.isLocal(path)
                 && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
+                && !buffer.isHeavyFile() // intermediate large-source tier also skips LSP (keeps highlighting)
                 && serverId != null
                 && serverEnabled(serverId)
                 && Boolean.TRUE.equals(lspServerAvailable.get(serverId));
@@ -6965,6 +6966,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             restoreNotes(buffer);
             restoreReadOnly(buffer);
             restoreMarkdownMode(buffer);
+            // The tab (and its LSP session) was set up before content loaded; if the file just entered the
+            // large-source tier, close the now-ineligible language server it may have started.
+            if (buffer.isHeavyFile()) {
+                syncBufferLsp(buffer);
+            }
             CodeArea area = buffer.getArea();
             int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
             area.moveTo(caret);
@@ -7469,6 +7475,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (size >= EditorBuffer.LARGE_FILE_BYTES) {
             buffer.setLargeFile(true);
             return largeFileNote(file);
+        }
+        // Intermediate tier: a very long single file (e.g. a 13k-line source) keeps highlighting + editing
+        // but drops the minimap + LSP — the two heaviest features for a huge source — so it stays responsive.
+        int threshold = config.getSettings().getLargeFileThreshold();
+        if (threshold > 0 && buffer.lineCount() >= threshold) {
+            buffer.setHeavyFile(true);
+            return tr("status.largeFileTier", buffer.lineCount());
         }
         return "";
     }
@@ -9484,6 +9497,19 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
             setStatus(tr("status.settingChanged", commandTitle(commandId), value));
         });
+    }
+
+    /** Toggles the intermediate large-file tier (minimap + LSP off, highlighting on) for the active buffer,
+     *  then re-syncs LSP so the session starts/stops to match. */
+    private void toggleLargeFileMode() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            return;
+        }
+        boolean now = !b.isHeavyFile();
+        b.setHeavyFile(now);
+        syncBufferLsp(b); // start (off) / stop (on) the LSP session to match the new state
+        setStatus(tr(now ? "status.largeFileMode.on" : "status.largeFileMode.off"));
     }
 
     /** Prompts for an integer setting (clamped to [min,max]); reports a parse error without changing it. */
@@ -12428,6 +12454,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                         10000,
                         v -> config.getSettings().setHistoryMaxTotalMb(v),
                         this::applyLocalHistory)));
+        registry.register(Command.of(
+                "editor.setLargeFileThreshold",
+                () -> promptIntSetting(
+                        "editor.setLargeFileThreshold",
+                        () -> config.getSettings().getLargeFileThreshold(),
+                        0,
+                        10_000_000,
+                        v -> config.getSettings().setLargeFileThreshold(v),
+                        null))); // applies to newly opened files
+        registry.register(Command.of("view.toggleLargeFileMode", this::toggleLargeFileMode));
         registry.register(Command.of(
                 "view.toggleRipgrep",
                 () -> toggleSetting(

@@ -152,6 +152,7 @@ public class SettingsWindow {
     private ComboBox<String> editorThemeCombo;
     private Spinner<Integer> tabSizeSpinner;
     private Spinner<Integer> fillColumnSpinner;
+    private Spinner<Integer> largeFileThresholdSpinner;
     private ComboBox<String> indentStyleCombo;
     private CheckBox columnRulerCheck;
     private CheckBox lineHighlightCheck;
@@ -625,6 +626,18 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setFillColumn(now);
+            apply();
+        });
+
+        // Line count above which the minimap + LSP auto-disable (highlighting + editing stay); 0 = never.
+        largeFileThresholdSpinner = new Spinner<>(0, 10_000_000, 10_000, 1000);
+        largeFileThresholdSpinner.setEditable(true);
+        largeFileThresholdSpinner.setPrefWidth(120);
+        largeFileThresholdSpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setLargeFileThreshold(now);
             apply();
         });
 
@@ -1594,6 +1607,15 @@ public class SettingsWindow {
                 indent,
                 editorConfigCheck,
                 "editorconfig indent style size charset end of line trailing whitespace final newline");
+        Label performance = section(p, tr("settings.section.performance"));
+        HBox largeFileBox = new HBox(8, largeFileThresholdSpinner, note(tr("settings.largeFileThreshold.unit")));
+        largeFileBox.setAlignment(Pos.CENTER_LEFT);
+        row(
+                p,
+                Category.EDITOR,
+                performance,
+                labeled(tr("settings.largeFileThreshold"), largeFileBox),
+                "large file performance minimap lsp lines threshold responsive huge source");
         Label logs = section(p, tr("settings.section.logs"));
         row(
                 p,
@@ -4441,6 +4463,7 @@ public class SettingsWindow {
             tabSizeSpinner.getValueFactory().setValue(settings.getTabSize());
             indentStyleCombo.setValue(settings.getIndentStyle());
             fillColumnSpinner.getValueFactory().setValue(settings.getFillColumn());
+            largeFileThresholdSpinner.getValueFactory().setValue(settings.getLargeFileThreshold());
             columnRulerCheck.setSelected(settings.isShowColumnRuler());
             lineHighlightCheck.setSelected(settings.isHighlightCurrentLine());
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
