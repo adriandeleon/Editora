@@ -5,9 +5,11 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javafx.application.Platform;
 import javafx.css.PseudoClass;
@@ -56,6 +58,10 @@ public class ToolWindowManager {
     private final SplitPane vSplit = new SplitPane();
 
     private final Map<String, ToolWindow> byId = new LinkedHashMap<>();
+    /** Tool windows whose stripe button is hidden by default (until the user shows them), absent any saved
+     *  visibility preference — e.g. Remote, which is niche so it stays off until enabled. */
+    private final Set<String> defaultHidden = new HashSet<>();
+
     private final Map<ToolWindow.Side, ToolWindow> openBySide = new HashMap<>();
     private final Map<ToolWindow, Button> stripeButtons = new HashMap<>();
     private final Map<ToolWindow, Region> panels = new HashMap<>();
@@ -128,6 +134,15 @@ public class ToolWindowManager {
     /** Registers an observer notified after any tool window opens (true) / closes (false). */
     public void setStateListener(java.util.function.BiConsumer<ToolWindow, Boolean> listener) {
         this.stateListener = listener;
+    }
+
+    /** Registers a tool window that defaults to hidden (no stripe button until the user enables it),
+     *  unless a saved visibility preference says otherwise. */
+    public void register(ToolWindow tw, boolean defaultVisible) {
+        if (!defaultVisible) {
+            defaultHidden.add(tw.getId());
+        }
+        register(tw);
     }
 
     public void register(ToolWindow tw) {
@@ -221,7 +236,10 @@ public class ToolWindowManager {
     /** True if this tool window's stripe button should be shown. Defaults to visible. */
     public boolean isVisible(ToolWindow tw) {
         Boolean v = config.getWorkspaceState().getToolWindowVisible().get(tw.getId());
-        return v == null || v;
+        if (v != null) {
+            return v;
+        }
+        return !defaultHidden.contains(tw.getId()); // default-hidden windows stay off until enabled
     }
 
     /**

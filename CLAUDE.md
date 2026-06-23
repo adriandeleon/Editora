@@ -157,8 +157,10 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   over saved connections → re-opens the form pre-filled), `remote.openFile` (an `sftp://` URI →
   `Vfs.parseStorable` → `openPath`), `remote.disconnect` (restores the local project root). **Saved sites get
   three visible surfaces** (all over the same `connections.json` most-recent-first list — no schema/secret
-  change): a **Remote Sites tool window** (`ui/RemoteConnectionsPanel`, id `remote`, `Side.LEFT`, `Icons::remote`,
-  `tool.remote`/`M-g r`, *not* buffer-gated — a flat `ListView` of saved sites; double-click/Enter or the
+  change): a **Remote Sites tool window** (`ui/RemoteConnectionsPanel`, id `remote`, `Side.RIGHT`, `Icons::remote`,
+  `tool.remote`/`M-g r`, *not* buffer-gated, **registered default-hidden** via `toolWindows.register(tw, false)` —
+  the stripe button is off until the user enables it (Settings → Tool Windows or `tool.remote`), and it opens on the
+  right; the remote *functionality* is unaffected — a flat `ListView` of saved sites; double-click/Enter or the
   New/Connect/Remove bar → `connectRemote(c)`/`removeConnection`/`connectRemote()`, refreshed on open + after a
   mount); a **Settings → Remote master-detail page** (`SettingsWindow.remoteConnectionsEditor`, mirroring the
   External Tools page — list + label/host/port/user/auth/key-path form editing the immutable `RemoteConnection`
