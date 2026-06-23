@@ -2998,25 +2998,28 @@ public class SettingsWindow {
                 persistExternalTools();
             }
         });
-        HBox buttons = new HBox(6, add, remove);
-        VBox left = new VBox(6, list, buttons);
-
         // Explicit Save (edits also auto-save on Enter / focus-loss + combo/checkbox change).
         Button save = new Button(tr("settings.save"));
         save.disableProperty().bind(form.disabledProperty());
         save.setOnAction(e -> commit.run());
-        HBox saveRow = new HBox(save);
-        saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, form, saveRow);
+
+        VBox left = new VBox(6, list);
+        VBox.setVgrow(list, Priority.ALWAYS);
+        VBox right = new VBox(8, form);
         VBox.setVgrow(form, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
 
         if (!externalToolItems.isEmpty()) {
             list.getSelectionModel().select(0);
         }
-        HBox box = new HBox(12, left, right);
-        box.setAlignment(Pos.TOP_LEFT);
-        return box;
+        HBox top = new HBox(12, left, right);
+        top.setAlignment(Pos.TOP_LEFT);
+        VBox.setVgrow(top, Priority.ALWAYS);
+
+        // One bottom bar below the whole editor: Add / Remove on the left, Save aligned on the right.
+        HBox buttons = new HBox(6, add, remove, spacer(), save);
+        buttons.setAlignment(Pos.CENTER_LEFT);
+        return new VBox(8, top, buttons);
     }
 
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
