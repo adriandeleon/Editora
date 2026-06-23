@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Internal: extracted `ExternalToolCoordinator` from `MainController`.** The External Tools feature (service + console panel + run/output logic + `externalTool.*` commands) moved into its own `CoordinatorHost`-style coordinator, trimming the `MainController` god-class. No behavior change — first step of an ongoing `MainController` decomposition.
 - **The Remote Sites tool window is off by default and opens on the right.** Its stripe button is now hidden until you enable it (Settings → Tool Windows, or the `tool.remote` command / `M-g r`), and when shown it docks on the right. The remote (SFTP) functionality is unchanged — only the tool window's default visibility and side moved. Existing layouts (if you'd already shown or moved it) are preserved.
 
 ### Added
