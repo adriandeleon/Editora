@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Remote Sites tool window is off by default and opens on the right.** Its stripe button is now hidden until you enable it (Settings → Tool Windows, or the `tool.remote` command / `M-g r`), and when shown it docks on the right. The remote (SFTP) functionality is unchanged — only the tool window's default visibility and side moved. Existing layouts (if you'd already shown or moved it) are preserved.
+
 ### Added
 
 - **Open the session log from Settings → Advanced.** Added a "Session log" link next to the settings-file path that opens `editora-session.log` (the captured logging + uncaught exceptions for the current session) in the editor — handy for grabbing diagnostics for a bug report.

@@ -2476,7 +2476,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         remoteToolWindow = new ToolWindow(
                 "remote",
                 tr("toolwindow.remote"),
-                ToolWindow.Side.LEFT,
+                ToolWindow.Side.RIGHT,
                 Icons::remote,
                 remoteConnectionsPanel,
                 "tool.remote");
@@ -2503,7 +2503,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(httpToolWindow);
         toolWindows.setAvailable(httpToolWindow, false); // shown only for a .http file with the feature on
         toolWindows.register(externalToolToolWindow);
-        toolWindows.register(remoteToolWindow); // always available — saved connections don't need a buffer
+        toolWindows.register(remoteToolWindow, false); // off by default (niche); always available — no buffer needed
         updateBufferToolWindows(); // hide buffer-only windows until there's an actionable buffer (no Welcome flash)
         // Detect a *user* open/close of the HTTP window (vs. our own auto show/hide, guarded by
         // httpAutoMutating) so a manual close is remembered per .http buffer and a manual open clears it.
