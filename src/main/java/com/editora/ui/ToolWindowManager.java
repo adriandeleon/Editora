@@ -488,6 +488,33 @@ public class ToolWindowManager {
         }
     }
 
+    /**
+     * Captures the live divider positions of the currently-open tool windows into the session. Called on
+     * quit/window-close so a divider the user dragged but left open is remembered — {@link #close} only
+     * captures it when a tool window is actually hidden, so a quit-while-open would otherwise lose it.
+     */
+    public void persistDividers() {
+        WorkspaceState state = config.getWorkspaceState();
+        ToolWindow left = openBySide.get(ToolWindow.Side.LEFT);
+        if (left != null) {
+            int idx = hSplit.getItems().indexOf(panels.get(left));
+            if (idx >= 0 && idx < hSplit.getDividers().size()) {
+                state.setLeftDividerPosition(hSplit.getDividers().get(idx).getPosition());
+            }
+        }
+        ToolWindow right = openBySide.get(ToolWindow.Side.RIGHT);
+        if (right != null) {
+            int idx = hSplit.getItems().indexOf(panels.get(right));
+            if (idx > 0 && idx - 1 < hSplit.getDividers().size()) {
+                state.setRightDividerPosition(hSplit.getDividers().get(idx - 1).getPosition());
+            }
+        }
+        ToolWindow bottom = openBySide.get(ToolWindow.Side.BOTTOM);
+        if (bottom != null && !vSplit.getDividers().isEmpty()) {
+            state.setBottomDividerPosition(vSplit.getDividers().get(0).getPosition());
+        }
+    }
+
     public void close(ToolWindow tw) {
         Region panel = panels.remove(tw);
         if (panel == null) {
