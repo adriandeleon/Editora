@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Internal: extracted `SearchCoordinator` from `MainController`.** The Find-in-Files feature (the multi-file search service + results panel, scope tracking, replace-in-files, and the ripgrep/walker backend selection) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
 - **Internal: extracted `TodoCoordinator` from `MainController`.** The TODO / highlight-pattern feature (service + tool-window panel + the in-editor highlight matcher + the project/open-files scan + `todo.*` commands) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
 - **Internal: extracted `MacroCoordinator` from `MainController`.** The keyboard-macro feature (per-window service + record/replay capture hooks + `macro.*` commands) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
 - **Internal: extracted `ExternalToolCoordinator` from `MainController`.** The External Tools feature (service + console panel + run/output logic + `externalTool.*` commands) moved into its own `CoordinatorHost`-style coordinator, trimming the `MainController` god-class. No behavior change — first step of an ongoing `MainController` decomposition.
