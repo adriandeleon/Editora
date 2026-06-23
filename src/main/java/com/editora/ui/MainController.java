@@ -347,8 +347,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private final java.util.Map<Path, java.util.List<com.editora.editor.LspDiagnostic>> lspProblems =
             new java.util.LinkedHashMap<>();
-    /** The currently-showing LSP hover popup (dismissable), or null. */
-    private javafx.stage.Popup lspHoverPopup;
 
     private GitPanel gitPanel;
     private ToolWindow commitToolWindow;
@@ -2829,6 +2827,21 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     });
 
+    /** LSP navigation/format flows (go-to-def / references / hover / format + the hover popup); see
+     *  {@link LspCoordinator}. The manager stays owned here (DAP layers on it, the MCP bridge reads it). */
+    private final LspCoordinator lspCoordinator =
+            new LspCoordinator(coordinatorHost, lspManager, new LspCoordinator.Ops() {
+                @Override
+                public void openAndGoto(Path file, int line0, int col0) {
+                    MainController.this.openAndGoto(file, line0, col0);
+                }
+
+                @Override
+                public boolean activeEditable() {
+                    return MainController.this.activeEditable();
+                }
+            });
+
     /** Personal Notes feature; owns the panel/jump-pickers/persistence. Built in {@link #init} (needs config). */
     private NotesCoordinator notesCoordinator;
 
@@ -4149,34 +4162,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.lsp.restarted"));
     }
 
-    /** Reformats the whole active file via its language server ({@code textDocument/formatting}), if the
-     *  server is running and advertises formatting. Edits apply through the undoable buffer. */
-    private void formatDocument() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null || buffer.getPath() == null || !activeEditable()) {
-            setStatus(tr("status.lsp.formatUnavailable"));
-            return;
-        }
-        Path path = buffer.getPath();
-        if (!lspManager.isManaged(path) || !lspManager.supportsFormatting(path)) {
-            setStatus(tr("status.lsp.formatUnavailable"));
-            return;
-        }
-        int tabSize = config.getSettings().getTabSize();
-        setStatus(tr("status.lsp.formatting"));
-        lspManager.formatDocument(path, tabSize, buffer.detectInsertSpaces(tabSize), edits -> {
-            if (buffer != activeBuffer()) {
-                return; // user switched tabs before the server replied
-            }
-            if (edits.isEmpty()) {
-                setStatus(tr("status.lsp.formatNoChange"));
-                return;
-            }
-            buffer.applyLspEdits(edits);
-            setStatus(tr("status.lsp.formatted"));
-        });
-    }
-
     /** Notifies the server of a save (didSave) for a managed file + refreshes pull-model diagnostics. */
     private void notifyLspSaved(EditorBuffer buffer) {
         if (buffer != null && buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
@@ -4236,139 +4221,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             // Malformed path token — treat as unresolvable.
         }
         return null;
-    }
-
-    /** The active buffer if it is LSP-managed, reporting + returning null otherwise. */
-    private EditorBuffer activeLspBuffer() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null || !lspManager.isManaged(b.getPath())) {
-            setStatus(tr("status.lsp.unavailable"));
-            return null;
-        }
-        return b;
-    }
-
-    private void lspGotoDefinition() {
-        EditorBuffer b = activeLspBuffer();
-        if (b == null) {
-            return;
-        }
-        CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
-        lspManager.definition(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
-            if (targets.isEmpty()) {
-                setStatus(tr("status.lsp.noDefinition"));
-            } else {
-                com.editora.lsp.LspManager.Target t = targets.get(0);
-                openAndGoto(t.file(), t.line(), t.character());
-            }
-        });
-    }
-
-    private void lspFindReferences() {
-        EditorBuffer b = activeLspBuffer();
-        if (b == null) {
-            return;
-        }
-        CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
-        lspManager.references(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
-            if (targets.isEmpty()) {
-                setStatus(tr("status.lsp.noReferences"));
-                return;
-            }
-            QuickOpen<com.editora.lsp.LspManager.Target> picker = new QuickOpen<>(
-                    tr("lsp.references.title"),
-                    tr("lsp.references.prompt"),
-                    () -> targets,
-                    t -> t.file().getFileName() + ":" + (t.line() + 1),
-                    t -> t.file().toString(),
-                    t -> openAndGoto(t.file(), t.line(), t.character()));
-            picker.setOverlayHost(overlayHost);
-            picker.show(stage);
-        });
-    }
-
-    private void lspShowHover() {
-        EditorBuffer b = activeLspBuffer();
-        if (b == null) {
-            return;
-        }
-        CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
-        lspManager.hover(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), text -> {
-            if (text == null || text.isBlank()) {
-                setStatus(tr("status.lsp.noHover"));
-            } else {
-                showHoverPopup(area, text);
-            }
-        });
-    }
-
-    /**
-     * Shows LSP hover markdown in a dismissable popup at the caret (rendered via the Markdown renderer).
-     * Closes on Escape, a click elsewhere (auto-hide), caret movement, scrolling, or another hover.
-     */
-    private void showHoverPopup(CodeArea area, String markdown) {
-        hideHoverPopup();
-        javafx.scene.Node content;
-        try {
-            javafx.scene.Node rendered = com.editora.editor.MarkdownRenderer.renderDocument(
-                    com.editora.editor.MarkdownRenderer.parseToDocument(markdown), null);
-            content = rendered;
-        } catch (RuntimeException e) {
-            javafx.scene.control.Label label = new javafx.scene.control.Label(markdown);
-            label.setWrapText(true);
-            content = label;
-        }
-        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(content);
-        box.getStyleClass().add("lsp-hover-popup");
-        box.setMaxWidth(560);
-        box.getStylesheets()
-                .addAll(
-                        getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
-                        getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
-
-        javafx.stage.Popup popup = new javafx.stage.Popup();
-        popup.setAutoHide(true); // click outside / focus loss dismisses it
-        popup.setConsumeAutoHidingEvents(false);
-        popup.getContent().add(box);
-        lspHoverPopup = popup;
-
-        // Dismiss on Escape, caret movement, or scroll — all detached again when the popup hides.
-        javafx.event.EventHandler<javafx.scene.input.KeyEvent> esc = ev -> {
-            if (ev.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
-                hideHoverPopup();
-                ev.consume();
-            }
-        };
-        javafx.beans.value.ChangeListener<Object> dismiss = (o, a, b) -> hideHoverPopup();
-        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, esc);
-        area.caretPositionProperty().addListener(dismiss);
-        area.estimatedScrollYProperty().addListener(dismiss);
-        popup.setOnHidden(ev -> {
-            area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, esc);
-            area.caretPositionProperty().removeListener(dismiss);
-            area.estimatedScrollYProperty().removeListener(dismiss);
-            if (lspHoverPopup == popup) {
-                lspHoverPopup = null;
-            }
-        });
-
-        var bounds = area.getCaretBounds().orElse(null);
-        if (bounds != null) {
-            popup.show(area, bounds.getMinX(), bounds.getMaxY());
-        } else {
-            popup.show(area, 0, 0);
-        }
-    }
-
-    /** Hides the LSP hover popup if one is showing. */
-    private void hideHoverPopup() {
-        if (lspHoverPopup != null) {
-            lspHoverPopup.hide();
-            lspHoverPopup = null;
-        }
     }
 
     /** Whether the Personal Notes feature is enabled in Settings (default off). */
@@ -6842,7 +6694,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         buffer.setLspNavActions(
-                this::lspGotoDefinition, this::lspFindReferences, this::lspShowHover, this::formatDocument);
+                lspCoordinator::gotoDefinition,
+                lspCoordinator::findReferences,
+                lspCoordinator::showHover,
+                lspCoordinator::formatDocument);
         syncBufferLsp(buffer);
         ensurePreviewControls(buffer);
         htmlPreview.ensureControl(buffer); // the floating "open in browser" globe (HTML buffers, feature on)
@@ -11509,11 +11364,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.debug", () -> ifDebug(() -> toolWindows.toggle(debugToolWindow))));
         // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
         registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
-        registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(this::lspGotoDefinition)));
-        registry.register(Command.of("lsp.findReferences", () -> ifLsp(this::lspFindReferences)));
-        registry.register(Command.of("lsp.hover", () -> ifLsp(this::lspShowHover)));
+        registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
+        registry.register(Command.of("lsp.findReferences", () -> ifLsp(lspCoordinator::findReferences)));
+        registry.register(Command.of("lsp.hover", () -> ifLsp(lspCoordinator::showHover)));
         registry.register(Command.of("lsp.restartServers", () -> ifLsp(this::restartLspServers)));
-        registry.register(Command.of("lsp.formatDocument", () -> ifLsp(this::formatDocument)));
+        registry.register(Command.of("lsp.formatDocument", () -> ifLsp(lspCoordinator::formatDocument)));
         registry.register(Command.of("view.toggleLsp", this::toggleLsp));
         registry.register(Command.of(
                 "view.toggleSemanticHighlight",
