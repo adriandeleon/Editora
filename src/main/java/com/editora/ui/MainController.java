@@ -263,9 +263,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private StructurePanel structurePanel;
     private BookmarksPanel bookmarksPanel;
     private NotesPanel notesPanel;
-    private SearchPanel searchPanel;
     private ToolWindow searchToolWindow;
-    private final com.editora.search.SearchService searchService = new com.editora.search.SearchService();
     private ToolWindow todoToolWindow;
     private MarkdownLintPanel markdownLintPanel;
     private ToolWindow markdownLintToolWindow;
@@ -489,7 +487,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         this.settingsWindow.setTemplateRegistry(templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
-        this.settingsWindow.setRipgrepProbe(this::probeRipgrep); // Settings → Search found/not-found status
+        this.settingsWindow.setRipgrepProbe(
+                searchCoordinator::probeRipgrep); // Settings → Search found/not-found status
         this.settingsWindow.setOnKeymapChanged(this::reloadKeymap); // picker/combo → live keymap switch
         this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
             @Override
@@ -543,7 +542,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyLocalHistory(); // Local File History tool window availability + list (on by default)
         applyNotesSupport(); // hide Personal Notes UI when disabled (default)
         mermaid.applySupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
-        applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
+        searchCoordinator
+                .applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
         applyMathSupport(); // LaTeX math rendering (off by default)
         httpClient.applySupport(); // .http run glyphs + response window off when disabled (default)
         htmlPreview.applySupport(); // HTML "open in browser" control off when disabled (default)
@@ -1340,9 +1340,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void setupRecentFiles() {
         recentFiles = new RecentFiles(config.getConfigDir());
         searchHistory = new com.editora.config.SearchHistory(config.getConfigDir());
-        if (searchPanel != null) {
-            searchPanel.setHistory(searchHistory.getList()); // bind the query combo's dropdown to history
-        }
+        searchCoordinator.refreshHistory(); // bind the query combo's dropdown to history
         recentButton.setGraphic(Icons.recent());
         recentButton.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
         recentButton.setTooltip(new Tooltip(tr("tooltip.recent")));
@@ -1414,7 +1412,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.projectKey = project == null ? "" : project.id();
         projectPanel.setRoot(project == null ? null : Path.of(project.root()));
         updateProjectFolderView(); // global ("No Project") window: show the active file's folder instead
-        refreshSearchScope(); // Find-in-Files scope label reflects this window's project (or current folder)
+        searchCoordinator
+                .refreshScope(); // Find-in-Files scope label reflects this window's project (or current folder)
         refreshProjectPanelList();
         updateWindowTitle();
         // When a project window is freshly opened, show the Projects tool window so the file tree is
@@ -1508,7 +1507,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (historyService != null) {
             historyService.shutdown();
         }
-        searchService.shutdown();
+        searchCoordinator.shutdown();
         todoCoordinator.shutdown();
         markdownLintService.shutdown();
         mermaid.shutdown();
@@ -2041,7 +2040,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             statusBar.attach(buffer);
             breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
             updateProjectFolderView(); // global window: retarget the tree at the new file's folder
-            refreshSearchScope(); // Find-in-Files "current folder" tracks the active file
+            searchCoordinator.refreshScope(); // Find-in-Files "current folder" tracks the active file
             if (AUTOSAVE_FOCUS.equals(autoSaveMode())) {
                 autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
             }
@@ -2340,42 +2339,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::history,
                 fileHistoryPanel,
                 "tool.fileHistory");
-        searchPanel = new SearchPanel(new SearchPanel.Actions() {
-            @Override
-            public void search(com.editora.search.SearchQuery query, String includeGlobs, String excludeGlobs) {
-                runFileSearch(query, includeGlobs, excludeGlobs);
-            }
-
-            @Override
-            public void openMatch(java.nio.file.Path file, int line, int col, boolean focusEditor) {
-                openPath(file);
-                Platform.runLater(() -> {
-                    gotoInFile(file, line, col, focusEditor);
-                    // A preview (single click / keyboard selection) keeps focus in the results so the user
-                    // can keep arrowing — openPath/gotoInFile would otherwise have grabbed editor focus.
-                    if (!focusEditor && searchPanel != null) {
-                        searchPanel.focusResults();
-                    }
-                });
-            }
-
-            @Override
-            public void replaceAll(
-                    com.editora.search.SearchQuery query,
-                    String replacement,
-                    java.util.List<java.nio.file.Path> files) {
-                replaceInFiles(query, replacement, files);
-            }
-
-            @Override
-            public void recordSearch(String query) {
-                if (searchHistory != null) {
-                    searchHistory.add(query);
-                }
-            }
-        });
         searchToolWindow = new ToolWindow(
-                "search", tr("toolwindow.search"), ToolWindow.Side.RIGHT, Icons::find, searchPanel, "tool.search");
+                "search",
+                tr("toolwindow.search"),
+                ToolWindow.Side.RIGHT,
+                Icons::find,
+                searchCoordinator.panel(),
+                "tool.search");
         todoToolWindow = new ToolWindow(
                 "todo",
                 tr("toolwindow.todo"),
@@ -2516,103 +2486,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
     }
 
-    /** Runs a multi-file search: open buffers (in-memory) + the active project root, results to the panel. */
-    private void runFileSearch(com.editora.search.SearchQuery query, String includeGlobs, String excludeGlobs) {
-        java.util.Map<java.nio.file.Path, String> open = new java.util.HashMap<>();
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null && b.getPath() != null) {
-                open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
-            }
-        }
-        // Scope to THIS window's project root, else the active file's folder ("Current Folder").
-        java.nio.file.Path root = searchScopeRoot();
-        refreshSearchScope(); // keep the toolbar's "searching in" label in step with what we search
-        setStatus(tr("search.searching"));
-        java.util.List<String> include = com.editora.search.Globs.split(includeGlobs);
-        java.util.List<String> exclude = com.editora.search.Globs.split(excludeGlobs);
-        searchService.search(query, root, open, include, exclude, outcome -> {
-            searchPanel.setResults(outcome);
-            setStatus(
-                    outcome.totalMatches() == 0
-                            ? tr("search.none")
-                            : tr("search.summary", outcome.totalMatches(), outcome.fileCount()));
-        });
-    }
-
-    /**
-     * The folder Find in Files searches on disk: this window's project root when a project is open, else the
-     * active file's parent folder ("Current Folder"). {@code null} (no project, no saved file) ⇒ only the
-     * open buffers are searched.
-     */
-    private java.nio.file.Path searchScopeRoot() {
-        if (windowProject != null && projectsEnabled()) {
-            return java.nio.file.Path.of(windowProject.root());
-        }
-        EditorBuffer b = activeBuffer();
-        if (b != null && b.getPath() != null) {
-            return b.getPath().toAbsolutePath().normalize().getParent();
-        }
-        return null;
-    }
-
-    /** Pushes the current search scope folder to the panel's "searching in" label (home-collapsed + tooltip). */
-    private void refreshSearchScope() {
-        if (searchPanel == null) {
-            return;
-        }
-        java.nio.file.Path root = searchScopeRoot();
-        if (root == null) {
-            searchPanel.setScope(tr("search.scopeOpenFiles"), null);
-            return;
-        }
-        String full = root.toString();
-        searchPanel.setScope(homeCollapsed(full), full);
-    }
-
     /** Home-collapses an absolute folder path for a scope label (e.g. {@code ~/proj}). */
     private static String homeCollapsed(String full) {
         String home = System.getProperty("user.home", "");
         return !home.isEmpty() && (full.equals(home) || full.startsWith(home + java.io.File.separator))
                 ? "~" + full.substring(home.length())
                 : full;
-    }
-
-    /** Toggles the Find-in-Files tool window: opens it (focusing its query field) when closed, closes it
-     *  when already open — so the toolbar icon (and {@code C-S-f}) acts as an open/close toggle. */
-    private void openSearchInFiles() {
-        if (toolWindows.isOpen(searchToolWindow)) {
-            toolWindows.close(searchToolWindow);
-        } else {
-            refreshSearchScope(); // show the folder we'll search before the first query
-            String selection = selectedLineForSearch();
-            if (selection != null) {
-                searchPanel.setQuery(selection); // pre-fill (and run) from the editor selection
-            }
-            toolWindows.open(searchToolWindow, true);
-        }
-    }
-
-    /**
-     * The active buffer's selection when it is non-empty and stays on a single line, else {@code null}.
-     * Used to pre-fill the find-in-files query from the selected text (the VS Code convention); a
-     * multi-line selection isn't a sensible search term, so it returns {@code null} and the query is left
-     * untouched.
-     */
-    private String selectedLineForSearch() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return null;
-        }
-        org.fxmisc.richtext.CodeArea area = buffer.getFocusedArea();
-        if (area == null) {
-            return null;
-        }
-        String sel = area.getSelectedText();
-        if (sel == null || sel.isEmpty() || sel.indexOf('\n') >= 0 || sel.indexOf('\r') >= 0) {
-            return null;
-        }
-        return sel;
     }
 
     /** Starts AceJump on the active buffer: type a character, then a label, to jump the caret. */
@@ -2623,57 +2502,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         setStatus(tr("acejump.prompt"));
         b.startAceJump();
-    }
-
-    /**
-     * Replaces every match of {@code query} with {@code replacement} across {@code files}. Open buffers
-     * are edited in-memory (undoable); closed files are rewritten on disk (UTF-8, line endings kept as
-     * they live in the text). Asks for confirmation, then re-runs the search to refresh the panel.
-     */
-    private void replaceInFiles(
-            com.editora.search.SearchQuery query, String replacement, java.util.List<java.nio.file.Path> files) {
-        if (query == null || query.text() == null || query.text().isEmpty() || files.isEmpty()) {
-            return;
-        }
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("search.replaceConfirm", files.size()),
-                javafx.scene.control.ButtonType.OK,
-                javafx.scene.control.ButtonType.CANCEL);
-        confirm.initOwner(stage);
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
-                != javafx.scene.control.ButtonType.OK) {
-            return;
-        }
-        int total = 0;
-        int changedFiles = 0;
-        for (java.nio.file.Path file : files) {
-            try {
-                Tab tab = tabForPath(file);
-                EditorBuffer buffer = bufferOf(tab);
-                if (buffer != null) {
-                    var r = com.editora.search.MultiFileSearch.replaceAll(buffer.getContent(), query, replacement);
-                    if (r.count() > 0) {
-                        buffer.setContent(r.text());
-                        total += r.count();
-                        changedFiles++;
-                    }
-                } else {
-                    String text = java.nio.file.Files.readString(file);
-                    var r = com.editora.search.MultiFileSearch.replaceAll(text, query, replacement);
-                    if (r.count() > 0) {
-                        java.nio.file.Files.writeString(file, r.text());
-                        total += r.count();
-                        changedFiles++;
-                    }
-                }
-            } catch (java.io.IOException | RuntimeException e) {
-                setStatus(tr("search.replaceFailed", String.valueOf(file.getFileName())));
-            }
-        }
-        setStatus(tr("search.replaced", total, changedFiles));
-        searchPanel.refresh(); // re-run with the panel's current query + globs to refresh the results
     }
 
     private Region placeholder(String text) {
@@ -2702,63 +2530,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b.refreshPreview();
             }
         }
-    }
-
-    /** Last rg command probed + whether it was found, so a repeated apply doesn't re-spawn {@code rg --version}. */
-    private java.util.List<String> ripgrepProbedCommand = null;
-
-    private volatile boolean ripgrepAvailable = false;
-
-    /**
-     * Configures the Find-in-Files backend: ripgrep when the setting is on AND rg is detected on PATH, else
-     * the built-in Java walker. Detection runs off the FX thread (it spawns {@code rg --version}); cached per
-     * command. Run at init + on every settings apply, mirroring {@link MermaidCoordinator#applySupport}.
-     */
-    private void applyRipgrepSupport() {
-        Settings s = config.getSettings();
-        java.util.List<String> cmd = com.editora.search.Ripgrep.command(s.getRipgrepCommand());
-        boolean enabled = s.isRipgrepSearch();
-        if (cmd.equals(ripgrepProbedCommand)) {
-            boolean effective = enabled && ripgrepAvailable;
-            searchService.setBackend(effective, cmd, s.isSearchRespectGitignore());
-            if (searchPanel != null) {
-                searchPanel.setBackendActive(effective);
-            }
-            return;
-        }
-        Thread t = new Thread(
-                () -> {
-                    boolean ok = com.editora.search.Ripgrep.detect(cmd);
-                    Platform.runLater(() -> {
-                        ripgrepProbedCommand = cmd;
-                        ripgrepAvailable = ok;
-                        boolean effective = s.isRipgrepSearch() && ok;
-                        searchService.setBackend(effective, cmd, s.isSearchRespectGitignore());
-                        if (searchPanel != null) {
-                            searchPanel.setBackendActive(effective);
-                        }
-                        if (settingsWindow != null) {
-                            settingsWindow.syncRipgrepStatus(ok);
-                        }
-                    });
-                },
-                "rg-detect");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    /** Probe rg availability off-thread for the current command, delivering the result on the FX thread. */
-    private void probeRipgrep(java.util.function.Consumer<Boolean> onResult) {
-        java.util.List<String> cmd =
-                com.editora.search.Ripgrep.command(config.getSettings().getRipgrepCommand());
-        Thread t = new Thread(
-                () -> {
-                    boolean ok = com.editora.search.Ripgrep.detect(cmd);
-                    Platform.runLater(() -> onResult.accept(ok));
-                },
-                "rg-detect");
-        t.setDaemon(true);
-        t.start();
     }
 
     // --- Feature coordinators (each peeled off MainController; share one CoordinatorHost adapter) -----
@@ -2979,6 +2750,71 @@ public class MainController implements com.editora.mcp.McpBridge {
             return MainController.this.homeCollapsed(absolutePath);
         }
     });
+
+    /** Find-in-Files feature; owns the search service/panel/backend (the tool window + commands stay here). */
+    private final SearchCoordinator searchCoordinator =
+            new SearchCoordinator(coordinatorHost, new SearchCoordinator.Ops() {
+                @Override
+                public java.nio.file.Path projectRoot() {
+                    return (windowProject != null && projectsEnabled())
+                            ? java.nio.file.Path.of(windowProject.root())
+                            : null;
+                }
+
+                @Override
+                public void openMatch(java.nio.file.Path file, int line, int col, boolean focusEditor) {
+                    openPath(file);
+                    Platform.runLater(() -> {
+                        gotoInFile(file, line, col, focusEditor);
+                        // A preview (single click / keyboard selection) keeps focus in the results so the user
+                        // can keep arrowing — openPath/gotoInFile would otherwise have grabbed editor focus.
+                        if (!focusEditor) {
+                            searchCoordinator.panel().focusResults();
+                        }
+                    });
+                }
+
+                @Override
+                public boolean isToolWindowOpen() {
+                    return searchToolWindow != null && toolWindows.isOpen(searchToolWindow);
+                }
+
+                @Override
+                public void openToolWindow() {
+                    toolWindows.open(searchToolWindow, true);
+                }
+
+                @Override
+                public void closeToolWindow() {
+                    toolWindows.close(searchToolWindow);
+                }
+
+                @Override
+                public EditorBuffer bufferForPath(java.nio.file.Path file) {
+                    return bufferOf(tabForPath(file));
+                }
+
+                @Override
+                public void recordSearch(String query) {
+                    if (searchHistory != null) {
+                        searchHistory.add(query);
+                    }
+                }
+
+                @Override
+                public javafx.collections.ObservableList<String> searchHistory() {
+                    return searchHistory != null
+                            ? searchHistory.getList()
+                            : javafx.collections.FXCollections.observableArrayList();
+                }
+
+                @Override
+                public void syncRipgrepStatus(boolean found) {
+                    if (settingsWindow != null) {
+                        settingsWindow.syncRipgrepStatus(found);
+                    }
+                }
+            });
 
     // --- HTTP Client (.http request runner + response tool window) -----------------------------------
 
@@ -3217,7 +3053,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (p != null) {
                 root = Path.of(p.root());
             }
-            searchService.search(q, root, open, fut::complete);
+            searchCoordinator.service().search(q, root, open, fut::complete);
         });
         com.editora.search.SearchService.Outcome outcome;
         try {
@@ -8538,7 +8374,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     @FXML
     private void onFindInFiles() {
-        openSearchInFiles();
+        searchCoordinator.openToggle();
     }
 
     /** Shows the Run tool window's stripe button only for a runnable file (the in-editor affordance is
@@ -11345,7 +11181,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         git.applyBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
         applyNotesSupport();
         mermaid.applySupport();
-        applyRipgrepSupport();
+        searchCoordinator.applyRipgrepSupport();
         applyMathSupport();
         httpClient.applySupport();
         htmlPreview.applySupport();
@@ -12105,21 +11941,21 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleRipgrep",
                         () -> config.getSettings().isRipgrepSearch(),
                         v -> config.getSettings().setRipgrepSearch(v),
-                        this::applyRipgrepSupport)));
+                        searchCoordinator::applyRipgrepSupport)));
         registry.register(Command.of(
                 "search.setRipgrepCommand",
                 () -> promptStringSetting(
                         "search.setRipgrepCommand",
                         () -> config.getSettings().getRipgrepCommand(),
                         v -> config.getSettings().setRipgrepCommand(v),
-                        this::applyRipgrepSupport)));
+                        searchCoordinator::applyRipgrepSupport)));
         registry.register(Command.of(
                 "view.toggleSearchGitignore",
                 () -> toggleSetting(
                         "view.toggleSearchGitignore",
                         () -> config.getSettings().isSearchRespectGitignore(),
                         v -> config.getSettings().setSearchRespectGitignore(v),
-                        this::applyRipgrepSupport)));
+                        searchCoordinator::applyRipgrepSupport)));
         registry.register(Command.of(
                 "mermaid.setMmdcCommand",
                 () -> promptStringSetting(
@@ -12296,7 +12132,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.toggle(remoteToolWindow);
         }));
         registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
-        registry.register(Command.of("search.inFiles", this::openSearchInFiles));
+        registry.register(Command.of("search.inFiles", searchCoordinator::openToggle));
         todoCoordinator.registerCommands(registry); // tool.todo + todo.refresh + todo.addPattern
         registry.register(Command.of(
                 "view.toggleTodoHighlight",
