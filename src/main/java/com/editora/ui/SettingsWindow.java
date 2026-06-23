@@ -4170,6 +4170,23 @@ public class SettingsWindow {
         fileRow.setAlignment(Pos.CENTER_LEFT);
         row(p, Category.ADVANCED, fileSection, fileRow, "settings file path toml config location");
 
+        Path sessionLog = DebugLog.sessionFile(config.getConfigDir());
+        Hyperlink sessionLink = new Hyperlink(displaySettingsPath(sessionLog));
+        sessionLink.setTooltip(new Tooltip(tr("settings.openFileTip")));
+        sessionLink.setOnAction(e -> {
+            if (onOpenFile != null && sessionLog != null) {
+                onOpenFile.accept(sessionLog);
+            }
+        });
+        HBox sessionRow = new HBox(6, new Label(tr("settings.sessionLog")), sessionLink);
+        sessionRow.setAlignment(Pos.CENTER_LEFT);
+        row(
+                p,
+                Category.ADVANCED,
+                fileSection,
+                sessionRow,
+                "session log debug crash report editora-session.log diagnostics");
+
         Label resetSection = section(p, tr("settings.section.reset"));
         Button reset = new Button(tr("settings.resetDefaults"));
         reset.setOnAction(e -> resetAll());

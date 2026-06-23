@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Open the session log from Settings → Advanced.** Added a "Session log" link next to the settings-file path that opens `editora-session.log` (the captured logging + uncaught exceptions for the current session) in the editor — handy for grabbing diagnostics for a bug report.
+
 - **Open the dictionary files from Settings → Spell Check.** Two links (grouped near the top of the page): **"Open the technical.txt dictionary"** opens the built-in technical dictionary read-only in a new tab so you can browse what it covers, and **"Open dictionary.txt…"** opens your personal dictionary file in the editor (created empty if you haven't added a word yet).
 
 - **Large source files stay responsive (intermediate large-file tier).** A very long single file (e.g. a 13k-line source) below the 5 MB hard cutoff used to get the full treatment — syntax highlighting *plus* the minimap (which redraws every line) *plus* a language server churning over a huge AST — which made it slow to load and scroll. There's now an intermediate tier: above a configurable **line count** (Settings → Editor → Performance → "Disable minimap & LSP above", default **10000 lines**, `0` = never), the **minimap and language server auto-disable** while syntax highlighting and full editing stay on. A status note reports it on open, and you can flip it per file from the palette (**Toggle Large-File Mode**). Palette `editor.setLargeFileThreshold` changes the threshold; `view.toggleLargeFileMode` overrides per buffer.
