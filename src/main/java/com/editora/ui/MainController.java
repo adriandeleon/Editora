@@ -2582,11 +2582,31 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         String full = root.toString();
+        searchPanel.setScope(homeCollapsed(full), full);
+    }
+
+    /** Home-collapses an absolute folder path for a scope label (e.g. {@code ~/proj}). */
+    private static String homeCollapsed(String full) {
         String home = System.getProperty("user.home", "");
-        String display = !home.isEmpty() && (full.equals(home) || full.startsWith(home + java.io.File.separator))
+        return !home.isEmpty() && (full.equals(home) || full.startsWith(home + java.io.File.separator))
                 ? "~" + full.substring(home.length())
                 : full;
-        searchPanel.setScope(display, full);
+    }
+
+    /** Pushes the current TODO scan scope to the panel's label: this window's project tree (when one is
+     *  open), else the open-files-only scope — matching what {@link #runTodoScan} actually scans. */
+    private void refreshTodoScope() {
+        if (todoPanel == null) {
+            return;
+        }
+        java.nio.file.Path root =
+                (windowProject != null && projectsEnabled()) ? java.nio.file.Path.of(windowProject.root()) : null;
+        if (root == null) {
+            todoPanel.setScope(tr("search.scopeOpenFiles"), null);
+            return;
+        }
+        String full = root.toString();
+        todoPanel.setScope(homeCollapsed(full), full);
     }
 
     /** Toggles the Find-in-Files tool window: opens it (focusing its query field) when closed, closes it
@@ -5318,6 +5338,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Scans for TODO/highlight matches and fills the tool window: the open project's tree when a project
      *  is open, else just the open buffers. Off-thread (TodoService); no-op when the feature is off. */
     private void runTodoScan() {
+        refreshTodoScope(); // keep the panel's "scanning in" label in step with what we scan
         Settings s = config.getSettings();
         if (!s.isTodoHighlight()) {
             todoPanel.setResults(new com.editora.todo.TodoService.Outcome(java.util.List.of(), 0, 0, false));
@@ -5339,6 +5360,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (windowProject != null && projectsEnabled()) {
             root = java.nio.file.Path.of(windowProject.root());
         }
+        todoService.setRespectGitignore(s.isSearchRespectGitignore()); // same "exclude .gitignore" setting as search
         setStatus(tr("todo.scanning"));
         todoService.scan(compiled, root, open, outcome -> {
             todoPanel.setResults(outcome);

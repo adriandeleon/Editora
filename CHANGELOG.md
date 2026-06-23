@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The TODO tool window shows the folder it's scanning.** Like Find in Files, the TODO panel now has a "Scanning in:" line at the top showing the scope — the **project root** when a project is open, otherwise **open files only** (full path on hover).
+- **The TODO scan skips `.gitignore`d files and folders.** Scanning a project for TODO/FIXME markers now excludes the paths your `.gitignore` excludes (`target/`, `node_modules/`, build output, `*.log`, …), so the TODO panel stops filling with generated-code noise. Governed by the same **Settings → Search → "Exclude .gitignore files and folders from search"** toggle as Find in Files.
 - **Find in Files shows the folder it's searching.** The Find-in-Files panel now has a "Searching in:" line at the top showing the exact scope — the **project root** when a project is open, otherwise the **current file's folder** (with the full path on hover). Non-project searches now actually scan that folder on disk (previously they only matched open buffers), and the scope updates as you switch tabs.
 - **Find in Files skips `.gitignore`d files and folders.** Searching a project now excludes the paths your `.gitignore` excludes — `target/`, `node_modules/`, `build/`, `dist/`, `*.log`, etc. — so build output and dependencies stop cluttering results. New setting **Settings → Search → "Exclude .gitignore files and folders from search"** (default **on**; palette `view.toggleSearchGitignore`). The ripgrep backend already honored `.gitignore`; the built-in walker now does too (via a new pragmatic `.gitignore` parser), and turning the setting off searches everything (rg `--no-ignore`).
 
