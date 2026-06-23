@@ -76,8 +76,6 @@ import com.editora.editor.LanguageRegistry;
 import com.editora.editor.SpellDictionaries;
 import com.editora.editor.TabContent;
 import com.editora.editor.TextNav;
-import com.editora.macro.Macro;
-import com.editora.macro.MacroService;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 
@@ -181,8 +179,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ConfigManager config;
     private CommandRegistry registry;
     private KeymapManager keymap;
-    /** Per-window keyboard-macro recorder/player coordinator (shares the saved-macro store across windows). */
-    private MacroService macroService;
+    /** Keyboard macros (record/replay/save/run); see {@link MacroCoordinator}. Created in {@link #init}. */
+    private MacroCoordinator macroCoordinator;
 
     private CommandPalette palette;
     private FindReplaceBar findBar;
@@ -453,9 +451,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.config = config;
         this.registry = registry;
         this.keymap = keymap;
-        this.macroService = new MacroService(config);
+        this.macroCoordinator =
+                new MacroCoordinator(config, registry, coordinatorHost, this::refreshSavedMacroCommandsAllWindows);
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
-        registry.setExecutionListener(macroService::onCommand);
+        registry.setExecutionListener(macroCoordinator::onCommand);
         this.snippets = new com.editora.snippet.SnippetManager(config);
         this.templates = new com.editora.template.TemplateRegistry(config);
         this.completion = new com.editora.completion.CompletionEngine(snippets, config::getUserDictionary);
@@ -1531,8 +1530,8 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
         // Record literally-typed characters into an in-progress macro (no-op unless recording).
-        if (macroService != null) {
-            dispatcher.setTypedListener(macroService::onTypedChar);
+        if (macroCoordinator != null) {
+            dispatcher.setTypedListener(macroCoordinator::onTypedChar);
         }
         dispatcher.setPreDispatch((token, target) -> {
             if (!"M-g".equals(token)) {
@@ -11963,138 +11962,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         return file == null ? null : file.toPath();
     }
 
-    // --- Keyboard macros (record / replay / save / run) ---
+    // --- Keyboard macros (record / replay / save / run): see MacroCoordinator ---
 
-    private void macroStartRecording() {
-        if (macroService.isRecording()) {
-            setStatus(tr("status.macro.alreadyRecording"));
-            return;
-        }
-        macroService.startRecording();
-        setStatus(tr("status.macro.recording"));
-    }
-
-    private void macroStopRecording() {
-        if (!macroService.isRecording()) {
-            setStatus(tr("status.macro.notRecording"));
-            return;
-        }
-        int n = macroService.stopRecording();
-        setStatus(tr("status.macro.recorded", n));
-    }
-
-    private void macroReplayLast(int times) {
-        if (macroService.isRecording()) {
-            macroStopRecording(); // C-x e while still defining: finalize, then play (Emacs behavior)
-        }
-        if (!macroService.hasLast()) {
-            setStatus(tr("status.macro.none"));
-            return;
-        }
-        macroService.replayLast(times, id -> registry.run(id), this::macroTypeText);
-        setStatus(times == 1 ? tr("status.macro.replayed") : tr("status.macro.replayedN", times));
-    }
-
-    private void macroReplayLastN() {
-        if (macroService.isRecording()) {
-            macroStopRecording();
-        }
-        if (!macroService.hasLast()) {
-            setStatus(tr("status.macro.none"));
-            return;
-        }
-        promptText(tr("command.macro.replayLastN"), tr("palette.macro.countPrompt"), "1", s -> {
-            int times = parsePositiveInt(s, 1);
-            macroReplayLast(times);
-        });
-    }
-
-    private void macroNameAndSave() {
-        if (macroService.isRecording()) {
-            macroStopRecording();
-        }
-        if (!macroService.hasLast()) {
-            setStatus(tr("status.macro.none"));
-            return;
-        }
-        promptText(tr("command.macro.nameAndSave"), tr("palette.macro.namePrompt"), "", name -> {
-            if (name == null || name.isBlank()) {
-                return;
-            }
-            Macro m = macroService.saveLast(name);
-            if (m != null) {
-                refreshSavedMacroCommandsAllWindows();
-                setStatus(tr("status.macro.saved", m.name()));
-            }
-        });
-    }
-
-    private void macroRunSaved() {
-        if (macroService.saved().isEmpty()) {
-            setStatus(tr("status.macro.noSaved"));
-            return;
-        }
-        QuickOpen<Macro> picker = new QuickOpen<>(
-                tr("command.macro.runSaved"),
-                tr("palette.macro.runPrompt"),
-                () -> new java.util.ArrayList<>(macroService.saved()),
-                Macro::name,
-                m -> tr("palette.macro.stepCount", m.steps().size()),
-                m -> macroService.run(m.name(), 1, id -> registry.run(id), this::macroTypeText));
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    private void macroDeleteSaved() {
-        if (macroService.saved().isEmpty()) {
-            setStatus(tr("status.macro.noSaved"));
-            return;
-        }
-        QuickOpen<Macro> picker = new QuickOpen<>(
-                tr("command.macro.deleteSaved"),
-                tr("palette.macro.deletePrompt"),
-                () -> new java.util.ArrayList<>(macroService.saved()),
-                Macro::name,
-                m -> tr("palette.macro.stepCount", m.steps().size()),
-                m -> {
-                    if (macroService.delete(m.name())) {
-                        refreshSavedMacroCommandsAllWindows();
-                        setStatus(tr("status.macro.deleted", m.name()));
-                    }
-                });
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Replay TEXT steps through the active buffer's typing path (auto-close / auto-indent reproduced). */
-    private void macroTypeText(String text) {
-        EditorBuffer b = activeBuffer();
-        if (b != null) {
-            b.typeString(text);
-        }
-    }
-
-    /** Registers one {@code macro.run.<slug>} command per saved macro (palette- and key-bindable). */
-    private void registerSavedMacroCommands() {
-        for (Macro m : macroService.saved()) {
-            String name = m.name();
-            registry.register(Command.of(
-                    MacroService.commandIdFor(name),
-                    name,
-                    () -> macroService.run(name, 1, id -> registry.run(id), this::macroTypeText)));
-        }
-    }
-
-    /** Drops stale {@code macro.run.*} commands and re-registers the current saved set (this window). */
+    /** Drops stale {@code macro.run.*} commands and re-registers the current saved set; called per window by
+     *  {@link WindowManager}'s macros broadcast. Delegates to the coordinator. */
     void refreshSavedMacroCommands() {
-        java.util.List<String> stale = new java.util.ArrayList<>();
-        for (Command c : registry.all()) {
-            if (c.id().startsWith("macro.run.")) {
-                stale.add(c.id());
-            }
-        }
-        stale.forEach(registry::remove);
-        registerSavedMacroCommands();
+        macroCoordinator.refreshCommands();
     }
 
     /** After the saved-macro set changes, re-register the synthetic commands in every open window. */
@@ -12103,15 +11976,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             windowManager.broadcastMacrosChanged();
         } else {
             refreshSavedMacroCommands();
-        }
-    }
-
-    private static int parsePositiveInt(String s, int fallback) {
-        try {
-            int n = Integer.parseInt(s == null ? "" : s.trim());
-            return n > 0 ? n : fallback;
-        } catch (NumberFormatException e) {
-            return fallback;
         }
     }
 
@@ -12138,14 +12002,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("file.open", this::onOpen));
         registry.register(Command.of("file.find", () -> fileFinder.show(stage)));
         // --- Keyboard macros ---
-        registry.register(Command.of("macro.startRecording", this::macroStartRecording));
-        registry.register(Command.of("macro.stopRecording", this::macroStopRecording));
-        registry.register(Command.of("macro.replayLast", () -> macroReplayLast(1)));
-        registry.register(Command.of("macro.replayLastN", this::macroReplayLastN));
-        registry.register(Command.of("macro.nameAndSave", this::macroNameAndSave));
-        registry.register(Command.of("macro.runSaved", this::macroRunSaved));
-        registry.register(Command.of("macro.deleteSaved", this::macroDeleteSaved));
-        registerSavedMacroCommands(); // one macro.run.<slug> per persisted macro (palette- + key-bindable)
+        macroCoordinator.registerCommands(); // macro.* + one macro.run.<slug> per persisted macro
         // --- External Tools ---
         externalToolCoordinator.registerCommands(
                 registry); // externalTool.run/clearOutput/rerunLast + per-tool run.<slug>
