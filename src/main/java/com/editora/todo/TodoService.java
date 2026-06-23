@@ -18,10 +18,13 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import com.editora.search.GitignoreFilter;
+
 /**
  * Scans for TODO/highlight pattern matches off the JavaFX thread (the {@code SearchService} idiom: a
  * single daemon executor + a generation guard so a superseded scan is dropped). Walks a scope root
- * (skipping dot-dirs, oversized and binary files) and scans each file; <b>open buffers</b> are scanned
+ * (skipping dot-dirs, {@code .gitignore}d paths when enabled, oversized and binary files) and scans
+ * each file; <b>open buffers</b> are scanned
  * from their in-memory text (passed in) so unsaved edits count, and open files outside the root are
  * included too. Results are capped and posted back via {@link Platform#runLater}.
  */
@@ -44,6 +47,14 @@ public final class TodoService {
         return t;
     });
     private final AtomicLong gen = new AtomicLong();
+    /** When true, the tree walk excludes {@code .gitignore}d files/folders (target/, node_modules/, …),
+     *  mirroring Find in Files. Driven by {@code Settings.searchRespectGitignore}. */
+    private volatile boolean respectGitignore = true;
+
+    /** Sets whether the tree walk honors {@code .gitignore} (the shared "exclude .gitignore" setting). */
+    public void setRespectGitignore(boolean respect) {
+        this.respectGitignore = respect;
+    }
 
     /**
      * Scans {@code scopeRoot} (may be null) plus all {@code openContents} (path → in-memory text) with
@@ -71,7 +82,8 @@ public final class TodoService {
         }
         Set<Path> candidates = new LinkedHashSet<>();
         if (scopeRoot != null && Files.isDirectory(scopeRoot)) {
-            collect(scopeRoot, candidates);
+            GitignoreFilter gitignore = respectGitignore ? GitignoreFilter.load(scopeRoot) : GitignoreFilter.NONE;
+            collect(scopeRoot, candidates, gitignore);
         }
         candidates.addAll(open.keySet()); // open buffers, even outside the root
 
@@ -106,7 +118,7 @@ public final class TodoService {
         return new Outcome(results, total, results.size(), truncated);
     }
 
-    private void collect(Path root, Set<Path> out) {
+    private void collect(Path root, Set<Path> out, GitignoreFilter gitignore) {
         try {
             int[] scanned = {0};
             Files.walkFileTree(
@@ -120,6 +132,9 @@ public final class TodoService {
                                     && dir.getFileName().toString().startsWith(".")) {
                                 return FileVisitResult.SKIP_SUBTREE; // .git, .idea, etc.
                             }
+                            if (gitignore.ignored(relativize(root, dir), true)) {
+                                return FileVisitResult.SKIP_SUBTREE; // target/, node_modules/, …
+                            }
                             return scanned[0] > MAX_FILES_SCANNED
                                     ? FileVisitResult.TERMINATE
                                     : FileVisitResult.CONTINUE;
@@ -131,7 +146,10 @@ public final class TodoService {
                                 return FileVisitResult.TERMINATE;
                             }
                             String name = file.getFileName().toString();
-                            if (!name.startsWith(".") && a.isRegularFile() && a.size() <= MAX_FILE_BYTES) {
+                            if (!name.startsWith(".")
+                                    && a.isRegularFile()
+                                    && a.size() <= MAX_FILE_BYTES
+                                    && !gitignore.ignored(relativize(root, file), false)) {
                                 out.add(file);
                             }
                             return FileVisitResult.CONTINUE;
@@ -144,6 +162,19 @@ public final class TodoService {
                     });
         } catch (IOException ignored) {
             // best-effort walk
+        }
+    }
+
+    /** Root-relative, forward-slash path used to test {@code .gitignore} patterns (mirrors SearchService). */
+    private static String relativize(Path root, Path file) {
+        try {
+            return root.toAbsolutePath()
+                    .normalize()
+                    .relativize(file.toAbsolutePath().normalize())
+                    .toString()
+                    .replace('\\', '/');
+        } catch (RuntimeException e) {
+            return file.getFileName().toString();
         }
     }
 

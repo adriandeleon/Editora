@@ -42,6 +42,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
 
     private final Actions actions;
     private final Label summary = new Label();
+    private final Label scopeLabel = new Label();
     private final TreeView<Row> tree = new TreeView<>();
 
     public TodoPanel(Actions actions) {
@@ -54,6 +55,18 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     }
 
     private void build() {
+        // The folder being scanned (the open project's tree, else open files only), so the user always
+        // knows the scope — mirrors Find in Files. Set by the controller via setScope; reuses the
+        // .search-scope-* styling. Ellipsized with a full-path tooltip.
+        Label scopePrefix = new Label(tr("todo.scopeLabel"));
+        scopePrefix.getStyleClass().add("search-scope-prefix");
+        scopeLabel.getStyleClass().add("search-scope-path");
+        scopeLabel.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(scopeLabel, Priority.ALWAYS);
+        HBox scopeRow = new HBox(6, scopePrefix, scopeLabel);
+        scopeRow.setAlignment(Pos.CENTER_LEFT);
+        scopeRow.getStyleClass().add("search-scope-row");
+
         Button refreshBtn = new Button();
         refreshBtn.setGraphic(Icons.refresh());
         refreshBtn.getStyleClass().add("todo-refresh");
@@ -75,7 +88,14 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         VBox.setVgrow(tree, Priority.ALWAYS);
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
 
-        getChildren().addAll(toolbar, tree);
+        getChildren().addAll(scopeRow, toolbar, tree);
+    }
+
+    /** Sets the displayed scan-scope folder. {@code display} is a friendly label (e.g. {@code ~/proj}),
+     *  {@code fullPath} the absolute path shown as a tooltip (null for the open-files-only scope). */
+    public void setScope(String display, String fullPath) {
+        scopeLabel.setText(display == null ? "" : display);
+        scopeLabel.setTooltip(fullPath == null || fullPath.isBlank() ? null : new Tooltip(fullPath));
     }
 
     private void onKey(KeyEvent e) {
