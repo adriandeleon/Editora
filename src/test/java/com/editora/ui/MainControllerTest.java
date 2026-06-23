@@ -46,15 +46,15 @@ class MainControllerTest {
     @Test
     void compactSourceNoiseMatchesImplicitClassComplaintsOnly() {
         // JDK 23+ JDT wording, the preview-gating message, and the JDK 21/22 preview-era name…
-        assertTrue(MainController.isCompactSourceNoise("Implicitly declared class must have a candidate main method"));
-        assertTrue(MainController.isCompactSourceNoise(
+        assertTrue(LspCoordinator.isCompactSourceNoise("Implicitly declared class must have a candidate main method"));
+        assertTrue(LspCoordinator.isCompactSourceNoise(
                 "Implicitly Declared Classes and Instance Main Methods is a preview feature and"
                         + " disabled by default. Use --enable-preview to enable"));
         assertTrue(
-                MainController.isCompactSourceNoise("Unnamed Classes and Instance Main Methods is a preview feature"));
+                LspCoordinator.isCompactSourceNoise("Unnamed Classes and Instance Main Methods is a preview feature"));
         // …but real errors in the file still surface.
-        assertFalse(MainController.isCompactSourceNoise("The method foo() is undefined"));
-        assertFalse(MainController.isCompactSourceNoise("Syntax error on token \";\""));
-        assertFalse(MainController.isCompactSourceNoise(null));
+        assertFalse(LspCoordinator.isCompactSourceNoise("The method foo() is undefined"));
+        assertFalse(LspCoordinator.isCompactSourceNoise("Syntax error on token \";\""));
+        assertFalse(LspCoordinator.isCompactSourceNoise(null));
     }
 }

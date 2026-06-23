@@ -294,7 +294,9 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  Weak keys so a closed buffer drops out without manual cleanup. */
     private final java.util.Set<EditorBuffer> httpUserClosed =
             java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
-    /** LSP: manager (one server per workspace root), the Problems window, and the latest diagnostics. */
+    /** LSP: manager (one server per workspace root). Diagnostics route to {@link #lspCoordinator} via the
+     *  thin {@link #onLspDiagnostics} delegate — a method ref (not a direct field read) so it isn't an
+     *  illegal forward reference to the later-declared coordinator; the field read defers to call time. */
     private final com.editora.lsp.LspManager lspManager =
             new com.editora.lsp.LspManager(this::onLspDiagnostics, this::onLspServerStatus);
     /** serverId → whether that server's command was found on this machine (per-server availability). */
@@ -324,7 +326,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         "csharp"
     };
 
-    private ProblemsPanel problemsPanel;
     private ToolWindow problemsToolWindow;
     /** Run: streams a runnable file's output; see {@link RunCoordinator}. The tool window stays here. */
     private ToolWindow runToolWindow;
@@ -344,9 +345,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final java.util.Set<String> exceptionFilters = new java.util.LinkedHashSet<>();
     /** The java-debug bundle jars last pushed to the LSP layer — restart jdtls only when this changes. */
     private List<String> appliedDebugBundles = List.of();
-
-    private final java.util.Map<Path, java.util.List<com.editora.editor.LspDiagnostic>> lspProblems =
-            new java.util.LinkedHashMap<>();
 
     private GitPanel gitPanel;
     private ToolWindow commitToolWindow;
@@ -2119,8 +2117,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         if (closed != null) {
                             if (closed.getPath() != null && lspManager.isManaged(closed.getPath())) {
                                 lspManager.closeDocument(closed.getPath());
-                                lspProblems.remove(closed.getPath());
-                                refreshProblems();
+                                lspCoordinator.clearDiagnostics(closed.getPath());
                             }
                             logViewer.onBufferClosed(closed); // cancel tail-follow + drop per-buffer state
                             closed.dispose();
@@ -2357,13 +2354,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::warning,
                 markdownLintPanel,
                 "tool.markdownLint");
-        problemsPanel = new ProblemsPanel(this::openAndGoto);
         problemsToolWindow = new ToolWindow(
                 "problems",
                 tr("toolwindow.problems"),
                 ToolWindow.Side.BOTTOM,
                 Icons::problems,
-                problemsPanel,
+                lspCoordinator.problemsPanel(),
                 "tool.problems");
         runToolWindow = new ToolWindow(
                 "run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runCoordinator.panel(), "tool.run");
@@ -2827,8 +2823,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     });
 
-    /** LSP navigation/format flows (go-to-def / references / hover / format + the hover popup); see
-     *  {@link LspCoordinator}. The manager stays owned here (DAP layers on it, the MCP bridge reads it). */
+    /** LSP nav/format flows + diagnostics routing (go-to-def / references / hover / format, the hover
+     *  popup, the Problems panel + per-file diagnostics map); see {@link LspCoordinator}. The manager stays
+     *  owned here (DAP layers on it, the MCP bridge reads it). */
     private final LspCoordinator lspCoordinator =
             new LspCoordinator(coordinatorHost, lspManager, new LspCoordinator.Ops() {
                 @Override
@@ -2839,6 +2836,21 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public boolean activeEditable() {
                     return MainController.this.activeEditable();
+                }
+
+                @Override
+                public boolean lspFeatureEnabled() {
+                    return lspEnabled();
+                }
+
+                @Override
+                public void stopLspLoading() {
+                    statusBar.setLspLoading(false);
+                }
+
+                @Override
+                public EditorBuffer bufferForPath(Path file) {
+                    return bufferOf(tabForPath(file));
                 }
             });
 
@@ -3050,7 +3062,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
             Path key = canonicalPath(target);
             java.util.List<Diagnostic> out = new java.util.ArrayList<>();
-            for (var e : lspProblems.entrySet()) {
+            for (var e : lspCoordinator.problems().entrySet()) {
                 if (!canonicalPath(e.getKey()).equals(key)) {
                     continue;
                 }
@@ -3729,8 +3741,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         updateRunButton();
         if (!on) {
             lspServerAvailable.clear();
-            lspProblems.clear();
-            refreshProblems();
+            lspCoordinator.clearAllDiagnostics();
             for (Tab tab : tabPane.getTabs()) {
                 EditorBuffer b = bufferOf(tab);
                 if (b != null) {
@@ -3978,8 +3989,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.setSemanticActive(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
-                lspProblems.remove(path);
-                refreshProblems();
+                lspCoordinator.clearDiagnostics(path);
             }
         }
     }
@@ -4005,52 +4015,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         };
     }
 
-    /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
+    /** Thin LspManager diagnostics callback — delegates to {@link LspCoordinator#onDiagnostics} (kept here
+     *  only to avoid an illegal forward reference at the manager's field initializer; see {@link #lspManager}). */
     private void onLspDiagnostics(Path file, java.util.List<com.editora.editor.LspDiagnostic> diagnostics) {
-        if (!lspEnabled()) {
-            return;
-        }
-        statusBar.setLspLoading(false); // diagnostics flowing ⇒ the server is up; stop the loading bar
-        // A language server publishes diagnostics project-wide (jdtls especially), but we only surface
-        // problems for files actually OPEN in Editora — otherwise the Problems window fills with whole-
-        // workspace noise from a single open file.
-        Tab tab = tabForPath(file);
-        EditorBuffer buffer = tab == null ? null : bufferOf(tab);
-        // A jdtls whose compliance predates JDK 25 flags a compact source file's implicit class as a
-        // preview/unsupported feature — pure noise for a file the JDK 25 launcher runs fine. Drop just
-        // those complaints (real errors in the file still surface).
-        if (buffer != null && "java".equals(buffer.getLanguage()) && buffer.isRunnable()) {
-            diagnostics = diagnostics.stream()
-                    .filter(d -> !isCompactSourceNoise(d.message()))
-                    .toList();
-        }
-        if (buffer != null) {
-            buffer.setLspDiagnostics(diagnostics);
-        }
-        if (tab == null || diagnostics.isEmpty()) {
-            lspProblems.remove(file);
-        } else {
-            lspProblems.put(file, diagnostics);
-        }
-        refreshProblems();
-    }
-
-    /** Whether an LSP diagnostic on a compact source file is implicit-class noise from a server whose
-     *  Java compliance predates JDK 25 (JEP 512 final). Pure — tested. */
-    static boolean isCompactSourceNoise(String message) {
-        if (message == null) {
-            return false;
-        }
-        String m = message.toLowerCase(java.util.Locale.ROOT);
-        return m.contains("implicitly declared class") // JDK 23+ JDT wording (incl. preview gating)
-                || m.contains("unnamed class") // the JDK 21/22 preview-era wording
-                || m.contains("instance main method"); // "...Instance Main Methods is a preview feature"
-    }
-
-    private void refreshProblems() {
-        if (problemsPanel != null) {
-            problemsPanel.setProblems(lspProblems);
-        }
+        lspCoordinator.onDiagnostics(file, diagnostics);
     }
 
     /** Updates the status-bar LSP segment: "LSP: &lt;server&gt;" when the active file is managed, else hidden. */
@@ -4156,8 +4124,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void restartLspServers() {
         lspManager.shutdownAll();
-        lspProblems.clear();
-        refreshProblems();
+        lspCoordinator.clearAllDiagnostics();
         applyLspGating();
         setStatus(tr("status.lsp.restarted"));
     }
