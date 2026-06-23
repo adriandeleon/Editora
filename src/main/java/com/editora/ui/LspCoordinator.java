@@ -24,17 +24,29 @@ import org.fxmisc.richtext.CodeArea;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * Language Server Protocol integration, extracted from {@link MainController} via the
- * {@link CoordinatorHost} pattern. Owns the on-demand <em>navigation/format</em> flows — go-to-definition,
- * find-references, hover, and document formatting (the {@code lsp.*} palette commands and the editor
- * right-click items) plus the dismissable hover popup — and the <em>diagnostics routing</em>: the
- * per-open-file {@code problems} map, the {@link ProblemsPanel}, and the {@code publishDiagnostics} callback.
+ * The whole Language Server Protocol integration, extracted from {@link MainController} via the
+ * {@link CoordinatorHost} pattern. Owns:
+ * <ul>
+ *   <li>the on-demand <em>navigation/format</em> flows — go-to-definition, find-references, hover, and
+ *       document formatting (the {@code lsp.*} commands + editor right-click items) plus the hover popup;
+ *   <li>the <em>diagnostics routing</em> — the per-open-file {@code problems} map, the {@link ProblemsPanel},
+ *       and the {@code publishDiagnostics} callback ({@link #onDiagnostics});
+ *   <li>the <em>configure/detect/gating + per-buffer lifecycle</em> — {@link #applySupport} (mirrors
+ *       {@link MermaidCoordinator}), per-server detection ({@code serverAvailable}/{@code SERVER_IDS}), the
+ *       per-server enable/command switches, {@link #syncBuffer} (open/activate/close), the status-bar
+ *       {@code LSP:} segment ({@link #updateStatusBar}), the Structure outline ({@link #requestStructureSymbols}),
+ *       semantic tokens, the server-ready callback ({@link #onServerStatus}), the {@link #wireBuffer} hook set,
+ *       and the {@code lsp.toggleServer}/{@code lsp.setServerCommand} pickers.
+ * </ul>
  *
  * <p>The {@link LspManager} is <em>not</em> owned here: it stays constructed in {@code MainController} because
  * the Debug (DAP) integration layers on the same jdtls session and the MCP bridge reads its diagnostics, so
  * the manager must remain reachable from both. The coordinator takes it as a constructor argument. The
- * status-bar {@code LSP:} segment + Problems-window availability gating and the per-buffer open/close
- * lifecycle stay in {@code MainController} for now (a later phase).
+ * {@code lspManager}'s {@code publishDiagnostics}/{@code status} callbacks route through thin
+ * {@code MainController.onLspDiagnostics}/{@code onLspServerStatus} method-ref delegates (to dodge an illegal
+ * forward reference at the manager's field initializer). {@code MainController} also keeps the {@code lspEnabled}
+ * predicate (used widely by Run/Debug gating), the {@code ifLsp}/{@code toggleLsp} command glue, the Problems
+ * {@code ToolWindow} (built with {@link #problemsPanel()}), and {@code canonicalPath}/{@code tabForPath}.
  */
 final class LspCoordinator {
 
@@ -49,11 +61,29 @@ final class LspCoordinator {
         /** Whether the LSP feature is effectively on (off in Simple UI mode); diagnostics are dropped when off. */
         boolean lspFeatureEnabled();
 
-        /** Diagnostics flowing ⇒ the server is up: stop the status-bar loading bar. */
-        void stopLspLoading();
+        /** Shows/hides the status-bar indeterminate loading bar (a server is starting). */
+        void setLspLoading(boolean loading);
 
         /** The open buffer for {@code file} (canonical-tab match), or {@code null} when no tab holds it. */
         EditorBuffer bufferForPath(Path file);
+
+        /** Sets (or clears, when {@code null}) the status-bar {@code LSP: <server>} segment label. */
+        void setStatusBarLsp(String label);
+
+        /** Shows/hides the Problems tool-window stripe button (active file is server-managed). */
+        void setProblemsAvailable(boolean available);
+
+        /** Pushes the server's document-symbol outline (or {@code null} to fall back to the heuristic). */
+        void setStructureSymbols(EditorBuffer buffer, java.util.List<com.editora.lsp.SymbolNode> symbols);
+
+        /** Refreshes the toolbar Run button (the Run affordance is gated by the LSP feature). */
+        void refreshRunButton();
+
+        /** Base dir for per-project jdtls Eclipse workspaces ({@code <configDir>/jdtls-workspaces}). */
+        Path jdtlsWorkspaceBase();
+
+        /** The active project's root for LSP root resolution (null when Projects is off / no project). */
+        Path lspProjectRoot();
     }
 
     private final CoordinatorHost host;
@@ -64,6 +94,37 @@ final class LspCoordinator {
     private final Map<Path, List<LspDiagnostic>> problems = new LinkedHashMap<>();
 
     private final ProblemsPanel problemsPanel;
+
+    /** serverId → whether that server's command was found on this machine (per-server availability). */
+    private final Map<String, Boolean> serverAvailable = new java.util.HashMap<>();
+
+    /** Known LSP server ids (the configure/detect/gating loops iterate these). */
+    private static final String[] SERVER_IDS = {
+        "java",
+        "typescript",
+        "python",
+        "xml",
+        "json",
+        "bash",
+        "yaml",
+        "go",
+        "rust",
+        "php",
+        "ruby",
+        "clangd",
+        "html",
+        "css",
+        "kotlin",
+        "lua",
+        "dockerfile",
+        "sql",
+        "terraform",
+        "toml",
+        "csharp"
+    };
+
+    /** Lines of over-scan above/below the viewport when requesting semantic tokens (small scrolls stay covered). */
+    private static final int SEMANTIC_WINDOW_PAD = 200;
 
     /** The currently-showing LSP hover popup (dismissable), or null. */
     private Popup hoverPopup;
@@ -90,7 +151,7 @@ final class LspCoordinator {
         if (!ops.lspFeatureEnabled()) {
             return;
         }
-        ops.stopLspLoading(); // diagnostics flowing ⇒ the server is up; stop the loading bar
+        ops.setLspLoading(false); // diagnostics flowing ⇒ the server is up; stop the loading bar
         // A language server publishes diagnostics project-wide (jdtls especially), but we only surface
         // problems for files actually OPEN in Editora — otherwise the Problems window fills with whole-
         // workspace noise from a single open file.
@@ -140,6 +201,514 @@ final class LspCoordinator {
         return m.contains("implicitly declared class") // JDK 23+ JDT wording (incl. preview gating)
                 || m.contains("unnamed class") // the JDK 21/22 preview-era wording
                 || m.contains("instance main method"); // "...Instance Main Methods is a preview feature"
+    }
+
+    // --- gating + lifecycle (the configure/detect/per-buffer-sync machine) ----------------------------
+
+    /** Whether {@code serverId}'s command was found on this machine (read by the DAP debug gating for java). */
+    boolean isServerAvailable(String serverId) {
+        return Boolean.TRUE.equals(serverAvailable.get(serverId));
+    }
+
+    /**
+     * Reconciles the LSP feature with its setting (mirrors {@link MermaidCoordinator}). Configures the
+     * manager + Problems window, then (when enabled) detects each server and gates per-buffer LSP. Runs at
+     * init and on every settings apply.
+     */
+    void applySupport() {
+        var s = host.settings();
+        boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
+        // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
+        // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
+        lspManager.setJdtlsWorkspaceBase(ops.jdtlsWorkspaceBase());
+        lspManager.configure(
+                on,
+                Map.ofEntries(
+                        Map.entry("java", s.getJavaLspCommand()),
+                        Map.entry("typescript", s.getTypescriptLspCommand()),
+                        Map.entry("python", s.getPythonLspCommand()),
+                        Map.entry("xml", s.getXmlLspCommand()),
+                        Map.entry("json", s.getJsonLspCommand()),
+                        Map.entry("bash", s.getBashLspCommand()),
+                        Map.entry("yaml", s.getYamlLspCommand()),
+                        Map.entry("go", s.getGoLspCommand()),
+                        Map.entry("rust", s.getRustLspCommand()),
+                        Map.entry("php", s.getPhpLspCommand()),
+                        Map.entry("ruby", s.getRubyLspCommand()),
+                        Map.entry("clangd", s.getClangdLspCommand()),
+                        Map.entry("html", s.getHtmlLspCommand()),
+                        Map.entry("css", s.getCssLspCommand()),
+                        Map.entry("kotlin", s.getKotlinLspCommand()),
+                        Map.entry("lua", s.getLuaLspCommand()),
+                        Map.entry("dockerfile", s.getDockerfileLspCommand()),
+                        Map.entry("sql", s.getSqlLspCommand()),
+                        Map.entry("terraform", s.getTerraformLspCommand()),
+                        Map.entry("toml", s.getTomlLspCommand()),
+                        Map.entry("csharp", s.getCsharpLspCommand())));
+        updateProblemsAvailability();
+        // The Run affordance (compact source files) is gated by the LSP feature: toggle every buffer's
+        // Run detection, then refresh the active buffer's Run tool-window availability.
+        boolean shellRun = on && s.isBashLspEnabled();
+        host.forEachBuffer(b -> {
+            b.setRunEnabled(on);
+            b.setShellRunEnabled(shellRun); // shell Run glyph gated by the Bash LSP toggle
+        });
+        ops.refreshRunButton();
+        if (!on) {
+            serverAvailable.clear();
+            clearAllDiagnostics();
+            host.forEachBuffer(b -> b.setLspActive(false));
+            ops.setLspLoading(false);
+            updateStatusBar();
+            return;
+        }
+        for (String serverId : SERVER_IDS) {
+            // Stop any server whose per-server toggle is off (frees its process); buffers deactivate below.
+            if (!serverEnabled(serverId)) {
+                lspManager.shutdownServer(serverId);
+            }
+            // Probe each known server independently (one may be installed and another not).
+            lspManager.detect(serverId, ok -> {
+                serverAvailable.put(serverId, ok);
+                applyGating();
+            });
+        }
+    }
+
+    /** Applies the detection-dependent gate to every open buffer (per the file's own server). */
+    void applyGating() {
+        host.forEachBuffer(this::syncBuffer);
+        updateStatusBar();
+    }
+
+    /** Whether a server's own enable toggle is on (under the global LSP enable). */
+    boolean serverEnabled(String serverId) {
+        var s = host.settings();
+        return switch (serverId) {
+            case "typescript" -> s.isTypescriptLspEnabled();
+            case "python" -> s.isPythonLspEnabled();
+            case "xml" -> s.isXmlLspEnabled();
+            case "json" -> s.isJsonLspEnabled();
+            case "bash" -> s.isBashLspEnabled();
+            case "yaml" -> s.isYamlLspEnabled();
+            case "go" -> s.isGoLspEnabled();
+            case "rust" -> s.isRustLspEnabled();
+            case "php" -> s.isPhpLspEnabled();
+            case "ruby" -> s.isRubyLspEnabled();
+            case "clangd" -> s.isClangdLspEnabled();
+            case "html" -> s.isHtmlLspEnabled();
+            case "css" -> s.isCssLspEnabled();
+            case "kotlin" -> s.isKotlinLspEnabled();
+            case "lua" -> s.isLuaLspEnabled();
+            case "dockerfile" -> s.isDockerfileLspEnabled();
+            case "sql" -> s.isSqlLspEnabled();
+            case "terraform" -> s.isTerraformLspEnabled();
+            case "toml" -> s.isTomlLspEnabled();
+            case "csharp" -> s.isCsharpLspEnabled();
+            default -> s.isJavaLspEnabled();
+        };
+    }
+
+    /** The configured command for a server id (blank ⇒ the server's default). */
+    private String serverCommand(String serverId) {
+        var s = host.settings();
+        return switch (serverId) {
+            case "typescript" -> s.getTypescriptLspCommand();
+            case "python" -> s.getPythonLspCommand();
+            case "xml" -> s.getXmlLspCommand();
+            case "json" -> s.getJsonLspCommand();
+            case "bash" -> s.getBashLspCommand();
+            case "yaml" -> s.getYamlLspCommand();
+            case "go" -> s.getGoLspCommand();
+            case "rust" -> s.getRustLspCommand();
+            case "php" -> s.getPhpLspCommand();
+            case "ruby" -> s.getRubyLspCommand();
+            case "clangd" -> s.getClangdLspCommand();
+            case "html" -> s.getHtmlLspCommand();
+            case "css" -> s.getCssLspCommand();
+            case "kotlin" -> s.getKotlinLspCommand();
+            case "lua" -> s.getLuaLspCommand();
+            case "dockerfile" -> s.getDockerfileLspCommand();
+            case "sql" -> s.getSqlLspCommand();
+            case "terraform" -> s.getTerraformLspCommand();
+            case "toml" -> s.getTomlLspCommand();
+            case "csharp" -> s.getCsharpLspCommand();
+            default -> s.getJavaLspCommand();
+        };
+    }
+
+    /** Sets a server's per-server enable toggle (mirrors {@link #serverEnabled}). */
+    private void setServerEnabled(String serverId, boolean on) {
+        var s = host.settings();
+        switch (serverId) {
+            case "typescript" -> s.setTypescriptLspEnabled(on);
+            case "python" -> s.setPythonLspEnabled(on);
+            case "xml" -> s.setXmlLspEnabled(on);
+            case "json" -> s.setJsonLspEnabled(on);
+            case "bash" -> s.setBashLspEnabled(on);
+            case "yaml" -> s.setYamlLspEnabled(on);
+            case "go" -> s.setGoLspEnabled(on);
+            case "rust" -> s.setRustLspEnabled(on);
+            case "php" -> s.setPhpLspEnabled(on);
+            case "ruby" -> s.setRubyLspEnabled(on);
+            case "clangd" -> s.setClangdLspEnabled(on);
+            case "html" -> s.setHtmlLspEnabled(on);
+            case "css" -> s.setCssLspEnabled(on);
+            case "kotlin" -> s.setKotlinLspEnabled(on);
+            case "lua" -> s.setLuaLspEnabled(on);
+            case "dockerfile" -> s.setDockerfileLspEnabled(on);
+            case "sql" -> s.setSqlLspEnabled(on);
+            case "terraform" -> s.setTerraformLspEnabled(on);
+            case "toml" -> s.setTomlLspEnabled(on);
+            case "csharp" -> s.setCsharpLspEnabled(on);
+            default -> s.setJavaLspEnabled(on);
+        }
+    }
+
+    /** Sets a server's configured command (blank ⇒ the server's default); mirrors {@link #serverCommand}. */
+    private void setServerCommand(String serverId, String command) {
+        var s = host.settings();
+        switch (serverId) {
+            case "typescript" -> s.setTypescriptLspCommand(command);
+            case "python" -> s.setPythonLspCommand(command);
+            case "xml" -> s.setXmlLspCommand(command);
+            case "json" -> s.setJsonLspCommand(command);
+            case "bash" -> s.setBashLspCommand(command);
+            case "yaml" -> s.setYamlLspCommand(command);
+            case "go" -> s.setGoLspCommand(command);
+            case "rust" -> s.setRustLspCommand(command);
+            case "php" -> s.setPhpLspCommand(command);
+            case "ruby" -> s.setRubyLspCommand(command);
+            case "clangd" -> s.setClangdLspCommand(command);
+            case "html" -> s.setHtmlLspCommand(command);
+            case "css" -> s.setCssLspCommand(command);
+            case "kotlin" -> s.setKotlinLspCommand(command);
+            case "lua" -> s.setLuaLspCommand(command);
+            case "dockerfile" -> s.setDockerfileLspCommand(command);
+            case "sql" -> s.setSqlLspCommand(command);
+            case "terraform" -> s.setTerraformLspCommand(command);
+            case "toml" -> s.setTomlLspCommand(command);
+            case "csharp" -> s.setCsharpLspCommand(command);
+            default -> s.setJavaLspCommand(command);
+        }
+    }
+
+    /**
+     * Requests semantic tokens for {@code buffer}'s visible region (padded by {@link #SEMANTIC_WINDOW_PAD})
+     * and pushes them into the buffer when the response lands — but only if it's still the active buffer
+     * (a background tab's tokens would overlay nothing useful and waste an apply).
+     */
+    void requestSemanticTokens(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (path == null || !buffer.isSemanticActive() || !lspManager.isManaged(path)) {
+            return;
+        }
+        int[] window = buffer.visibleLineWindow();
+        lspManager.requestSemanticTokens(
+                path, window[0] - SEMANTIC_WINDOW_PAD, window[1] + SEMANTIC_WINDOW_PAD, tokens -> {
+                    if (buffer == host.activeBuffer()) {
+                        buffer.setSemanticTokens(tokens);
+                    }
+                });
+    }
+
+    /**
+     * Re-gates LSP semantic highlighting against {@code Settings.semanticHighlight} for every open buffer
+     * (the palette toggle's apply). Doesn't disturb the sessions — just flips each managed buffer's overlay
+     * on/off and fetches tokens when turning on.
+     */
+    void applySemanticHighlight() {
+        boolean want = host.settings().isSemanticHighlight();
+        host.forEachBuffer(b -> {
+            if (b.getPath() == null) {
+                return;
+            }
+            boolean on = want && lspManager.isManaged(b.getPath()) && lspManager.supportsSemanticTokens(b.getPath());
+            b.setSemanticActive(on);
+            if (on) {
+                requestSemanticTokens(b);
+            }
+        });
+    }
+
+    /**
+     * Refreshes the Structure tool window's outline for {@code buffer} from the language server
+     * ({@code textDocument/documentSymbol}) when supported; otherwise clears the LSP outline so the panel
+     * falls back to the TextMate/fold heuristic. Only acts for the active buffer; an empty result also
+     * falls back to the heuristic.
+     */
+    void requestStructureSymbols(EditorBuffer buffer) {
+        if (buffer == null || buffer != host.activeBuffer()) {
+            return;
+        }
+        Path path = buffer.getPath();
+        if (path != null && lspManager.isManaged(path) && lspManager.supportsDocumentSymbols(path)) {
+            lspManager.documentSymbols(path, syms -> ops.setStructureSymbols(buffer, syms.isEmpty() ? null : syms));
+        } else {
+            ops.setStructureSymbols(buffer, null);
+        }
+    }
+
+    /** Opens+activates an eligible buffer on its language's server, or deactivates+closes it otherwise. */
+    void syncBuffer(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        String lang = buffer.getLanguage();
+        String serverId = com.editora.lsp.LspServerRegistry.serverIdFor(lang);
+        boolean eligible = ops.lspFeatureEnabled()
+                && path != null
+                && com.editora.vfs.Vfs.isLocal(path)
+                && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
+                && !buffer.isHeavyFile() // intermediate large-source tier also skips LSP (keeps highlighting)
+                && serverId != null
+                && serverEnabled(serverId)
+                && Boolean.TRUE.equals(serverAvailable.get(serverId));
+        if (eligible) {
+            if (!lspManager.isManaged(path)) {
+                host.setStatus(tr("status.lsp.starting", serverLabel(serverId)));
+                ops.setLspLoading(true); // show the loading bar until the server reports ready
+                lspManager.openDocument(path, lspRootFor(buffer), lang, buffer.text());
+            }
+            buffer.setLspActive(true);
+            // Push the server's completion trigger characters + request initial pull diagnostics. Both are
+            // no-ops until the server's initialize completes (then onServerStatus "ready" refreshes them),
+            // and effective immediately when the server for this root is already running (a 2nd file).
+            buffer.setLspTriggerChars(lspManager.triggerCharacters(path));
+            buffer.setLspFormatAvailable(lspManager.supportsFormatting(path));
+            buffer.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
+            lspManager.pullDiagnostics(path);
+            // Semantic highlighting: gate on the setting + the server's capability; request the initial
+            // viewport (a no-op until the server reports ready, then onServerStatus refreshes it).
+            boolean semantic = host.settings().isSemanticHighlight() && lspManager.supportsSemanticTokens(path);
+            buffer.setSemanticActive(semantic);
+            if (semantic) {
+                requestSemanticTokens(buffer);
+            }
+        } else {
+            buffer.setLspActive(false);
+            buffer.setLspTriggerChars(java.util.Set.of());
+            buffer.setLspFormatAvailable(false);
+            buffer.setLspRangeFormatAvailable(false);
+            buffer.setSemanticActive(false);
+            if (path != null && lspManager.isManaged(path)) {
+                lspManager.closeDocument(path);
+                clearDiagnostics(path);
+            }
+        }
+    }
+
+    /** Workspace root for a buffer: active project (if Projects on), else nearest build file, else dir. */
+    private Path lspRootFor(EditorBuffer buffer) {
+        return com.editora.lsp.RootResolver.resolve(
+                ops.lspProjectRoot(),
+                buffer.getPath(),
+                com.editora.lsp.LspServerRegistry.rootMarkersFor(buffer.getLanguage()));
+    }
+
+    /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
+     *  auto-import's {@code import} line). Returns null when the item can't carry extra edits. */
+    private Runnable autoImportAccept(EditorBuffer buffer, org.eclipse.lsp4j.CompletionItem item) {
+        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item)) {
+            return null;
+        }
+        return () -> {
+            if (buffer.getPath() != null) {
+                lspManager.resolveCompletion(buffer.getPath(), item, buffer::applyLspEdits);
+            }
+        };
+    }
+
+    /** Updates the status-bar LSP segment: "LSP: &lt;server&gt;" when the active file is managed, else hidden. */
+    void updateStatusBar() {
+        EditorBuffer b = host.activeBuffer();
+        boolean managed = b != null && b.getPath() != null && lspManager.isManaged(b.getPath());
+        String serverId = managed ? com.editora.lsp.LspServerRegistry.serverIdFor(b.getLanguage()) : null;
+        ops.setStatusBarLsp(serverId != null ? serverLabel(serverId) : null);
+        updateProblemsAvailability(); // the Problems window tracks the same active-file LSP-managed condition
+    }
+
+    /**
+     * The Problems tool-window stripe button is shown only when the active file is served by a language
+     * server (LSP on + managed) — the same condition as the status-bar {@code LSP:} segment. So it's hidden
+     * on a Welcome/Markdown/plain tab even if another open file has diagnostics.
+     */
+    private void updateProblemsAvailability() {
+        EditorBuffer b = host.activeBuffer();
+        boolean available =
+                ops.lspFeatureEnabled() && b != null && b.getPath() != null && lspManager.isManaged(b.getPath());
+        ops.setProblemsAvailable(available);
+    }
+
+    /** The short server name shown in the status bar — the configured command's basename for {@code serverId}. */
+    private String serverLabel(String serverId) {
+        String configured = serverCommand(serverId);
+        String cmd = configured == null || configured.isBlank()
+                ? com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId)
+                : configured;
+        List<String> toks = com.editora.lsp.LspServerRegistry.tokenize(cmd);
+        String exe = toks.isEmpty() ? serverId : toks.get(0);
+        try {
+            return Path.of(exe).getFileName().toString();
+        } catch (RuntimeException e) {
+            return exe;
+        }
+    }
+
+    /**
+     * Shows a language server's status/log message in the echo area and drives the status-bar loading
+     * bar: a "ServiceReady"/"Ready" (or "Error") status stops it. {@code type} is the JDT LS
+     * {@code language/status} type (or "Message"/"Error").
+     */
+    void onServerStatus(String type, String message) {
+        if (!ops.lspFeatureEnabled()) {
+            return;
+        }
+        if (message != null && !message.isBlank()) {
+            host.setStatus(tr("status.lsp.server", message));
+        }
+        if (type != null) {
+            String t = type.toLowerCase(Locale.ROOT);
+            if (t.contains("ready") || t.contains("error")) {
+                ops.setLspLoading(false); // server finished starting (or failed)
+            }
+            if (t.contains("ready")) {
+                // A server just finished initializing — its capabilities are now known. Push completion
+                // trigger characters to every open managed buffer and pull initial diagnostics (the
+                // pull-model servers don't publish until asked).
+                host.forEachBuffer(b -> {
+                    if (b.getPath() != null && lspManager.isManaged(b.getPath())) {
+                        b.setLspTriggerChars(lspManager.triggerCharacters(b.getPath()));
+                        b.setLspFormatAvailable(lspManager.supportsFormatting(b.getPath()));
+                        b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(b.getPath()));
+                        lspManager.pullDiagnostics(b.getPath());
+                        // Capabilities are known now — (re)gate semantic highlighting + fetch initial tokens.
+                        boolean sem =
+                                host.settings().isSemanticHighlight() && lspManager.supportsSemanticTokens(b.getPath());
+                        b.setSemanticActive(sem);
+                        if (sem) {
+                            requestSemanticTokens(b);
+                        }
+                    }
+                });
+                requestStructureSymbols(host.activeBuffer()); // the outline can now be populated from the server
+            }
+        }
+    }
+
+    /** Restarts every running server, clears diagnostics, then re-gates each buffer ({@code lsp.restartServers}). */
+    void restartServers() {
+        lspManager.shutdownAll();
+        clearAllDiagnostics();
+        applyGating();
+        host.setStatus(tr("status.lsp.restarted"));
+    }
+
+    /** Notifies the server of a save (didSave) for a managed file + refreshes pull-model diagnostics. */
+    void notifyDocumentSaved(EditorBuffer buffer) {
+        if (buffer != null && buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+            lspManager.saveDocument(buffer.getPath());
+            lspManager.pullDiagnostics(buffer.getPath()); // no-op for push-only servers
+        }
+    }
+
+    /** Wires every LSP hook onto a freshly-added buffer (didChange/diagnostics/completion/format/nav), then
+     *  opens+activates it if eligible. Called from {@code MainController.addBuffer}. */
+    void wireBuffer(EditorBuffer buffer) {
+        // Debounced didChange sink + keep the Structure outline live as the document changes.
+        buffer.setLspChangeListener(text -> {
+            if (buffer.getPath() != null) {
+                lspManager.changeDocument(buffer.getPath(), text);
+                requestStructureSymbols(buffer);
+            }
+        });
+        // Pull-model diagnostics (fired on the same debounce as didChange; no-op for push-only servers).
+        buffer.setLspDiagnosticsRequester(() -> {
+            if (buffer.getPath() != null) {
+                lspManager.pullDiagnostics(buffer.getPath());
+            }
+        });
+        // Semantic tokens re-request (fired on the same debounce as didChange + on scroll-settle).
+        buffer.setSemanticTokensRequester(() -> requestSemanticTokens(buffer));
+        buffer.setLspCompletionProvider((pos, cb) -> {
+            if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+                lspManager.completion(
+                        buffer.getPath(),
+                        pos[0],
+                        pos[1],
+                        items -> cb.accept(
+                                com.editora.lsp.CompletionMapper.map(items, item -> autoImportAccept(buffer, item))));
+            } else {
+                cb.accept(java.util.List.of());
+            }
+        });
+        // Lazy documentation for the completion doc side-popup: resolve the item's docs on demand.
+        buffer.setCompletionDocResolver((token, cb) -> {
+            if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+                lspManager.resolveCompletionDoc(buffer.getPath(), token, cb);
+            } else {
+                cb.accept(null);
+            }
+        });
+        buffer.setCompletionDocEnabled(host.settings().isCompletionDoc());
+        // Tab re-indents the current line to the server's convention via range formatting (when supported).
+        buffer.setLspRangeFormatter((sl, sc, el, ec, cb) -> {
+            if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+                int tabSize = host.settings().getTabSize();
+                lspManager.rangeFormatting(
+                        buffer.getPath(), sl, sc, el, ec, tabSize, buffer.detectInsertSpaces(tabSize), cb);
+            } else {
+                cb.accept(java.util.List.of());
+            }
+        });
+        buffer.setLspNavActions(this::gotoDefinition, this::findReferences, this::showHover, this::formatDocument);
+        syncBuffer(buffer);
+    }
+
+    /** Palette picker over the LSP servers: toggles the chosen server's per-server enable ({@code lsp.toggleServer}). */
+    void chooseServerToggle() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("command.lsp.toggleServer"),
+                tr("palette.setting.pick"),
+                () -> List.of(SERVER_IDS),
+                id -> id + "  —  " + tr(serverEnabled(id) ? "common.on" : "common.off"),
+                this::serverLabel,
+                id -> {
+                    if (id == null) {
+                        return;
+                    }
+                    boolean next = !serverEnabled(id);
+                    setServerEnabled(id, next);
+                    host.requestSave();
+                    applySupport();
+                    host.syncSettingsWindow();
+                    host.setStatus(tr("status.settingToggled", id, tr(next ? "common.on" : "common.off")));
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /** Palette picker over the LSP servers, then prompts for the chosen server's command ({@code lsp.setServerCommand}). */
+    void chooseServerCommand() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("command.lsp.setServerCommand"),
+                tr("palette.setting.pick"),
+                () -> List.of(SERVER_IDS),
+                id -> id,
+                this::serverLabel,
+                id -> {
+                    if (id == null) {
+                        return;
+                    }
+                    host.promptText(id, tr("palette.setting.value"), serverCommand(id), v -> {
+                        String value = v.trim();
+                        setServerCommand(id, value);
+                        host.requestSave();
+                        applySupport();
+                        host.syncSettingsWindow();
+                        host.setStatus(tr("status.settingChanged", id, value));
+                    });
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
     }
 
     /** The active buffer if it is LSP-managed, reporting + returning null otherwise. */
