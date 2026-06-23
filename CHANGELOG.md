@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Internal: extracted `NotesCoordinator` from `MainController`.** The Personal Notes feature (the panel + cross-file pickers, per-buffer persist/restore with anchor re-keying, the note editor dialog, and the `notes.*` flow) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
 - **Internal: documented soft code-size limits in `CLAUDE.md`.** Added review heuristics for class/method size (target ≤1000 lines/class, ≤50/method; refactor-smell beyond ~2000/~100) and codified the `CoordinatorHost` decomposition as the way to keep `MainController` (and future features) in check. Docs only — no tooling/behavior change.
 - **Internal: extracted `RunCoordinator` from `MainController`.** The run-a-file feature (the run service + console panel, the run/rerun/stop flow, and the launcher-command building) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.
 - **Internal: extracted `SearchCoordinator` from `MainController`.** The Find-in-Files feature (the multi-file search service + results panel, scope tracking, replace-in-files, and the ripgrep/walker backend selection) moved into its own `CoordinatorHost`-style coordinator. No behavior change — part of the ongoing `MainController` decomposition.

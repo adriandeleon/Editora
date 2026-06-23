@@ -238,8 +238,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Region projectToolbarGap;
     /** Tracks the last-applied project-support state to detect off→on transitions (reveal the panel). */
     private boolean projectSupportApplied;
-    /** Tracks the last-applied Notes-support state to detect off→on transitions (reload open buffers' notes). */
-    private boolean notesSupportApplied;
 
     // Auto save. Mode keys: "off" | "afterDelay" | "onFocusChange".
     static final String AUTOSAVE_OFF = "off";
@@ -262,15 +260,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     private UndoHistoryPanel undoHistoryPanel;
     private StructurePanel structurePanel;
     private BookmarksPanel bookmarksPanel;
-    private NotesPanel notesPanel;
     private ToolWindow searchToolWindow;
     private ToolWindow todoToolWindow;
     private MarkdownLintPanel markdownLintPanel;
     private ToolWindow markdownLintToolWindow;
     private final com.editora.editor.MarkdownLintService markdownLintService =
             new com.editora.editor.MarkdownLintService();
-    private QuickOpen<NoteEntry> notesPalette;
-    private QuickOpen<NoteEntry> notesSearchPalette;
     /** Session-only Simple-UI override from the {@code --simple} CLI flag; OR'd with the saved setting. */
     private boolean cliSimpleOverride;
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) ---
@@ -446,6 +441,48 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.keymap = keymap;
         this.macroCoordinator =
                 new MacroCoordinator(config, registry, coordinatorHost, this::refreshSavedMacroCommandsAllWindows);
+        // Built here (not as a field initializer) because NotesPanel's constructor reads config.getNotes().
+        this.notesCoordinator = new NotesCoordinator(coordinatorHost, new NotesCoordinator.Ops() {
+            @Override
+            public void openPath(java.nio.file.Path file) {
+                MainController.this.openPath(file);
+            }
+
+            @Override
+            public void navigateToLine(int line) {
+                MainController.this.navigateToLine(line);
+            }
+
+            @Override
+            public String noteKey(EditorBuffer buffer) {
+                return MainController.noteKey(buffer);
+            }
+
+            @Override
+            public EditorBuffer bufferForKey(String fileKey) {
+                return bufferOf(tabForKey(fileKey));
+            }
+
+            @Override
+            public void installEmacsKeys(javafx.scene.control.TextInputControl control) {
+                com.editora.command.TextInputKeymap.install(control, keymap);
+            }
+
+            @Override
+            public void setToolWindowAvailable(boolean available) {
+                toolWindows.setAvailable(notesToolWindow, available);
+            }
+
+            @Override
+            public java.util.Map<String, java.util.List<com.editora.config.PersonalNote>> notes() {
+                return config.getNotes();
+            }
+
+            @Override
+            public void saveNotes() {
+                config.saveNotes();
+            }
+        });
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
         registry.setExecutionListener(macroCoordinator::onCommand);
         this.snippets = new com.editora.snippet.SnippetManager(config);
@@ -537,7 +574,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyProjectSupport(); // hide project UI when disabled (default)
         git.applySupport(); // hide Git UI when disabled (default)
         applyLocalHistory(); // Local File History tool window availability + list (on by default)
-        applyNotesSupport(); // hide Personal Notes UI when disabled (default)
+        notesCoordinator.applySupport(); // hide Personal Notes UI when disabled (default)
         mermaid.applySupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
         searchCoordinator
                 .applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
@@ -1288,8 +1325,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         openFilesPalette.setOverlayHost(overlayHost);
         toolWindowPalette.setOverlayHost(overlayHost);
         bookmarkPalette.setOverlayHost(overlayHost);
-        notesPalette.setOverlayHost(overlayHost);
-        notesSearchPalette.setOverlayHost(overlayHost);
+        notesCoordinator.wireOverlayHost();
         snippetPalette.setOverlayHost(overlayHost);
         projectPicker.setOverlayHost(overlayHost);
         fileFinder.setOverlayHost(overlayHost);
@@ -1619,25 +1655,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                         + (e.description == null ? "" : e.description), // search name+id+desc
                 this::confirmAndInstall);
         browsePalette.setPreferredSize(960, 10); // wide — registry rows carry a name + a long description
-        notesPalette = new QuickOpen<>(
-                tr("notes.jumpTitle"),
-                tr("notes.jumpPrompt"),
-                this::allNoteEntries,
-                e -> noteEntryLabel(e.note()),
-                e -> Path.of(e.fileKey()).getFileName() + ":"
-                        + (e.note().anchor().line() + 1),
-                e -> noteActivate(e.fileKey(), e.note()));
-        // Search Notes: same picker, but the query matches the full body + tags + file (not just the
-        // first line) so you can find a note by any word in it.
-        notesSearchPalette = new QuickOpen<>(
-                tr("notes.searchTitle"),
-                tr("notes.searchPrompt"),
-                this::allNoteEntries,
-                e -> noteEntryLabel(e.note()),
-                e -> Path.of(e.fileKey()).getFileName() + ":"
-                        + (e.note().anchor().line() + 1),
-                e -> noteSearchText(e),
-                e -> noteActivate(e.fileKey(), e.note()));
         snippetPalette = new QuickOpen<>(
                 "Insert Snippet",
                 "Type to filter snippets…",
@@ -2226,35 +2243,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::bookmark,
                 bookmarksPanel,
                 "tool.bookmarks");
-        notesPanel = new NotesPanel(config::getNotes, new NotesPanel.Actions() {
-            @Override
-            public void openAndJump(String fileKey, com.editora.config.PersonalNote note) {
-                noteActivate(fileKey, note);
-            }
-
-            @Override
-            public void editBody(String fileKey, com.editora.config.PersonalNote note) {
-                noteEditBody(fileKey, note);
-            }
-
-            @Override
-            public void setStatus(
-                    String fileKey, com.editora.config.PersonalNote note, com.editora.config.NoteStatus status) {
-                noteSetStatus(fileKey, note, status);
-            }
-
-            @Override
-            public void delete(String fileKey, com.editora.config.PersonalNote note) {
-                noteDelete(fileKey, note);
-            }
-
-            @Override
-            public void deleteAll(String fileKey) {
-                noteDeleteAll(fileKey);
-            }
-        });
         notesToolWindow = new ToolWindow(
-                "notes", tr("toolwindow.notes"), ToolWindow.Side.RIGHT, Icons::notes, notesPanel, "tool.notes");
+                "notes",
+                tr("toolwindow.notes"),
+                ToolWindow.Side.RIGHT,
+                Icons::notes,
+                notesCoordinator.panel(),
+                "tool.notes");
         fileInfoPanel = new FileInformationPanel();
         fileInfoToolWindow = new ToolWindow(
                 "file-information",
@@ -2838,6 +2833,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             openRunLink(link);
         }
     });
+
+    /** Personal Notes feature; owns the panel/jump-pickers/persistence. Built in {@link #init} (needs config). */
+    private NotesCoordinator notesCoordinator;
 
     // --- HTTP Client (.http request runner + response tool window) -----------------------------------
 
@@ -4379,49 +4377,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Whether the Personal Notes feature is enabled in Settings (default off). */
-    private boolean notesEnabled() {
-        return config.getSettings().isNotesSupport();
-    }
-
-    /** Runs {@code action} only when Personal Notes is enabled; otherwise reports it (no-op command/key). */
-    private void ifNotes(Runnable action) {
-        if (notesEnabled()) {
-            action.run();
-        } else {
-            setStatus(tr("statusbar.tip.notesDisabled"));
-        }
-    }
-
-    /**
-     * Reconciles all Personal Notes UI with the "Enable Personal Notes" setting (default off). When off:
-     * the Notes tool window is hidden and the editor "Add Note" menu items + commands/keybindings no-op.
-     * On the off→on transition each open buffer loads its saved notes from {@code notes.json}. Indicator
-     * visibility itself is applied per-buffer in {@link #applyViewSettings} (gated by both flags). Runs at
-     * startup and on every settings apply (mirrors {@link GitCoordinator#applySupport}).
-     */
-    private void applyNotesSupport() {
-        boolean on = notesEnabled();
-        toolWindows.setAvailable(notesToolWindow, on);
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null) {
-                b.setNotesEnabled(on);
-            }
-        }
-        if (on && !notesSupportApplied) {
-            // off→on: populate open buffers' notes (restoreNotes early-returns while disabled).
-            for (Tab tab : tabPane.getTabs()) {
-                EditorBuffer b = bufferOf(tab);
-                if (b != null) {
-                    restoreNotes(b);
-                }
-            }
-            if (notesPanel != null) {
-                notesPanel.refresh();
-            }
-        }
-        notesSupportApplied = on;
-    }
 
     // --- Diff viewer ----------------------------------------------------------------------------
 
@@ -6730,7 +6685,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             restoreFolds(buffer);
             restoreBookmarks(buffer);
             restoreBreakpoints(buffer);
-            restoreNotes(buffer);
+            notesCoordinator.restoreNotes(buffer);
             restoreReadOnly(buffer);
             restoreMarkdownMode(buffer);
             // The tab (and its LSP session) was set up before content loaded; if the file just entered the
@@ -6789,8 +6744,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> persistBookmarks(buffer));
         buffer.setGutterBookmarkClick(this::onGutterBookmarkClick);
-        buffer.setOnNotesChanged(() -> persistNotes(buffer));
-        buffer.setGutterNoteClick(this::onGutterNoteClick);
+        buffer.setOnNotesChanged(() -> notesCoordinator.persistNotes(buffer));
+        buffer.setGutterNoteClick(notesCoordinator::onGutterNoteClick);
         buffer.setGutterBlameClick(this::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)
         // Refresh the Run button when this buffer's runnable status flips (only acts if it's active).
@@ -6809,8 +6764,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         // (only for debuggable languages — java/python/javascript).
         buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
-        buffer.setAddNoteHandler(this::addNoteFromContext);
-        buffer.setNotesEnabled(notesEnabled());
+        buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
+        buffer.setNotesEnabled(notesCoordinator.isEnabled());
         buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
         buffer.setHtmlPreviewDirtyListener(() -> htmlPreview.onBufferEdited(buffer));
@@ -7210,7 +7165,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             restoreFolds(buffer);
             restoreBookmarks(buffer);
             restoreBreakpoints(buffer);
-            restoreNotes(buffer);
+            notesCoordinator.restoreNotes(buffer);
             restoreReadOnly(buffer); // before addBuffer so the tab meta reflects read-only
             addBuffer(buffer);
             restoreMarkdownMode(buffer); // after addBuffer so the toggle is wired
@@ -7868,7 +7823,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     requestSave();
                     // Carry bookmarks + personal notes over to the new path so an in-app rename never strands them.
                     migrateBookmarksKey(oldBookmarkKey, target.toString());
-                    migrateNotesKey(oldNoteKey, noteKey(buffer));
+                    notesCoordinator.migrateKey(oldNoteKey, noteKey(buffer));
                     updateTabMeta(tab, buffer);
                     statusBar.refresh();
                     if (buffer == activeBuffer()) {
@@ -10312,8 +10267,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // ---- Personal Notes ----
 
-    private record NoteEntry(String fileKey, com.editora.config.PersonalNote note) {}
-
     /** Canonical-path key for a buffer's notes in the store (cheap; no content hashing). */
     private static String noteKey(EditorBuffer buffer) {
         return com.editora.config.PathKeys.canonicalKey(buffer.getPath());
@@ -10327,25 +10280,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
         return null;
-    }
-
-    /** Persists the active buffer's notes (keyed by canonical path), preserving the panel's order. */
-    private void persistNotes(EditorBuffer buffer) {
-        if (!notesEnabled() || buffer.getPath() == null) {
-            return;
-        }
-        String key = noteKey(buffer);
-        List<com.editora.config.PersonalNote> snap = buffer.getNoteManager().snapshot();
-        var map = config.getNotes();
-        if (snap.isEmpty()) {
-            map.remove(key);
-        } else {
-            map.put(key, com.editora.config.NoteStore.mergePreservingOrder(map.get(key), snap));
-        }
-        config.saveNotes();
-        if (notesPanel != null) {
-            notesPanel.refresh();
-        }
     }
 
     /** Moves a file's bookmarks from {@code oldKey} to {@code newKey} (used by in-app rename). */
@@ -10362,76 +10296,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 bookmarksPanel.refresh();
             }
         }
-    }
-
-    /** Moves a file's personal notes from {@code oldKey} to {@code newKey} (used by in-app rename). */
-    private void migrateNotesKey(String oldKey, String newKey) {
-        if (oldKey == null || oldKey.equals(newKey)) {
-            return;
-        }
-        var map = config.getNotes();
-        List<com.editora.config.PersonalNote> moved = map.remove(oldKey);
-        if (moved != null) {
-            map.put(newKey, moved);
-            config.saveNotes();
-            if (notesPanel != null) {
-                notesPanel.refresh();
-            }
-        }
-    }
-
-    /** Re-applies a file's saved notes after open, re-attaching by content hash if the file was renamed. */
-    private void restoreNotes(EditorBuffer buffer) {
-        if (!notesEnabled() || buffer.getPath() == null) {
-            return;
-        }
-        String key = noteKey(buffer);
-        var map = config.getNotes();
-        List<com.editora.config.PersonalNote> saved = map.get(key);
-        boolean rekeyed = false;
-        if (saved == null && !map.isEmpty()) {
-            // The file may have been renamed/moved outside Editora — match by content hash and re-key.
-            String matchKey = findNoteKeyByIdentity(map, buffer.fileIdentity());
-            if (matchKey != null) {
-                saved = map.remove(matchKey);
-                map.put(key, saved);
-                rekeyed = true;
-            }
-        }
-        boolean moved = buffer.applyNotes(saved);
-        if (moved || rekeyed) {
-            persistNotes(buffer); // self-heal corrected positions / re-key / orphan status
-        } else if (notesPanel != null) {
-            notesPanel.refresh();
-        }
-    }
-
-    private static String findNoteKeyByIdentity(
-            Map<String, List<com.editora.config.PersonalNote>> map, com.editora.config.FileIdentity id) {
-        return com.editora.config.PathKeys.findKeyByIdentity(map, id);
-    }
-
-    /** "Add Personal Note" (context menu / command): captures the selection/caret anchor, prompts for a body. */
-    private void addNoteFromContext(EditorBuffer buffer) {
-        if (buffer == null || buffer.getPath() == null) {
-            setStatus(tr("notes.saveFirst"));
-            return;
-        }
-        com.editora.editor.NoteDraft draft = buffer.captureNoteDraft();
-        promptNoteBody("", body -> {
-            buffer.getNoteManager()
-                    .add(com.editora.config.PersonalNote.create(
-                            buffer.fileIdentity(), draft.scope(), draft.anchor(), body, List.of()));
-            buffer.refreshGutter();
-        });
-    }
-
-    private void addNoteAtCaret() {
-        addNoteFromContext(activeBuffer());
-    }
-
-    private void promptNoteBody(String initial, java.util.function.Consumer<String> onAccept) {
-        showNoteDialog(initial, onAccept, null);
     }
 
     /**
@@ -10457,205 +10321,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> onAccept.accept(field.getText()),
                 null,
                 false);
-    }
-
-    /**
-     * Multi-line note editor as an in-scene overlay. Saves the (non-blank) body via {@code onAccept}; when
-     * {@code onDelete} is non-null an extra Delete button is shown (used when editing an existing note).
-     * Enter inserts a newline; Ctrl/Cmd+Enter saves.
-     */
-    private void showNoteDialog(String initial, java.util.function.Consumer<String> onAccept, Runnable onDelete) {
-        TextArea editor = new TextArea(initial == null ? "" : initial);
-        editor.setWrapText(true);
-        editor.setPrefRowCount(6);
-        editor.setPrefColumnCount(42);
-        // Honor the user's configured keybindings (Emacs caret movement + basic editing) in the note box.
-        com.editora.command.TextInputKeymap.install(editor, keymap);
-        Label prompt = new Label(tr("dialog.note.content"));
-        VBox body = new VBox(6, prompt, editor);
-        OverlayInput.Extra extra = onDelete == null ? null : new OverlayInput.Extra(tr("notes.delete"), onDelete);
-        OverlayInput.show(
-                overlayHost,
-                tr("dialog.note.title"),
-                body,
-                editor,
-                tr("dialog.save"),
-                null,
-                () -> {
-                    String text = editor.getText().strip();
-                    if (!text.isBlank()) {
-                        onAccept.accept(text);
-                    }
-                },
-                extra,
-                true);
-    }
-
-    private void onGutterNoteClick(EditorBuffer buffer, int line) {
-        var ns = buffer.getNoteManager().notesOnLine(line);
-        if (!ns.isEmpty()) {
-            editOpenBufferNote(buffer, ns.get(0));
-        }
-    }
-
-    private void editOpenBufferNote(EditorBuffer buffer, com.editora.config.PersonalNote note) {
-        showNoteDialog(note.body(), body -> buffer.getNoteManager().update(note.withBody(body)), () -> {
-            buffer.getNoteManager().remove(note.id());
-            buffer.refreshGutter();
-        });
-    }
-
-    /** Deletes the (first) personal note on the active buffer's caret line. */
-    private void deleteNoteAtCaret() {
-        EditorBuffer b = activeBuffer();
-        if (b == null) {
-            return;
-        }
-        var ns = b.getNoteManager().notesOnLine(b.getArea().getCurrentParagraph());
-        if (ns.isEmpty()) {
-            setStatus(tr("status.noNotesInFile"));
-            return;
-        }
-        b.getNoteManager().remove(ns.get(0).id());
-        b.refreshGutter();
-    }
-
-    private void jumpNote(boolean forward) {
-        EditorBuffer b = activeBuffer();
-        if (b == null) {
-            return;
-        }
-        int from = b.getArea().getCurrentParagraph();
-        Integer target =
-                forward ? b.getNoteManager().next(from) : b.getNoteManager().previous(from);
-        if (target != null) {
-            navigateToLine(target);
-        } else {
-            setStatus(tr("status.noNotesInFile"));
-        }
-    }
-
-    /** Opens a cross-file picker that searches notes by their full body, tags, and file path. */
-    private void searchNotes() {
-        notesSearchPalette.show(stage);
-    }
-
-    /** The text {@code notes.search} matches against: the note's body + tags + file path. */
-    private static String noteSearchText(NoteEntry e) {
-        com.editora.config.PersonalNote n = e.note();
-        return n.body() + " " + String.join(" ", n.tags()) + " " + e.fileKey();
-    }
-
-    private List<NoteEntry> allNoteEntries() {
-        List<NoteEntry> out = new ArrayList<>();
-        config.getNotes().forEach((key, notes) -> {
-            if (notes != null) {
-                notes.forEach(n -> out.add(new NoteEntry(key, n)));
-            }
-        });
-        return out;
-    }
-
-    private static String noteEntryLabel(com.editora.config.PersonalNote n) {
-        String body = n.body().strip();
-        String first = body.isEmpty() ? "" : body.lines().findFirst().orElse("");
-        return first.isEmpty() ? tr("notes.empty") : first;
-    }
-
-    // --- NotesPanel.Actions (open buffer if loaded, else mutate the persisted closed-file list) ---
-
-    private void noteActivate(String fileKey, com.editora.config.PersonalNote note) {
-        String path = note.file() != null && !note.file().path().isBlank()
-                ? note.file().path()
-                : fileKey;
-        openPath(Path.of(path));
-        int line = note.anchor().line();
-        Platform.runLater(() -> navigateToLine(line));
-    }
-
-    private void noteEditBody(String fileKey, com.editora.config.PersonalNote note) {
-        EditorBuffer open = bufferOf(tabForKey(fileKey));
-        if (open != null) {
-            editOpenBufferNote(open, note);
-        } else {
-            showNoteDialog(
-                    note.body(),
-                    body -> updateClosedFileNotes(
-                            fileKey, list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withBody(body) : n)),
-                    () -> updateClosedFileNotes(fileKey, list -> list.removeIf(n -> n.id().equals(note.id()))));
-        }
-    }
-
-    private void noteSetStatus(
-            String fileKey, com.editora.config.PersonalNote note, com.editora.config.NoteStatus status) {
-        EditorBuffer open = bufferOf(tabForKey(fileKey));
-        if (open != null) {
-            open.getNoteManager().setStatus(note.id(), status);
-        } else {
-            updateClosedFileNotes(
-                    fileKey, list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withStatus(status) : n));
-        }
-    }
-
-    private void noteDelete(String fileKey, com.editora.config.PersonalNote note) {
-        Tab tab = tabForKey(fileKey);
-        if (tab != null) {
-            EditorBuffer b = bufferOf(tab);
-            b.getNoteManager().remove(note.id());
-            b.refreshGutter();
-        } else {
-            updateClosedFileNotes(fileKey, list -> list.removeIf(n -> n.id().equals(note.id())));
-        }
-    }
-
-    private void noteDeleteAll(String fileKey) {
-        Tab tab = tabForKey(fileKey);
-        if (tab != null) {
-            EditorBuffer b = bufferOf(tab);
-            b.getNoteManager().clear();
-            b.refreshGutter();
-        } else {
-            config.getNotes().remove(fileKey);
-            config.saveNotes();
-            notesPanel.refresh();
-        }
-    }
-
-    private void updateClosedFileNotes(
-            String fileKey, java.util.function.Consumer<List<com.editora.config.PersonalNote>> mutator) {
-        var map = config.getNotes();
-        List<com.editora.config.PersonalNote> list = map.get(fileKey);
-        if (list == null) {
-            return;
-        }
-        list = new ArrayList<>(list);
-        mutator.accept(list);
-        if (list.isEmpty()) {
-            map.remove(fileKey);
-        } else {
-            map.put(fileKey, list);
-        }
-        config.saveNotes();
-        notesPanel.refresh();
-    }
-
-    private void exportNotes() {
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.exportNotes.title"));
-        chooser.setInitialFileName("notes.json");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("JSON", "*.json"));
-        java.io.File f = chooser.showSaveDialog(stage);
-        if (f == null) {
-            return;
-        }
-        try {
-            new com.fasterxml.jackson.databind.ObjectMapper()
-                    .enable(com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT)
-                    .writeValue(f, config.getNotes());
-            setStatus(tr("status.notesExported", f.toString()));
-        } catch (IOException e) {
-            setStatus(tr("status.notesExportFailed", e.getMessage()));
-        }
     }
 
     /**
@@ -11070,7 +10735,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         git.applySupport();
         applyLocalHistory(); // re-gate the Local File History tool window + refresh its list
         git.applyBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
-        applyNotesSupport();
+        notesCoordinator.applySupport();
         mermaid.applySupport();
         searchCoordinator.applyRipgrepSupport();
         applyMathSupport();
@@ -11737,7 +11402,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleNotes",
                         () -> config.getSettings().isNotesSupport(),
                         v -> config.getSettings().setNotesSupport(v),
-                        this::applyNotesSupport)));
+                        notesCoordinator::applySupport)));
         registry.register(Command.of(
                 "view.toggleLocalHistory",
                 () -> toggleSetting(
@@ -11948,13 +11613,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("bookmarks.previous", () -> jumpBookmark(false)));
         registry.register(Command.of("bookmarks.jump", () -> bookmarkPalette.show(stage)));
         registry.register(Command.of("bookmarks.clearFile", this::clearBookmarksInFile));
-        registry.register(Command.of("notes.add", () -> ifNotes(this::addNoteAtCaret)));
-        registry.register(Command.of("notes.next", () -> ifNotes(() -> jumpNote(true))));
-        registry.register(Command.of("notes.previous", () -> ifNotes(() -> jumpNote(false))));
-        registry.register(Command.of("notes.jump", () -> ifNotes(() -> notesPalette.show(stage))));
-        registry.register(Command.of("notes.search", () -> ifNotes(this::searchNotes)));
-        registry.register(Command.of("notes.delete", () -> ifNotes(this::deleteNoteAtCaret)));
-        registry.register(Command.of("notes.export", () -> ifNotes(this::exportNotes)));
+        registry.register(Command.of("notes.add", () -> notesCoordinator.ifEnabled(notesCoordinator::addNoteAtCaret)));
+        registry.register(
+                Command.of("notes.next", () -> notesCoordinator.ifEnabled(() -> notesCoordinator.jumpNote(true))));
+        registry.register(
+                Command.of("notes.previous", () -> notesCoordinator.ifEnabled(() -> notesCoordinator.jumpNote(false))));
+        registry.register(
+                Command.of("notes.jump", () -> notesCoordinator.ifEnabled(notesCoordinator::openJumpPalette)));
+        registry.register(Command.of("notes.search", () -> notesCoordinator.ifEnabled(notesCoordinator::searchNotes)));
+        registry.register(
+                Command.of("notes.delete", () -> notesCoordinator.ifEnabled(notesCoordinator::deleteNoteAtCaret)));
+        registry.register(Command.of("notes.export", () -> notesCoordinator.ifEnabled(notesCoordinator::exportNotes)));
         registry.register(Command.of("snippets.insert", this::insertSnippetPicker));
         registry.register(Command.of("snippets.reload", () -> {
             snippets.reload();
@@ -12016,7 +11685,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.structure", () -> toolWindows.toggle(structureToolWindow)));
         registry.register(Command.of("tool.bookmarks", () -> toolWindows.toggle(bookmarksToolWindow)));
         registry.register(Command.of("tool.undoHistory", () -> toolWindows.toggle(undoHistoryToolWindow)));
-        registry.register(Command.of("tool.notes", () -> ifNotes(() -> toolWindows.toggle(notesToolWindow))));
+        registry.register(
+                Command.of("tool.notes", () -> notesCoordinator.ifEnabled(() -> toolWindows.toggle(notesToolWindow))));
         registry.register(Command.of("tool.fileInformation", () -> toolWindows.toggle(fileInfoToolWindow)));
         registry.register(Command.of("tool.remote", () -> {
             remoteConnectionsPanel.refresh();
