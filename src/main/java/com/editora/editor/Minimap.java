@@ -48,6 +48,13 @@ final class Minimap extends Region {
      *  the cached snapshot is dropped so its GPU texture can be reclaimed — keeps retained VRAM from
      *  scaling with the number of open files. */
     private boolean renderingActive = true;
+    /** Re-entrancy guard. {@link #renderContent}'s {@code canvas.snapshot()} forces a synchronous
+     *  full-scene layout pass that can settle the editor's viewport and fire the
+     *  {@code estimatedScrollYProperty} listener — re-entering {@link #redraw}/{@link #renderContent}
+     *  mid-render (with {@link #contentImage} momentarily null), which would paint a second, stale
+     *  viewport box over the in-progress frame. While a render is in flight, suppress nested paints;
+     *  the in-progress render draws the single, up-to-date viewport when it completes. */
+    private boolean painting;
     /** Visual width of a tab character, in columns. */
     private int tabSize = 4;
     /** LSP diagnostics drawn as colored stripes on the right edge (IntelliJ-style); never cached. */
@@ -206,6 +213,18 @@ final class Minimap extends Region {
 
     /** Renders the document content into the canvas, caches it, then draws the viewport on top. */
     private void renderContent() {
+        if (painting) {
+            return; // nested paint triggered by snapshot()'s forced layout — let the outer render finish
+        }
+        painting = true;
+        try {
+            renderContent0();
+        } finally {
+            painting = false;
+        }
+    }
+
+    private void renderContent0() {
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         GraphicsContext g = canvas.getGraphicsContext2D();
@@ -254,6 +273,9 @@ final class Minimap extends Region {
 
     /** Cheap redraw on scroll: re-blit the cached content image and draw the viewport rectangle. */
     private void redraw() {
+        if (painting) {
+            return; // nested paint during a render in flight (see the `painting` guard); suppress it
+        }
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         GraphicsContext g = canvas.getGraphicsContext2D();
