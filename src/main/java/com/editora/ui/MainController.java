@@ -8352,6 +8352,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         ? active.getPath().toAbsolutePath().toString()
                         : "");
         persistWindowBounds(state);
+        toolWindows.persistDividers(); // capture a divider dragged but left open (close() only saves on hide)
         config.save(); // durable flush on quit — not coalesced
     }
 
