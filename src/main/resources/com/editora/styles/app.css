@@ -1255,6 +1255,7 @@
 .md-lint-code {
     -fx-font-weight: bold;
     -fx-font-family: monospace;
+    -fx-padding: 0 0 0 6; /* breathing room between the checkbox and the "MDxxx" code */
 }
 .settings-coming-soon {
     -fx-text-fill: -color-fg-muted;
