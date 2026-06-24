@@ -280,7 +280,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private static MainController mcpOwner;
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
-    private final com.editora.diff.DiffService diffService = new com.editora.diff.DiffService();
     /** HTTP Client: the {@code .http} request runner + response tool window; see {@link HttpClientCoordinator}. */
     private ToolWindow httpToolWindow;
     /** True while we programmatically auto-show/hide the HTTP window, so the state listener ignores it. */
@@ -401,7 +400,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 if (projectPanel != null) {
                     projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
                 }
-                refreshOpenDiffs(); // a compared file may have changed on disk while we were away
+                diffCoordinator.refreshOpenDiffs(); // a compared file may have changed on disk while we were away
             }
         });
         this.config = config;
@@ -2178,7 +2177,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void gitCompareWithHead(Path file) {
-                git.ifEnabled(() -> diffPathVsHead(file));
+                git.ifEnabled(() -> diffCoordinator.diffPathVsHead(file));
             }
 
             @Override
@@ -2277,7 +2276,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void diff(String path, boolean staged) {
-                diffGitPanelFile(path, staged);
+                diffCoordinator.diffGitPanelFile(path, staged);
             }
         });
         gitPanel.setOnClone(this::gitClone);
@@ -2699,7 +2698,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void refreshOpenDiffs() {
-            MainController.this.refreshOpenDiffs();
+            diffCoordinator.refreshOpenDiffs();
         }
 
         @Override
@@ -2708,6 +2707,61 @@ public class MainController implements com.editora.mcp.McpBridge {
             return active == null ? null : Path.of(active.root());
         }
     });
+
+    /** The diff + merge-conflict viewer (open/refresh diffs, apply-change, compare entry points, patch
+     *  export, merge resolution); see {@link DiffCoordinator}. Git-backed diffs reach the repo via {@code git}. */
+    private final DiffCoordinator diffCoordinator =
+            new DiffCoordinator(coordinatorHost, git, new DiffCoordinator.Ops() {
+                @Override
+                public void addDiffTab(TabContent pane) {
+                    addContentTab(pane, true);
+                }
+
+                @Override
+                public EditorBuffer openBufferFor(Path target) {
+                    return MainController.this.openBufferFor(target);
+                }
+
+                @Override
+                public EditorBuffer openBackgroundBuffer(Path target) {
+                    try {
+                        EditorBuffer buffer = new EditorBuffer();
+                        buffer.setPath(target);
+                        loadInto(buffer, target);
+                        addBuffer(buffer, false); // background: keep the diff tab focused
+                        return buffer;
+                    } catch (IOException e) {
+                        return null;
+                    }
+                }
+
+                @Override
+                public boolean saveBuffer(EditorBuffer buffer) {
+                    return save(buffer);
+                }
+
+                @Override
+                public java.util.List<DiffViewerPane> openDiffPanes() {
+                    java.util.List<DiffViewerPane> out = new java.util.ArrayList<>();
+                    for (Tab tab : tabPane.getTabs()) {
+                        if (tab.getUserData() instanceof DiffViewerPane dp) {
+                            out.add(dp);
+                        }
+                    }
+                    return out;
+                }
+
+                @Override
+                public DiffViewerPane activeDiffPane() {
+                    Tab t = tabPane.getSelectionModel().getSelectedItem();
+                    return t != null && t.getUserData() instanceof DiffViewerPane dp ? dp : null;
+                }
+
+                @Override
+                public Path finderStartDir() {
+                    return MainController.this.finderStartDir();
+                }
+            });
 
     // --- Mermaid (mmdc render/export + maid lint) ----------------------------------------------------
 
@@ -3317,123 +3371,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Whether the Personal Notes feature is enabled in Settings (default off). */
 
-    // --- Diff viewer ----------------------------------------------------------------------------
-
-    /** A re-fetchable side of a diff: delivers the current text (a git blob or the working copy) to a
-     *  callback. Re-invoked on refresh so the diff tracks on-disk / git changes. */
-    @FunctionalInterface
-    private interface DiffSide {
-        void fetch(java.util.function.Consumer<String> onText);
-    }
-
-    /**
-     * Opens a diff tab comparing two re-fetchable sides (diff computed off-thread); reports identical /
-     * too-large. {@code headerLeft}/{@code headerRight} label the panes (e.g. "HEAD" / "Working tree");
-     * the clean {@code leftName}/{@code rightName} (real file names) drive grammar + patch labels. The
-     * pane's refresher re-fetches both sides and re-renders only when the content changed.
-     */
-    private void openDiff(
-            String title,
-            String headerLeft,
-            String headerRight,
-            String leftName,
-            String rightName,
-            DiffSide leftSide,
-            DiffSide rightSide,
-            DiffViewerPane.EditableSide editableSide,
-            Path target) {
-        leftSide.fetch(leftText -> rightSide.fetch(rightText -> diffService.compute(leftText, rightText, model -> {
-            if (model == null) {
-                setStatus(tr("status.diff.tooLarge"));
-                return;
-            }
-            DiffViewerPane pane = new DiffViewerPane(
-                    title,
-                    headerLeft,
-                    headerRight,
-                    leftName,
-                    rightName,
-                    leftText,
-                    rightText,
-                    model,
-                    config.getSettings().getFontFamily(),
-                    config.getSettings().getFontSize(),
-                    config.getSettings().isShowLineNumbers(),
-                    target == null ? null : target.toString());
-            pane.setOnExportPatch(this::exportPatch);
-            // "Apply change" arrows write the hunk into the local/editable file (via an undoable
-            // editor buffer), with Undo + Save acting on that buffer.
-            if (editableSide != DiffViewerPane.EditableSide.NONE && target != null) {
-                pane.setEditable(
-                        editableSide,
-                        newText -> applyToLocal(target, newText),
-                        () -> undoLocal(target),
-                        () -> saveLocal(target));
-            }
-            // Refresh: re-fetch both sides; re-render only if the content actually changed
-            // (so a focus-regain with no change keeps the view + scroll position).
-            pane.setRefresher(() -> leftSide.fetch(l -> rightSide.fetch(r -> {
-                if (pane.matches(l, r)) {
-                    return;
-                }
-                diffService.compute(l, r, m -> {
-                    if (m != null) {
-                        pane.updateContent(l, r, m);
-                    }
-                });
-            })));
-            addContentTab(pane, true);
-            if (model.isEmpty()) {
-                setStatus(tr("status.diff.identical"));
-            }
-        })));
-    }
-
-    /** Re-fetches every open diff tab's sides (run on window focus-regain + after a git mutation), so a
-     *  file changed on disk or by a git command is reflected. Each pane skips the rebuild when unchanged. */
-    private void refreshOpenDiffs() {
-        for (Tab tab : tabPane.getTabs()) {
-            if (tab.getUserData() instanceof DiffViewerPane dp) {
-                dp.refresh();
-            }
-        }
-    }
-
-    /** Writes a diff "apply change" result into the local file {@code target} via an undoable editor
-     *  buffer (opened in the background if not already open), marking it dirty — Undo reverts the apply,
-     *  Save persists it. Then re-diffs every open diff tab so the applied hunk disappears. */
-    private void applyToLocal(Path target, String newText) {
-        EditorBuffer b = bufferForApply(target);
-        if (b == null) {
-            setStatus(tr("status.diff.applyFailed", target.getFileName()));
-            return;
-        }
-        b.getArea().replaceText(newText);
-        setStatus(tr("status.diff.applied"));
-        refreshOpenDiffs();
-    }
-
-    /** Undoes the last applied change on {@code target}'s buffer (the buffer's own undo). */
-    private void undoLocal(Path target) {
-        EditorBuffer b = openBufferFor(target);
-        if (b != null && b.getArea().isUndoAvailable()) {
-            b.getArea().undo();
-            refreshOpenDiffs();
-        }
-    }
-
-    /** Saves {@code target}'s buffer (persisting the applied changes) and re-diffs. */
-    private void saveLocal(Path target) {
-        EditorBuffer b = openBufferFor(target);
-        if (b == null) {
-            return;
-        }
-        if (save(b)) {
-            setStatus(tr("status.diff.saved", target.getFileName()));
-            refreshOpenDiffs();
-        }
-    }
-
     /** The open buffer for {@code target} (canonical-path match), or null if not open. */
     private EditorBuffer openBufferFor(Path target) {
         for (Tab tab : tabPane.getTabs()) {
@@ -3443,237 +3380,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
         return null;
-    }
-
-    /** The editable buffer to apply a diff hunk into: the open buffer for {@code target}, else a fresh
-     *  one opened in the background (no tab switch, so the diff stays focused). */
-    private EditorBuffer bufferForApply(Path target) {
-        EditorBuffer open = openBufferFor(target);
-        if (open != null) {
-            return open;
-        }
-        try {
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(target);
-            loadInto(buffer, target);
-            addBuffer(buffer, false); // background: keep the diff tab focused
-            return buffer;
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-    /** Diff the active file's working copy against its committed (HEAD) version. */
-    private void diffActiveVsHead() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null) {
-            setStatus(tr("status.diff.noFile"));
-            return;
-        }
-        diffPathVsHead(b.getPath());
-    }
-
-    /** Opens a read-only diff of {@code path} at HEAD (left) vs its working-tree text (right). */
-    private void diffPathVsHead(Path path) {
-        if (path == null || Files.isDirectory(path)) {
-            setStatus(tr("status.diff.noFile"));
-            return;
-        }
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        String rel = com.editora.git.GitService.repoRelative(git.repoRoot(), path);
-        if (rel == null) {
-            setStatus(tr("status.diff.notInRepo"));
-            return;
-        }
-        String name = path.getFileName().toString();
-        openDiff(
-                tr("diff.title.vsHead", name),
-                tr("diff.side.head"),
-                tr("diff.side.working"),
-                name,
-                name,
-                cb -> git.service().show(git.repoRoot(), "HEAD:" + rel, cb),
-                cb -> cb.accept(worktreeText(path)),
-                DiffViewerPane.EditableSide.RIGHT,
-                path);
-    }
-
-    /** Pick a second file and diff it against the active file. */
-    private void compareActiveWithFile() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null) {
-            setStatus(tr("status.diff.noFile"));
-            return;
-        }
-        Path basePath = b.getPath();
-        String leftName = basePath.getFileName().toString();
-        FileFinder picker = new FileFinder(
-                this::finderStartDir,
-                chosen -> {
-                    String rightName = chosen.getFileName().toString();
-                    // Both sides re-fetch via worktreeText (open buffer's live text if open, else disk), so the
-                    // diff tracks either file changing on disk.
-                    openDiff(
-                            tr("diff.title.compare", leftName, rightName),
-                            leftName,
-                            rightName,
-                            leftName,
-                            rightName,
-                            cb -> cb.accept(worktreeText(basePath)),
-                            cb -> cb.accept(worktreeText(chosen)),
-                            DiffViewerPane.EditableSide.LEFT,
-                            basePath);
-                },
-                false,
-                tr("diff.compareTitle"));
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Diff the active file against a commit chosen from its history. */
-    private void diffActiveVsCommit() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null) {
-            setStatus(tr("status.diff.noFile"));
-            return;
-        }
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        String rel = com.editora.git.GitService.repoRelative(git.repoRoot(), b.getPath());
-        if (rel == null) {
-            setStatus(tr("status.diff.notInRepo"));
-            return;
-        }
-        Path path = b.getPath();
-        String name = path.getFileName().toString();
-        git.service().log(git.repoRoot(), path, 80, commits -> {
-            if (commits.isEmpty()) {
-                setStatus(tr("status.diff.noHistory"));
-                return;
-            }
-            QuickOpen<com.editora.git.GitService.Commit> picker = new QuickOpen<>(
-                    tr("diff.commitPickerTitle"),
-                    tr("diff.commitPickerPrompt"),
-                    () -> commits,
-                    c -> c.shortHash() + "  " + c.subject(),
-                    c -> c.date() + " · " + c.author(),
-                    c -> c.shortHash() + " " + c.subject() + " " + c.author() + " " + c.date(),
-                    chosen -> openDiff(
-                            tr("diff.title.vsCommit", name, chosen.shortHash()),
-                            chosen.shortHash(),
-                            tr("diff.side.working"),
-                            name,
-                            name,
-                            cb -> git.service().show(git.repoRoot(), chosen.hash() + ":" + rel, cb),
-                            cb -> cb.accept(worktreeText(path)),
-                            DiffViewerPane.EditableSide.RIGHT,
-                            path));
-            picker.setOverlayHost(overlayHost);
-            picker.show(stage);
-        });
-    }
-
-    /** Diff a Git-panel file row: staged → index↔HEAD, unstaged → worktree↔index. */
-    private void diffGitPanelFile(String repoRel, boolean staged) {
-        if (git.repoRoot() == null) {
-            return;
-        }
-        java.nio.file.Path abs = git.repoRoot().resolve(repoRel);
-        String name = abs.getFileName().toString();
-        if (staged) {
-            // index↔HEAD: neither side is the working file, so no "apply" (read-only diff).
-            openDiff(
-                    tr("diff.title.staged", name),
-                    tr("diff.side.head"),
-                    tr("diff.side.staged"),
-                    name,
-                    name,
-                    cb -> git.service().show(git.repoRoot(), "HEAD:" + repoRel, cb),
-                    cb -> git.service().show(git.repoRoot(), ":" + repoRel, cb),
-                    DiffViewerPane.EditableSide.NONE,
-                    null);
-        } else {
-            openDiff(
-                    tr("diff.title.unstaged", name),
-                    tr("diff.side.staged"),
-                    tr("diff.side.working"),
-                    name,
-                    name,
-                    cb -> git.service().show(git.repoRoot(), ":" + repoRel, cb),
-                    cb -> cb.accept(worktreeText(abs)),
-                    DiffViewerPane.EditableSide.RIGHT,
-                    abs);
-        }
-    }
-
-    /** The current working-tree text of {@code abs}: an open buffer's (incl. unsaved edits) if open,
-     *  else the file on disk ("" when unreadable / deleted). */
-    private String worktreeText(java.nio.file.Path abs) {
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null && b.getPath() != null && canonicalPath(b.getPath()).equals(canonicalPath(abs))) {
-                return b.text();
-            }
-        }
-        try {
-            return java.nio.file.Files.exists(abs) ? java.nio.file.Files.readString(abs) : "";
-        } catch (java.io.IOException e) {
-            return "";
-        }
-    }
-
-    /** Saves a unified-diff patch (the diff viewer's export action) via a file chooser. */
-    private void exportPatch(String patch) {
-        if (patch == null || patch.isEmpty()) {
-            setStatus(tr("status.diff.identical"));
-            return;
-        }
-        javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
-        fc.setTitle(tr("diff.exportPatch"));
-        fc.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("Patch (*.patch)", "*.patch"));
-        fc.setInitialFileName("changes.patch");
-        java.io.File f = fc.showSaveDialog(stage);
-        if (f == null) {
-            return;
-        }
-        try {
-            java.nio.file.Files.writeString(f.toPath(), patch);
-            setStatus(tr("status.diff.patchSaved", f.getName()));
-        } catch (java.io.IOException e) {
-            setStatus(tr("status.diff.patchFailed", e.getMessage() == null ? "" : e.getMessage()));
-        }
-    }
-
-    /** Opens the merge-conflict resolution view for the active buffer (if it has conflict markers). */
-    private void resolveConflicts() {
-        EditorBuffer b = activeBuffer();
-        if (b == null) {
-            setStatus(tr("status.diff.noFile"));
-            return;
-        }
-        String text = b.text();
-        if (!com.editora.diff.ConflictParser.hasConflictMarkers(text)) {
-            setStatus(tr("status.merge.noConflicts"));
-            return;
-        }
-        java.util.List<String> raw =
-                java.util.List.of(text.replace("\r\n", "\n").split("\n", -1));
-        com.editora.diff.ConflictParser.ConflictFile cf = com.editora.diff.ConflictParser.parse(raw);
-        String name =
-                b.getPath() == null ? b.getTitle() : b.getPath().getFileName().toString();
-        MergeViewerPane pane = new MergeViewerPane(
-                tr("merge.title", name),
-                cf,
-                config.getSettings().getFontFamily(),
-                config.getSettings().getFontSize(),
-                resolvedLines -> {
-                    b.getArea().replaceText(String.join("\n", resolvedLines));
-                    setStatus(tr("status.merge.applied"));
-                });
-        addContentTab(pane, true);
     }
 
     private void gitOp(String successMessage, String... args) {
@@ -3904,7 +3610,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void openFileDiff(String hash, String repoRel) {
-                diffCommitFile(hash, repoRel);
+                diffCoordinator.diffCommitFile(hash, repoRel);
             }
 
             @Override
@@ -4023,23 +3729,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Read-only diff of one file at a commit vs its first parent (from the Git Log file list). */
-    private void diffCommitFile(String hash, String repoRel) {
-        if (git.repoRoot() == null) {
-            return;
-        }
-        String name = repoRel.substring(repoRel.lastIndexOf('/') + 1);
-        openDiff(
-                tr("diff.title.commitFile", name, com.editora.git.GitFormat.shortHash(hash)),
-                tr("diff.side.parent"),
-                tr("diff.title.vsCommitShort", com.editora.git.GitFormat.shortHash(hash)),
-                name,
-                name,
-                cb -> git.service().show(git.repoRoot(), hash + "~1:" + repoRel, cb),
-                cb -> git.service().show(git.repoRoot(), hash + ":" + repoRel, cb),
-                DiffViewerPane.EditableSide.NONE,
-                null);
-    }
-
     /** A history mutation (checkout/reset/revert/cherry-pick/branch): run, report, refresh + reload log. */
     private void gitMutate(String successMessage, String... args) {
         if (git.reportIfNoRepo()) {
@@ -4486,7 +4175,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         Path target = b.getPath();
         String name = target.getFileName().toString();
-        openDiff(
+        diffCoordinator.openDiff(
                 tr("history.diff.title", name),
                 tr("history.side.snapshot"),
                 tr("history.side.current"),
@@ -4510,7 +4199,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 setStatus(tr("status.history.restoreFailed", target.getFileName()));
                 return;
             }
-            applyToLocal(target, text);
+            diffCoordinator.applyToLocal(target, text);
             setStatus(tr("status.history.restored", target.getFileName()));
         });
     }
@@ -4639,7 +4328,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         String rel = com.editora.git.GitService.repoRelative(git.repoRoot(), b.getPath());
         if (rel != null) {
-            diffCommitFile(hash, rel);
+            diffCoordinator.diffCommitFile(hash, rel);
         }
     }
 
@@ -5133,16 +4822,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         discardChanges(git.repoRoot().relativize(file.toAbsolutePath()).toString(), false);
-    }
-
-    /** Runs {@code op} on the active tab's diff viewer, or reports that no diff is focused. */
-    private void withActiveDiff(java.util.function.Consumer<DiffViewerPane> op) {
-        Tab t = tabPane.getSelectionModel().getSelectedItem();
-        if (t != null && t.getUserData() instanceof DiffViewerPane dp) {
-            op.accept(dp);
-        } else {
-            setStatus(tr("status.diff.noActiveDiff"));
-        }
     }
 
     private void findNextMatch() {
@@ -6758,10 +6437,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         rename.setOnAction(e -> renameFile(buffer, tab));
         MenuItem diffHead = new MenuItem(tr("menu.diffHead"));
         diffHead.setGraphic(Icons.diff());
-        diffHead.setOnAction(e -> git.ifEnabled(this::diffActiveVsHead));
+        diffHead.setOnAction(e -> git.ifEnabled(diffCoordinator::diffActiveVsHead));
         MenuItem compareWith = new MenuItem(tr("menu.compareWith"));
         compareWith.setGraphic(Icons.diff());
-        compareWith.setOnAction(e -> compareActiveWithFile());
+        compareWith.setOnAction(e -> diffCoordinator.compareActiveWithFile());
         MenuItem history = new MenuItem(tr("command.git.fileHistory"));
         history.setGraphic(Icons.gitLog());
         history.setOnAction(e -> git.ifEnabled(this::showFileHistory));
@@ -10317,15 +9996,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("git.stashDrop", () -> git.ifEnabled(this::gitStashDrop)));
         // Diff viewer + merge. The git-backed diffs are ifGit-gated; "Compare With…" and "Resolve
         // Conflicts" work on any file (no repo needed), so they are not gated.
-        registry.register(Command.of("diff.vsHead", () -> git.ifEnabled(this::diffActiveVsHead)));
+        registry.register(Command.of("diff.vsHead", () -> git.ifEnabled(diffCoordinator::diffActiveVsHead)));
         // Diff viewer toolbar actions (act on the active diff tab).
-        registry.register(Command.of("diff.toggleView", () -> withActiveDiff(DiffViewerPane::toggleViewMode)));
-        registry.register(Command.of("diff.applyAll", () -> withActiveDiff(DiffViewerPane::applyAllChanges)));
-        registry.register(Command.of("diff.nextChange", () -> withActiveDiff(DiffViewerPane::goNextChange)));
-        registry.register(Command.of("diff.previousChange", () -> withActiveDiff(DiffViewerPane::goPreviousChange)));
-        registry.register(Command.of("diff.compareWith", this::compareActiveWithFile));
-        registry.register(Command.of("diff.vsCommit", () -> git.ifEnabled(this::diffActiveVsCommit)));
-        registry.register(Command.of("merge.resolve", this::resolveConflicts));
+        registry.register(
+                Command.of("diff.toggleView", () -> diffCoordinator.withActiveDiff(DiffViewerPane::toggleViewMode)));
+        registry.register(
+                Command.of("diff.applyAll", () -> diffCoordinator.withActiveDiff(DiffViewerPane::applyAllChanges)));
+        registry.register(
+                Command.of("diff.nextChange", () -> diffCoordinator.withActiveDiff(DiffViewerPane::goNextChange)));
+        registry.register(Command.of(
+                "diff.previousChange", () -> diffCoordinator.withActiveDiff(DiffViewerPane::goPreviousChange)));
+        registry.register(Command.of("diff.compareWith", diffCoordinator::compareActiveWithFile));
+        registry.register(Command.of("diff.vsCommit", () -> git.ifEnabled(diffCoordinator::diffActiveVsCommit)));
+        registry.register(Command.of("merge.resolve", diffCoordinator::resolveConflicts));
         registry.register(Command.of("switcher.show", () -> switcher.show(stage, false)));
         registry.register(Command.of("switcher.showReverse", () -> switcher.show(stage, true)));
         registry.register(Command.of("find.show", this::findShowOrNext));
