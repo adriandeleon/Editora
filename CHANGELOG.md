@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Linux `.deb`: an `editora` command on `PATH`.** The Debian package now creates a `/usr/bin/editora` symlink to the installed launcher (jpackage otherwise installs it only at `/opt/editora/bin/Editora`, off `PATH`), so you can start Editora from a terminal with arguments — e.g. `editora some/file.java:42`. It's removed on uninstall. Implemented via custom DEB maintainer scripts (`packaging/linux/postinst`/`postrm`) passed through `jpackage --resource-dir` in the installer-wrap step; `.rpm` is unaffected (run `/opt/editora/bin/Editora`).
+- **Linux `.deb`: an `editora` command on `PATH`, plus a proper menu entry + app icon.** The Debian package now (1) creates a `/usr/bin/editora` symlink to the installed launcher (jpackage otherwise installs it only at `/opt/editora/bin/Editora`, off `PATH`), so you can start Editora from a terminal with arguments — e.g. `editora some/file.java:42`; and (2) registers the bundled `.desktop` into `/usr/share/applications` (injecting `StartupWMClass` so the running window matches it), so the application menu and dock show the Editora icon instead of the generic Java icon. Both are removed on uninstall. Implemented via custom DEB maintainer scripts (`packaging/linux/postinst`/`postrm`) passed through `jpackage --resource-dir` in the installer-wrap step — these *replace* jpackage's generated scripts, so they reproduce jpackage's menu/icon registration in addition to the new symlink. `.rpm` is unaffected (run `/opt/editora/bin/Editora`).
 
 ### Changed
 

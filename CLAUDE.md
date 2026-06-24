@@ -70,18 +70,24 @@ hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) wh
 GitHub release with all installers + fat jars + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
 build (the `dist` profile is reused as-is) and there is **no `pom.xml`/Maven change**, so the normal
 build is unaffected. Installers are currently **unsigned** (signing/notarization is a follow-up).
-**Linux `editora` command on PATH:** jpackage installs the launcher only at `/opt/editora/bin/Editora`
-(not on `PATH`), so the **`.deb`** ships custom Debian maintainer scripts — `packaging/linux/postinst`
-(symlinks `/usr/bin/editora` → the installed launcher, found via the `/opt/*/bin/Editora` glob since
-jpackage lowercases the install dir) and `packaging/linux/postrm` (removes it on remove/purge, only if
-it still points into `/opt/*/bin/Editora`). They're passed via `jpackage --resource-dir packaging/linux`
-**in the DEB wrap of `scripts/aot_build.java`** (the AOT helper builds the actual installer), DEB-only —
-the RPM bundler uses a `.spec` and ignores `postinst`/`postrm`, so `.rpm` users run `/opt/editora/bin/Editora`
-or add their own symlink. Because the override replaces jpackage's generated `postinst`/`postrm`, both
-scripts also re-run the freedesktop database refresh (`update-desktop-database`/`xdg-desktop-menu
-forceupdate`) that jpackage's default scripts did for the `--linux-shortcut` menu entry. **Device-test on
-Linux** (install the `.deb`: `which editora` + the app appears in the menu; then remove: the symlink is gone)
-— the macOS dev box and the `os-linux` profile can't exercise this.
+**Linux `.deb` PATH command + menu/icon registration:** jpackage installs everything under
+`/opt/editora/` (launcher at `bin/Editora`, the `.desktop` + the 512×512 `Editora.png` at
+`lib/editora-Editora.desktop`/`lib/Editora.png`) and relies on its **own generated `postinst`** to
+register the `.desktop`/icon system-wide (via `xdg-desktop-menu`). The **`.deb`** ships custom Debian
+maintainer scripts (`packaging/linux/postinst`/`postrm`, passed via `jpackage --resource-dir
+packaging/linux` **in the DEB wrap of `scripts/aot_build.java`** — DEB-only; the RPM bundler uses a
+`.spec` and ignores them, so `.rpm` users run `/opt/editora/bin/Editora`). **Because the override
+*replaces* jpackage's generated scripts, it must reproduce that registration or the launcher is never
+installed into `/usr/share/applications` and the app shows the generic Java icon.** So `postinst`
+(`configure`): (1) symlinks `/usr/bin/editora` → the launcher (found via the `/opt/*/bin/Editora` glob,
+since jpackage lowercases the install dir); (2) **copies the bundled `.desktop` into
+`/usr/share/applications/editora-Editora.desktop`, injecting `StartupWMClass=Editora`** (jpackage's
+generated entry omits it, so the *running* window can't be matched to the entry — the menu icon comes
+from the `.desktop`'s already-absolute `Icon=/opt/editora/lib/Editora.png`); then `update-desktop-database`.
+`postrm` (remove/purge) removes both. **Device-test on Linux** (install the `.deb`: `which editora`
+works + the app shows our icon in the menu and dock; then remove: both are gone) — the macOS dev box and
+the `os-linux` profile can't exercise this. *(If a terminal-launched window's dock icon is still generic,
+the real `WM_CLASS` differs from `Editora` — check `xprop WM_CLASS` and fix the injected value.)*
 Uses the BellSoft **Liberica** JDK 25 in CI for full arch coverage (incl. linux aarch64).
 
 ## Architecture
