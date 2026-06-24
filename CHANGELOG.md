@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Linux `.deb`: an `editora` command on `PATH`.** The Debian package now creates a `/usr/bin/editora` symlink to the installed launcher (jpackage otherwise installs it only at `/opt/editora/bin/Editora`, off `PATH`), so you can start Editora from a terminal with arguments — e.g. `editora some/file.java:42`. It's removed on uninstall. Implemented via custom DEB maintainer scripts (`packaging/linux/postinst`/`postrm`) passed through `jpackage --resource-dir` in the installer-wrap step; `.rpm` is unaffected (run `/opt/editora/bin/Editora`).
+
 ### Changed
 
 - **Internal: extracted `DebugCoordinator` from `MainController`.** The whole DAP debugging integration (the `DebugPanel`, breakpoint persistence + gutter gating, the DAP event sink + panel actions, the inline-values / hover / execution-line editor surfaces, the start/attach/step/run-to-cursor/jump flows, and the `debug.toggleAdapter`/`debug.setAdapterPath` pickers) moved into its own `CoordinatorHost`-style coordinator. The `DapManager` stays a `MainController` field (it's built on the LSP `lspManager`, and `SettingsWindow` + window-dispose reach it) and is passed to the coordinator, mirroring the LSP split; Java debugging layers on the jdtls session, so the coordinator also takes the `lspManager` + `LspCoordinator`. `MainController` shed ~565 lines (11,057 → ~10,492). This completes the `MainController` decomposition campaign (13,017 → ~10,492). No behavior change.

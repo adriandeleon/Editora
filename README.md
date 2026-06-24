@@ -374,6 +374,12 @@ java -jar target/Editora-<version>.jar
 
 The `dist` profile produces a platform installer under `target/dist/`.
 
+On **Linux**, the `.deb` installs the app under `/opt/editora/` and adds an **`editora` command on
+`PATH`** (a `/usr/bin/editora` symlink created by the package's maintainer scripts), so you can launch
+it from a terminal with arguments — e.g. `editora some/file.java:42` or `editora --new-file=notes.md`.
+The command is removed when you uninstall the package. (The `.rpm` installs under `/opt/editora/`
+too; run `/opt/editora/bin/Editora` or add your own symlink.)
+
 The `fatjar` profile produces a self-contained, runnable `target/Editora-<version>.jar` (no separate
 JavaFX install needed — `java -jar` is enough, on a JDK 25 runtime). It bundles JavaFX's classes and
 native libraries **for the build host's platform only**: a single jar can't be portable because
