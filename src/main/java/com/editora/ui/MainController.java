@@ -39,7 +39,6 @@ import javafx.scene.control.Separator;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToolBar;
 import javafx.scene.control.Tooltip;
@@ -708,7 +707,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
             // Signature gate: when "require signed plugins" is on, refuse an unsigned/unverified registry.
             if (requireSig && !r.signed()) {
-                gitError(tr("status.plugins.unsigned"), tr("dialog.plugins.unsignedDetail"));
+                git.gitError(tr("status.plugins.unsigned"), tr("dialog.plugins.unsignedDetail"));
                 return;
             }
             browseSigned = r.signed();
@@ -815,7 +814,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Common post-install handling: disclose capabilities + confirm enable, persist, refresh, report. */
     private void onPluginInstalled(com.editora.plugin.PluginInstaller.Result r) {
         if (!r.ok()) {
-            gitError(tr("status.plugins.installFailed", r.error() == null ? "" : r.error()), r.error());
+            git.gitError(tr("status.plugins.installFailed", r.error() == null ? "" : r.error()), r.error());
             return;
         }
         pluginRegistry.invalidate(); // status labels (Installed/Update) may change
@@ -914,7 +913,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
             });
         } catch (java.io.IOException e) {
-            gitError(tr("status.plugins.uninstallFailed", id), e.getMessage());
+            git.gitError(tr("status.plugins.uninstallFailed", id), e.getMessage());
             return;
         }
         config.getPluginStore().setEnabled(id, false);
@@ -2240,32 +2239,32 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void stage(String path) {
-                gitOp("Staged " + path, "add", "--", path);
+                git.gitOp("Staged " + path, "add", "--", path);
             }
 
             @Override
             public void unstage(String path) {
-                gitOp("Unstaged " + path, "reset", "-q", "HEAD", "--", path);
+                git.gitOp("Unstaged " + path, "reset", "-q", "HEAD", "--", path);
             }
 
             @Override
             public void discard(String path, boolean untracked) {
-                discardChanges(path, untracked);
+                git.discardChanges(path, untracked);
             }
 
             @Override
             public void stageAll() {
-                gitOp("Staged all changes", "add", "-A");
+                git.gitOp("Staged all changes", "add", "-A");
             }
 
             @Override
             public void commit(String message) {
-                gitCommit(message);
+                git.gitCommit(message);
             }
 
             @Override
             public void push() {
-                gitPush();
+                git.gitPush();
             }
 
             @Override
@@ -2705,6 +2704,31 @@ public class MainController implements com.editora.mcp.McpBridge {
         public Path projectRoot() {
             Project active = projects == null ? null : projects.active();
             return active == null ? null : Path.of(active.root());
+        }
+
+        @Override
+        public void checkExternalChanges() {
+            MainController.this.checkExternalChanges();
+        }
+
+        @Override
+        public void reloadAllFromDiskSilently() {
+            MainController.this.reloadAllFromDiskSilently();
+        }
+
+        @Override
+        public void clearCommitMessage() {
+            gitPanel.clearMessage();
+        }
+
+        @Override
+        public void openCommitWindow() {
+            toolWindows.open(commitToolWindow);
+        }
+
+        @Override
+        public void focusCommitMessage() {
+            Platform.runLater(gitPanel::focusCommitMessage);
         }
     });
 
@@ -3382,112 +3406,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         return null;
     }
 
-    private void gitOp(String successMessage, String... args) {
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        git.service()
-                .run(
-                        git.repoRoot(),
-                        r -> {
-                            if (r.ok()) {
-                                setStatus(successMessage);
-                            } else {
-                                gitError("Git command failed", r.message());
-                            }
-                            git.afterMutation();
-                        },
-                        args);
-    }
-
-    /** Confirms then discards a file's changes (or deletes an untracked file) — destructive. */
-    private void discardChanges(String path, boolean untracked) {
-        if (git.repoRoot() == null) {
-            return;
-        }
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
-                untracked ? tr("dialog.discard.untracked", path) : tr("dialog.discard.tracked", path),
-                ButtonType.OK,
-                ButtonType.CANCEL);
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("dialog.discard.title"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
-            return;
-        }
-        if (untracked) {
-            gitOp("Deleted " + path, "clean", "-f", "--", path);
-        } else {
-            gitOp("Discarded changes to " + path, "checkout", "--", path);
-        }
-        // The on-disk file changed under any open buffer for it — re-check so it reloads if needed.
-        Platform.runLater(this::checkExternalChanges);
-    }
-
-    private void gitCommit(String message) {
-        if (git.repoRoot() == null) {
-            return;
-        }
-        git.service()
-                .run(
-                        git.repoRoot(),
-                        r -> {
-                            if (r.ok()) {
-                                gitPanel.clearMessage();
-                                setStatus(tr("status.committed"));
-                            } else {
-                                gitError("Commit failed", r.message());
-                            }
-                            git.afterMutation();
-                        },
-                        "commit",
-                        "-m",
-                        message);
-    }
-
-    private void checkoutBranch(String name) {
-        if (git.repoRoot() == null || name == null || name.isBlank()) {
-            return;
-        }
-        git.service()
-                .run(
-                        git.repoRoot(),
-                        r -> {
-                            if (r.ok()) {
-                                setStatus(tr("status.switchedBranch", name));
-                            } else {
-                                gitError("Couldn't switch to " + name, r.message());
-                            }
-                            git.afterMutation();
-                            reloadAllFromDiskSilently();
-                        },
-                        "checkout",
-                        name);
-    }
-
-    /** Checks out a remote branch (e.g. {@code origin/foo}), creating a local tracking branch. */
-    private void checkoutRemoteBranch(String remote) {
-        if (git.repoRoot() == null || remote == null || remote.isBlank()) {
-            return;
-        }
-        git.service()
-                .run(
-                        git.repoRoot(),
-                        r -> {
-                            if (r.ok()) {
-                                setStatus(tr("status.checkedOut", remote));
-                            } else {
-                                gitError("Couldn't check out " + remote, r.message());
-                            }
-                            git.afterMutation();
-                            reloadAllFromDiskSilently();
-                        },
-                        "checkout",
-                        "--track",
-                        remote);
-    }
-
     /** Toggles the IntelliJ-style branch dropdown, fetching local + remote branches off-thread first. */
     private void chooseBranch() {
         // Toggle: a second click on the git status segment closes the open dropdown. (autoHide fires on
@@ -3506,15 +3424,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         git.service().branches(git.repoRoot(), branches -> {
             List<BranchPopup.MenuAction> actions = List.of(
-                    new BranchPopup.MenuAction(tr("branch.newBranch"), "", this::newBranch),
+                    new BranchPopup.MenuAction(tr("branch.newBranch"), "", git::newBranch),
                     new BranchPopup.MenuAction(
-                            tr("branch.pull"), "", () -> gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
+                            tr("branch.pull"), "", () -> git.gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
                     new BranchPopup.MenuAction(
-                            tr("branch.fetch"), "", () -> gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
-                    new BranchPopup.MenuAction(tr("branch.push"), "", this::gitPush),
-                    new BranchPopup.MenuAction(tr("branch.stash"), "", this::gitStash),
-                    new BranchPopup.MenuAction(tr("branch.unstash"), "", this::gitUnstash),
-                    new BranchPopup.MenuAction(tr("branch.commit"), "C-x g", this::gitCommitFocus));
+                            tr("branch.fetch"), "", () -> git.gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
+                    new BranchPopup.MenuAction(tr("branch.push"), "", git::gitPush),
+                    new BranchPopup.MenuAction(tr("branch.stash"), "", git::gitStash),
+                    new BranchPopup.MenuAction(tr("branch.unstash"), "", git::gitUnstash),
+                    new BranchPopup.MenuAction(tr("branch.commit"), "C-x g", git::gitCommitFocus));
             branchPopup.show(
                     stage,
                     statusBar.gitSegmentNode(),
@@ -3523,67 +3441,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                     branches.remote(),
                     branches.remoteUrl(),
                     actions,
-                    this::checkoutBranch,
-                    this::checkoutRemoteBranch);
+                    git::checkoutBranch,
+                    git::checkoutRemoteBranch);
         });
-    }
-
-    private void newBranch() {
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
-            String name = input.strip();
-            if (name.isEmpty()) {
-                return;
-            }
-            git.service()
-                    .run(
-                            git.repoRoot(),
-                            r -> {
-                                if (r.ok()) {
-                                    setStatus(tr("status.createdBranch", name));
-                                } else {
-                                    gitError("Couldn't create branch " + name, r.message());
-                                }
-                                git.afterMutation();
-                            },
-                            "checkout",
-                            "-b",
-                            name);
-        });
-    }
-
-    private void gitSync(String label, String... args) {
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        setStatus(tr("status.gitRunning", label));
-        git.service()
-                .runNetwork(
-                        git.repoRoot(),
-                        r -> {
-                            if (r.ok()) {
-                                setStatus(tr("status.gitDone", label));
-                                reloadAllFromDiskSilently();
-                            } else {
-                                gitError(label + " failed", r.message());
-                            }
-                            git.afterMutation();
-                        },
-                        args);
-    }
-
-    /**
-     * Pushes the current branch. The argv decision (first push of an upstream-less branch →
-     * {@code --set-upstream origin <branch>}, else a plain {@code push}) is the pure, unit-tested
-     * {@link com.editora.git.GitService#pushArgs}.
-     */
-    private void gitPush() {
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        gitSync(tr("gitlabel.push"), com.editora.git.GitService.pushArgs(git.branchName(), git.upstream()));
     }
 
     // --- Git Log / History tool window -----------------------------------------------------------
@@ -3741,7 +3601,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             if (r.ok()) {
                                 setStatus(successMessage);
                             } else {
-                                gitError(tr("status.git.opFailed"), r.message());
+                                git.gitError(tr("status.git.opFailed"), r.message());
                             }
                             git.afterMutation();
                             loadGitLog(gitLogFilter); // HEAD/refs moved → refresh the log
@@ -4155,7 +4015,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.noGitFile"));
             return;
         }
-        gitOp(
+        git.gitOp(
                 "Staged " + file.getFileName(),
                 "add",
                 "--",
@@ -4334,111 +4194,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- Stash -----------------------------------------------------------------------------------
 
-    /** Stashes the working tree (optionally with a message). */
-    private void gitStash() {
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        promptText(tr("stash.prompt.title"), tr("stash.prompt.label"), "", msg -> {
-            String m = msg.strip();
-            String[] args = m.isEmpty() ? new String[] {"stash", "push"} : new String[] {"stash", "push", "-m", m};
-            git.service()
-                    .run(
-                            git.repoRoot(),
-                            r -> {
-                                if (r.ok()) {
-                                    setStatus(tr("stash.pushed"));
-                                } else {
-                                    gitError(tr("status.git.opFailed"), r.message());
-                                }
-                                git.afterMutation();
-                                Platform.runLater(this::checkExternalChanges);
-                            },
-                            args);
-        });
-    }
-
-    /** Pops the most recent stash. */
-    private void gitStashPop() {
-        gitMutateStash(tr("stash.popped"), "stash", "pop");
-    }
-
-    /** Opens a picker over the stash list to apply / pop / drop a chosen entry. */
-    private void gitUnstash() {
-        chooseStash(
-                tr("stash.picker.applyTitle"),
-                entry -> gitMutateStash(tr("stash.applied"), "stash", "apply", entry.ref()));
-    }
-
-    /** Opens a picker over the stash list to drop a chosen entry. */
-    private void gitStashDrop() {
-        chooseStash(
-                tr("stash.picker.dropTitle"),
-                entry -> gitMutateStash(tr("stash.dropped"), "stash", "drop", entry.ref()));
-    }
-
-    private void chooseStash(String title, java.util.function.Consumer<com.editora.git.StashParser.StashEntry> onPick) {
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        git.service().stashList(git.repoRoot(), stashes -> {
-            if (stashes.isEmpty()) {
-                setStatus(tr("stash.empty"));
-                return;
-            }
-            QuickOpen<com.editora.git.StashParser.StashEntry> picker = new QuickOpen<>(
-                    title,
-                    tr("stash.picker.prompt"),
-                    () -> stashes,
-                    e -> e.ref() + "  " + e.subject(),
-                    e -> e.branch(),
-                    e -> e.ref() + " " + e.subject() + " " + e.branch(),
-                    onPick);
-            picker.setOverlayHost(overlayHost);
-            picker.show(stage);
-        });
-    }
-
-    private void gitMutateStash(String successMessage, String... args) {
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        git.service()
-                .run(
-                        git.repoRoot(),
-                        r -> {
-                            if (r.ok()) {
-                                setStatus(successMessage);
-                            } else {
-                                gitError(tr("status.git.opFailed"), r.message());
-                            }
-                            git.afterMutation();
-                            Platform.runLater(this::checkExternalChanges);
-                        },
-                        args);
-    }
-
-    /**
-     * Shows a Git command's (often multi-line) error output in a readable, scrollable dialog rather than
-     * cramming it into the one-line status bar. The status bar gets a short summary.
-     */
-    private void gitError(String summary, String detail) {
-        setStatus(summary);
-        String body = detail == null || detail.isBlank() ? summary : detail.strip();
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.initOwner(stage);
-        alert.setTitle(tr("dialog.git.title"));
-        alert.setHeaderText(summary);
-        TextArea area = new TextArea(body);
-        area.setEditable(false);
-        area.setWrapText(true);
-        area.setPrefColumnCount(52);
-        area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
-        area.getStyleClass().add("git-error-text");
-        alert.getDialogPane().setContent(area);
-        alert.showAndWait();
-    }
-
     /**
      * Clones a remote repository via one dialog asking for both the <em>URL</em> and the
      * <em>destination directory</em> (with a Browse button); the directory auto-fills to
@@ -4529,7 +4284,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             setStatus(tr("status.clonedInto", destination));
                             openClonedEntry(destination);
                         } else {
-                            gitError("Clone failed", r.message());
+                            git.gitError("Clone failed", r.message());
                         }
                     });
                 },
@@ -4680,7 +4435,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         if (r.ok()) {
                             mountRemote(conn, r.root());
                         } else {
-                            gitError(tr("status.remote.failed", conn.displayLabel()), r.error());
+                            git.gitError(tr("status.remote.failed", conn.displayLabel()), r.error());
                         }
                     });
                 },
@@ -4781,49 +4536,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         return name.strip();
     }
 
-    /** Stages the active file (used by the {@code git.stageFile} command). */
-    private void gitStageActiveFile() {
-        EditorBuffer b = activeBuffer();
-        Path file = b == null ? null : b.getPath();
-        if (file == null || git.repoRoot() == null) {
-            setStatus(tr("status.noGitFile"));
-            return;
-        }
-        gitOp(
-                "Staged " + file.getFileName(),
-                "add",
-                "--",
-                git.repoRoot().relativize(file.toAbsolutePath()).toString());
-    }
-
-    /** Unstages the active file (palette `git.unstageFile`; mirrors {@link #gitStageActiveFile}). */
-    private void gitUnstageActiveFile() {
-        EditorBuffer b = activeBuffer();
-        Path file = b == null ? null : b.getPath();
-        if (file == null || git.repoRoot() == null) {
-            setStatus(tr("status.noGitFile"));
-            return;
-        }
-        gitOp(
-                "Unstaged " + file.getFileName(),
-                "reset",
-                "-q",
-                "HEAD",
-                "--",
-                git.repoRoot().relativize(file.toAbsolutePath()).toString());
-    }
-
-    /** Discards the active file's changes (palette `git.discardFile`; confirms first, tracked-file revert). */
-    private void gitDiscardActiveFile() {
-        EditorBuffer b = activeBuffer();
-        Path file = b == null ? null : b.getPath();
-        if (file == null || git.repoRoot() == null) {
-            setStatus(tr("status.noGitFile"));
-            return;
-        }
-        discardChanges(git.repoRoot().relativize(file.toAbsolutePath()).toString(), false);
-    }
-
     private void findNextMatch() {
         if (findBar.isShown()) {
             findBar.findNext();
@@ -4856,12 +4568,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             findBar.show(false);
             findBar.focusReplace();
         }
-    }
-
-    /** Opens the Git tool window and focuses the commit message box. */
-    private void gitCommitFocus() {
-        toolWindows.open(commitToolWindow);
-        Platform.runLater(gitPanel::focusCommitMessage);
     }
 
     /** After a branch switch/pull, silently reload any open buffer whose file changed on disk. */
@@ -9960,15 +9666,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("remote.settings", () -> settingsWindow.showRemote(stage)));
         registry.register(Command.of("remote.disconnect", this::disconnectRemote));
         registry.register(Command.of("git.clone", () -> git.ifEnabled(this::gitClone)));
-        registry.register(Command.of("git.commit", () -> git.ifEnabled(this::gitCommitFocus)));
-        registry.register(Command.of("git.stageFile", () -> git.ifEnabled(this::gitStageActiveFile)));
-        registry.register(Command.of("git.unstageFile", () -> git.ifEnabled(this::gitUnstageActiveFile)));
-        registry.register(Command.of("git.discardFile", () -> git.ifEnabled(this::gitDiscardActiveFile)));
+        registry.register(Command.of("git.commit", () -> git.ifEnabled(git::gitCommitFocus)));
+        registry.register(Command.of("git.stageFile", () -> git.ifEnabled(git::gitStageActiveFile)));
+        registry.register(Command.of("git.unstageFile", () -> git.ifEnabled(git::gitUnstageActiveFile)));
+        registry.register(Command.of("git.discardFile", () -> git.ifEnabled(git::gitDiscardActiveFile)));
         registry.register(Command.of("git.switchBranch", () -> git.ifEnabled(this::chooseBranch)));
-        registry.register(Command.of("git.newBranch", () -> git.ifEnabled(this::newBranch)));
-        registry.register(Command.of("git.fetch", () -> git.ifEnabled(() -> gitSync("Fetch", "fetch", "--all"))));
-        registry.register(Command.of("git.pull", () -> git.ifEnabled(() -> gitSync("Pull", "pull", "--ff-only"))));
-        registry.register(Command.of("git.push", () -> git.ifEnabled(this::gitPush)));
+        registry.register(Command.of("git.newBranch", () -> git.ifEnabled(git::newBranch)));
+        registry.register(Command.of("git.fetch", () -> git.ifEnabled(() -> git.gitSync("Fetch", "fetch", "--all"))));
+        registry.register(Command.of("git.pull", () -> git.ifEnabled(() -> git.gitSync("Pull", "pull", "--ff-only"))));
+        registry.register(Command.of("git.push", () -> git.ifEnabled(git::gitPush)));
         // Git Log: act on the commit selected in the Git Log tool window (parity with its right-click menu).
         registry.register(Command.of("git.log.checkout", () -> withSelectedCommit(gitLogOps::checkout)));
         registry.register(Command.of("git.log.newBranch", () -> withSelectedCommit(gitLogOps::newBranch)));
@@ -9990,10 +9696,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("git.fileHistory", () -> git.ifEnabled(this::showFileHistory)));
         registry.register(Command.of("git.toggleBlame", this::toggleGitBlame));
         registry.register(Command.of("git.blameShowCommit", () -> git.ifEnabled(this::blameShowCommit)));
-        registry.register(Command.of("git.stash", () -> git.ifEnabled(this::gitStash)));
-        registry.register(Command.of("git.stashPop", () -> git.ifEnabled(this::gitStashPop)));
-        registry.register(Command.of("git.unstash", () -> git.ifEnabled(this::gitUnstash)));
-        registry.register(Command.of("git.stashDrop", () -> git.ifEnabled(this::gitStashDrop)));
+        registry.register(Command.of("git.stash", () -> git.ifEnabled(git::gitStash)));
+        registry.register(Command.of("git.stashPop", () -> git.ifEnabled(git::gitStashPop)));
+        registry.register(Command.of("git.unstash", () -> git.ifEnabled(git::gitUnstash)));
+        registry.register(Command.of("git.stashDrop", () -> git.ifEnabled(git::gitStashDrop)));
         // Diff viewer + merge. The git-backed diffs are ifGit-gated; "Compare With…" and "Resolve
         // Conflicts" work on any file (no repo needed), so they are not gated.
         registry.register(Command.of("diff.vsHead", () -> git.ifEnabled(diffCoordinator::diffActiveVsHead)));
