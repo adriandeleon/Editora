@@ -81,9 +81,11 @@ packaging/linux` **in the DEB wrap of `scripts/aot_build.java`** — DEB-only; t
 installed into `/usr/share/applications` and the app shows the generic Java icon.** So `postinst`
 (`configure`): (1) symlinks `/usr/bin/editora` → the launcher (found via the `/opt/*/bin/Editora` glob,
 since jpackage lowercases the install dir); (2) **copies the bundled `.desktop` into
-`/usr/share/applications/editora-Editora.desktop`, injecting `StartupWMClass=Editora`** (jpackage's
-generated entry omits it, so the *running* window can't be matched to the entry — the menu icon comes
-from the `.desktop`'s already-absolute `Icon=/opt/editora/lib/Editora.png`); then `update-desktop-database`.
+`/usr/share/applications/editora-Editora.desktop`, injecting `StartupWMClass=com.editora.App`** (the
+real `WM_CLASS`, verified via `wmctrl -lx` — JavaFX derives it from the module main `com.editora.App`,
+*not* the app name; jpackage's generated entry omits it, so the *running* window can't be matched to the
+entry — the menu icon itself comes from the `.desktop`'s already-absolute
+`Icon=/opt/editora/lib/Editora.png`); then `update-desktop-database`.
 `postrm` (remove/purge) removes both. **Device-test on Linux** (install the `.deb`: `which editora`
 works + the app shows our icon in the menu and dock; then remove: both are gone) — the macOS dev box and
 the `os-linux` profile can't exercise this. *(If a terminal-launched window's dock icon is still generic,
