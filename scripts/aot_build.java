@@ -165,6 +165,16 @@ public class aot_build {
                     "--win-shortcut", "--win-dir-chooser"));
         } else if (t.equals("DEB") || t.equals("RPM")) {
             cmd.add("--linux-shortcut");
+            // DEB: ship an `editora` command on PATH via custom maintainer scripts (postinst/postrm in
+            // packaging/linux). jpackage installs only /opt/<pkg>/bin/Editora, which isn't on PATH. The
+            // RPM bundler uses a .spec (it ignores postinst/postrm), so the resource dir is DEB-only.
+            if (t.equals("DEB")) {
+                Path resDir = Path.of(System.getProperty("user.dir"), "packaging", "linux");
+                if (Files.isDirectory(resDir)) {
+                    cmd.add("--resource-dir");
+                    cmd.add(resDir.toString());
+                }
+            }
         }
         System.out.println("[aot] wrapping installer: " + String.join(" ", cmd));
         Process p = new ProcessBuilder(cmd).inheritIO().start();

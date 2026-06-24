@@ -70,6 +70,18 @@ hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) wh
 GitHub release with all installers + fat jars + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
 build (the `dist` profile is reused as-is) and there is **no `pom.xml`/Maven change**, so the normal
 build is unaffected. Installers are currently **unsigned** (signing/notarization is a follow-up).
+**Linux `editora` command on PATH:** jpackage installs the launcher only at `/opt/editora/bin/Editora`
+(not on `PATH`), so the **`.deb`** ships custom Debian maintainer scripts — `packaging/linux/postinst`
+(symlinks `/usr/bin/editora` → the installed launcher, found via the `/opt/*/bin/Editora` glob since
+jpackage lowercases the install dir) and `packaging/linux/postrm` (removes it on remove/purge, only if
+it still points into `/opt/*/bin/Editora`). They're passed via `jpackage --resource-dir packaging/linux`
+**in the DEB wrap of `scripts/aot_build.java`** (the AOT helper builds the actual installer), DEB-only —
+the RPM bundler uses a `.spec` and ignores `postinst`/`postrm`, so `.rpm` users run `/opt/editora/bin/Editora`
+or add their own symlink. Because the override replaces jpackage's generated `postinst`/`postrm`, both
+scripts also re-run the freedesktop database refresh (`update-desktop-database`/`xdg-desktop-menu
+forceupdate`) that jpackage's default scripts did for the `--linux-shortcut` menu entry. **Device-test on
+Linux** (install the `.deb`: `which editora` + the app appears in the menu; then remove: the symlink is gone)
+— the macOS dev box and the `os-linux` profile can't exercise this.
 Uses the BellSoft **Liberica** JDK 25 in CI for full arch coverage (incl. linux aarch64).
 
 ## Architecture

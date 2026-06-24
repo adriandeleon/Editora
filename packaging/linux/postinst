@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# Editora .deb postinst — OVERRIDES jpackage's generated DEB postinst (jpackage picks up any file
+# named "postinst" in --resource-dir). jpackage installs the launcher only at
+# /opt/<package>/bin/Editora, which is not on PATH, so add an `editora` command via a symlink in
+# /usr/bin (policy-correct location for a package-provided command; postrm removes it).
+#
+# Because this replaces jpackage's default postinst, it also re-runs the desktop-database refresh
+# that jpackage's script would have done for the --linux-shortcut menu entry.
+#
+set -e
+
+case "$1" in
+    configure)
+        # Install dir is /opt/<package-name> (jpackage lowercases it); the launcher keeps its case.
+        for launcher in /opt/*/bin/Editora; do
+            if [ -x "$launcher" ]; then
+                ln -sf "$launcher" /usr/bin/editora
+                break
+            fi
+        done
+        ;;
+esac
+
+# Refresh desktop integration for the bundled .desktop entry (harmless if the tools are absent).
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q 2>/dev/null || true
+fi
+if command -v xdg-desktop-menu >/dev/null 2>&1; then
+    xdg-desktop-menu forceupdate 2>/dev/null || true
+fi
+
+exit 0
