@@ -5,6 +5,12 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
+
+import javafx.application.Platform;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.TextArea;
 
 import com.editora.editor.BlameInfo;
 import com.editora.editor.EditorBuffer;
@@ -25,12 +31,15 @@ import static com.editora.i18n.Messages.tr;
  * Commit / Log tool windows, the active buffer's gutter change bars, and its inline blame annotations in
  * sync with what's on disk.
  *
- * <p>{@code MainController} keeps the user-facing Git <em>operations</em> (commit, branch, log, blame
- * click→commit-diff, stash, clone, diff) and reaches into this coordinator for the shared engine:
- * {@link #service()} for the CLI facade and {@link #repoRoot()} for the active repo. Everything the engine
- * needs from the window goes through the shared {@link CoordinatorHost} (settings, simple-mode gate, active
- * buffer, theme brightness, per-buffer iteration) plus a small git-specific {@link WindowOps} for the
- * surfaces it drives.
+ * <p>It also owns the user-facing Git <em>mutation operations</em> — {@code gitOp}/{@code gitCommit}/
+ * {@code discardChanges}, branch checkout/create, fetch/pull/push ({@code gitSync}), the stash commands, the
+ * active-file stage/unstage/discard, and the {@code gitError} dialog — which run their commands through the
+ * same {@link #service()}/{@link #repoRoot()}/{@code afterMutation()} engine. {@code MainController} keeps the
+ * Git tool windows + panels ({@code GitPanel}/{@code GitLogPanel}) and the {@code BranchPopup}, plus the Git
+ * Log / blame-click→commit-diff flows and {@code git.clone} (whose callbacks delegate to {@code git.*}), and
+ * the {@code git.*} command registrations. Everything the engine needs from the window goes through the shared
+ * {@link CoordinatorHost} (settings, simple-mode gate, active buffer, theme brightness, per-buffer iteration,
+ * status, prompts, the overlay host) plus a small git-specific {@link WindowOps} for the surfaces it drives.
  *
  * <p>The {@code applyState}/{@code applySupport} state machine is pinned by {@code GitStateFxTest}.
  */
@@ -53,6 +62,21 @@ final class GitCoordinator {
 
         /** The active project's root folder, or {@code null} when no project is open. */
         Path projectRoot();
+
+        /** Re-checks the active file's on-disk stamp + reloads it if a git command changed it under us. */
+        void checkExternalChanges();
+
+        /** After a branch switch / pull, silently reload any open buffer whose file changed on disk. */
+        void reloadAllFromDiskSilently();
+
+        /** Clears the Commit tool window's message box (after a successful commit). */
+        void clearCommitMessage();
+
+        /** Opens the Commit tool window. */
+        void openCommitWindow();
+
+        /** Focuses the Commit tool window's message box (deferred onto the FX thread). */
+        void focusCommitMessage();
     }
 
     private final CoordinatorHost host;
@@ -352,5 +376,320 @@ final class GitCoordinator {
             case MONTHS -> tr("blame.monthsAgo", v);
             case YEARS -> tr("blame.yearsAgo", v);
         };
+    }
+
+    // --- user-facing operations (commit / branch / stash / discard) --------------------------------
+
+    /** Runs a git command, reporting success/failure + refreshing state afterward. */
+    void gitOp(String successMessage, String... args) {
+        if (reportIfNoRepo()) {
+            return;
+        }
+        service.run(
+                repoRoot,
+                r -> {
+                    if (r.ok()) {
+                        host.setStatus(successMessage);
+                    } else {
+                        gitError("Git command failed", r.message());
+                    }
+                    afterMutation();
+                },
+                args);
+    }
+
+    /** Confirms then discards a file's changes (or deletes an untracked file) — destructive. */
+    void discardChanges(String path, boolean untracked) {
+        if (repoRoot == null) {
+            return;
+        }
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                untracked ? tr("dialog.discard.untracked", path) : tr("dialog.discard.tracked", path),
+                ButtonType.OK,
+                ButtonType.CANCEL);
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("dialog.discard.title"));
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+            return;
+        }
+        if (untracked) {
+            gitOp("Deleted " + path, "clean", "-f", "--", path);
+        } else {
+            gitOp("Discarded changes to " + path, "checkout", "--", path);
+        }
+        // The on-disk file changed under any open buffer for it — re-check so it reloads if needed.
+        Platform.runLater(ops::checkExternalChanges);
+    }
+
+    void gitCommit(String message) {
+        if (repoRoot == null) {
+            return;
+        }
+        service.run(
+                repoRoot,
+                r -> {
+                    if (r.ok()) {
+                        ops.clearCommitMessage();
+                        host.setStatus(tr("status.committed"));
+                    } else {
+                        gitError("Commit failed", r.message());
+                    }
+                    afterMutation();
+                },
+                "commit",
+                "-m",
+                message);
+    }
+
+    void checkoutBranch(String name) {
+        if (repoRoot == null || name == null || name.isBlank()) {
+            return;
+        }
+        service.run(
+                repoRoot,
+                r -> {
+                    if (r.ok()) {
+                        host.setStatus(tr("status.switchedBranch", name));
+                    } else {
+                        gitError("Couldn't switch to " + name, r.message());
+                    }
+                    afterMutation();
+                    ops.reloadAllFromDiskSilently();
+                },
+                "checkout",
+                name);
+    }
+
+    /** Checks out a remote branch (e.g. {@code origin/foo}), creating a local tracking branch. */
+    void checkoutRemoteBranch(String remote) {
+        if (repoRoot == null || remote == null || remote.isBlank()) {
+            return;
+        }
+        service.run(
+                repoRoot,
+                r -> {
+                    if (r.ok()) {
+                        host.setStatus(tr("status.checkedOut", remote));
+                    } else {
+                        gitError("Couldn't check out " + remote, r.message());
+                    }
+                    afterMutation();
+                    ops.reloadAllFromDiskSilently();
+                },
+                "checkout",
+                "--track",
+                remote);
+    }
+
+    void newBranch() {
+        if (reportIfNoRepo()) {
+            return;
+        }
+        host.promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
+            String name = input.strip();
+            if (name.isEmpty()) {
+                return;
+            }
+            service.run(
+                    repoRoot,
+                    r -> {
+                        if (r.ok()) {
+                            host.setStatus(tr("status.createdBranch", name));
+                        } else {
+                            gitError("Couldn't create branch " + name, r.message());
+                        }
+                        afterMutation();
+                    },
+                    "checkout",
+                    "-b",
+                    name);
+        });
+    }
+
+    void gitSync(String label, String... args) {
+        if (reportIfNoRepo()) {
+            return;
+        }
+        host.setStatus(tr("status.gitRunning", label));
+        service.runNetwork(
+                repoRoot,
+                r -> {
+                    if (r.ok()) {
+                        host.setStatus(tr("status.gitDone", label));
+                        ops.reloadAllFromDiskSilently();
+                    } else {
+                        gitError(label + " failed", r.message());
+                    }
+                    afterMutation();
+                },
+                args);
+    }
+
+    /**
+     * Pushes the current branch. The argv decision (first push of an upstream-less branch →
+     * {@code --set-upstream origin <branch>}, else a plain {@code push}) is the pure, unit-tested
+     * {@link GitService#pushArgs}.
+     */
+    void gitPush() {
+        if (reportIfNoRepo()) {
+            return;
+        }
+        gitSync(tr("gitlabel.push"), GitService.pushArgs(branchName, upstream));
+    }
+
+    /** Opens the Git tool window and focuses the commit message box. */
+    void gitCommitFocus() {
+        ops.openCommitWindow();
+        ops.focusCommitMessage();
+    }
+
+    /** Stages the active file (palette {@code git.stageFile}). */
+    void gitStageActiveFile() {
+        EditorBuffer b = host.activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file == null || repoRoot == null) {
+            host.setStatus(tr("status.noGitFile"));
+            return;
+        }
+        gitOp(
+                "Staged " + file.getFileName(),
+                "add",
+                "--",
+                repoRoot.relativize(file.toAbsolutePath()).toString());
+    }
+
+    /** Unstages the active file (palette {@code git.unstageFile}; mirrors {@link #gitStageActiveFile}). */
+    void gitUnstageActiveFile() {
+        EditorBuffer b = host.activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file == null || repoRoot == null) {
+            host.setStatus(tr("status.noGitFile"));
+            return;
+        }
+        gitOp(
+                "Unstaged " + file.getFileName(),
+                "reset",
+                "-q",
+                "HEAD",
+                "--",
+                repoRoot.relativize(file.toAbsolutePath()).toString());
+    }
+
+    /** Discards the active file's changes (palette {@code git.discardFile}; confirms first). */
+    void gitDiscardActiveFile() {
+        EditorBuffer b = host.activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file == null || repoRoot == null) {
+            host.setStatus(tr("status.noGitFile"));
+            return;
+        }
+        discardChanges(repoRoot.relativize(file.toAbsolutePath()).toString(), false);
+    }
+
+    // --- stash -------------------------------------------------------------------------------------
+
+    /** Stashes the working tree (optionally with a message). */
+    void gitStash() {
+        if (reportIfNoRepo()) {
+            return;
+        }
+        host.promptText(tr("stash.prompt.title"), tr("stash.prompt.label"), "", msg -> {
+            String m = msg.strip();
+            String[] args = m.isEmpty() ? new String[] {"stash", "push"} : new String[] {"stash", "push", "-m", m};
+            service.run(
+                    repoRoot,
+                    r -> {
+                        if (r.ok()) {
+                            host.setStatus(tr("stash.pushed"));
+                        } else {
+                            gitError(tr("status.git.opFailed"), r.message());
+                        }
+                        afterMutation();
+                        Platform.runLater(ops::checkExternalChanges);
+                    },
+                    args);
+        });
+    }
+
+    /** Pops the most recent stash. */
+    void gitStashPop() {
+        gitMutateStash(tr("stash.popped"), "stash", "pop");
+    }
+
+    /** Opens a picker over the stash list to apply a chosen entry. */
+    void gitUnstash() {
+        chooseStash(
+                tr("stash.picker.applyTitle"),
+                entry -> gitMutateStash(tr("stash.applied"), "stash", "apply", entry.ref()));
+    }
+
+    /** Opens a picker over the stash list to drop a chosen entry. */
+    void gitStashDrop() {
+        chooseStash(
+                tr("stash.picker.dropTitle"),
+                entry -> gitMutateStash(tr("stash.dropped"), "stash", "drop", entry.ref()));
+    }
+
+    private void chooseStash(String title, Consumer<com.editora.git.StashParser.StashEntry> onPick) {
+        if (reportIfNoRepo()) {
+            return;
+        }
+        service.stashList(repoRoot, stashes -> {
+            if (stashes.isEmpty()) {
+                host.setStatus(tr("stash.empty"));
+                return;
+            }
+            QuickOpen<com.editora.git.StashParser.StashEntry> picker = new QuickOpen<>(
+                    title,
+                    tr("stash.picker.prompt"),
+                    () -> stashes,
+                    e -> e.ref() + "  " + e.subject(),
+                    e -> e.branch(),
+                    e -> e.ref() + " " + e.subject() + " " + e.branch(),
+                    onPick);
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
+    private void gitMutateStash(String successMessage, String... args) {
+        if (reportIfNoRepo()) {
+            return;
+        }
+        service.run(
+                repoRoot,
+                r -> {
+                    if (r.ok()) {
+                        host.setStatus(successMessage);
+                    } else {
+                        gitError(tr("status.git.opFailed"), r.message());
+                    }
+                    afterMutation();
+                    Platform.runLater(ops::checkExternalChanges);
+                },
+                args);
+    }
+
+    /**
+     * Shows a Git command's (often multi-line) error output in a readable, scrollable dialog rather than
+     * cramming it into the one-line status bar. The status bar gets a short summary.
+     */
+    void gitError(String summary, String detail) {
+        host.setStatus(summary);
+        String body = detail == null || detail.isBlank() ? summary : detail.strip();
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.initOwner(host.window());
+        alert.setTitle(tr("dialog.git.title"));
+        alert.setHeaderText(summary);
+        TextArea area = new TextArea(body);
+        area.setEditable(false);
+        area.setWrapText(true);
+        area.setPrefColumnCount(52);
+        area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
+        area.getStyleClass().add("git-error-text");
+        alert.getDialogPane().setContent(area);
+        alert.showAndWait();
     }
 }
