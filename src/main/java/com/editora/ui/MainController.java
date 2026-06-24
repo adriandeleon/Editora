@@ -308,17 +308,14 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private RemoteConnectionsPanel remoteConnectionsPanel;
     private ToolWindow remoteToolWindow;
-    /** Debug (DAP): drives Java debugging layered on the jdtls LSP session. */
+    /** Debug (DAP): drives Java debugging layered on the jdtls LSP session. Stays a field (SettingsWindow +
+     *  window-dispose reach it); the {@link DebugCoordinator} operates on it (mirrors lspManager/LspCoordinator). */
     private final com.editora.dap.DapManager dapManager = new com.editora.dap.DapManager(lspManager);
 
-    private DebugPanel debugPanel;
     private ToolWindow debugToolWindow;
-    /** The buffer currently showing the debugger's execution-line highlight, or null. */
-    private EditorBuffer execHighlightBuffer;
-    /** Exception-breakpoint filters currently active (e.g. {@code uncaught}); toggled by the user. */
-    private final java.util.Set<String> exceptionFilters = new java.util.LinkedHashSet<>();
-    /** The java-debug bundle jars last pushed to the LSP layer — restart jdtls only when this changes. */
-    private List<String> appliedDebugBundles = List.of();
+    /** The Debugging feature; owns the DebugPanel + breakpoints + DAP session flows. Built in {@link #setupToolWindows}
+     *  (its panel reads workspace state). See {@link DebugCoordinator}. */
+    private DebugCoordinator debugCoordinator;
 
     private GitPanel gitPanel;
     private ToolWindow commitToolWindow;
@@ -588,7 +585,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         logViewer.applySupport(); // log-viewer control + level overlay (default on for .log files)
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
         lspCoordinator.applySupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
-        applyDebugSupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on jdtls)
+        debugCoordinator
+                .applySupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on
+        // jdtls)
         todoCoordinator.applyHighlight(); // compile TODO/FIXME patterns + highlight (on by default)
         applyMarkdownLint(); // push Markdown-lint enabled state to buffers (on by default)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
@@ -2064,7 +2063,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             git.refresh(); // update branch/status + this file's gutter change bars
             lspCoordinator
                     .updateStatusBar(); // show/hide the "LSP: <server>" segment + Problems window for the new file
-            updateDebugAvailability(); // show the Debug window only for a debuggable file (or a live session)
+            debugCoordinator.updateDebugAvailability(); // Debug window only for a debuggable file / live session
             updateRunButton(); // show the Run button only for a compact source file
             updateBufferToolWindows(); // hide buffer-only tool windows when there's no actionable buffer
             refreshLocalHistory(); // re-gate + reload the Local File History list for the new active file
@@ -2339,16 +2338,86 @@ public class MainController implements com.editora.mcp.McpBridge {
                 "tool.problems");
         runToolWindow = new ToolWindow(
                 "run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runCoordinator.panel(), "tool.run");
-        debugPanel = new DebugPanel(debugActions());
-        debugPanel.setPrompt(this::promptText);
-        debugPanel.setOnLink(this::openRunLink); // double-clicked stack-trace line → jump
-        debugPanel.setWatches(config.getWorkspaceState().getDebugWatches());
-        debugPanel.setOnWatchesChanged(() -> {
-            config.getWorkspaceState().setDebugWatches(new java.util.ArrayList<>(debugPanel.getWatches()));
-            config.save();
-        });
+        debugCoordinator = new DebugCoordinator(
+                coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
+                    @Override
+                    public void openToolWindow() {
+                        toolWindows.open(debugToolWindow);
+                    }
+
+                    @Override
+                    public void toggleToolWindow() {
+                        toolWindows.toggle(debugToolWindow);
+                    }
+
+                    @Override
+                    public void setToolWindowAvailable(boolean available) {
+                        toolWindows.setAvailable(debugToolWindow, available);
+                    }
+
+                    @Override
+                    public void setStatusDebug(String text) {
+                        statusBar.setDebug(text);
+                    }
+
+                    @Override
+                    public void setStatusDebugLoading(boolean loading) {
+                        statusBar.setDebugLoading(loading);
+                    }
+
+                    @Override
+                    public boolean saveBuffer(EditorBuffer buffer) {
+                        return save(buffer);
+                    }
+
+                    @Override
+                    public String programArgs(Path path) {
+                        return programArgsFor(path);
+                    }
+
+                    @Override
+                    public void openLink(com.editora.run.StackTraceLinks.Link link) {
+                        openRunLink(link);
+                    }
+
+                    @Override
+                    public void openPath(Path file) {
+                        MainController.this.openPath(file);
+                    }
+
+                    @Override
+                    public EditorBuffer bufferForPath(Path file) {
+                        return bufferOf(tabForPath(file));
+                    }
+
+                    @Override
+                    public List<String> debugWatches() {
+                        return config.getWorkspaceState().getDebugWatches();
+                    }
+
+                    @Override
+                    public void persistDebugWatches(List<String> watches) {
+                        config.getWorkspaceState().setDebugWatches(new java.util.ArrayList<>(watches));
+                        config.save();
+                    }
+
+                    @Override
+                    public java.util.Map<String, List<com.editora.config.Breakpoint>> breakpointMap() {
+                        return config.getBreakpoints();
+                    }
+
+                    @Override
+                    public void saveBreakpoints() {
+                        config.saveBreakpoints();
+                    }
+                });
         debugToolWindow = new ToolWindow(
-                "debug", tr("toolwindow.debug"), ToolWindow.Side.BOTTOM, Icons::debug, debugPanel, "tool.debug");
+                "debug",
+                tr("toolwindow.debug"),
+                ToolWindow.Side.BOTTOM,
+                Icons::debug,
+                debugCoordinator.panel(),
+                "tool.debug");
         httpToolWindow = new ToolWindow(
                 "http",
                 tr("toolwindow.http"),
@@ -2436,8 +2505,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 httpUserClosed.add(b); // a manual close suppresses auto-show until the user reopens it
             }
         });
-        dapManager.setListener(dapListener());
-        dapManager.setBreakpointsSupplier(this::collectBreakpoints);
     }
 
     /** Home-collapses an absolute folder path for a scope label (e.g. {@code ~/proj}). */
@@ -3150,547 +3217,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         return null;
     }
 
-    // --- Debugging (DAP) integration -----------------------------------------------------------
-
-    private boolean debugSupportEnabled() {
-        // Simple UI mode disables debugging (+ the breakpoint gutter) entirely; saved setting unchanged.
-        return config.getSettings().isDebugSupport() && !simpleModeActive();
-    }
-
-    /** Debugging is <em>effective</em> for Java only when LSP + the java server are on and detected, and
-     *  the java-debug plugin jar was located. */
-    private boolean debugEffective() {
-        return debugEffectiveFor("java");
-    }
-
-    /**
-     * Whether debugging is available for {@code language} (the editor/LSP language id): Java layers on
-     * the jdtls LSP server + the java-debug plugin; Python needs {@code pythonDebugEnabled} + debugpy
-     * detected; JavaScript needs {@code jsDebugEnabled} + the js-debug server + node detected.
-     */
-    private boolean debugEffectiveFor(String language) {
-        if (!debugSupportEnabled() || language == null) {
-            return false;
-        }
-        Settings s = config.getSettings();
-        return switch (language) {
-            case "java" ->
-                lspEnabled()
-                        && lspCoordinator.serverEnabled("java")
-                        && lspCoordinator.isServerAvailable("java")
-                        && dapManager.isAdapterAvailable();
-            case "python" -> s.isPythonDebugEnabled() && dapManager.isLanguageAvailable("python");
-            case "javascript" -> s.isJsDebugEnabled() && dapManager.isLanguageAvailable("javascript");
-            default -> false;
-        };
-    }
-
-    /** Runs {@code action} only when the Debug feature is enabled; otherwise reports it. */
-    private void ifDebug(Runnable action) {
-        if (debugSupportEnabled()) {
-            action.run();
-        } else {
-            setStatus(tr("statusbar.tip.debugDisabled"));
-        }
-    }
-
-    /**
-     * Reconciles the Debug feature with its setting (mirrors {@link #applyLspSupport}). **The plugin jar is
-     * located synchronously and pushed into the LSP layer BEFORE any jdtls session can start** — doing it in
-     * an async callback raced the session-restore, so jdtls could come up without the debug bundle and
-     * report "No delegateCommandHandler for vscode.java.resolveMainClass". When the bundle set changes, a
-     * *running* jdtls is restarted so it reloads with (or without) the plugin; otherwise the next session
-     * just initializes with the up-to-date bundles. Gates the breakpoint gutter + Debug window. Runs at init
-     * + every settings apply.
-     */
-    private void applyDebugSupport() {
-        Settings s = config.getSettings();
-        boolean on = debugSupportEnabled(); // effective: off in Simple UI mode
-        // Configure all three adapters: java (jdtls plugin, located synchronously) + the standalone
-        // python (debugpy) / javascript (vscode-js-debug) adapters (paths resolved synchronously; their
-        // availability needs a subprocess probe, run async below).
-        dapManager.configure(
-                on,
-                s.getJavaDebugPluginPath(),
-                s.isPythonDebugEnabled(),
-                s.getPythonDebugCommand(),
-                s.isJsDebugEnabled(),
-                s.getJsDebugPath());
-        List<String> bundles = on ? dapManager.bundlePaths() : List.of();
-        boolean changed = !bundles.equals(appliedDebugBundles);
-        lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
-        appliedDebugBundles = bundles;
-        if (!on) {
-            dapManager.stop();
-        }
-        if (changed) {
-            lspManager.restartServer("java"); // reload a running jdtls with/without the bundle (no-op if none)
-            lspCoordinator.applyGating(); // re-open the java buffers on the fresh session
-        }
-        applyDebugGating();
-        if (on) {
-            // Probe debugpy / node off-thread; re-gate when each result lands (enables python/js gutters).
-            dapManager.detectPython(ok -> applyDebugGating());
-            dapManager.detectJs(ok -> applyDebugGating());
-        }
-    }
-
-    /** Per-buffer breakpoint-gutter gate (only for debuggable languages) + Debug tool-window availability. */
-    private void applyDebugGating() {
-        boolean on = debugSupportEnabled();
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null) {
-                b.setBreakpointsEnabled(on && isDebuggableBuffer(b));
-            }
-        }
-        updateDebugAvailability();
-        if (!on) {
-            statusBar.setDebug(null);
-            statusBar.setDebugLoading(false);
-        }
-    }
-
-    /**
-     * The Debug tool-window stripe button is shown only when the active file is debuggable (Java/Python/JS) —
-     * or whenever a debug session is live, so it never disappears mid-session if you peek at another file.
-     * Re-run on tab switch and on debug state changes.
-     */
-    private void updateDebugAvailability() {
-        boolean available = debugSupportEnabled() && (isDebuggableBuffer(activeBuffer()) || dapManager.isActive());
-        toolWindows.setAvailable(debugToolWindow, available);
-    }
-
-    /** Whether a buffer's language has a registered debug adapter (java/python/javascript). */
-    private boolean isDebuggableBuffer(EditorBuffer b) {
-        return b != null
-                && com.editora.vfs.Vfs.isLocal(b.getPath())
-                && com.editora.dap.DapServerRegistry.isDebuggable(b.getLanguage());
-    }
-
     /** True when {@code b}'s file is on the local filesystem (or untitled) — the gate for every feature
      *  that shells out to a local process (LSP/DAP/git/run/HTTP). Remote (SFTP) buffers are text-only. */
     private boolean isLocalBuffer(EditorBuffer b) {
         return b != null && com.editora.vfs.Vfs.isLocal(b.getPath());
-    }
-
-    /** Persists a buffer's breakpoints + (if a session is live) re-sends that file's set to the adapter. */
-    private void onBreakpointsChanged(EditorBuffer buffer) {
-        persistBreakpoints(buffer);
-        if (buffer.getPath() != null && dapManager.isActive()) {
-            dapManager.updateBreakpoints(fileBreakpoints(buffer));
-        }
-    }
-
-    private void persistBreakpoints(EditorBuffer buffer) {
-        Path file = buffer.getPath();
-        if (file == null) {
-            return;
-        }
-        List<com.editora.config.Breakpoint> bps = buffer.getBreakpointManager().snapshot();
-        var map = config.getBreakpoints();
-        if (bps.isEmpty()) {
-            map.remove(file.toString());
-        } else {
-            map.put(
-                    file.toString(),
-                    com.editora.config.BreakpointStore.mergePreservingOrder(map.get(file.toString()), bps));
-        }
-        config.saveBreakpoints();
-    }
-
-    private void restoreBreakpoints(EditorBuffer buffer) {
-        Path file = buffer.getPath();
-        if (file == null) {
-            return;
-        }
-        if (buffer.applyBreakpoints(config.getBreakpoints().get(file.toString()))) {
-            persistBreakpoints(buffer); // self-heal re-anchored indices once
-        }
-    }
-
-    /** The enabled breakpoints of {@code buffer} as a DAP {@code FileBreakpoints} (empty list if none). */
-    private com.editora.dap.DapModels.FileBreakpoints fileBreakpoints(EditorBuffer buffer) {
-        List<com.editora.dap.DapModels.LineBreakpoint> lines = new ArrayList<>();
-        for (com.editora.config.Breakpoint bp : buffer.getBreakpointManager().snapshot()) {
-            if (bp.enabled()) {
-                lines.add(new com.editora.dap.DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage()));
-            }
-        }
-        return new com.editora.dap.DapModels.FileBreakpoints(buffer.getPath(), lines);
-    }
-
-    /** All open buffers' enabled breakpoints (sent to the adapter when a session initializes). */
-    private List<com.editora.dap.DapModels.FileBreakpoints> collectBreakpoints() {
-        List<com.editora.dap.DapModels.FileBreakpoints> out = new ArrayList<>();
-        for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b == null || b.getPath() == null) {
-                continue;
-            }
-            com.editora.dap.DapModels.FileBreakpoints fb = fileBreakpoints(b);
-            if (!fb.breakpoints().isEmpty()) {
-                out.add(fb);
-            }
-        }
-        return out;
-    }
-
-    // -- DAP event sink + panel actions --
-
-    private com.editora.dap.DapManager.Listener dapListener() {
-        return new com.editora.dap.DapManager.Listener() {
-            @Override
-            public void onState(com.editora.dap.DapManager.State state) {
-                debugPanel.setState(state);
-                updateDebugStatus(state);
-                if (state != com.editora.dap.DapManager.State.SUSPENDED) {
-                    clearExecHighlight();
-                    clearDebugEditorSurfaces(); // inline values + hover live only while suspended
-                }
-                boolean starting = state == com.editora.dap.DapManager.State.STARTING;
-                statusBar.setDebugLoading(starting);
-                updateDebugAvailability(); // keep the window available during a session; hide it once it ends
-                if (starting) {
-                    toolWindows.open(debugToolWindow);
-                }
-            }
-
-            @Override
-            public void onStopped(int threadId, String reason, List<com.editora.dap.DapModels.StackFrameInfo> frames) {
-                debugPanel.setCallStack(frames); // auto-selects the top frame → selectFrame highlights + loads vars
-                dapManager.threads(list -> debugPanel.setThreads(list, dapManager.currentThreadId()));
-            }
-
-            @Override
-            public void onOutput(String text, String category) {
-                debugPanel.appendOutput(text, category);
-            }
-
-            @Override
-            public void onError(String message) {
-                setStatus(tr("status.debug.error", message));
-            }
-        };
-    }
-
-    private void updateDebugStatus(com.editora.dap.DapManager.State state) {
-        switch (state) {
-            case INACTIVE, TERMINATED -> statusBar.setDebug(null);
-            case STARTING -> statusBar.setDebug(tr("debug.state.starting"));
-            case RUNNING -> statusBar.setDebug(tr("debug.state.running"));
-            case SUSPENDED -> statusBar.setDebug(tr("debug.state.suspended"));
-        }
-    }
-
-    private DebugPanel.Actions debugActions() {
-        return new DebugPanel.Actions() {
-            @Override
-            public void start() {
-                debugStart(); // start a session when idle, or continue when suspended
-            }
-
-            @Override
-            public void pause() {
-                dapManager.pause();
-            }
-
-            @Override
-            public void runToCursor() {
-                debugRunToCursor();
-            }
-
-            @Override
-            public void selectThread(int threadId) {
-                dapManager.selectThread(threadId, frames -> debugPanel.setCallStack(frames));
-            }
-
-            @Override
-            public void stepOver() {
-                dapManager.stepOver();
-            }
-
-            @Override
-            public void stepInto() {
-                dapManager.stepInto();
-            }
-
-            @Override
-            public void stepOut() {
-                dapManager.stepOut();
-            }
-
-            @Override
-            public void stop() {
-                dapManager.stop();
-            }
-
-            @Override
-            public void restart() {
-                dapManager.restart();
-            }
-
-            @Override
-            public void selectFrame(com.editora.dap.DapModels.StackFrameInfo frame) {
-                debugFrameId = frame.id(); // the hover evaluator's frame context
-                highlightFrame(frame);
-                dapManager.scopes(frame.id(), scopes -> {
-                    debugPanel.setScopes(scopes);
-                    applyInlineValues(frame, scopes);
-                });
-            }
-
-            @Override
-            public void loadChildren(
-                    int ref, java.util.function.Consumer<List<com.editora.dap.DapModels.VariableInfo>> cb) {
-                dapManager.variables(ref, cb);
-            }
-
-            @Override
-            public void evaluate(String expr, int frameId, java.util.function.Consumer<String> cb) {
-                dapManager.evaluate(expr, frameId, "repl", cb);
-            }
-
-            @Override
-            public void evaluateWatch(
-                    String expr, int frameId, java.util.function.Consumer<com.editora.dap.DapModels.EvalResult> cb) {
-                dapManager.evaluateFull(expr, frameId, "watch", cb);
-            }
-
-            @Override
-            public void setVariable(int parentRef, String name, String value, java.util.function.Consumer<String> cb) {
-                dapManager.setVariable(parentRef, name, value, cb);
-            }
-        };
-    }
-
-    /** The selected stack frame's id (the hover evaluator's context); -1 while not suspended. */
-    private int debugFrameId = -1;
-    /** The buffer currently carrying inline values + an active hover (cleared on resume/terminate). */
-    private EditorBuffer debugValuesBuffer;
-    /** Inline-value fetch cap — frames can hold hundreds of locals; the overlay needs a name→value map. */
-    private static final int MAX_INLINE_VALUES = 100;
-
-    /** Fetches the selected frame's local variables and paints them as inline values in the frame's
-     *  file buffer; also arms the hover value tooltip there (IntelliJ's editor surfaces). */
-    private void applyInlineValues(
-            com.editora.dap.DapModels.StackFrameInfo frame, List<com.editora.dap.DapModels.ScopeInfo> scopes) {
-        if (frame == null || frame.file() == null || scopes.isEmpty()) {
-            return;
-        }
-        com.editora.dap.DapModels.ScopeInfo locals =
-                scopes.stream().filter(s -> !s.expensive()).findFirst().orElse(null);
-        if (locals == null) {
-            return;
-        }
-        dapManager.variables(locals.variablesReference(), vars -> {
-            if (dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
-                return; // resumed while the request was in flight
-            }
-            java.util.Map<String, String> values = new java.util.LinkedHashMap<>();
-            for (com.editora.dap.DapModels.VariableInfo v : vars) {
-                if (values.size() == MAX_INLINE_VALUES) {
-                    break;
-                }
-                values.put(v.name(), v.value());
-            }
-            EditorBuffer b = bufferOf(tabForPath(frame.file()));
-            if (b == null) {
-                return;
-            }
-            if (debugValuesBuffer != null && debugValuesBuffer != b) {
-                debugValuesBuffer.setInlineValues(null); // frame moved to another file
-                debugValuesBuffer.setDebugHoverActive(false);
-            }
-            debugValuesBuffer = b;
-            b.setInlineValues(values);
-            b.setDebugHoverActive(true);
-        });
-    }
-
-    private void clearDebugEditorSurfaces() {
-        debugFrameId = -1;
-        if (debugValuesBuffer != null) {
-            debugValuesBuffer.setInlineValues(null);
-            debugValuesBuffer.setDebugHoverActive(false);
-            debugValuesBuffer = null;
-        }
-    }
-
-    /** Opens the frame's file and paints the execution-line highlight there. */
-    private void highlightFrame(com.editora.dap.DapModels.StackFrameInfo frame) {
-        if (frame == null || frame.file() == null) {
-            return;
-        }
-        clearExecHighlight();
-        openPath(frame.file()); // opens or focuses the tab
-        EditorBuffer b = activeBuffer();
-        if (b != null) {
-            execHighlightBuffer = b;
-            b.setExecutionLine(frame.line());
-        }
-    }
-
-    private void clearExecHighlight() {
-        if (execHighlightBuffer != null) {
-            execHighlightBuffer.clearExecutionLine();
-            execHighlightBuffer = null;
-        }
-    }
-
-    // -- Debug commands --
-
-    /** Starts a launch debug session for the active file (saving first, like Run). */
-    private void debugStart() {
-        EditorBuffer b = activeBuffer();
-        if (dapManager.isActive()) {
-            // A session is live. If the user switched to a DIFFERENT debuggable file and the old
-            // session is merely running (not paused mid-step), retarget: stop it and launch the new
-            // file — otherwise the Debug window stays silently bound to the old file. While SUSPENDED
-            // the green button keeps its Continue semantics (never yank a paused session).
-            boolean differentFile = b != null && b.getPath() != null && !samePath(b.getPath(), dapManager.debugFile());
-            if (dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED
-                    || !differentFile
-                    || !debugEffectiveFor(b.getLanguage())) {
-                dapManager.resume(); // F5-style continue (no-op unless suspended)
-                return;
-            }
-            dapManager.stop(); // retarget to the newly active file below
-        }
-        if (b == null || b.getPath() == null && !save(b)) {
-            setStatus(tr("status.debug.saveFirst"));
-            return;
-        }
-        String language = b.getLanguage();
-        if (!debugEffectiveFor(language)) {
-            setStatus(tr("status.debug.unavailable"));
-            return;
-        }
-        if ((b.isDirty() || b.getPath() == null) && !save(b)) {
-            return;
-        }
-        toolWindows.open(debugToolWindow);
-        debugPanel.setSessionFile(b.getPath().getFileName().toString());
-        // The debuggee gets the same per-file program arguments the Run feature uses.
-        dapManager.setProgramArgs(com.editora.run.ProgramArgs.tokenize(programArgsFor(b.getPath())));
-        dapManager.startLaunch(b.getPath(), language, this::pickMainClass);
-    }
-
-    /** Whether two paths refer to the same file (normalized absolute comparison; null-safe). */
-    private static boolean samePath(Path a, Path b) {
-        return com.editora.config.PathKeys.sameNormalized(a, b);
-    }
-
-    /** Resumes and stops at the active buffer's caret line via a one-shot temporary breakpoint. */
-    private void debugRunToCursor() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
-            return;
-        }
-        dapManager.runToCursor(b.getPath(), b.getArea().getCurrentParagraph());
-    }
-
-    /** Jump to Line: move the execution pointer to the caret line without executing in-between code.
-     *  Capability-gated — debugpy supports it; java-debug/js-debug report "not supported". */
-    private void debugJumpToLine() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED) {
-            return;
-        }
-        if (!dapManager.supportsJumpToLine()) {
-            setStatus(tr("status.debug.jumpUnsupported"));
-            return;
-        }
-        dapManager.jumpToLine(
-                b.getPath(),
-                b.getArea().getCurrentParagraph(),
-                err -> setStatus(err.isEmpty() ? tr("status.debug.jumpNoTarget") : err));
-    }
-
-    /** Attaches to a running JVM (asks for {@code host:port}). */
-    private void debugAttach() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null) {
-            setStatus(tr("status.debug.saveFirst"));
-            return;
-        }
-        if (!debugEffective()) {
-            setStatus(tr("status.debug.unavailable"));
-            return;
-        }
-        promptText(tr("dialog.debug.attachTitle"), tr("dialog.debug.attachContent"), "localhost:5005", input -> {
-            String text = input == null ? "" : input.trim();
-            String host = "localhost";
-            String portStr = text;
-            int colon = text.lastIndexOf(':');
-            if (colon >= 0) {
-                host = text.substring(0, colon);
-                portStr = text.substring(colon + 1);
-            }
-            try {
-                int port = Integer.parseInt(portStr.trim());
-                toolWindows.open(debugToolWindow);
-                debugPanel.setSessionFile(b.getPath().getFileName().toString());
-                dapManager.startAttach(b.getPath(), host, port);
-            } catch (NumberFormatException e) {
-                setStatus(tr("status.debug.badAddress", text));
-            }
-        });
-    }
-
-    /** Main-class chooser (QuickOpen) when jdtls finds several. */
-    private void pickMainClass(
-            List<com.editora.dap.DapManager.MainClassOption> options,
-            java.util.function.Consumer<com.editora.dap.DapManager.MainClassOption> chosen) {
-        QuickOpen<com.editora.dap.DapManager.MainClassOption> picker = new QuickOpen<>(
-                tr("debug.pickMainTitle"),
-                tr("debug.pickMainPrompt"),
-                () -> options,
-                com.editora.dap.DapManager.MainClassOption::mainClass,
-                o -> o.projectName() == null ? "" : o.projectName(),
-                chosen);
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Toggles a breakpoint on the active buffer's caret line. */
-    private void toggleBreakpointAtCaret() {
-        EditorBuffer b = activeBuffer();
-        if (b != null) {
-            b.toggleBreakpoint(b.getArea().getCurrentParagraph());
-        }
-    }
-
-    /** Edits the caret line's breakpoint condition / log message (creating one if absent). */
-    private void editBreakpointAtCaret() {
-        EditorBuffer b = activeBuffer();
-        if (b == null) {
-            return;
-        }
-        int line = b.getArea().getCurrentParagraph();
-        var mgr = b.getBreakpointManager();
-        if (!mgr.isBreakpoint(line)) {
-            b.toggleBreakpoint(line);
-        }
-        com.editora.config.Breakpoint bp = mgr.get(line);
-        String initial = bp == null ? "" : bp.condition();
-        promptText(
-                tr("dialog.debug.conditionTitle"),
-                tr("dialog.debug.conditionContent"),
-                initial,
-                cond -> mgr.setCondition(line, cond == null ? "" : cond.trim()));
-    }
-
-    /** Toggles the "uncaught exceptions" breakpoint filter. */
-    private void toggleExceptionBreakpoints() {
-        if (exceptionFilters.contains("uncaught")) {
-            exceptionFilters.remove("uncaught");
-        } else {
-            exceptionFilters.add("uncaught");
-        }
-        dapManager.setExceptionFilters(new ArrayList<>(exceptionFilters));
-        setStatus(
-                tr(exceptionFilters.contains("uncaught") ? "status.debug.exceptionsOn" : "status.debug.exceptionsOff"));
     }
 
     // --- LSP (Language Server Protocol) integration --------------------------------------------
@@ -6093,7 +5623,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
             restoreFolds(buffer);
             bookmarkCoordinator.restoreBookmarks(buffer);
-            restoreBreakpoints(buffer);
+            debugCoordinator.restoreBreakpoints(buffer);
             notesCoordinator.restoreNotes(buffer);
             restoreReadOnly(buffer);
             restoreMarkdownMode(buffer);
@@ -6169,10 +5699,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
         buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
-        // Debugging: the leftmost breakpoint gutter strip + persistence + live re-send to a session
-        // (only for debuggable languages — java/python/javascript).
-        buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
-        buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
+        // Debugging: the breakpoint gutter gate + change/hover hooks (debuggable languages only).
+        debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());
         buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
@@ -6207,8 +5735,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }));
         buffer.setMarkdownLintEnabled(markdownLintEnabled());
         buffer.setImageDropHandler(files -> insertDroppedImages(buffer, files)); // drag image → assets/ + ![](…)
-        // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
-        buffer.setDebugHoverEvaluator((expr, cb) -> dapManager.evaluateHover(expr, debugFrameId, cb));
         // LSP: wire didChange/diagnostics/completion/format/nav hooks + open+activate if eligible.
         lspCoordinator.wireBuffer(buffer);
         ensurePreviewControls(buffer);
@@ -6526,7 +6052,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // Apply folds before the node is in the scene, so each fold skips per-fold layout.
             restoreFolds(buffer);
             bookmarkCoordinator.restoreBookmarks(buffer);
-            restoreBreakpoints(buffer);
+            debugCoordinator.restoreBreakpoints(buffer);
             notesCoordinator.restoreNotes(buffer);
             restoreReadOnly(buffer); // before addBuffer so the tab meta reflects read-only
             addBuffer(buffer);
@@ -8611,100 +8137,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
-    // Debug adapters: "java" has no enable (gated by the Java LSP server); python/javascript do.
-    private static final String[] DEBUG_TOGGLEABLE_ADAPTERS = {"python", "javascript"};
-    private static final String[] DEBUG_PATH_ADAPTERS = {"java", "python", "javascript"};
-
-    /** Display name for a debug adapter (language names are deliberately untranslated, like LSP ids). */
-    private static String debugAdapterLabel(String id) {
-        return switch (id) {
-            case "python" -> "Python";
-            case "javascript" -> "JavaScript";
-            default -> "Java";
-        };
-    }
-
-    private boolean debugAdapterEnabled(String id) {
-        Settings s = config.getSettings();
-        return switch (id) {
-            case "python" -> s.isPythonDebugEnabled();
-            case "javascript" -> s.isJsDebugEnabled();
-            default -> true;
-        };
-    }
-
-    private String debugAdapterPath(String id) {
-        Settings s = config.getSettings();
-        return switch (id) {
-            case "python" -> s.getPythonDebugCommand();
-            case "javascript" -> s.getJsDebugPath();
-            default -> s.getJavaDebugPluginPath();
-        };
-    }
-
-    /** Picker over the python/javascript debug adapters: toggles the chosen one's enable. */
-    private void chooseDebugAdapterToggle() {
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("command.debug.toggleAdapter"),
-                tr("palette.setting.pick"),
-                () -> List.of(DEBUG_TOGGLEABLE_ADAPTERS),
-                id -> debugAdapterLabel(id) + "  —  " + tr(debugAdapterEnabled(id) ? "common.on" : "common.off"),
-                id -> "",
-                id -> {
-                    if (id == null) {
-                        return;
-                    }
-                    Settings s = config.getSettings();
-                    boolean next = !debugAdapterEnabled(id);
-                    if ("python".equals(id)) {
-                        s.setPythonDebugEnabled(next);
-                    } else {
-                        s.setJsDebugEnabled(next);
-                    }
-                    requestSave();
-                    applyDebugSupport();
-                    if (settingsWindow != null) {
-                        settingsWindow.syncAll();
-                    }
-                    setStatus(
-                            tr("status.settingToggled", debugAdapterLabel(id), tr(next ? "common.on" : "common.off")));
-                });
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Picker over the java/python/javascript debug adapters, then prompts for that adapter's path. */
-    private void chooseDebugAdapterPath() {
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("command.debug.setAdapterPath"),
-                tr("palette.setting.pick"),
-                () -> List.of(DEBUG_PATH_ADAPTERS),
-                MainController::debugAdapterLabel,
-                this::debugAdapterPath,
-                id -> {
-                    if (id == null) {
-                        return;
-                    }
-                    promptText(debugAdapterLabel(id), tr("palette.setting.value"), debugAdapterPath(id), v -> {
-                        String value = v.trim();
-                        Settings s = config.getSettings();
-                        switch (id) {
-                            case "python" -> s.setPythonDebugCommand(value);
-                            case "javascript" -> s.setJsDebugPath(value);
-                            default -> s.setJavaDebugPluginPath(value);
-                        }
-                        requestSave();
-                        applyDebugSupport();
-                        if (settingsWindow != null) {
-                            settingsWindow.syncAll();
-                        }
-                        setStatus(tr("status.settingChanged", debugAdapterLabel(id), value));
-                    });
-                });
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
     /** Converts the active buffer's line endings between LF and CRLF. */
     private void chooseLineEndings() {
         if (!activeEditable()) {
@@ -9803,7 +9235,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyAutocomplete();
         applyMultiCaret();
         lspCoordinator.applySupport(); // (re)configure LSP: command/enabled change re-detects + re-gates buffers
-        applyDebugSupport(); // (re)configure DAP after LSP (it layers on jdtls)
+        debugCoordinator.applySupport(); // (re)configure DAP after LSP (it layers on jdtls)
         applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
@@ -10491,7 +9923,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleDebug",
                         () -> config.getSettings().isDebugSupport(),
                         v -> config.getSettings().setDebugSupport(v),
-                        this::applyDebugSupport)));
+                        debugCoordinator::applySupport)));
         registry.register(Command.of(
                 "file.setAutoSaveDelay",
                 () -> promptIntSetting(
@@ -10596,8 +10028,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                         null)));
         registry.register(Command.of("lsp.toggleServer", lspCoordinator::chooseServerToggle));
         registry.register(Command.of("lsp.setServerCommand", lspCoordinator::chooseServerCommand));
-        registry.register(Command.of("debug.toggleAdapter", this::chooseDebugAdapterToggle));
-        registry.register(Command.of("debug.setAdapterPath", this::chooseDebugAdapterPath));
+        registry.register(Command.of("debug.toggleAdapter", debugCoordinator::chooseAdapterToggle));
+        registry.register(Command.of("debug.setAdapterPath", debugCoordinator::chooseAdapterPath));
         registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));
         registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
@@ -10797,31 +10229,34 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("http.openResponseInTab", httpClient::openActiveResponseInTab));
         registry.register(Command.of("tool.http", httpClient::toggleToolWindow));
         // Debugging (DAP). Gated by the "Enable Java debugging" setting (default off).
-        registry.register(Command.of("debug.start", () -> ifDebug(this::debugStart)));
-        registry.register(Command.of("debug.stop", () -> ifDebug(dapManager::stop)));
-        registry.register(Command.of("debug.restart", () -> ifDebug(dapManager::restart)));
-        registry.register(Command.of("debug.attach", () -> ifDebug(this::debugAttach)));
-        registry.register(Command.of("debug.continue", () -> ifDebug(dapManager::resume)));
-        registry.register(Command.of("debug.pause", () -> ifDebug(dapManager::pause)));
-        registry.register(Command.of("debug.runToCursor", () -> ifDebug(this::debugRunToCursor)));
-        registry.register(Command.of("debug.jumpToLine", () -> ifDebug(this::debugJumpToLine)));
-        // Debugger data inspection (parity with the Debug panel's own controls).
-        registry.register(Command.of(
-                "debug.evaluate",
-                () -> ifDebug(() -> {
-                    toolWindows.open(debugToolWindow);
-                    debugPanel.focusEvaluate();
-                })));
-        registry.register(Command.of("debug.addWatch", () -> ifDebug(debugPanel::addWatch)));
-        registry.register(Command.of("debug.setValue", () -> ifDebug(debugPanel::setSelectedValue)));
-        registry.register(Command.of("debug.stepOver", () -> ifDebug(dapManager::stepOver)));
-        registry.register(Command.of("debug.stepInto", () -> ifDebug(dapManager::stepInto)));
-        registry.register(Command.of("debug.stepOut", () -> ifDebug(dapManager::stepOut)));
-        registry.register(Command.of("debug.toggleBreakpoint", () -> ifDebug(this::toggleBreakpointAtCaret)));
-        registry.register(Command.of("debug.editBreakpoint", () -> ifDebug(this::editBreakpointAtCaret)));
+        registry.register(Command.of("debug.start", () -> debugCoordinator.ifDebug(debugCoordinator::debugStart)));
+        registry.register(Command.of("debug.stop", () -> debugCoordinator.ifDebug(dapManager::stop)));
+        registry.register(Command.of("debug.restart", () -> debugCoordinator.ifDebug(dapManager::restart)));
+        registry.register(Command.of("debug.attach", () -> debugCoordinator.ifDebug(debugCoordinator::debugAttach)));
+        registry.register(Command.of("debug.continue", () -> debugCoordinator.ifDebug(dapManager::resume)));
+        registry.register(Command.of("debug.pause", () -> debugCoordinator.ifDebug(dapManager::pause)));
         registry.register(
-                Command.of("debug.toggleExceptionBreakpoints", () -> ifDebug(this::toggleExceptionBreakpoints)));
-        registry.register(Command.of("tool.debug", () -> ifDebug(() -> toolWindows.toggle(debugToolWindow))));
+                Command.of("debug.runToCursor", () -> debugCoordinator.ifDebug(debugCoordinator::debugRunToCursor)));
+        registry.register(
+                Command.of("debug.jumpToLine", () -> debugCoordinator.ifDebug(debugCoordinator::debugJumpToLine)));
+        // Debugger data inspection (parity with the Debug panel's own controls).
+        registry.register(
+                Command.of("debug.evaluate", () -> debugCoordinator.ifDebug(debugCoordinator::focusEvaluate)));
+        registry.register(Command.of("debug.addWatch", () -> debugCoordinator.ifDebug(debugCoordinator::addWatch)));
+        registry.register(
+                Command.of("debug.setValue", () -> debugCoordinator.ifDebug(debugCoordinator::setSelectedValue)));
+        registry.register(Command.of("debug.stepOver", () -> debugCoordinator.ifDebug(dapManager::stepOver)));
+        registry.register(Command.of("debug.stepInto", () -> debugCoordinator.ifDebug(dapManager::stepInto)));
+        registry.register(Command.of("debug.stepOut", () -> debugCoordinator.ifDebug(dapManager::stepOut)));
+        registry.register(Command.of(
+                "debug.toggleBreakpoint", () -> debugCoordinator.ifDebug(debugCoordinator::toggleBreakpointAtCaret)));
+        registry.register(Command.of(
+                "debug.editBreakpoint", () -> debugCoordinator.ifDebug(debugCoordinator::editBreakpointAtCaret)));
+        registry.register(Command.of(
+                "debug.toggleExceptionBreakpoints",
+                () -> debugCoordinator.ifDebug(debugCoordinator::toggleExceptionBreakpoints)));
+        registry.register(
+                Command.of("tool.debug", () -> debugCoordinator.ifDebug(() -> toolWindows.toggle(debugToolWindow))));
         // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
         registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
         registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
