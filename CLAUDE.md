@@ -85,7 +85,12 @@ since jpackage lowercases the install dir); (2) **copies the bundled `.desktop` 
 real `WM_CLASS`, verified via `wmctrl -lx` — JavaFX derives it from the module main `com.editora.App`,
 *not* the app name; jpackage's generated entry omits it, so the *running* window can't be matched to the
 entry — the menu icon itself comes from the `.desktop`'s already-absolute
-`Icon=/opt/editora/lib/Editora.png`); then `update-desktop-database`.
+`Icon=/opt/editora/lib/Editora.png`); then `update-desktop-database`. **That `lib/Editora.png` must be
+*our* icon, and it isn't by default:** the jpackage app-image phase (panteleyev plugin `<icon>`) leaves
+its generic Java icon there, and the installer wrap runs `jpackage --app-image` which *ignores* `--icon`
+— so **`scripts/aot_build.java` overwrites `<imageRoot>/lib/Editora.png` with `branding/editora.png`
+before wrapping** (Linux-only, guarded). Verify a real `.deb`'s icon by `sha256sum`-ing
+`/opt/editora/lib/Editora.png` against `branding/editora.png` — they must match.
 `postrm` (remove/purge) removes both. **Device-test on Linux** (install the `.deb`: `which editora`
 works + the app shows our icon in the menu and dock; then remove: both are gone) — the macOS dev box and
 the `os-linux` profile can't exercise this. *(If a terminal-launched window's dock icon is still generic,

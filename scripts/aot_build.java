@@ -77,6 +77,21 @@ public class aot_build {
         // single-type platform's failure) fails the build.
         Files.createDirectories(destDir);
         Path imageRoot = imageRoot(imageDir, appName, win); // Editora.app (mac) or Editora dir
+
+        // Ensure the Linux app image carries OUR icon. The jpackage app-image phase can leave the
+        // default JavaApp.png at lib/<name>.png (the panteleyev plugin's <icon> didn't take), and the
+        // installer wrap runs `jpackage --app-image`, which IGNORES --icon — so the .deb would ship the
+        // generic Java icon (the .desktop's Icon= points at this file). Overwrite it explicitly here.
+        boolean linux = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux");
+        if (linux && icon != null && !icon.isBlank() && !"-".equals(icon) && icon.endsWith(".png")) {
+            Path iconSrc = Path.of(icon);
+            Path iconDst = imageRoot.resolve("lib").resolve(appName + ".png");
+            if (Files.isRegularFile(iconSrc) && Files.isDirectory(iconDst.getParent())) {
+                Files.copy(iconSrc, iconDst, StandardCopyOption.REPLACE_EXISTING);
+                System.out.println("[aot] set Linux app icon -> " + iconDst);
+            }
+        }
+
         if ("APP_IMAGE".equalsIgnoreCase(type.trim())) {
             Path out = destDir.resolve(imageRoot.getFileName());
             deleteRecursive(out);
