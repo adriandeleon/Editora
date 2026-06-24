@@ -33,8 +33,10 @@ case "$1" in
             if grep -q '^StartupWMClass=' "$src"; then
                 cp -f "$src" /usr/share/applications/editora-Editora.desktop
             else
+                # WM_CLASS is com.editora.App (JavaFX derives it from the module main); must match
+                # exactly or GNOME won't bind the running window to this entry (verified via wmctrl -lx).
                 awk '{ print }
-                     /^\[Desktop Entry\]/ && !added { print "StartupWMClass=Editora"; added = 1 }' \
+                     /^\[Desktop Entry\]/ && !added { print "StartupWMClass=com.editora.App"; added = 1 }' \
                     "$src" > /usr/share/applications/editora-Editora.desktop
             fi
             chmod 0644 /usr/share/applications/editora-Editora.desktop
