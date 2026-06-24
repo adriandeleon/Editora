@@ -1,8 +1,8 @@
 #!/bin/sh
 #
-# Editora .deb postrm — OVERRIDES jpackage's generated DEB postrm. Removes the `editora` PATH
-# symlink that postinst created (only if it still points into our install tree, so a foreign
-# /usr/bin/editora is never touched) on remove/purge.
+# Editora .deb postrm — OVERRIDES jpackage's generated DEB postrm. Undoes what postinst created:
+# the `editora` PATH symlink (only if it still points into our install tree, so a foreign
+# /usr/bin/editora is never touched) and the registered menu entry — on remove/purge.
 #
 set -e
 
@@ -13,11 +13,12 @@ case "$1" in
                 /opt/*/bin/Editora) rm -f /usr/bin/editora ;;
             esac
         fi
+        rm -f /usr/share/applications/editora-Editora.desktop
         ;;
 esac
 
 if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database -q 2>/dev/null || true
+    update-desktop-database -q /usr/share/applications 2>/dev/null || true
 fi
 
 exit 0

@@ -1,33 +1,51 @@
 #!/bin/sh
 #
 # Editora .deb postinst — OVERRIDES jpackage's generated DEB postinst (jpackage picks up any file
-# named "postinst" in --resource-dir). jpackage installs the launcher only at
-# /opt/<package>/bin/Editora, which is not on PATH, so add an `editora` command via a symlink in
-# /usr/bin (policy-correct location for a package-provided command; postrm removes it).
+# named "postinst" in --resource-dir).
 #
-# Because this replaces jpackage's default postinst, it also re-runs the desktop-database refresh
-# that jpackage's script would have done for the --linux-shortcut menu entry.
+# It does what jpackage's default script did (register the menu entry) PLUS two extras:
+#   1. an `editora` command on PATH (jpackage installs the launcher only at /opt/<pkg>/bin/Editora);
+#   2. a StartupWMClass on the menu entry so the *running* window also picks up our icon.
+#
+# Background: jpackage installs the .desktop + icon only under /opt/<pkg>/lib/ and relies on its
+# postinst to register them system-wide. Since we replace postinst we must do that here, or the
+# launcher is never installed into /usr/share/applications and the app shows the generic Java icon.
+# The bundled .desktop's Icon= is already an absolute path to our PNG, so once it's registered the
+# menu shows our icon — we just copy it into /usr/share/applications, injecting StartupWMClass
+# (jpackage's generated entry omits it, so the running window can't be matched to the entry).
 #
 set -e
 
 case "$1" in
     configure)
-        # Install dir is /opt/<package-name> (jpackage lowercases it); the launcher keeps its case.
+        # 1) PATH command — install dir is /opt/<package-name> (jpackage lowercases it).
         for launcher in /opt/*/bin/Editora; do
             if [ -x "$launcher" ]; then
                 ln -sf "$launcher" /usr/bin/editora
                 break
             fi
         done
+
+        # 2) Register the menu entry system-wide, injecting StartupWMClass if the source lacks it.
+        for src in /opt/*/lib/editora-Editora.desktop; do
+            [ -f "$src" ] || continue
+            mkdir -p /usr/share/applications
+            if grep -q '^StartupWMClass=' "$src"; then
+                cp -f "$src" /usr/share/applications/editora-Editora.desktop
+            else
+                awk '{ print }
+                     /^\[Desktop Entry\]/ && !added { print "StartupWMClass=Editora"; added = 1 }' \
+                    "$src" > /usr/share/applications/editora-Editora.desktop
+            fi
+            chmod 0644 /usr/share/applications/editora-Editora.desktop
+            break
+        done
         ;;
 esac
 
-# Refresh desktop integration for the bundled .desktop entry (harmless if the tools are absent).
+# Refresh the desktop database so the launcher + icon show up without a re-login.
 if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database -q 2>/dev/null || true
-fi
-if command -v xdg-desktop-menu >/dev/null 2>&1; then
-    xdg-desktop-menu forceupdate 2>/dev/null || true
+    update-desktop-database -q /usr/share/applications 2>/dev/null || true
 fi
 
 exit 0
