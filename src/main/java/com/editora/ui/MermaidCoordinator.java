@@ -97,6 +97,11 @@ final class MermaidCoordinator {
         return s.isAutocomplete() && s.isAutocompleteMermaid() && s.isMermaidSupport() && avail.mmdc();
     }
 
+    /** Whether the mmdc CLI was detected — read by the install coordinator to know if Mermaid is set up. */
+    boolean mmdcAvailable() {
+        return avail.mmdc();
+    }
+
     /** The mmdc command for rendering a diagram in a PDF/print, or {@code null} when the feature is off. */
     List<String> mmdcCommandOrNull() {
         return isEnabled() ? service.mmdcCommand() : null;

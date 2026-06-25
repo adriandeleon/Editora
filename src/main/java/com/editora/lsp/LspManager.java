@@ -95,6 +95,12 @@ public final class LspManager {
         return enabled;
     }
 
+    /** Clears the cached per-server availability so the next {@link #detect} re-probes — used after an
+     *  in-app install drops a server onto PATH / into the config dir without changing its command. */
+    public void invalidateDetection() {
+        availableCache.clear();
+    }
+
     /**
      * Base directory under which jdtls gets a dedicated per-project workspace (via {@code -data}). Without
      * this, jdtls falls back to a single shared default workspace that deadlocks on its {@code .lock} when
