@@ -294,6 +294,10 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  (its panel reads workspace state). See {@link DebugCoordinator}. */
     private DebugCoordinator debugCoordinator;
 
+    /** In-app install of LSP servers + DAP adapters + Mermaid tools. Built in {@link #setupToolWindows}
+     *  (after the LSP/Debug coordinators it re-detects through). See {@link InstallCoordinator}. */
+    private InstallCoordinator installCoordinator;
+
     private GitPanel gitPanel;
     private ToolWindow commitToolWindow;
     private GitLogPanel gitLogPanel;
@@ -1000,6 +1004,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         pdfService.shutdown();
         printService.shutdown();
         runCoordinator.shutdown();
+        if (installCoordinator != null) {
+            installCoordinator.shutdown();
+        }
         autoSaveExecutor.shutdownNow();
         projectPanel.dispose(); // stop the project tree's filesystem watcher + its daemon thread
     }
@@ -1883,6 +1890,36 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::tools,
                 externalToolCoordinator.panel(),
                 "tool.externalTools");
+        installCoordinator = new InstallCoordinator(coordinatorHost, new InstallCoordinator.Ops() {
+            @Override
+            public java.nio.file.Path configDir() {
+                return config.getConfigDir();
+            }
+
+            @Override
+            public boolean lspAvailable(String serverId) {
+                return lspCoordinator.isServerAvailable(serverId);
+            }
+
+            @Override
+            public boolean dapAvailable(String language) {
+                return dapManager.isLanguageAvailable(language);
+            }
+
+            @Override
+            public boolean mmdcAvailable() {
+                return mermaid.mmdcAvailable();
+            }
+
+            @Override
+            public void reapplyToolSupport() {
+                lspManager.invalidateDetection();
+                lspCoordinator.applySupport();
+                debugCoordinator.applySupport();
+                mermaid.applySupport();
+                requestSave(); // persist a resolved command (e.g. the installed jdtls launcher path)
+            }
+        });
         remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
         remoteToolWindow = new ToolWindow(
                 "remote",
@@ -8239,6 +8276,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("lsp.setServerCommand", lspCoordinator::chooseServerCommand));
         registry.register(Command.of("debug.toggleAdapter", debugCoordinator::chooseAdapterToggle));
         registry.register(Command.of("debug.setAdapterPath", debugCoordinator::chooseAdapterPath));
+        registry.register(Command.of(
+                "install.javaSupport",
+                () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.JAVA)));
+        registry.register(Command.of(
+                "install.pythonSupport",
+                () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.PYTHON)));
+        registry.register(Command.of(
+                "install.jsSupport",
+                () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.JAVASCRIPT)));
+        registry.register(Command.of(
+                "install.mermaidSupport",
+                () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.MERMAID)));
         registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));
         registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
