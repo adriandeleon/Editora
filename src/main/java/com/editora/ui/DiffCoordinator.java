@@ -215,7 +215,11 @@ final class DiffCoordinator {
         if (git.reportIfNoRepo()) {
             return;
         }
-        String rel = GitService.repoRelative(git.repoRoot(), path);
+        // Capture the repo root at open time and close over it: the refresher re-runs this fetcher, and the
+        // live git.repoRoot() goes null while a (non-buffer) diff tab is the active tab in a No-Project window
+        // — re-reading it then would fetch HEAD against a null root and blank the left pane.
+        Path root = git.repoRoot();
+        String rel = GitService.repoRelative(root, path);
         if (rel == null) {
             host.setStatus(tr("status.diff.notInRepo"));
             return;
@@ -227,7 +231,7 @@ final class DiffCoordinator {
                 tr("diff.side.working"),
                 name,
                 name,
-                cb -> git.service().show(git.repoRoot(), "HEAD:" + rel, cb),
+                cb -> git.service().show(root, "HEAD:" + rel, cb),
                 cb -> cb.accept(worktreeText(path)),
                 DiffViewerPane.EditableSide.RIGHT,
                 path);
@@ -275,14 +279,15 @@ final class DiffCoordinator {
         if (git.reportIfNoRepo()) {
             return;
         }
-        String rel = GitService.repoRelative(git.repoRoot(), b.getPath());
+        Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
+        String rel = GitService.repoRelative(root, b.getPath());
         if (rel == null) {
             host.setStatus(tr("status.diff.notInRepo"));
             return;
         }
         Path path = b.getPath();
         String name = path.getFileName().toString();
-        git.service().log(git.repoRoot(), path, 80, commits -> {
+        git.service().log(root, path, 80, commits -> {
             if (commits.isEmpty()) {
                 host.setStatus(tr("status.diff.noHistory"));
                 return;
@@ -300,7 +305,7 @@ final class DiffCoordinator {
                             tr("diff.side.working"),
                             name,
                             name,
-                            cb -> git.service().show(git.repoRoot(), chosen.hash() + ":" + rel, cb),
+                            cb -> git.service().show(root, chosen.hash() + ":" + rel, cb),
                             cb -> cb.accept(worktreeText(path)),
                             DiffViewerPane.EditableSide.RIGHT,
                             path));
@@ -311,10 +316,11 @@ final class DiffCoordinator {
 
     /** Diff a Git-panel file row: staged → index↔HEAD, unstaged → worktree↔index. */
     void diffGitPanelFile(String repoRel, boolean staged) {
-        if (git.repoRoot() == null) {
+        Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
+        if (root == null) {
             return;
         }
-        Path abs = git.repoRoot().resolve(repoRel);
+        Path abs = root.resolve(repoRel);
         String name = abs.getFileName().toString();
         if (staged) {
             // index↔HEAD: neither side is the working file, so no "apply" (read-only diff).
@@ -324,8 +330,8 @@ final class DiffCoordinator {
                     tr("diff.side.staged"),
                     name,
                     name,
-                    cb -> git.service().show(git.repoRoot(), "HEAD:" + repoRel, cb),
-                    cb -> git.service().show(git.repoRoot(), ":" + repoRel, cb),
+                    cb -> git.service().show(root, "HEAD:" + repoRel, cb),
+                    cb -> git.service().show(root, ":" + repoRel, cb),
                     DiffViewerPane.EditableSide.NONE,
                     null);
         } else {
@@ -335,7 +341,7 @@ final class DiffCoordinator {
                     tr("diff.side.working"),
                     name,
                     name,
-                    cb -> git.service().show(git.repoRoot(), ":" + repoRel, cb),
+                    cb -> git.service().show(root, ":" + repoRel, cb),
                     cb -> cb.accept(worktreeText(abs)),
                     DiffViewerPane.EditableSide.RIGHT,
                     abs);
@@ -344,7 +350,8 @@ final class DiffCoordinator {
 
     /** Diff a commit's version of a file against its parent (commit~1 ↔ commit), read-only. */
     void diffCommitFile(String hash, String repoRel) {
-        if (git.repoRoot() == null) {
+        Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
+        if (root == null) {
             return;
         }
         String name = repoRel.substring(repoRel.lastIndexOf('/') + 1);
@@ -354,8 +361,8 @@ final class DiffCoordinator {
                 tr("diff.title.vsCommitShort", GitFormat.shortHash(hash)),
                 name,
                 name,
-                cb -> git.service().show(git.repoRoot(), hash + "~1:" + repoRel, cb),
-                cb -> git.service().show(git.repoRoot(), hash + ":" + repoRel, cb),
+                cb -> git.service().show(root, hash + "~1:" + repoRel, cb),
+                cb -> git.service().show(root, hash + ":" + repoRel, cb),
                 DiffViewerPane.EditableSide.NONE,
                 null);
     }
