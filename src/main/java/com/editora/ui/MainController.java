@@ -4969,6 +4969,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem diffHead = new MenuItem(tr("menu.diffHead"));
         diffHead.setGraphic(Icons.diff());
         diffHead.setOnAction(e -> git.ifEnabled(diffCoordinator::diffActiveVsHead));
+        MenuItem diffCommit = new MenuItem(tr("menu.diffCommit"));
+        diffCommit.setGraphic(Icons.diff());
+        diffCommit.setOnAction(e -> git.ifEnabled(diffCoordinator::diffActiveVsCommit));
         MenuItem compareWith = new MenuItem(tr("menu.compareWith"));
         compareWith.setGraphic(Icons.diff());
         compareWith.setOnAction(e -> diffCoordinator.compareActiveWithFile());
@@ -4995,6 +4998,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 closeRight,
                 new SeparatorMenuItem(),
                 diffHead,
+                diffCommit,
                 compareWith,
                 history,
                 new SeparatorMenuItem(),
@@ -5018,6 +5022,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // available for this file (Git off, or not inside a repo) — not just disabled.
             boolean gitFile = hasPath && git.isAvailable();
             diffHead.setVisible(gitFile);
+            diffCommit.setVisible(gitFile);
             history.setVisible(gitFile);
             // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
             save.setDisable(hasPath && !buffer.isDirty());
