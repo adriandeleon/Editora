@@ -105,6 +105,48 @@ class ConfigFileTypeTest {
         // Maven/Gradle wrapper scripts are POSIX shell.
         assertEquals("shell", ConfigFileType.resolve("mvnw"));
         assertEquals("shell", ConfigFileType.resolve("/proj/gradlew"));
+        // Shell startup / alias dotfiles (bash, zsh, ksh, POSIX sh) — extension-less, so name-matched.
+        assertEquals("shell", ConfigFileType.resolve(".bashrc"));
+        assertEquals("shell", ConfigFileType.resolve("/home/adl/.bash_aliases"));
+        assertEquals("shell", ConfigFileType.resolve(".bash_profile"));
+        assertEquals("shell", ConfigFileType.resolve(".zshrc"));
+        assertEquals("shell", ConfigFileType.resolve("/home/adl/.zsh_aliases"));
+        assertEquals("shell", ConfigFileType.resolve(".zshenv"));
+        assertEquals("shell", ConfigFileType.resolve(".profile"));
+        assertEquals("shell", ConfigFileType.resolve(".aliases"));
+        assertEquals("shell", ConfigFileType.resolve(".zshrc.local"));
+        // A non-shell dotfile must not be swept in.
+        assertNull(ConfigFileType.resolve(".bash_history"));
+        // X session startup scripts are shell too.
+        assertEquals("shell", ConfigFileType.resolve("/home/adl/.xprofile"));
+        assertEquals("shell", ConfigFileType.resolve(".xinitrc"));
+        // Ruby DSL build files (no extension).
+        assertEquals("ruby", ConfigFileType.resolve("Gemfile"));
+        assertEquals("ruby", ConfigFileType.resolve("/proj/Rakefile"));
+        assertEquals("ruby", ConfigFileType.resolve("Brewfile"));
+        assertEquals("ruby", ConfigFileType.resolve("Podfile"));
+        assertEquals("ruby", ConfigFileType.resolve("Vagrantfile"));
+        // ...but a lockfile is not Ruby (left to its extension / plaintext).
+        assertNull(ConfigFileType.resolve("Gemfile.lock"));
+        // Jenkins pipeline is Groovy (literal + suffixed).
+        assertEquals("groovy", ConfigFileType.resolve("Jenkinsfile"));
+        assertEquals("groovy", ConfigFileType.resolve("Jenkinsfile.prod"));
+        // .gitmodules shares .gitconfig syntax.
+        assertEquals("git-config", ConfigFileType.resolve(".gitmodules"));
+        // Lint/tool INI configs.
+        assertEquals("ini", ConfigFileType.resolve(".npmrc"));
+        assertEquals("ini", ConfigFileType.resolve("/proj/pylintrc"));
+        assertEquals("ini", ConfigFileType.resolve(".flake8"));
+        assertEquals("ini", ConfigFileType.resolve(".coveragerc"));
+        // YAML tool configs.
+        assertEquals("yaml", ConfigFileType.resolve(".clang-format"));
+        assertEquals("yaml", ConfigFileType.resolve("/proj/.clang-tidy"));
+        assertEquals("yaml", ConfigFileType.resolve(".condarc"));
+        assertEquals("yaml", ConfigFileType.resolve(".gemrc"));
+        // JS/web rc → JSON (bare forms).
+        assertEquals("json", ConfigFileType.resolve(".babelrc"));
+        assertEquals("json", ConfigFileType.resolve(".eslintrc"));
+        assertEquals("json", ConfigFileType.resolve(".prettierrc"));
         // Eclipse project metadata is XML.
         assertEquals("xml", ConfigFileType.resolve(".classpath"));
         assertEquals("xml", ConfigFileType.resolve("/proj/.project"));

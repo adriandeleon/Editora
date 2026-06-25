@@ -115,6 +115,105 @@ public final class ConfigFileType {
         if (lower.equals("mvnw") || lower.equals("gradlew")) {
             return "shell";
         }
+        // Shell startup / alias dotfiles — bash, zsh, ksh and POSIX sh all share sh syntax. These are
+        // extension-less, so the extension map never sees them. (.bash_aliases is a real convention —
+        // Debian/Ubuntu's default .bashrc sources it; .zsh_aliases isn't auto-sourced by zsh but is a
+        // common user-chosen name people source from .zshrc.) Also covers ".<rc>.local" overrides.
+        switch (lower) {
+            case ".profile":
+            case ".bashrc":
+            case ".bash_profile":
+            case ".bash_login":
+            case ".bash_logout":
+            case ".bash_aliases":
+            case ".bash_functions":
+            case ".zshrc":
+            case ".zshenv":
+            case ".zprofile":
+            case ".zlogin":
+            case ".zlogout":
+            case ".zsh_aliases":
+            case ".zsh_functions":
+            case ".aliases":
+            case ".shrc":
+            case ".kshrc":
+            case ".profile.local":
+            case ".bashrc.local":
+            case ".zshrc.local":
+            // X session startup scripts are sourced as POSIX/sh too.
+            case ".xprofile":
+            case ".xinitrc":
+            case ".xsession":
+            case ".xsessionrc":
+                return "shell";
+            default:
+                break;
+        }
+        // Ruby DSL build/config files — no extension, but pure Ruby. (Gemfile.lock / Podfile.lock are
+        // their own formats and intentionally not matched here.)
+        switch (lower) {
+            case "gemfile":
+            case "rakefile":
+            case "guardfile":
+            case "capfile":
+            case "thorfile":
+            case "berksfile":
+            case "brewfile":
+            case "podfile":
+            case "vagrantfile":
+            case "fastfile":
+            case "appfile":
+            case "dangerfile":
+                return "ruby";
+            default:
+                break;
+        }
+        // Jenkins pipeline — Groovy (literal "Jenkinsfile" or a "Jenkinsfile.<env>" suffix).
+        if (lower.equals("jenkinsfile") || lower.startsWith("jenkinsfile.")) {
+            return "groovy";
+        }
+        // .gitmodules uses the same syntax as .gitconfig.
+        if (lower.equals(".gitmodules")) {
+            return "git-config";
+        }
+        // Lint/tool configs in INI (key=value / [section]) form — no extension.
+        switch (lower) {
+            case ".npmrc":
+            case "pylintrc":
+            case ".pylintrc":
+            case ".flake8":
+            case ".coveragerc":
+            case ".pep8":
+            case ".gitlint":
+            case ".hgrc":
+                return "ini";
+            default:
+                break;
+        }
+        // Tool configs in YAML form — no extension.
+        switch (lower) {
+            case ".clang-format":
+            case ".clang-tidy":
+            case ".condarc":
+            case ".gemrc":
+            case ".yamllint":
+                return "yaml";
+            default:
+                break;
+        }
+        // JS/web tool rc files — the bare forms are JSON by convention (the explicit .json/.yaml/.js
+        // variants are matched by extension; a few of these can also be YAML, but JSON is the default).
+        switch (lower) {
+            case ".babelrc":
+            case ".eslintrc":
+            case ".prettierrc":
+            case ".stylelintrc":
+            case ".swcrc":
+            case ".bowerrc":
+                return "json";
+            default:
+                break;
+        }
         // Eclipse project metadata is XML.
         if (lower.equals(".classpath") || lower.equals(".project")) {
             return "xml";
