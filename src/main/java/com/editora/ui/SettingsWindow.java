@@ -3446,7 +3446,7 @@ public class SettingsWindow {
                 "dialog.plugins.enableBody",
                 name,
                 d.manifest().version == null ? "" : d.manifest().version,
-                MainController.pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
+                PluginCoordinator.pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.plugins.enableTitle"));
