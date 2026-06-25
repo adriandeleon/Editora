@@ -175,7 +175,14 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   eligibility), DAP/breakpoints (`isDebuggableBuffer`), run/shell-run/HTTP (`addBuffer`), git
   (`refreshGit` → `RepoState.NONE` for a remote context), and external-change polling
   (`checkExternalChanges` skips remote — a network `mtime` per focus). **Remote stays text-capable**:
-  editing, highlighting, search, bookmarks, notes, preview, PDF/print. **UI/commands** (`MainController`):
+  editing, highlighting, search, bookmarks, notes, preview, PDF/print. **The SFTP UI/commands live in
+  `ui/RemoteCoordinator`** (the `CoordinatorHost` feature-coordinator pattern — owns the `RemoteFileSystems`
+  engine + the `RemoteConnectionsPanel` + the mount state, reaching the window via the shared host plus an
+  `Ops` extension for keymap / open-path / set-project-root / open-project-tool-window / active-project-root /
+  error-report (reusing `GitCoordinator.gitError`) / the `connections.json` get/put/remove; `MainController`
+  keeps the `remote` `ToolWindow` built with `remoteCoordinator.panel()`, queries `isMounted()` for the
+  current-folder view, and wires the `remote.*`/`tool.remote` commands + the Welcome quick-connect to it).
+  **UI/commands**:
   `remote.connect` (an `OverlayInput` form — host/port/user/auth + key Browse/secret/path, localized auth
   picker; on success **mounts the remote folder as the Project tree root** via `projectPanel.setRoot` +
   opens the Project tool window, and `config.putConnection`s it), `remote.manageConnections` (a `QuickOpen`
