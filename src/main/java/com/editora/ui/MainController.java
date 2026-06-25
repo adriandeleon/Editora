@@ -28,13 +28,11 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
-import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.PasswordField;
 import javafx.scene.control.Separator;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
@@ -252,9 +250,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             new com.editora.editor.MarkdownLintService();
     /** Session-only Simple-UI override from the {@code --simple} CLI flag; OR'd with the saved setting. */
     private boolean cliSimpleOverride;
-    // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) ---
-    private com.editora.vfs.RemoteFileSystems remoteFs; // lazily created on first remote use
-    private String activeRemoteAuthority; // the connection backing the mounted remote root
+    // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) — owned by RemoteCoordinator ---
+    private RemoteCoordinator remoteCoordinator;
     // MCP server: a single app-wide loopback HTTP endpoint exposing live editor state + the command
     // registry to an LLM agent. Static so only the first window with the feature on starts it (the
     // setting is shared); that window's controller is the bridge. (Multi-window caveat: if the owner
@@ -288,7 +285,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** External Tools: the feature coordinator owns the service/panel/commands (see {@link ExternalToolCoordinator}). */
     private ToolWindow externalToolToolWindow;
 
-    private RemoteConnectionsPanel remoteConnectionsPanel;
     private ToolWindow remoteToolWindow;
     /** Debug (DAP): drives Java debugging layered on the jdtls LSP session. Stays a field (SettingsWindow +
      *  window-dispose reach it); the {@link DebugCoordinator} operates on it (mirrors lspManager/LspCoordinator). */
@@ -853,7 +849,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::projectsEnabled,
                 git::isEnabled,
                 config::getConnections, // saved SFTP sites (most-recent first); empty hides the section
-                this::connectRemote, // pick a site → prefilled connect form
+                remoteCoordinator::connect, // pick a site → prefilled connect form
                 config.isDev() ? com.editora.AppInfo.gitCommit() : ""); // build commit shown only in --dev
     }
 
@@ -917,7 +913,9 @@ public class MainController implements com.editora.mcp.McpBridge {
      * active it shows the placeholder and the default title.
      */
     private void updateProjectFolderView() {
-        if (windowProject != null || !projectsEnabled() || activeRemoteAuthority != null) {
+        if (windowProject != null
+                || !projectsEnabled()
+                || (remoteCoordinator != null && remoteCoordinator.isMounted())) {
             return; // a project / remote mount owns the tree root + title — leave them alone
         }
         EditorBuffer b = activeBuffer();
@@ -1872,29 +1870,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::tools,
                 externalToolCoordinator.panel(),
                 "tool.externalTools");
-        remoteConnectionsPanel =
-                new RemoteConnectionsPanel(config::getConnections, new RemoteConnectionsPanel.Actions() {
-                    @Override
-                    public void connect(com.editora.vfs.RemoteConnection c) {
-                        connectRemote(c);
-                    }
-
-                    @Override
-                    public void remove(com.editora.vfs.RemoteConnection c) {
-                        config.removeConnection(c.id());
-                    }
-
-                    @Override
-                    public void newConnection() {
-                        connectRemote();
-                    }
-                });
+        remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
         remoteToolWindow = new ToolWindow(
                 "remote",
                 tr("toolwindow.remote"),
                 ToolWindow.Side.RIGHT,
                 Icons::remote,
-                remoteConnectionsPanel,
+                remoteCoordinator.panel(),
                 "tool.remote");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
@@ -1983,6 +1965,56 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Window hooks for {@link HistoryCoordinator} (config history buckets + tool window + tree + current text). */
+    private RemoteCoordinator.Ops remoteOps() {
+        return new RemoteCoordinator.Ops() {
+            @Override
+            public com.editora.command.KeymapManager keymap() {
+                return keymap;
+            }
+
+            @Override
+            public void openPath(Path file) {
+                MainController.this.openPath(file);
+            }
+
+            @Override
+            public void setProjectRoot(Path root) {
+                projectPanel.setRoot(root);
+            }
+
+            @Override
+            public void openProjectToolWindow() {
+                toolWindows.open(projectToolWindow);
+            }
+
+            @Override
+            public Path activeProjectRoot() {
+                Project active = projects == null ? null : projects.active();
+                return active == null ? null : Path.of(active.root());
+            }
+
+            @Override
+            public void reportError(String summary, String detail) {
+                git.gitError(summary, detail);
+            }
+
+            @Override
+            public java.util.List<com.editora.vfs.RemoteConnection> connections() {
+                return config.getConnections();
+            }
+
+            @Override
+            public void putConnection(com.editora.vfs.RemoteConnection conn) {
+                config.putConnection(conn);
+            }
+
+            @Override
+            public void removeConnection(String id) {
+                config.removeConnection(id);
+            }
+        };
+    }
+
     private HistoryCoordinator.Ops historyOps() {
         return new HistoryCoordinator.Ops() {
             @Override
@@ -3435,210 +3467,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     // ===== Remote files (SFTP) =====
-
-    private com.editora.vfs.RemoteFileSystems remoteFs() {
-        if (remoteFs == null) {
-            remoteFs = new com.editora.vfs.RemoteFileSystems(); // starts the SSH client + wires Vfs resolver
-        }
-        return remoteFs;
-    }
-
-    private void connectRemote() {
-        connectRemote(null);
-    }
-
-    /** Shows the SFTP connection form (optionally pre-filled from a saved connection); on success, mounts
-     *  the remote folder in the Project tool window. */
-    private void connectRemote(com.editora.vfs.RemoteConnection prefill) {
-        TextField hostField = new TextField();
-        hostField.setPromptText(tr("remote.hostPrompt"));
-        hostField.setPrefColumnCount(24);
-        com.editora.command.TextInputKeymap.install(hostField, keymap);
-        TextField portField = new TextField("22");
-        portField.setPrefColumnCount(5);
-        TextField userField = new TextField(System.getProperty("user.name", ""));
-        userField.setPrefColumnCount(16);
-        com.editora.command.TextInputKeymap.install(userField, keymap);
-        TextField pathField = new TextField();
-        pathField.setPromptText(tr("remote.pathPrompt"));
-        com.editora.command.TextInputKeymap.install(pathField, keymap);
-
-        ComboBox<com.editora.vfs.RemoteConnection.AuthMethod> authCombo = new ComboBox<>();
-        authCombo.getItems().setAll(com.editora.vfs.RemoteConnection.AuthMethod.values());
-        authCombo.setValue(com.editora.vfs.RemoteConnection.AuthMethod.DEFAULT_KEYS);
-        authCombo.setConverter(new javafx.util.StringConverter<com.editora.vfs.RemoteConnection.AuthMethod>() {
-            @Override
-            public String toString(com.editora.vfs.RemoteConnection.AuthMethod m) {
-                return m == null
-                        ? ""
-                        : switch (m) {
-                            case DEFAULT_KEYS -> tr("remote.auth.defaultKeys");
-                            case KEY -> tr("remote.auth.key");
-                            case PASSWORD -> tr("remote.auth.password");
-                        };
-            }
-
-            @Override
-            public com.editora.vfs.RemoteConnection.AuthMethod fromString(String s) {
-                return null;
-            }
-        });
-        PasswordField secretField = new PasswordField();
-        secretField.setPromptText(tr("remote.secretPrompt"));
-        TextField keyField = new TextField();
-        keyField.setPromptText(tr("remote.keyPrompt"));
-        com.editora.command.TextInputKeymap.install(keyField, keymap);
-        Button keyBrowse = new Button(tr("dialog.clone.browse"));
-        keyBrowse.setFocusTraversable(false);
-        keyBrowse.setOnAction(e -> {
-            FileChooser fc = new FileChooser();
-            fc.setTitle(tr("remote.keyPrompt"));
-            java.io.File f = fc.showOpenDialog(stage);
-            if (f != null) {
-                keyField.setText(f.getAbsolutePath());
-            }
-        });
-        // Show only the fields relevant to the chosen auth method.
-        Runnable syncAuth = () -> {
-            var m = authCombo.getValue();
-            boolean key = m == com.editora.vfs.RemoteConnection.AuthMethod.KEY;
-            boolean pwd = m == com.editora.vfs.RemoteConnection.AuthMethod.PASSWORD;
-            keyField.setDisable(!key);
-            keyBrowse.setDisable(!key);
-            secretField.setDisable(!key && !pwd);
-            secretField.setPromptText(pwd ? tr("remote.secretPrompt") : tr("remote.passphrasePrompt"));
-        };
-        authCombo.valueProperty().addListener((o, a, b) -> syncAuth.run());
-        if (prefill != null) { // reconnecting a saved connection — fill everything but the secret
-            hostField.setText(prefill.host());
-            portField.setText(String.valueOf(prefill.port()));
-            userField.setText(prefill.user() == null ? "" : prefill.user());
-            authCombo.setValue(prefill.auth());
-            keyField.setText(prefill.keyPath() == null ? "" : prefill.keyPath());
-            pathField.setText(prefill.lastPath() == null ? "" : prefill.lastPath());
-        }
-        syncAuth.run();
-
-        GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
-        grid.add(new Label(tr("remote.host")), 0, 0);
-        grid.add(hostField, 1, 0);
-        grid.add(new Label(tr("remote.port")), 2, 0);
-        grid.add(portField, 3, 0);
-        grid.add(new Label(tr("remote.user")), 0, 1);
-        grid.add(userField, 1, 1);
-        grid.add(new Label(tr("remote.auth")), 0, 2);
-        grid.add(authCombo, 1, 2, 3, 1);
-        grid.add(new Label(tr("remote.key")), 0, 3);
-        grid.add(keyField, 1, 3, 2, 1);
-        grid.add(keyBrowse, 3, 3);
-        grid.add(new Label(tr("remote.secret")), 0, 4);
-        grid.add(secretField, 1, 4, 3, 1);
-        grid.add(new Label(tr("remote.path")), 0, 5);
-        grid.add(pathField, 1, 5, 3, 1);
-        GridPane.setHgrow(hostField, Priority.ALWAYS);
-
-        javafx.beans.property.BooleanProperty valid = new javafx.beans.property.SimpleBooleanProperty(false);
-        Runnable revalidate = () ->
-                valid.set(!hostField.getText().isBlank() && !userField.getText().isBlank());
-        hostField.textProperty().addListener((o, a, b) -> revalidate.run());
-        userField.textProperty().addListener((o, a, b) -> revalidate.run());
-        revalidate.run();
-
-        OverlayInput.show(
-                overlayHost,
-                tr("remote.connect.title"),
-                grid,
-                hostField,
-                tr("remote.connect.button"),
-                valid,
-                () -> {
-                    int port = 22;
-                    try {
-                        port = Integer.parseInt(portField.getText().strip());
-                    } catch (NumberFormatException ignore) {
-                        // keep the default port
-                    }
-                    String path = pathField.getText().strip();
-                    com.editora.vfs.RemoteConnection conn = new com.editora.vfs.RemoteConnection(
-                            hostField.getText().strip(),
-                            port,
-                            userField.getText().strip(),
-                            authCombo.getValue(),
-                            keyField.getText().strip(),
-                            null,
-                            path.isEmpty() ? null : path);
-                    char[] secret = secretField.getText().isEmpty()
-                            ? null
-                            : secretField.getText().toCharArray();
-                    setStatus(tr("status.remote.connecting", conn.displayLabel()));
-                    remoteFs().connect(conn, secret, r -> {
-                        if (r.ok()) {
-                            mountRemote(conn, r.root());
-                        } else {
-                            git.gitError(tr("status.remote.failed", conn.displayLabel()), r.error());
-                        }
-                    });
-                },
-                null,
-                false);
-    }
-
-    /** Mounts a connected remote folder as the Project tree root + opens the Project tool window. */
-    private void mountRemote(com.editora.vfs.RemoteConnection conn, Path root) {
-        activeRemoteAuthority = conn.id();
-        config.putConnection(conn); // remember the connection (metadata only — no secret) for next time
-        remoteConnectionsPanel.refresh(); // surface the just-used site at the top of the list
-        projectPanel.setRoot(root);
-        toolWindows.open(projectToolWindow);
-        setStatus(tr("status.remote.connected", conn.displayLabel()));
-    }
-
-    /** A picker over the saved SFTP connections; choosing one re-opens the connect form pre-filled. */
-    private void manageRemoteConnections() {
-        var saved = config.getConnections();
-        if (saved.isEmpty()) {
-            connectRemote(); // nothing saved yet — go straight to a fresh connection
-            return;
-        }
-        QuickOpen<com.editora.vfs.RemoteConnection> picker = new QuickOpen<>(
-                tr("remote.manage.title"),
-                tr("remote.manage.prompt"),
-                () -> List.copyOf(config.getConnections()),
-                com.editora.vfs.RemoteConnection::displayLabel,
-                com.editora.vfs.RemoteConnection::id,
-                this::connectRemote);
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Opens a single remote file from an {@code sftp://user@host/path} URI (its connection must be open). */
-    private void openRemoteFile() {
-        promptText(tr("remote.openFile.title"), tr("remote.openFile.label"), "sftp://", uri -> {
-            Path p = com.editora.vfs.Vfs.parseStorable(uri.strip());
-            if (p == null) {
-                setStatus(tr("status.remote.notConnected"));
-                return;
-            }
-            openPath(p);
-        });
-    }
-
-    /** Disconnects the mounted remote folder and returns the Project tree to the active local project. */
-    private void disconnectRemote() {
-        if (activeRemoteAuthority == null || remoteFs == null) {
-            setStatus(tr("status.remote.notConnected"));
-            return;
-        }
-        remoteFs.disconnect(activeRemoteAuthority);
-        activeRemoteAuthority = null;
-        Project active = projects.active();
-        if (active != null) {
-            projectPanel.setRoot(Path.of(active.root()));
-        }
-        setStatus(tr("status.remote.disconnected"));
-    }
 
     /**
      * Opens a representative file from a freshly cloned repo (its README if present) so Git activates
@@ -8698,7 +8526,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Command.of("tool.notes", () -> notesCoordinator.ifEnabled(() -> toolWindows.toggle(notesToolWindow))));
         registry.register(Command.of("tool.fileInformation", () -> toolWindows.toggle(fileInfoToolWindow)));
         registry.register(Command.of("tool.remote", () -> {
-            remoteConnectionsPanel.refresh();
+            remoteCoordinator.refreshPanel();
             toolWindows.toggle(remoteToolWindow);
         }));
         registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
@@ -8798,11 +8626,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.commit", () -> git.ifEnabled(() -> toolWindows.toggle(commitToolWindow))));
         // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
         // absent / not in a repo. The ifGit wrapper disables the commands + keybindings when Git is off.
-        registry.register(Command.of("remote.connect", this::connectRemote));
-        registry.register(Command.of("remote.openFile", this::openRemoteFile));
-        registry.register(Command.of("remote.manageConnections", this::manageRemoteConnections));
+        registry.register(Command.of("remote.connect", remoteCoordinator::connect));
+        registry.register(Command.of("remote.openFile", remoteCoordinator::openFile));
+        registry.register(Command.of("remote.manageConnections", remoteCoordinator::manageConnections));
         registry.register(Command.of("remote.settings", () -> settingsWindow.showRemote(stage)));
-        registry.register(Command.of("remote.disconnect", this::disconnectRemote));
+        registry.register(Command.of("remote.disconnect", remoteCoordinator::disconnect));
         registry.register(Command.of("git.clone", () -> git.ifEnabled(this::gitClone)));
         registry.register(Command.of("git.commit", () -> git.ifEnabled(git::gitCommitFocus)));
         registry.register(Command.of("git.stageFile", () -> git.ifEnabled(git::gitStageActiveFile)));
