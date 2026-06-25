@@ -1335,8 +1335,21 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.deletedProject", p.name()));
     }
 
+    /**
+     * Window title: the active file's name + path, then the project (if any), then "Editora" —
+     * e.g. {@code ~/src/app/Main.java — MyProject — Editora}. A {@code •} prefix marks an unsaved
+     * buffer; an untitled buffer shows its display name; with no buffer (Welcome) just the app/project.
+     */
     private void updateWindowTitle() {
-        stage.setTitle(windowProject == null ? "Editora" : "Editora — " + windowProject.name());
+        String app = windowProject == null ? "Editora" : windowProject.name() + " — Editora";
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            stage.setTitle(app);
+            return;
+        }
+        Path p = b.getPath();
+        String file = p != null ? homeCollapsed(p.toString()) : b.getDisplayName();
+        stage.setTitle((b.isDirty() ? "• " : "") + file + " — " + app);
     }
 
     /** Syncs editor/session state after the Project tree renames a file on disk (old → target). */
@@ -1487,6 +1500,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     buffer); // upgrade the outline to LSP symbols when the server supports them
             statusBar.attach(buffer);
             breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
+            updateWindowTitle(); // show the active file's name + path in the window title bar
             updateProjectFolderView(); // global window: retarget the tree at the new file's folder
             searchCoordinator.refreshScope(); // Find-in-Files "current folder" tracks the active file
             if (AUTOSAVE_FOCUS.equals(autoSaveMode())) {
@@ -4005,6 +4019,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Refreshes a tab's title (pin + dirty markers), style classes, and full-path tooltip. */
     private void updateTabMeta(Tab tab, EditorBuffer buffer) {
+        // Keep the window title's file name/path + dirty marker in step (dirty flips, Save-As, rename).
+        if (tab == tabPane.getSelectionModel().getSelectedItem()) {
+            updateWindowTitle();
+        }
         boolean dirty = buffer.isDirty();
         boolean isPinned = pinned.contains(tab);
         // The title lives in a graphic node (not tab.setText) so it can be a drag handle for
