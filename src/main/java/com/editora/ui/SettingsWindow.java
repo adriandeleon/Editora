@@ -283,6 +283,11 @@ public class SettingsWindow {
 
     private final java.util.Map<String, TextField> lspCommandFields = new java.util.LinkedHashMap<>();
     private final java.util.Map<String, Label> lspStatusLabels = new java.util.LinkedHashMap<>();
+    /** Install buttons keyed by install-language ({@code java}/{@code python}/{@code javascript}/{@code mermaid}). */
+    private final java.util.Map<String, Button> installButtons = new java.util.HashMap<>();
+    /** Injected by MainController: runs {@code InstallCoordinator.installSupport} for the given language key. */
+    private java.util.function.Consumer<String> onInstallSupport;
+
     private CheckBox zenCheck;
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
@@ -424,6 +429,53 @@ public class SettingsWindow {
     /** Wires the security-notice confirm shown before the MCP checkbox enables the server. */
     public void setMcpConfirm(java.util.function.BooleanSupplier confirm) {
         this.mcpConfirm = confirm;
+    }
+
+    /** Wires the Settings Install buttons (LSP/Mermaid pages) to {@code InstallCoordinator.installSupport}.
+     *  The argument is the install-language key: {@code java}/{@code python}/{@code javascript}/{@code mermaid}. */
+    public void setInstallActions(java.util.function.Consumer<String> onInstallSupport) {
+        this.onInstallSupport = onInstallSupport;
+    }
+
+    /** Re-probes tool detection on the LSP/Debugger/Mermaid pages (labels + Install buttons) — called by
+     *  MainController after an in-app install completes so the now-installed tools flip to "Installed". */
+    public void refreshDetectionStatus() {
+        refreshLspStatus();
+        refreshDebugStatus();
+        refreshMermaidStatus();
+    }
+
+    /** The install-language key for an installable LSP server row, or {@code null} (no installer). */
+    private static String installLangForServer(String serverId) {
+        return switch (serverId) {
+            case "java" -> "java";
+            case "python" -> "python";
+            case "typescript" -> "javascript";
+            default -> null;
+        };
+    }
+
+    /** A small "Install…" button for {@code langKey}, wired to the injected install action + tracked for
+     *  enable/disable from the detection refresh. */
+    private Button installButton(String langKey) {
+        Button b = new Button(tr("settings.install.button"));
+        b.getStyleClass().add("settings-install-button");
+        b.setOnAction(e -> {
+            if (onInstallSupport != null) {
+                onInstallSupport.accept(langKey);
+            }
+        });
+        installButtons.put(langKey, b);
+        return b;
+    }
+
+    /** Reflects a tool's detected state on its Install button: disabled + "Installed" when present. */
+    private void updateInstallButton(String langKey, boolean installed) {
+        Button b = langKey == null ? null : installButtons.get(langKey);
+        if (b != null) {
+            b.setDisable(installed);
+            b.setText(installed ? tr("settings.install.installed") : tr("settings.install.button"));
+        }
     }
 
     public void show(Window owner) {
@@ -2153,6 +2205,7 @@ public class SettingsWindow {
         mermaidStatusLabel.setWrapText(true);
         mermaidStatusLabel.setMaxWidth(440);
         row(p, Category.MERMAID, null, mermaidStatusLabel, "mermaid mmdc maid found installed not found");
+        row(p, Category.MERMAID, null, installButton("mermaid"), "mermaid mmdc install download cli");
         row(p, Category.MERMAID, null, mermaidCheck, "mermaid diagram enable mmdc render mmd");
         row(
                 p,
@@ -3582,6 +3635,10 @@ public class SettingsWindow {
             status.setMaxWidth(440);
             lspStatusLabels.put(srv.id(), status);
             row(p, Category.LSP, null, status, srv.keywords());
+            String langKey = installLangForServer(srv.id());
+            if (langKey != null) {
+                row(p, Category.LSP, null, installButton(langKey), srv.keywords() + " install download");
+            }
             row(
                     p,
                     Category.LSP,
@@ -3879,6 +3936,7 @@ public class SettingsWindow {
                             "settings-git-status",
                             a.mmdc() && a.maid() ? "settings-git-found" : "settings-git-missing");
             mermaidStatusLabel.setText(tr("settings.mermaid.status", mmdcState, maidState));
+            updateInstallButton("mermaid", a.mmdc());
         });
     }
 
@@ -3987,10 +4045,12 @@ public class SettingsWindow {
             String statusKey = srv.statusKey();
             status.getStyleClass().setAll("settings-git-status");
             status.setText(tr("settings.lsp.checking"));
+            String langKey = installLangForServer(srv.id());
             lspManager.detect(srv.id(), found -> {
                 status.getStyleClass()
                         .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
                 status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
+                updateInstallButton(langKey, found);
             });
         }
     }

@@ -506,6 +506,17 @@ public class MainController implements com.editora.mcp.McpBridge {
                 pluginCoordinator::browse, pluginCoordinator::installFromDisk, pluginCoordinator::uninstall);
         this.settingsWindow.setDictionaryActions(
                 this::openTechnicalDictionary, this::openPersonalDictionary); // Spell Check file links
+        this.settingsWindow.setInstallActions(
+                key -> { // Settings LSP/Mermaid "Install…" buttons
+                    com.editora.install.InstallCatalog.Lang lang =
+                            switch (key) {
+                                case "python" -> com.editora.install.InstallCatalog.Lang.PYTHON;
+                                case "javascript" -> com.editora.install.InstallCatalog.Lang.JAVASCRIPT;
+                                case "mermaid" -> com.editora.install.InstallCatalog.Lang.MERMAID;
+                                default -> com.editora.install.InstallCatalog.Lang.JAVA;
+                            };
+                    installCoordinator.installSupport(lang);
+                });
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         this.settingsWindow.setTemplateRegistry(templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
@@ -1918,6 +1929,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 debugCoordinator.applySupport();
                 mermaid.applySupport();
                 requestSave(); // persist a resolved command (e.g. the installed jdtls launcher path)
+                if (settingsWindow != null) {
+                    settingsWindow.refreshDetectionStatus(); // flip the Settings Install buttons to "Installed"
+                }
             }
         });
         remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
