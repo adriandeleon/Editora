@@ -96,6 +96,13 @@ final class GitCoordinator {
 
         /** Opens (or focuses) the tab for {@code file} (used to open a file from a fresh clone). */
         void openPath(Path file);
+
+        /** Re-syncs the Settings window's "inline blame" checkbox after the blame toggle. */
+        void syncBlameCheck();
+
+        /** Opens a read-only diff of {@code repoRel} at {@code hash} vs its parent (a blame-annotation click).
+         *  Routed through the window to reach {@code DiffCoordinator} without a circular dependency. */
+        void openCommitFileDiff(String hash, String repoRel);
     }
 
     private final CoordinatorHost host;
@@ -313,6 +320,45 @@ final class GitCoordinator {
             }
         });
         refreshBlame(active);
+    }
+
+    /** Toggles inline blame annotations (palette + {@code M-g a}); persists the setting and re-applies. */
+    void toggleBlame() {
+        ifEnabled(() -> {
+            var s = host.settings();
+            s.setGitBlameInline(!s.isGitBlameInline());
+            host.requestSave();
+            applyBlame();
+            ops.syncBlameCheck();
+            host.setStatus(tr("status.toggle.gitBlame", tr(s.isGitBlameInline() ? "common.on" : "common.off")));
+        });
+    }
+
+    /** Opens the read-only diff of the active file at the caret line's commit vs its parent. */
+    void blameShowCommit() {
+        EditorBuffer b = host.activeBuffer();
+        showBlameCommit(b, b == null ? null : b.blameHashAtCaret());
+    }
+
+    /** Clicking a line's blame annotation opens that line's commit (IntelliJ-style). */
+    void onGutterBlameClick(EditorBuffer buffer, int line) {
+        showBlameCommit(buffer, buffer == null ? null : buffer.blameHashAt(line));
+    }
+
+    /** Opens the read-only diff of {@code b}'s file at {@code hash} vs its parent (shared by the caret
+     *  command and the gutter-annotation click). */
+    private void showBlameCommit(EditorBuffer b, String hash) {
+        if (b == null || b.getPath() == null || repoRoot == null) {
+            return;
+        }
+        if (hash == null || hash.isBlank()) {
+            host.setStatus(tr("status.git.noBlameLine"));
+            return;
+        }
+        String rel = GitService.repoRelative(repoRoot, b.getPath());
+        if (rel != null) {
+            ops.openCommitFileDiff(hash, rel);
+        }
     }
 
     /** Fetches blame for {@code b} off-thread and pushes formatted annotations (or clears when ineligible). */
