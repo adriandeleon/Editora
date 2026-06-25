@@ -236,8 +236,16 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   predicate)` + `discover()`): `discover()` scans the dir, parses each manifest (`parseManifest`, unit-tested),
   builds one `URLClassLoader` per enabled Java plugin; `instantiate(descriptor)` does `Class.forName(main,...)`
   + `newInstance` under the plugin TCCL, catching `Throwable` → null (one bad plugin never blocks others).
-  **Multi-window:** classes load **once** (shared manager), but a `Plugin` **instance + its tool-window content
-  Node are built per window** (a Node can't live in two scenes) — `MainController.applyPlugins()` (run in
+  **The whole plugin feature lives in `ui/PluginCoordinator`** (the `CoordinatorHost` pattern): it owns the
+  per-window `PluginRegistry`/`PluginInstaller`, the started-plugin instances, the plugin-contributed tool
+  windows + editor menu items, the "Browse Plugins" picker, and the two inner adapters
+  (`PluginContextImpl`/`ActiveEditorImpl`). The shared `PluginManager` (owned by `WindowManager`) is passed
+  in; `MainController` keeps the `pluginManager` field + thin `disposePlugins()` (the `WindowManager`
+  window-close contract) and `pluginsEnabled()` delegates, and wires `applyPlugins` / the buffer-gating
+  (`gateToolWindows`) / the editor-menu contributor (`editorMenuItems`) / the `plugins.*`+`view.togglePlugins`
+  commands to the coordinator; `PluginCoordinator.pluginCapabilitySummary` is the public static the Settings
+  page also calls. **Multi-window:** classes load **once** (shared manager), but a `Plugin` **instance + its
+  tool-window content Node are built per window** (a Node can't live in two scenes) — `PluginCoordinator.applyPlugins()` (run in
   `init`, **before** `toolWindows.restore()` so contributed windows restore their visibility) registers the
   declarative bits + `plugin.<id>.<cmd>` external commands (`runDeclaredCommand` → `process/ProcessRunner`
   off-thread) + applies the shared `keymap.applyOverrides(manifest.keymap)`, then `instantiate` + `start(new
