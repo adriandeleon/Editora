@@ -11,33 +11,33 @@ class MainControllerTest {
 
     @Test
     void repoNameFromHttpsUrl() {
-        assertEquals("repo", MainController.repoNameFromUrl("https://github.com/user/repo.git"));
-        assertEquals("repo", MainController.repoNameFromUrl("https://github.com/user/repo"));
+        assertEquals("repo", GitCoordinator.repoNameFromUrl("https://github.com/user/repo.git"));
+        assertEquals("repo", GitCoordinator.repoNameFromUrl("https://github.com/user/repo"));
     }
 
     @Test
     void repoNameFromScpStyleUrl() {
-        assertEquals("repo", MainController.repoNameFromUrl("git@github.com:user/repo.git"));
-        assertEquals("Editora", MainController.repoNameFromUrl("git@github.com:adriandeleon/Editora.git"));
+        assertEquals("repo", GitCoordinator.repoNameFromUrl("git@github.com:user/repo.git"));
+        assertEquals("Editora", GitCoordinator.repoNameFromUrl("git@github.com:adriandeleon/Editora.git"));
     }
 
     @Test
     void repoNameStripsTrailingSlashes() {
-        assertEquals("repo", MainController.repoNameFromUrl("https://github.com/user/repo/"));
-        assertEquals("repo", MainController.repoNameFromUrl("https://github.com/user/repo.git/"));
+        assertEquals("repo", GitCoordinator.repoNameFromUrl("https://github.com/user/repo/"));
+        assertEquals("repo", GitCoordinator.repoNameFromUrl("https://github.com/user/repo.git/"));
     }
 
     @Test
     void repoNameFromLocalPath() {
-        assertEquals("myrepo", MainController.repoNameFromUrl("/home/me/src/myrepo.git"));
-        assertEquals("myrepo", MainController.repoNameFromUrl("/home/me/src/myrepo"));
+        assertEquals("myrepo", GitCoordinator.repoNameFromUrl("/home/me/src/myrepo.git"));
+        assertEquals("myrepo", GitCoordinator.repoNameFromUrl("/home/me/src/myrepo"));
     }
 
     @Test
     void blankOrNullUrl() {
-        assertEquals("", MainController.repoNameFromUrl(""));
-        assertEquals("", MainController.repoNameFromUrl(null));
-        assertEquals("", MainController.repoNameFromUrl("   "));
+        assertEquals("", GitCoordinator.repoNameFromUrl(""));
+        assertEquals("", GitCoordinator.repoNameFromUrl(null));
+        assertEquals("", GitCoordinator.repoNameFromUrl("   "));
     }
 
     // (C-a smart-line-start column logic moved to editor/TextNavTest; path-identity/keying — canonicalPath,

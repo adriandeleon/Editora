@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -8,10 +10,20 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Priority;
+import javafx.stage.DirectoryChooser;
 
+import com.editora.command.KeymapManager;
+import com.editora.command.TextInputKeymap;
 import com.editora.editor.BlameInfo;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.BlameHeatmap;
@@ -33,11 +45,12 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>It also owns the user-facing Git <em>mutation operations</em> — {@code gitOp}/{@code gitCommit}/
  * {@code discardChanges}, branch checkout/create, fetch/pull/push ({@code gitSync}), the stash commands, the
- * active-file stage/unstage/discard, and the {@code gitError} dialog — which run their commands through the
- * same {@link #service()}/{@link #repoRoot()}/{@code afterMutation()} engine. {@code MainController} keeps the
- * Git tool windows + panels ({@code GitPanel}/{@code GitLogPanel}) and the {@code BranchPopup}, plus the Git
- * Log / blame-click→commit-diff flows and {@code git.clone} (whose callbacks delegate to {@code git.*}), and
- * the {@code git.*} command registrations. Everything the engine needs from the window goes through the shared
+ * active-file stage/unstage/discard, the {@code gitError} dialog, and {@code git.clone} (the URL+destination
+ * form → {@code git clone} → open a file from the clone via {@link #cloneRepo()}) — which run their commands
+ * through the same {@link #service()}/{@link #repoRoot()}/{@code afterMutation()} engine. {@code MainController}
+ * keeps the Git tool windows + panels ({@code GitPanel}/{@code GitLogPanel}) and the {@code BranchPopup}, plus
+ * the Git Log / blame-click→commit-diff flows (whose callbacks delegate to {@code git.*}), and the
+ * {@code git.*} command registrations. Everything the engine needs from the window goes through the shared
  * {@link CoordinatorHost} (settings, simple-mode gate, active buffer, theme brightness, per-buffer iteration,
  * status, prompts, the overlay host) plus a small git-specific {@link WindowOps} for the surfaces it drives.
  *
@@ -77,6 +90,12 @@ final class GitCoordinator {
 
         /** Focuses the Commit tool window's message box (deferred onto the FX thread). */
         void focusCommitMessage();
+
+        /** This window's active keymap (for installing caret navigation on the clone form's text fields). */
+        com.editora.command.KeymapManager keymap();
+
+        /** Opens (or focuses) the tab for {@code file} (used to open a file from a fresh clone). */
+        void openPath(Path file);
     }
 
     private final CoordinatorHost host;
@@ -691,5 +710,142 @@ final class GitCoordinator {
         area.getStyleClass().add("git-error-text");
         alert.getDialogPane().setContent(area);
         alert.showAndWait();
+    }
+
+    // --- clone (URL + destination form → git clone → open a file so Git lights up) ---
+
+    /**
+     * Clones a remote repository via one form asking for both the <em>URL</em> and the destination directory
+     * (a Browse button + auto-fill of {@code <home>/<repo-name>} as you type the URL, until you edit it
+     * yourself). Clones into that folder, then opens a file from it (its README, if any) so Git lights up.
+     * Clone and Projects are independent — no project is created.
+     */
+    void cloneRepo() {
+        KeymapManager keymap = ops.keymap();
+        TextField urlField = new TextField();
+        urlField.setPromptText("https://github.com/user/repo.git");
+        urlField.setPrefColumnCount(34);
+        TextInputKeymap.install(urlField, keymap);
+        TextField dirField = new TextField();
+        dirField.setPromptText(tr("dialog.clone.dirPrompt"));
+        dirField.setPrefColumnCount(28);
+        TextInputKeymap.install(dirField, keymap);
+        Button browse = new Button(tr("dialog.clone.browse"));
+        browse.setFocusTraversable(false);
+
+        String defaultParent = System.getProperty("user.home", "");
+        boolean[] dirEdited = {false};
+        boolean[] autoFilling = {false};
+        urlField.textProperty().addListener((o, a, b) -> {
+            if (!dirEdited[0]) {
+                String name = repoNameFromUrl(b);
+                autoFilling[0] = true;
+                dirField.setText(
+                        name.isEmpty()
+                                ? ""
+                                : Path.of(defaultParent).resolve(name).toString());
+                autoFilling[0] = false;
+            }
+        });
+        dirField.textProperty().addListener((o, a, b) -> {
+            if (!autoFilling[0]) {
+                dirEdited[0] = true; // user took control of the directory; stop auto-filling
+            }
+        });
+        browse.setOnAction(e -> {
+            DirectoryChooser chooser = new DirectoryChooser();
+            chooser.setTitle(tr("dialog.clone.parentTitle"));
+            File parent = chooser.showDialog(host.window());
+            if (parent != null) {
+                String name = repoNameFromUrl(urlField.getText());
+                dirField.setText(parent.toPath()
+                        .resolve(name.isEmpty() ? "repository" : name)
+                        .toString());
+            }
+        });
+
+        GridPane grid = new GridPane();
+        grid.setHgap(8);
+        grid.setVgap(8);
+        grid.add(new Label(tr("dialog.clone.url")), 0, 0);
+        grid.add(urlField, 1, 0, 2, 1);
+        grid.add(new Label(tr("dialog.clone.directory")), 0, 1);
+        grid.add(dirField, 1, 1);
+        grid.add(browse, 2, 1);
+        GridPane.setHgrow(urlField, Priority.ALWAYS);
+        GridPane.setHgrow(dirField, Priority.ALWAYS);
+
+        // Enable Clone only when both fields are filled (mirrors the old dialog's validation).
+        BooleanProperty valid = new SimpleBooleanProperty(false);
+        Runnable revalidate = () ->
+                valid.set(!urlField.getText().isBlank() && !dirField.getText().isBlank());
+        urlField.textProperty().addListener((o, a, b) -> revalidate.run());
+        dirField.textProperty().addListener((o, a, b) -> revalidate.run());
+        revalidate.run();
+
+        OverlayInput.show(
+                host.overlayHost(),
+                tr("dialog.clone.title"),
+                grid,
+                urlField,
+                tr("dialog.clone.button"),
+                valid,
+                () -> {
+                    String url = urlField.getText().strip();
+                    Path destination = Path.of(dirField.getText().strip());
+                    if (Files.exists(destination)) {
+                        host.setStatus(tr("status.destExists", destination));
+                        return;
+                    }
+                    host.setStatus(tr("status.cloning", url));
+                    service.clone(url, destination, r -> {
+                        if (r.ok()) {
+                            host.setStatus(tr("status.clonedInto", destination));
+                            openClonedEntry(destination);
+                        } else {
+                            gitError("Clone failed", r.message());
+                        }
+                    });
+                },
+                null,
+                false);
+    }
+
+    /**
+     * Opens a representative file from a freshly cloned repo (its README if present) so Git activates for it —
+     * no project involved. If there's no obvious entry file, the clone is just reported and the user can open
+     * files from it (File: Open / Find File).
+     */
+    private void openClonedEntry(Path dir) {
+        for (String candidate : new String[] {"README.md", "README.markdown", "README.rst", "README.txt", "README"}) {
+            Path file = dir.resolve(candidate);
+            if (Files.isRegularFile(file)) {
+                ops.openPath(file);
+                return;
+            }
+        }
+        host.setStatus(tr("status.clonedOpen", dir));
+    }
+
+    /**
+     * Derives the working-folder name for a clone URL: the last path segment with any {@code .git} suffix and
+     * trailing slashes removed. Handles {@code https://…/repo.git}, {@code git@host:org/repo.git}, and local
+     * paths. Pure/unit-tested. Returns {@code ""} when no name can be found.
+     */
+    static String repoNameFromUrl(String url) {
+        if (url == null) {
+            return "";
+        }
+        String s = url.strip();
+        while (s.endsWith("/")) {
+            s = s.substring(0, s.length() - 1);
+        }
+        if (s.endsWith(".git")) {
+            s = s.substring(0, s.length() - 4);
+        }
+        // The last segment after a '/' or (for scp-style "git@host:org/repo") a ':'.
+        int cut = Math.max(s.lastIndexOf('/'), s.lastIndexOf(':'));
+        String name = cut >= 0 ? s.substring(cut + 1) : s;
+        return name.strip();
     }
 }

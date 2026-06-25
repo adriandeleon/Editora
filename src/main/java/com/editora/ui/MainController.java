@@ -45,7 +45,6 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -1720,7 +1719,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 diffCoordinator.diffGitPanelFile(path, staged);
             }
         });
-        gitPanel.setOnClone(this::gitClone);
+        gitPanel.setOnClone(git::cloneRepo);
         commitToolWindow = new ToolWindow(
                 "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
         gitLogPanel = new GitLogPanel(gitLogOps = gitLogActions());
@@ -2254,6 +2253,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void focusCommitMessage() {
             Platform.runLater(gitPanel::focusCommitMessage);
+        }
+
+        @Override
+        public com.editora.command.KeymapManager keymap() {
+            return keymap;
+        }
+
+        @Override
+        public void openPath(Path file) {
+            MainController.this.openPath(file);
         }
     });
 
@@ -2944,7 +2953,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (git.repoRoot() == null) {
             // Not under version control: the dropdown offers only "Clone Git repository…".
-            branchPopup.showNoVcs(stage, statusBar.gitSegmentNode(), this::gitClone);
+            branchPopup.showNoVcs(stage, statusBar.gitSegmentNode(), git::cloneRepo);
             return;
         }
         git.service().branches(git.repoRoot(), branches -> {
@@ -3364,146 +3373,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (rel != null) {
             diffCoordinator.diffCommitFile(hash, rel);
         }
-    }
-
-    // --- Stash -----------------------------------------------------------------------------------
-
-    /**
-     * Clones a remote repository via one dialog asking for both the <em>URL</em> and the
-     * <em>destination directory</em> (with a Browse button); the directory auto-fills to
-     * {@code <home>/<repo-name>} as you type the URL, until you edit it yourself. Clones into that
-     * folder, then opens a file from it (its README, if any) so Git lights up. Clone and
-     * {@link com.editora.config.ProjectManager Projects} are independent — cloning never creates or
-     * requires a project.
-     */
-    private void gitClone() {
-        TextField urlField = new TextField();
-        urlField.setPromptText("https://github.com/user/repo.git");
-        urlField.setPrefColumnCount(34);
-        com.editora.command.TextInputKeymap.install(urlField, keymap);
-        TextField dirField = new TextField();
-        dirField.setPromptText(tr("dialog.clone.dirPrompt"));
-        dirField.setPrefColumnCount(28);
-        com.editora.command.TextInputKeymap.install(dirField, keymap);
-        Button browse = new Button(tr("dialog.clone.browse"));
-        browse.setFocusTraversable(false);
-
-        String defaultParent = System.getProperty("user.home", "");
-        boolean[] dirEdited = {false};
-        boolean[] autoFilling = {false};
-        urlField.textProperty().addListener((o, a, b) -> {
-            if (!dirEdited[0]) {
-                String name = repoNameFromUrl(b);
-                autoFilling[0] = true;
-                dirField.setText(
-                        name.isEmpty()
-                                ? ""
-                                : Path.of(defaultParent).resolve(name).toString());
-                autoFilling[0] = false;
-            }
-        });
-        dirField.textProperty().addListener((o, a, b) -> {
-            if (!autoFilling[0]) {
-                dirEdited[0] = true; // user took control of the directory; stop auto-filling
-            }
-        });
-        browse.setOnAction(e -> {
-            DirectoryChooser chooser = new DirectoryChooser();
-            chooser.setTitle(tr("dialog.clone.parentTitle"));
-            java.io.File parent = chooser.showDialog(stage);
-            if (parent != null) {
-                String name = repoNameFromUrl(urlField.getText());
-                dirField.setText(parent.toPath()
-                        .resolve(name.isEmpty() ? "repository" : name)
-                        .toString());
-            }
-        });
-
-        GridPane grid = new GridPane();
-        grid.setHgap(8);
-        grid.setVgap(8);
-        grid.add(new Label(tr("dialog.clone.url")), 0, 0);
-        grid.add(urlField, 1, 0, 2, 1);
-        grid.add(new Label(tr("dialog.clone.directory")), 0, 1);
-        grid.add(dirField, 1, 1);
-        grid.add(browse, 2, 1);
-        GridPane.setHgrow(urlField, Priority.ALWAYS);
-        GridPane.setHgrow(dirField, Priority.ALWAYS);
-
-        // Enable Clone only when both fields are filled (mirrors the old dialog's validation).
-        javafx.beans.property.BooleanProperty valid = new javafx.beans.property.SimpleBooleanProperty(false);
-        Runnable revalidate = () ->
-                valid.set(!urlField.getText().isBlank() && !dirField.getText().isBlank());
-        urlField.textProperty().addListener((o, a, b) -> revalidate.run());
-        dirField.textProperty().addListener((o, a, b) -> revalidate.run());
-        revalidate.run();
-
-        OverlayInput.show(
-                overlayHost,
-                tr("dialog.clone.title"),
-                grid,
-                urlField,
-                tr("dialog.clone.button"),
-                valid,
-                () -> {
-                    String url = urlField.getText().strip();
-                    Path destination = Path.of(dirField.getText().strip());
-                    if (Files.exists(destination)) {
-                        setStatus(tr("status.destExists", destination));
-                        return;
-                    }
-                    setStatus(tr("status.cloning", url));
-                    git.service().clone(url, destination, r -> {
-                        if (r.ok()) {
-                            setStatus(tr("status.clonedInto", destination));
-                            openClonedEntry(destination);
-                        } else {
-                            git.gitError("Clone failed", r.message());
-                        }
-                    });
-                },
-                null,
-                false);
-    }
-
-    // ===== Remote files (SFTP) =====
-
-    /**
-     * Opens a representative file from a freshly cloned repo (its README if present) so Git activates
-     * for it — no project involved. If there's no obvious entry file, the clone is just reported and the
-     * user can open files from it (File: Open / Find File).
-     */
-    private void openClonedEntry(Path dir) {
-        for (String candidate : new String[] {"README.md", "README.markdown", "README.rst", "README.txt", "README"}) {
-            Path file = dir.resolve(candidate);
-            if (Files.isRegularFile(file)) {
-                openPath(file);
-                return;
-            }
-        }
-        setStatus(tr("status.clonedOpen", dir));
-    }
-
-    /**
-     * Derives the working-folder name for a clone URL: the last path segment with any {@code .git}
-     * suffix and trailing slashes removed. Handles {@code https://…/repo.git}, {@code git@host:org/repo.git},
-     * and local paths. Pure/unit-tested. Returns {@code ""} when no name can be found.
-     */
-    static String repoNameFromUrl(String url) {
-        if (url == null) {
-            return "";
-        }
-        String s = url.strip();
-        while (s.endsWith("/")) {
-            s = s.substring(0, s.length() - 1);
-        }
-        if (s.endsWith(".git")) {
-            s = s.substring(0, s.length() - 4);
-        }
-        // The last segment after a '/' or (for scp-style "git@host:org/repo") a ':'.
-        int cut = Math.max(s.lastIndexOf('/'), s.lastIndexOf(':'));
-        String name = cut >= 0 ? s.substring(cut + 1) : s;
-        return name.strip();
     }
 
     private void findNextMatch() {
@@ -8631,7 +8500,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("remote.manageConnections", remoteCoordinator::manageConnections));
         registry.register(Command.of("remote.settings", () -> settingsWindow.showRemote(stage)));
         registry.register(Command.of("remote.disconnect", remoteCoordinator::disconnect));
-        registry.register(Command.of("git.clone", () -> git.ifEnabled(this::gitClone)));
+        registry.register(Command.of("git.clone", () -> git.ifEnabled(git::cloneRepo)));
         registry.register(Command.of("git.commit", () -> git.ifEnabled(git::gitCommitFocus)));
         registry.register(Command.of("git.stageFile", () -> git.ifEnabled(git::gitStageActiveFile)));
         registry.register(Command.of("git.unstageFile", () -> git.ifEnabled(git::gitUnstageActiveFile)));

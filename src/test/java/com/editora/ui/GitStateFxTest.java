@@ -14,7 +14,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Characterization tests for the Git state machine — the {@code applyGitState}/{@code applyGitSupport} core
@@ -91,5 +93,23 @@ class GitStateFxTest {
         assertEquals("", FxTestSupport.field(git(), "branchName"));
 
         fx.shared.getSettings().setGitSupport(true); // restore for any later test ordering
+    }
+
+    /**
+     * The {@code git.clone} form (moved into {@link GitCoordinator#cloneRepo()}) renders as an in-scene
+     * overlay through the coordinator's {@code CoordinatorHost}/{@code WindowOps} wiring — no network.
+     */
+    @Test
+    void cloneFormRendersAsOverlay() throws Exception {
+        Object git = git();
+        Object overlayHost = FxTestSupport.field(fx.controller, "overlayHost");
+        assertFalse((boolean) FxTestSupport.call(overlayHost, "isShowing", new Class<?>[] {}), "no overlay up yet");
+
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(git, "cloneRepo"));
+        assertTrue(
+                (boolean) FxTestSupport.call(overlayHost, "isShowing", new Class<?>[] {}),
+                "the clone URL+destination form is shown as an in-scene overlay");
+
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(overlayHost, "hide")); // clean up for later tests
     }
 }
