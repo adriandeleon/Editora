@@ -119,4 +119,28 @@ class AppArgsTest {
         assertEquals(List.of(), App.fileTargets(List.of("--new-file=foo.txt")));
         assertEquals(List.of(), App.fileTargets(List.of("--new-file")));
     }
+
+    @Test
+    void singleWindowArgAbsentIsNull() {
+        assertNull(App.singleWindowArg(List.of("README.md")));
+        assertNull(App.singleWindowArg(List.of()));
+    }
+
+    @Test
+    void singleWindowArgBareIsEmptyString() {
+        assertEquals("", App.singleWindowArg(List.of("--single-window")));
+        assertEquals("", App.singleWindowArg(List.of("--dev", "--single-window")));
+    }
+
+    @Test
+    void singleWindowArgNamedReturnsProjectName() {
+        assertEquals("MyProj", App.singleWindowArg(List.of("--single-window=MyProj")));
+        assertEquals("My App", App.singleWindowArg(List.of("--zen", "--single-window=My App")));
+    }
+
+    @Test
+    void singleWindowArgIsNotAFileTarget() {
+        assertEquals(List.of(), App.fileTargets(List.of("--single-window")));
+        assertEquals(List.of(), App.fileTargets(List.of("--single-window=MyProj")));
+    }
 }

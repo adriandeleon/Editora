@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--single-window[=project]` command-line flag.** Opens exactly one window at startup instead of restoring every window that was open at last quit: bare `--single-window` opens the no-project window; `--single-window=MyProject` opens that project's window (falling back to the no-project window if no project matches that name). It's **session-only** — it does not change your saved multi-window layout, so a normal launch afterwards restores all your windows as before (and quitting a one-window run won't shrink the saved set). CLI file targets / `--zen` / `--new-file` / `--simple` apply to the single window.
 - **Syntax highlighting for many extension-less dotfiles / named config files** (matched by name via `ConfigFileType`, so they also get the matching language server when enabled):
   - **Shell** — `.bashrc`, `.bash_profile`, `.bash_aliases`, `.zshrc`, `.zshenv`, `.zprofile`, `.zsh_aliases`, `.profile`, `.aliases`, `.kshrc`, the `.<rc>.local` overrides, and X-session scripts (`.xprofile`/`.xinitrc`/`.xsession`). (`.bash_aliases` is standard — Debian/Ubuntu sources it; `.zsh_aliases` isn't auto-sourced by zsh but is a common user-chosen name.)
   - **Ruby** — `Gemfile`, `Rakefile`, `Guardfile`, `Capfile`, `Thorfile`, `Berksfile`, `Brewfile`, `Podfile`, `Vagrantfile`, `Fastfile`, `Appfile`, `Dangerfile` (lockfiles like `Gemfile.lock` are intentionally left alone).

@@ -47,6 +47,10 @@ public class WindowManager {
     /** The JavaFX primary stage, reused for the first window built (then null — others get a new Stage). */
     private Stage primaryStage;
 
+    /** Set by {@code --single-window}: freezes the persisted open-window set this session (so quitting a
+     *  one-window run never shrinks the saved multi-window layout). See {@link #reconcileOpenSet()}. */
+    private boolean singleWindowSession;
+
     /**
      * Debounce for persisting the open-window restore set after a close. Each close calls {@code
      * playFromStart}, so a run of closes ending in the app quitting (an OS/Cmd-Q burst <em>or</em> the user
@@ -98,8 +102,15 @@ public class WindowManager {
             List<MainController.OpenTarget> targets,
             boolean zen,
             String newFile,
-            boolean simple) {
+            boolean simple,
+            String singleWindow) {
         this.primaryStage = primaryStage; // reused for the first window built
+        // --single-window[=name]: open exactly one window (the named project, else the no-project window)
+        // instead of restoring the whole saved set. Session-only — we don't touch the persisted open set.
+        if (singleWindow != null) {
+            launchSingleWindow(singleWindow, targets, zen, newFile, simple);
+            return;
+        }
         Settings settings = shared.getSettings();
         boolean projectsOn = settings.isProjectSupport();
         ProjectManager pm = projects();
@@ -152,6 +163,56 @@ public class WindowManager {
         pm.save();
         gcOrphanWindowSessions(toOpen);
         focusKey(primary);
+    }
+
+    /**
+     * {@code --single-window[=name]}: open exactly one window and stop. {@code name} (blank ⇒ the no-project
+     * window) selects the window: a matching project name opens that project's window, an unknown name (or
+     * Projects disabled) falls back to the no-project window. Session-only — it deliberately does <b>not</b>
+     * {@code markOpen}/{@code save}/GC the persisted open-window set (and {@link #reconcileOpenSet()} is
+     * suppressed for the session), so quitting a one-window run never shrinks the saved multi-window layout.
+     * The CLI targets / {@code --zen} / {@code --new-file} / {@code --simple} all apply to this one window.
+     */
+    private void launchSingleWindow(
+            String name, List<MainController.OpenTarget> targets, boolean zen, String newFile, boolean simple) {
+        singleWindowSession = true;
+        boolean projectsOn = shared.getSettings().isProjectSupport();
+        String key = "";
+        Project project = null;
+        Path stateFile = null;
+        if (projectsOn && name != null && !name.isBlank()) {
+            project = findProjectByName(name.trim());
+            if (project == null) {
+                java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                        .warning("--single-window: no project named '" + name.trim()
+                                + "'; opening the no-project window");
+            } else {
+                key = project.id();
+                stateFile = projects().stateFile(project);
+            }
+        }
+        try {
+            buildWindow(key, project, stateFile, targets, zen, newFile, simple);
+        } catch (RuntimeException | Error t) {
+            java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                    .log(java.util.logging.Level.WARNING, "Failed to build single window for key '" + key + "'", t);
+        }
+        focusKey(key);
+    }
+
+    /** Finds a project by display name (exact first, then case-insensitive), or {@code null} if none match. */
+    private Project findProjectByName(String name) {
+        for (Project p : projects().list()) {
+            if (p.name().equals(name)) {
+                return p;
+            }
+        }
+        for (Project p : projects().list()) {
+            if (p.name().equalsIgnoreCase(name)) {
+                return p;
+            }
+        }
+        return null;
     }
 
     // --- open / focus ---
@@ -263,6 +324,9 @@ public class WindowManager {
      * after the last window closed: we persist nothing rather than an empty set.
      */
     private void reconcileOpenSet() {
+        if (singleWindowSession) {
+            return; // --single-window: never rewrite the saved set from this one-window session
+        }
         if (windows.isEmpty()) {
             return; // quitting — keep the pre-quit open set so it's all restored next launch
         }

@@ -100,7 +100,8 @@ public class App extends Application {
                 fileTargets(rawArgs),
                 zenFlag(rawArgs),
                 newFileArg(rawArgs),
-                simpleFlag(rawArgs));
+                simpleFlag(rawArgs),
+                singleWindowArg(rawArgs));
     }
 
     /** True when running on macOS (used to opt the UI chrome into the native system font). */
@@ -234,6 +235,8 @@ public class App extends Application {
                   --dev                 Dev mode: use ~/.editora-dev (separate from production config)
                   --project[=]<dir>     Open <dir> as a project (only when Projects are enabled)
                   --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named)
+                  --single-window[=project]  Open just one window (the named project, else no-project)
+                                        instead of restoring all windows; doesn't change the saved layout
                   --zen                 Start in Zen (distraction-free) mode
                   --simple              Start in Simple UI mode (minimal chrome; session only)
                   --version, -V         Print the version and exit
@@ -284,6 +287,32 @@ public class App extends Application {
                 return a.substring(prefix.length()).trim();
             }
             if (a.equals("--new-file")) {
+                return "";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The {@code --single-window[=NAME]} request, or {@code null} when not given. Opens exactly one window at
+     * startup instead of restoring the whole saved set: {@code ""} (bare {@code --single-window}) ⇒ the
+     * no-project window; {@code NAME} ({@code --single-window=MyProj}) ⇒ that project's window (falling back
+     * to the no-project window if no project matches). Session-only — it doesn't change the saved layout.
+     * Pure + unit-testable.
+     */
+    static String singleWindowArg(java.util.List<String> args) {
+        if (args == null) {
+            return null;
+        }
+        String prefix = "--single-window=";
+        for (String a : args) {
+            if (a == null) {
+                continue;
+            }
+            if (a.startsWith(prefix)) {
+                return a.substring(prefix.length()).trim();
+            }
+            if (a.equals("--single-window")) {
                 return "";
             }
         }
