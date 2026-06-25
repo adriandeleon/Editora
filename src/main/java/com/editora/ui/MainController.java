@@ -2264,6 +2264,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         public void openPath(Path file) {
             MainController.this.openPath(file);
         }
+
+        @Override
+        public void syncBlameCheck() {
+            settingsWindow.syncGitBlameCheck();
+        }
+
+        @Override
+        public void openCommitFileDiff(String hash, String repoRel) {
+            diffCoordinator.diffCommitFile(hash, repoRel);
+        }
     });
 
     /** The diff + merge-conflict viewer (open/refresh diffs, apply-change, compare entry points, patch
@@ -3294,11 +3304,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr(wasDisabled ? "status.markdownLint.ruleEnabled" : "status.markdownLint.ruleDisabled", code));
     }
 
-    // --- Git blame annotations (IntelliJ-style gutter column) ------------------------------------
-    // The annotation engine (eligibility, off-thread fetch, blame→BlameInfo mapping) lives in
-    // GitCoordinator; the click→commit-diff actions (blameShowCommit/onGutterBlameClick) stay below
-    // since they open a diff tab. applyGitBlame is reached via git.applyBlame().
-
     // --- Local File History --------------------------------------------------------------------
 
     /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */
@@ -3333,45 +3338,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             return Files.readString(file);
         } catch (IOException e) {
             return "";
-        }
-    }
-
-    /** Toggles blame annotations (palette + {@code M-g a}); persists the setting and re-applies. */
-    private void toggleGitBlame() {
-        git.ifEnabled(() -> {
-            Settings s = config.getSettings();
-            s.setGitBlameInline(!s.isGitBlameInline());
-            requestSave();
-            git.applyBlame();
-            settingsWindow.syncGitBlameCheck();
-            setStatus(tr("status.toggle.gitBlame", tr(s.isGitBlameInline() ? "common.on" : "common.off")));
-        });
-    }
-
-    /** Opens the read-only diff of the active file at the caret line's commit vs its parent. */
-    private void blameShowCommit() {
-        EditorBuffer b = activeBuffer();
-        showBlameCommit(b, b == null ? null : b.blameHashAtCaret());
-    }
-
-    /** Clicking a line's blame annotation opens that line's commit (IntelliJ-style). */
-    private void onGutterBlameClick(EditorBuffer buffer, int line) {
-        showBlameCommit(buffer, buffer == null ? null : buffer.blameHashAt(line));
-    }
-
-    /** Opens the read-only diff of {@code b}'s file at {@code hash} vs its parent (shared by the caret
-     *  command and the gutter-annotation click). */
-    private void showBlameCommit(EditorBuffer b, String hash) {
-        if (b == null || b.getPath() == null || git.repoRoot() == null) {
-            return;
-        }
-        if (hash == null || hash.isBlank()) {
-            setStatus(tr("status.git.noBlameLine"));
-            return;
-        }
-        String rel = com.editora.git.GitService.repoRelative(git.repoRoot(), b.getPath());
-        if (rel != null) {
-            diffCoordinator.diffCommitFile(hash, rel);
         }
     }
 
@@ -3909,7 +3875,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setGutterBookmarkClick(bookmarkCoordinator::onGutterBookmarkClick);
         buffer.setOnNotesChanged(() -> notesCoordinator.persistNotes(buffer));
         buffer.setGutterNoteClick(notesCoordinator::onGutterNoteClick);
-        buffer.setGutterBlameClick(this::onGutterBlameClick);
+        buffer.setGutterBlameClick(git::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)
         // Refresh the Run button when this buffer's runnable status flips (only acts if it's active).
         buffer.setOnRunnableChanged(() -> {
@@ -8529,8 +8495,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("history.putLabel", historyCoordinator::putLabel));
         registry.register(Command.of("history.recentChanges", historyCoordinator::showRecentChanges));
         registry.register(Command.of("git.fileHistory", () -> git.ifEnabled(this::showFileHistory)));
-        registry.register(Command.of("git.toggleBlame", this::toggleGitBlame));
-        registry.register(Command.of("git.blameShowCommit", () -> git.ifEnabled(this::blameShowCommit)));
+        registry.register(Command.of("git.toggleBlame", git::toggleBlame));
+        registry.register(Command.of("git.blameShowCommit", () -> git.ifEnabled(git::blameShowCommit)));
         registry.register(Command.of("git.stash", () -> git.ifEnabled(git::gitStash)));
         registry.register(Command.of("git.stashPop", () -> git.ifEnabled(git::gitStashPop)));
         registry.register(Command.of("git.unstash", () -> git.ifEnabled(git::gitUnstash)));
