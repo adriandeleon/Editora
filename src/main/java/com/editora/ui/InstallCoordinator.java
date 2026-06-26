@@ -53,6 +53,8 @@ final class InstallCoordinator {
     private final InstallService service = new InstallService();
     /** Languages with an install currently running (so a second trigger no-ops). */
     private final Set<Lang> installing = EnumSet.noneOf(Lang.class);
+    /** LSP-only server ids (json/bash/go/…) with an install currently running. */
+    private final Set<String> installingServers = new java.util.HashSet<>();
 
     InstallCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -118,6 +120,62 @@ final class InstallCoordinator {
                         onResult.accept(result.ok());
                     });
         });
+    }
+
+    /** Installs an LSP-only server ({@code json}/{@code bash}/{@code go}/…) by its registry server id. */
+    void installServer(String serverId) {
+        installServer(serverId, ok -> {});
+    }
+
+    /** As {@link #installServer(String)} but reports the settled outcome (banner spinner/hide). */
+    void installServer(String serverId, java.util.function.Consumer<Boolean> onResult) {
+        List<Step> steps = InstallCatalog.serverInstall(serverId).orElse(List.of());
+        if (steps.isEmpty()) {
+            onResult.accept(false);
+            return;
+        }
+        if (installingServers.contains(serverId)) {
+            host.setStatus(tr("status.install.inProgress"));
+            onResult.accept(false);
+            return;
+        }
+        if (ops.lspAvailable(serverId)) {
+            host.setStatus(tr("status.install.already", serverName(serverId)));
+            onResult.accept(true);
+            return;
+        }
+        service.detectPrereqs(present -> {
+            Set<Prereq> needed = steps.stream()
+                    .flatMap(s -> s.prereqs().stream())
+                    .collect(Collectors.toCollection(() -> EnumSet.noneOf(Prereq.class)));
+            needed.removeAll(present);
+            if (!needed.isEmpty()) {
+                String names = needed.stream().map(this::prereqName).collect(Collectors.joining(", "));
+                host.setStatus(tr("status.install.needPrereq", names));
+                alert(Alert.AlertType.WARNING, tr("status.install.needPrereq", names));
+                onResult.accept(false);
+                return;
+            }
+            installingServers.add(serverId);
+            host.setStatus(tr("status.install.installing", serverName(serverId)));
+            service.install(
+                    steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
+                        installingServers.remove(serverId);
+                        if (result.ok()) {
+                            ops.reapplyToolSupport();
+                            host.setStatus(tr("status.install.done", serverName(serverId)));
+                        } else {
+                            host.setStatus(tr("status.install.failed", serverName(serverId)));
+                            alert(Alert.AlertType.ERROR, result.message());
+                        }
+                        onResult.accept(result.ok());
+                    });
+        });
+    }
+
+    /** Friendly display name for an LSP server id (e.g. {@code json} → "JSON"). */
+    String serverName(String serverId) {
+        return tr("install.lang." + serverId);
     }
 
     /** After a successful install: point jdtls at its bundled launcher (Java), then re-detect everything. */

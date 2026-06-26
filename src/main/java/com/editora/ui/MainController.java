@@ -520,6 +520,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             };
                     installCoordinator.installSupport(lang);
                 });
+        this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         this.settingsWindow.setTemplateRegistry(templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
@@ -5603,47 +5604,70 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (buffer == null) {
             return;
         }
-        if (shouldOfferInstall(buffer)) {
-            com.editora.install.InstallCatalog.Lang lang = com.editora.install.InstallCatalog.forBufferLanguage(
-                            buffer.getLanguage())
-                    .orElseThrow();
-            String langName = tr("install.lang." + lang.name().toLowerCase(java.util.Locale.ROOT));
-            buffer.setInstallPrompt(
-                    tr("install.banner.message", langName),
-                    tr("install.banner.install"),
-                    () -> {
-                        buffer.setInstallBarBusy(true);
-                        installCoordinator.installSupport(lang, ok -> {
-                            buffer.setInstallBarBusy(false);
-                            if (ok) {
-                                buffer.showInstallBar(false);
-                            }
-                        });
-                    },
-                    () -> {
-                        installDismissed.add(buffer);
-                        buffer.showInstallBar(false);
-                    });
-            buffer.showInstallBar(true);
-        } else {
+        if (!installPromptsEligible(buffer)) {
             buffer.showInstallBar(false);
+            return;
         }
-    }
-
-    /** Whether the install banner should be offered for {@code buffer} right now. */
-    private boolean shouldOfferInstall(EditorBuffer buffer) {
-        if (!config.getSettings().isLspInstallPrompts() || simpleModeActive() || installDismissed.contains(buffer)) {
-            return false;
-        }
-        if (!isLocalBuffer(buffer)) {
-            return false; // tooling can't serve a remote file, so don't offer
-        }
+        // The rich bundles (Java/Python/JS LSP+DAP, Mermaid CLI) first…
         java.util.Optional<com.editora.install.InstallCatalog.Lang> lang =
                 com.editora.install.InstallCatalog.forBufferLanguage(buffer.getLanguage());
-        if (lang.isEmpty()) {
-            return false;
+        if (lang.isPresent() && langSupportMissing(lang.get())) {
+            com.editora.install.InstallCatalog.Lang l = lang.get();
+            offerInstall(
+                    buffer,
+                    tr("install.lang." + l.name().toLowerCase(java.util.Locale.ROOT)),
+                    cb -> installCoordinator.installSupport(l, cb));
+            return;
         }
-        return switch (lang.get()) {
+        // …then the LSP-only servers (json/bash/yaml/dockerfile/toml/…).
+        String serverId = com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage());
+        if (serverId != null
+                && lspEnabled()
+                && !lspCoordinator.isServerAvailable(serverId)
+                && com.editora.install.InstallCatalog.installableServerIds().contains(serverId)) {
+            String id = serverId;
+            offerInstall(buffer, installCoordinator.serverName(id), cb -> installCoordinator.installServer(id, cb));
+            return;
+        }
+        buffer.showInstallBar(false);
+    }
+
+    /** Builds + shows the install banner for {@code buffer} with a display name and an install trigger that
+     *  is handed a settled-callback (so it can spin the banner + hide on success). */
+    private void offerInstall(
+            EditorBuffer buffer,
+            String displayName,
+            java.util.function.Consumer<java.util.function.Consumer<Boolean>> installer) {
+        buffer.setInstallPrompt(
+                tr("install.banner.message", displayName),
+                tr("install.banner.install"),
+                () -> {
+                    buffer.setInstallBarBusy(true);
+                    installer.accept(ok -> {
+                        buffer.setInstallBarBusy(false);
+                        if (ok) {
+                            buffer.showInstallBar(false);
+                        }
+                    });
+                },
+                () -> {
+                    installDismissed.add(buffer);
+                    buffer.showInstallBar(false);
+                });
+        buffer.showInstallBar(true);
+    }
+
+    /** The common gates for offering the install banner (toggle on, not Simple, not dismissed, local file). */
+    private boolean installPromptsEligible(EditorBuffer buffer) {
+        return config.getSettings().isLspInstallPrompts()
+                && !simpleModeActive()
+                && !installDismissed.contains(buffer)
+                && isLocalBuffer(buffer);
+    }
+
+    /** Whether the rich bundle for {@code lang} is missing its primary tool (feature on but tool absent). */
+    private boolean langSupportMissing(com.editora.install.InstallCatalog.Lang lang) {
+        return switch (lang) {
             case JAVA -> lspEnabled() && !lspCoordinator.isServerAvailable("java");
             case PYTHON -> lspEnabled() && !lspCoordinator.isServerAvailable("python");
             case JAVASCRIPT -> lspEnabled() && !lspCoordinator.isServerAvailable("typescript");
@@ -5915,6 +5939,23 @@ public class MainController implements com.editora.mcp.McpBridge {
                 com.editora.command.KeymapManager::displayName,
                 id -> "",
                 this::applyKeymap);
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** {@code install.languageServer}: pick an installable LSP server (json/bash/go/…) and install it. */
+    private void chooseInstallServer() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("command.install.languageServer"),
+                tr("palette.install.prompt"),
+                () -> new java.util.ArrayList<>(com.editora.install.InstallCatalog.installableServerIds()),
+                installCoordinator::serverName,
+                id -> "",
+                id -> {
+                    if (id != null) {
+                        installCoordinator.installServer(id);
+                    }
+                });
         picker.setOverlayHost(overlayHost);
         picker.show(stage);
     }
@@ -8366,6 +8407,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of(
                 "install.mermaidSupport",
                 () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.MERMAID)));
+        registry.register(Command.of("install.languageServer", this::chooseInstallServer));
         registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));
         registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));

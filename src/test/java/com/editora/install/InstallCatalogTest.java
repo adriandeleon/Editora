@@ -127,6 +127,35 @@ class InstallCatalogTest {
     }
 
     @Test
+    void npmServersAreInstallableViaTheirPackages() {
+        // json/html/css all ship in one npm package.
+        for (String id : new String[] {"json", "html", "css"}) {
+            List<Step> steps = InstallCatalog.serverInstall(id).orElseThrow();
+            assertEquals(1, steps.size());
+            assertEquals(Kind.NPM_GLOBAL, steps.get(0).kind());
+            assertEquals(List.of("vscode-langservers-extracted"), steps.get(0).npmPackages());
+            assertTrue(steps.get(0).prereqs().contains(Prereq.NPM));
+        }
+        assertEquals(
+                List.of("bash-language-server"),
+                InstallCatalog.serverInstall("bash").orElseThrow().get(0).npmPackages());
+        assertEquals(
+                List.of("@taplo/cli"),
+                InstallCatalog.serverInstall("toml").orElseThrow().get(0).npmPackages());
+    }
+
+    @Test
+    void installableServerIdsAreAllServiceable() {
+        for (String id : InstallCatalog.installableServerIds()) {
+            assertTrue(InstallCatalog.serverInstall(id).isPresent(), id + " should have install steps");
+        }
+        // The Java/Python/JS bundles are handled by the Lang path, not the server-id path.
+        assertTrue(InstallCatalog.serverInstall("java").isEmpty());
+        assertTrue(InstallCatalog.serverInstall("typescript").isEmpty());
+        assertTrue(InstallCatalog.serverInstall(null).isEmpty());
+    }
+
+    @Test
     void mermaidStepIsMmdcNpmOnly() {
         List<Step> steps = InstallCatalog.steps(Lang.MERMAID);
         assertEquals(1, steps.size());
