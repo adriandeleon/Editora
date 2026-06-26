@@ -156,6 +156,32 @@ class InstallCatalogTest {
     }
 
     @Test
+    void toolchainServersRunTheirPackageManager() {
+        Step gopls = InstallCatalog.serverInstall("go").orElseThrow().get(0);
+        assertEquals(Kind.TOOL_COMMAND, gopls.kind());
+        assertEquals(List.of("go", "install", "golang.org/x/tools/gopls@latest"), gopls.npmPackages());
+        assertTrue(gopls.prereqs().contains(Prereq.GO));
+
+        assertEquals(
+                List.of("gem", "install", "ruby-lsp"),
+                InstallCatalog.serverInstall("ruby").orElseThrow().get(0).npmPackages());
+        assertTrue(InstallCatalog.serverInstall("ruby")
+                .orElseThrow()
+                .get(0)
+                .prereqs()
+                .contains(Prereq.RUBY));
+        assertEquals(
+                List.of("rustup", "component", "add", "rust-analyzer"),
+                InstallCatalog.serverInstall("rust").orElseThrow().get(0).npmPackages());
+        assertEquals(
+                List.of("dotnet", "tool", "install", "--global", "csharp-ls"),
+                InstallCatalog.serverInstall("csharp").orElseThrow().get(0).npmPackages());
+        assertEquals(
+                List.of("composer", "global", "require", "phpactor/phpactor"),
+                InstallCatalog.serverInstall("php").orElseThrow().get(0).npmPackages());
+    }
+
+    @Test
     void mermaidStepIsMmdcNpmOnly() {
         List<Step> steps = InstallCatalog.steps(Lang.MERMAID);
         assertEquals(1, steps.size());
