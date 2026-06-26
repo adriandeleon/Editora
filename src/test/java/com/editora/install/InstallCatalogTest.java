@@ -3,14 +3,17 @@ package com.editora.install;
 import java.nio.file.Path;
 import java.util.List;
 
+import com.editora.install.InstallCatalog.ArchiveSpec;
 import com.editora.install.InstallCatalog.Kind;
 import com.editora.install.InstallCatalog.Lang;
+import com.editora.install.InstallCatalog.Platform;
 import com.editora.install.InstallCatalog.Prereq;
 import com.editora.install.InstallCatalog.Step;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -142,6 +145,42 @@ class InstallCatalogTest {
         assertEquals(
                 List.of("@taplo/cli"),
                 InstallCatalog.serverInstall("toml").orElseThrow().get(0).npmPackages());
+    }
+
+    @Test
+    void platformKeyBucketsOsAndArch() {
+        assertEquals(Platform.MAC_ARM, InstallCatalog.platformKey("Mac OS X", "aarch64"));
+        assertEquals(Platform.MAC_X64, InstallCatalog.platformKey("Mac OS X", "x86_64"));
+        assertEquals(Platform.LINUX_X64, InstallCatalog.platformKey("Linux", "amd64"));
+        assertEquals(Platform.LINUX_ARM, InstallCatalog.platformKey("Linux", "aarch64"));
+        assertEquals(Platform.WIN_X64, InstallCatalog.platformKey("Windows 11", "amd64"));
+        assertEquals(Platform.WIN_X64, InstallCatalog.platformKey("Windows 11", "aarch64")); // win-arm → x64
+    }
+
+    @Test
+    void archiveSpecsCoverEveryPlatformAndTheRightBinary() {
+        for (String id : new String[] {"clangd", "kotlin", "lua", "xml", "terraform"}) {
+            // It's an ARCHIVE step with a recipe.
+            assertEquals(
+                    Kind.ARCHIVE,
+                    InstallCatalog.serverInstall(id).orElseThrow().get(0).kind());
+            ArchiveSpec spec = InstallCatalog.archiveSpec(id).orElseThrow();
+            for (Platform p : Platform.values()) {
+                assertNotNull(spec.assetByPlatform().get(p), id + " missing asset for " + p);
+            }
+        }
+        assertEquals(
+                "clangd", InstallCatalog.archiveSpec("clangd").orElseThrow().binaryName());
+        assertTrue(InstallCatalog.archiveSpec("xml").orElseThrow().binaryPrefix()); // lemminx-osx-x86_64, etc.
+        assertEquals(
+                " serve", InstallCatalog.archiveSpec("terraform").orElseThrow().commandSuffix());
+        assertEquals(
+                "darwin_arm64",
+                InstallCatalog.archiveSpec("terraform")
+                        .orElseThrow()
+                        .assetByPlatform()
+                        .get(Platform.MAC_ARM));
+        assertTrue(InstallCatalog.archiveSpec("unknown").isEmpty());
     }
 
     @Test
