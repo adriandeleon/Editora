@@ -189,7 +189,10 @@ public final class MarkdownRenderer {
             return s;
         }
         if (node instanceof HtmlBlock hb) {
-            return codeBlock(hb.getLiteral()); // raw HTML shown as text (no interpretation)
+            if (isHtmlComment(hb.getLiteral())) {
+                return null; // HTML comments are invisible (as in GitHub / every Markdown renderer)
+            }
+            return codeBlock(hb.getLiteral()); // other raw HTML shown as text (no interpretation)
         }
         if (node instanceof TableBlock tb) {
             return renderTable(tb, baseDir);
@@ -204,6 +207,11 @@ public final class MarkdownRenderer {
         VBox box = new VBox();
         appendBlocks(node, box, baseDir);
         return box.getChildren().isEmpty() ? null : box;
+    }
+
+    /** Whether a raw-HTML literal is an HTML comment ({@code <!-- … -->}) — rendered invisibly. Pure. */
+    public static boolean isHtmlComment(String literal) {
+        return literal != null && literal.strip().startsWith("<!--");
     }
 
     private static Node renderList(org.commonmark.node.Node list, Path baseDir, boolean ordered, int start) {
@@ -418,7 +426,9 @@ public final class MarkdownRenderer {
         } else if (n instanceof HardLineBreak) {
             flow.getChildren().add(new Text("\n"));
         } else if (n instanceof HtmlInline h) {
-            flow.getChildren().add(inlineCode(h.getLiteral()));
+            if (!isHtmlComment(h.getLiteral())) {
+                flow.getChildren().add(inlineCode(h.getLiteral())); // skip inline HTML comments
+            }
         } else if (n instanceof TaskListItemMarker) {
             // rendered as a CheckBox by renderList — skip here
         } else {
