@@ -134,6 +134,37 @@ public final class InstallCatalog {
         };
     }
 
+    /**
+     * LSP servers (beyond the Java/Python/JS bundles above) that have an in-app installer, in display order.
+     * These are LSP-only (no DAP); the install is keyed by the {@code LspServerRegistry} server id.
+     */
+    public static List<String> installableServerIds() {
+        // Phase A: the npm-installable servers (need only Node). json/html/css all ship in one package.
+        return List.of("json", "html", "css", "bash", "yaml", "dockerfile", "toml");
+    }
+
+    /** The install steps for an LSP-only server id (empty if it has no installer). Pure. */
+    public static java.util.Optional<List<Step>> serverInstall(String serverId) {
+        if (serverId == null) {
+            return java.util.Optional.empty();
+        }
+        return switch (serverId) {
+            // vscode-langservers-extracted ships the JSON, HTML, and CSS servers in one npm package.
+            case "json", "html", "css" -> java.util.Optional.of(List.of(npmStep("vscode-langservers-extracted")));
+            case "bash" -> java.util.Optional.of(List.of(npmStep("bash-language-server")));
+            case "yaml" -> java.util.Optional.of(List.of(npmStep("yaml-language-server")));
+            case "dockerfile" -> java.util.Optional.of(List.of(npmStep("dockerfile-language-server-nodejs")));
+            case "toml" -> java.util.Optional.of(List.of(npmStep("@taplo/cli")));
+            default -> java.util.Optional.empty();
+        };
+    }
+
+    /** A single {@code npm install -g <pkg>} step (the step id = the package). Pure. */
+    private static Step npmStep(String pkg) {
+        return new Step(
+                pkg, Kind.NPM_GLOBAL, Set.of(Prereq.NPM), List.of(pkg), null, null, null, null, false, "", null);
+    }
+
     // --- Step factories ------------------------------------------------------------------------
 
     private static final String VSIX_PATTERN = "https://[^\"\\s]+\\.vsix";

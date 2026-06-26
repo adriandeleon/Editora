@@ -288,6 +288,8 @@ public class SettingsWindow {
     private final java.util.Map<String, Button> installButtons = new java.util.HashMap<>();
     /** Injected by MainController: runs {@code InstallCoordinator.installSupport} for the given language key. */
     private java.util.function.Consumer<String> onInstallSupport;
+    /** Injected by MainController: runs {@code InstallCoordinator.installServer} for the given LSP server id. */
+    private java.util.function.Consumer<String> onInstallServer;
 
     private CheckBox zenCheck;
     private CheckBox projectShowCheck;
@@ -438,6 +440,11 @@ public class SettingsWindow {
         this.onInstallSupport = onInstallSupport;
     }
 
+    /** Wires the per-LSP-server Install buttons (json/bash/yaml/…) to {@code InstallCoordinator.installServer}. */
+    public void setInstallServerActions(java.util.function.Consumer<String> onInstallServer) {
+        this.onInstallServer = onInstallServer;
+    }
+
     /** Re-probes tool detection on the LSP/Debugger/Mermaid pages (labels + Install buttons) — called by
      *  MainController after an in-app install completes so the now-installed tools flip to "Installed". */
     public void refreshDetectionStatus() {
@@ -467,6 +474,19 @@ public class SettingsWindow {
             }
         });
         installButtons.put(langKey, b);
+        return b;
+    }
+
+    /** A per-LSP-server "Install…" button (json/bash/yaml/…), tracked under its server id. */
+    private Button installServerButton(String serverId) {
+        Button b = new Button(tr("settings.install.button"));
+        b.getStyleClass().add("settings-install-button");
+        b.setOnAction(e -> {
+            if (onInstallServer != null) {
+                onInstallServer.accept(serverId);
+            }
+        });
+        installButtons.put(serverId, b);
         return b;
     }
 
@@ -3641,6 +3661,8 @@ public class SettingsWindow {
             String langKey = installLangForServer(srv.id());
             if (langKey != null) {
                 row(p, Category.LSP, null, installButton(langKey), srv.keywords() + " install download");
+            } else if (com.editora.install.InstallCatalog.installableServerIds().contains(srv.id())) {
+                row(p, Category.LSP, null, installServerButton(srv.id()), srv.keywords() + " install download");
             }
             row(
                     p,
@@ -4053,7 +4075,7 @@ public class SettingsWindow {
                 status.getStyleClass()
                         .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
                 status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
-                updateInstallButton(langKey, found);
+                updateInstallButton(langKey != null ? langKey : srv.id(), found);
             });
         }
     }
