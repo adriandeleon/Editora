@@ -272,6 +272,9 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  Weak keys so a closed buffer drops out without manual cleanup. */
     private final java.util.Set<EditorBuffer> httpUserClosed =
             java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    /** Buffers whose install banner the user dismissed this session (don't re-offer). Weak keys, like above. */
+    private final java.util.Set<EditorBuffer> installDismissed =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
     /** LSP: manager (one server per workspace root). Diagnostics route to {@link #lspCoordinator} via the
      *  thin {@link #onLspDiagnostics} delegate — a method ref (not a direct field read) so it isn't an
      *  illegal forward reference to the later-declared coordinator; the field read defers to call time. */
@@ -961,6 +964,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (welcomePane != null) {
             welcomePane.refresh();
         }
+        maybeOfferInstall(activeBuffer()); // the install-prompts toggle / a feature gate may have changed
     }
 
     /**
@@ -1536,6 +1540,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateRunButton(); // show the Run button only for a compact source file
             updateBufferToolWindows(); // hide buffer-only tool windows when there's no actionable buffer
             historyCoordinator.refresh(); // re-gate + reload the Local File History list for the new active file
+            maybeOfferInstall(activeBuffer()); // offer to install this language's LSP/DAP if it's missing
         });
         tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
@@ -1932,6 +1937,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 if (settingsWindow != null) {
                     settingsWindow.refreshDetectionStatus(); // flip the Settings Install buttons to "Installed"
                 }
+                maybeOfferInstall(activeBuffer()); // re-evaluate the editor install banner after re-detection
             }
         });
         remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
@@ -5587,6 +5593,64 @@ public class MainController implements com.editora.mcp.McpBridge {
      * adding a right-side panel synchronously during the selection event mis-sized it; the active buffer is
      * re-read inside in case the user switched again before it runs.
      */
+    /**
+     * Shows the in-editor "install language support?" banner on {@code buffer} when the file's language has an
+     * installer (Java/Python/JS/Mermaid), the relevant feature is enabled but that language server (or the
+     * Mermaid CLI) isn't installed, the user hasn't dismissed it for this buffer, and the master nudge toggle
+     * is on. Otherwise it hides the banner. Driven on tab switch / addBuffer / after an install.
+     */
+    private void maybeOfferInstall(EditorBuffer buffer) {
+        if (buffer == null) {
+            return;
+        }
+        if (shouldOfferInstall(buffer)) {
+            com.editora.install.InstallCatalog.Lang lang = com.editora.install.InstallCatalog.forBufferLanguage(
+                            buffer.getLanguage())
+                    .orElseThrow();
+            String langName = tr("install.lang." + lang.name().toLowerCase(java.util.Locale.ROOT));
+            buffer.setInstallPrompt(
+                    tr("install.banner.message", langName),
+                    tr("install.banner.install"),
+                    () -> {
+                        buffer.setInstallBarBusy(true);
+                        installCoordinator.installSupport(lang, ok -> {
+                            buffer.setInstallBarBusy(false);
+                            if (ok) {
+                                buffer.showInstallBar(false);
+                            }
+                        });
+                    },
+                    () -> {
+                        installDismissed.add(buffer);
+                        buffer.showInstallBar(false);
+                    });
+            buffer.showInstallBar(true);
+        } else {
+            buffer.showInstallBar(false);
+        }
+    }
+
+    /** Whether the install banner should be offered for {@code buffer} right now. */
+    private boolean shouldOfferInstall(EditorBuffer buffer) {
+        if (!config.getSettings().isLspInstallPrompts() || simpleModeActive() || installDismissed.contains(buffer)) {
+            return false;
+        }
+        if (!isLocalBuffer(buffer)) {
+            return false; // tooling can't serve a remote file, so don't offer
+        }
+        java.util.Optional<com.editora.install.InstallCatalog.Lang> lang =
+                com.editora.install.InstallCatalog.forBufferLanguage(buffer.getLanguage());
+        if (lang.isEmpty()) {
+            return false;
+        }
+        return switch (lang.get()) {
+            case JAVA -> lspEnabled() && !lspCoordinator.isServerAvailable("java");
+            case PYTHON -> lspEnabled() && !lspCoordinator.isServerAvailable("python");
+            case JAVASCRIPT -> lspEnabled() && !lspCoordinator.isServerAvailable("typescript");
+            case MERMAID -> mermaid.isEnabled() && !mermaid.mmdcAvailable();
+        };
+    }
+
     private void applyHttpAutoToolWindow() {
         if (restoringSession) {
             return; // restore() + persistence handle the initial open; reconciled in runPendingAfterRestore
@@ -8305,6 +8369,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));
         registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
+        registry.register(Command.of(
+                "view.toggleInstallPrompts",
+                () -> toggleSetting(
+                        "view.toggleInstallPrompts",
+                        () -> config.getSettings().isLspInstallPrompts(),
+                        v -> config.getSettings().setLspInstallPrompts(v),
+                        () -> maybeOfferInstall(activeBuffer()))));
         registry.register(Command.of("view.togglePlugins", pluginCoordinator::toggleSupport));
         registry.register(Command.of("plugins.browse", pluginCoordinator::browse));
         registry.register(Command.of("plugins.installFromDisk", pluginCoordinator::installFromDisk));

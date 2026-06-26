@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 44;
+    public static final int SCHEMA_VERSION = 45;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -198,6 +198,9 @@ public class Settings {
     /** Language Server Protocol support: off by default — needs an external language server. Phase 1
      *  covers Java (Eclipse JDT LS): diagnostics, hover/go-to-definition/references, completion. */
     private boolean lspSupport = false;
+    /** Show the in-editor "install language support?" banner when an enabled language's server is missing
+     *  (Java/Python/JS LSP, or the Mermaid CLI). Default on; the user can silence the nudge. */
+    private boolean lspInstallPrompts = true;
     /** Command to launch the Java language server (JDT LS); blank = resolve "jdtls" on PATH. */
     private String javaLspCommand = "";
 
@@ -844,6 +847,14 @@ public class Settings {
 
     public void setLspSupport(boolean lspSupport) {
         this.lspSupport = lspSupport;
+    }
+
+    public boolean isLspInstallPrompts() {
+        return lspInstallPrompts;
+    }
+
+    public void setLspInstallPrompts(boolean lspInstallPrompts) {
+        this.lspInstallPrompts = lspInstallPrompts;
     }
 
     public boolean isDebugSupport() {

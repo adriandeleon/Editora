@@ -1133,6 +1133,18 @@
     -fx-font-style: italic;
 }
 
+/* IntelliJ-style "install language support?" banner above the editor (theme-aware semantic colors). */
+.lsp-install-bar {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 6 12 6 12;
+}
+
+.lsp-install-bar .lsp-install-title {
+    -fx-text-fill: -color-fg-default;
+}
+
 /* Text-zoom control in the status bar: a tight − % + group. */
 .status-bar .text-zoom {
     -fx-alignment: center;
