@@ -29,6 +29,8 @@ final class MermaidCoordinator {
     private final CoordinatorHost host;
     private final MermaidService service = new MermaidService();
     private MermaidService.Availability avail = new MermaidService.Availability(false, false);
+    /** Whether a tool-detection probe has completed at least once (vs. still pending at startup). */
+    private boolean detected;
 
     MermaidCoordinator(CoordinatorHost host) {
         this.host = host;
@@ -65,6 +67,7 @@ final class MermaidCoordinator {
         if (on) {
             service.detect(a -> {
                 avail = a;
+                detected = true;
                 gating();
             });
         } else {
@@ -100,6 +103,11 @@ final class MermaidCoordinator {
     /** Whether the mmdc CLI was detected — read by the install coordinator to know if Mermaid is set up. */
     boolean mmdcAvailable() {
         return avail.mmdc();
+    }
+
+    /** Whether a detection probe has completed (so the install banner doesn't nag during the startup window). */
+    boolean mmdcDetected() {
+        return detected;
     }
 
     /** The mmdc command for rendering a diagram in a PDF/print, or {@code null} when the feature is off. */

@@ -84,6 +84,9 @@ final class LspCoordinator {
 
         /** The active project's root for LSP root resolution (null when Projects is off / no project). */
         Path lspProjectRoot();
+
+        /** Detection finished updating — re-evaluate the active buffer's install banner. */
+        void onDetectionSettled();
     }
 
     private final CoordinatorHost host;
@@ -211,6 +214,20 @@ final class LspCoordinator {
     }
 
     /**
+     * Whether {@code serverId} was <em>probed and found absent</em> — distinct from "not probed yet". The
+     * install banner uses this (not {@code !isServerAvailable}) so a server isn't reported missing during the
+     * startup detection window, when the map has no entry yet.
+     */
+    boolean isServerMissing(String serverId) {
+        return serverAvailable.containsKey(serverId) && Boolean.FALSE.equals(serverAvailable.get(serverId));
+    }
+
+    /** Whether a live LSP session is currently serving {@code path} (⇒ its server is demonstrably present). */
+    boolean isManaged(java.nio.file.Path path) {
+        return path != null && lspManager.isManaged(path);
+    }
+
+    /**
      * Reconciles the LSP feature with its setting (mirrors {@link MermaidCoordinator}). Configures the
      * manager + Problems window, then (when enabled) detects each server and gates per-buffer LSP. Runs at
      * init and on every settings apply.
@@ -279,6 +296,7 @@ final class LspCoordinator {
     void applyGating() {
         host.forEachBuffer(this::syncBuffer);
         updateStatusBar();
+        ops.onDetectionSettled(); // re-evaluate the install banner now that detection has updated
     }
 
     /** Whether a server's own enable toggle is on (under the global LSP enable). */
