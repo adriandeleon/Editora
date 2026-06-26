@@ -21,6 +21,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
@@ -90,33 +91,40 @@ public class SettingsWindow {
         EDITOR(tr("settings.cat.editor"), Group.EDITOR),
         COMPLETION(tr("settings.cat.completion"), Group.EDITOR),
         SNIPPETS(tr("settings.cat.snippets"), Group.EDITOR),
-        TEMPLATES(tr("settings.cat.templates"), Group.EDITOR),
+        TEMPLATES(tr("settings.cat.templates"), Group.EDITOR, true),
         TODO(tr("settings.cat.todo"), Group.EDITOR),
         SPELL_CHECK(tr("settings.cat.spellCheck"), Group.EDITOR),
         SEARCH(tr("settings.cat.search"), Group.EDITOR),
         // Languages & Tools
-        LSP(tr("settings.cat.lsp"), Group.LANGUAGES_TOOLS),
-        DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS),
+        LSP(tr("settings.cat.lsp"), Group.LANGUAGES_TOOLS, true),
+        DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS, true),
         MARKDOWN(tr("settings.cat.markdown"), Group.LANGUAGES_TOOLS),
         MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS),
-        WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS),
+        WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, true),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
         // Version control
-        GIT(tr("settings.cat.git"), Group.VERSION_CONTROL),
+        GIT(tr("settings.cat.git"), Group.VERSION_CONTROL, true),
         // System
         KEYMAPS(tr("settings.cat.keymaps"), Group.SYSTEM),
         MACROS(tr("settings.cat.macros"), Group.SYSTEM),
-        REMOTE(tr("settings.cat.remote"), Group.SYSTEM),
+        REMOTE(tr("settings.cat.remote"), Group.SYSTEM, true),
         PLUGINS(tr("settings.cat.plugins"), Group.SYSTEM),
-        MCP(tr("settings.cat.mcp"), Group.SYSTEM),
+        MCP(tr("settings.cat.mcp"), Group.SYSTEM, true),
         ADVANCED(tr("settings.cat.advanced"), Group.SYSTEM);
 
         final String display;
         final Group group;
+        /** Whether the feature is still beta — the sidebar shows a small "Beta" pill beside its name. */
+        final boolean beta;
 
         Category(String display, Group group) {
+            this(display, group, false);
+        }
+
+        Category(String display, Group group, boolean beta) {
             this.display = display;
             this.group = group;
+            this.beta = beta;
         }
     }
 
@@ -4441,6 +4449,7 @@ public class SettingsWindow {
         protected void updateItem(Object item, boolean empty) {
             super.updateItem(item, empty);
             getStyleClass().removeAll("settings-group-header", "settings-sidebar-item");
+            setGraphic(null);
             if (empty || item == null) {
                 setText(null);
                 setDisable(false);
@@ -4459,6 +4468,13 @@ public class SettingsWindow {
                 getStyleClass().add("settings-sidebar-item");
                 setMouseTransparent(false);
                 setDisable(searchHiddenCats.contains(c));
+                if (c.beta) {
+                    Label pill = new Label(tr("settings.beta"));
+                    pill.getStyleClass().add("settings-beta-pill");
+                    setGraphic(pill); // small "Beta" pill beside the feature name
+                    setContentDisplay(ContentDisplay.RIGHT);
+                    setGraphicTextGap(6);
+                }
             }
         }
     }
