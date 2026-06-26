@@ -423,8 +423,11 @@
                         </goals>
                         <configuration>
                             <haltOnFailure>true</haltOnFailure>
+                            <!-- Floors are a regression net, ratcheted to a few points below the actual
+                                 measured coverage (not a target). Raise them again whenever a package's
+                                 real coverage climbs. -->
                             <rules>
-                                <!-- Tier A (~0.85): the highest-covered pure packages. -->
+                                <!-- Tier A (~0.90): the highest-covered pure packages (diff 96%, migration 94%). -->
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
@@ -435,15 +438,28 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.85</minimum>
+                                            <minimum>0.90</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
-                                <!-- Tier B (~0.80): config / template / editorconfig. -->
+                                <!-- config (~88%): mostly pure models/stores + some IO glue. -->
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
                                         <include>com.editora.config</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.86</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <!-- Tier B (~0.82): template / editorconfig (both ~85%). -->
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
                                         <include>com.editora.template</include>
                                         <include>com.editora.editorconfig</include>
                                     </includes>
@@ -451,11 +467,11 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.80</minimum>
+                                            <minimum>0.82</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
-                                <!-- Tier C (~0.68): good-but-not-pure packages (some service glue). -->
+                                <!-- Tier C (~0.70): good-but-not-pure packages (some service glue). -->
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
@@ -467,7 +483,7 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.68</minimum>
+                                            <minimum>0.70</minimum>
                                         </limit>
                                     </limits>
                                 </rule>

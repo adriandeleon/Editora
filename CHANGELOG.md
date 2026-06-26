@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **Test coverage: added unit tests + ratcheted the JaCoCo floors.** New tests for `config` models/stores (`Breakpoint`, `BreakpointStore`, `RecentFiles`, plus `FileIdentity` null/empty branches) raised `config` line coverage to ~88%, and new `InstallService` tests cover `findBinary`/`makeExecutable`/`Result`. The per-package `jacoco-check` floors were ratcheted to sit a few points below the measured coverage (migration·diff 0.85→0.90, config split out at 0.86, template·editorconfig 0.80→0.82, completion·http·pdf 0.68→0.70).
+
 ### Fixed
 
 - **Markdown preview no longer renders HTML comments.** `<!-- … -->` blocks (and inline comments) were shown as visible text/code in the preview (and PDF/print export); they're now hidden, matching GitHub and every other Markdown renderer.

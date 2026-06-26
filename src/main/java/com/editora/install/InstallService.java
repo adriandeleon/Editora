@@ -220,7 +220,7 @@ public final class InstallService {
     }
 
     /** Walks {@code dest} for the LS binary (exact or {@code prefix} match; tolerates a Windows extension). */
-    private static Path findBinary(Path dest, String name, boolean prefix) throws IOException {
+    static Path findBinary(Path dest, String name, boolean prefix) throws IOException {
         try (Stream<Path> s = Files.walk(dest)) {
             return s.filter(Files::isRegularFile)
                     .filter(p -> {
@@ -236,7 +236,7 @@ public final class InstallService {
     }
 
     /** Best-effort {@code chmod +x} (zip extraction drops the Unix exec bit); no-op on Windows. */
-    private static void makeExecutable(Path file) {
+    static void makeExecutable(Path file) {
         try {
             var perms = new java.util.HashSet<>(Files.getPosixFilePermissions(file));
             perms.add(java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE);
