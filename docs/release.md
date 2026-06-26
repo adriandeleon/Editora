@@ -53,8 +53,10 @@ CI uses the BellSoft **Liberica** JDK 25 for full arch coverage (incl. linux aar
 ## Notes
 
 - Installers are currently **unsigned** (signing/notarization is a follow-up).
-- Bumping the JavaFX version means rebuilding the vendored **Monocle** backend, or the
-  `@Tag("fx")` tests stop linking — see [dependencies.md](dependencies.md#monocle--self-built-headless-backend-m2-repo-test-scope-only).
+- A JavaFX bump no longer needs any test-harness work — the headless backend ships inside JavaFX
+  26 (the old vendored Monocle rebuild is gone; see
+  [dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)). Do
+  re-run the device tests, since the per-OS Prism pipeline matters.
 - The AOT cache adds ~60 MB to the installed image (compressed in the DMG/MSI/DEB); it's
   failure-tolerant, so a runner without a usable display still ships, just without the cache —
   see [building-and-packaging.md](building-and-packaging.md#aot-cache-jdk-25-leyden).

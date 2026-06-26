@@ -8,12 +8,15 @@ are the readable distillation of it — when they disagree with the code, the co
 
 ## Start here
 
-- [architecture.md](architecture.md) — module map, boot path, the multi-window model, the
-  `EditorBuffer`/`TabContent` abstraction, and the recurring patterns.
+- [architecture.md](architecture.md) — module map (with diagrams), boot path, the multi-window
+  model, the `EditorBuffer`/`TabContent` abstraction, and the recurring patterns.
 - [conventions.md](conventions.md) — the rules a change must follow (commands, settings, i18n,
   schema, formatting, worktrees). See also [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 - [performance.md](performance.md) — the hot paths and the discipline that keeps the editor
   responsive. Read before touching highlighting, overlays, the gutter, or scrolling.
+- [glossary.md](glossary.md) — the recurring Editora-specific terms in one place.
+- [gotchas.md](gotchas.md) — the non-obvious traps (JPMS opens, macOS classloader, the
+  headless-AWT guard, the texture-pool black window, …) with symptom and fix.
 
 ## How-to
 
@@ -23,11 +26,28 @@ are the readable distillation of it — when they disagree with the code, the co
   packaging, and the registry. The full plugin catalog lives in the
   [editora-plugins](https://github.com/adriandeleon/editora-plugins) repo.
 
+## Subsystem deep-dives
+
+- [subsystems/command-system.md](subsystems/command-system.md) — `Command`/`CommandRegistry`,
+  the five keymaps + per-OS variants, `KeyDispatcher`, the keybinding editor.
+- [subsystems/config-and-migrations.md](subsystems/config-and-migrations.md) — the config dir,
+  `SharedConfig`/`ConfigManager`, `ConfigWriter`, and schema versioning + migrations.
+- [subsystems/lsp-and-dap.md](subsystems/lsp-and-dap.md) — Language Server + Debug Adapter
+  integration, and the `process/ProcessRegistry` lifecycle that owns spawned servers.
+
+## Decisions
+
+- [decisions/](decisions/README.md) — architecture decision records: the *why* behind the
+  unusual choices (the RichTextFX fork, native-CLI git, TOML settings, TextMate highlighting,
+  in-scene overlays, the headless-AWT guard, multi-window config, feature coordinators, the
+  plugin classloader, the headless test platform).
+
 ## Build, test, ship
 
 - [building-and-packaging.md](building-and-packaging.md) — run, dist/jpackage, the AOT cache,
   fat jar, the per-OS Prism pipeline.
-- [dependencies.md](dependencies.md) — the vendored/forked/repackaged deps (RichTextFX fork,
-  Monocle, tm4e) and the moditect story.
-- [testing.md](testing.md) — pure tests, the headless-FX Monocle harness, the JaCoCo floors.
+- [dependencies.md](dependencies.md) — the vendored/forked/repackaged deps (the RichTextFX fork,
+  tm4e) and the moditect story.
+- [testing.md](testing.md) — pure tests, the headless-FX harness (JavaFX 26's built-in Headless
+  platform), the JaCoCo floors.
 - [release.md](release.md) — cutting a release and the CI matrix.

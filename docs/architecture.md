@@ -11,7 +11,7 @@ the deeper conventions live in [conventions.md](conventions.md) and
 
 ## What it is
 
-A keyboard-driven, cross-platform programmer's text editor: **JDK 25 + JavaFX 25**, Maven,
+A keyboard-driven, cross-platform programmer's text editor: **JDK 25 + JavaFX 26**, Maven,
 a single JPMS module `com.editora` (see [`src/main/java/module-info.java`](../src/main/java/module-info.java)).
 The editor surface is a [RichTextFX](dependencies.md) `CodeArea`; standard controls are
 themed by AtlantaFX.
@@ -34,6 +34,25 @@ themed by AtlantaFX.
    is the per-window hub: toolbar, the tabbed `EditorBuffer`s, the status bar, tool windows,
    and the wiring for every feature. It is large by design — most features are wired here and
    delegate into their own packages.
+
+```mermaid
+sequenceDiagram
+    participant main as App.main
+    participant start as App.start
+    participant WM as WindowManager
+    participant MC as MainController (per window)
+    main->>main: java.awt.headless=true  (first statement)
+    main->>main: DebugLog.install() + uncaught handler
+    main->>start: launch()
+    start->>start: config.load(), Messages.init(), pin classloader
+    start->>start: ProcessRegistry.reapOrphans()
+    start->>WM: launch()  (restore previously-open windows)
+    loop each window to open
+        WM->>MC: buildWindow()
+        MC->>MC: registerCommands, KeyDispatcher, theme, load main.fxml
+        MC->>MC: setWindowContext(project) + startup(...)
+    end
+```
 
 ### The headless-AWT guard (don't move it)
 
@@ -60,7 +79,28 @@ Config is split:
 So a `config.save()` from any window writes `settings.toml` + that window's session file
 without clobbering another window's in-memory copy. A settings change in one window
 broadcasts to all via `WindowManager.broadcastSettingsApplied()`. See
-[config-and-schema](conventions.md#config-and-schema) for the storage details.
+[config-and-schema](conventions.md#config-and-schema) for the storage details, and the
+[config subsystem deep-dive](subsystems/config-and-migrations.md) for the full model.
+
+```mermaid
+flowchart LR
+    subgraph shared["SharedConfig — one instance, shared by reference"]
+        direction TB
+        S["Settings (settings.toml)"]
+        ST["bookmark / note / breakpoint /<br/>connection / macro stores"]
+        PM["ProjectManager index"]
+    end
+    subgraph w1["Window A — own MainController + ConfigManager"]
+        WS1["WorkspaceState"]
+    end
+    subgraph w2["Window B — own MainController + ConfigManager"]
+        WS2["WorkspaceState"]
+    end
+    w1 -->|delegates shared| shared
+    w2 -->|delegates shared| shared
+    WS1 -.->|workspace-state.json| F1[(session A)]
+    WS2 -.->|projects/&lt;id&gt;.json| F2[(session B)]
+```
 
 ## The editor buffer
 
@@ -72,6 +112,25 @@ completion, snippets). Features are injected rather than imported so the `editor
 stays free of `ui`, `config`, and the feature packages — e.g. `setSnippetProvider`,
 `setCompletionProvider`, `setMarkdownLintValidator`, `setLspCompletionProvider`. When you add
 an editor feature, follow that injection pattern.
+
+A buffer's lifecycle, and why `dispose()` matters (it shuts the per-buffer daemon executors so
+they don't accumulate one pair per opened file):
+
+```mermaid
+stateDiagram-v2
+    [*] --> Opened: addBuffer / loadInto
+    Opened --> Editing: user edits
+    Editing --> Editing: debounced highlight + coalesced overlays
+    Editing --> Saved: save → writeBuffer
+    Saved --> Editing: further edits
+    Editing --> Disposed: tab closed
+    Saved --> Disposed: tab closed
+    Disposed --> [*]: dispose() — shutdownNow() executors + unsubscribe
+    note right of Disposed
+        Runs on every real close path,
+        never on a tab switch.
+    end note
+```
 
 ### Tabs are `TabContent`, not always buffers
 
@@ -95,6 +154,33 @@ Welcome tab. Tab-switch consumers (status bar, Structure, git, …) must be null
 | `git/` `diff/` | Native-CLI git, the diff/merge viewer. |
 | `search/` `todo/` `snippet/` `template/` `completion/` `pdf/` `print/` `mermaid/` `http/` `web/` `macro/` `externaltool/` `logviewer/` `editorconfig/` `vfs/` `plugin/` `run/` | Feature packages, each largely self-contained and wired in `MainController`. |
 | `process/` | `ProcessRunner` (the only place a subprocess is spawned) + `ProcessRegistry` (lifecycle of spawned servers). |
+
+Dependency direction (arrows point at what a package depends on). The key invariants: `ui`
+depends on everything and wires it together; `editor` and `completion` depend on **neither** `ui`
+nor the feature packages — features reach the editor through injected hooks; every subprocess
+goes through `process`.
+
+```mermaid
+flowchart TD
+    ui["ui<br/>(MainController, coordinators)"]
+    editor["editor"]
+    command["command"]
+    config["config (+ migration)"]
+    i18n["i18n"]
+    features["feature packages<br/>lsp · dap · git · diff · search · todo ·<br/>snippet · template · pdf · mermaid · http ·<br/>web · macro · run · plugin · vfs · …"]
+    process["process<br/>(ProcessRunner / ProcessRegistry)"]
+
+    ui --> editor
+    ui --> command
+    ui --> config
+    ui --> features
+    ui --> i18n
+    features --> process
+    features --> config
+    editor -. "feature hooks injected by ui<br/>(setXxxProvider) — no compile dep" .-> features
+    editor --> command
+    editor --> i18n
+```
 
 ## Recurring patterns
 

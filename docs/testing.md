@@ -21,13 +21,17 @@ JavaFX code so it can be tested directly.
 ## The headless-FX harness
 
 Real controller behavior (Zen toggling chrome, Simple-mode stripping, tab/window lifecycle, the
-coordinators) is covered end-to-end by a **TestFX** harness running over a self-built JavaFX
-**Monocle** Glass backend, so FX tests run headless on CI with **no display/xvfb**.
+coordinators) is covered end-to-end by a **TestFX** harness running over **JavaFX 26's built-in
+Headless Glass platform** (`-Dglass.platform=Headless`, part of `javafx.graphics` since 26), so
+FX tests run headless on CI with **no display/xvfb** — no Monocle jar, no native libs, nothing
+vendored. The harness only uses `FxToolkit` to boot the toolkit; it never drives the TestFX robot
+(no `clickOn`/key simulation — everything goes through `runOnFx`/`callOnFx` + reflection), so the
+prototype platform's input/rendering limitations don't apply.
 
 - All FX tests are tagged `@Tag("fx")`. Run the pure suite alone with
   `mvn test -DexcludedGroups=fx`.
-- **`FxTestSupport`** boots the toolkit once (Monocle Headless + `Fonts.load`/`Messages.init` +
-  the AtlantaFX UA sheet + the classloader pin) and exposes `runOnFx`/`callOnFx` + reflection
+- **`FxTestSupport`** boots the toolkit once (the Headless platform + `Fonts.load`/`Messages.init`
+  + the AtlantaFX UA sheet + the classloader pin) and exposes `runOnFx`/`callOnFx` + reflection
   helpers (`field`/`invoke`/`call`) to read private `@FXML` nodes and call private methods. Tests
   run on the **classpath** as the unnamed module, so `setAccessible` is unrestricted.
 - **`FxWindowFixture`** builds a real window via `WindowManager.buildWindowForTest()` — a
@@ -39,13 +43,13 @@ coordinators) is covered end-to-end by a **TestFX** harness running over a self-
 In `pom.xml`:
 
 - `<useModulePath>false</useModulePath>` — classpath mode.
-- headless system properties: `glass.platform=Monocle`, `monocle.platform=Headless`,
-  `prism.order=sw`, `testfx.headless=true`.
+- headless system properties: `glass.platform=Headless`, `prism.order=sw`.
 - `<argLine>@{argLine}</argLine>` — **the `@{argLine}` token is mandatory** so JaCoCo's injected
   coverage agent (set via the `argLine` property) survives. A plain `<argLine>` would clobber it.
 
-Monocle is vendored, test-scope, and must be rebuilt on every JavaFX bump — see
-[dependencies.md](dependencies.md#monocle--self-built-headless-backend-m2-repo-test-scope-only).
+Because the backend ships inside JavaFX, it can never go stale on a JavaFX bump — unlike the
+previously self-built Monocle backend it replaced (see
+[dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)).
 
 ## Coverage
 
