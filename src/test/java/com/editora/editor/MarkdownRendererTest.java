@@ -19,6 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class MarkdownRendererTest {
 
+    @Test
+    void htmlCommentsAreRecognizedAsInvisible() {
+        assertTrue(MarkdownRenderer.isHtmlComment("<!-- hidden -->"));
+        assertTrue(MarkdownRenderer.isHtmlComment("   <!--\nmulti\nline\n-->"));
+        assertFalse(MarkdownRenderer.isHtmlComment("<div>shown</div>"));
+        assertFalse(MarkdownRenderer.isHtmlComment(""));
+        assertFalse(MarkdownRenderer.isHtmlComment(null));
+    }
+
     private static final String SAMPLE = """
             # Heading
 

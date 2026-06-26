@@ -2544,6 +2544,7 @@ public class EditorBuffer implements TabContent {
             scheduleRenderPreview();
         }
         rebuildViewHost();
+        setMinimapVisible(minimapVisible); // re-apply: the minimap is hidden while the preview is shown
         if (target == MarkdownViewMode.PREVIEW) {
             // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
             Platform.runLater(previewPane()::requestFocus);
@@ -3679,8 +3680,10 @@ public class EditorBuffer implements TabContent {
     public void setMinimapVisible(boolean visible) {
         this.minimapVisible = visible;
         // Large files (and the intermediate large-source tier) force the minimap off regardless of the
-        // user's setting (see setLargeFile / setHeavyFile).
-        boolean effective = visible && !largeFile && !heavyFile;
+        // user's setting (see setLargeFile / setHeavyFile). The Markdown preview (SPLIT/PREVIEW) also hides
+        // it — a minimap squeezed between the editor and the preview is redundant clutter (the preview is
+        // the overview), so it only shows in the plain EDITOR view.
+        boolean effective = visible && !largeFile && !heavyFile && markdownViewMode == MarkdownViewMode.EDITOR;
         applyMinimap(scrollPane, minimap, effective);
         AnchorPane.setRightAnchor(whitespace, effective ? Minimap.WIDTH : 0d);
         if (minimap2 != null) {
