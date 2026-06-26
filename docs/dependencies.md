@@ -39,20 +39,19 @@ automatic module, so moditect injects a `module-info` for it too.
 The NetBeans jar is **code-signed**, and `jlink` rejects signed modular jars — the `dist`
 profile's antrun step strips `META-INF/*.SF,*.RSA,*.DSA,*.EC` before linking.
 
-## Monocle — self-built headless backend (`m2-repo/`, test scope only)
+## The headless test backend (no vendored dependency)
 
-`io.github.adriandeleon:openjfx-monocle` is the headless Glass backend for the FX test harness,
-**vendored in `m2-repo/`, test scope, never shipped**. There is no upstream build for current
-JavaFX (`org.testfx:openjfx-monocle` stops at 21, `one.jpro` at jfx-21), and Monocle is tightly
-coupled to internal `com.sun.glass.ui` APIs, so it is **self-built and must be rebuilt on every
-JavaFX bump** (a stale-version jar fails to link, breaking the `@Tag("fx")` tests).
+The `@Tag("fx")` harness runs over **JavaFX 26's built-in Headless Glass platform**
+(`-Dglass.platform=Headless`, part of `javafx.graphics` since 26 — set in the surefire
+`<systemPropertyVariables>`). Nothing is vendored: no jar, no native libs, no rebuild on a
+JavaFX bump.
 
-To rebuild: sparse-checkout the `com/sun/glass/ui/monocle` sources (+ resources) from the
-matching `openjdk/jfx` tag, `javac --release <ver>` against the **platform-classified** JavaFX
-jars (the no-classifier ones are stubs), `jar` with manifest
-`Automatic-Module-Name: org.testfx.monocle`, drop under
-`m2-repo/io/github/adriandeleon/openjfx-monocle/<ver>/`, and bump `<monocle.version>`. No
-`module-info`/jlink impact — it's never on the runtime path. See [testing.md](testing.md).
+This **replaced** a previously self-built **Monocle** backend
+(`io.github.adriandeleon:openjfx-monocle`, once vendored in `m2-repo/`), which had to be rebuilt
+from the OpenJFX sources on every JavaFX bump. That whole ritual and its artifacts are gone. The
+built-in platform is officially a *prototype* in 26, but the harness only boots the toolkit and
+never drives the robot or renders/snapshots, so the prototype's limitations don't apply. It's
+test-scope only and never on the runtime path. See [testing.md](testing.md).
 
 ## Automatic modules + moditect (general)
 
