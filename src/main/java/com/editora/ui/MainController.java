@@ -2624,6 +2624,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                             (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
                     return active == null ? null : Path.of(active.root());
                 }
+
+                @Override
+                public void onDetectionSettled() {
+                    maybeOfferInstall(activeBuffer()); // hide/show the install banner per fresh LSP detection
+                }
             });
 
     /** Personal Notes feature; owns the panel/jump-pickers/persistence. Built in {@link #init} (needs config). */
@@ -5608,6 +5613,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.showInstallBar(false);
             return;
         }
+        // A live LSP session already serving this file ⇒ its server is present; never nag.
+        if (lspCoordinator.isManaged(buffer.getPath())) {
+            buffer.showInstallBar(false);
+            return;
+        }
         // The rich bundles (Java/Python/JS LSP+DAP, Mermaid CLI) first…
         java.util.Optional<com.editora.install.InstallCatalog.Lang> lang =
                 com.editora.install.InstallCatalog.forBufferLanguage(buffer.getLanguage());
@@ -5623,7 +5633,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         String serverId = com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage());
         if (serverId != null
                 && lspEnabled()
-                && !lspCoordinator.isServerAvailable(serverId)
+                && lspCoordinator.isServerMissing(serverId)
                 && com.editora.install.InstallCatalog.installableServerIds().contains(serverId)) {
             String id = serverId;
             offerInstall(buffer, installCoordinator.serverName(id), cb -> installCoordinator.installServer(id, cb));
@@ -5668,10 +5678,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Whether the rich bundle for {@code lang} is missing its primary tool (feature on but tool absent). */
     private boolean langSupportMissing(com.editora.install.InstallCatalog.Lang lang) {
         return switch (lang) {
-            case JAVA -> lspEnabled() && !lspCoordinator.isServerAvailable("java");
-            case PYTHON -> lspEnabled() && !lspCoordinator.isServerAvailable("python");
-            case JAVASCRIPT -> lspEnabled() && !lspCoordinator.isServerAvailable("typescript");
-            case MERMAID -> mermaid.isEnabled() && !mermaid.mmdcAvailable();
+            case JAVA -> lspEnabled() && lspCoordinator.isServerMissing("java");
+            case PYTHON -> lspEnabled() && lspCoordinator.isServerMissing("python");
+            case JAVASCRIPT -> lspEnabled() && lspCoordinator.isServerMissing("typescript");
+            case MERMAID -> mermaid.isEnabled() && mermaid.mmdcDetected() && !mermaid.mmdcAvailable();
         };
     }
 
