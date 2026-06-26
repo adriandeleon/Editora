@@ -1774,6 +1774,16 @@
     -fx-padding: 6 12 6 24;
 }
 
+/* Small "Beta" pill shown beside a still-beta feature's name in the Settings sidebar. */
+.settings-beta-pill {
+    -fx-background-color: -color-accent-muted;
+    -fx-text-fill: -color-accent-fg;
+    -fx-background-radius: 8;
+    -fx-padding: 0 6 0 6;
+    -fx-font-size: 9px;
+    -fx-font-weight: bold;
+}
+
 /* Snippet/Template body code editor in Settings: frame it like the form's text fields. */
 .snippet-body {
     -fx-border-color: -color-border-default;
