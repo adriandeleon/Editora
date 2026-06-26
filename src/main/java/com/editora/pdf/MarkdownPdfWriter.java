@@ -182,8 +182,11 @@ public final class MarkdownPdfWriter {
                 rule(left);
             } else if (n instanceof TableBlock t) {
                 table(t, left);
+            } else if (n instanceof org.commonmark.node.HtmlBlock hb
+                    && com.editora.editor.MarkdownRenderer.isHtmlComment(hb.getLiteral())) {
+                // HTML comments are invisible — skip (matches the on-screen preview).
             } else {
-                // HtmlBlock / unknown: render its textual content as a paragraph if any.
+                // HtmlBlock(non-comment) / unknown: render its textual content as a paragraph if any.
                 String text = plain(n);
                 if (!text.isBlank()) {
                     flow(

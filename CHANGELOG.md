@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Markdown preview no longer renders HTML comments.** `<!-- … -->` blocks (and inline comments) were shown as visible text/code in the preview (and PDF/print export); they're now hidden, matching GitHub and every other Markdown renderer.
+- **Markdown preview hides the editor minimap.** In Split/Preview mode the minimap was wedged between the editor and the preview; it's now hidden while the preview is shown (the preview is the overview) and restored when you return to the plain editor view.
+
 - **The "install language support?" banner no longer shows when the language server is actually installed and running.** It was reading the server-availability flag before startup detection finished (and never re-checking), so it could falsely claim e.g. Java support was missing while jdtls was serving the file. The banner now only appears once a server is *confirmed* absent (not merely "not probed yet"), never when a live session is already serving the file, and re-evaluates as soon as detection settles. Also fixed the banner text dropping its apostrophe ("isnt") — the message runs through `MessageFormat`, where `'` must be doubled.
 
 ### Added
