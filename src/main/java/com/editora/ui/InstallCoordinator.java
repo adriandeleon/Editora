@@ -70,14 +70,25 @@ final class InstallCoordinator {
      * persists the jdtls path (Java) and re-detects so the tools activate without a restart.
      */
     void installSupport(Lang lang) {
+        installSupport(lang, ok -> {});
+    }
+
+    /**
+     * As {@link #installSupport(Lang)} but reports the settled outcome to {@code onResult} on the FX thread
+     * ({@code true} = nothing-to-do or installed OK; {@code false} = a prereq was missing, an install was
+     * already running, or it failed). Used by the editor banner to clear its spinner + hide on success.
+     */
+    void installSupport(Lang lang, java.util.function.Consumer<Boolean> onResult) {
         if (installing.contains(lang)) {
             host.setStatus(tr("status.install.inProgress"));
+            onResult.accept(false);
             return;
         }
         List<Step> all = InstallCatalog.steps(lang);
         List<Step> missing = all.stream().filter(s -> !stepInstalled(s)).toList();
         if (missing.isEmpty()) {
             host.setStatus(tr("status.install.already", langName(lang)));
+            onResult.accept(true);
             return;
         }
         service.detectPrereqs(present -> {
@@ -89,6 +100,7 @@ final class InstallCoordinator {
                 String names = needed.stream().map(this::prereqName).collect(Collectors.joining(", "));
                 host.setStatus(tr("status.install.needPrereq", names));
                 alert(Alert.AlertType.WARNING, tr("status.install.needPrereq", names));
+                onResult.accept(false);
                 return;
             }
             installing.add(lang);
@@ -103,6 +115,7 @@ final class InstallCoordinator {
                             host.setStatus(tr("status.install.failed", langName(lang)));
                             alert(Alert.AlertType.ERROR, result.message());
                         }
+                        onResult.accept(result.ok());
                     });
         });
     }

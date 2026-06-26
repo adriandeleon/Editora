@@ -188,6 +188,7 @@ public class SettingsWindow {
     private CheckBox toolStripeCheck;
     private CheckBox projectHiddenCheck;
     private CheckBox markdownFormatBarCheck;
+    private CheckBox lspInstallPromptsCheck;
     private CheckBox markdownLintCheck;
     private CheckBox mathSupportCheck;
     private CheckBox editorConfigCheck;
@@ -822,6 +823,7 @@ public class SettingsWindow {
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
         projectHiddenCheck = viewCheck(tr("settings.projectShowHidden"), Settings::setProjectShowHidden);
         markdownFormatBarCheck = viewCheck(tr("settings.markdownFormatBar"), Settings::setMarkdownFormatBar);
+        lspInstallPromptsCheck = viewCheck(tr("settings.lspInstallPrompts"), Settings::setLspInstallPrompts);
         markdownLintCheck = viewCheck(tr("settings.markdownLint"), Settings::setMarkdownLint);
         mathSupportCheck = viewCheck(tr("settings.mathSupport"), Settings::setMathSupport);
         editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
@@ -3627,6 +3629,7 @@ public class SettingsWindow {
                 null,
                 lspCheck,
                 "lsp language server protocol enable java typescript python xml json bash diagnostics");
+        row(p, Category.LSP, null, lspInstallPromptsCheck, "lsp install banner prompt offer language support");
         for (LspServerUi srv : lspServerUis()) {
             row(p, Category.LSP, null, lspEnableChecks.get(srv.id()), srv.keywords());
             Label status = new Label(tr("settings.lsp.checking"));
@@ -4609,6 +4612,7 @@ public class SettingsWindow {
             toolStripeCheck.setSelected(settings.isShowToolStripe());
             projectHiddenCheck.setSelected(settings.isProjectShowHidden());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
+            lspInstallPromptsCheck.setSelected(settings.isLspInstallPrompts());
             markdownLintCheck.setSelected(settings.isMarkdownLint());
             mathSupportCheck.setSelected(settings.isMathSupport());
             editorConfigCheck.setSelected(settings.isEditorConfigSupport());
@@ -5105,6 +5109,7 @@ public class SettingsWindow {
             simpleModeCheck.setSelected(s.isSimpleMode());
             toolStripeCheck.setSelected(s.isShowToolStripe());
             markdownFormatBarCheck.setSelected(s.isMarkdownFormatBar());
+            lspInstallPromptsCheck.setSelected(s.isLspInstallPrompts());
             markdownLintCheck.setSelected(s.isMarkdownLint());
             mathSupportCheck.setSelected(s.isMathSupport());
             editorConfigCheck.setSelected(s.isEditorConfigSupport());

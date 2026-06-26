@@ -87,8 +87,23 @@ public class EditorBuffer implements TabContent {
     /** The MS-Word-style read-only banner (lazy); its "Enable Editing" runs {@link #onEnableEditing}. */
     private HBox viewModeBar;
 
+    private boolean viewModeBarVisible;
+
     private Button enableEditingButton;
     private Label viewModeNote;
+
+    /** IntelliJ-style "install language support?" banner (lazy), stacked above the view-mode bar; driven by
+     *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. Generic (strings + runnables),
+     *  so {@code editor} stays decoupled from {@code install}/{@code ui}. */
+    private HBox installBar;
+
+    private Label installMessageLabel;
+    private Button installActionButton;
+    private Button installDismissButton;
+    private javafx.scene.control.ProgressIndicator installProgress;
+    private Runnable onInstallAction;
+    private Runnable onInstallDismiss;
+    private boolean installBarShown;
     /** Invoked by the banner's "Enable Editing" button; the controller persists + refreshes indicators. */
     private Runnable onEnableEditing = () -> setViewMode(false);
     /** A second editable view sharing this document (created lazily on first split). */
@@ -4120,19 +4135,103 @@ public class EditorBuffer implements TabContent {
      */
     private void updateViewModeBar() {
         boolean show = viewMode && !hugeFile;
-        if (!show) {
+        if (show) {
+            if (viewModeBar == null) {
+                viewModeBar = buildViewModeBar();
+            }
+            boolean canEdit = path == null || Files.isWritable(path);
+            enableEditingButton.setVisible(canEdit);
+            enableEditingButton.setManaged(canEdit);
+            viewModeNote.setVisible(!canEdit);
+            viewModeNote.setManaged(!canEdit);
+        }
+        viewModeBarVisible = show;
+        refreshTopBars();
+    }
+
+    /** Puts the active top bars into {@code outer.setTop}: the install banner above the view-mode banner
+     *  (a {@code VBox} when both show), or {@code null} when neither does. */
+    private void refreshTopBars() {
+        java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(2);
+        if (installBarShown && installBar != null) {
+            bars.add(installBar);
+        }
+        if (viewModeBarVisible && viewModeBar != null) {
+            bars.add(viewModeBar);
+        }
+        if (bars.isEmpty()) {
             outer.setTop(null);
+        } else if (bars.size() == 1) {
+            outer.setTop(bars.get(0));
+        } else {
+            outer.setTop(new javafx.scene.layout.VBox(bars.toArray(new javafx.scene.Node[0])));
+        }
+    }
+
+    /**
+     * Sets the install banner's content + actions (built lazily). Shown/hidden via {@link #showInstallBar}.
+     * {@code onInstall}/{@code onDismiss} are wired by MainController; the banner stays toolkit-only.
+     */
+    public void setInstallPrompt(String message, String actionLabel, Runnable onInstall, Runnable onDismiss) {
+        if (installBar == null) {
+            buildInstallBar();
+        }
+        installMessageLabel.setText(message);
+        installActionButton.setText(actionLabel);
+        this.onInstallAction = onInstall;
+        this.onInstallDismiss = onDismiss;
+    }
+
+    /** Shows or hides the install banner (no-op visual until {@link #setInstallPrompt} has set content). */
+    public void showInstallBar(boolean show) {
+        installBarShown = show && installBar != null;
+        refreshTopBars();
+    }
+
+    public boolean isInstallBarShown() {
+        return installBarShown;
+    }
+
+    /** Reflects an in-progress install: spins the indicator + disables the buttons. */
+    public void setInstallBarBusy(boolean busy) {
+        if (installBar == null) {
             return;
         }
-        if (viewModeBar == null) {
-            viewModeBar = buildViewModeBar();
-        }
-        boolean canEdit = path == null || Files.isWritable(path);
-        enableEditingButton.setVisible(canEdit);
-        enableEditingButton.setManaged(canEdit);
-        viewModeNote.setVisible(!canEdit);
-        viewModeNote.setManaged(!canEdit);
-        outer.setTop(viewModeBar);
+        installActionButton.setDisable(busy);
+        installDismissButton.setDisable(busy);
+        installProgress.setVisible(busy);
+        installProgress.setManaged(busy);
+    }
+
+    private void buildInstallBar() {
+        installMessageLabel = new Label();
+        installMessageLabel.getStyleClass().add("lsp-install-title");
+        installMessageLabel.setWrapText(true);
+        javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+        HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+        installProgress = new javafx.scene.control.ProgressIndicator();
+        installProgress.setPrefSize(16, 16);
+        installProgress.setVisible(false);
+        installProgress.setManaged(false);
+        installActionButton = new Button();
+        installActionButton.getStyleClass().add("accent");
+        installActionButton.setOnAction(e -> {
+            if (onInstallAction != null) {
+                onInstallAction.run();
+            }
+        });
+        installDismissButton = new Button(tr("install.banner.dismiss"));
+        installDismissButton.getStyleClass().add("lsp-install-dismiss");
+        installDismissButton.setOnAction(e -> {
+            if (onInstallDismiss != null) {
+                onInstallDismiss.run();
+            }
+        });
+        HBox bar =
+                new HBox(10, installMessageLabel, spacer, installProgress, installActionButton, installDismissButton);
+        bar.getStyleClass().add("lsp-install-bar");
+        bar.setAlignment(Pos.CENTER_LEFT);
+        installBar = bar;
     }
 
     private HBox buildViewModeBar() {
