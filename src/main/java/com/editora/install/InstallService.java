@@ -38,8 +38,22 @@ import com.editora.process.ProcessRunner;
  */
 public final class InstallService {
 
-    /** Outcome of an install run: {@code ok} + a (possibly empty) error/detail {@code message}. */
-    public record Result(boolean ok, String message) {}
+    /**
+     * Outcome of an install run: {@code ok} + a (possibly empty) error/detail {@code message}, plus the
+     * resolved command for a per-OS binary install ({@code installedCommand}, the extracted binary path +
+     * any suffix — the coordinator persists it into the server's Settings command; {@code null} otherwise).
+     */
+    public record Result(boolean ok, String message, String installedCommand) {
+        public Result(boolean ok, String message) {
+            this(ok, message, null);
+        }
+    }
+
+    /** Generous extraction caps for installer archives — native LS binaries (e.g. clangd) dwarf plugin caps. */
+    private static final long MAX_ARCHIVE_ENTRY_BYTES = 512L * 1024 * 1024;
+
+    private static final long MAX_ARCHIVE_TOTAL_BYTES = 1024L * 1024 * 1024;
+    private static final int MAX_ARCHIVE_ENTRIES = 100_000;
 
     /** A bounded cap on any single download (vsix/tarball/JSON) so a hostile/oversized response can't OOM. */
     private static final long MAX_DOWNLOAD_BYTES = 200L * 1024 * 1024;
@@ -100,11 +114,16 @@ public final class InstallService {
     public void install(List<Step> steps, Path configDir, Consumer<String> onStepStart, Consumer<Result> onResult) {
         exec.submit(() -> {
             try {
+                String installedCommand = null;
                 for (Step s : steps) {
                     Platform.runLater(() -> onStepStart.accept(s.id()));
-                    runStep(s, configDir);
+                    String cmd = runStep(s, configDir);
+                    if (cmd != null) {
+                        installedCommand = cmd;
+                    }
                 }
-                Platform.runLater(() -> onResult.accept(new Result(true, "")));
+                String resolved = installedCommand;
+                Platform.runLater(() -> onResult.accept(new Result(true, "", resolved)));
             } catch (InstallException e) {
                 Platform.runLater(() -> onResult.accept(new Result(false, e.getMessage())));
             } catch (Exception e) {
@@ -121,7 +140,8 @@ public final class InstallService {
 
     // --- step execution ------------------------------------------------------------------------
 
-    private void runStep(Step s, Path configDir) throws Exception {
+    /** Runs one step; returns the resolved server command for an ARCHIVE step, else {@code null}. */
+    private String runStep(Step s, Path configDir) throws Exception {
         switch (s.kind()) {
             case NPM_GLOBAL -> runCommand(InstallCatalog.npmInstallGlobalArgv(s.npmPackages()), s.id());
             case PIP_TARGET -> {
@@ -133,6 +153,98 @@ public final class InstallService {
             case VSIX -> installVsix(s, configDir);
             case TARBALL -> installTarball(s, configDir);
             case TOOL_COMMAND -> runCommand(s.npmPackages(), s.id()); // argv carried in npmPackages
+            case ARCHIVE -> {
+                return installArchive(s, configDir);
+            }
+        }
+        return null;
+    }
+
+    /** Downloads + extracts a per-OS binary archive; returns the resolved server command (binary + suffix). */
+    private String installArchive(Step s, Path configDir) throws Exception {
+        InstallCatalog.ArchiveSpec spec = InstallCatalog.archiveSpec(s.id()).orElse(null);
+        if (spec == null) {
+            throw new InstallException(s.id() + ": no archive recipe");
+        }
+        String asset = spec.assetByPlatform().get(InstallCatalog.currentPlatform());
+        if (asset == null) {
+            throw new InstallException(s.id() + ": no prebuilt binary for this OS/architecture");
+        }
+        String json = new String(download(spec.apiUrl()), StandardCharsets.UTF_8);
+        String url = pickArchiveUrl(json, asset);
+        if (url == null) {
+            throw new InstallException(s.id() + ": no download asset matched '" + asset + "'");
+        }
+        byte[] data = download(url);
+        Path dest = configDir.resolve(s.destSubpath());
+        deleteRecursively(dest);
+        Files.createDirectories(dest);
+        if (url.endsWith(".tar.gz") || url.endsWith(".tgz")) {
+            Path tmp = Files.createTempFile("editora-dl", ".tar.gz");
+            try {
+                Files.write(tmp, data);
+                ProcessRunner.Result r = ProcessRunner.run(null, CMD_TIMEOUT, InstallCatalog.tarExtractArgv(tmp, dest));
+                if (!r.ok()) {
+                    throw new InstallException(s.id() + ": tar failed — " + r.message());
+                }
+            } finally {
+                deleteQuietly(tmp);
+            }
+        } else {
+            Unzip.extract(
+                    new ByteArrayInputStream(data),
+                    dest,
+                    MAX_ARCHIVE_ENTRY_BYTES,
+                    MAX_ARCHIVE_TOTAL_BYTES,
+                    MAX_ARCHIVE_ENTRIES);
+        }
+        Path binary = findBinary(dest, spec.binaryName(), spec.binaryPrefix());
+        if (binary == null) {
+            throw new InstallException(s.id() + ": '" + spec.binaryName() + "' not found after extraction");
+        }
+        makeExecutable(binary);
+        return binary.toString() + spec.commandSuffix();
+    }
+
+    /** The first archive URL (.zip/.tar.gz/.tgz) in {@code json} that contains {@code substr} — skips the
+     *  sibling {@code .sha256}/{@code .sig} checksum URLs that also contain the per-platform substring. */
+    static String pickArchiveUrl(String json, String substr) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("https://[^\"\\s]+?(?:\\.zip|\\.tar\\.gz|\\.tgz)")
+                .matcher(json == null ? "" : json);
+        while (m.find()) {
+            if (m.group().contains(substr)) {
+                return m.group();
+            }
+        }
+        return null;
+    }
+
+    /** Walks {@code dest} for the LS binary (exact or {@code prefix} match; tolerates a Windows extension). */
+    private static Path findBinary(Path dest, String name, boolean prefix) throws IOException {
+        try (Stream<Path> s = Files.walk(dest)) {
+            return s.filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String f = p.getFileName().toString();
+                        String base = f.endsWith(".exe") || f.endsWith(".bat") || f.endsWith(".cmd")
+                                ? f.substring(0, f.lastIndexOf('.'))
+                                : f;
+                        return prefix ? base.startsWith(name) : base.equals(name);
+                    })
+                    .min(Comparator.comparingInt(p -> p.toString().length()))
+                    .orElse(null);
+        }
+    }
+
+    /** Best-effort {@code chmod +x} (zip extraction drops the Unix exec bit); no-op on Windows. */
+    private static void makeExecutable(Path file) {
+        try {
+            var perms = new java.util.HashSet<>(Files.getPosixFilePermissions(file));
+            perms.add(java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE);
+            perms.add(java.nio.file.attribute.PosixFilePermission.GROUP_EXECUTE);
+            perms.add(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE);
+            Files.setPosixFilePermissions(file, perms);
+        } catch (UnsupportedOperationException | IOException ignored) {
+            // Windows (no POSIX perms) or a transient FS error — the launcher resolves it regardless
         }
     }
 

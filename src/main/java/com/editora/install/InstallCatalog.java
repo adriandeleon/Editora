@@ -43,7 +43,19 @@ public final class InstallCatalog {
         TARBALL,
         /** Run a fixed command via the language's own package manager (go/gem/dotnet/rustup/composer);
          *  the argv is carried in {@code npmPackages}. */
-        TOOL_COMMAND
+        TOOL_COMMAND,
+        /** Download a per-OS/arch binary archive (zip or tar.gz) and extract it into the config dir; the
+         *  details (release API, per-platform asset, binary name) come from {@link #archiveSpec}. */
+        ARCHIVE
+    }
+
+    /** The host OS/arch buckets used to pick a per-platform release asset. */
+    public enum Platform {
+        MAC_ARM,
+        MAC_X64,
+        LINUX_X64,
+        LINUX_ARM,
+        WIN_X64
     }
 
     /** An external runtime a step needs already on PATH — Editora never installs these itself. */
@@ -167,7 +179,13 @@ public final class InstallCatalog {
                 "ruby",
                 "csharp",
                 "rust",
-                "php");
+                "php",
+                // per-OS/arch binary archives (download + extract; needs only network + tar/unzip).
+                "clangd",
+                "kotlin",
+                "lua",
+                "xml",
+                "terraform");
     }
 
     /** The install steps for an LSP-only server id (empty if it has no installer). Pure. */
@@ -202,8 +220,112 @@ public final class InstallCatalog {
             case "php" ->
                 java.util.Optional.of(List.of(toolStep(
                         "phpactor", Prereq.COMPOSER, List.of("composer", "global", "require", "phpactor/phpactor"))));
+            // --- per-OS/arch binary archives (download + extract into the config dir) ---
+            case "clangd", "kotlin", "lua", "xml", "terraform" -> java.util.Optional.of(List.of(archiveStep(serverId)));
             default -> java.util.Optional.empty();
         };
+    }
+
+    /**
+     * The per-OS binary-archive recipe for a server id (clangd/kotlin/lua/xml/terraform), or empty.
+     * {@code apiUrl} returns JSON whose asset/download URLs we match by the per-{@link Platform} substring;
+     * the extracted tree is searched for {@code binaryName} (a prefix when {@code binaryPrefix}) and the
+     * server's command is set to that path + {@code commandSuffix}. Pure.
+     */
+    public static java.util.Optional<ArchiveSpec> archiveSpec(String serverId) {
+        if (serverId == null) {
+            return java.util.Optional.empty();
+        }
+        return switch (serverId) {
+            case "clangd" ->
+                java.util.Optional.of(new ArchiveSpec(
+                        "https://api.github.com/repos/clangd/clangd/releases/latest",
+                        java.util.Map.of(
+                                Platform.MAC_ARM, "clangd-mac",
+                                Platform.MAC_X64, "clangd-mac",
+                                Platform.LINUX_X64, "clangd-linux",
+                                Platform.LINUX_ARM, "clangd-linux",
+                                Platform.WIN_X64, "clangd-windows"),
+                        "clangd",
+                        false,
+                        ""));
+            case "kotlin" ->
+                java.util.Optional.of(new ArchiveSpec(
+                        "https://api.github.com/repos/fwcd/kotlin-language-server/releases/latest",
+                        java.util.Map.of(
+                                Platform.MAC_ARM, "server.zip",
+                                Platform.MAC_X64, "server.zip",
+                                Platform.LINUX_X64, "server.zip",
+                                Platform.LINUX_ARM, "server.zip",
+                                Platform.WIN_X64, "server.zip"),
+                        "kotlin-language-server",
+                        false,
+                        ""));
+            case "lua" ->
+                java.util.Optional.of(new ArchiveSpec(
+                        "https://api.github.com/repos/LuaLS/lua-language-server/releases/latest",
+                        java.util.Map.of(
+                                Platform.MAC_ARM, "darwin-arm64",
+                                Platform.MAC_X64, "darwin-x64",
+                                Platform.LINUX_X64, "linux-x64",
+                                Platform.LINUX_ARM, "linux-arm64",
+                                Platform.WIN_X64, "win32-x64"),
+                        "lua-language-server",
+                        false,
+                        ""));
+            case "xml" ->
+                java.util.Optional.of(new ArchiveSpec(
+                        "https://api.github.com/repos/redhat-developer/vscode-xml/releases/latest",
+                        java.util.Map.of(
+                                Platform.MAC_ARM, "osx-aarch_64",
+                                Platform.MAC_X64, "osx-x86_64",
+                                Platform.LINUX_X64, "linux-x86_64",
+                                Platform.LINUX_ARM, "linux-aarch_64",
+                                Platform.WIN_X64, "win32"),
+                        "lemminx",
+                        true,
+                        ""));
+            case "terraform" ->
+                java.util.Optional.of(new ArchiveSpec(
+                        "https://api.releases.hashicorp.com/v1/releases/terraform-ls/latest",
+                        java.util.Map.of(
+                                Platform.MAC_ARM, "darwin_arm64",
+                                Platform.MAC_X64, "darwin_amd64",
+                                Platform.LINUX_X64, "linux_amd64",
+                                Platform.LINUX_ARM, "linux_arm64",
+                                Platform.WIN_X64, "windows_amd64"),
+                        "terraform-ls",
+                        false,
+                        " serve"));
+            default -> java.util.Optional.empty();
+        };
+    }
+
+    /** A per-OS binary-archive recipe. */
+    public record ArchiveSpec(
+            String apiUrl,
+            java.util.Map<Platform, String> assetByPlatform,
+            String binaryName,
+            boolean binaryPrefix,
+            String commandSuffix) {}
+
+    /** The host {@link Platform} for an OS/arch (e.g. from {@code os.name}/{@code os.arch}). Pure. */
+    public static Platform platformKey(String osName, String osArch) {
+        String os = osName == null ? "" : osName.toLowerCase(java.util.Locale.ROOT);
+        String arch = osArch == null ? "" : osArch.toLowerCase(java.util.Locale.ROOT);
+        boolean arm = arch.contains("aarch64") || arch.contains("arm64") || arch.equals("arm");
+        if (os.contains("win")) {
+            return Platform.WIN_X64; // Windows-on-ARM runs the x64 build under emulation
+        }
+        if (os.contains("mac") || os.contains("darwin") || os.contains("osx")) {
+            return arm ? Platform.MAC_ARM : Platform.MAC_X64;
+        }
+        return arm ? Platform.LINUX_ARM : Platform.LINUX_X64;
+    }
+
+    /** This machine's {@link Platform}. */
+    public static Platform currentPlatform() {
+        return platformKey(System.getProperty("os.name"), System.getProperty("os.arch"));
     }
 
     /** A single {@code npm install -g <pkg>} step (the step id = the package). Pure. */
@@ -215,6 +337,23 @@ public final class InstallCatalog {
     /** A step that runs {@code argv} via a language toolchain (argv carried in {@code npmPackages}). Pure. */
     private static Step toolStep(String id, Prereq prereq, List<String> argv) {
         return new Step(id, Kind.TOOL_COMMAND, Set.of(prereq), argv, null, null, null, null, false, "", null);
+    }
+
+    /** A per-OS binary-archive step; the recipe lives in {@link #archiveSpec}. Extracts to plugins/lsp/&lt;id&gt;.
+     *  Declares the TAR prereq since some platforms ship a {@code .tar.gz} (a no-op where the asset is a zip). */
+    private static Step archiveStep(String id) {
+        return new Step(
+                id,
+                Kind.ARCHIVE,
+                Set.of(Prereq.TAR),
+                List.of(),
+                null,
+                null,
+                null,
+                null,
+                false,
+                "plugins/lsp/" + id,
+                null);
     }
 
     // --- Step factories ------------------------------------------------------------------------

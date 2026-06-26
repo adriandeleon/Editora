@@ -57,6 +57,16 @@ public final class Unzip {
      * Throws {@link IOException} on a malicious/oversized archive or any I/O error.
      */
     public static void extract(InputStream in, Path dest) throws IOException {
+        extract(in, dest, MAX_ENTRY_BYTES, MAX_TOTAL_BYTES, MAX_ENTRIES);
+    }
+
+    /**
+     * As {@link #extract(InputStream, Path)} but with explicit caps. The installer path passes generous caps
+     * because native language-server binaries (e.g. clangd, ~130 MB uncompressed) exceed the small plugin
+     * defaults; the zip-slip guard is unchanged.
+     */
+    public static void extract(InputStream in, Path dest, long maxEntryBytes, long maxTotalBytes, int maxEntries)
+            throws IOException {
         Files.createDirectories(dest);
         long total = 0;
         int count = 0;
@@ -64,7 +74,7 @@ public final class Unzip {
             ZipEntry entry;
             byte[] buf = new byte[8192];
             while ((entry = zip.getNextEntry()) != null) {
-                if (++count > MAX_ENTRIES) {
+                if (++count > maxEntries) {
                     throw new IOException("archive has too many entries");
                 }
                 if (!safeEntryName(entry.getName())) {
@@ -85,10 +95,10 @@ public final class Unzip {
                     while ((n = zip.read(buf)) > 0) {
                         written += n;
                         total += n;
-                        if (written > MAX_ENTRY_BYTES) {
+                        if (written > maxEntryBytes) {
                             throw new IOException("zip entry too large: " + entry.getName());
                         }
-                        if (total > MAX_TOTAL_BYTES) {
+                        if (total > maxTotalBytes) {
                             throw new IOException("archive too large");
                         }
                         out.write(buf, 0, n);

@@ -162,6 +162,9 @@ final class InstallCoordinator {
                     steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
                         installingServers.remove(serverId);
                         if (result.ok()) {
+                            if (result.installedCommand() != null) {
+                                applyServerCommand(serverId, result.installedCommand());
+                            }
                             ops.reapplyToolSupport();
                             host.setStatus(tr("status.install.done", serverName(serverId)));
                         } else {
@@ -176,6 +179,21 @@ final class InstallCoordinator {
     /** Friendly display name for an LSP server id (e.g. {@code json} → "JSON"). */
     String serverName(String serverId) {
         return tr("install.lang." + serverId);
+    }
+
+    /** Persists the extracted-binary command into the right per-server Settings field (binary-archive servers). */
+    private void applyServerCommand(String serverId, String command) {
+        com.editora.config.Settings s = host.settings();
+        switch (serverId) {
+            case "clangd" -> s.setClangdLspCommand(command);
+            case "kotlin" -> s.setKotlinLspCommand(command);
+            case "lua" -> s.setLuaLspCommand(command);
+            case "xml" -> s.setXmlLspCommand(command);
+            case "terraform" -> s.setTerraformLspCommand(command);
+            default -> {
+                /* npm/toolchain servers resolve on PATH; no command to persist */
+            }
+        }
     }
 
     /** After a successful install: point jdtls at its bundled launcher (Java), then re-detect everything. */
