@@ -54,6 +54,28 @@ class FileIdentityTest {
     }
 
     @Test
+    void ofNullIsEmptyAndEmptyFileIsNotHashed(@TempDir Path dir) throws Exception {
+        FileIdentity none = FileIdentity.of(null);
+        assertEquals("", none.path());
+        assertEquals("", none.canonicalPath());
+        assertEquals("", none.hash());
+        assertEquals(0, none.size());
+
+        Path empty = dir.resolve("empty.txt");
+        Files.createFile(empty);
+        FileIdentity id = FileIdentity.of(empty);
+        assertEquals(0, id.size());
+        assertTrue(id.hash().isBlank(), "size-0 files are not hashed");
+    }
+
+    @Test
+    void matchWithANullIdentityIsNone() {
+        FileIdentity a = new FileIdentity("/a", "/a", 1, 1, "h");
+        assertEquals(FileIdentity.Match.NONE, FileIdentity.match(a, null));
+        assertEquals(FileIdentity.Match.NONE, FileIdentity.match(null, a));
+    }
+
+    @Test
     void largeFileIsNotHashed(@TempDir Path dir) throws Exception {
         Path big = dir.resolve("big.bin");
         Files.write(big, new byte[(int) FileIdentity.MAX_HASH_BYTES + 1]);

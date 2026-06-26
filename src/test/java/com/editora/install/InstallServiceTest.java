@@ -1,9 +1,16 @@
 package com.editora.install;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InstallServiceTest {
 
@@ -30,5 +37,48 @@ class InstallServiceTest {
     void pickArchiveUrlReturnsNullWhenNoArchiveMatches() {
         assertNull(InstallService.pickArchiveUrl("\"https://x/y/foo-linux.sha256\"", "linux"));
         assertNull(InstallService.pickArchiveUrl(null, "x"));
+    }
+
+    @Test
+    void findBinaryByExactNameIgnoringWindowsExtensionAndPreferringShortestPath(@TempDir Path dir) throws Exception {
+        // A nested copy and a top-level copy of the binary; the shortest path wins.
+        Files.createDirectories(dir.resolve("deeply/nested/sub"));
+        Files.createFile(dir.resolve("deeply/nested/sub/gopls"));
+        Path top = dir.resolve("gopls");
+        Files.createFile(top);
+        assertEquals(top, InstallService.findBinary(dir, "gopls", false));
+
+        // The ".exe" suffix is stripped before matching the requested name.
+        Path winDir = Files.createDirectories(dir.resolve("win"));
+        Path exe = winDir.resolve("clangd.exe");
+        Files.createFile(exe);
+        assertEquals(exe, InstallService.findBinary(winDir, "clangd", false));
+    }
+
+    @Test
+    void findBinaryByPrefixAndMissingReturnsNull(@TempDir Path dir) throws Exception {
+        Files.createFile(dir.resolve("lemminx-osx-aarch_64"));
+        assertEquals(
+                dir.resolve("lemminx-osx-aarch_64"), InstallService.findBinary(dir, "lemminx", true)); // prefix match
+        assertNull(InstallService.findBinary(dir, "lemminx", false)); // exact-name match fails
+        assertNull(InstallService.findBinary(dir, "nonesuch", true));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // POSIX exec bit; no-op (and not asserted) on Windows
+    void makeExecutableSetsTheExecBit(@TempDir Path dir) throws Exception {
+        Path bin = dir.resolve("server");
+        Files.writeString(bin, "#!/bin/sh\n");
+        InstallService.makeExecutable(bin);
+        assertTrue(Files.isExecutable(bin));
+    }
+
+    @Test
+    void resultConvenienceCtorLeavesInstalledCommandNull() {
+        InstallService.Result r = new InstallService.Result(true, "done");
+        assertTrue(r.ok());
+        assertEquals("done", r.message());
+        assertNull(r.installedCommand());
+        assertEquals("/opt/clangd", new InstallService.Result(true, "", "/opt/clangd").installedCommand());
     }
 }
