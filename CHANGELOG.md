@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One-click install extended to toolchain-based language servers:** Go (`gopls`), SQL (`sqls`), Ruby (`ruby-lsp`), C# (`csharp-ls`), Rust (`rust-analyzer`), and PHP (`phpactor`) join the Install… buttons / banner / **Install: Language Server…** picker. Each installs via that language's own package manager — `go install`, `gem install`, `dotnet tool install`, `rustup component add`, `composer global require` — so they only run when the relevant toolchain (Go / Ruby / .NET / rustup / Composer) is already on your PATH; otherwise Editora tells you which toolchain to install first.
+
 - **One-click install extended to more language servers (npm batch):** JSON, HTML, CSS (one package, `vscode-langservers-extracted`), Bash/Shell, YAML, Dockerfile, and TOML now have **Install…** buttons on Settings → Language Servers, an in-editor install banner (when LSP is on but the server is missing), and a new **Install: Language Server…** palette command that lists every installable server. All install globally via `npm` (needs Node).
 
 - **In-editor "install language support?" banner.** When you open a Java/Python/JavaScript file (with the Language Servers feature on) whose language server isn't installed — or a Mermaid file with the Mermaid feature on but no `mmdc` — a slim banner appears above the editor offering **Install** (one click, with a progress spinner) or **Not now** (dismissed for that file this session). It only appears when the relevant feature is enabled, and you can turn the nudge off globally via the new **Offer to install missing language support** checkbox (Settings → Language Servers) or the `view.toggleInstallPrompts` palette command.

@@ -72,6 +72,21 @@ public final class InstallService {
             if (onPath("tar")) {
                 have.add(Prereq.TAR);
             }
+            if (onPath("go")) {
+                have.add(Prereq.GO);
+            }
+            if (onPath("gem")) {
+                have.add(Prereq.RUBY);
+            }
+            if (onPath("dotnet")) {
+                have.add(Prereq.DOTNET);
+            }
+            if (onPath("rustup")) {
+                have.add(Prereq.RUSTUP);
+            }
+            if (onPath("composer")) {
+                have.add(Prereq.COMPOSER);
+            }
             Set<Prereq> result = Set.copyOf(have);
             Platform.runLater(() -> onResult.accept(result));
         });
@@ -117,6 +132,7 @@ public final class InstallService {
             }
             case VSIX -> installVsix(s, configDir);
             case TARBALL -> installTarball(s, configDir);
+            case TOOL_COMMAND -> runCommand(s.npmPackages(), s.id()); // argv carried in npmPackages
         }
     }
 

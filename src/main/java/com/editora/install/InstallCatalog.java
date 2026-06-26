@@ -40,7 +40,10 @@ public final class InstallCatalog {
         /** Download a {@code .vsix} (a ZIP) and extract it (optionally just the java-debug jar). */
         VSIX,
         /** Download a {@code .tar.gz} and extract it with the system {@code tar}. */
-        TARBALL
+        TARBALL,
+        /** Run a fixed command via the language's own package manager (go/gem/dotnet/rustup/composer);
+         *  the argv is carried in {@code npmPackages}. */
+        TOOL_COMMAND
     }
 
     /** An external runtime a step needs already on PATH — Editora never installs these itself. */
@@ -50,7 +53,17 @@ public final class InstallCatalog {
         /** {@code python3}/{@code python} + pip. */
         PYTHON,
         /** The {@code tar} command (system bsdtar on Win10+). */
-        TAR
+        TAR,
+        /** The Go toolchain ({@code go install}). */
+        GO,
+        /** Ruby + {@code gem}. */
+        RUBY,
+        /** The .NET SDK ({@code dotnet tool}). */
+        DOTNET,
+        /** {@code rustup} (Rust toolchain manager). */
+        RUSTUP,
+        /** PHP's {@code composer}. */
+        COMPOSER
     }
 
     /** Eclipse JDT-LS rolling release; extracts to top-level {@code bin/ config/ features/ plugins/}. */
@@ -139,8 +152,22 @@ public final class InstallCatalog {
      * These are LSP-only (no DAP); the install is keyed by the {@code LspServerRegistry} server id.
      */
     public static List<String> installableServerIds() {
-        // Phase A: the npm-installable servers (need only Node). json/html/css all ship in one package.
-        return List.of("json", "html", "css", "bash", "yaml", "dockerfile", "toml");
+        return List.of(
+                // npm-installable (need only Node). json/html/css all ship in one package.
+                "json",
+                "html",
+                "css",
+                "bash",
+                "yaml",
+                "dockerfile",
+                "toml",
+                // installed via the language's own toolchain (go/gem/dotnet/rustup/composer must be present).
+                "go",
+                "sql",
+                "ruby",
+                "csharp",
+                "rust",
+                "php");
     }
 
     /** The install steps for an LSP-only server id (empty if it has no installer). Pure. */
@@ -149,12 +176,32 @@ public final class InstallCatalog {
             return java.util.Optional.empty();
         }
         return switch (serverId) {
+            // --- npm (Node) ---
             // vscode-langservers-extracted ships the JSON, HTML, and CSS servers in one npm package.
             case "json", "html", "css" -> java.util.Optional.of(List.of(npmStep("vscode-langservers-extracted")));
             case "bash" -> java.util.Optional.of(List.of(npmStep("bash-language-server")));
             case "yaml" -> java.util.Optional.of(List.of(npmStep("yaml-language-server")));
             case "dockerfile" -> java.util.Optional.of(List.of(npmStep("dockerfile-language-server-nodejs")));
             case "toml" -> java.util.Optional.of(List.of(npmStep("@taplo/cli")));
+            // --- language toolchains (install only if the toolchain is already on PATH) ---
+            case "go" ->
+                java.util.Optional.of(List.of(
+                        toolStep("gopls", Prereq.GO, List.of("go", "install", "golang.org/x/tools/gopls@latest"))));
+            case "sql" ->
+                java.util.Optional.of(List.of(
+                        toolStep("sqls", Prereq.GO, List.of("go", "install", "github.com/sqls-server/sqls@latest"))));
+            case "ruby" ->
+                java.util.Optional.of(
+                        List.of(toolStep("ruby-lsp", Prereq.RUBY, List.of("gem", "install", "ruby-lsp"))));
+            case "csharp" ->
+                java.util.Optional.of(List.of(toolStep(
+                        "csharp-ls", Prereq.DOTNET, List.of("dotnet", "tool", "install", "--global", "csharp-ls"))));
+            case "rust" ->
+                java.util.Optional.of(List.of(toolStep(
+                        "rust-analyzer", Prereq.RUSTUP, List.of("rustup", "component", "add", "rust-analyzer"))));
+            case "php" ->
+                java.util.Optional.of(List.of(toolStep(
+                        "phpactor", Prereq.COMPOSER, List.of("composer", "global", "require", "phpactor/phpactor"))));
             default -> java.util.Optional.empty();
         };
     }
@@ -163,6 +210,11 @@ public final class InstallCatalog {
     private static Step npmStep(String pkg) {
         return new Step(
                 pkg, Kind.NPM_GLOBAL, Set.of(Prereq.NPM), List.of(pkg), null, null, null, null, false, "", null);
+    }
+
+    /** A step that runs {@code argv} via a language toolchain (argv carried in {@code npmPackages}). Pure. */
+    private static Step toolStep(String id, Prereq prereq, List<String> argv) {
+        return new Step(id, Kind.TOOL_COMMAND, Set.of(prereq), argv, null, null, null, null, false, "", null);
     }
 
     // --- Step factories ------------------------------------------------------------------------
