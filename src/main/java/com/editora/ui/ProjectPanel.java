@@ -1,11 +1,8 @@
 package com.editora.ui;
 
 import java.io.IOException;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -436,50 +433,43 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         searchExecutor.shutdownNow();
     }
 
-    /** Bounded project-wide filename search: dot-dirs skipped, capped on entries visited and matches. */
-    private static List<Path> search(Path root, String query, boolean includeHidden) {
+    /**
+     * Bounded, <em>breadth-first</em> project-wide filename search: dot-dirs skipped (unless showing
+     * hidden), capped on entries visited and matches. BFS is deliberate — a depth-first walk descends fully
+     * into the first subtree it meets, so under a large root (e.g. a home dir with huge {@code .cache}/
+     * {@code .m2}/{@code node_modules} trees) the {@link #MAX_VISIT} budget is exhausted deep inside one of
+     * them before a shallow, top-level file (like {@code .profile}) is ever reached. BFS visits every
+     * shallower entry before descending, so a top-level match is never starved by a deep sibling subtree.
+     * Package-visible for tests.
+     */
+    static List<Path> search(Path root, String query, boolean includeHidden) {
         String q = query.toLowerCase(Locale.ROOT);
         List<Path> matches = new ArrayList<>();
-        int[] visited = {0};
-        try {
-            Files.walkFileTree(
-                    root,
-                    java.util.EnumSet.noneOf(java.nio.file.FileVisitOption.class),
-                    MAX_DEPTH,
-                    new SimpleFileVisitor<>() {
-                        @Override
-                        public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) {
-                            if (!includeHidden
-                                    && !dir.equals(root)
-                                    && dir.getFileName().toString().startsWith(".")) {
-                                return FileVisitResult.SKIP_SUBTREE; // skip .git, etc.
-                            }
-                            return cap();
+        record Dir(Path path, int depth) {}
+        java.util.Deque<Dir> queue = new java.util.ArrayDeque<>();
+        queue.add(new Dir(root, 0));
+        int visited = 0;
+        while (!queue.isEmpty() && visited <= MAX_VISIT && matches.size() < MAX_MATCHES) {
+            Dir current = queue.poll();
+            try (java.nio.file.DirectoryStream<Path> entries = Files.newDirectoryStream(current.path())) {
+                for (Path p : entries) {
+                    if (++visited > MAX_VISIT || matches.size() >= MAX_MATCHES) {
+                        break;
+                    }
+                    String name = p.getFileName().toString();
+                    boolean hidden = name.startsWith(".");
+                    if (Files.isDirectory(p, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                        if (current.depth() + 1 < MAX_DEPTH && (includeHidden || !hidden)) {
+                            queue.add(new Dir(p, current.depth() + 1)); // descend later — shallower first
                         }
-
-                        @Override
-                        public FileVisitResult visitFile(Path file, BasicFileAttributes a) {
-                            String name = file.getFileName().toString();
-                            if ((includeHidden || !name.startsWith("."))
-                                    && name.toLowerCase(Locale.ROOT).contains(q)) {
-                                matches.add(file);
-                            }
-                            return cap();
-                        }
-
-                        @Override
-                        public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                            return cap();
-                        }
-
-                        private FileVisitResult cap() {
-                            return ++visited[0] > MAX_VISIT || matches.size() >= MAX_MATCHES
-                                    ? FileVisitResult.TERMINATE
-                                    : FileVisitResult.CONTINUE;
-                        }
-                    });
-        } catch (IOException | RuntimeException ex) {
-            // Best effort — return whatever matched before the error.
+                    } else if ((includeHidden || !hidden)
+                            && name.toLowerCase(Locale.ROOT).contains(q)) {
+                        matches.add(p);
+                    }
+                }
+            } catch (IOException | RuntimeException ex) {
+                // Unreadable directory — skip it, keep searching the rest (best effort).
+            }
         }
         matches.sort(Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER));
         return matches;

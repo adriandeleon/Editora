@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Project / Current-Folder filter now finds top-level files in a large root.** The filter-box search walked the tree depth-first, so under a big root (e.g. a home directory with huge `.cache`/`.m2`/`node_modules` subtrees) it exhausted its visit budget deep inside one subtree before ever reaching a shallow file like `.profile` — which then never appeared in the results. The search is now breadth-first, visiting every shallower entry before descending, so top-level matches are never starved by a deep sibling subtree.
+
 - **Hardened several spots against NullPointerExceptions from corrupted config or non-conforming servers** (found via a full-codebase null-flow audit). `Macro` now defaults a missing `name` to `""`, so a hand-edited/corrupted `macros.json` entry without a name can't NPE macro lookups (find/save/delete). `SnippetManager` skips a snippet file whose content is the literal `null` instead of throwing. `LspManager` go-to-definition / find-references guard a `Location`/`LocationLink` range that a non-conforming language server leaves null. `DapClient.evaluate` tolerates a null adapter response like `evaluateFull` already did. (The wider audit found the `ui`/`editor`/`MainController` packages already guard nullable returns consistently.)
 
 - **Hardened the Bookmarks drag-reorder against a theoretical NPE.** `handleDrop` dereferenced a dragged mark row's `getParent()` directly; it's always non-null today (a mark is always under a file group), but a defensive guard now returns early if a detached row is ever dropped, so a future tree-shape change can't turn it into a crash.
