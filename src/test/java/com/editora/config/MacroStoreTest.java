@@ -31,6 +31,19 @@ class MacroStoreTest {
     }
 
     @Test
+    void namelessMacroFromCorruptedJsonDoesNotNpeLookups() {
+        // A corrupted/hand-edited macros.json entry with no "name" deserializes to a Macro with a null name
+        // component; Macro defaults it to "" so find/put/remove (which call m.name().equals(...)) never NPE.
+        Macro nameless = new Macro(null, List.of(MacroStep.text("x")));
+        assertEquals("", nameless.name());
+        MacroStore store = new MacroStore();
+        store.macros.add(nameless);
+        assertNull(store.find("anything")); // iterates + derefs m.name() — must not throw
+        store.put(new Macro("real", List.of()));
+        assertFalse(store.remove("missing"));
+    }
+
+    @Test
     void roundTripsThroughMacrosJson(@TempDir Path dir) throws Exception {
         SharedConfig cfg = new SharedConfig(dir, true);
         cfg.load();

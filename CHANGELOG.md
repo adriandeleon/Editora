@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hardened several spots against NullPointerExceptions from corrupted config or non-conforming servers** (found via a full-codebase null-flow audit). `Macro` now defaults a missing `name` to `""`, so a hand-edited/corrupted `macros.json` entry without a name can't NPE macro lookups (find/save/delete). `SnippetManager` skips a snippet file whose content is the literal `null` instead of throwing. `LspManager` go-to-definition / find-references guard a `Location`/`LocationLink` range that a non-conforming language server leaves null. `DapClient.evaluate` tolerates a null adapter response like `evaluateFull` already did. (The wider audit found the `ui`/`editor`/`MainController` packages already guard nullable returns consistently.)
+
 - **Hardened the Bookmarks drag-reorder against a theoretical NPE.** `handleDrop` dereferenced a dragged mark row's `getParent()` directly; it's always non-null today (a mark is always under a file group), but a defensive guard now returns early if a detached row is ever dropped, so a future tree-shape change can't turn it into a crash.
 
 - **Markdown preview no longer renders HTML comments.** `<!-- … -->` blocks (and inline comments) were shown as visible text/code in the preview (and PDF/print export); they're now hidden, matching GitHub and every other Markdown renderer.

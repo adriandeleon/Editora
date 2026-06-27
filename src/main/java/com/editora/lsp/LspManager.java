@@ -571,14 +571,19 @@ public final class LspManager {
             if (error == null && result != null) {
                 if (result.isLeft()) {
                     for (Location l : result.getLeft()) {
-                        addTarget(targets, l.getUri(), l.getRange().getStart());
+                        var range = l.getRange(); // a non-conforming server can omit the (spec-required) range
+                        if (range != null) {
+                            addTarget(targets, l.getUri(), range.getStart());
+                        }
                     }
                 } else if (result.getRight() != null) {
                     for (LocationLink ll : result.getRight()) {
                         var range = ll.getTargetSelectionRange() != null
                                 ? ll.getTargetSelectionRange()
                                 : ll.getTargetRange();
-                        addTarget(targets, ll.getTargetUri(), range.getStart());
+                        if (range != null) {
+                            addTarget(targets, ll.getTargetUri(), range.getStart());
+                        }
                     }
                 }
             }
@@ -596,7 +601,10 @@ public final class LspManager {
             List<Target> targets = new ArrayList<>();
             if (error == null && locations != null) {
                 for (Location l : locations) {
-                    addTarget(targets, l.getUri(), l.getRange().getStart());
+                    var range = l.getRange(); // guard against a server omitting the spec-required range
+                    if (range != null) {
+                        addTarget(targets, l.getUri(), range.getStart());
+                    }
                 }
             }
             Platform.runLater(() -> cb.accept(targets));
