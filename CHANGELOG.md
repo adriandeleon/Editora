@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Broadened the headless-FX harness over `EditorBuffer`.** A new `EditorBufferFxTest` exercises Markdown view-mode switching (incl. the minimap-hidden-in-preview rule), read-only / view mode, programmatic typing through the macro-replay path (with auto-close), per-language run-glyph detection (compact Java / Python / gated shell), and display-name/dirty/EOL bookkeeping — raising `editor`-package coverage with no new production code beyond two helper-visibility tweaks.
 - **Test coverage: added unit tests + ratcheted the JaCoCo floors.** New tests for `config` models/stores (`Breakpoint`, `BreakpointStore`, `RecentFiles`, plus `FileIdentity` null/empty branches) raised `config` line coverage to ~88%, and new `InstallService` tests cover `findBinary`/`makeExecutable`/`Result`. The per-package `jacoco-check` floors were ratcheted to sit a few points below the measured coverage (migration·diff 0.85→0.90, config split out at 0.86, template·editorconfig 0.80→0.82, completion·http·pdf 0.68→0.70).
 
 ### Fixed
