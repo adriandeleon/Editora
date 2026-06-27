@@ -381,7 +381,11 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (src.getValue() instanceof MarkRow sm) {
-            var siblings = src.getParent().getChildren();
+            TreeItem<Row> parent = src.getParent();
+            if (parent == null) {
+                return; // a detached/root mark row has no file group to reorder within (defensive)
+            }
+            var siblings = parent.getChildren();
             int from = siblings.indexOf(src);
             moveMark(
                     sm.file(),

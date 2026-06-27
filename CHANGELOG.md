@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hardened the Bookmarks drag-reorder against a theoretical NPE.** `handleDrop` dereferenced a dragged mark row's `getParent()` directly; it's always non-null today (a mark is always under a file group), but a defensive guard now returns early if a detached row is ever dropped, so a future tree-shape change can't turn it into a crash.
+
 - **Markdown preview no longer renders HTML comments.** `<!-- … -->` blocks (and inline comments) were shown as visible text/code in the preview (and PDF/print export); they're now hidden, matching GitHub and every other Markdown renderer.
 - **Markdown preview hides the editor minimap.** In Split/Preview mode the minimap was wedged between the editor and the preview; it's now hidden while the preview is shown (the preview is the overview) and restored when you return to the plain editor view.
 
