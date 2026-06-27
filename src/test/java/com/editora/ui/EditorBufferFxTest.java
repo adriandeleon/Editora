@@ -1,0 +1,177 @@
+package com.editora.ui;
+
+import javafx.scene.Node;
+
+import com.editora.editor.EditorBuffer;
+import com.editora.editor.EditorBuffer.MarkdownViewMode;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * End-to-end (headless-FX) coverage of {@link EditorBuffer} behaviors that need the toolkit: Markdown
+ * view-mode switching + the minimap-hidden-in-preview rule, read-only / view mode, programmatic typing
+ * (the macro-replay path with auto-close), run-glyph detection per language, and display-name/dirty/EOL
+ * bookkeeping. Constructs buffers directly (no services), so it exercises the {@code editor} package alone.
+ */
+@Tag("fx")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class EditorBufferFxTest {
+
+    @BeforeAll
+    void setUp() throws Exception {
+        FxTestSupport.bootToolkit();
+    }
+
+    @AfterAll
+    void tearDown() {
+        // Buffers are local to each test; nothing global to dispose.
+    }
+
+    private EditorBuffer markdownBuffer(String text) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("markdown");
+            b.setContent(text);
+            b.getNode(); // realize the scene graph (scroll pane + minimap)
+            return b;
+        });
+    }
+
+    private static boolean minimapVisible(EditorBuffer b) {
+        Node mm = FxTestSupport.field(b, "minimap");
+        return mm.isVisible();
+    }
+
+    @Test
+    void markdownPreviewModesToggleAndHideTheMinimap() throws Exception {
+        EditorBuffer b = markdownBuffer("# Title\n\nSome **body** text.\n");
+        assertTrue(FxTestSupport.callOnFx(b::isMarkdown));
+        assertTrue(FxTestSupport.callOnFx(b::hasPreview));
+
+        // EDITOR (default): minimap shown.
+        assertEquals(MarkdownViewMode.EDITOR, FxTestSupport.callOnFx(b::getMarkdownViewMode));
+        assertTrue(minimapVisible(b), "minimap shown in plain editor view");
+
+        // SPLIT: preview is the overview, so the minimap is hidden.
+        FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.SPLIT));
+        assertEquals(MarkdownViewMode.SPLIT, FxTestSupport.callOnFx(b::getMarkdownViewMode));
+        assertFalse(minimapVisible(b), "minimap hidden in split preview");
+
+        // PREVIEW: still hidden.
+        FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
+        assertFalse(minimapVisible(b), "minimap hidden in full preview");
+
+        // Back to EDITOR: minimap restored.
+        FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.EDITOR));
+        assertTrue(minimapVisible(b), "minimap restored on return to editor");
+    }
+
+    @Test
+    void minimapSettingStillGatesTheEditorView() throws Exception {
+        EditorBuffer b = markdownBuffer("plain\n");
+        FxTestSupport.runOnFx(() -> b.setMinimapVisible(false));
+        assertFalse(minimapVisible(b), "user turned the minimap off");
+        FxTestSupport.runOnFx(() -> b.setMinimapVisible(true));
+        assertTrue(minimapVisible(b), "user turned the minimap back on");
+    }
+
+    @Test
+    void viewModeMakesTheBufferReadOnly() throws Exception {
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setContent("code");
+            return buf;
+        });
+        assertTrue(FxTestSupport.callOnFx(b::isEditable), "editable by default");
+        FxTestSupport.runOnFx(() -> b.setViewMode(true));
+        assertTrue(FxTestSupport.callOnFx(b::isViewMode));
+        assertFalse(FxTestSupport.callOnFx(b::isEditable), "view mode blocks editing");
+        FxTestSupport.runOnFx(() -> b.setViewMode(false));
+        assertTrue(FxTestSupport.callOnFx(b::isEditable), "editable again");
+    }
+
+    @Test
+    void typeStringReusesTheEditAssistsAndAutoClosesBrackets() throws Exception {
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setLanguageOverride("java");
+            buf.setContent("");
+            return buf;
+        });
+        FxTestSupport.runOnFx(() -> b.typeString("x("));
+        // Auto-close inserts the matching ) after the typed ( — same assist the live key filter uses.
+        assertEquals("x()", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void runGlyphDetectionPerLanguage() throws Exception {
+        // A Java 25 compact source file (top-level void main) is runnable once the Run feature is on.
+        EditorBuffer java = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setDisplayName("Main.java"); // compact-source detection keys off the .java name
+            buf.setLanguageOverride("java");
+            buf.setRunEnabled(true);
+            buf.setContent("void main() {\n    IO.println(\"hi\");\n}\n");
+            return buf;
+        });
+        assertTrue(FxTestSupport.callOnFx(java::isRunnable), "compact-source main ⇒ runnable");
+        assertFalse(FxTestSupport.callOnFx(java::isPython));
+
+        // Python is runnable (the controller picks python3 as the runner).
+        EditorBuffer py = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setLanguageOverride("python");
+            buf.setRunEnabled(true);
+            buf.setContent("if __name__ == \"__main__\":\n    print('hi')\n");
+            return buf;
+        });
+        assertTrue(FxTestSupport.callOnFx(py::isRunnable));
+        assertTrue(FxTestSupport.callOnFx(py::isPython));
+
+        // A shell script needs BOTH the Run feature and the shell-run gate (the Bash LSP toggle).
+        EditorBuffer sh = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setLanguageOverride("shell");
+            buf.setRunEnabled(true);
+            buf.setContent("#!/bin/bash\necho hi\n");
+            return buf;
+        });
+        assertTrue(FxTestSupport.callOnFx(sh::isShell));
+        assertFalse(FxTestSupport.callOnFx(sh::isRunnable), "shell glyph gated off until shell-run enabled");
+        FxTestSupport.runOnFx(() -> sh.setShellRunEnabled(true));
+        assertTrue(FxTestSupport.callOnFx(sh::isRunnable), "shell glyph appears once enabled");
+
+        // Turning the Run feature off removes the glyph for every language.
+        FxTestSupport.runOnFx(() -> py.setRunEnabled(false));
+        assertFalse(FxTestSupport.callOnFx(py::isRunnable));
+    }
+
+    @Test
+    void displayNameDirtyAndLineEndingBookkeeping() throws Exception {
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setDisplayName("scratch.md");
+            buf.setContent("one\n");
+            buf.markClean();
+            return buf;
+        });
+        assertEquals("scratch.md", FxTestSupport.callOnFx(b::getDisplayName));
+        assertFalse(FxTestSupport.callOnFx(b::isDirty), "clean right after markClean");
+
+        FxTestSupport.runOnFx(() -> b.typeString("two"));
+        assertTrue(FxTestSupport.callOnFx(b::isDirty), "an edit marks the buffer dirty");
+
+        // EOL override is reflected by getLineEnding; the static detector reads raw text.
+        FxTestSupport.runOnFx(() -> b.setEolOverride("CRLF"));
+        assertEquals("CRLF", FxTestSupport.callOnFx(b::getLineEnding));
+        assertEquals("CRLF", EditorBuffer.detectLineEnding("a\r\nb"));
+        assertEquals("LF", EditorBuffer.detectLineEnding("a\nb"));
+    }
+}
