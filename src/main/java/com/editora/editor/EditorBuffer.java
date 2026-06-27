@@ -613,11 +613,14 @@ public class EditorBuffer implements TabContent {
             }
         });
         // Dirty only when the content differs from the last saved/loaded text, so reverting an edit
-        // (undo or manual) clears the marker. The length check short-circuits the O(n) compare —
-        // it runs only when the length matches the saved length (i.e. near the original state).
-        area.textProperty()
-                .addListener(
-                        (obs, old, now) -> dirty.set(now.length() != cleanText.length() || !now.equals(cleanText)));
+        // (undo or manual) clears the marker. Driven off plainTextChanges (not textProperty): subscribing
+        // to textProperty would force RichTextFX to materialize the whole document String on every
+        // keystroke — O(n) allocation per char on a very large single buffer (e.g. minified JS on one
+        // line, past the line-count heavy-file tier). The cheap getLength() check gates the full-text
+        // compare so area.getText() is only built in the rare near-clean state, never while typing.
+        area.plainTextChanges()
+                .subscribe(c -> dirty.set(area.getLength() != cleanText.length()
+                        || !area.getText().equals(cleanText)));
         area.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
             scheduleBraceMatch();
