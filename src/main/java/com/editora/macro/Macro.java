@@ -11,6 +11,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 public record Macro(String name, List<MacroStep> steps) {
 
     public Macro {
+        name = name == null ? "" : name; // a name-less entry in a hand-edited macros.json must not NPE lookups
         steps = steps == null ? List.of() : List.copyOf(steps);
     }
 

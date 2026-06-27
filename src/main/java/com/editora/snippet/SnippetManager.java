@@ -108,6 +108,9 @@ public final class SnippetManager {
         }
         try (InputStream in = Files.newInputStream(file)) {
             Map<String, Dto> map = mapper.readValue(in, new TypeReference<Map<String, Dto>>() {});
+            if (map == null) {
+                return out; // a snippet file whose content is the literal `null` ⇒ no snippets
+            }
             map.forEach((name, dto) -> {
                 if (dto == null) {
                     return;
@@ -139,6 +142,9 @@ public final class SnippetManager {
                 return out;
             }
             Map<String, Dto> map = mapper.readValue(in, new TypeReference<Map<String, Dto>>() {});
+            if (map == null) {
+                return out; // a bundled snippet resource whose content is the literal `null`
+            }
             map.forEach((name, dto) -> {
                 if (dto == null) {
                     return;
@@ -246,6 +252,9 @@ public final class SnippetManager {
     private void readInto(Map<String, Snippet> byPrefix, InputStream in, String language) {
         try {
             Map<String, Dto> map = mapper.readValue(in, new TypeReference<Map<String, Dto>>() {});
+            if (map == null) {
+                return; // a snippet file whose content is the literal `null`
+            }
             map.forEach((name, dto) -> {
                 if (dto == null) {
                     return;

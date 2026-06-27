@@ -19,7 +19,6 @@ import org.eclipse.lsp4j.debug.ContinueArguments;
 import org.eclipse.lsp4j.debug.ContinuedEventArguments;
 import org.eclipse.lsp4j.debug.DisconnectArguments;
 import org.eclipse.lsp4j.debug.EvaluateArguments;
-import org.eclipse.lsp4j.debug.EvaluateResponse;
 import org.eclipse.lsp4j.debug.InitializeRequestArguments;
 import org.eclipse.lsp4j.debug.NextArguments;
 import org.eclipse.lsp4j.debug.OutputEventArguments;
@@ -349,7 +348,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setExpression(expression);
         a.setFrameId(frameId);
         a.setContext(context);
-        return server.evaluate(a).thenApply(EvaluateResponse::getResult);
+        return server.evaluate(a).thenApply(r -> r == null ? null : r.getResult()); // adapter may null the body
     }
 
     /** Like {@link #evaluate} but keeps the full response: result + expandable children reference + type
