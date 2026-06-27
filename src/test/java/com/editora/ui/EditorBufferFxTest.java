@@ -174,4 +174,24 @@ class EditorBufferFxTest {
         assertEquals("CRLF", EditorBuffer.detectLineEnding("a\r\nb"));
         assertEquals("LF", EditorBuffer.detectLineEnding("a\nb"));
     }
+
+    @Test
+    void revertingToSavedContentClearsDirty() throws Exception {
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setContent("abc");
+            buf.markClean();
+            return buf;
+        });
+        org.fxmisc.richtext.CodeArea area = FxTestSupport.field(b, "area");
+        assertFalse(FxTestSupport.callOnFx(b::isDirty), "clean after markClean");
+
+        // An edit of different length hits the cheap getLength() path ⇒ dirty.
+        FxTestSupport.runOnFx(() -> area.appendText("X"));
+        assertTrue(FxTestSupport.callOnFx(b::isDirty), "an edit marks dirty");
+
+        // Reverting to the exact saved text (lengths match again) clears dirty via the getText compare.
+        FxTestSupport.runOnFx(() -> area.replaceText("abc"));
+        assertFalse(FxTestSupport.callOnFx(b::isDirty), "reverting to saved content clears dirty");
+    }
 }

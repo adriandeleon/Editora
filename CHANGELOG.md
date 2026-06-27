@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **Dirty-state tracking no longer allocates the whole document on every keystroke.** The editor's modified-flag listener was bound to RichTextFX's `textProperty()`, which forces the full document `String` to be materialized on each change — an O(n) allocation per character on a very large single buffer (e.g. minified JS/CSS or a one-line JSON/log that slips past the line-count heavy-file tier). It now runs off `plainTextChanges` with a cheap `getLength()` gate, so the full text is only built in the rare near-clean state, never while typing. Behavior is unchanged (reverting an edit still clears the marker).
+
 ### Internal
 
 - **Broadened the headless-FX harness over the Run + External-Tool console panels.** New `RunPanelFxTest` and `ExternalToolPanelFxTest` exercise the console lifecycle (started → appendOutput stdout/stderr → finished/failed, Stop-button enablement) and the one-shot tool console (command header + stdout + stderr + status line, clear).
