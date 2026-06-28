@@ -284,10 +284,22 @@ final class NotesCoordinator {
                 true);
     }
 
-    void onGutterNoteClick(EditorBuffer buffer, int line) {
-        var ns = buffer.getNoteManager().notesOnLine(line);
-        if (!ns.isEmpty()) {
-            editOpenBufferNote(buffer, ns.get(0));
+    /** Edit the personal note at the caret — the one whose span contains the caret, else the first on the
+     *  caret's line. Backs the {@code notes.editNote} command (the inline marker has no gutter click). */
+    void editNoteAtCaret() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        PersonalNote note = buffer.getNoteManager().noteAt(buffer.getArea().getCaretPosition());
+        if (note == null) {
+            var ns = buffer.getNoteManager().notesOnLine(buffer.getArea().getCurrentParagraph());
+            if (!ns.isEmpty()) {
+                note = ns.get(0);
+            }
+        }
+        if (note != null) {
+            editOpenBufferNote(buffer, note);
         }
     }
 

@@ -3990,7 +3990,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.persistBookmarks(buffer));
         buffer.setGutterBookmarkClick(bookmarkCoordinator::onGutterBookmarkClick);
         buffer.setOnNotesChanged(() -> notesCoordinator.persistNotes(buffer));
-        buffer.setGutterNoteClick(notesCoordinator::onGutterNoteClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)
         // Refresh the Run button when this buffer's runnable status flips (only acts if it's active).
@@ -8535,6 +8534,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("bookmarks.jump", bookmarkCoordinator::openJumpPalette));
         registry.register(Command.of("bookmarks.clearFile", bookmarkCoordinator::clearInFile));
         registry.register(Command.of("notes.add", () -> notesCoordinator.ifEnabled(notesCoordinator::addNoteAtCaret)));
+        registry.register(
+                Command.of("notes.editNote", () -> notesCoordinator.ifEnabled(notesCoordinator::editNoteAtCaret)));
         registry.register(
                 Command.of("notes.next", () -> notesCoordinator.ifEnabled(() -> notesCoordinator.jumpNote(true))));
         registry.register(
