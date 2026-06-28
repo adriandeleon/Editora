@@ -191,6 +191,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private QuickOpen<StructurePanel.Outline> structurePalette;
     private QuickOpen<Tab> openFilesPalette;
     private QuickOpen<ToolWindow> toolWindowPalette;
+    private QuickOpen<com.editora.editor.UndoHistory.Checkpoint> undoHistoryPalette;
     private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
     private com.editora.snippet.SnippetManager snippets;
     private com.editora.template.TemplateRegistry templates;
@@ -794,6 +795,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         structurePalette.setOverlayHost(overlayHost);
         openFilesPalette.setOverlayHost(overlayHost);
         toolWindowPalette.setOverlayHost(overlayHost);
+        undoHistoryPalette.setOverlayHost(overlayHost);
         bookmarkCoordinator.wireOverlayHost();
         notesCoordinator.wireOverlayHost();
         snippetPalette.setOverlayHost(overlayHost);
@@ -1111,6 +1113,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 ToolWindow::getTitle,
                 tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
                 toolWindows::open);
+        undoHistoryPalette = new QuickOpen<>(
+                tr("toolwindow.undoHistory"),
+                tr("undoHistory.popupPrompt"),
+                this::undoHistoryCheckpoints,
+                c -> c.linePreview().isEmpty() ? tr("undoHistory.blankLine") : c.linePreview(),
+                MainController::undoCheckpointTime, // detail column = the capture time
+                this::restoreUndoCheckpoint);
         snippetPalette = new QuickOpen<>(
                 "Insert Snippet",
                 "Type to filter snippets…",
@@ -3923,6 +3932,35 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private EditorBuffer activeBuffer() {
         return bufferOf(tabPane.getSelectionModel().getSelectedItem());
+    }
+
+    // --- Undo History popup (the QuickOpen mirror of the Undo History tool window) ---
+
+    /** Checkpoints of the active buffer, newest-first, seeding a baseline when empty (like the panel). */
+    private java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            return java.util.List.of();
+        }
+        if (b.getUndoHistory().isEmpty()) {
+            b.captureUndoCheckpoint(); // baseline = the current state, so there's always something to pick
+        }
+        return b.getUndoHistory().entriesNewestFirst();
+    }
+
+    private void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c) {
+        EditorBuffer b = activeBuffer();
+        if (b != null) {
+            b.restoreUndoCheckpoint(c);
+        }
+    }
+
+    private static final java.time.format.DateTimeFormatter UNDO_TIME =
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault());
+
+    /** The checkpoint's capture time as {@code HH:mm:ss} for the popup's detail column. */
+    private static String undoCheckpointTime(com.editora.editor.UndoHistory.Checkpoint c) {
+        return UNDO_TIME.format(java.time.Instant.ofEpochMilli(c.epochMillis()));
     }
 
     /** Pages the active buffer's Markdown preview if it's the active scroll target (C-v / M-v). */
@@ -8488,6 +8526,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("structure.jump", () -> structurePalette.show(stage)));
         registry.register(Command.of("buffer.jump", () -> openFilesPalette.show(stage)));
         registry.register(Command.of("tool.jump", () -> toolWindowPalette.show(stage)));
+        registry.register(Command.of("undoHistory.jump", () -> undoHistoryPalette.show(stage)));
         registry.register(Command.of("bookmarks.toggle", bookmarkCoordinator::toggleAtCaret));
         registry.register(Command.of("bookmarks.editNote", bookmarkCoordinator::editNoteAtCaret));
         registry.register(Command.of("bookmarks.next", () -> bookmarkCoordinator.jump(true)));
