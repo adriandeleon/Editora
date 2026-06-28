@@ -1781,7 +1781,7 @@ public class SettingsWindow {
         }
         // One row per rule: a checkbox whose label is the rule code (fixed-width so codes align) followed by
         // a muted one-line description — a readable vertical list instead of a wrapping grid of bare codes.
-        for (com.editora.editor.MarkdownLint.Rule rule : com.editora.editor.MarkdownLint.RULES) {
+        for (com.editora.markdown.MarkdownLint.Rule rule : com.editora.markdown.MarkdownLint.RULES) {
             String code = rule.code();
             Label codeLabel = new Label(code);
             codeLabel.getStyleClass().add("md-lint-code");

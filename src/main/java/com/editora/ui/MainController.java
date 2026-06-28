@@ -3314,7 +3314,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     long mtime = java.nio.file.Files.getLastModifiedTime(cfg).toMillis();
                     MarkdownLintConfigEntry cached = markdownLintConfigCache.get(cfg);
                     if (cached == null || cached.mtime() != mtime) {
-                        java.util.Set<String> rules = com.editora.editor.MarkdownLintConfig.disabledRules(
+                        java.util.Set<String> rules = com.editora.markdown.MarkdownLintConfig.disabledRules(
                                 java.nio.file.Files.readString(cfg));
                         cached = new MarkdownLintConfigEntry(mtime, rules);
                         markdownLintConfigCache.put(cfg, cached);
@@ -3341,7 +3341,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         String text = b.getContent();
-        String fixed = com.editora.editor.MarkdownLintFix.fix(
+        String fixed = com.editora.markdown.MarkdownLintFix.fix(
                 text, effectiveMarkdownLintDisabled(b), config.getSettings().getTabSize());
         if (fixed.equals(text)) {
             setStatus(tr("status.markdownLint.fixNone"));
@@ -3355,8 +3355,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void chooseMarkdownLintRule() {
         chooseSetting(
                 "markdownLint.toggleRule",
-                () -> com.editora.editor.MarkdownLint.RULES.stream()
-                        .map(com.editora.editor.MarkdownLint.Rule::code)
+                () -> com.editora.markdown.MarkdownLint.RULES.stream()
+                        .map(com.editora.markdown.MarkdownLint.Rule::code)
                         .toList(),
                 code -> {
                     boolean on = !markdownLintRuleDisabled(code);
@@ -5448,14 +5448,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         try {
             java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-            java.nio.file.Path assets = baseDir.resolve(com.editora.editor.MarkdownImagePaste.ASSETS_DIR);
+            java.nio.file.Path assets = baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
             java.nio.file.Files.createDirectories(assets);
-            String name = com.editora.editor.MarkdownImagePaste.uniqueFileName(
+            String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
                     n -> java.nio.file.Files.exists(assets.resolve(n)), "pasted-image", "png");
             java.nio.file.Path target = assets.resolve(name);
             writeFxImageToPng(img, target);
-            String rel = com.editora.editor.MarkdownImagePaste.relativePath(baseDir, target);
-            b.insertAtCaret(com.editora.editor.MarkdownImagePaste.snippet(rel, ""));
+            String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
+            b.insertAtCaret(com.editora.markdown.MarkdownImagePaste.snippet(rel, ""));
             setStatus(tr("status.markdown.imagePasted", rel));
         } catch (Exception ex) {
             setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
@@ -5471,21 +5471,21 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         try {
             java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-            java.nio.file.Path assets = baseDir.resolve(com.editora.editor.MarkdownImagePaste.ASSETS_DIR);
+            java.nio.file.Path assets = baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
             java.nio.file.Files.createDirectories(assets);
             StringBuilder out = new StringBuilder();
             for (java.io.File f : files) {
                 String ext = extensionOf(f.getName());
                 String base = stripExtension(f.getName());
-                String name = com.editora.editor.MarkdownImagePaste.uniqueFileName(
+                String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
                         n -> java.nio.file.Files.exists(assets.resolve(n)), base, ext);
                 java.nio.file.Path target = assets.resolve(name);
                 java.nio.file.Files.copy(f.toPath(), target);
-                String rel = com.editora.editor.MarkdownImagePaste.relativePath(baseDir, target);
+                String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
                 if (out.length() > 0) {
                     out.append('\n');
                 }
-                out.append(com.editora.editor.MarkdownImagePaste.snippet(rel, base));
+                out.append(com.editora.markdown.MarkdownImagePaste.snippet(rel, base));
             }
             b.insertAtCaret(out.toString());
             setStatus(tr("status.markdown.imageDropped", files.size()));

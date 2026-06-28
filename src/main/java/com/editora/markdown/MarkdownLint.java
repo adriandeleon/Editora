@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.markdown;
 
 import java.util.ArrayList;
 import java.util.HashSet;

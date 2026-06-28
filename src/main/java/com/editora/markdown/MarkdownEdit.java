@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.markdown;
 
 /**
  * A pure text edit produced by the Markdown editing cores ({@link MarkdownInline}, {@link MarkdownHeading},

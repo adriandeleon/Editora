@@ -10,6 +10,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
+import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
 
 /**

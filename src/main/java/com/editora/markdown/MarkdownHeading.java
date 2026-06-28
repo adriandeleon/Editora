@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.markdown;
 
 /**
  * Pure (no-toolkit, unit-tested) Markdown heading level changes over the line(s) a selection covers:

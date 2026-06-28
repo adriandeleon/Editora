@@ -1,10 +1,10 @@
-package com.editora.editor;
+package com.editora.markdown;
 
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import com.editora.editor.MarkdownLint.Diagnostic;
+import com.editora.markdown.MarkdownLint.Diagnostic;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

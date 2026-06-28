@@ -1,8 +1,8 @@
-package com.editora.editor;
+package com.editora.markdown;
 
 import java.util.List;
 
-import com.editora.editor.MarkdownOutline.Heading;
+import com.editora.markdown.MarkdownOutline.Heading;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
