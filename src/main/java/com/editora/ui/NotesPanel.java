@@ -5,11 +5,13 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import javafx.geometry.Pos;
+import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -68,8 +70,20 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         filterField.setPromptText(tr("notes.filterPrompt"));
         filterField.getStyleClass().add("notes-filter");
         filterField.textProperty().addListener((o, w, n) -> refresh());
+        // Trailing clear ("✕") button — visible only while the filter has text (mirrors the Project panel).
+        Button clear = new Button("✕");
+        clear.getStyleClass().add("project-filter-clear");
+        clear.setFocusTraversable(false);
+        clear.setTooltip(new Tooltip(tr("project.filterClear")));
+        clear.setOnAction(e -> {
+            filterField.clear();
+            filterField.requestFocus();
+        });
+        clear.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        clear.managedProperty().bind(clear.visibleProperty());
         HBox.setHgrow(filterField, Priority.ALWAYS);
-        HBox header = new HBox(6, filterField);
+        HBox header = new HBox(6, filterField, clear);
+        header.getStyleClass().add("project-filter-bar");
         header.setAlignment(Pos.CENTER_LEFT);
 
         tree.setShowRoot(false);
@@ -182,13 +196,14 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
             setContextMenu(null);
-            getStyleClass().removeAll("note-resolved", "note-orphaned");
+            getStyleClass().removeAll("note-resolved", "note-orphaned", "notes-file-row");
             if (empty || item == null) {
                 setText(null);
                 return;
             }
             if (item instanceof FileRow f) {
                 setText(fileName(f.fileKey()));
+                getStyleClass().add("notes-file-row");
                 MenuItem deleteAll = new MenuItem(tr("notes.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());
                 deleteAll.setOnAction(e -> actions.deleteAll(f.fileKey()));

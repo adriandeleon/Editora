@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.VBox;
@@ -265,8 +267,12 @@ final class NotesCoordinator {
         // Honor the user's configured keybindings (Emacs caret movement + basic editing) in the note box.
         ops.installEmacsKeys(editor);
         Label prompt = new Label(tr("dialog.note.content"));
-        VBox body = new VBox(6, prompt, editor);
-        OverlayInput.Extra extra = onDelete == null ? null : new OverlayInput.Extra(tr("notes.delete"), onDelete);
+        Label hint = new Label(tr("dialog.note.markdownHint"));
+        hint.getStyleClass().add("note-dialog-hint");
+        VBox body = new VBox(6, prompt, editor, hint);
+        // Editing an existing note: the Delete button confirms first (it's destructive).
+        OverlayInput.Extra extra =
+                onDelete == null ? null : new OverlayInput.Extra(tr("notes.delete"), () -> confirmDelete(onDelete));
         OverlayInput.show(
                 host.overlayHost(),
                 tr("dialog.note.title"),
@@ -282,6 +288,21 @@ final class NotesCoordinator {
                 },
                 extra,
                 true);
+    }
+
+    /** Confirms (native dialog) before running a destructive note delete from the editor popup. */
+    private void confirmDelete(Runnable onConfirm) {
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("dialog.note.deleteConfirm.content"),
+                ButtonType.OK,
+                ButtonType.CANCEL);
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("dialog.note.deleteConfirm.title"));
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            onConfirm.run();
+        }
     }
 
     /** Edit the personal note at the caret — the one whose span contains the caret, else the first on the
