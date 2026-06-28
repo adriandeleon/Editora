@@ -17,7 +17,6 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
-import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -139,8 +138,9 @@ public class CommandPalette {
         content.setMaxSize(620, Region.USE_PREF_SIZE); // hug its content; don't stretch to fill the overlay
         // Editor-context chords (C-n/C-p/arrows) are left to the palette's own handler while it's open.
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE);
-        // Clicks on the card must not reach the backdrop (which hides the palette).
-        content.addEventFilter(MouseEvent.MOUSE_CLICKED, MouseEvent::consume);
+        // (No MOUSE_CLICKED consume on the card: the backdrop dismisses on MOUSE_PRESSED targeted at
+        // itself, so a click inside the card never reaches it — and consuming MOUSE_CLICKED here would
+        // swallow the result cells' own click-to-run handler.)
     }
 
     /** Injects the shared overlay host used to show the palette card. */

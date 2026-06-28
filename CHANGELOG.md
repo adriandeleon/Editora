@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Test coverage: added unit tests + ratcheted the JaCoCo floors.** New tests for `config` models/stores (`Breakpoint`, `BreakpointStore`, `RecentFiles`, plus `FileIdentity` null/empty branches) raised `config` line coverage to ~88%, and new `InstallService` tests cover `findBinary`/`makeExecutable`/`Result`. The per-package `jacoco-check` floors were ratcheted to sit a few points below the measured coverage (migration·diff 0.85→0.90, config split out at 0.86, template·editorconfig 0.80→0.82, completion·http·pdf 0.68→0.70).
 
 ### Fixed
+- **Command palette: clicking a result now runs it.** A card-wide `MOUSE_CLICKED` consume filter was swallowing the result cells' click-to-run handler (only Enter worked).
+- **Command palette: removed the stray separator line above the command description.**
 
 - **Project / Current-Folder filter now finds top-level files in a large root.** The filter-box search walked the tree depth-first, so under a big root (e.g. a home directory with huge `.cache`/`.m2`/`node_modules` subtrees) it exhausted its visit budget deep inside one subtree before ever reaching a shallow file like `.profile` — which then never appeared in the results. The search is now breadth-first, visiting every shallower entry before descending, so top-level matches are never starved by a deep sibling subtree.
 
