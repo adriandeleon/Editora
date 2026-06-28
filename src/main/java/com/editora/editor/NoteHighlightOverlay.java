@@ -27,7 +27,7 @@ final class NoteHighlightOverlay extends Region {
     // A small solid corner triangle painted at each note's start character — the inline "there's a note
     // here" marker (replaces the old gutter glyph). Deeper amber than the wash so it reads on top of it.
     private static final Color GLYPH = Color.web("#f57f17", 0.95);
-    private static final double GLYPH_SIZE = 7;
+    private static final double GLYPH_SIZE = 8.75;
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);

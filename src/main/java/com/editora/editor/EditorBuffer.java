@@ -3626,9 +3626,9 @@ public class EditorBuffer implements TabContent {
                     continue;
                 }
                 if (e.getScreenX() >= scr.getMinX()
-                        && e.getScreenX() <= scr.getMinX() + 9
+                        && e.getScreenX() <= scr.getMinX() + 11
                         && e.getScreenY() >= scr.getMinY()
-                        && e.getScreenY() <= scr.getMinY() + 9) {
+                        && e.getScreenY() <= scr.getMinY() + 11) {
                     com.editora.config.PersonalNote n = notes.noteAt(span[0]);
                     if (n != null) {
                         noteMarkerClick.accept(this, n);
