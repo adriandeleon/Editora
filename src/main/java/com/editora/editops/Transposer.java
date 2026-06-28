@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 /**
  * Pure, unit-tested implementation of the Emacs transpose commands — character (`C-t`), word (`M-t`),

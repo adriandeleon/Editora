@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 /**
  * Pure, unit-tested line operations — <b>duplicate line</b>, <b>move line up</b>, and <b>move line

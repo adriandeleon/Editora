@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 /**
  * Finds the bracket matching the one adjacent to the caret — pure (no toolkit), so it is unit-tested.

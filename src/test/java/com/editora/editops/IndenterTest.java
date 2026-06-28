@@ -1,6 +1,6 @@
-package com.editora.editor;
+package com.editora.editops;
 
-import com.editora.editor.Indenter.Style;
+import com.editora.editops.Indenter.Style;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

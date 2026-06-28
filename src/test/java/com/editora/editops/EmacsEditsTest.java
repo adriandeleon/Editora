@@ -1,8 +1,8 @@
-package com.editora.editor;
+package com.editora.editops;
 
 import java.util.function.BiFunction;
 
-import com.editora.editor.EmacsEdits.Edit;
+import com.editora.editops.EmacsEdits.Edit;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

@@ -45,7 +45,7 @@ public class Settings {
      */
     private String indentStyle = "detect";
     /** Target column for the Emacs-style fill commands (M-q / fill-region); Emacs default. */
-    private int fillColumn = com.editora.editor.Filler.DEFAULT_FILL_COLUMN;
+    private int fillColumn = com.editora.editops.Filler.DEFAULT_FILL_COLUMN;
 
     private String keymap = "emacs";
     /** UI language code (e.g. {@code "es"}); empty = auto (system language if bundled, else English). */
@@ -337,7 +337,7 @@ public class Settings {
     }
 
     public int getFillColumn() {
-        return fillColumn < 1 ? com.editora.editor.Filler.DEFAULT_FILL_COLUMN : fillColumn;
+        return fillColumn < 1 ? com.editora.editops.Filler.DEFAULT_FILL_COLUMN : fillColumn;
     }
 
     public void setFillColumn(int fillColumn) {

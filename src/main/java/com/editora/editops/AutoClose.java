@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 /**
  * Pure decision logic for auto-closing brackets and quotes (no toolkit), so it is unit-tested.

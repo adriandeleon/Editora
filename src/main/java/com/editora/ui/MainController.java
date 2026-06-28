@@ -7809,7 +7809,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /**
      * Toggles comments on the selection/current line: a line comment for a single line, a block/region
-     * comment for a multi-line selection, depending on the language (see {@link com.editora.editor.Commenter}).
+     * comment for a multi-line selection, depending on the language (see {@link com.editora.editops.Commenter}).
      */
     /** Manually opens the autocomplete popup for the active buffer (the {@code edit.completion} command). */
     private void triggerCompletion() {
@@ -7843,7 +7843,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Applies an Emacs transpose (chars/words/lines) to the active editable buffer at the caret. */
-    private void transpose(java.util.function.BiFunction<String, Integer, com.editora.editor.Transposer.Edit> op) {
+    private void transpose(java.util.function.BiFunction<String, Integer, com.editora.editops.Transposer.Edit> op) {
         if (!activeEditable()) {
             return;
         }
@@ -7852,7 +7852,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editor.Transposer.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        com.editora.editops.Transposer.Edit edit = op.apply(area.getText(), area.getCaretPosition());
         if (edit == null) {
             return;
         }
@@ -7861,8 +7861,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         area.requestFocus();
     }
 
-    /** Applies a pure {@link com.editora.editor.LineOps} edit to the active area (duplicate / move line). */
-    private void lineOp(java.util.function.BiFunction<String, Integer, com.editora.editor.LineOps.Edit> op) {
+    /** Applies a pure {@link com.editora.editops.LineOps} edit to the active area (duplicate / move line). */
+    private void lineOp(java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op) {
         if (!activeEditable()) {
             return;
         }
@@ -7871,7 +7871,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editor.LineOps.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        com.editora.editops.LineOps.Edit edit = op.apply(area.getText(), area.getCaretPosition());
         if (edit == null) {
             return;
         }
@@ -7881,11 +7881,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Applies a pure {@link com.editora.editor.EmacsEdits} caret-based edit (backward-kill-word, the
+     * Applies a pure {@link com.editora.editops.EmacsEdits} caret-based edit (backward-kill-word, the
      * case-word commands, join-line, the whitespace commands, open-line, kill-whole-line, …) to the
      * active editable buffer. Mirrors {@link #transpose} / {@link #lineOp}.
      */
-    private void emacsEdit(java.util.function.BiFunction<String, Integer, com.editora.editor.EmacsEdits.Edit> op) {
+    private void emacsEdit(java.util.function.BiFunction<String, Integer, com.editora.editops.EmacsEdits.Edit> op) {
         if (!activeEditable()) {
             return;
         }
@@ -7894,7 +7894,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editor.EmacsEdits.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        com.editora.editops.EmacsEdits.Edit edit = op.apply(area.getText(), area.getCaretPosition());
         if (edit == null) {
             return;
         }
@@ -7914,9 +7914,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         var sel = area.getSelection();
-        com.editora.editor.EmacsEdits.Edit edit = upper
-                ? com.editora.editor.EmacsEdits.upcaseRegion(area.getText(), sel.getStart(), sel.getEnd())
-                : com.editora.editor.EmacsEdits.downcaseRegion(area.getText(), sel.getStart(), sel.getEnd());
+        com.editora.editops.EmacsEdits.Edit edit = upper
+                ? com.editora.editops.EmacsEdits.upcaseRegion(area.getText(), sel.getStart(), sel.getEnd())
+                : com.editora.editops.EmacsEdits.downcaseRegion(area.getText(), sel.getStart(), sel.getEnd());
         if (edit == null) {
             return; // no selection / already the target case
         }
@@ -7938,7 +7938,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         int caret = area.getCaretPosition();
-        int end = com.editora.editor.SexpNav.forward(area.getText(), caret);
+        int end = com.editora.editops.SexpNav.forward(area.getText(), caret);
         if (end <= caret) {
             return;
         }
@@ -7953,7 +7953,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (area == null) {
             return;
         }
-        int[] bounds = com.editora.editor.SexpNav.paragraphBounds(area.getText(), area.getCaretPosition());
+        int[] bounds = com.editora.editops.SexpNav.paragraphBounds(area.getText(), area.getCaretPosition());
         if (bounds[0] >= bounds[1]) {
             return;
         }
@@ -7965,8 +7965,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Emacs {@code kill-sexp} (`C-M-k`): delete the balanced expression after the caret. */
     private void killSexp() {
         emacsEdit((text, caret) -> {
-            int end = com.editora.editor.SexpNav.forward(text, caret);
-            return end > caret ? new com.editora.editor.EmacsEdits.Edit(caret, end, "", caret) : null;
+            int end = com.editora.editops.SexpNav.forward(text, caret);
+            return end > caret ? new com.editora.editops.EmacsEdits.Edit(caret, end, "", caret) : null;
         });
     }
 
@@ -7974,7 +7974,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Emacs {@code zap-to-char} (`M-z`): read one more character, then delete from the caret up to and
      * including its next occurrence. The character is captured via a one-shot {@code KEY_TYPED} filter
      * on the focused area (interactive, like AceJump — the span computation is the pure, tested
-     * {@link com.editora.editor.EmacsEdits#zapToChar}).
+     * {@link com.editora.editops.EmacsEdits#zapToChar}).
      */
     private void zapToChar() {
         if (!activeEditable()) {
@@ -7996,8 +7996,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     setStatus(""); // Escape / no printable character: cancel
                     return;
                 }
-                com.editora.editor.EmacsEdits.Edit edit =
-                        com.editora.editor.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch.charAt(0));
+                com.editora.editops.EmacsEdits.Edit edit =
+                        com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch.charAt(0));
                 if (edit == null) {
                     setStatus(tr("status.zapNotFound", ch));
                     return;
@@ -8038,7 +8038,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Emacs {@code fill-paragraph} (`M-q`): re-wrap the paragraph at the caret to the fill column. */
     private void fillParagraph() {
-        applyFill((text, b) -> com.editora.editor.Filler.fillParagraph(
+        applyFill((text, b) -> com.editora.editops.Filler.fillParagraph(
                 text, b.getFocusedArea().getCaretPosition(), fillColumn(), lineCommentFor(b)));
     }
 
@@ -8048,12 +8048,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             CodeArea a = b.getFocusedArea();
             int start = a.getSelection().getLength() > 0 ? a.getSelection().getStart() : a.getCaretPosition();
             int end = a.getSelection().getLength() > 0 ? a.getSelection().getEnd() : a.getCaretPosition();
-            return com.editora.editor.Filler.fillRegion(text, start, end, fillColumn(), lineCommentFor(b));
+            return com.editora.editops.Filler.fillRegion(text, start, end, fillColumn(), lineCommentFor(b));
         });
     }
 
     /** Shared applier for the fill commands (guarded by {@link #activeEditable()}). */
-    private void applyFill(java.util.function.BiFunction<String, EditorBuffer, com.editora.editor.Filler.Edit> op) {
+    private void applyFill(java.util.function.BiFunction<String, EditorBuffer, com.editora.editops.Filler.Edit> op) {
         if (!activeEditable()) {
             return;
         }
@@ -8062,7 +8062,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editor.Filler.Edit edit = op.apply(area.getText(), buffer);
+        com.editora.editops.Filler.Edit edit = op.apply(area.getText(), buffer);
         if (edit == null) {
             return; // nothing to fill / already filled
         }
@@ -8079,7 +8079,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The buffer language's line-comment token (e.g. {@code "//"}), or {@code null} — for the fill prefix. */
     private static String lineCommentFor(EditorBuffer buffer) {
         String line =
-                com.editora.editor.Commenter.styleFor(buffer.getLanguage()).line();
+                com.editora.editops.Commenter.styleFor(buffer.getLanguage()).line();
         return line == null || line.isBlank() ? null : line;
     }
 
@@ -8791,15 +8791,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.completionDoc", this::toggleCompletionDoc));
         registry.register(Command.of("edit.toggleComment", this::toggleComment));
         registry.register(
-                Command.of("edit.transposeChars", () -> transpose(com.editora.editor.Transposer::transposeChars)));
+                Command.of("edit.transposeChars", () -> transpose(com.editora.editops.Transposer::transposeChars)));
         registry.register(
-                Command.of("edit.transposeWords", () -> transpose(com.editora.editor.Transposer::transposeWords)));
+                Command.of("edit.transposeWords", () -> transpose(com.editora.editops.Transposer::transposeWords)));
         registry.register(
-                Command.of("edit.transposeLines", () -> transpose(com.editora.editor.Transposer::transposeLines)));
+                Command.of("edit.transposeLines", () -> transpose(com.editora.editops.Transposer::transposeLines)));
         registry.register(Command.of("edit.selectAll", this::selectAll));
-        registry.register(Command.of("edit.duplicateLine", () -> lineOp(com.editora.editor.LineOps::duplicateLine)));
-        registry.register(Command.of("edit.moveLineUp", () -> lineOp(com.editora.editor.LineOps::moveLineUp)));
-        registry.register(Command.of("edit.moveLineDown", () -> lineOp(com.editora.editor.LineOps::moveLineDown)));
+        registry.register(Command.of("edit.duplicateLine", () -> lineOp(com.editora.editops.LineOps::duplicateLine)));
+        registry.register(Command.of("edit.moveLineUp", () -> lineOp(com.editora.editops.LineOps::moveLineUp)));
+        registry.register(Command.of("edit.moveLineDown", () -> lineOp(com.editora.editops.LineOps::moveLineDown)));
         // Emacs fill commands: re-wrap paragraphs to the fill column (M-q / fill-region / set-fill-column).
         registry.register(Command.of("edit.fillParagraph", this::fillParagraph));
         registry.register(Command.of("edit.fillRegion", this::fillRegion));
@@ -8870,34 +8870,34 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.killLine", () -> withArea(this::killLine)));
         // Additional Emacs editing/movement commands (kill-ring features remain deferred).
         registry.register(
-                Command.of("edit.backwardKillWord", () -> emacsEdit(com.editora.editor.EmacsEdits::backwardKillWord)));
-        registry.register(Command.of("edit.upcaseWord", () -> emacsEdit(com.editora.editor.EmacsEdits::upcaseWord)));
+                Command.of("edit.backwardKillWord", () -> emacsEdit(com.editora.editops.EmacsEdits::backwardKillWord)));
+        registry.register(Command.of("edit.upcaseWord", () -> emacsEdit(com.editora.editops.EmacsEdits::upcaseWord)));
         registry.register(
-                Command.of("edit.downcaseWord", () -> emacsEdit(com.editora.editor.EmacsEdits::downcaseWord)));
+                Command.of("edit.downcaseWord", () -> emacsEdit(com.editora.editops.EmacsEdits::downcaseWord)));
         registry.register(
-                Command.of("edit.capitalizeWord", () -> emacsEdit(com.editora.editor.EmacsEdits::capitalizeWord)));
+                Command.of("edit.capitalizeWord", () -> emacsEdit(com.editora.editops.EmacsEdits::capitalizeWord)));
         registry.register(Command.of("edit.upcaseRegion", () -> emacsCaseRegion(true)));
         registry.register(Command.of("edit.downcaseRegion", () -> emacsCaseRegion(false)));
         registry.register(Command.of(
-                "edit.deleteIndentation", () -> emacsEdit(com.editora.editor.EmacsEdits::deleteIndentation)));
+                "edit.deleteIndentation", () -> emacsEdit(com.editora.editops.EmacsEdits::deleteIndentation)));
         registry.register(Command.of(
-                "edit.deleteHorizontalSpace", () -> emacsEdit(com.editora.editor.EmacsEdits::deleteHorizontalSpace)));
+                "edit.deleteHorizontalSpace", () -> emacsEdit(com.editora.editops.EmacsEdits::deleteHorizontalSpace)));
         registry.register(
-                Command.of("edit.justOneSpace", () -> emacsEdit(com.editora.editor.EmacsEdits::justOneSpace)));
+                Command.of("edit.justOneSpace", () -> emacsEdit(com.editora.editops.EmacsEdits::justOneSpace)));
         registry.register(
-                Command.of("edit.deleteBlankLines", () -> emacsEdit(com.editora.editor.EmacsEdits::deleteBlankLines)));
-        registry.register(Command.of("edit.openLine", () -> emacsEdit(com.editora.editor.EmacsEdits::openLine)));
+                Command.of("edit.deleteBlankLines", () -> emacsEdit(com.editora.editops.EmacsEdits::deleteBlankLines)));
+        registry.register(Command.of("edit.openLine", () -> emacsEdit(com.editora.editops.EmacsEdits::openLine)));
         registry.register(
-                Command.of("edit.killWholeLine", () -> emacsEdit(com.editora.editor.EmacsEdits::killWholeLine)));
+                Command.of("edit.killWholeLine", () -> emacsEdit(com.editora.editops.EmacsEdits::killWholeLine)));
         registry.register(Command.of("edit.zapToChar", this::zapToChar));
         registry.register(Command.of("edit.killSexp", this::killSexp));
         registry.register(Command.of("edit.markSexp", this::markSexp));
         registry.register(Command.of("edit.markParagraph", this::markParagraph));
-        registry.register(Command.of("nav.forwardSexp", () -> sexpMove(com.editora.editor.SexpNav::forward)));
-        registry.register(Command.of("nav.backwardSexp", () -> sexpMove(com.editora.editor.SexpNav::backward)));
+        registry.register(Command.of("nav.forwardSexp", () -> sexpMove(com.editora.editops.SexpNav::forward)));
+        registry.register(Command.of("nav.backwardSexp", () -> sexpMove(com.editora.editops.SexpNav::backward)));
         registry.register(
-                Command.of("nav.beginningOfDefun", () -> sexpMove(com.editora.editor.SexpNav::beginningOfDefun)));
-        registry.register(Command.of("nav.endOfDefun", () -> sexpMove(com.editora.editor.SexpNav::endOfDefun)));
+                Command.of("nav.beginningOfDefun", () -> sexpMove(com.editora.editops.SexpNav::beginningOfDefun)));
+        registry.register(Command.of("nav.endOfDefun", () -> sexpMove(com.editora.editops.SexpNav::endOfDefun)));
         registry.register(Command.of("nav.moveToWindowLine", this::moveToWindowLine));
     }
 

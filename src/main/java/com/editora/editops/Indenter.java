@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 import java.util.Set;
 
@@ -409,7 +409,7 @@ public final class Indenter {
     }
 
     /** The document's indent unit: tab vs {@code tabSize} spaces, inferred from the first indented line. */
-    static String detectUnit(String text, int tabSize) {
+    public static String detectUnit(String text, int tabSize) {
         int limit = Math.min(text.length(), MAX_SCAN);
         int i = 0;
         while (i < limit) {
