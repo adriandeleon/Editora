@@ -58,9 +58,11 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
         this.onLink = onLink;
     }
 
-    /** Matches the console font to the editor's code-area font (family + effective size). */
+    /** Matches the console font to the editor's code-area font (family + effective size). Sets the
+     *  control's {@code font} property directly (user-set, so the {@code .run-output} stylesheet rule
+     *  can't override it) rather than {@code -fx-font-size} via setStyle, which a TextArea ignores. */
     public void setOutputFont(String family, int size) {
-        output.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
+        output.setFont(javafx.scene.text.Font.font(family, size));
     }
 
     /** Clears the output console (the Clear button + the {@code externalTool.clearOutput} palette command). */

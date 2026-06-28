@@ -584,9 +584,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Matches the console font to the editor's code-area font (family + effective size). */
+    /** Matches the console font to the editor's code-area font (family + effective size). Sets the
+     *  control's {@code font} property directly (user-set, so the {@code .debug-console} stylesheet rule
+     *  can't override it) rather than {@code -fx-font-size} via setStyle, which a TextArea ignores. */
     public void setConsoleFont(String family, int size) {
-        console.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
+        console.setFont(javafx.scene.text.Font.font(family, size));
     }
 
     /** Appends program/console output (trimmed to a cap), auto-scrolling to the bottom. */
