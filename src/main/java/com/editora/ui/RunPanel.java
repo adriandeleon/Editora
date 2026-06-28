@@ -95,6 +95,11 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         this.onLink = onLink;
     }
 
+    /** Matches the console font to the editor's code-area font (family + effective size). */
+    public void setOutputFont(String family, int size) {
+        output.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
+    }
+
     /** Double-clicking a console line that holds a stack-trace location jumps to it. Shared with the
      *  Debug console (see {@link DebugPanel}). */
     static void installLinkClicks(

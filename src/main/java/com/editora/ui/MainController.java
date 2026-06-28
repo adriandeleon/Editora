@@ -7655,6 +7655,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         lspCoordinator.applySupport(); // (re)configure LSP: command/enabled change re-detects + re-gates buffers
         debugCoordinator.applySupport(); // (re)configure DAP after LSP (it layers on jdtls)
         applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
+        // Match the console fonts (External Tools / Run / Debug) to the editor's code-area font.
+        int consoleFont = Math.max(1, (int) Math.round(settings.getFontSize() * settings.getFontZoom()));
+        externalToolCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
+        runCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
+        debugCoordinator.panel().setConsoleFont(settings.getFontFamily(), consoleFont);
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {

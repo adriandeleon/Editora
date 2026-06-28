@@ -584,6 +584,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /** Matches the console font to the editor's code-area font (family + effective size). */
+    public void setConsoleFont(String family, int size) {
+        console.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
+    }
+
     /** Appends program/console output (trimmed to a cap), auto-scrolling to the bottom. */
     public void appendOutput(String text, String category) {
         if (text == null) {
