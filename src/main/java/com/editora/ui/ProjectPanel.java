@@ -19,17 +19,20 @@ import javafx.application.Platform;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -90,6 +93,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private OverlayInput.Prompt prompt;
 
     private final TextField filterField = new TextField();
+    /** Filter row: the text field plus a trailing clear ("✕") button shown only while there's text. */
+    private final HBox filterBar = new HBox();
+
     private final TreeView<Path> tree = new TreeView<>();
     private final StackPane placeholderPane;
     private final PauseTransition filterDebounce = new PauseTransition(Duration.millis(150));
@@ -186,6 +192,24 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         });
         filterDebounce.setOnFinished(e -> rebuildBody());
+
+        // Trailing clear button — visible only while the filter has text; clicking it empties the filter
+        // (which restores the lazy tree via the debounce) and returns focus to the field.
+        Button clear = new Button("✕");
+        clear.getStyleClass().add("project-filter-clear");
+        clear.setFocusTraversable(false);
+        clear.setTooltip(new Tooltip(tr("project.filterClear")));
+        clear.setOnAction(e -> {
+            filterField.clear();
+            filterField.requestFocus();
+        });
+        clear.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        clear.managedProperty().bind(clear.visibleProperty()); // reclaim its width when hidden
+
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+        filterBar.getStyleClass().add("project-filter-bar");
+        filterBar.setAlignment(Pos.CENTER);
+        filterBar.getChildren().setAll(filterField, clear);
     }
 
     /** Re-renders the visible tree cells so each file's modified marker/color reflects current state. */
@@ -318,7 +342,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 });
             });
         }
-        getChildren().setAll(filterField, tree);
+        getChildren().setAll(filterBar, tree);
         syncWatches(); // register the (new) tree's directories with the filesystem watcher
     }
 

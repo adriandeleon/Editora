@@ -568,6 +568,23 @@
     -project-folder-color: -color-accent-fg;
     -project-file-color: -color-fg-muted;
 }
+
+/* Filter row: the search field + a trailing clear ("✕") button (shown only while there's text). */
+.project-filter-bar {
+    -fx-spacing: 2;
+}
+.project-filter-bar .project-filter-clear {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 0 6 0 6;
+    -fx-font-size: 11px;
+    -fx-cursor: hand;
+}
+.project-filter-bar .project-filter-clear:hover {
+    -fx-background-color: -color-neutral-muted;
+    -fx-text-fill: -color-fg-default;
+}
 .project-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;

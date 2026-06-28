@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Clear (✕) button on the Project / Current-Folder filter.** A small clear button appears at the right of the filter box once you've typed something; clicking it empties the filter (restoring the full tree) and returns focus to the field. It's hidden whenever the filter is empty.
+
 - **"Beta" pills in the Settings sidebar.** Still-beta features (Language Servers, Debugger, Web — HTTP client + HTML preview, Templates, Git, Remote, MCP) now show a small *Beta* pill beside their name in the Settings category list, so their maturity is clear at a glance.
 - **One-click install completed for the binary-only language servers** — C/C++ (`clangd`), XML (`lemminx`), Kotlin (`kotlin-language-server`), Terraform (`terraform-ls`), and Lua (`lua-language-server`). Editora downloads the right per-OS/architecture release archive (from GitHub releases, or releases.hashicorp.com for terraform-ls), extracts it into `~/.editora/plugins/lsp/<server>/`, and points that server's command at the extracted binary — so every supported language server now has an in-app installer (Install… button / banner / **Install: Language Server…** picker). With this, all 21 language servers across the npm, toolchain, and binary tiers are covered.
 
