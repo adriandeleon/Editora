@@ -404,8 +404,10 @@ public class EditorBuffer implements TabContent {
     private final NoteHighlightOverlay noteOverlay = new NoteHighlightOverlay(area);
     /** When false, the Personal Notes feature is disabled for this buffer (no "Add Note" menu items). */
     private boolean notesEnabled = false;
-    /** When false, note gutter markers + highlight are hidden (the {@code showNoteIndicators} setting). */
+    /** When false, the note inline marker + highlight are hidden (the {@code showNoteIndicators} setting). */
     private boolean noteIndicators = true;
+    /** Invoked when the user clicks a note's inline start marker — the controller opens the note editor. */
+    private java.util.function.BiConsumer<EditorBuffer, com.editora.config.PersonalNote> noteMarkerClick = (b, n) -> {};
     /** Reused hover tooltip + the id of the note it's currently showing (so we only update on change). */
     private final javafx.scene.control.Tooltip noteTip = new javafx.scene.control.Tooltip();
 
@@ -3595,6 +3597,90 @@ public class EditorBuffer implements TabContent {
             }
         });
         area.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hideNoteTip());
+        // Clicking the inline note marker (the ~7px amber triangle at a note's start) opens the editor —
+        // restoring the click-to-edit the gutter glyph used to give. A click elsewhere is untouched.
+        area.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+            if (!noteIndicators || e.getButton() != MouseButton.PRIMARY || e.getClickCount() != 1) {
+                return;
+            }
+            for (int[] span : notes.activeSpans()) {
+                Bounds scr;
+                try {
+                    scr = area.getCharacterBoundsOnScreen(span[0], Math.min(area.getLength(), span[0] + 1))
+                            .orElse(null);
+                } catch (RuntimeException ex) {
+                    scr = null;
+                }
+                if (scr == null) {
+                    continue;
+                }
+                if (e.getScreenX() >= scr.getMinX()
+                        && e.getScreenX() <= scr.getMinX() + 9
+                        && e.getScreenY() >= scr.getMinY()
+                        && e.getScreenY() <= scr.getMinY() + 9) {
+                    com.editora.config.PersonalNote n = notes.noteAt(span[0]);
+                    if (n != null) {
+                        noteMarkerClick.accept(this, n);
+                        e.consume();
+                    }
+                    return;
+                }
+            }
+        });
+    }
+
+    /** Sets the handler invoked when the user clicks a note's inline start marker (controller edits it). */
+    public void setNoteMarkerClick(
+            java.util.function.BiConsumer<EditorBuffer, com.editora.config.PersonalNote> handler) {
+        if (handler != null) {
+            this.noteMarkerClick = handler;
+        }
+    }
+
+    /** Moves the caret to the next TODO/highlight match after the caret (wrapping); false if none exist. */
+    public boolean jumpToNextTodo() {
+        return jumpTodoMark(true);
+    }
+
+    /** Moves the caret to the previous TODO/highlight match before the caret (wrapping); false if none. */
+    public boolean jumpToPreviousTodo() {
+        return jumpTodoMark(false);
+    }
+
+    private boolean jumpTodoMark(boolean forward) {
+        if (todoMatcher == null) {
+            return false;
+        }
+        java.util.List<TodoMark> marks = todoMatcher.match(area.getText());
+        if (marks.isEmpty()) {
+            return false;
+        }
+        int caret = area.getCaretPosition();
+        TodoMark target = null;
+        if (forward) {
+            for (TodoMark m : marks) {
+                if (m.start() > caret) {
+                    target = m;
+                    break;
+                }
+            }
+            if (target == null) {
+                target = marks.get(0);
+            }
+        } else {
+            for (int i = marks.size() - 1; i >= 0; i--) {
+                if (marks.get(i).start() < caret) {
+                    target = marks.get(i);
+                    break;
+                }
+            }
+            if (target == null) {
+                target = marks.get(marks.size() - 1);
+            }
+        }
+        area.moveTo(Math.min(target.start(), area.getLength()));
+        area.requestFollowCaret();
+        return true;
     }
 
     /**

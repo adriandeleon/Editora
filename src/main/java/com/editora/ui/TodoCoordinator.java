@@ -86,6 +86,17 @@ final class TodoCoordinator {
             runScan();
         }));
         registry.register(Command.of("todo.addPattern", this::promptAddPattern));
+        registry.register(Command.of("todo.next", () -> jumpTodo(true)));
+        registry.register(Command.of("todo.previous", () -> jumpTodo(false)));
+    }
+
+    /** Moves the caret to the next/previous TODO match in the active buffer (wrapping). */
+    private void jumpTodo(boolean forward) {
+        EditorBuffer b = host.activeBuffer();
+        boolean found = b != null && (forward ? b.jumpToNextTodo() : b.jumpToPreviousTodo());
+        if (!found) {
+            host.setStatus(tr("status.todo.none"));
+        }
     }
 
     /** Compiles the configured patterns and pushes the highlight matcher + on/off to every buffer. On by
