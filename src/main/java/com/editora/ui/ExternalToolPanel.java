@@ -58,6 +58,11 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
         this.onLink = onLink;
     }
 
+    /** Matches the console font to the editor's code-area font (family + effective size). */
+    public void setOutputFont(String family, int size) {
+        output.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
+    }
+
     /** Clears the output console (the Clear button + the {@code externalTool.clearOutput} palette command). */
     public void clearConsole() {
         output.clear();
