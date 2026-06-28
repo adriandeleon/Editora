@@ -1969,7 +1969,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(fileHistoryToolWindow);
         toolWindows.setAvailable(fileHistoryToolWindow, false); // shown only for a local file with history on
         toolWindows.register(fileInfoToolWindow);
-        toolWindows.register(undoHistoryToolWindow);
+        toolWindows.register(undoHistoryToolWindow, false); // stripe off by default; reachable via the
+        // undoHistory.jump popup, the tool.undoHistory command, or Settings → Tool Windows
         toolWindows.register(searchToolWindow);
         toolWindows.register(todoToolWindow);
         toolWindows.register(markdownLintToolWindow);
