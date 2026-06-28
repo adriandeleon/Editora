@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The "install language support?" banner no longer shows when the language server is actually installed and running.** It was reading the server-availability flag before startup detection finished (and never re-checking), so it could falsely claim e.g. Java support was missing while jdtls was serving the file. The banner now only appears once a server is *confirmed* absent (not merely "not probed yet"), never when a live session is already serving the file, and re-evaluates as soon as detection settles. Also fixed the banner text dropping its apostrophe ("isnt") — the message runs through `MessageFormat`, where `'` must be doubled.
 
 ### Added
+- **Jump to next/previous TODO** — `todo.next` / `todo.previous` (`M-g ]` / `M-g [`) move the caret between TODO/FIXME (highlight-pattern) matches in the active file, wrapping around.
+- **Clickable inline note marker** — click a personal note's amber start triangle to edit it (restores the click-to-edit the old gutter marker had).
+- **`notes.toggleResolved`** — resolve/reopen the personal note at the caret from the keyboard (was panel-only).
+- **Keybindings for `notes.editNote` (`C-c e`), `notes.search` (`M-g s`), and `undoHistory.jump` (`M-g v`)** — previously palette-only.
 
 - **Undo History popup.** Besides the Undo History tool window, the new `undoHistory.jump` palette command opens the active buffer's edit checkpoints as a filterable popup (caret-line preview + capture time); pick one to jump back to that state (undoable). Same checkpoints, a faster keyboard-driven path.
 

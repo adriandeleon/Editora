@@ -310,6 +310,35 @@ final class NotesCoordinator {
         });
     }
 
+    /** Edits the note whose inline start marker was clicked (wired into {@code EditorBuffer}). */
+    void onNoteMarkerClick(EditorBuffer buffer, PersonalNote note) {
+        if (note != null) {
+            editOpenBufferNote(buffer, note);
+        }
+    }
+
+    /** Toggles the resolved/active status of the note at the caret (the first on the line as a fallback). */
+    void toggleResolvedAtCaret() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        PersonalNote note = buffer.getNoteManager().noteAt(buffer.getArea().getCaretPosition());
+        if (note == null) {
+            var ns = buffer.getNoteManager().notesOnLine(buffer.getArea().getCurrentParagraph());
+            if (!ns.isEmpty()) {
+                note = ns.get(0);
+            }
+        }
+        if (note == null) {
+            host.setStatus(tr("status.noNotesInFile"));
+            return;
+        }
+        NoteStatus next = note.status() == NoteStatus.RESOLVED ? NoteStatus.ACTIVE : NoteStatus.RESOLVED;
+        buffer.getNoteManager().setStatus(note.id(), next);
+        host.setStatus(tr(next == NoteStatus.RESOLVED ? "status.note.resolved" : "status.note.reopened"));
+    }
+
     /** Deletes the (first) personal note on the active buffer's caret line. */
     void deleteNoteAtCaret() {
         EditorBuffer b = host.activeBuffer();
