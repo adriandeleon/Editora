@@ -6963,6 +6963,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 com.editora.template.Template::name,
                 com.editora.template.Template::description,
                 t -> beginTemplate(t, targetDir));
+        // Wider than the default picker + a taller minimum: template descriptions are long, so the
+        // default 620px clipped them (and showed a horizontal scrollbar).
+        picker.setPreferredSize(820, 8);
         picker.setOverlayHost(overlayHost);
         picker.show(stage);
     }
