@@ -24,6 +24,10 @@ final class NoteHighlightOverlay extends Region {
     // A soft amber wash painted like a text selection: a flat, contiguous fill (no per-line outline or
     // rounded corners) so a multi-line note traces the same shape as the editor's selection.
     private static final Color FILL = Color.web("#fbc02d", 0.22);
+    // A small solid corner triangle painted at each note's start character — the inline "there's a note
+    // here" marker (replaces the old gutter glyph). Deeper amber than the wash so it reads on top of it.
+    private static final Color GLYPH = Color.web("#f57f17", 0.95);
+    private static final double GLYPH_SIZE = 7;
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
@@ -161,6 +165,14 @@ final class NoteHighlightOverlay extends Region {
             // Flat, square fill so adjacent lines join seamlessly (like a selection), not separate pills.
             g.setFill(FILL);
             g.fillRect(x, b.getMinY(), Math.max(1, right - x), b.getHeight());
+            // The inline note marker: a small corner triangle at the very start of the note's span (drawn
+            // once, on the note's first line, when that line is visible).
+            if (line == startLine) {
+                double gx = Math.max(0, x);
+                double gy = b.getMinY();
+                g.setFill(GLYPH);
+                g.fillPolygon(new double[] {gx, gx + GLYPH_SIZE, gx}, new double[] {gy, gy, gy + GLYPH_SIZE}, 3);
+            }
         }
     }
 

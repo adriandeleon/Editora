@@ -411,7 +411,6 @@ public class EditorBuffer implements TabContent {
 
     private java.util.UUID hoverNoteId;
     /** Handles a gutter note-marker click (the controller opens/edits that line's note). Default: no-op. */
-    private java.util.function.BiConsumer<EditorBuffer, Integer> gutterNoteClick = (buffer, line) -> {};
     /** Handles a click on a line's blame annotation (the controller shows that line's commit). Default: no-op. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBlameClick = (buffer, line) -> {};
     /** Invoked by the "Add Personal Note" context-menu item (the controller prompts + creates). */
@@ -513,7 +512,7 @@ public class EditorBuffer implements TabContent {
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
-        folds.setNoteHooks(line -> noteIndicators && notes.isNoted(line), line -> gutterNoteClick.accept(this, line));
+        // Personal-Notes markers are drawn inline at each note's start by noteOverlay (no gutter slot).
         notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         // Git change bars: the slot is reserved only while tracking is on (changeBars != null); the
         // per-line hunk text feeds a hover tooltip on the bar.
@@ -3482,13 +3481,6 @@ public class EditorBuffer implements TabContent {
 
     public NoteManager getNoteManager() {
         return notes;
-    }
-
-    /** Sets the gutter note-marker click handler ({@code (buffer, line)}) — the controller opens the note. */
-    public void setGutterNoteClick(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
-        if (handler != null) {
-            this.gutterNoteClick = handler;
-        }
     }
 
     /** Sets the blame-annotation click handler ({@code (buffer, line)}) — the controller shows that
