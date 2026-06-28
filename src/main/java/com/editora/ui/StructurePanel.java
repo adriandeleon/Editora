@@ -622,7 +622,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         List<StructureNode> roots = new ArrayList<>();
         Deque<StructureNode> stack = new ArrayDeque<>();
         Deque<Integer> levels = new ArrayDeque<>();
-        for (com.editora.editor.MarkdownOutline.Heading h : com.editora.editor.MarkdownOutline.headings(text)) {
+        for (com.editora.markdown.MarkdownOutline.Heading h : com.editora.markdown.MarkdownOutline.headings(text)) {
             StructureNode node =
                     new StructureNode(null, h.title().isBlank() ? "(untitled)" : h.title(), "heading", h.line());
             while (!levels.isEmpty() && levels.peek() >= h.level()) {

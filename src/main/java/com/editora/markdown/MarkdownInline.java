@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.markdown;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

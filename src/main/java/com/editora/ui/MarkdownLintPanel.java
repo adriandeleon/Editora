@@ -17,7 +17,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
-import com.editora.editor.MarkdownLint;
+import com.editora.markdown.MarkdownLint;
 
 import static com.editora.i18n.Messages.tr;
 

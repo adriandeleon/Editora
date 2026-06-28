@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.markdown;
 
 import java.nio.file.Path;
 import java.util.function.Predicate;

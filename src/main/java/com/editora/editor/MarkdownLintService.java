@@ -8,6 +8,8 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import com.editora.markdown.MarkdownLint;
+
 /**
  * Runs the pure {@link MarkdownLint} off the FX thread and posts results back via
  * {@link Platform#runLater}, mirroring {@code MermaidService.validate}. The scan is cheap, but a
