@@ -1575,17 +1575,16 @@
 
 /* Run tool window (Java 25 compact source files). */
 .run-panel .run-status { -fx-text-fill: -color-fg-muted; }
-.run-panel .run-output {
-    -fx-font-family: "JetBrains Mono", monospace;
-    -fx-font-size: 12px;
-}
+/* No font here: the Run/External-Tools console font is set programmatically to match the editor
+   (RunPanel/ExternalToolPanel.setOutputFont). A -fx-font-size rule here overrides that on every CSS
+   pass, so the family/size are deliberately left to the control's font property. */
 /* Debug tool window: muted status + section labels; monospace console. Dense like the Structure/Git
    panels — borderless transparent lists with tight cells, flattened split panes, compact toolbar. */
 .debug-panel .debug-status { -fx-text-fill: -color-fg-muted; }
 .debug-panel .debug-section { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-font-weight: bold; }
 .debug-panel .debug-console {
-    -fx-font-family: "JetBrains Mono", monospace;
-    -fx-font-size: 12px;
+    /* Font set programmatically to match the editor (DebugPanel.setConsoleFont); a -fx-font-size here
+       would override it on every CSS pass. */
     -fx-background-insets: 0;
     -fx-border-width: 0;
 }
