@@ -1809,3 +1809,14 @@
     -fx-background-radius: 4;
     -fx-padding: 2;
 }
+
+/* Markdown-support hint under the Personal Note editor (muted, small). */
+.note-dialog-hint {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+
+/* Personal Notes: file-header rows bold (matching the Find-in-Files panel). */
+.notes-panel .tree-cell.notes-file-row {
+    -fx-font-weight: bold;
+}
