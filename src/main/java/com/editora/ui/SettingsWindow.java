@@ -709,7 +709,7 @@ public class SettingsWindow {
             apply();
         });
 
-        fillColumnSpinner = new Spinner<>(20, 200, com.editora.editor.Filler.DEFAULT_FILL_COLUMN);
+        fillColumnSpinner = new Spinner<>(20, 200, com.editora.editops.Filler.DEFAULT_FILL_COLUMN);
         fillColumnSpinner.setEditable(true);
         fillColumnSpinner.setPrefWidth(90);
         fillColumnSpinner.valueProperty().addListener((obs, was, now) -> {

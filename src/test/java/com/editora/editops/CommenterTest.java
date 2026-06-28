@@ -1,7 +1,7 @@
-package com.editora.editor;
+package com.editora.editops;
 
-import com.editora.editor.Commenter.CommentStyle;
-import com.editora.editor.Commenter.Edit;
+import com.editora.editops.Commenter.CommentStyle;
+import com.editora.editops.Commenter.Edit;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

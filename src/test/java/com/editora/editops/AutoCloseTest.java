@@ -1,6 +1,6 @@
-package com.editora.editor;
+package com.editora.editops;
 
-import com.editora.editor.AutoClose.Action;
+import com.editora.editops.AutoClose.Action;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

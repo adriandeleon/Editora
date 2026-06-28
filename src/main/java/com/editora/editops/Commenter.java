@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 /**
  * Toggles comments — pure (no toolkit), so it is unit-tested. {@link EditorBuffer}/the controller

@@ -1,4 +1,4 @@
-package com.editora.editor;
+package com.editora.editops;
 
 /**
  * Pure, unit-tested structural navigation for the Emacs balanced-expression and defun commands:

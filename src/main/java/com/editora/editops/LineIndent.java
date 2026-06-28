@@ -1,8 +1,10 @@
-package com.editora.editor;
+package com.editora.editops;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+
+import com.editora.editor.LspTextEdit;
 
 /**
  * Pure helper for the "Tab re-indents the current line to the LSP convention" feature. Given a line's text
