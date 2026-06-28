@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Test coverage: added unit tests + ratcheted the JaCoCo floors.** New tests for `config` models/stores (`Breakpoint`, `BreakpointStore`, `RecentFiles`, plus `FileIdentity` null/empty branches) raised `config` line coverage to ~88%, and new `InstallService` tests cover `findBinary`/`makeExecutable`/`Result`. The per-package `jacoco-check` floors were ratcheted to sit a few points below the measured coverage (migration·diff 0.85→0.90, config split out at 0.86, template·editorconfig 0.80→0.82, completion·http·pdf 0.68→0.70).
 
 ### Fixed
+- **Tool-window consoles now actually pick up the editor font.** The previous attempt set `-fx-font-size` via `setStyle`, which a JavaFX `TextArea` ignores; the consoles (External Tools / Run / Debug) now set the control's `font` property directly so they match the editor's family + size.
 - **Command palette: clicking a result now runs it.** A card-wide `MOUSE_CLICKED` consume filter was swallowing the result cells' click-to-run handler (only Enter worked).
 - **Command palette: removed the stray separator line above the command description.**
 
