@@ -1981,7 +1981,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.setAvailable(debugToolWindow, false); // shown only while debugging is enabled
         toolWindows.register(httpToolWindow);
         toolWindows.setAvailable(httpToolWindow, false); // shown only for a .http file with the feature on
-        toolWindows.register(externalToolToolWindow);
+        toolWindows.register(externalToolToolWindow, false); // stripe off by default; reachable via the
+        // tool.externalTools command / externalTool.run picker / Settings → Tool Windows
         toolWindows.register(remoteToolWindow, false); // off by default (niche); always available — no buffer needed
         updateBufferToolWindows(); // hide buffer-only windows until there's an actionable buffer (no Welcome flash)
         // Detect a *user* open/close of the HTTP window (vs. our own auto show/hide, guarded by
