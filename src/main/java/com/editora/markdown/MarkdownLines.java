@@ -207,4 +207,14 @@ public final class MarkdownLines {
         }
         return false;
     }
+
+    /**
+     * Smart Backspace: when the caret (column {@code col}) sits at the end of a line that is <em>only</em> an
+     * empty list/blockquote marker (a {@code "- "}/{@code "1. "}/{@code "> "}/{@code "- [ ] "} item with no
+     * content), the number of leading characters to delete to clear the whole marker (back to the line start),
+     * leaving an empty line — else 0 (caller does a normal single-char Backspace).
+     */
+    public static int emptyMarkerDeleteLength(String line, int col) {
+        return (line != null && col == line.length() && isEmptyItem(line)) ? col : 0;
+    }
 }
