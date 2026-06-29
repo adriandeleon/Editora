@@ -218,6 +218,17 @@ public final class ConfigFileType {
         if (lower.equals(".classpath") || lower.equals(".project")) {
             return "xml";
         }
+        // Generic "rc" config files not caught by a more specific rule above (e.g. .vimrc, .inputrc,
+        // .screenrc, .nanorc, .curlrc, .wgetrc, .netrc, .mailrc, /etc/inputrc): most "rc" runtime-config
+        // files are INI-style key/value, so default them to INI. Restricted to an extension-less name
+        // (or a single-dot dotfile) ending in "rc" so it can't hijack ordinary files that merely contain
+        // "rc" (e.g. march.txt → text via the extension map). Specific rc formats handled above win
+        // (.bashrc=shell, .npmrc=ini, .babelrc=json, .condarc=yaml, ...).
+        boolean dotfileNoExt = base.startsWith(".") && base.indexOf('.', 1) < 0;
+        boolean noExtension = base.indexOf('.') < 0;
+        if (lower.length() > 2 && lower.endsWith("rc") && (noExtension || dotfileNoExt)) {
+            return "ini";
+        }
         return null;
     }
 
