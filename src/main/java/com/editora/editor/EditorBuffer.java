@@ -248,6 +248,8 @@ public class EditorBuffer implements TabContent {
     private Runnable previewExportPdfHandler = () -> {};
 
     private Runnable previewPrintHandler = () -> {};
+    private Runnable previewExportDocxHandler = () -> {};
+    private Runnable previewExportOdtHandler = () -> {};
     private javafx.scene.control.ContextMenu previewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private SnippetSession snippetSession;
@@ -2757,6 +2759,15 @@ public class EditorBuffer implements TabContent {
         this.previewPrintHandler = handler == null ? () -> {} : handler;
     }
 
+    /** Injects the preview right-click "Export to Word (.docx)" / "Export to OpenDocument (.odt)" actions. */
+    public void setPreviewExportDocxHandler(Runnable handler) {
+        this.previewExportDocxHandler = handler == null ? () -> {} : handler;
+    }
+
+    public void setPreviewExportOdtHandler(Runnable handler) {
+        this.previewExportOdtHandler = handler == null ? () -> {} : handler;
+    }
+
     /** Copies the preview text to the clipboard — rendered plain text for Markdown, the source for a diagram. */
     public void copyPreviewToClipboard() {
         String text = isMarkdown() ? MarkdownRenderer.plainText(getContent()) : getContent();
@@ -2779,8 +2790,18 @@ public class EditorBuffer implements TabContent {
             MenuItem print = new MenuItem(tr("command.preview.print"));
             print.setGraphic(MenuIcons.print());
             print.setOnAction(ev -> previewPrintHandler.run());
-            previewContextMenu =
-                    new javafx.scene.control.ContextMenu(selectAll, copy, new SeparatorMenuItem(), pdf, print);
+            previewContextMenu = new javafx.scene.control.ContextMenu(selectAll, copy, new SeparatorMenuItem(), pdf);
+            // Word / OpenDocument export — Markdown only (not standalone diagrams).
+            if (isMarkdown()) {
+                MenuItem docx = new MenuItem(tr("command.preview.exportDocx"));
+                docx.setGraphic(MenuIcons.download());
+                docx.setOnAction(ev -> previewExportDocxHandler.run());
+                MenuItem odt = new MenuItem(tr("command.preview.exportOdt"));
+                odt.setGraphic(MenuIcons.download());
+                odt.setOnAction(ev -> previewExportOdtHandler.run());
+                previewContextMenu.getItems().addAll(docx, odt);
+            }
+            previewContextMenu.getItems().addAll(new SeparatorMenuItem(), print);
             previewContextMenu.getStyleClass().add("editor-context-menu");
         }
         previewContextMenu.show(previewPane, screenX, screenY);

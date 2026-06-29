@@ -189,6 +189,14 @@ Apache Commons Logging — commons-logging:commons-logging
     License: Apache License 2.0
     https://commons.apache.org/proper/commons-logging/
 
+Apache POI (poi, poi-ooxml, poi-ooxml-lite) — org.apache.poi
+    MS Word (.docx) generation for the Markdown preview "Export to Word" feature, plus its transitive
+    dependencies (Apache XMLBeans, Apache Commons Compress/IO/Codec/Collections/Math, SparseBitSet,
+    curvesapi, Apache Log4j API).
+    License: Apache License 2.0
+    https://poi.apache.org/
+    (OpenDocument .odt export is hand-written, not via the ODF Toolkit — no extra dependency.)
+
 Apache Lucene (lucene-core, lucene-analysis-common)
     Pure-Java spell-check engine (the org.apache.lucene.analysis.hunspell
     package) and its in-memory store.

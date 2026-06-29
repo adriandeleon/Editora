@@ -24,6 +24,10 @@ module com.editora {
     // Apache PDFBox: PDF export. An automatic module (Automatic-Module-Name only) — moditect injects a
     // real descriptor for the jlink dist build (pdfbox + pdfbox-io + fontbox + commons-logging).
     requires org.apache.pdfbox;
+    // Apache POI XWPF: Markdown preview → MS Word (.docx) export (com.editora.office). Automatic modules
+    // (poi-ooxml + poi); moditect injects real descriptors for the jlink dist build (poi/xmlbeans/commons*).
+    requires org.apache.poi.ooxml;
+    requires org.apache.poi.poi;
     requires org.commonmark.ext.gfm.tables;
     requires org.commonmark.ext.gfm.strikethrough;
     requires org.commonmark.ext.task.list.items;

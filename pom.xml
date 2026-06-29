@@ -47,6 +47,7 @@
         <jsvg.version>1.7.2</jsvg.version>
         <jlatexmath.version>1.0.7</jlatexmath.version>
         <pdfbox.version>3.0.5</pdfbox.version>
+        <poi.version>5.4.1</poi.version>
         <lucene.version>10.2.2</lucene.version>
         <javadiffutils.version>4.12</javadiffutils.version>
         <sshd.version>2.15.0</sshd.version>
@@ -190,6 +191,16 @@
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>${pdfbox.version}</version>
+        </dependency>
+        <!-- Markdown preview export to MS Word (.docx) via Apache POI XWPF. Pulls an automatic-module
+             dependency tree (xmlbeans, commons-*, log4j-api, …); the -Pdist jlink build needs moditect
+             descriptors for them (see the moditect section). OpenDocument (.odt) is hand-rolled (a ZIP of
+             XML) in com.editora.office — odfdom drags in Apache Jena + xercesImpl, which break the
+             modular/jlink build, so it is deliberately not used. -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -728,6 +739,51 @@
                                     </artifact>
                                     <moduleInfo>
                                         <name>org.apache.pdfbox</name>
+                                    </moduleInfo>
+                                </module>
+                                <!-- Apache POI (.docx export). POI 5.4.x + xmlbeans + commons-compress/io/codec
+                                     already ship real module descriptors and link directly; only these four
+                                     leaf deps are automatic modules needing a jdeps-generated descriptor. POI's
+                                     optional batik/bouncycastle/santuario/xmlgraphics deps are `requires static`,
+                                     so jlink doesn't pull them. Names match POI's own module-info `requires`. -->
+                                <module>
+                                    <artifact>
+                                        <groupId>com.zaxxer</groupId>
+                                        <artifactId>SparseBitSet</artifactId>
+                                        <version>1.3</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>com.zaxxer.sparsebitset</name>
+                                    </moduleInfo>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.apache.commons</groupId>
+                                        <artifactId>commons-math3</artifactId>
+                                        <version>3.6.1</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>commons.math3</name>
+                                    </moduleInfo>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>org.apache.commons</groupId>
+                                        <artifactId>commons-collections4</artifactId>
+                                        <version>4.4</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>org.apache.commons.collections4</name>
+                                    </moduleInfo>
+                                </module>
+                                <module>
+                                    <artifact>
+                                        <groupId>com.github.virtuald</groupId>
+                                        <artifactId>curvesapi</artifactId>
+                                        <version>1.08</version>
+                                    </artifact>
+                                    <moduleInfo>
+                                        <name>com.github.virtuald.curvesapi</name>
                                     </moduleInfo>
                                 </module>
                                 <!-- LSP4J (+ its JSON-RPC transport) ship only Bundle-SymbolicName, so
