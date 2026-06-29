@@ -32,14 +32,20 @@ final class MarkdownFormatBar {
         node.setPadding(new Insets(3));
         node.setAlignment(Pos.CENTER_LEFT);
 
+        // Icon glyphs (the same MenuIcons used by the editor right-click menu) instead of letter labels —
+        // an italic "I" barely slants, and icons keep the bar consistent with the menu.
         node.getChildren()
                 .addAll(
-                        button("B", "tooltip.markdown.bold", "md-fmt-bold", () -> buffer.formatInline("**")),
-                        button("I", "tooltip.markdown.italic", "md-fmt-italic", () -> buffer.formatInline("*")),
-                        button("S", "tooltip.markdown.strikethrough", "md-fmt-strike", () -> buffer.formatInline("~~")),
-                        button("</>", "tooltip.markdown.code", null, () -> buffer.formatInline("`")),
-                        button("Link", "tooltip.markdown.link", null, buffer::formatLinkFromClipboard),
-                        button("List", "tooltip.markdown.bulletList", null, buffer::formatBulletList),
+                        button(MenuIcons.bold(), "tooltip.markdown.bold", () -> buffer.formatInline("**")),
+                        button(MenuIcons.italic(), "tooltip.markdown.italic", () -> buffer.formatInline("*")),
+                        button(
+                                MenuIcons.strikethrough(),
+                                "tooltip.markdown.strikethrough",
+                                () -> buffer.formatInline("~~")),
+                        button(MenuIcons.code(), "tooltip.markdown.code", () -> buffer.formatInline("`")),
+                        button(MenuIcons.link(), "tooltip.markdown.link", buffer::formatLinkFromClipboard),
+                        button(MenuIcons.bulletList(), "tooltip.markdown.bulletList", buffer::formatBulletList),
+                        button(MenuIcons.taskList(), "tooltip.markdown.taskList", buffer::formatTaskList),
                         new Separator(javafx.geometry.Orientation.VERTICAL),
                         headingBox(buffer));
     }
@@ -48,12 +54,10 @@ final class MarkdownFormatBar {
         return node;
     }
 
-    private static Button button(String text, String tooltipKey, String styleClass, Runnable action) {
-        Button b = new Button(text);
+    private static Button button(Node icon, String tooltipKey, Runnable action) {
+        Button b = new Button();
+        b.setGraphic(icon);
         b.getStyleClass().addAll("flat", "md-fmt-btn");
-        if (styleClass != null) {
-            b.getStyleClass().add(styleClass);
-        }
         b.setFocusTraversable(false);
         b.setTooltip(new Tooltip(tr(tooltipKey)));
         b.setOnAction(e -> action.run());

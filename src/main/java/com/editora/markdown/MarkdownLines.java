@@ -16,6 +16,7 @@ public final class MarkdownLines {
     private static final Pattern ORDERED = Pattern.compile("^(\\s*)(\\d+)([.)])(\\s+)(.*)$");
     private static final Pattern QUOTE = Pattern.compile("^(\\s*)((?:>\\s?)+)(.*)$");
     private static final Pattern BULLET_PREFIX = Pattern.compile("^(\\s*)[-*+]\\s+");
+    private static final Pattern TASK_PREFIX = Pattern.compile("^(\\s*)[-*+]\\s+\\[[ xX]\\]\\s+");
 
     private MarkdownLines() {}
 
@@ -83,6 +84,59 @@ public final class MarkdownLines {
         Matcher m = BULLET_PREFIX.matcher(line);
         if (m.find()) {
             return m.group(1) + line.substring(m.end());
+        }
+        return line;
+    }
+
+    /**
+     * Toggles a GFM task-list checkbox ({@code "- [ ] "}) on every line the selection covers: removes it
+     * when <em>all</em> non-blank lines are already task items, otherwise adds it (a plain {@code "- "}
+     * bullet gains a {@code "[ ] "} box; a bare line becomes {@code "- [ ] "}). Returns a
+     * {@link MarkdownEdit} spanning the affected line block.
+     */
+    public static MarkdownEdit toggleTask(String text, int selStart, int selEnd) {
+        int blockStart = lineStartAt(text, selStart);
+        int blockEnd = lineEndAt(text, Math.max(selStart, selEnd));
+        String[] lines = text.substring(blockStart, blockEnd).split("\n", -1);
+        boolean anyContent = false;
+        boolean allTasks = true;
+        for (String l : lines) {
+            if (l.isBlank()) {
+                continue;
+            }
+            anyContent = true;
+            if (!TASK_PREFIX.matcher(l).find()) {
+                allTasks = false;
+            }
+        }
+        boolean remove = anyContent && allTasks;
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                out.append('\n');
+            }
+            out.append(remove ? untask(lines[i]) : addTask(lines[i]));
+        }
+        String repl = out.toString();
+        return new MarkdownEdit(blockStart, blockEnd, repl, blockStart, blockStart + repl.length());
+    }
+
+    private static String addTask(String line) {
+        if (line.isBlank() || TASK_PREFIX.matcher(line).find()) {
+            return line; // blank, or already a task item
+        }
+        Matcher b = BULLET_PREFIX.matcher(line);
+        if (b.find()) {
+            return line.substring(0, b.end()) + "[ ] " + line.substring(b.end()); // bullet → bullet + box
+        }
+        String indent = leadingWhitespace(line);
+        return indent + "- [ ] " + line.substring(indent.length());
+    }
+
+    private static String untask(String line) {
+        Matcher m = TASK_PREFIX.matcher(line);
+        if (m.find()) {
+            return m.group(1) + line.substring(m.end()); // drop the "- [ ] " marker, keep indent + content
         }
         return line;
     }

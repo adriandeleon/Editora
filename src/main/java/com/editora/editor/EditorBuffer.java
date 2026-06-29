@@ -977,6 +977,16 @@ public class EditorBuffer implements TabContent {
         applyMarkdownEdit(MarkdownLines.toggleBullet(a.getText(), sel.getStart(), sel.getEnd()));
     }
 
+    /** Toggles a GFM task-list checkbox ({@code "- [ ] "}) on the selected line(s). */
+    public void formatTaskList() {
+        if (!canFormatMarkdown()) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        var sel = a.getSelection();
+        applyMarkdownEdit(MarkdownLines.toggleTask(a.getText(), sel.getStart(), sel.getEnd()));
+    }
+
     /** Reflows the GFM table around the caret; returns false when the caret is not on a table. */
     public boolean reflowTable() {
         if (!canFormatMarkdown()) {

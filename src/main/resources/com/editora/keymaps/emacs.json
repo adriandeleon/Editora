@@ -113,6 +113,7 @@
   "C-c C-s s": "markdown.strikethrough",
   "C-c C-s c": "markdown.code",
   "C-c C-s u": "markdown.bulletList",
+  "C-c C-s k": "markdown.taskList",
   "C-c C-s t": "markdown.reflowTable",
   "C-c C-a l": "markdown.link",
   "C-c C-h p": "markdown.headingPromote",
