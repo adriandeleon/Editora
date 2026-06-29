@@ -3769,13 +3769,18 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Show/hide the minimap overview (on every split pane); reclaims its width for the editor when hidden. */
+    /**
+     * Whether the minimap should actually show: the user's setting, but forced off for large/heavy files
+     * (too costly) and in full {@link MarkdownViewMode#PREVIEW} (no editor surface to map). It stays on in
+     * {@link MarkdownViewMode#SPLIT} — the editor is still visible there. Pure, so it's unit-tested.
+     */
+    static boolean minimapEffective(boolean visible, boolean largeFile, boolean heavyFile, MarkdownViewMode mode) {
+        return visible && !largeFile && !heavyFile && mode != MarkdownViewMode.PREVIEW;
+    }
+
     public void setMinimapVisible(boolean visible) {
         this.minimapVisible = visible;
-        // Large files (and the intermediate large-source tier) force the minimap off regardless of the
-        // user's setting (see setLargeFile / setHeavyFile). The Markdown preview (SPLIT/PREVIEW) also hides
-        // it — a minimap squeezed between the editor and the preview is redundant clutter (the preview is
-        // the overview), so it only shows in the plain EDITOR view.
-        boolean effective = visible && !largeFile && !heavyFile && markdownViewMode == MarkdownViewMode.EDITOR;
+        boolean effective = minimapEffective(visible, largeFile, heavyFile, markdownViewMode);
         applyMinimap(scrollPane, minimap, effective);
         AnchorPane.setRightAnchor(whitespace, effective ? Minimap.WIDTH : 0d);
         if (minimap2 != null) {

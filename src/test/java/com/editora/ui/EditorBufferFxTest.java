@@ -59,12 +59,12 @@ class EditorBufferFxTest {
         assertEquals(MarkdownViewMode.EDITOR, FxTestSupport.callOnFx(b::getMarkdownViewMode));
         assertTrue(minimapVisible(b), "minimap shown in plain editor view");
 
-        // SPLIT: preview is the overview, so the minimap is hidden.
+        // SPLIT: the editor is still on screen, so the minimap stays shown.
         FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.SPLIT));
         assertEquals(MarkdownViewMode.SPLIT, FxTestSupport.callOnFx(b::getMarkdownViewMode));
-        assertFalse(minimapVisible(b), "minimap hidden in split preview");
+        assertTrue(minimapVisible(b), "minimap shown in split (editor still visible)");
 
-        // PREVIEW: still hidden.
+        // PREVIEW: no editor surface, so the minimap is hidden.
         FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
         assertFalse(minimapVisible(b), "minimap hidden in full preview");
 
