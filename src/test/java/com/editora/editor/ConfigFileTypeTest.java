@@ -161,4 +161,26 @@ class ConfigFileTypeTest {
         assertNull(ConfigFileType.resolve("Main.java"));
         assertNull(ConfigFileType.resolve("/src/app.py"));
     }
+
+    @Test
+    void genericRcFilesDefaultToIni() {
+        // Unmatched "rc" runtime-config files → INI (dotfiles and /etc forms).
+        assertEquals("ini", ConfigFileType.resolve(".vimrc"));
+        assertEquals("ini", ConfigFileType.resolve(".inputrc"));
+        assertEquals("ini", ConfigFileType.resolve(".screenrc"));
+        assertEquals("ini", ConfigFileType.resolve(".nanorc"));
+        assertEquals("ini", ConfigFileType.resolve(".curlrc"));
+        assertEquals("ini", ConfigFileType.resolve(".netrc"));
+        assertEquals("ini", ConfigFileType.resolve("/home/me/.mailrc"));
+        assertEquals("ini", ConfigFileType.resolve("/etc/inputrc"));
+        // More specific rc rules above still win over the generic fallback.
+        assertEquals("shell", ConfigFileType.resolve(".bashrc"));
+        assertEquals("json", ConfigFileType.resolve(".babelrc"));
+        assertEquals("yaml", ConfigFileType.resolve(".condarc"));
+        // Ordinary files that merely contain/​end-ish with "rc" but have a real extension are untouched
+        // (so the caller's extension map decides — e.g. text for .txt).
+        assertNull(ConfigFileType.resolve("march.txt"));
+        assertNull(ConfigFileType.resolve(".eslintrc.json")); // extension map → json
+        assertNull(ConfigFileType.resolve("source.c")); // ends with "c", not "rc"
+    }
 }
