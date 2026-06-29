@@ -8588,6 +8588,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markdown.code", () -> markdownInline("`")));
         registry.register(Command.of("markdown.link", () -> withMarkdown(EditorBuffer::formatLinkFromClipboard)));
         registry.register(Command.of("markdown.bulletList", () -> withMarkdown(EditorBuffer::formatBulletList)));
+        registry.register(Command.of("markdown.taskList", () -> withMarkdown(EditorBuffer::formatTaskList)));
         registry.register(Command.of("markdown.headingPromote", () -> withMarkdown(b -> b.formatHeading(-1))));
         registry.register(Command.of("markdown.headingDemote", () -> withMarkdown(b -> b.formatHeading(1))));
         registry.register(Command.of("markdown.openLink", this::markdownOpenLink));

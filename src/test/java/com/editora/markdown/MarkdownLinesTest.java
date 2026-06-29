@@ -60,6 +60,19 @@ class MarkdownLinesTest {
     }
 
     @Test
+    void toggleTaskAddsBoxAndRemoves() {
+        // plain line -> "- [ ] "
+        assertEquals("- [ ] a\n- [ ] b", MarkdownLines.toggleTask("a\nb", 0, 3).replacement());
+        // existing bullet keeps the marker, gains a box
+        assertEquals("- [ ] a", MarkdownLines.toggleTask("- a", 0, 3).replacement());
+        // already-a-task line is untouched when adding (mixed selection)
+        assertEquals(
+                "- [ ] a\n- [ ] b", MarkdownLines.toggleTask("- [ ] a\nb", 0, 9).replacement());
+        // all task items -> stripped back to plain content
+        assertEquals("a\nb", MarkdownLines.toggleTask("- [ ] a\n- [ ] b", 0, 15).replacement());
+    }
+
+    @Test
     void detectsEmptyItems() {
         assertTrue(MarkdownLines.isEmptyItem("- "));
         assertTrue(MarkdownLines.isEmptyItem("1. "));

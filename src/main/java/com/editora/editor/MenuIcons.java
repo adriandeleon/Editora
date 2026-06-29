@@ -105,6 +105,19 @@ final class MenuIcons {
                 + "3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z");
     }
 
+    /** Material "format_list_bulleted" — a bulleted list. */
+    static Node bulletList() {
+        return of("M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 "
+                + "0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 "
+                + "1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z");
+    }
+
+    /** Material "checklist" — a task list (checked items), for the GFM {@code - [ ]} checkbox button. */
+    static Node taskList() {
+        return of("M22 7h-9v2h9V7zm0 8h-9v2h9v-2zM5.54 11 2 7.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 "
+                + "1.41L5.54 11zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19z");
+    }
+
     // ---- LSP navigation ----
 
     /** Material "north_east" arrow — "Go to Definition". */
