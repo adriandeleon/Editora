@@ -20,6 +20,9 @@ import org.fxmisc.richtext.model.StyleSpans;
  */
 public final class PdfExportService {
 
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(PdfExportService.class.getName());
+
     /** Outcome of an export: {@code ok} plus an error {@code message} on failure. */
     public record Result(boolean ok, String message) {}
 
@@ -54,7 +57,10 @@ public final class PdfExportService {
                 }
                 CodePdfWriter.write(text, spans, lineNumbers, tabSize, pageSize, out);
                 result = new Result(true, "");
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                // Throwable, not Exception: an Error (e.g. a jlink/resource NoClassDefFoundError) on this
+                // submit()'d task would otherwise be swallowed by the Future, hanging the "Exporting…" status.
+                LOG.log(java.util.logging.Level.SEVERE, "Code PDF export failed", e);
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
             }
             Result r = result;
@@ -78,7 +84,8 @@ public final class PdfExportService {
             try {
                 MarkdownPdfWriter.write(markdown, baseDir, pageSize, mmdcCommand, out);
                 result = new Result(true, "");
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                LOG.log(java.util.logging.Level.SEVERE, "Markdown PDF export failed", e);
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
             }
             Result r = result;
