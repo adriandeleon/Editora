@@ -1381,7 +1381,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         Path p = b.getPath();
         String file = p != null ? homeCollapsed(p.toString()) : b.getDisplayName();
-        stage.setTitle((b.isDirty() ? "• " : "") + file + " — " + app);
+        // The OS title bar renders plain text only (no color/italic/weight, so the tab's amber-italic
+        // dirty styling can't be mirrored here) — use a prominent leading "●" as the unsaved marker so
+        // the modified state is visible even in Zen mode, where the tab strip is hidden.
+        stage.setTitle((b.isDirty() ? "● " : "") + file + " — " + app);
     }
 
     /** Syncs editor/session state after the Project tree renames a file on disk (old → target). */
