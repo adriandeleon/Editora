@@ -82,4 +82,16 @@ class MarkdownLinesTest {
         assertFalse(MarkdownLines.isEmptyItem("1. first"));
         assertFalse(MarkdownLines.isEmptyItem("plain"));
     }
+
+    @Test
+    void emptyMarkerBackspaceDeletesWholeMarker() {
+        assertEquals(2, MarkdownLines.emptyMarkerDeleteLength("- ", 2)); // bullet
+        assertEquals(3, MarkdownLines.emptyMarkerDeleteLength("1. ", 3)); // ordered
+        assertEquals(2, MarkdownLines.emptyMarkerDeleteLength("> ", 2)); // quote
+        assertEquals(6, MarkdownLines.emptyMarkerDeleteLength("- [ ] ", 6)); // task box
+        assertEquals(4, MarkdownLines.emptyMarkerDeleteLength("  - ", 4)); // indented
+        assertEquals(0, MarkdownLines.emptyMarkerDeleteLength("- Item", 6)); // has content
+        assertEquals(0, MarkdownLines.emptyMarkerDeleteLength("- ", 1)); // caret not at end
+        assertEquals(0, MarkdownLines.emptyMarkerDeleteLength("text", 4)); // not a marker
+    }
 }

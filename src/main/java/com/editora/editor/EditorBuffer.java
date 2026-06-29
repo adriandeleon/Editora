@@ -4743,6 +4743,14 @@ public class EditorBuffer implements TabContent {
                 return; // at column 0 — let normal Backspace join the previous line
             }
             String line = a.getParagraph(par).getText();
+            // Markdown: Backspace at the end of an empty list/quote item ("- ", "1. ", "> ", "- [ ] ")
+            // clears the whole marker → a blank line (the SDD "smart backspace" helper).
+            int marker = isMarkdown() ? MarkdownLines.emptyMarkerDeleteLength(line, col) : 0;
+            if (marker > 0) {
+                a.deleteText(caret - marker, caret);
+                e.consume();
+                return;
+            }
             int del = Indenter.smartBackspaceCount(line.substring(0, col), line.substring(col), par > 0);
             if (del > 1) {
                 a.deleteText(caret - del, caret);
