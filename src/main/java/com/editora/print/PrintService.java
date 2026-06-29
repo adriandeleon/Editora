@@ -87,7 +87,7 @@ public final class PrintService {
                                 layout -> CodePrintLayout.paginate(
                                         lines, layout, lineNumbers, Font.font(MONO_FAMILY, CodePrintLayout.FONT_SIZE)),
                                 null));
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
         });
@@ -99,7 +99,7 @@ public final class PrintService {
             try {
                 org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(markdown);
                 deliver(onReady, new Prepared(layout -> MarkdownPrintLayout.paginate(ast, baseDir, layout), null));
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
         });
@@ -116,7 +116,7 @@ public final class PrintService {
                 }
                 Image img = new Image(new ByteArrayInputStream(r.image()));
                 deliver(onReady, new Prepared(layout -> List.of(imagePage(img, layout)), null));
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
         });
@@ -152,7 +152,11 @@ public final class PrintService {
         Platform.runLater(() -> onReady.accept(prepared));
     }
 
-    private static String message(Exception e) {
+    private static String message(Throwable e) {
+        // Throwable, not Exception: a jlink/resource Error on the submit()'d task would otherwise be
+        // swallowed by the Future, hanging the "Preparing…" status (see PdfExportService).
+        java.util.logging.Logger.getLogger(PrintService.class.getName())
+                .log(java.util.logging.Level.SEVERE, "Print prepare failed", e);
         return e.getMessage() == null ? e.toString() : e.getMessage();
     }
 

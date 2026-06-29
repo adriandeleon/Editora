@@ -49,7 +49,11 @@ public final class OfficeExportService {
             try {
                 job.run();
                 result = new Result(true, "");
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                // Throwable, not Exception: a jlink/resource Error would otherwise be swallowed by the
+                // Future, hanging the "Exporting…" status forever (see PdfExportService).
+                java.util.logging.Logger.getLogger(OfficeExportService.class.getName())
+                        .log(java.util.logging.Level.SEVERE, "Office export failed", e);
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
             }
             Result r = result;

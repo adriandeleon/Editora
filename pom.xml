@@ -707,19 +707,26 @@
                                         }
                                     </moduleInfoSource>
                                 </module>
-                                <!-- Apache PDFBox 3.x trio ships only Automatic-Module-Name, so jlink
-                                     needs real descriptors (jdeps-generated). Listed in dependency order.
-                                     (commons-logging 1.3.5 is already a real multi-release module, so it
-                                     is NOT patched here.) -->
+                                <!-- Apache PDFBox 3.x trio ships only Automatic-Module-Name, so jlink needs
+                                     real descriptors. All three (pdfbox-io, fontbox, pdfbox) log via
+                                     commons-logging, but jdeps reports commons-logging "not found" (it is not
+                                     on moditect's jdeps path) and the global ignore-missing-deps flag then
+                                     drops the requires — so jlink prunes commons-logging and PDF export fails
+                                     with IllegalAccessError/NoClassDefFoundError. Hand-write each descriptor
+                                     with the explicit requires (commons-logging is a real module 1.3.5).
+                                     Listed in dependency order. -->
                                 <module>
                                     <artifact>
                                         <groupId>org.apache.pdfbox</groupId>
                                         <artifactId>pdfbox-io</artifactId>
                                         <version>${pdfbox.version}</version>
                                     </artifact>
-                                    <moduleInfo>
-                                        <name>org.apache.pdfbox.io</name>
-                                    </moduleInfo>
+                                    <moduleInfoSource>
+                                        module org.apache.pdfbox.io {
+                                            requires org.apache.commons.logging;
+                                            exports org.apache.pdfbox.io;
+                                        }
+                                    </moduleInfoSource>
                                 </module>
                                 <module>
                                     <artifact>
@@ -727,9 +734,27 @@
                                         <artifactId>fontbox</artifactId>
                                         <version>${pdfbox.version}</version>
                                     </artifact>
-                                    <moduleInfo>
-                                        <name>org.apache.fontbox</name>
-                                    </moduleInfo>
+                                    <moduleInfoSource>
+                                        module org.apache.fontbox {
+                                            requires java.desktop;
+                                            requires org.apache.commons.logging;
+                                            requires org.apache.pdfbox.io;
+                                            exports org.apache.fontbox;
+                                            exports org.apache.fontbox.afm;
+                                            exports org.apache.fontbox.cff;
+                                            exports org.apache.fontbox.cmap;
+                                            exports org.apache.fontbox.encoding;
+                                            exports org.apache.fontbox.pfb;
+                                            exports org.apache.fontbox.ttf;
+                                            exports org.apache.fontbox.ttf.gsub;
+                                            exports org.apache.fontbox.ttf.model;
+                                            exports org.apache.fontbox.ttf.table.common;
+                                            exports org.apache.fontbox.ttf.table.gsub;
+                                            exports org.apache.fontbox.type1;
+                                            exports org.apache.fontbox.util;
+                                            exports org.apache.fontbox.util.autodetect;
+                                        }
+                                    </moduleInfoSource>
                                 </module>
                                 <module>
                                     <artifact>
@@ -737,9 +762,77 @@
                                         <artifactId>pdfbox</artifactId>
                                         <version>${pdfbox.version}</version>
                                     </artifact>
-                                    <moduleInfo>
-                                        <name>org.apache.pdfbox</name>
-                                    </moduleInfo>
+                                    <!-- Hand-written, not jdeps-generated: jdeps + the global
+                                         ignore-missing-deps flag drops pdfbox's runtime requires on
+                                         commons-logging, pdfbox-io and fontbox, so jlink prunes them and ALL
+                                         PDF export dies on the packaged build with NoClassDefFoundError
+                                         org/apache/commons/logging/LogFactory (LogFactory loads first). The
+                                         exports list is jdeps' generated set; only the requires are fixed. -->
+                                    <moduleInfoSource>
+                                        module org.apache.pdfbox {
+                                            requires java.desktop;
+                                            requires java.xml;
+                                            requires org.apache.commons.logging;
+                                            requires org.apache.pdfbox.io;
+                                            requires org.apache.fontbox;
+                                            exports org.apache.pdfbox;
+                                            exports org.apache.pdfbox.contentstream;
+                                            exports org.apache.pdfbox.contentstream.operator;
+                                            exports org.apache.pdfbox.contentstream.operator.color;
+                                            exports org.apache.pdfbox.contentstream.operator.graphics;
+                                            exports org.apache.pdfbox.contentstream.operator.markedcontent;
+                                            exports org.apache.pdfbox.contentstream.operator.state;
+                                            exports org.apache.pdfbox.contentstream.operator.text;
+                                            exports org.apache.pdfbox.cos;
+                                            exports org.apache.pdfbox.filter;
+                                            exports org.apache.pdfbox.multipdf;
+                                            exports org.apache.pdfbox.pdfparser;
+                                            exports org.apache.pdfbox.pdfparser.xref;
+                                            exports org.apache.pdfbox.pdfwriter;
+                                            exports org.apache.pdfbox.pdfwriter.compress;
+                                            exports org.apache.pdfbox.pdmodel;
+                                            exports org.apache.pdfbox.pdmodel.common;
+                                            exports org.apache.pdfbox.pdmodel.common.filespecification;
+                                            exports org.apache.pdfbox.pdmodel.common.function;
+                                            exports org.apache.pdfbox.pdmodel.common.function.type4;
+                                            exports org.apache.pdfbox.pdmodel.documentinterchange.logicalstructure;
+                                            exports org.apache.pdfbox.pdmodel.documentinterchange.markedcontent;
+                                            exports org.apache.pdfbox.pdmodel.documentinterchange.prepress;
+                                            exports org.apache.pdfbox.pdmodel.documentinterchange.taggedpdf;
+                                            exports org.apache.pdfbox.pdmodel.encryption;
+                                            exports org.apache.pdfbox.pdmodel.fdf;
+                                            exports org.apache.pdfbox.pdmodel.fixup;
+                                            exports org.apache.pdfbox.pdmodel.fixup.processor;
+                                            exports org.apache.pdfbox.pdmodel.font;
+                                            exports org.apache.pdfbox.pdmodel.font.encoding;
+                                            exports org.apache.pdfbox.pdmodel.graphics;
+                                            exports org.apache.pdfbox.pdmodel.graphics.blend;
+                                            exports org.apache.pdfbox.pdmodel.graphics.color;
+                                            exports org.apache.pdfbox.pdmodel.graphics.form;
+                                            exports org.apache.pdfbox.pdmodel.graphics.image;
+                                            exports org.apache.pdfbox.pdmodel.graphics.optionalcontent;
+                                            exports org.apache.pdfbox.pdmodel.graphics.pattern;
+                                            exports org.apache.pdfbox.pdmodel.graphics.shading;
+                                            exports org.apache.pdfbox.pdmodel.graphics.state;
+                                            exports org.apache.pdfbox.pdmodel.interactive.action;
+                                            exports org.apache.pdfbox.pdmodel.interactive.annotation;
+                                            exports org.apache.pdfbox.pdmodel.interactive.annotation.handlers;
+                                            exports org.apache.pdfbox.pdmodel.interactive.annotation.layout;
+                                            exports org.apache.pdfbox.pdmodel.interactive.digitalsignature;
+                                            exports org.apache.pdfbox.pdmodel.interactive.digitalsignature.visible;
+                                            exports org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination;
+                                            exports org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline;
+                                            exports org.apache.pdfbox.pdmodel.interactive.form;
+                                            exports org.apache.pdfbox.pdmodel.interactive.measurement;
+                                            exports org.apache.pdfbox.pdmodel.interactive.pagenavigation;
+                                            exports org.apache.pdfbox.pdmodel.interactive.viewerpreferences;
+                                            exports org.apache.pdfbox.printing;
+                                            exports org.apache.pdfbox.rendering;
+                                            exports org.apache.pdfbox.text;
+                                            exports org.apache.pdfbox.util;
+                                            exports org.apache.pdfbox.util.filetypedetector;
+                                        }
+                                    </moduleInfoSource>
                                 </module>
                                 <!-- Apache POI (.docx export). POI 5.4.x + xmlbeans + commons-compress/io/codec
                                      already ship real module descriptors and link directly; only these four
