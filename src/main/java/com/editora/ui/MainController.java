@@ -265,6 +265,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private static com.editora.mcp.McpServer mcpServer;
     private static MainController mcpOwner;
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
+    private final com.editora.office.OfficeExportService officeService = new com.editora.office.OfficeExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
     /** HTTP Client: the {@code .http} request runner + response tool window; see {@link HttpClientCoordinator}. */
     private ToolWindow httpToolWindow;
@@ -1026,6 +1027,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         logViewer.shutdown(); // stop any log tail-follow poll thread
         stopMcpIfOwner(); // stop the MCP server if this window owns it
         pdfService.shutdown();
+        officeService.shutdown();
         printService.shutdown();
         runCoordinator.shutdown();
         if (installCoordinator != null) {
@@ -4026,6 +4028,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
         buffer.setPreviewExportPdfHandler(this::exportPreviewPdf); // preview right-click menu
         buffer.setPreviewPrintHandler(this::printPreview);
+        buffer.setPreviewExportDocxHandler(this::exportPreviewDocx); // preview → MS Word
+        buffer.setPreviewExportOdtHandler(this::exportPreviewOdt); // preview → OpenDocument
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         buffer.setCompletionProvider(completion::complete);
@@ -7504,6 +7508,66 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** Exports the active Markdown preview to a MS Word {@code .docx} (Apache POI). */
+    private void exportPreviewDocx() {
+        exportPreviewOffice(true);
+    }
+
+    /** Exports the active Markdown preview to an OpenDocument Text {@code .odt} (hand-rolled). */
+    private void exportPreviewOdt() {
+        exportPreviewOffice(false);
+    }
+
+    private void exportPreviewOffice(boolean docx) {
+        EditorBuffer b = activeBuffer();
+        // Word/ODT render the Markdown document model — diagrams (.mmd) aren't supported, only Markdown.
+        if (b == null || !b.isMarkdown()) {
+            setStatus(tr("status.office.notMarkdown"));
+            return;
+        }
+        String ext = docx ? "docx" : "odt";
+        String filter = docx ? "Word" : "OpenDocument";
+        java.io.File f = chooseOfficeDestination(bufferBaseName(b), ext, filter);
+        if (f == null) {
+            return;
+        }
+        setStatus(tr("status.office.exporting"));
+        java.nio.file.Path baseDir = b.getPath() == null ? null : b.getPath().getParent();
+        java.util.List<String> mmdc = mermaid.mmdcCommandOrNull(); // ```mermaid blocks → diagram images
+        java.util.function.Consumer<com.editora.office.OfficeExportService.Result> cb = r -> reportOffice(r, f);
+        if (docx) {
+            officeService.exportDocx(b.getContent(), baseDir, mmdc, f.toPath(), cb);
+        } else {
+            officeService.exportOdt(b.getContent(), baseDir, mmdc, f.toPath(), cb);
+        }
+    }
+
+    /** A Save dialog defaulting to {@code <base-without-ext>.<ext>}. */
+    private java.io.File chooseOfficeDestination(String base, String ext, String filterName) {
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle(tr("dialog.officeExport.title"));
+        int dot = base == null ? -1 : base.lastIndexOf('.');
+        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + "." + ext);
+        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter(filterName, "*." + ext));
+        return chooser.showSaveDialog(stage);
+    }
+
+    /** Reports an office export result: status + (on failure) an error dialog. */
+    private void reportOffice(com.editora.office.OfficeExportService.Result r, java.io.File f) {
+        if (r.ok()) {
+            setStatus(tr("status.office.exported", f.toString()));
+        } else {
+            String msg = String.valueOf(r.message());
+            setStatus(tr("status.office.exportFailed", msg));
+            Alert err = new Alert(Alert.AlertType.ERROR);
+            err.initOwner(stage);
+            err.setTitle(tr("dialog.officeExport.title"));
+            err.setHeaderText(tr("status.office.exportFailed", ""));
+            err.setContentText(msg);
+            err.showAndWait();
+        }
+    }
+
     /**
      * Prints the active buffer's source code via the native print dialog. Honors the (shared with PDF)
      * "include line numbers" + "syntax highlighting" settings; always light. Off the FX thread.
@@ -8578,6 +8642,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
         registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));
         registry.register(Command.of("preview.exportHtml", this::exportPreviewHtml));
+        registry.register(Command.of("preview.exportDocx", this::exportPreviewDocx));
+        registry.register(Command.of("preview.exportOdt", this::exportPreviewOdt));
         registry.register(Command.of("editor.print", this::printCode));
         registry.register(Command.of("preview.print", this::printPreview));
         registry.register(Command.of("mermaid.export", mermaid::export));
