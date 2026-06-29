@@ -6897,6 +6897,28 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** {@code markdown.tableFromCsv}: convert the selected CSV (else clipboard CSV) into a GFM table. */
+    private void markdownTableFromCsv() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.canFormatMarkdown()) {
+            setStatus(tr("status.notMarkdown"));
+        } else if (!b.tableFromCsv()) {
+            setStatus(tr("status.markdown.csvEmpty"));
+        }
+    }
+
+    /** {@code markdown.tableToCsv}: copy the caret's GFM table to the clipboard as CSV. */
+    private void markdownTableToCsv() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.canFormatMarkdown()) {
+            setStatus(tr("status.notMarkdown"));
+        } else if (!b.tableToCsv()) {
+            setStatus(tr("status.markdown.notTable"));
+        } else {
+            setStatus(tr("status.markdown.csvCopied"));
+        }
+    }
+
     /** {@code markdown.toggleFormatBar}: flip the selection format-bar setting + re-sync every buffer. */
     private void toggleMarkdownFormatBar() {
         Settings s = config.getSettings();
@@ -8761,6 +8783,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markdown.headingDemote", () -> withMarkdown(b -> b.formatHeading(1))));
         registry.register(Command.of("markdown.openLink", this::markdownOpenLink));
         registry.register(Command.of("markdown.reflowTable", this::markdownReflowTable));
+        registry.register(Command.of("markdown.tableFromCsv", this::markdownTableFromCsv));
+        registry.register(Command.of("markdown.tableToCsv", this::markdownTableToCsv));
         registry.register(Command.of("markdown.toggleFormatBar", this::toggleMarkdownFormatBar));
         registry.register(Command.of("view.textZoomIn", () -> textZoom(1)));
         registry.register(Command.of("view.textZoomOut", () -> textZoom(-1)));

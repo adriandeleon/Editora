@@ -1089,6 +1089,62 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
+    /**
+     * Converts CSV into a Markdown table: the non-empty selection is treated as CSV and replaced in place,
+     * else the clipboard CSV is inserted as a table at the caret. Returns false when there's nothing
+     * parseable (no selection + empty/non-CSV clipboard, or a non-Markdown buffer).
+     */
+    public boolean tableFromCsv() {
+        if (!canFormatMarkdown()) {
+            return false;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        String sel = a.getSelectedText();
+        boolean fromSelection = sel != null && !sel.isBlank();
+        String csv = fromSelection ? sel : Clipboard.getSystemClipboard().getString();
+        if (csv == null || csv.isBlank()) {
+            return false;
+        }
+        String table = MarkdownTable.fromCsv(csv);
+        if (table == null) {
+            return false;
+        }
+        if (fromSelection) {
+            var s = a.getSelection();
+            a.replaceText(s.getStart(), s.getEnd(), table);
+            a.moveTo(s.getStart() + table.length());
+        } else {
+            int caret = a.getCaretPosition();
+            boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
+            String text = (needLeading ? "\n" : "") + table + "\n";
+            a.replaceText(caret, caret, text);
+            a.moveTo(caret + text.length());
+        }
+        a.requestFollowCaret();
+        a.requestFocus();
+        return true;
+    }
+
+    /** Copies the caret's Markdown table to the system clipboard as CSV; false when the caret isn't on a table. */
+    public boolean tableToCsv() {
+        if (!canFormatMarkdown()) {
+            return false;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
+        if (b == null) {
+            return false;
+        }
+        String csv = MarkdownTable.toCsv(a.getText().substring(b[0], b[1]));
+        if (csv == null) {
+            return false;
+        }
+        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+        content.putString(csv);
+        Clipboard.getSystemClipboard().setContent(content);
+        return true;
+    }
+
     /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
     public String linkUnderCaret() {
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -1365,7 +1421,10 @@ public class EditorBuffer implements TabContent {
                         tableItem(
                                 "command.markdown.tableAlignRight",
                                 MenuIcons.alignRight(),
-                                () -> tableSetAlignment(MarkdownTable.Align.RIGHT)));
+                                () -> tableSetAlignment(MarkdownTable.Align.RIGHT)),
+                        new javafx.scene.control.SeparatorMenuItem(),
+                        tableItem("command.markdown.tableFromCsv", MenuIcons.paste(), this::tableFromCsv),
+                        tableItem("command.markdown.tableToCsv", MenuIcons.copy(), this::tableToCsv));
         return menu;
     }
 

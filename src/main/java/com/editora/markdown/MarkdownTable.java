@@ -428,6 +428,189 @@ public final class MarkdownTable {
         };
     }
 
+    /**
+     * Converts CSV/TSV {@code csv} into an aligned GFM table (the first row becomes the header), or
+     * {@code null} when there are no rows. The delimiter is auto-detected (comma / semicolon / tab);
+     * RFC-4180 quoting is honored ({@code ""} → {@code "}, and delimiters/newlines inside quotes). A pipe
+     * in a cell is escaped (`\|`) and an embedded newline becomes a space, so it stays a single GFM cell.
+     */
+    public static String fromCsv(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return null;
+        }
+        char delim = detectDelimiter(csv);
+        List<List<String>> rows = parseCsv(csv, delim);
+        while (!rows.isEmpty() && rows.get(rows.size() - 1).stream().allMatch(String::isBlank)) {
+            rows.remove(rows.size() - 1); // drop trailing blank records
+        }
+        if (rows.isEmpty()) {
+            return null;
+        }
+        int ncol = rows.stream().mapToInt(List::size).max().orElse(1);
+        // Build display cells (pipes NOT yet escaped — kept literal for width measurement).
+        List<List<String>> data = new ArrayList<>();
+        for (List<String> row : rows) {
+            data.add(csvCells(row, ncol));
+        }
+        Align[] align = new Align[ncol];
+        int[] width = new int[ncol];
+        for (int c = 0; c < ncol; c++) {
+            align[c] = Align.NONE;
+            width[c] = MIN_WIDTH;
+            for (List<String> r : data) {
+                width[c] = Math.max(width[c], r.get(c).length());
+            }
+        }
+        // Emit our own aligned table (NOT through reflow, whose pipe-naive split would corrupt `\|`):
+        // header, delimiter, then body — escaping any literal pipe on emit so cells stay intact.
+        StringBuilder out = new StringBuilder();
+        out.append(csvDataRow(data.get(0), width, align));
+        out.append('\n').append(delimiterRow(width, align));
+        for (int i = 1; i < data.size(); i++) {
+            out.append('\n').append(csvDataRow(data.get(i), width, align));
+        }
+        return out.toString();
+    }
+
+    /** Pads {@code row} to {@code ncol} and flattens newlines; pipes stay literal (escaped later, on emit). */
+    private static List<String> csvCells(List<String> row, int ncol) {
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < ncol; i++) {
+            String v = i < row.size() ? row.get(i) : "";
+            out.add(v.replace("\r", " ").replace("\n", " ").strip());
+        }
+        return out;
+    }
+
+    /** A reflow-style data row, padded to the column widths, with any literal pipe escaped (`\|`) on emit. */
+    private static String csvDataRow(List<String> cells, int[] width, Align[] align) {
+        StringBuilder sb = new StringBuilder("|");
+        for (int c = 0; c < width.length; c++) {
+            String v = c < cells.size() ? cells.get(c) : "";
+            sb.append(' ')
+                    .append(pad(v, width[c], align[c]).replace("|", "\\|"))
+                    .append(" |");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Converts the GFM table {@code block} (the caret's table) to comma-delimited CSV with RFC-4180 quoting
+     * (a cell containing a comma, quote or newline is wrapped in {@code "…"} with internal quotes doubled).
+     * The delimiter row is skipped and {@code \|} unescaped to {@code |}. Returns {@code null} when not a table.
+     */
+    public static String toCsv(String block) {
+        if (block == null) {
+            return null;
+        }
+        String[] lines = block.split("\n", -1);
+        if (delimiterIndex(lines) < 0) {
+            return null;
+        }
+        StringBuilder out = new StringBuilder();
+        boolean first = true;
+        for (String line : lines) {
+            if (!isRow(line) || isDelimiterRow(line)) {
+                continue;
+            }
+            if (!first) {
+                out.append('\n');
+            }
+            first = false;
+            List<String> cells = splitCellsEscaped(line);
+            for (int c = 0; c < cells.size(); c++) {
+                if (c > 0) {
+                    out.append(',');
+                }
+                out.append(csvQuote(cells.get(c)));
+            }
+        }
+        return out.toString();
+    }
+
+    private static String csvQuote(String s) {
+        if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0) {
+            return '"' + s.replace("\"", "\"\"") + '"';
+        }
+        return s;
+    }
+
+    /** Picks comma / semicolon / tab by counting unquoted occurrences in the first line (comma default). */
+    private static char detectDelimiter(String csv) {
+        int nl = csv.indexOf('\n');
+        String head = nl < 0 ? csv : csv.substring(0, nl);
+        int comma = 0;
+        int semi = 0;
+        int tab = 0;
+        boolean q = false;
+        for (int i = 0; i < head.length(); i++) {
+            char c = head.charAt(i);
+            if (c == '"') {
+                q = !q;
+            } else if (!q) {
+                if (c == ',') {
+                    comma++;
+                } else if (c == ';') {
+                    semi++;
+                } else if (c == '\t') {
+                    tab++;
+                }
+            }
+        }
+        if (tab > 0 && tab >= comma && tab >= semi) {
+            return '\t';
+        }
+        if (semi > comma) {
+            return ';';
+        }
+        return ',';
+    }
+
+    /** RFC-4180 record/field parser: quoted fields ({@code ""} escape), delimiters/newlines inside quotes. */
+    private static List<List<String>> parseCsv(String text, char delim) {
+        List<List<String>> rows = new ArrayList<>();
+        List<String> row = new ArrayList<>();
+        StringBuilder f = new StringBuilder();
+        boolean inQuotes = false;
+        boolean pending = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (inQuotes) {
+                if (c == '"') {
+                    if (i + 1 < text.length() && text.charAt(i + 1) == '"') {
+                        f.append('"');
+                        i++;
+                    } else {
+                        inQuotes = false;
+                    }
+                } else {
+                    f.append(c);
+                }
+            } else if (c == '"' && f.length() == 0) {
+                inQuotes = true;
+                pending = true;
+            } else if (c == delim) {
+                row.add(f.toString());
+                f.setLength(0);
+                pending = true;
+            } else if (c == '\n') {
+                row.add(f.toString());
+                rows.add(row);
+                row = new ArrayList<>();
+                f.setLength(0);
+                pending = false;
+            } else if (c != '\r') {
+                f.append(c);
+                pending = true;
+            }
+        }
+        if (pending || f.length() > 0 || !row.isEmpty()) {
+            row.add(f.toString());
+            rows.add(row);
+        }
+        return rows;
+    }
+
     private static int delimiterIndex(String[] lines) {
         for (int i = 0; i < lines.length; i++) {
             if (isDelimiterRow(lines[i])) {
@@ -532,6 +715,33 @@ public final class MarkdownTable {
             }
         }
         return -1;
+    }
+
+    /** Like {@link #splitCells} but treats {@code \|} as an escaped pipe inside a cell (unescaped to {@code |}). */
+    private static List<String> splitCellsEscaped(String line) {
+        String t = line.strip();
+        if (t.startsWith("|")) {
+            t = t.substring(1);
+        }
+        if (t.endsWith("|") && !t.endsWith("\\|")) {
+            t = t.substring(0, t.length() - 1);
+        }
+        List<String> cells = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        for (int i = 0; i < t.length(); i++) {
+            char c = t.charAt(i);
+            if (c == '\\' && i + 1 < t.length() && t.charAt(i + 1) == '|') {
+                cur.append('|');
+                i++;
+            } else if (c == '|') {
+                cells.add(cur.toString().strip());
+                cur.setLength(0);
+            } else {
+                cur.append(c);
+            }
+        }
+        cells.add(cur.toString().strip());
+        return cells;
     }
 
     private static List<String> splitCells(String line) {

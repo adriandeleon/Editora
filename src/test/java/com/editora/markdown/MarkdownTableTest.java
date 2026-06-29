@@ -161,4 +161,47 @@ class MarkdownTableTest {
         assertNull(MarkdownTable.parseSize("axb"));
         assertNull(MarkdownTable.parseSize(null));
     }
+
+    @Test
+    void fromCsvProducesValidGfmTableWithHeaderRow() {
+        String t = MarkdownTable.fromCsv("Name,Age\nAlice,30");
+        String[] lines = t.split("\n");
+        assertEquals(3, lines.length);
+        assertTrue(lines[0].contains("Name") && lines[0].contains("Age"), lines[0]);
+        assertTrue(lines[1].replace(" ", "").matches("\\|-+\\|-+\\|"), lines[1]); // delimiter row
+        assertTrue(lines[2].contains("Alice") && lines[2].contains("30"), lines[2]);
+    }
+
+    @Test
+    void csvRoundTripsThroughTable() {
+        // toCsv(fromCsv(csv)) is padding-agnostic, so it exercises both directions
+        String csv = "Name,Age\nAlice,30\nBob,7";
+        assertEquals(csv, MarkdownTable.toCsv(MarkdownTable.fromCsv(csv)));
+    }
+
+    @Test
+    void fromCsvDetectsTabAndSemicolonDelimiters() {
+        assertEquals("a,b,c\n1,2,3", MarkdownTable.toCsv(MarkdownTable.fromCsv("a\tb\tc\n1\t2\t3")));
+        assertEquals("a,b\n1,2", MarkdownTable.toCsv(MarkdownTable.fromCsv("a;b\n1;2")));
+    }
+
+    @Test
+    void csvHonorsQuotingAndEscapesPipes() {
+        // a quoted comma, a doubled quote, and a literal pipe — round-trips exactly
+        String csv = "h1,h2\n\"x, y\",\"say \"\"hi\"\"\"\na|b,c";
+        assertEquals(csv, MarkdownTable.toCsv(MarkdownTable.fromCsv(csv)));
+    }
+
+    @Test
+    void fromCsvPadsShortRowsAndReturnsNullWhenEmpty() {
+        assertEquals("a,b,c\n1,,", MarkdownTable.toCsv(MarkdownTable.fromCsv("a,b,c\n1")));
+        assertNull(MarkdownTable.fromCsv("   "));
+        assertNull(MarkdownTable.fromCsv(null));
+    }
+
+    @Test
+    void toCsvUnescapesPipesAndReturnsNullWhenNotATable() {
+        assertEquals("a|b,c", MarkdownTable.toCsv("| a\\|b | c |\n| --- | --- |"));
+        assertNull(MarkdownTable.toCsv("just some text\nno table here"));
+    }
 }
