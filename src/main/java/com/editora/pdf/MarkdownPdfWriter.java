@@ -301,7 +301,7 @@ public final class MarkdownPdfWriter {
                     PDImageXObject img = PDImageXObject.createFromByteArray(doc, r.image(), "mermaid");
                     drawImage(img, left);
                     return;
-                } catch (IOException ignored) {
+                } catch (IOException | RuntimeException ignored) {
                     // fall through to code rendering
                 }
             }
@@ -314,7 +314,7 @@ public final class MarkdownPdfWriter {
                 try {
                     drawImage(PDImageXObject.createFromByteArray(doc, png, "math"), left);
                     return;
-                } catch (IOException ignored) {
+                } catch (IOException | RuntimeException ignored) {
                     // fall through to text rendering
                 }
             }
@@ -326,11 +326,21 @@ public final class MarkdownPdfWriter {
             byte[] bytes = fetch(node.getDestination());
             if (bytes != null) {
                 try {
+                    // PDFBox can't decode SVG (shields.io/GitHub badges are image/svg+xml); rasterize it
+                    // to PNG first via the same JSVG path the on-screen preview uses.
+                    if (com.editora.editor.PreviewImageLoader.looksLikeSvg(bytes)) {
+                        byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(bytes);
+                        if (png != null) {
+                            bytes = png;
+                        }
+                    }
                     PDImageXObject img = PDImageXObject.createFromByteArray(doc, bytes, "img");
                     drawImage(img, left);
                     return;
-                } catch (IOException ignored) {
-                    // unsupported format (e.g. SVG) — fall back to alt text
+                } catch (IOException | RuntimeException ignored) {
+                    // unfetchable / unsupported / undecodable format — fall back to alt text below.
+                    // (createFromByteArray throws IllegalArgumentException for unknown image types, which
+                    // previously escaped and aborted the whole export.)
                 }
             }
             String alt = plain(node);
