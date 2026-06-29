@@ -6796,6 +6796,26 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
+     * The command-palette path: a keyboard-only {@code RxC} size prompt (e.g. {@code "4x4"}) instead of the
+     * mouse grid picker. The grid picker stays the format-bar button / right-click "Insert Table" UI.
+     */
+    private void markdownInsertTableViaText() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.canFormatMarkdown()) {
+            setStatus(tr("status.notMarkdown"));
+            return;
+        }
+        promptText(tr("table.size.title"), tr("table.size.label"), "3x3", input -> {
+            int[] rc = MarkdownTable.parseSize(input);
+            if (rc == null) {
+                setStatus(tr("table.size.invalid"));
+                return;
+            }
+            b.insertTable(rc[0], rc[1]);
+        });
+    }
+
+    /**
      * A Typora/Word-style table-size grid picker shown as an in-scene overlay: hover to highlight an
      * {@code R × C} block (rows include the header), click to commit. Max {@value #TABLE_PICKER_MAX_ROWS} ×
      * {@value #TABLE_PICKER_MAX_COLS}.
@@ -8660,7 +8680,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markdown.link", () -> withMarkdown(EditorBuffer::formatLinkFromClipboard)));
         registry.register(Command.of("markdown.bulletList", () -> withMarkdown(EditorBuffer::formatBulletList)));
         registry.register(Command.of("markdown.taskList", () -> withMarkdown(EditorBuffer::formatTaskList)));
-        registry.register(Command.of("markdown.insertTable", this::markdownInsertTable));
+        registry.register(Command.of("markdown.insertTable", this::markdownInsertTableViaText));
         registry.register(Command.of("markdown.tableAddRow", () -> withMarkdown(b -> b.tableAddRow())));
         registry.register(Command.of("markdown.tableDeleteRow", () -> withMarkdown(b -> b.tableDeleteRow())));
         registry.register(Command.of("markdown.tableAddColumn", () -> withMarkdown(b -> b.tableAddColumn())));
