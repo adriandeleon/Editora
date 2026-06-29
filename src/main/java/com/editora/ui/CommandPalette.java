@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -238,6 +239,11 @@ public class CommandPalette {
                 matches.add(command);
             }
         }
+        if (!q.isEmpty()) {
+            // Rank by relevance (exact > whole-word > word-start > substring > scattered subsequence) so the
+            // best match leads — e.g. "undo" puts "Edit: Undo" above "Unsplit Editor" (a scattered match).
+            matches.sort(Comparator.comparing(Command::title, byRelevance(q)));
+        }
         items.setAll(matches);
         if (!items.isEmpty()) {
             list.getSelectionModel().select(0);
@@ -245,6 +251,40 @@ public class CommandPalette {
     }
 
     /** True if every char of {@code needle} appears in {@code haystack} in order (fuzzy match). */
+    /**
+     * Comparator that orders titles by how well they match {@code query} (best first), tie-broken by
+     * shorter title then case-insensitive alphabetical. Used to rank command-palette results so the most
+     * relevant command leads.
+     */
+    static Comparator<String> byRelevance(String query) {
+        String q = query.toLowerCase(Locale.ROOT).trim();
+        return Comparator.comparingInt((String t) -> -relevance(q, t))
+                .thenComparingInt(String::length)
+                .thenComparing(t -> t, String.CASE_INSENSITIVE_ORDER);
+    }
+
+    /**
+     * Relevance of {@code title} to the (already lowercased) {@code q}: exact (5) &gt; whole-word (4) &gt;
+     * word-start (3) &gt; substring anywhere (2) &gt; scattered subsequence / no substring (1).
+     */
+    static int relevance(String q, String title) {
+        String t = title.toLowerCase(Locale.ROOT);
+        if (t.equals(q)) {
+            return 5;
+        }
+        int idx = t.indexOf(q);
+        if (idx >= 0) {
+            boolean wordStart = idx == 0 || !Character.isLetterOrDigit(t.charAt(idx - 1));
+            int after = idx + q.length();
+            boolean wordEnd = after >= t.length() || !Character.isLetterOrDigit(t.charAt(after));
+            if (wordStart && wordEnd) {
+                return 4;
+            }
+            return wordStart ? 3 : 2;
+        }
+        return 1; // matched only as a scattered subsequence (the filter already guaranteed that)
+    }
+
     static boolean isSubsequence(String needle, String haystack) {
         int i = 0;
         for (int j = 0; i < needle.length() && j < haystack.length(); j++) {
