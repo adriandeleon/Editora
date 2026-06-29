@@ -39,7 +39,7 @@ import com.github.weisj.jsvg.parser.SVGLoader;
  * <p>Off the hot paths: all network/parse/raster work runs on a small daemon pool; only the final
  * {@code setImage} touches the FX thread.
  */
-final class PreviewImageLoader {
+public final class PreviewImageLoader {
 
     private static final int TIMEOUT_MS = 6000;
     /** Don't re-attempt a failed URL for this long (lets an offline → online retry eventually succeed). */
@@ -133,7 +133,7 @@ final class PreviewImageLoader {
     }
 
     /** Sniffs whether {@code bytes} is SVG (XML prolog/comment then an {@code <svg} tag). Pure; unit-tested. */
-    static boolean looksLikeSvg(byte[] bytes) {
+    public static boolean looksLikeSvg(byte[] bytes) {
         int n = Math.min(bytes.length, 1024);
         String head = new String(bytes, 0, n, StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
         return head.contains("<svg");
@@ -187,6 +187,37 @@ final class PreviewImageLoader {
         doc.render((java.awt.Component) null, g, new ViewBox(0, 0, (float) w, (float) h));
         g.dispose();
         return new Loaded(toFxImage(buf), w); // backing bitmap is 2×; ImageView displays it at logical width w
+    }
+
+    /**
+     * Rasterizes SVG bytes to PNG bytes via JSVG, for consumers that need a bitmap rather than a JavaFX
+     * {@code Image} (e.g. the PDF/print writers, which embed via PDFBox and can't decode SVG). Returns
+     * {@code null} when the SVG can't be parsed/rendered, so callers degrade gracefully.
+     */
+    public static byte[] svgToPng(byte[] svg) {
+        try {
+            SVGDocument doc = new SVGLoader().load(new ByteArrayInputStream(svg), null, LoaderContext.createDefault());
+            if (doc == null) {
+                return null;
+            }
+            FloatSize size = doc.size();
+            double w = size.width > 0 ? size.width : 100;
+            double h = size.height > 0 ? size.height : 20;
+            int pw = (int) Math.ceil(w * RASTER_SCALE);
+            int ph = (int) Math.ceil(h * RASTER_SCALE);
+            BufferedImage buf = new BufferedImage(pw, ph, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = buf.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            g.scale(RASTER_SCALE, RASTER_SCALE);
+            doc.render((java.awt.Component) null, g, new ViewBox(0, 0, (float) w, (float) h));
+            g.dispose();
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            return javax.imageio.ImageIO.write(buf, "png", out) ? out.toByteArray() : null;
+        } catch (RuntimeException | java.io.IOException e) {
+            return null;
+        }
     }
 
     private static URI uriOrNull(String url) {
