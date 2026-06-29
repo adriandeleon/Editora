@@ -242,6 +242,8 @@ public class EditorBuffer implements TabContent {
     private boolean formatBarUpdatePending;
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
     private java.util.function.Consumer<String> openUrlHandler = u -> {};
+    /** Injected by the controller: opens the table-size picker, then inserts a table. */
+    private Runnable insertTableHandler;
     /** Preview right-click menu actions (injected from the controller's export/print commands). */
     private Runnable previewExportPdfHandler = () -> {};
 
@@ -1006,6 +1008,85 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
+    /** Inserts a fresh, aligned GFM table ({@code rowsTotal} rows incl. header × {@code cols}) at the caret. */
+    public void insertTable(int rowsTotal, int cols) {
+        if (!canFormatMarkdown()) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        MarkdownTable.Nav g = MarkdownTable.generate(rowsTotal, cols);
+        int caret = a.getCaretPosition();
+        // Put the table on its own line(s): add a leading newline if not already at column 0, and a trailing one.
+        boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
+        String prefix = needLeading ? "\n" : "";
+        String text = prefix + g.block() + "\n";
+        a.replaceText(caret, caret, text);
+        int pos = caret
+                + prefix.length()
+                + Math.max(0, Math.min(g.caret(), g.block().length()));
+        a.moveTo(pos);
+        a.requestFollowCaret();
+        a.requestFocus();
+    }
+
+    /** Shows the interactive table-size picker (wired by the controller); a no-op until injected. */
+    public void insertTableInteractive() {
+        if (canFormatMarkdown() && insertTableHandler != null) {
+            insertTableHandler.run();
+        }
+    }
+
+    /** Injected by the controller: opens the table-size picker, then calls {@link #insertTable}. */
+    public void setInsertTableHandler(Runnable handler) {
+        this.insertTableHandler = handler;
+    }
+
+    /** Adds a row below the caret's row in the GFM table; false when the caret is not on a table. */
+    public boolean tableAddRow() {
+        return applyTableNav(MarkdownTable::addRow);
+    }
+
+    /** Deletes the caret's data row; false when not on a table (or the caret is on the header/delimiter). */
+    public boolean tableDeleteRow() {
+        return applyTableNav(MarkdownTable::deleteRow);
+    }
+
+    /** Adds a column to the right of the caret's column; false when the caret is not on a table. */
+    public boolean tableAddColumn() {
+        return applyTableNav(MarkdownTable::addColumn);
+    }
+
+    /** Deletes the caret's column; false when not on a table (or only one column remains). */
+    public boolean tableDeleteColumn() {
+        return applyTableNav(MarkdownTable::deleteColumn);
+    }
+
+    /** Sets the caret column's alignment; false when the caret is not on a table. */
+    public boolean tableSetAlignment(MarkdownTable.Align align) {
+        return applyTableNav((block, caret) -> MarkdownTable.setAlignment(block, caret, align));
+    }
+
+    private boolean applyTableNav(java.util.function.BiFunction<String, Integer, MarkdownTable.Nav> op) {
+        if (!canFormatMarkdown()) {
+            return false;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        int caret = a.getCaretPosition();
+        int[] b = MarkdownTable.blockBounds(a.getText(), caret);
+        if (b == null) {
+            return false;
+        }
+        MarkdownTable.Nav nav = op.apply(a.getText().substring(b[0], b[1]), caret - b[0]);
+        if (nav == null) {
+            return false;
+        }
+        a.replaceText(b[0], b[1], nav.block());
+        a.moveTo(b[0] + Math.max(0, Math.min(nav.caret(), nav.block().length())));
+        a.requestFollowCaret();
+        a.requestFocus();
+        return true;
+    }
+
     /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
     public String linkUnderCaret() {
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -1255,7 +1336,42 @@ public class EditorBuffer implements TabContent {
         MenuItem link = new MenuItem(tr("command.markdown.link"));
         link.setGraphic(MenuIcons.link());
         link.setOnAction(e -> formatLinkFromClipboard());
-        return List.of(bold, italic, strike, code, link);
+        return List.of(bold, italic, strike, code, link, tableMenu());
+    }
+
+    /** The "Table" submenu: insert + add/delete row & column + column alignment. */
+    private javafx.scene.control.Menu tableMenu() {
+        javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("menu.markdown.table"));
+        menu.setGraphic(MenuIcons.table());
+        menu.getItems()
+                .addAll(
+                        tableItem("command.markdown.insertTable", MenuIcons.table(), this::insertTableInteractive),
+                        new javafx.scene.control.SeparatorMenuItem(),
+                        tableItem("command.markdown.tableAddRow", MenuIcons.add(), this::tableAddRow),
+                        tableItem("command.markdown.tableDeleteRow", MenuIcons.remove(), this::tableDeleteRow),
+                        tableItem("command.markdown.tableAddColumn", MenuIcons.add(), this::tableAddColumn),
+                        tableItem("command.markdown.tableDeleteColumn", MenuIcons.remove(), this::tableDeleteColumn),
+                        new javafx.scene.control.SeparatorMenuItem(),
+                        tableItem(
+                                "command.markdown.tableAlignLeft",
+                                MenuIcons.alignLeft(),
+                                () -> tableSetAlignment(MarkdownTable.Align.LEFT)),
+                        tableItem(
+                                "command.markdown.tableAlignCenter",
+                                MenuIcons.alignCenter(),
+                                () -> tableSetAlignment(MarkdownTable.Align.CENTER)),
+                        tableItem(
+                                "command.markdown.tableAlignRight",
+                                MenuIcons.alignRight(),
+                                () -> tableSetAlignment(MarkdownTable.Align.RIGHT)));
+        return menu;
+    }
+
+    private static MenuItem tableItem(String key, Node icon, Runnable action) {
+        MenuItem mi = new MenuItem(tr(key));
+        mi.setGraphic(icon);
+        mi.setOnAction(e -> action.run());
+        return mi;
     }
 
     /** The Cut/Copy/Paste/Undo/Redo/Select All items, with state for the current selection/clipboard. */

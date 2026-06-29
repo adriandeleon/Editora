@@ -1460,6 +1460,32 @@
     -fx-min-width: 96;
 }
 
+/* ---- Markdown table-size picker (the Typora/Word-style grid overlay) ---- */
+.table-size-picker {
+    -fx-background-color: -color-bg-default;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-border-radius: 8;
+}
+.table-size-label {
+    -fx-text-fill: -color-fg-default;
+    -fx-font-size: 12px;
+}
+.table-size-cell {
+    -fx-arc-width: 4;
+    -fx-arc-height: 4;
+    -fx-stroke: -color-border-default;
+    -fx-stroke-width: 1;
+    -fx-cursor: hand;
+}
+.table-size-cell-off {
+    -fx-fill: -color-bg-subtle;
+}
+.table-size-cell-on {
+    -fx-fill: -color-accent-emphasis;
+}
+
 /* ---- Welcome page (editor-area empty state when no file tabs are open) ---- */
 .welcome-pane {
     -fx-background-color: -color-bg-default;
