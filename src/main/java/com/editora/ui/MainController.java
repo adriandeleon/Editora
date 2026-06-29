@@ -6897,6 +6897,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** {@code markdown.toc}: insert a table of contents at the caret, or regenerate the existing TOC block. */
+    private void markdownToc() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.canFormatMarkdown()) {
+            setStatus(tr("status.notMarkdown"));
+        } else if (!b.insertOrUpdateToc()) {
+            setStatus(tr("status.markdown.tocNoHeadings"));
+        } else {
+            setStatus(tr("status.markdown.tocDone"));
+        }
+    }
+
     /** {@code markdown.tableFromCsv}: convert the selected CSV (else clipboard CSV) into a GFM table. */
     private void markdownTableFromCsv() {
         EditorBuffer b = activeBuffer();
@@ -8783,6 +8795,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markdown.headingDemote", () -> withMarkdown(b -> b.formatHeading(1))));
         registry.register(Command.of("markdown.openLink", this::markdownOpenLink));
         registry.register(Command.of("markdown.reflowTable", this::markdownReflowTable));
+        registry.register(Command.of("markdown.toc", this::markdownToc));
         registry.register(Command.of("markdown.tableFromCsv", this::markdownTableFromCsv));
         registry.register(Command.of("markdown.tableToCsv", this::markdownTableToCsv));
         registry.register(Command.of("markdown.toggleFormatBar", this::toggleMarkdownFormatBar));

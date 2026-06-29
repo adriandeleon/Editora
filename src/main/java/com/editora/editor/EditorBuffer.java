@@ -53,6 +53,7 @@ import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLines;
 import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownTable;
+import com.editora.markdown.MarkdownToc;
 import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetParser;
@@ -1145,6 +1146,40 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
+    /**
+     * Inserts a Markdown table of contents (a nested list of heading links) wrapped in {@code <!-- toc -->}
+     * markers at the caret, or — when the document already has such a marker block — regenerates it in place.
+     * Returns false when not a Markdown buffer or the document has no headings.
+     */
+    public boolean insertOrUpdateToc() {
+        if (!canFormatMarkdown()) {
+            return false;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        String doc = a.getText();
+        String updated = MarkdownToc.updated(doc, 1, 6);
+        if (updated != null) {
+            if (!updated.equals(doc)) {
+                a.replaceText(updated); // whole-document, undoable
+            }
+            a.requestFocus();
+            return true;
+        }
+        String body = MarkdownToc.build(doc, 1, 6);
+        if (body.isEmpty()) {
+            return false; // no headings to list
+        }
+        String block = MarkdownToc.wrapped(body);
+        int caret = a.getCaretPosition();
+        boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
+        String text = (needLeading ? "\n" : "") + block + "\n";
+        a.replaceText(caret, caret, text);
+        a.moveTo(caret + text.length());
+        a.requestFollowCaret();
+        a.requestFocus();
+        return true;
+    }
+
     /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
     public String linkUnderCaret() {
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -1394,7 +1429,10 @@ public class EditorBuffer implements TabContent {
         MenuItem link = new MenuItem(tr("command.markdown.link"));
         link.setGraphic(MenuIcons.link());
         link.setOnAction(e -> formatLinkFromClipboard());
-        return List.of(bold, italic, strike, code, link, tableMenu());
+        MenuItem toc = new MenuItem(tr("command.markdown.toc"));
+        toc.setGraphic(MenuIcons.bulletList());
+        toc.setOnAction(e -> insertOrUpdateToc());
+        return List.of(bold, italic, strike, code, link, tableMenu(), toc);
     }
 
     /** The "Table" submenu: insert + add/delete row & column + column alignment. */
