@@ -46,6 +46,7 @@ final class MarkdownFormatBar {
                         button(MenuIcons.link(), "tooltip.markdown.link", buffer::formatLinkFromClipboard),
                         button(MenuIcons.bulletList(), "tooltip.markdown.bulletList", buffer::formatBulletList),
                         button(MenuIcons.taskList(), "tooltip.markdown.taskList", buffer::formatTaskList),
+                        button(MenuIcons.table(), "tooltip.markdown.insertTable", buffer::insertTableInteractive),
                         new Separator(javafx.geometry.Orientation.VERTICAL),
                         headingBox(buffer));
     }

@@ -72,6 +72,7 @@ import com.editora.editor.LanguageRegistry;
 import com.editora.editor.SpellDictionaries;
 import com.editora.editor.TabContent;
 import com.editora.editor.TextNav;
+import com.editora.markdown.MarkdownTable;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 
@@ -186,6 +187,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final DebugLogWindow debugLogWindow = new DebugLogWindow();
     /** Shared in-scene overlay host for the command palette + pickers (replaces focus-stealing Popups). */
     private final OverlayHost overlayHost = new OverlayHost();
+
+    /** Max grid the Markdown table-size picker offers (rows × columns). */
+    private static final int TABLE_PICKER_MAX_ROWS = 8;
+
+    private static final int TABLE_PICKER_MAX_COLS = 8;
 
     private QuickOpen<Path> recentPalette;
     private QuickOpen<StructurePanel.Outline> structurePalette;
@@ -4014,6 +4020,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());
         buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
+        buffer.setInsertTableHandler(this::markdownInsertTable); // Markdown format-bar "insert table" button
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
         buffer.setHtmlPreviewDirtyListener(() -> htmlPreview.onBufferEdited(buffer));
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
@@ -6778,6 +6785,70 @@ public class MainController implements com.editora.mcp.McpBridge {
         action.accept(b);
     }
 
+    /** Opens the table-size grid picker; on pick, inserts a fresh GFM table into the active Markdown buffer. */
+    private void markdownInsertTable() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.canFormatMarkdown()) {
+            setStatus(tr("status.notMarkdown"));
+            return;
+        }
+        showTableSizePicker((rows, cols) -> b.insertTable(rows, cols));
+    }
+
+    /**
+     * A Typora/Word-style table-size grid picker shown as an in-scene overlay: hover to highlight an
+     * {@code R × C} block (rows include the header), click to commit. Max {@value #TABLE_PICKER_MAX_ROWS} ×
+     * {@value #TABLE_PICKER_MAX_COLS}.
+     */
+    private void showTableSizePicker(java.util.function.BiConsumer<Integer, Integer> onPick) {
+        final int maxR = TABLE_PICKER_MAX_ROWS;
+        final int maxC = TABLE_PICKER_MAX_COLS;
+        javafx.scene.layout.VBox card = new javafx.scene.layout.VBox(8);
+        card.getStyleClass().add("table-size-picker");
+        card.setPadding(new javafx.geometry.Insets(12));
+        Label heading = new Label(tr("table.picker.prompt"));
+        heading.getStyleClass().add("table-size-label");
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(3);
+        grid.setVgap(3);
+        javafx.scene.shape.Rectangle[][] cells = new javafx.scene.shape.Rectangle[maxR][maxC];
+        int[] sel = {0, 0}; // selected rows, cols (1-based; 0 = nothing yet)
+        Runnable[] repaint = new Runnable[1];
+        repaint[0] = () -> {
+            for (int r = 0; r < maxR; r++) {
+                for (int c = 0; c < maxC; c++) {
+                    boolean on = r < sel[0] && c < sel[1];
+                    cells[r][c]
+                            .getStyleClass()
+                            .setAll("table-size-cell", on ? "table-size-cell-on" : "table-size-cell-off");
+                }
+            }
+            heading.setText(sel[0] == 0 ? tr("table.picker.prompt") : tr("table.picker.size", sel[0], sel[1]));
+        };
+        for (int r = 0; r < maxR; r++) {
+            for (int c = 0; c < maxC; c++) {
+                javafx.scene.shape.Rectangle cell = new javafx.scene.shape.Rectangle(16, 16);
+                cell.getStyleClass().setAll("table-size-cell", "table-size-cell-off");
+                final int rr = r + 1;
+                final int cc = c + 1;
+                cell.setOnMouseEntered(e -> {
+                    sel[0] = rr;
+                    sel[1] = cc;
+                    repaint[0].run();
+                });
+                cell.setOnMouseClicked(e -> {
+                    overlayHost.hide();
+                    onPick.accept(rr, cc);
+                });
+                cells[r][c] = cell;
+                grid.add(cell, c, r);
+            }
+        }
+        card.getChildren().addAll(heading, grid);
+        card.getProperties().put("editora.ownsKeys", true);
+        overlayHost.show(card, () -> {}, () -> {});
+    }
+
     private void markdownInline(String marker) {
         withMarkdown(b -> b.formatInline(marker));
     }
@@ -8589,6 +8660,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markdown.link", () -> withMarkdown(EditorBuffer::formatLinkFromClipboard)));
         registry.register(Command.of("markdown.bulletList", () -> withMarkdown(EditorBuffer::formatBulletList)));
         registry.register(Command.of("markdown.taskList", () -> withMarkdown(EditorBuffer::formatTaskList)));
+        registry.register(Command.of("markdown.insertTable", this::markdownInsertTable));
+        registry.register(Command.of("markdown.tableAddRow", () -> withMarkdown(b -> b.tableAddRow())));
+        registry.register(Command.of("markdown.tableDeleteRow", () -> withMarkdown(b -> b.tableDeleteRow())));
+        registry.register(Command.of("markdown.tableAddColumn", () -> withMarkdown(b -> b.tableAddColumn())));
+        registry.register(Command.of("markdown.tableDeleteColumn", () -> withMarkdown(b -> b.tableDeleteColumn())));
+        registry.register(Command.of(
+                "markdown.tableAlignLeft", () -> withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.LEFT))));
+        registry.register(Command.of(
+                "markdown.tableAlignCenter", () -> withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.CENTER))));
+        registry.register(Command.of(
+                "markdown.tableAlignRight", () -> withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.RIGHT))));
         registry.register(Command.of("markdown.headingPromote", () -> withMarkdown(b -> b.formatHeading(-1))));
         registry.register(Command.of("markdown.headingDemote", () -> withMarkdown(b -> b.formatHeading(1))));
         registry.register(Command.of("markdown.openLink", this::markdownOpenLink));

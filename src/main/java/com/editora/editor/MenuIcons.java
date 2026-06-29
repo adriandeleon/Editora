@@ -118,6 +118,35 @@ final class MenuIcons {
                 + "1.41L5.54 11zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19z");
     }
 
+    // ---- Markdown tables ----
+
+    /** Material "grid_on" — a table grid (insert/format table). */
+    static Node table() {
+        return of("M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM8 20H4v-4h4v4zm0"
+                + "-6H4v-4h4v4zm0-6H4V4h4v4zm6 12h-4v-4h4v4zm0-6h-4v-4h4v4zm0-6h-4V4h4v4zm6 12h-4v-4h4v4zm0"
+                + "-6h-4v-4h4v4zm0-6h-4V4h4v4z");
+    }
+
+    /** Material "remove" — a minus (delete row/column). */
+    static Node remove() {
+        return of("M19 13H5v-2h14v2z");
+    }
+
+    /** Material "format_align_left". */
+    static Node alignLeft() {
+        return of("M15 15H3v2h12v-2zm0-8H3v2h12V7zM3 13h18v-2H3v2zm0 8h18v-2H3v2zM3 3v2h18V3H3z");
+    }
+
+    /** Material "format_align_center". */
+    static Node alignCenter() {
+        return of("M7 15v2h10v-2H7zm-4 6h18v-2H3v2zm0-8h18v-2H3v2zm4-6v2h10V7H7zM3 3v2h18V3H3z");
+    }
+
+    /** Material "format_align_right". */
+    static Node alignRight() {
+        return of("M3 21h18v-2H3v2zm6-4h12v-2H9v2zm-6-4h18v-2H3v2zm6-4h12V7H9v2zM3 3v2h18V3H3z");
+    }
+
     // ---- LSP navigation ----
 
     /** Material "north_east" arrow — "Go to Definition". */

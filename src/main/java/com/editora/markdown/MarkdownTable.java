@@ -18,7 +18,8 @@ public final class MarkdownTable {
 
     private static final int MIN_WIDTH = 3; // room for "---" / ":-:"
 
-    private enum Align {
+    /** Column alignment, as encoded by the GFM delimiter row ({@code ---}/{@code :--}/{@code :-:}/{@code --:}). */
+    public enum Align {
         NONE,
         LEFT,
         CENTER,
@@ -200,6 +201,200 @@ public final class MarkdownTable {
         String reflowed = reflow(working);
         int newLine = reflowed.split("\n", -1).length - 1;
         return new Nav(reflowed, cellContentOffset(reflowed, newLine, 0));
+    }
+
+    /**
+     * Generates a fresh, aligned GFM table skeleton with {@code rowsTotal} rows (the first is the header) and
+     * {@code cols} columns: a {@code Column 1 | Column 2 | …} header, a delimiter row, then empty body rows.
+     * The {@link Nav} caret lands in the first header cell. {@code rowsTotal}/{@code cols} are clamped to ≥1.
+     */
+    public static Nav generate(int rowsTotal, int cols) {
+        int c = Math.max(1, cols);
+        int body = Math.max(0, rowsTotal - 1);
+        List<List<String>> grid = new ArrayList<>();
+        List<String> header = new ArrayList<>();
+        List<String> delim = new ArrayList<>();
+        for (int i = 0; i < c; i++) {
+            header.add("Column " + (i + 1));
+            delim.add("---");
+        }
+        grid.add(header);
+        grid.add(delim);
+        for (int r = 0; r < body; r++) {
+            List<String> row = new ArrayList<>();
+            for (int i = 0; i < c; i++) {
+                row.add("");
+            }
+            grid.add(row);
+        }
+        String reflowed = reflow(joinRows(grid));
+        return new Nav(reflowed, cellContentOffset(reflowed, 0, 0));
+    }
+
+    /**
+     * Inserts an empty row below the caret's row (or as the first body row when the caret is on the header /
+     * delimiter), reflows, and puts the caret in the new row's first cell. Returns {@code null} when the
+     * block is not a GFM table.
+     */
+    public static Nav addRow(String block, int caretInBlock) {
+        String[] lines = block.split("\n", -1);
+        int delim = delimiterIndex(lines);
+        if (delim < 0) {
+            return null;
+        }
+        int li = lineIndexAt(block, caretInBlock);
+        int ncol = columnCount(lines);
+        List<List<String>> rows = rowsOf(block);
+        int insertAt = (li <= delim) ? delim + 1 : li + 1;
+        rows.add(insertAt, emptyCells(ncol, ""));
+        String reflowed = reflow(joinRows(rows));
+        return new Nav(reflowed, cellContentOffset(reflowed, insertAt, 0));
+    }
+
+    /**
+     * Deletes the caret's data row (reflows, caret to the same cell in the surviving neighbour). Returns
+     * {@code null} when not a GFM table or when the caret is on the header or delimiter row (those can't be
+     * deleted).
+     */
+    public static Nav deleteRow(String block, int caretInBlock) {
+        String[] lines = block.split("\n", -1);
+        int delim = delimiterIndex(lines);
+        if (delim < 0) {
+            return null;
+        }
+        int li = lineIndexAt(block, caretInBlock);
+        if (li == 0 || li == delim) {
+            return null; // never delete the header or the delimiter row
+        }
+        int ci = cellIndexAt(lines[li], caretInBlock - lineStartOffset(block, li));
+        List<List<String>> rows = rowsOf(block);
+        rows.remove(li);
+        String reflowed = reflow(joinRows(rows));
+        int newLine = Math.min(li, rows.size() - 1);
+        return new Nav(reflowed, cellContentOffset(reflowed, newLine, ci));
+    }
+
+    /**
+     * Inserts an empty column to the right of the caret's column in every row, reflows, and puts the caret in
+     * the new cell. Returns {@code null} when not a GFM table.
+     */
+    public static Nav addColumn(String block, int caretInBlock) {
+        String[] lines = block.split("\n", -1);
+        int delim = delimiterIndex(lines);
+        if (delim < 0) {
+            return null;
+        }
+        int li = lineIndexAt(block, caretInBlock);
+        int ci = cellIndexAt(lines[li], caretInBlock - lineStartOffset(block, li));
+        int ncol = columnCount(lines);
+        int insertAt = Math.min(ci + 1, ncol);
+        List<List<String>> rows = rowsOf(block);
+        for (int i = 0; i < rows.size(); i++) {
+            List<String> r = rows.get(i);
+            String fill = (i == delim) ? "---" : "";
+            while (r.size() < ncol) {
+                r.add(fill);
+            }
+            r.add(Math.min(insertAt, r.size()), fill);
+        }
+        String reflowed = reflow(joinRows(rows));
+        return new Nav(reflowed, cellContentOffset(reflowed, li, insertAt));
+    }
+
+    /**
+     * Deletes the caret's column from every row, reflows, and keeps the caret in the same row. Returns
+     * {@code null} when not a GFM table or when there is only one column left.
+     */
+    public static Nav deleteColumn(String block, int caretInBlock) {
+        String[] lines = block.split("\n", -1);
+        int delim = delimiterIndex(lines);
+        if (delim < 0) {
+            return null;
+        }
+        int ncol = columnCount(lines);
+        if (ncol <= 1) {
+            return null; // a table needs at least one column
+        }
+        int li = lineIndexAt(block, caretInBlock);
+        int ci = cellIndexAt(lines[li], caretInBlock - lineStartOffset(block, li));
+        List<List<String>> rows = rowsOf(block);
+        for (int i = 0; i < rows.size(); i++) {
+            List<String> r = rows.get(i);
+            String fill = (i == delim) ? "---" : "";
+            while (r.size() < ncol) {
+                r.add(fill);
+            }
+            if (ci < r.size()) {
+                r.remove(ci);
+            }
+        }
+        String reflowed = reflow(joinRows(rows));
+        int newCell = Math.max(0, Math.min(ci, ncol - 2));
+        return new Nav(reflowed, cellContentOffset(reflowed, li, newCell));
+    }
+
+    /**
+     * Sets the alignment of the caret's column (rewrites that delimiter cell to {@code ---}/{@code :--}/
+     * {@code :-:}/{@code --:}), reflows, and keeps the caret in place. Returns {@code null} when not a GFM
+     * table.
+     */
+    public static Nav setAlignment(String block, int caretInBlock, Align align) {
+        String[] lines = block.split("\n", -1);
+        int delim = delimiterIndex(lines);
+        if (delim < 0) {
+            return null;
+        }
+        int li = lineIndexAt(block, caretInBlock);
+        int ci = cellIndexAt(lines[li], caretInBlock - lineStartOffset(block, li));
+        int ncol = columnCount(lines);
+        List<List<String>> rows = rowsOf(block);
+        List<String> d = rows.get(delim);
+        while (d.size() < ncol) {
+            d.add("---");
+        }
+        d.set(Math.min(ci, d.size() - 1), delimCellFor(align));
+        String reflowed = reflow(joinRows(rows));
+        return new Nav(reflowed, cellContentOffset(reflowed, li, ci));
+    }
+
+    private static List<String> emptyCells(int ncol, String fill) {
+        List<String> r = new ArrayList<>();
+        for (int c = 0; c < Math.max(1, ncol); c++) {
+            r.add(fill);
+        }
+        return r;
+    }
+
+    private static List<List<String>> rowsOf(String block) {
+        List<List<String>> rows = new ArrayList<>();
+        for (String line : block.split("\n", -1)) {
+            rows.add(splitCells(line));
+        }
+        return rows;
+    }
+
+    /** Re-joins parsed rows into a raw pipe block (re-aligned by a following {@link #reflow}). */
+    private static String joinRows(List<List<String>> rows) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < rows.size(); i++) {
+            if (i > 0) {
+                sb.append('\n');
+            }
+            sb.append('|');
+            for (String c : rows.get(i)) {
+                sb.append(' ').append(c).append(" |");
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String delimCellFor(Align a) {
+        return switch (a) {
+            case LEFT -> ":--";
+            case CENTER -> ":-:";
+            case RIGHT -> "--:";
+            case NONE -> "---";
+        };
     }
 
     private static int delimiterIndex(String[] lines) {
