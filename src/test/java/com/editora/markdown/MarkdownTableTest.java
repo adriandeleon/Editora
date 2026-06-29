@@ -147,4 +147,18 @@ class MarkdownTableTest {
         MarkdownTable.Nav nav = MarkdownTable.setAlignment(block, 2, MarkdownTable.Align.CENTER); // col 0
         assertTrue(nav.block().split("\n", -1)[1].startsWith("| :-")); // col 0 now centered
     }
+
+    @Test
+    void parseSizeAcceptsNxNAndRejectsGarbage() {
+        assertArrayEquals(new int[] {4, 4}, MarkdownTable.parseSize("4x4"));
+        assertArrayEquals(new int[] {3, 2}, MarkdownTable.parseSize(" 3 X 2 "));
+        assertArrayEquals(new int[] {2, 5}, MarkdownTable.parseSize("2×5"));
+        assertArrayEquals(
+                new int[] {MarkdownTable.MAX_SIZE, MarkdownTable.MAX_SIZE}, MarkdownTable.parseSize("999x999"));
+        assertNull(MarkdownTable.parseSize("4"));
+        assertNull(MarkdownTable.parseSize("4x"));
+        assertNull(MarkdownTable.parseSize("0x3"));
+        assertNull(MarkdownTable.parseSize("axb"));
+        assertNull(MarkdownTable.parseSize(null));
+    }
 }

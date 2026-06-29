@@ -2,6 +2,7 @@ package com.editora.markdown;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -201,6 +202,36 @@ public final class MarkdownTable {
         String reflowed = reflow(working);
         int newLine = reflowed.split("\n", -1).length - 1;
         return new Nav(reflowed, cellContentOffset(reflowed, newLine, 0));
+    }
+
+    /** The largest table dimension {@link #parseSize} accepts, to keep a typo like {@code 999x999} sane. */
+    public static final int MAX_SIZE = 50;
+
+    private static final Pattern SIZE = Pattern.compile("\\s*(\\d+)\\s*[x×X]\\s*(\\d+)\\s*");
+
+    /**
+     * Parses an {@code "RxC"} table-size string (e.g. {@code "4x4"}, {@code "3 X 2"}, {@code "2×5"}) into
+     * {@code int[]{rows, cols}} (rows includes the header), each clamped to {@code [1, }{@link #MAX_SIZE}{@code ]}.
+     * Returns {@code null} when the input is not two {@code x}-separated positive integers.
+     */
+    public static int[] parseSize(String s) {
+        if (s == null) {
+            return null;
+        }
+        Matcher m = SIZE.matcher(s);
+        if (!m.matches()) {
+            return null;
+        }
+        try {
+            int r = Integer.parseInt(m.group(1));
+            int c = Integer.parseInt(m.group(2));
+            if (r < 1 || c < 1) {
+                return null;
+            }
+            return new int[] {Math.min(r, MAX_SIZE), Math.min(c, MAX_SIZE)};
+        } catch (NumberFormatException e) {
+            return null; // overflow on an absurdly long digit run
+        }
     }
 
     /**
