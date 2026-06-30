@@ -57,6 +57,10 @@ final class FxWindowFixture {
                 // best-effort teardown
             }
         });
+        // Drain any queued async config writes (settings.toml/session) before deleting the temp dir —
+        // otherwise the ConfigWriter's temp-file + ATOMIC_MOVE can race the delete and throw
+        // NoSuchFileException, an intermittent test error.
+        shared.flushWrites();
         deleteRecursively(configDir);
     }
 
