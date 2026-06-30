@@ -100,4 +100,25 @@ class MarkdownRendererTest {
         assertFalse(t.contains("~~"), "no strikethrough markers");
         assertFalse(t.contains("---"), "no table delimiter row");
     }
+
+    @Test
+    void multiLineDisplayMathIsRecognized() {
+        // $$ on its own line, content, then $$ — commonmark inserts SoftLineBreaks; paragraphText must
+        // span them so the paragraph is recognized as a sole $$…$$ display block (regression: it bailed
+        // on the first SoftLineBreak, so only single-line $$…$$ rendered).
+        org.commonmark.node.Node doc = MarkdownRenderer.parseToDocument("$$\n\\int_0^1 x^2 dx\n$$");
+        org.commonmark.node.Paragraph p = (org.commonmark.node.Paragraph) doc.getFirstChild();
+        String latex = MarkdownRenderer.soleDisplayMath(MarkdownRenderer.paragraphText(p));
+        assertTrue(latex != null && latex.contains("\\int_0^1 x^2 dx"), "multi-line $$ block, got: " + latex);
+
+        // single-line form still works
+        org.commonmark.node.Node doc2 = MarkdownRenderer.parseToDocument("$$ a^2 + b^2 = c^2 $$");
+        org.commonmark.node.Paragraph p2 = (org.commonmark.node.Paragraph) doc2.getFirstChild();
+        assertTrue(MarkdownRenderer.soleDisplayMath(MarkdownRenderer.paragraphText(p2)) != null, "single-line $$");
+
+        // a normal paragraph is NOT display math
+        org.commonmark.node.Node doc3 = MarkdownRenderer.parseToDocument("just some prose here");
+        org.commonmark.node.Paragraph p3 = (org.commonmark.node.Paragraph) doc3.getFirstChild();
+        assertFalse(MarkdownRenderer.soleDisplayMath(MarkdownRenderer.paragraphText(p3)) != null, "prose");
+    }
 }
