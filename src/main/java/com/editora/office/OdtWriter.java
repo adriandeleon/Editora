@@ -14,6 +14,8 @@ import java.util.zip.ZipOutputStream;
 import javax.imageio.ImageIO;
 
 import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.MathImages;
+import com.editora.editor.MathSpans;
 import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.gfm.tables.TableCell;
 import org.commonmark.ext.gfm.tables.TableRow;
@@ -82,7 +84,7 @@ public final class OdtWriter {
                     .append("\" text:outline-level=\"")
                     .append(lvl)
                     .append("\">");
-            inline(b, InlineRun.flatten(h));
+            inline(b, InlineRun.flatten(h), images);
             b.append("</text:h>");
         } else if (n instanceof Paragraph p) {
             String math = InlineRun.soleDisplayMath(p);
@@ -96,7 +98,7 @@ public final class OdtWriter {
                 imageFrame(b, (Image) p.getFirstChild(), baseDir, images);
                 b.append("</text:p>");
             } else {
-                paragraph(b, "Standard", InlineRun.flatten(p));
+                paragraph(b, "Standard", InlineRun.flatten(p), images);
             }
         } else if (n instanceof BulletList bl) {
             listXml(b, bl, false, baseDir, mmdc, images);
@@ -105,7 +107,7 @@ public final class OdtWriter {
         } else if (n instanceof BlockQuote bq) {
             for (Node c = bq.getFirstChild(); c != null; c = c.getNext()) {
                 if (c instanceof Paragraph p) {
-                    paragraph(b, "Quotations", InlineRun.flatten(p));
+                    paragraph(b, "Quotations", InlineRun.flatten(p), images);
                 } else {
                     block(b, c, baseDir, mmdc, images);
                 }
@@ -124,13 +126,13 @@ public final class OdtWriter {
         } else if (n instanceof ThematicBreak) {
             b.append("<text:p text:style-name=\"Horizontal_20_Line\"/>");
         } else if (n instanceof TableBlock t) {
-            tableXml(b, t);
+            tableXml(b, t, images);
         }
     }
 
-    private static void paragraph(StringBuilder b, String style, List<InlineRun> runs) {
+    private static void paragraph(StringBuilder b, String style, List<InlineRun> runs, List<Embedded> images) {
         b.append("<text:p text:style-name=\"").append(style).append("\">");
-        inline(b, runs);
+        inline(b, runs, images);
         b.append("</text:p>");
     }
 
@@ -161,7 +163,7 @@ public final class OdtWriter {
                 } else if (c instanceof OrderedList no) {
                     listXml(b, no, true, baseDir, mmdc, images);
                 } else if (c instanceof Paragraph p) {
-                    paragraph(b, "Standard", InlineRun.flatten(p));
+                    paragraph(b, "Standard", InlineRun.flatten(p), images);
                 } else {
                     block(b, c, baseDir, mmdc, images);
                 }
@@ -171,7 +173,7 @@ public final class OdtWriter {
         b.append("</text:list>");
     }
 
-    private static void tableXml(StringBuilder b, TableBlock t) {
+    private static void tableXml(StringBuilder b, TableBlock t, List<Embedded> images) {
         List<List<TableCell>> rows = new ArrayList<>();
         for (Node section = t.getFirstChild(); section != null; section = section.getNext()) {
             for (Node r = section.getFirstChild(); r != null; r = r.getNext()) {
@@ -201,7 +203,7 @@ public final class OdtWriter {
                 b.append("<table:table-cell office:value-type=\"string\">");
                 b.append("<text:p text:style-name=\"Standard\">");
                 if (ci < row.size()) {
-                    inline(b, InlineRun.flatten(row.get(ci)));
+                    inline(b, InlineRun.flatten(row.get(ci)), images);
                 }
                 b.append("</text:p></table:table-cell>");
             }
@@ -211,7 +213,7 @@ public final class OdtWriter {
     }
 
     /** Appends inline runs, wrapping each in nested {@code <text:span>}s per active style + {@code <text:a>} links. */
-    private static void inline(StringBuilder b, List<InlineRun> runs) {
+    private static void inline(StringBuilder b, List<InlineRun> runs, List<Embedded> images) {
         for (InlineRun r : runs) {
             if (r.isBreak()) {
                 b.append("<text:line-break/>");
@@ -244,13 +246,60 @@ public final class OdtWriter {
                 b.append("<text:span text:style-name=\"TCode\">");
                 spans++;
             }
-            b.append(esc(r.text()));
+            emitText(b, r, images);
             for (int i = 0; i < spans; i++) {
                 b.append("</text:span>");
             }
             if (link) {
                 b.append("</text:a>");
             }
+        }
+    }
+
+    /** Appends a run's text, splitting non-code text on inline {@code $…$}/{@code $$…$$} math → as-char frames. */
+    private static void emitText(StringBuilder b, InlineRun r, List<Embedded> images) {
+        if (r.code() || r.text().indexOf('$') < 0 || !MathImages.isEnabled()) {
+            b.append(esc(r.text()));
+            return;
+        }
+        for (MathSpans.Segment seg : MathSpans.segments(r.text())) {
+            if (seg.text() != null) {
+                b.append(esc(seg.text()));
+            } else {
+                byte[] png =
+                        OfficeImages.renderMath(seg.span().latex(), seg.span().display());
+                if (!mathFrame(b, png, images, seg.span().display())) {
+                    String d = seg.span().display() ? "$$" : "$";
+                    b.append(esc(d + seg.span().latex() + d));
+                }
+            }
+        }
+    }
+
+    /** Embeds {@code png} as an as-char {@code <draw:frame>} sized to roughly the line height; false if undecodable. */
+    private static boolean mathFrame(StringBuilder b, byte[] png, List<Embedded> images, boolean display) {
+        if (png == null) {
+            return false;
+        }
+        try {
+            BufferedImage bi = ImageIO.read(new ByteArrayInputStream(png));
+            if (bi == null || bi.getHeight() <= 0) {
+                return false;
+            }
+            double hCm = display ? 0.85 : 0.42; // ~ line height
+            double wCm = bi.getWidth() * (hCm / bi.getHeight());
+            String name = "Pictures/math" + images.size() + "." + OfficeImages.extension(png);
+            images.add(new Embedded(name, png, OfficeImages.mediaType(png)));
+            b.append("<draw:frame text:anchor-type=\"as-char\" svg:width=\"")
+                    .append(String.format(java.util.Locale.ROOT, "%.3fcm", wCm))
+                    .append("\" svg:height=\"")
+                    .append(String.format(java.util.Locale.ROOT, "%.3fcm", hCm))
+                    .append("\"><draw:image xlink:href=\"")
+                    .append(escAttr(name))
+                    .append("\" xlink:type=\"simple\" xlink:show=\"embed\" xlink:actuate=\"onLoad\"/></draw:frame>");
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 

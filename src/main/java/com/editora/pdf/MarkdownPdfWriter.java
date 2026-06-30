@@ -79,7 +79,29 @@ public final class MarkdownPdfWriter {
     }
 
     /** A styled, space-separated word (or a forced line break) in an inline flow. */
-    private record Word(String text, PDFont font, float size, Color color, boolean underline, boolean brk) {}
+    /**
+     * A flowed inline token: a text word (the common case) or an inline math image ({@code img != null},
+     * sized {@code imgW}×{@code imgH} in points). {@code font} stays set on a math word so the flow can
+     * measure the leading space before it.
+     */
+    private record Word(
+            String text,
+            PDFont font,
+            float size,
+            Color color,
+            boolean underline,
+            boolean brk,
+            PDImageXObject img,
+            float imgW,
+            float imgH) {
+        static Word of(String text, PDFont font, float size, Color color, boolean underline, boolean brk) {
+            return new Word(text, font, size, color, underline, brk, null, 0, 0);
+        }
+
+        static Word math(PDImageXObject img, float w, float h, PDFont font, float size) {
+            return new Word("", font, size, null, false, false, img, w, h);
+        }
+    }
 
     /** Cursor: the document + current page/stream + the y baseline, with block/inline layout helpers. */
     private static final class Cur {
@@ -190,7 +212,7 @@ public final class MarkdownPdfWriter {
                 String text = plain(n);
                 if (!text.isBlank()) {
                     flow(
-                            List.of(new Word(text.strip(), body, BODY, PdfTheme.DEFAULT_FG, false, false)),
+                            List.of(Word.of(text.strip(), body, BODY, PdfTheme.DEFAULT_FG, false, false)),
                             left,
                             contentRight(),
                             LEADING);
@@ -345,7 +367,7 @@ public final class MarkdownPdfWriter {
             }
             String alt = plain(node);
             flow(
-                    List.of(new Word(
+                    List.of(Word.of(
                             "[" + (alt.isBlank() ? "image" : alt) + "]",
                             bodyItalic,
                             BODY,
@@ -467,31 +489,67 @@ public final class MarkdownPdfWriter {
                 throws IOException {
             for (Node n = parent.getFirstChild(); n != null; n = n.getNext()) {
                 if (n instanceof Text t) {
-                    for (String w : t.getLiteral().split(" ", -1)) {
-                        if (!w.isEmpty()) {
-                            out.add(new Word(w, reg, size, color, underline, false));
-                        }
-                    }
+                    addInlineText(t.getLiteral(), out, reg, size, color, underline);
                 } else if (n instanceof StrongEmphasis) {
                     inline(n, out, bold, bold, bold, size, color, underline);
                 } else if (n instanceof Emphasis) {
                     inline(n, out, italic, bold, italic, size, color, underline);
                 } else if (n instanceof Code c) {
-                    out.add(new Word(c.getLiteral(), mono, size - 0.5f, PdfTheme.hex("#0a3069"), underline, false));
+                    out.add(Word.of(c.getLiteral(), mono, size - 0.5f, PdfTheme.hex("#0a3069"), underline, false));
                 } else if (n instanceof Link link) {
                     inline(n, out, reg, bold, italic, size, PdfTheme.hex("#0969da"), true);
                 } else if (n instanceof SoftLineBreak) {
                     // word boundary — flow inserts spaces between words already
-                    out.add(new Word("", reg, size, color, false, false));
+                    out.add(Word.of("", reg, size, color, false, false));
                 } else if (n instanceof HardLineBreak) {
-                    out.add(new Word("", reg, size, color, false, true));
+                    out.add(Word.of("", reg, size, color, false, true));
                 } else if (n instanceof Image) {
-                    out.add(new Word("[" + plain(n) + "]", italic, size, PdfTheme.LINE_NUMBER, false, false));
+                    out.add(Word.of("[" + plain(n) + "]", italic, size, PdfTheme.LINE_NUMBER, false, false));
                 } else {
                     // Strikethrough, html inline, etc.: render their text plainly.
                     inline(n, out, reg, bold, italic, size, color, underline);
                 }
             }
+        }
+
+        /** Splits a text literal into flow words, turning inline {@code $…$}/{@code $$…$$} math into image words. */
+        void addInlineText(String literal, List<Word> out, PDFont reg, float size, Color color, boolean underline)
+                throws IOException {
+            if (!MathImages.isEnabled() || literal.indexOf('$') < 0) {
+                for (String w : literal.split(" ", -1)) {
+                    if (!w.isEmpty()) {
+                        out.add(Word.of(w, reg, size, color, underline, false));
+                    }
+                }
+                return;
+            }
+            for (MathSpans.Segment seg : MathSpans.segments(literal)) {
+                if (seg.text() != null) {
+                    for (String w : seg.text().split(" ", -1)) {
+                        if (!w.isEmpty()) {
+                            out.add(Word.of(w, reg, size, color, underline, false));
+                        }
+                    }
+                } else {
+                    out.add(mathWord(seg.span().latex(), seg.span().display(), reg, size, color, underline));
+                }
+            }
+        }
+
+        /** A math image word sized to the line, or a literal {@code $…$} text fallback when rendering fails. */
+        Word mathWord(String latex, boolean display, PDFont reg, float size, Color color, boolean underline)
+                throws IOException {
+            byte[] png = MathImages.renderPng(latex, display, display ? 30f : 16f, false);
+            if (png != null) {
+                PDImageXObject xo = PDImageXObject.createFromByteArray(doc, png, "math");
+                if (xo.getHeight() > 0) {
+                    float h = display ? size * 1.8f : size * 1.05f;
+                    float w = (float) xo.getWidth() / xo.getHeight() * h;
+                    return Word.math(xo, w, h, reg, size);
+                }
+            }
+            String d = display ? "$$" : "$";
+            return Word.of(d + latex + d, reg, size, color, underline, false);
         }
 
         /** Greedy word-wrap flow of styled words at the current y; advances y per visual line. */
@@ -505,6 +563,22 @@ public final class MarkdownPdfWriter {
                     need(leading);
                     x = left;
                     started = false;
+                    continue;
+                }
+                if (w.img() != null) {
+                    float iw = w.imgW();
+                    float isp = started ? w.font().getStringWidth(" ") / 1000f * w.size() : 0f;
+                    if (started && x + isp + iw > right) {
+                        y -= leading;
+                        need(leading);
+                        x = left;
+                        started = false;
+                        isp = 0f;
+                    }
+                    float ix = x + isp;
+                    cs.drawImage(w.img(), ix, y - w.imgH() * 0.25f, w.imgW(), w.imgH()); // sit ~on the baseline
+                    x = ix + iw;
+                    started = true;
                     continue;
                 }
                 if (w.text().isEmpty()) {
