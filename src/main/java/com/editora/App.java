@@ -13,6 +13,14 @@ import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.ui.Themes;
 
+/**
+ * The JavaFX {@link Application} entry point. {@link #main} runs before the toolkit starts: it sets
+ * {@code java.awt.headless=true} (the macOS SVG/Java2D guard), installs the debug-log + uncaught-exception
+ * handlers, handles {@code --version}/{@code --help}, and otherwise launches the FX application. {@link #start}
+ * parses the remaining CLI arguments, loads the shared config and localized UI, and hands off to
+ * {@code ui.WindowManager} to build the window(s). The non-{@link Application} {@code com.editora.Launcher}
+ * is the fat-jar/classpath entry point and routes through {@link #main}.
+ */
 public class App extends Application {
 
     // Quiet tm4e/Oniguruma grammar-compile WARNINGs ("']' without escape", "No grammar source for

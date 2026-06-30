@@ -287,7 +287,7 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   `exports com.editora.plugin;` + `opens com.editora.plugin to com.fasterxml.jackson.databind;` (the manifest
   DTO). **Plugins load at startup only** — enable/disable + the master gate take effect on the next launch (no
   hot classloader/UI unload; per-window `stop()` on close is the only teardown). **One new exported package; no
-  new Maven dependency.** Example: `examples/example-plugin/` (a complete Java + declarative plugin with a
+  new Maven dependency.** Plugin-API Javadoc (the author-facing surface) builds + doclint-validates via the `apidocs` profile: `./mvnw -Papidocs javadoc:javadoc` (scoped to `com.editora.plugin`, `doclint=all,-missing` so broken `@link`/HTML fail). Example: `examples/example-plugin/` (a complete Java + declarative plugin with a
   `build.sh`) + `docs/plugins.md`. **Registry / install (browse + from-disk):** a plugin is distributed as a
   **`.zip`** whose top level is the plugin folder contents. **`RegistryIndex`/`RegistryEntry`** (lenient
   Jackson, static `parse`) model a curated **`index.json`**; **`PluginRegistry`** fetches it over HTTPS

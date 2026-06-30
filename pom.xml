@@ -58,6 +58,7 @@
         <jacoco.version>0.8.13</jacoco.version>
         <testfx.version>4.0.18</testfx.version>
         <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
+        <maven-javadoc-plugin.version>3.11.2</maven-javadoc-plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
         <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
         <jpackage.icon>${project.basedir}/branding/editora.png</jpackage.icon>
@@ -1010,6 +1011,35 @@
     </build>
 
     <profiles>
+        <!-- `apidocs`: generate + doclint-validate the public plugin API (the one surface third-party
+             plugin authors consume). Scoped to `com.editora.plugin`; doclint=all + failOnWarnings make it a
+             real gate. Run: `./mvnw -Papidocs javadoc:javadoc` → target/reports/apidocs. Not bound to the
+             normal build (full-tree doclint would be noise given internal methods are intentionally terse). -->
+        <profile>
+            <id>apidocs</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${maven-javadoc-plugin.version}</version>
+                        <configuration>
+                            <subpackages>com.editora.plugin</subpackages>
+                            <!-- all,-missing: validate references/HTML/syntax (catch broken @link, bad markup)
+                                 without demanding a @param/@return tag on every method — the internal
+                                 machinery in this package (installer/registry/unzip) is intentionally terse. -->
+                            <doclint>all,-missing</doclint>
+                            <failOnWarnings>true</failOnWarnings>
+                            <failOnError>true</failOnError>
+                            <notimestamp>true</notimestamp>
+                            <quiet>true</quiet>
+                            <doctitle>Editora Plugin API ${project.version}</doctitle>
+                            <windowtitle>Editora Plugin API ${project.version}</windowtitle>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- OS-activated profiles select the native installer type + the Prism pipeline order for the `dist`
              build and `javafx:run` (auto-activated by the build OS). -->
         <profile>
