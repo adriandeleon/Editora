@@ -458,20 +458,22 @@ public final class MarkdownRenderer {
     }
 
     /** The concatenated literal text of a paragraph's inline children, or null if it isn't pure text. */
-    private static String paragraphText(Paragraph p) {
+    static String paragraphText(Paragraph p) {
         StringBuilder sb = new StringBuilder();
         for (org.commonmark.node.Node c = p.getFirstChild(); c != null; c = c.getNext()) {
             if (c instanceof org.commonmark.node.Text t) {
                 sb.append(t.getLiteral());
+            } else if (c instanceof SoftLineBreak || c instanceof HardLineBreak) {
+                sb.append(' '); // a $$…$$ block spans lines as soft breaks — join them, don't bail
             } else {
-                return null; // contains markup → not a bare display-math paragraph
+                return null; // contains real markup → not a bare display-math paragraph
             }
         }
         return sb.toString();
     }
 
     /** If {@code text} is exactly one {@code $$…$$} display-math span, its LaTeX; else null. */
-    private static String soleDisplayMath(String text) {
+    static String soleDisplayMath(String text) {
         if (text == null) {
             return null;
         }
