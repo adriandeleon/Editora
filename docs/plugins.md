@@ -105,6 +105,10 @@ A Java plugin may use Editora's **exported** API (`com.editora.plugin` and the p
 jar (or `lib/`). One bad plugin never blocks the others — a failure is isolated, logged, and shown as a
 load error on the Settings page.
 
+Generate the Javadoc for the plugin API with `./mvnw -Papidocs javadoc:javadoc` (output under
+`target/reports/apidocs`). That run also doclint-validates the API's references/HTML, so a broken `@link`
+in the public surface fails the build.
+
 ### How loading works (and why it's jlink-safe)
 
 The packaged installers are a **sealed jlink image with no module path at runtime**. Plugins are therefore
