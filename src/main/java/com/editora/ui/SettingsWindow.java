@@ -586,6 +586,10 @@ public class SettingsWindow {
                                 .getResource("/com/editora/styles/syntax.css")
                                 .toExternalForm());
         stage.setScene(scene);
+        // The content scroll pane is fit-to-width (no horizontal scrollbar), so a too-narrow window would
+        // clip the wider rows (label + spinner + unit) with no way to read them. Floor the window size.
+        stage.setMinWidth(720);
+        stage.setMinHeight(480);
 
         sidebar.getSelectionModel().select(Category.APPEARANCE);
     }
@@ -4346,8 +4350,11 @@ public class SettingsWindow {
 
     private Region labeled(String label, Node control) {
         Label l = new Label(label);
+        // Floor the width to 130 so short labels line up into a tidy column, but let a longer label grow to
+        // its full text (maxWidth = pref) instead of ellipsizing — e.g. "Max size / project (MB)" or any
+        // longer translation. (Previously a fixed prefWidth(130) clamped + truncated the longer ones.)
         l.setMinWidth(130);
-        l.setPrefWidth(130);
+        l.setMaxWidth(Region.USE_PREF_SIZE);
         HBox h = new HBox(10, l, control);
         h.setAlignment(Pos.CENTER_LEFT);
         return h;
