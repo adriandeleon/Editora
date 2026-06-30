@@ -10,6 +10,8 @@ import java.util.List;
 import javax.imageio.ImageIO;
 
 import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.MathImages;
+import com.editora.editor.MathSpans;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.Borders;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
@@ -209,38 +211,92 @@ public final class DocxWriter {
                 last.addBreak();
                 continue;
             }
-            XWPFRun r;
-            if (ir.href() != null && !ir.href().isBlank()) {
-                XWPFHyperlinkRun hr = p.createHyperlinkRun(ir.href());
-                hr.setColor(LINK_COLOR);
-                hr.setUnderline(UnderlinePatterns.SINGLE);
-                r = hr;
-            } else {
-                r = p.createRun();
+            // Split non-code text on inline $…$ / $$…$$ math and embed each math span as an inline picture.
+            if (!ir.code() && ir.text().indexOf('$') >= 0 && MathImages.isEnabled()) {
+                for (MathSpans.Segment seg : MathSpans.segments(ir.text())) {
+                    if (seg.text() != null) {
+                        if (!seg.text().isEmpty()) {
+                            last = emitTextRun(p, ir, seg.text(), forceBold, size);
+                        }
+                    } else {
+                        byte[] png = OfficeImages.renderMath(
+                                seg.span().latex(), seg.span().display());
+                        XWPFRun m = embedInlineMath(p, png, seg.span().display());
+                        last = m != null ? m : emitTextRun(p, ir, rawMath(seg.span()), forceBold, size);
+                    }
+                }
+                continue;
             }
-            r.setText(ir.text());
-            if (ir.bold() || forceBold) {
-                r.setBold(true);
-            }
-            if (ir.italic()) {
-                r.setItalic(true);
-            }
-            if (ir.strike()) {
-                r.setStrikeThrough(true);
-            }
-            if (ir.underline() && !(r instanceof XWPFHyperlinkRun)) {
-                r.setUnderline(UnderlinePatterns.SINGLE);
-            }
-            if (ir.code()) {
-                r.setFontFamily(MONO);
-            }
-            if (size > 0) {
-                r.setFontSize(size);
-            }
-            last = r;
+            last = emitTextRun(p, ir, ir.text(), forceBold, size);
         }
         if (forceBold) {
             p.setAlignment(ParagraphAlignment.LEFT);
+        }
+    }
+
+    /** Creates one styled run carrying {@code text} (reusing {@code ir}'s styling/link). */
+    private static XWPFRun emitTextRun(XWPFParagraph p, InlineRun ir, String text, boolean forceBold, int size) {
+        XWPFRun r;
+        if (ir.href() != null && !ir.href().isBlank()) {
+            XWPFHyperlinkRun hr = p.createHyperlinkRun(ir.href());
+            hr.setColor(LINK_COLOR);
+            hr.setUnderline(UnderlinePatterns.SINGLE);
+            r = hr;
+        } else {
+            r = p.createRun();
+        }
+        r.setText(text);
+        if (ir.bold() || forceBold) {
+            r.setBold(true);
+        }
+        if (ir.italic()) {
+            r.setItalic(true);
+        }
+        if (ir.strike()) {
+            r.setStrikeThrough(true);
+        }
+        if (ir.underline() && !(r instanceof XWPFHyperlinkRun)) {
+            r.setUnderline(UnderlinePatterns.SINGLE);
+        }
+        if (ir.code()) {
+            r.setFontFamily(MONO);
+        }
+        if (size > 0) {
+            r.setFontSize(size);
+        }
+        return r;
+    }
+
+    /** The original {@code $…$}/{@code $$…$$} source for a math span — used as a text fallback when render fails. */
+    private static String rawMath(MathSpans.Span s) {
+        String d = s.display() ? "$$" : "$";
+        return d + s.latex() + d;
+    }
+
+    /** Embeds {@code png} as an inline picture sized to roughly the line height; null when it can't decode. */
+    private static XWPFRun embedInlineMath(XWPFParagraph p, byte[] png, boolean display) {
+        if (png == null) {
+            return null;
+        }
+        try {
+            BufferedImage bi = ImageIO.read(new ByteArrayInputStream(png));
+            if (bi == null || bi.getHeight() <= 0) {
+                return null;
+            }
+            double maxH = display ? 30.0 : 14.0; // px treated as points (matches embedBytes' sizing model)
+            double scale = Math.min(1.0, maxH / bi.getHeight());
+            int w = (int) Math.round(bi.getWidth() * scale);
+            int h = (int) Math.round(bi.getHeight() * scale);
+            XWPFRun r = p.createRun();
+            r.addPicture(
+                    new ByteArrayInputStream(png),
+                    OfficeImages.poiPictureType(png),
+                    "math",
+                    Units.toEMU(w),
+                    Units.toEMU(h));
+            return r;
+        } catch (Exception e) {
+            return null;
         }
     }
 
