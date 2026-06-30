@@ -153,6 +153,7 @@ public final class InstallService {
             case VSIX -> installVsix(s, configDir);
             case TARBALL -> installTarball(s, configDir);
             case TOOL_COMMAND -> runCommand(s.npmPackages(), s.id()); // argv carried in npmPackages
+            case PUPPETEER_BROWSER -> installPuppeteerChrome(s);
             case ARCHIVE -> {
                 return installArchive(s, configDir);
             }
@@ -252,6 +253,31 @@ public final class InstallService {
         ProcessRunner.Result r = ProcessRunner.run(null, CMD_TIMEOUT, argv);
         if (!r.ok()) {
             throw new InstallException(id + ": " + (r.message().isBlank() ? "command failed" : r.message()));
+        }
+    }
+
+    /**
+     * Installs the headless Chrome mmdc renders with. Run from mmdc's own global dir (resolved via
+     * {@code npm root -g}) so {@code npx puppeteer} picks mmdc's Puppeteer — and therefore the exact Chrome
+     * version it expects — instead of a freshly-fetched latest that would leave a version mismatch.
+     */
+    private void installPuppeteerChrome(Step s) throws InstallException {
+        Path cwd = null;
+        try {
+            ProcessRunner.Result root = ProcessRunner.run(null, CMD_TIMEOUT, List.of("npm", "root", "-g"));
+            if (root.ok() && root.out() != null && !root.out().isBlank()) {
+                Path mmdcDir =
+                        Path.of(root.out().strip()).resolve("@mermaid-js").resolve("mermaid-cli");
+                if (Files.isDirectory(mmdcDir)) {
+                    cwd = mmdcDir;
+                }
+            }
+        } catch (Exception ignore) {
+            // fall back to the default working dir (npx fetches its own puppeteer)
+        }
+        ProcessRunner.Result r = ProcessRunner.run(cwd, CMD_TIMEOUT, s.npmPackages());
+        if (!r.ok()) {
+            throw new InstallException(s.id() + ": " + (r.message().isBlank() ? "command failed" : r.message()));
         }
     }
 

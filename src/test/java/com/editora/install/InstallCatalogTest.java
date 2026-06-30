@@ -130,6 +130,19 @@ class InstallCatalogTest {
     }
 
     @Test
+    void mermaidStepsAreMmdcThenPuppeteerChrome() {
+        List<Step> steps = InstallCatalog.steps(Lang.MERMAID);
+        assertEquals(
+                List.of("mmdc", "chrome-headless-shell"),
+                steps.stream().map(Step::id).toList());
+        assertEquals(Kind.NPM_GLOBAL, steps.get(0).kind());
+        assertEquals(Kind.PUPPETEER_BROWSER, steps.get(1).kind());
+        assertEquals(
+                List.of("npx", "-y", "puppeteer", "browsers", "install", "chrome-headless-shell"),
+                steps.get(1).npmPackages());
+    }
+
+    @Test
     void npmServersAreInstallableViaTheirPackages() {
         // json/html/css all ship in one npm package.
         for (String id : new String[] {"json", "html", "css"}) {
@@ -221,12 +234,11 @@ class InstallCatalogTest {
     }
 
     @Test
-    void mermaidStepIsMmdcNpmOnly() {
-        List<Step> steps = InstallCatalog.steps(Lang.MERMAID);
-        assertEquals(1, steps.size());
-        assertEquals("mmdc", steps.get(0).id());
-        assertEquals(Kind.NPM_GLOBAL, steps.get(0).kind());
-        assertEquals(List.of("@mermaid-js/mermaid-cli"), steps.get(0).npmPackages());
-        assertFalse(steps.get(0).extractJarOnly());
+    void mermaidFirstStepIsMmdcNpm() {
+        Step mmdc = InstallCatalog.steps(Lang.MERMAID).get(0);
+        assertEquals("mmdc", mmdc.id());
+        assertEquals(Kind.NPM_GLOBAL, mmdc.kind());
+        assertEquals(List.of("@mermaid-js/mermaid-cli"), mmdc.npmPackages());
+        assertFalse(mmdc.extractJarOnly());
     }
 }

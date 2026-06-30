@@ -46,7 +46,10 @@ public final class InstallCatalog {
         TOOL_COMMAND,
         /** Download a per-OS/arch binary archive (zip or tar.gz) and extract it into the config dir; the
          *  details (release API, per-platform asset, binary name) come from {@link #archiveSpec}. */
-        ARCHIVE
+        ARCHIVE,
+        /** {@code npx puppeteer browsers install chrome-headless-shell} — the headless Chrome that
+         *  mermaid-cli (mmdc) drives; run from mmdc's own dir so the version matches its Puppeteer. */
+        PUPPETEER_BROWSER
     }
 
     /** The host OS/arch buckets used to pick a per-platform release asset. */
@@ -155,7 +158,7 @@ public final class InstallCatalog {
             case JAVA -> List.of(jdtls(), javaDebug());
             case PYTHON -> List.of(pyright(), debugpy());
             case JAVASCRIPT -> List.of(typescriptLs(), jsDebug());
-            case MERMAID -> List.of(mmdc());
+            case MERMAID -> List.of(mmdc(), puppeteerChrome());
         };
     }
 
@@ -464,5 +467,26 @@ public final class InstallCatalog {
                 false,
                 "",
                 null);
+    }
+
+    /** The headless Chrome mmdc renders with — installed via mmdc's own Puppeteer so the version matches. */
+    private static Step puppeteerChrome() {
+        return new Step(
+                "chrome-headless-shell",
+                Kind.PUPPETEER_BROWSER,
+                Set.of(Prereq.NPM),
+                puppeteerInstallArgv(),
+                null,
+                null,
+                null,
+                null,
+                false,
+                "",
+                null);
+    }
+
+    /** {@code [npx, -y, puppeteer, browsers, install, chrome-headless-shell]}. Pure. */
+    public static List<String> puppeteerInstallArgv() {
+        return List.of("npx", "-y", "puppeteer", "browsers", "install", "chrome-headless-shell");
     }
 }

@@ -189,6 +189,11 @@ Editora is built with the help of AI coding tools.
   inline error squiggles, and keyword + snippet autocomplete in `.mmd` files. Uses the external
   **mmdc** (mermaid-cli) to render/export and **maid** to lint (configure their commands in Settings).
   **On by default** when the `mmdc` CLI is found (inert otherwise) — toggle under *Settings → Mermaid*.
+  `mmdc` drives a headless Chrome via Puppeteer; if rendering fails with *"Could not find Chrome …"*
+  install it once with `npx puppeteer browsers install chrome-headless-shell` (on Linux a global
+  `npm i -g @mermaid-js/mermaid-cli` sometimes skips Chrome's download). The in-app
+  **Settings → Mermaid → Install…** button (and the `install.mermaidSupport` command) now does this for
+  you — it installs mmdc *and* that Chrome.
 - **Export to PDF** — export the active file as a real, *searchable* PDF: source code with syntax
   highlighting and optional line numbers (always a light theme), the **Markdown** preview as native
   vector text (headings, lists, tables, images, embedded diagrams), or a standalone Mermaid `.mmd`
