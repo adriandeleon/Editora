@@ -94,6 +94,8 @@ public record InlineRun(
         for (Node c = paragraph.getFirstChild(); c != null; c = c.getNext()) {
             if (c instanceof Text t) {
                 sb.append(t.getLiteral());
+            } else if (c instanceof SoftLineBreak || c instanceof HardLineBreak) {
+                sb.append(' '); // a $$…$$ block spans lines as soft breaks — join them, don't bail
             } else {
                 return null;
             }

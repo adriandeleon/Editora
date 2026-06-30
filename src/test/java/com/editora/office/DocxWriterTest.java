@@ -5,11 +5,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Collectors;
 
+import com.editora.editor.MarkdownRenderer;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.commonmark.node.Paragraph;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DocxWriterTest {
@@ -34,5 +37,23 @@ class DocxWriterTest {
         } finally {
             Files.deleteIfExists(out);
         }
+    }
+
+    @Test
+    void soleDisplayMathSpansMultipleLines() {
+        // $$ on its own line, body, then $$ — commonmark inserts SoftLineBreaks; the detector must span them
+        // (regression: it bailed on the first break, so only single-line $$…$$ exported as a block image).
+        Paragraph multi = (Paragraph)
+                MarkdownRenderer.parseToDocument("$$\n\\int_0^1 x dx\n$$").getFirstChild();
+        String latex = InlineRun.soleDisplayMath(multi);
+        assertTrue(latex != null && latex.contains("\\int_0^1 x dx"), "multi-line $$ block, got: " + latex);
+
+        Paragraph single =
+                (Paragraph) MarkdownRenderer.parseToDocument("$$ a^2 + b^2 $$").getFirstChild();
+        assertTrue(InlineRun.soleDisplayMath(single) != null, "single-line $$ block");
+
+        Paragraph prose =
+                (Paragraph) MarkdownRenderer.parseToDocument("just some prose").getFirstChild();
+        assertNull(InlineRun.soleDisplayMath(prose), "prose is not display math");
     }
 }
