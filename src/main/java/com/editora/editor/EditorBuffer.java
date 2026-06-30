@@ -5508,16 +5508,22 @@ public class EditorBuffer implements TabContent {
             return;
         }
         int caret = a.getCaretPosition();
-        String text = a.getText();
-        int start = caret;
-        while (start > 0 && isPrefixChar(text.charAt(start - 1))) {
-            start--;
+        // Only the chars just before the caret matter — read a bounded window instead of materializing the
+        // whole document (this fires per caret-move while the popup is open; getText() on a big file is O(n)).
+        int from = Math.max(0, caret - PREFIX_LOOKBACK);
+        String before = a.getText(from, caret);
+        int kept = before.length();
+        while (kept > 0 && isPrefixChar(before.charAt(kept - 1))) {
+            kept--;
         }
-        boolean afterTrigger = lspActive && !isProse() && endsWithLspTrigger(text, caret);
-        if (start == caret && !afterTrigger) {
+        boolean afterTrigger = lspActive && !isProse() && endsWithLspTrigger(before, before.length());
+        if (kept == before.length() && !afterTrigger) {
             hideCompletion();
         }
     }
+
+    /** Lookback window (chars) when checking the prefix before the caret — far longer than any real prefix. */
+    private static final int PREFIX_LOOKBACK = 256;
 
     /** True while the completion popup or the inline ghost is visible. */
     public boolean completionShowing() {

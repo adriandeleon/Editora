@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import java.time.Duration;
 
+import javafx.application.Platform;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -56,6 +57,8 @@ final class Minimap extends Region {
      *  viewport box over the in-progress frame. While a render is in flight, suppress nested paints;
      *  the in-progress render draws the single, up-to-date viewport when it completes. */
     private boolean painting;
+
+    private boolean redrawPending;
     /** Visual width of a tab character, in columns. */
     private int tabSize = 4;
     /** LSP diagnostics drawn as colored stripes on the right edge (IntelliJ-style); never cached. */
@@ -88,7 +91,7 @@ final class Minimap extends Region {
         setMaxWidth(WIDTH);
 
         area.multiPlainChanges().successionEnds(Duration.ofMillis(200)).subscribe(ignore -> renderContent());
-        area.estimatedScrollYProperty().addListener((o, a, b) -> redraw());
+        area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
 
         canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, this::scrollToEvent);
         canvas.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::scrollToEvent);
@@ -273,6 +276,18 @@ final class Minimap extends Region {
     }
 
     /** Cheap redraw on scroll: re-blit the cached content image and draw the viewport rectangle. */
+    /** Coalesces scroll-driven repaints to one per pulse (the overlay {@code pending}-flag idiom). */
+    private void scheduleRedraw() {
+        if (redrawPending) {
+            return;
+        }
+        redrawPending = true;
+        Platform.runLater(() -> {
+            redrawPending = false;
+            redraw();
+        });
+    }
+
     private void redraw() {
         if (painting) {
             return; // nested paint during a render in flight (see the `painting` guard); suppress it

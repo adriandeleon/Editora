@@ -159,14 +159,26 @@ public final class MermaidImages {
     }
 
     private static Label errorNode(String message) {
-        String body = message == null || message.isBlank()
+        String base = message == null || message.isBlank()
                 ? Messages.tr("mermaid.renderFailed")
                 : Messages.tr("mermaid.renderFailed") + "\n" + message.strip();
+        // mmdc fails with a long Puppeteer stack when its headless Chrome isn't installed — lead with the
+        // one-line fix so the user isn't left to parse it (the common Linux "Could not find Chrome" case).
+        String body = looksLikeChromeMissing(message) ? Messages.tr("mermaid.chromeMissing") + "\n\n" + base : base;
         Label label = new Label(body);
         label.getStyleClass().add("mermaid-error");
         label.setWrapText(true);
         label.setMaxWidth(Double.MAX_VALUE);
         return label;
+    }
+
+    /** Whether {@code message} is mmdc's "headless Chrome / Puppeteer not installed" failure. Pure. */
+    static boolean looksLikeChromeMissing(String message) {
+        if (message == null) {
+            return false;
+        }
+        String m = message.toLowerCase(java.util.Locale.ROOT);
+        return m.contains("could not find chrome") || m.contains("chrome-headless-shell") || m.contains("puppeteer");
     }
 
     /** Cache key = sha-256 of theme + source (so editing invalidates, but re-renders of the same text hit). */
