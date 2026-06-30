@@ -4,9 +4,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 import javafx.application.Platform;
+import javafx.event.Event;
 import javafx.geometry.Bounds;
+import javafx.scene.Node;
+import javafx.scene.Scene;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.PlainTextChange;
@@ -175,7 +180,51 @@ public final class SnippetSession {
             } else {
                 menu.show(area, javafx.geometry.Side.BOTTOM, 0, 0);
             }
+            installChoiceKeys(menu);
         });
+    }
+
+    /**
+     * Adds the editor's completion-style chords to the choice popup so it's driven the same way as
+     * autocomplete: {@code C-n}/{@code C-p} move (= Down/Up), {@code Tab} accepts (= Enter), {@code C-g}
+     * cancels (= leave the default). The popup already handles Down/Up/Enter/Esc natively.
+     */
+    private void installChoiceKeys(ContextMenu menu) {
+        Scene sc = menu.getScene();
+        if (sc == null) {
+            return;
+        }
+        sc.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isControlDown() && e.getCode() == KeyCode.N) {
+                redispatch(menu, KeyCode.DOWN);
+                e.consume();
+            } else if (e.isControlDown() && e.getCode() == KeyCode.P) {
+                redispatch(menu, KeyCode.UP);
+                e.consume();
+            } else if (e.getCode() == KeyCode.TAB) {
+                redispatch(menu, KeyCode.ENTER); // accept the highlighted option
+                e.consume();
+            } else if (e.isControlDown() && e.getCode() == KeyCode.G) {
+                hideChoiceMenu(); // cancel — keep the field's current/default text
+                area.requestFocus();
+                e.consume();
+            }
+        });
+    }
+
+    /** Re-fires {@code code} as a synthetic key press so the popup's native navigation/accept handler runs. */
+    private static void redispatch(ContextMenu menu, KeyCode code) {
+        Scene sc = menu.getScene();
+        if (sc == null) {
+            return;
+        }
+        // The ContextMenu skin's node (ContextMenuContent) owns the Down/Up/Enter behavior; fire at it so the
+        // event bubbles through that handler. Fall back to the focus owner / scene root.
+        Node target = menu.getSkin() != null ? menu.getSkin().getNode() : null;
+        if (target == null) {
+            target = sc.getFocusOwner() != null ? sc.getFocusOwner() : sc.getRoot();
+        }
+        Event.fireEvent(target, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, false, false, false, false));
     }
 
     private void applyChoice(String option) {
