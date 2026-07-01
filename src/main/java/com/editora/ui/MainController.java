@@ -4129,6 +4129,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }));
         buffer.setMarkdownLintEnabled(markdownLintEnabled());
         buffer.setImageDropHandler(files -> insertDroppedImages(buffer, files)); // drag image → assets/ + ![](…)
+        buffer.setWebImageDropHandler((image, url) -> insertWebImage(buffer, image, url)); // browser image → assets/
         // LSP: wire didChange/diagnostics/completion/format/nav hooks + open+activate if eligible.
         lspCoordinator.wireBuffer(buffer);
         ensurePreviewControls(buffer);
@@ -5830,6 +5831,106 @@ public class MainController implements com.editora.mcp.McpBridge {
         } catch (Exception ex) {
             setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
         }
+    }
+
+    /**
+     * Handles a raw image / image URL dragged from a web browser onto a Markdown buffer: encodes a raw
+     * dragged image now (FX thread), then off the FX thread downloads the URL (or uses the encoded bytes)
+     * into {@code assets/} and inserts {@code ![](assets/…)}. If everything fails but a URL exists, it
+     * falls back to referencing the remote URL directly (the preview loads http(s) images).
+     */
+    private void insertWebImage(EditorBuffer b, javafx.scene.image.Image image, String url) {
+        if (b.getPath() == null || !isLocalBuffer(b)) {
+            setStatus(tr("status.markdown.imageNeedsSave"));
+            return;
+        }
+        // Encode a raw dragged image now, on the FX thread (PixelReader), before going off-thread.
+        byte[] inlinePng = image != null ? com.editora.editor.PreviewImageLoader.imageToPng(image) : null;
+        java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
+        setStatus(tr("status.markdown.imageDownloading"));
+        new Thread(
+                        () -> {
+                            byte[] bytes = null;
+                            String ext = "png";
+                            if (url != null && !url.isBlank()) {
+                                try {
+                                    bytes = com.editora.editor.PreviewImageLoader.fetchBytes(url);
+                                    if (bytes != null && bytes.length > 0) {
+                                        ext = com.editora.markdown.MarkdownImagePaste.extensionForUrl(
+                                                url,
+                                                com.editora.editor.PreviewImageLoader.looksLikeSvg(bytes)
+                                                        ? "svg"
+                                                        : "png");
+                                    } else {
+                                        bytes = null;
+                                    }
+                                } catch (Exception ignore) {
+                                    bytes = null; // fall back to the encoded image / remote reference below
+                                }
+                            }
+                            if (bytes == null) {
+                                bytes = inlinePng;
+                                ext = "png";
+                            }
+                            if (bytes == null) {
+                                javafx.application.Platform.runLater(() -> {
+                                    if (url != null) {
+                                        b.insertAtCaret(com.editora.markdown.MarkdownImagePaste.snippet(url, ""));
+                                        setStatus(tr("status.markdown.imageDropped", 1));
+                                    } else {
+                                        setStatus(tr("status.markdown.imageFailed", ""));
+                                    }
+                                });
+                                return;
+                            }
+                            byte[] finalBytes = bytes;
+                            String finalExt = ext;
+                            try {
+                                java.nio.file.Path assets =
+                                        baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
+                                java.nio.file.Files.createDirectories(assets);
+                                String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
+                                        n -> java.nio.file.Files.exists(assets.resolve(n)),
+                                        webImageBaseName(url),
+                                        finalExt);
+                                java.nio.file.Path target = assets.resolve(name);
+                                java.nio.file.Files.write(target, finalBytes);
+                                String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
+                                javafx.application.Platform.runLater(() -> {
+                                    b.insertAtCaret(com.editora.markdown.MarkdownImagePaste.snippet(rel, ""));
+                                    setStatus(tr("status.markdown.imageDropped", 1));
+                                });
+                            } catch (Exception ex) {
+                                javafx.application.Platform.runLater(() ->
+                                        setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage()))));
+                            }
+                        },
+                        "md-web-image")
+                .start();
+    }
+
+    /** A file-name base for a dragged web image: the URL's last path segment (sans extension), else "image". */
+    private static String webImageBaseName(String url) {
+        if (url == null || url.startsWith("data:")) {
+            return "image";
+        }
+        String u = url;
+        int q = u.indexOf('?');
+        if (q >= 0) {
+            u = u.substring(0, q);
+        }
+        int h = u.indexOf('#');
+        if (h >= 0) {
+            u = u.substring(0, h);
+        }
+        int slash = u.lastIndexOf('/');
+        String seg = slash >= 0 ? u.substring(slash + 1) : u;
+        int dot = seg.lastIndexOf('.');
+        if (dot > 0) {
+            seg = seg.substring(0, dot);
+        }
+        seg = seg.replaceAll("[^A-Za-z0-9_-]", "");
+        return seg.isBlank() ? "image" : seg;
     }
 
     private static String extensionOf(String name) {
