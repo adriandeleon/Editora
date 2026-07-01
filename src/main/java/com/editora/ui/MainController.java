@@ -5872,6 +5872,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.toggle.minimap", tr(s.isShowMinimap() ? "common.on" : "common.off")));
     }
 
+    private void toggleWordWrap() {
+        Settings s = config.getSettings();
+        s.setWordWrap(!s.isWordWrap());
+        requestSave();
+        applyViewSettingsToAllBuffers(s);
+        if (settingsWindow != null) {
+            settingsWindow.syncViewChecks();
+        }
+        setStatus(tr("status.toggle.wordWrap", tr(s.isWordWrap() ? "common.on" : "common.off")));
+    }
+
     private void toggleWhitespace() {
         Settings s = config.getSettings();
         s.setShowWhitespace(!s.isShowWhitespace());
@@ -7700,6 +7711,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setLineHighlightOn(Chrome.lineHighlight(s.isHighlightCurrentLine(), zen));
         buffer.setLineNumbersVisible(Chrome.lineNumbers(s.isShowLineNumbers(), zen, simple));
         buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
+        buffer.setWordWrap(s.isWordWrap());
         buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
@@ -8695,6 +8707,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
         registry.register(Command.of("view.toggleMinimap", this::toggleMinimap));
+        registry.register(Command.of("view.toggleWordWrap", this::toggleWordWrap));
         registry.register(Command.of("view.toggleWhitespace", this::toggleWhitespace));
         registry.register(Command.of("view.toggleSpellCheck", this::toggleSpellCheck));
         registry.register(Command.of("view.toggleAutocomplete", this::toggleAutocomplete));
