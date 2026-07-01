@@ -1814,6 +1814,21 @@
     -fx-padding: 6 12 6 24;
 }
 
+/* Keymaps → Customize shortcuts: a row reveals its Record/Reset buttons only when selected
+   (click to select), so the list stays uncluttered. */
+.shortcut-row-clickable {
+    -fx-cursor: hand;
+    -fx-padding: 2 4 2 4;
+    -fx-background-radius: 4;
+}
+.shortcut-row-clickable:hover {
+    -fx-background-color: -color-bg-subtle;
+}
+.shortcut-row-selected {
+    -fx-background-color: -color-accent-subtle;
+    -fx-background-radius: 4;
+}
+
 /* Small "Beta" pill shown beside a still-beta feature's name in the Settings sidebar. */
 .settings-beta-pill {
     -fx-background-color: -color-accent-muted;
