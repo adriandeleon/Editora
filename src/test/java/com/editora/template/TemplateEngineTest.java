@@ -41,6 +41,29 @@ class TemplateEngineTest {
     }
 
     @Test
+    void discoverForNewFilePromptsFileIdentityUsedInTheFileNamePattern() {
+        // ${baseName} in the file-name pattern can't be derived for a new file, so it must be prompted
+        // (keeping its :default as the pre-fill); ${author}/${date} stay auto-resolved.
+        List<TemplateVar> v = TemplateEngine.discoverVariablesForNewFile(
+                "${baseName:Main}.java", "// ${author}\nclass ${baseName} {}\n${date}");
+        assertEquals(List.of("baseName"), v.stream().map(TemplateVar::name).toList());
+        assertEquals("Main", v.get(0).defaultValue());
+    }
+
+    @Test
+    void discoverForNewFileLeavesBodyOnlyFileIdentityAutoDerived() {
+        // baseName used ONLY in the body (fixed file name) is still derived, not prompted.
+        List<TemplateVar> v = TemplateEngine.discoverVariablesForNewFile("Main.java", "class ${baseName} by ${author}");
+        assertTrue(v.isEmpty());
+    }
+
+    @Test
+    void promptedBaseNameFlowsIntoTheFileNameExpansion() {
+        // With the prompted answer, ${baseName:Main}.java resolves to the user's value (answers win).
+        assertEquals("Widget.java", TemplateEngine.expand("${baseName:Main}.java", vars(Map.of("baseName", "Widget"))));
+    }
+
+    @Test
     void substituteResolvesVarsAndCursorBecomesFinalCaret() {
         ParsedSnippet p = TemplateEngine.substitute("Hi ${author}!\n${cursor}", vars(Map.of()));
         assertEquals("Hi Ada!\n", p.text());
