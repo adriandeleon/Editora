@@ -1,0 +1,67 @@
+/* Adaptive editor theme — shared by every bundled AtlantaFX community theme
+   (Blue/Navy/Army, the seasonal set, Blacky, News, Yacht, …). Instead of hard-coding
+   colors, every rule pulls from the active AtlantaFX theme's own `-color-*` semantic
+   variables (defined on `.root` by the theme's user-agent stylesheet), so the editor
+   surface and syntax palette stay coordinated with — and readable against — whichever
+   theme is active, with no per-theme override file. Works for both light and dark
+   themes because every referenced variable is theme-relative.
+
+   See syntax.css for why token rules use the compound `.text.<class>` selector. */
+
+.editor-area { -fx-background-color: -color-bg-default; }
+.editor-area .text { -fx-fill: -color-fg-default; }
+.editor-area .caret { -fx-stroke: -color-fg-default; }
+.editor-area .selection { -fx-fill: -color-accent-muted; }
+.column-ruler { -fx-stroke: -color-border-default; }
+
+.minimap { -fx-background-color: -color-bg-default; -fx-border-color: -color-border-default; }
+
+.editor-area .lineno { -fx-background-color: -color-bg-subtle; -fx-text-fill: -color-fg-subtle; }
+.editor-area .fold-header-line { -fx-background-color: -color-bg-subtle; }
+.editor-area .fold-gutter { -fx-background-color: -color-bg-subtle; }
+.editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
+.editor-area .fold-chevron { -fx-text-fill: -color-fg-subtle; }
+.editor-area .fold-chevron:hover { -fx-text-fill: -color-accent-fg; }
+
+/* Syntax tokens — a classic red-keyword / green-string / blue-number scheme mapped onto
+   the theme's semantic color roles so it adapts per theme. */
+.text.keyword    { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
+.text.operator   { -fx-fill: -color-danger-fg; }
+.text.string     { -fx-fill: -color-success-fg; }
+.text.regexp     { -fx-fill: -color-success-fg; -fx-font-style: italic; }
+.text.escape     { -fx-fill: -color-warning-fg; }
+.text.comment    { -fx-fill: -color-fg-muted; -fx-font-style: italic; }
+.text.number     { -fx-fill: -color-accent-fg; }
+.text.constant   { -fx-fill: -color-accent-fg; }
+.text.annotation { -fx-fill: -color-warning-fg; }
+.text.type       { -fx-fill: -color-warning-fg; }
+.text.function   { -fx-fill: -color-accent-emphasis; }
+.text.variable   { -fx-fill: -color-fg-default; }
+.text.property   { -fx-fill: -color-accent-fg; }
+.text.punct      { -fx-fill: -color-fg-muted; }
+.text.tag        { -fx-fill: -color-success-fg; }
+.text.attribute  { -fx-fill: -color-warning-fg; }
+.text.invalid    { -fx-fill: -color-fg-emphasis; -rtfx-background-color: -color-danger-emphasis; }
+
+.text.heading    { -fx-fill: -color-accent-emphasis; -fx-font-weight: bold; }
+.text.code       { -fx-fill: -color-success-fg; }
+.text.link       { -fx-fill: -color-accent-fg; -fx-underline: true; }
+.text.bold       { -fx-fill: -color-fg-default; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: -color-fg-default; -fx-font-style: italic; }
+
+/* LSP semantic tokens — mirror the lexical token colors (overlaid on TextMate). */
+.text.sem-parameter { -fx-fill: -color-fg-default; -fx-font-style: italic; }
+.text.sem-variable  { -fx-fill: -color-fg-default; }
+.text.sem-property  { -fx-fill: -color-accent-fg; }
+.text.sem-function  { -fx-fill: -color-accent-emphasis; }
+.text.sem-type      { -fx-fill: -color-warning-fg; }
+.text.sem-macro     { -fx-fill: -color-warning-fg; }
+.text.sem-constant  { -fx-fill: -color-accent-fg; }
+.text.sem-deprecated { -fx-fill: -color-fg-muted; -fx-strikethrough: true; }
+
+/* Project tree: folder accent + muted file. */
+.project-tree { -project-folder-color: -color-accent-fg; -project-file-color: -color-fg-muted; }
+
+/* Bookmark / note gutter markers. */
+.editor-area .fold-gutter .bookmark-marker { -fx-fill: -color-warning-emphasis; }
+.editor-area .fold-gutter .note-marker { -fx-fill: -color-danger-emphasis; }
