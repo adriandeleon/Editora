@@ -469,6 +469,10 @@ public class EditorBuffer implements TabContent {
     private String language = LanguageRegistry.plaintext();
     /** TextMate grammar for the current file, or {@code null} when no grammar is bundled. */
     private IGrammar grammar;
+    /** {@code --source N} version from a Java compact-source shebang (for the run command), else null. */
+    private Integer shebangJavaSource;
+    /** True once the user explicitly picked a language (status bar), so shebang detection won't fight it. */
+    private boolean languageUserOverride;
     // --- Spell checking (Lucene Hunspell via SpellCheckOverlay); off until enabled by the controller. ---
     private SpellChecker spellChecker;
     private boolean spellCheckOn;
@@ -2156,6 +2160,7 @@ public class EditorBuffer implements TabContent {
 
     /** Recomputes runnable status + the gutter entry line(s); refreshes the gutter and fires the callback. */
     private void recomputeRun() {
+        maybeApplyShebang(); // an interpreter shebang can set the language before we gate the Run glyph
         String name = path != null ? path.getFileName().toString() : displayName;
         boolean eligible = runFeatureEnabled && !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
         boolean httpEligible =
@@ -2179,7 +2184,11 @@ public class EditorBuffer implements TabContent {
         } else if (eligible && shellRunEnabled && "shell".equals(language)) {
             nowRunnable = true;
             nowLine = 0; // run the whole script from the top (the shebang line, if any)
-        } else if (eligible && CompactSource.isLaunchable(name, text)) {
+        } else if (eligible
+                && "java".equals(language)
+                && (CompactSource.isLaunchable(name, text)
+                        || (shebangJavaSource != null && CompactSource.hasTopLevelMain(text)))) {
+            // A .java compact source, or an extensionless file with a `java --source N` shebang.
             nowRunnable = true;
             nowLine = CompactSource.mainLine(text);
         } else {
@@ -4226,8 +4235,54 @@ public class EditorBuffer implements TabContent {
      */
     public void setLanguageOverride(String name) {
         String resolved = name == null ? LanguageRegistry.plaintext() : name;
+        languageUserOverride = true; // the user's pick wins; don't re-detect a shebang over it
         IGrammar g = GrammarRegistry.shared().forLanguageName(resolved);
         applyLanguage(resolved, g);
+    }
+
+    /**
+     * When the file's extension resolves to plain text, promotes it to the language named by a
+     * first-line interpreter shebang (e.g. {@code #!/usr/bin/env python3} → Python; a
+     * {@code java --source N} shebang → Java compact source). Resolves the language + grammar
+     * through the normal {@code forFileName} path (via a synthetic {@code "shebang.<ext>"} name) so a
+     * shebang file behaves exactly like a real file of that type. No-op for a real extension, a
+     * user-overridden language, an empty buffer, or an unrecognized/absent shebang.
+     */
+    private void maybeApplyShebang() {
+        if (languageUserOverride || !LanguageRegistry.plaintext().equals(language)) {
+            return; // a real extension or the user's pick already decided the language
+        }
+        int len = area.getLength();
+        if (len < 2) {
+            return;
+        }
+        String head = area.getText(0, Math.min(len, 256));
+        int nl = head.indexOf('\n');
+        String firstLine = nl >= 0 ? head.substring(0, nl) : head;
+        if (!firstLine.startsWith("#!")) {
+            return;
+        }
+        Shebang.Result r = Shebang.parse(firstLine);
+        if (r == null) {
+            return;
+        }
+        shebangJavaSource = r.javaSource();
+        String synthetic = "shebang." + r.extension();
+        String lang = LanguageRegistry.forFileName(synthetic);
+        if (lang.equals(language)) {
+            return;
+        }
+        IGrammar cached = GrammarRegistry.shared().cachedForFileName(synthetic);
+        if (cached != null) {
+            applyLanguage(lang, cached); // grammar already compiled this session — apply instantly
+        } else {
+            applyLanguageDeferred(lang, synthetic); // first file of this type — compile off the FX thread
+        }
+    }
+
+    /** The {@code --source N} version if this is a Java compact-source shebang file, else {@code null}. */
+    public Integer getShebangJavaSource() {
+        return shebangJavaSource;
     }
 
     /** Applies a language name + grammar: updates fold strategy and re-highlights. */

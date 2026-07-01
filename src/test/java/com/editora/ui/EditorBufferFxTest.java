@@ -154,6 +154,52 @@ class EditorBufferFxTest {
     }
 
     @Test
+    void shebangPromotesAnExtensionlessBufferOnLoad() throws Exception {
+        // A file whose name resolves to plain text picks up its language from a first-line shebang.
+        EditorBuffer py = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setPath(java.nio.file.Path.of("/tmp/pyscript")); // no extension ⇒ plaintext
+            buf.setRunEnabled(true);
+            buf.setContent("#!/usr/bin/env python3\nprint('hi')\n");
+            return buf;
+        });
+        assertEquals("python", FxTestSupport.callOnFx(py::getLanguage), "python shebang ⇒ python");
+        assertTrue(FxTestSupport.callOnFx(py::isPython));
+        assertTrue(FxTestSupport.callOnFx(py::isRunnable));
+
+        // A bash shebang ⇒ shell (still gated by the shell-run toggle for the glyph).
+        EditorBuffer sh = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setPath(java.nio.file.Path.of("/tmp/deployer"));
+            buf.setContent("#!/usr/bin/env bash\necho hi\n");
+            return buf;
+        });
+        assertEquals("shell", FxTestSupport.callOnFx(sh::getLanguage), "bash shebang ⇒ shell");
+
+        // A `java --source N` shebang ⇒ Java compact source: runnable with no .java extension, and the
+        // captured source version feeds the run command.
+        EditorBuffer javaBuf = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setPath(java.nio.file.Path.of("/tmp/launcher"));
+            buf.setRunEnabled(true);
+            buf.setContent("#!/usr/bin/env -S java --source 25\nvoid main() {\n    IO.println(\"hi\");\n}\n");
+            return buf;
+        });
+        assertEquals("java", FxTestSupport.callOnFx(javaBuf::getLanguage), "java --source shebang ⇒ java");
+        assertTrue(FxTestSupport.callOnFx(javaBuf::isRunnable), "shebang compact source ⇒ runnable");
+        assertEquals(25, FxTestSupport.callOnFx(javaBuf::getShebangJavaSource));
+
+        // A real extension always wins over any first-line content.
+        EditorBuffer md = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setPath(java.nio.file.Path.of("/tmp/notes.md"));
+            buf.setContent("#!/bin/bash\n# a markdown doc that happens to start oddly\n");
+            return buf;
+        });
+        assertEquals("markdown", FxTestSupport.callOnFx(md::getLanguage), "real extension is never overridden");
+    }
+
+    @Test
     void displayNameDirtyAndLineEndingBookkeeping() throws Exception {
         EditorBuffer b = FxTestSupport.callOnFx(() -> {
             EditorBuffer buf = new EditorBuffer();

@@ -139,6 +139,13 @@ final class RunCoordinator {
             command.add("bash");
         } else {
             command.add("java");
+            Integer javaSource = buffer.getShebangJavaSource();
+            if (javaSource != null) {
+                // An extensionless `java --source N` shebang file: the source launcher needs the flag
+                // (a plain `java <file>` only works when the name ends in .java).
+                command.add("--source");
+                command.add(String.valueOf(javaSource));
+            }
         }
         command.add(path.toString());
         command.addAll(ProgramArgs.tokenize(ops.programArgs(path)));
