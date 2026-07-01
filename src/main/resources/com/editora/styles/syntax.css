@@ -70,3 +70,63 @@
    semi-transparent box reads on both light and dark editor themes, so no per-theme override is needed.
    Compound `.text.<class>` like the token rules (no descendant combinator → keeps the style cache). */
 .text.brace-match { -rtfx-background-color: rgba(128,128,128,0.4); }
+
+/* ---------------------------------------------------------------------------------------------------
+   Markdown-preview code-block token colors follow the preview's INDEPENDENT light/dark theme.
+
+   The preview can be themed separately from the editor (the sun/moon toggle → md-light/md-dark on the
+   preview ScrollPane). Its code blocks are TextFlows of `.text.<class>` runs (see MarkdownRenderer),
+   which by default inherit the active *editor* theme's token colors — unreadable when the preview is
+   forced to the opposite brightness (dark tokens on a light code background, or vice versa). These
+   preview-scoped rules pin a fixed GitHub palette per preview brightness — Primer Light / Primer Dark,
+   matching the preview's GitHub-style prose — so code stays readable regardless of the editor theme.
+
+   Specificity is (0,4,0) — above the editor-theme override's `.text.<class>` (0,2,0) — so they win in
+   the preview. Descendant combinators are fine here: preview nodes are built once per render, not
+   restyled per scroll pulse like the RichTextFX area (the per-node-cache concern above doesn't apply).
+   Only present when the user picked an explicit preview theme; in "follow app" mode no md-* class is
+   added and the code tracks the editor theme (already consistent). Plain runs use `-color-fg-default`,
+   which md-light/md-dark already redefine, and log tokens use `-color-*` vars, so both adapt for free. */
+.md-light .md-code-block .text.keyword    { -fx-fill: #cf222e; }
+.md-light .md-code-block .text.string     { -fx-fill: #0a3069; }
+.md-light .md-code-block .text.regexp     { -fx-fill: #0a3069; }
+.md-light .md-code-block .text.escape     { -fx-fill: #1a7f37; }
+.md-light .md-code-block .text.comment    { -fx-fill: #6e7781; }
+.md-light .md-code-block .text.number     { -fx-fill: #0550ae; }
+.md-light .md-code-block .text.constant   { -fx-fill: #0550ae; }
+.md-light .md-code-block .text.annotation { -fx-fill: #953800; }
+.md-light .md-code-block .text.type       { -fx-fill: #953800; }
+.md-light .md-code-block .text.function   { -fx-fill: #8250df; }
+.md-light .md-code-block .text.variable   { -fx-fill: #24292f; }
+.md-light .md-code-block .text.operator   { -fx-fill: #cf222e; }
+.md-light .md-code-block .text.property   { -fx-fill: #0550ae; }
+.md-light .md-code-block .text.punct      { -fx-fill: #24292f; }
+.md-light .md-code-block .text.tag        { -fx-fill: #116329; }
+.md-light .md-code-block .text.attribute  { -fx-fill: #0550ae; }
+.md-light .md-code-block .text.heading    { -fx-fill: #0550ae; }
+.md-light .md-code-block .text.code       { -fx-fill: #0a3069; }
+.md-light .md-code-block .text.link       { -fx-fill: #0969da; }
+.md-light .md-code-block .text.bold       { -fx-fill: #24292f; }
+.md-light .md-code-block .text.italic     { -fx-fill: #24292f; }
+
+.md-dark .md-code-block .text.keyword    { -fx-fill: #ff7b72; }
+.md-dark .md-code-block .text.string     { -fx-fill: #a5d6ff; }
+.md-dark .md-code-block .text.regexp     { -fx-fill: #a5d6ff; }
+.md-dark .md-code-block .text.escape     { -fx-fill: #7ee787; }
+.md-dark .md-code-block .text.comment    { -fx-fill: #8b949e; }
+.md-dark .md-code-block .text.number     { -fx-fill: #79c0ff; }
+.md-dark .md-code-block .text.constant   { -fx-fill: #79c0ff; }
+.md-dark .md-code-block .text.annotation { -fx-fill: #ffa657; }
+.md-dark .md-code-block .text.type       { -fx-fill: #ffa657; }
+.md-dark .md-code-block .text.function   { -fx-fill: #d2a8ff; }
+.md-dark .md-code-block .text.variable   { -fx-fill: #c9d1d9; }
+.md-dark .md-code-block .text.operator   { -fx-fill: #ff7b72; }
+.md-dark .md-code-block .text.property   { -fx-fill: #79c0ff; }
+.md-dark .md-code-block .text.punct      { -fx-fill: #c9d1d9; }
+.md-dark .md-code-block .text.tag        { -fx-fill: #7ee787; }
+.md-dark .md-code-block .text.attribute  { -fx-fill: #79c0ff; }
+.md-dark .md-code-block .text.heading    { -fx-fill: #79c0ff; }
+.md-dark .md-code-block .text.code       { -fx-fill: #a5d6ff; }
+.md-dark .md-code-block .text.link       { -fx-fill: #58a6ff; }
+.md-dark .md-code-block .text.bold       { -fx-fill: #c9d1d9; }
+.md-dark .md-code-block .text.italic     { -fx-fill: #c9d1d9; }
