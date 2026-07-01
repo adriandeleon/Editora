@@ -608,7 +608,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // jdtls)
         todoCoordinator.applyHighlight(); // compile TODO/FIXME patterns + highlight (on by default)
         applyMarkdownLint(); // push Markdown-lint enabled state to buffers (on by default)
-        applyAdminSaveSupport(); // detect pkexec (Linux) for save-as-administrator (off by default)
+        applyAdminSaveSupport(); // detect the elevation tool (pkexec/osascript) for save-as-admin (off by default)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
@@ -4714,18 +4714,18 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** @return true if the buffer is on disk afterwards (either already saved or just saved). */
-    /** Whether {@code pkexec} was detected on PATH (Linux); refreshed by {@link #applyAdminSaveSupport}. */
-    private boolean pkexecAvailable;
+    /** Whether the elevation tool is present (macOS osascript always; Linux pkexec probed on PATH). */
+    private boolean adminToolAvailable;
 
-    /** Admin-save is enabled in Settings and the OS supports it (Linux/polkit). */
+    /** Admin-save is enabled in Settings and the OS supports it (Linux/polkit or macOS/osascript). */
     private boolean adminSaveEnabled() {
         return config.getSettings().isAdminSave()
                 && com.editora.process.ElevatedSave.supportedOnOs(System.getProperty("os.name"));
     }
 
-    /** Admin-save is enabled and the elevation tool (pkexec) is actually available. */
+    /** Admin-save is enabled and the elevation tool (pkexec/osascript) is actually available. */
     private boolean elevationAvailable() {
-        return adminSaveEnabled() && pkexecAvailable;
+        return adminSaveEnabled() && adminToolAvailable;
     }
 
     /** True when a plain save of {@code p} would fail for permissions but an elevated save could succeed. */
@@ -4738,13 +4738,19 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Detects {@code pkexec} (Linux) when admin-save is enabled and pushes the "Edit as Administrator"
-     * affordance to every open buffer. The probe runs off the FX thread (it spawns a process); the gate
-     * updates when it returns. Mirrors {@code applyRipgrepSupport}.
+     * Detects the elevation tool when admin-save is enabled and pushes the "Edit as Administrator"
+     * affordance to every open buffer. macOS ships {@code osascript}, so it's available immediately;
+     * Linux probes {@code pkexec} off the FX thread (it spawns a process) and updates the gate when it
+     * returns. Mirrors {@code applyRipgrepSupport}.
      */
     private void applyAdminSaveSupport() {
         if (!adminSaveEnabled()) {
-            pkexecAvailable = false;
+            adminToolAvailable = false;
+            pushAdminEditAvailable();
+            return;
+        }
+        if (com.editora.process.ElevatedSave.isMac(System.getProperty("os.name"))) {
+            adminToolAvailable = true; // osascript is always present on macOS
             pushAdminEditAvailable();
             return;
         }
@@ -4763,7 +4769,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             }
                             boolean available = ok;
                             Platform.runLater(() -> {
-                                pkexecAvailable = available;
+                                adminToolAvailable = available;
                                 pushAdminEditAvailable();
                             });
                         },
@@ -4832,8 +4838,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 var r = com.editora.process.ProcessRunner.run(
                                         null,
                                         java.time.Duration.ofMinutes(2),
-                                        com.editora.process.ElevatedSave.pkexecArgv(
-                                                com.editora.process.ElevatedSave.PKEXEC, tmp, target));
+                                        com.editora.process.ElevatedSave.elevatedArgv(
+                                                System.getProperty("os.name"),
+                                                com.editora.process.ElevatedSave.PKEXEC,
+                                                tmp,
+                                                target));
                                 exit = r.exit();
                                 err = r.err();
                             } catch (IOException | RuntimeException e) {
@@ -4856,7 +4865,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 .start();
     }
 
-    /** Applies the outcome of an elevated save on the FX thread (0 = ok, 126 = cancelled, else failed). */
+    /** Applies the outcome of an elevated save on the FX thread (ok / user-cancelled / failed). */
     private void onAdminSaveDone(EditorBuffer buffer, Path target, int exit, String err) {
         if (exit == 0) {
             historyCoordinator.record(buffer, HistoryRevision.REASON_SAVE);
@@ -4869,8 +4878,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (tab != null) {
                 updateTabMeta(tab, buffer);
             }
-        } else if (exit == 126) {
-            setStatus(tr("status.admin.cancelled")); // user dismissed the dialog / not authorized
+        } else if (com.editora.process.ElevatedSave.isCancellation(System.getProperty("os.name"), exit, err)) {
+            setStatus(tr("status.admin.cancelled")); // user dismissed the auth dialog / not authorized
         } else {
             setStatus(tr("status.admin.failed", err == null || err.isBlank() ? String.valueOf(exit) : err));
         }
