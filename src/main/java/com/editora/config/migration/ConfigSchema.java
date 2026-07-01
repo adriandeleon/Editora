@@ -84,7 +84,8 @@ public enum ConfigSchema {
                     Map.entry(42, (Migration) ConfigMigrations::identity), // v42→43: + searchRespectGitignore
                     Map.entry(43, (Migration) ConfigMigrations::identity), // v43→44: + largeFileThreshold (additive)
                     Map.entry(44, (Migration) ConfigMigrations::identity), // v44→45: + lspInstallPrompts (additive)
-                    Map.entry(45, (Migration) ConfigMigrations::identity))), // v45→46: + wordWrap (additive)
+                    Map.entry(45, (Migration) ConfigMigrations::identity), // v45→46: + wordWrap (additive)
+                    Map.entry(46, (Migration) ConfigMigrations::identity))), // v46→47: + adminSave (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

@@ -171,6 +171,7 @@ public class SettingsWindow {
     private CheckBox lineNumbersCheck;
     private CheckBox minimapCheck;
     private CheckBox wordWrapCheck;
+    private CheckBox adminSaveCheck;
     private CheckBox whitespaceCheck;
     private CheckBox notesCheck;
     private CheckBox noteIndicatorsCheck;
@@ -742,6 +743,7 @@ public class SettingsWindow {
         lineNumbersCheck = viewCheck(tr("settings.showLineNumbers"), Settings::setShowLineNumbers);
         minimapCheck = viewCheck(tr("settings.showMinimap"), Settings::setShowMinimap);
         wordWrapCheck = viewCheck(tr("settings.wordWrap"), Settings::setWordWrap);
+        adminSaveCheck = viewCheck(tr("settings.adminSave"), Settings::setAdminSave);
         whitespaceCheck = viewCheck(tr("settings.showWhitespace"), Settings::setShowWhitespace);
         notesCheck = viewCheck(tr("settings.enableNotes"), Settings::setNotesSupport);
         noteIndicatorsCheck = viewCheck(tr("settings.showNoteIndicators"), Settings::setShowNoteIndicators);
@@ -1732,6 +1734,11 @@ public class SettingsWindow {
                 saving,
                 labeled(tr("settings.autoSave"), autoSaveBox),
                 "auto save autosave delay inactivity focus");
+        row(p, Category.EDITOR, saving, adminSaveCheck, "save administrator root sudo pkexec permission etc linux");
+        Label adminSaveNote = note(tr("settings.adminSave.note"));
+        adminSaveNote.setWrapText(true);
+        adminSaveNote.setMaxWidth(440);
+        row(p, Category.EDITOR, saving, adminSaveNote, "save administrator root permission linux pkexec");
         Label pdf = section(p, tr("settings.section.pdf"));
         row(p, Category.EDITOR, pdf, pdfLineNumbersCheck, "pdf export line numbers gutter");
         row(p, Category.EDITOR, pdf, pdfHighlightCheck, "pdf export syntax highlighting colors");
@@ -4631,6 +4638,7 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
             minimapCheck.setSelected(settings.isShowMinimap());
             wordWrapCheck.setSelected(settings.isWordWrap());
+            adminSaveCheck.setSelected(settings.isAdminSave());
             whitespaceCheck.setSelected(settings.isShowWhitespace());
             notesCheck.setSelected(settings.isNotesSupport());
             noteIndicatorsCheck.setSelected(settings.isShowNoteIndicators());
@@ -5144,6 +5152,7 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(s.isShowLineNumbers());
             minimapCheck.setSelected(s.isShowMinimap());
             wordWrapCheck.setSelected(s.isWordWrap());
+            adminSaveCheck.setSelected(s.isAdminSave());
             whitespaceCheck.setSelected(s.isShowWhitespace());
             notesCheck.setSelected(s.isNotesSupport());
             noteIndicatorsCheck.setSelected(s.isShowNoteIndicators());
