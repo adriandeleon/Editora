@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 46;
+    public static final int SCHEMA_VERSION = 47;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -57,6 +57,8 @@ public class Settings {
     private boolean showMinimap = true;
     private boolean showWhitespace = false;
     private boolean wordWrap = false;
+    /** Save-as-administrator: offer to write a non-writable file via the OS auth agent (pkexec, Linux). Off. */
+    private boolean adminSave = false;
     /** Personal Notes feature: on by default — the tool window, commands, gutter/highlight, and the editor
      *  "Add Personal Note" menu items. */
     private boolean notesSupport = true;
@@ -461,6 +463,14 @@ public class Settings {
 
     public void setWordWrap(boolean wordWrap) {
         this.wordWrap = wordWrap;
+    }
+
+    public boolean isAdminSave() {
+        return adminSave;
+    }
+
+    public void setAdminSave(boolean adminSave) {
+        this.adminSave = adminSave;
     }
 
     public boolean isShowWhitespace() {

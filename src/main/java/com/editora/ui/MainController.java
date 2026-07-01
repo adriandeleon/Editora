@@ -608,6 +608,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // jdtls)
         todoCoordinator.applyHighlight(); // compile TODO/FIXME patterns + highlight (on by default)
         applyMarkdownLint(); // push Markdown-lint enabled state to buffers (on by default)
+        applyAdminSaveSupport(); // detect pkexec (Linux) for save-as-administrator (off by default)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
@@ -982,6 +983,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             welcomePane.refresh();
         }
         maybeOfferInstall(activeBuffer()); // the install-prompts toggle / a feature gate may have changed
+        applyAdminSaveSupport(); // the admin-save toggle may have flipped
     }
 
     /**
@@ -4084,6 +4086,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean local = isLocalBuffer(buffer); // remote (SFTP) files can't run a local process
         buffer.setRunEnabled(lspEnabled() && local); // the Run affordance is gated by the LSP feature
         buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
+        buffer.setAdminEditAvailable(elevationAvailable() && local); // "Edit as Administrator" on a locked file
         buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         // Debugging: the breakpoint gutter gate + change/hover hooks (debuggable languages only).
@@ -4685,6 +4688,23 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** {@code file.saveAsAdmin}: write the active buffer via the OS auth agent (root-owned files). */
+    private void onSaveAsAdmin() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (buffer.getPath() == null) {
+            saveAs(buffer);
+            return;
+        }
+        if (!elevationAvailable()) {
+            setStatus(tr("status.admin.unavailable"));
+            return;
+        }
+        saveAsAdmin(buffer);
+    }
+
     @FXML
     private void onSaveAs() {
         EditorBuffer buffer = activeBuffer();
@@ -4694,11 +4714,166 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** @return true if the buffer is on disk afterwards (either already saved or just saved). */
+    /** Whether {@code pkexec} was detected on PATH (Linux); refreshed by {@link #applyAdminSaveSupport}. */
+    private boolean pkexecAvailable;
+
+    /** Admin-save is enabled in Settings and the OS supports it (Linux/polkit). */
+    private boolean adminSaveEnabled() {
+        return config.getSettings().isAdminSave()
+                && com.editora.process.ElevatedSave.supportedOnOs(System.getProperty("os.name"));
+    }
+
+    /** Admin-save is enabled and the elevation tool (pkexec) is actually available. */
+    private boolean elevationAvailable() {
+        return adminSaveEnabled() && pkexecAvailable;
+    }
+
+    /** True when a plain save of {@code p} would fail for permissions but an elevated save could succeed. */
+    private boolean adminSaveApplicable(Path p) {
+        return elevationAvailable()
+                && p != null
+                && com.editora.vfs.Vfs.isLocal(p)
+                && Files.exists(p)
+                && !Files.isWritable(p);
+    }
+
+    /**
+     * Detects {@code pkexec} (Linux) when admin-save is enabled and pushes the "Edit as Administrator"
+     * affordance to every open buffer. The probe runs off the FX thread (it spawns a process); the gate
+     * updates when it returns. Mirrors {@code applyRipgrepSupport}.
+     */
+    private void applyAdminSaveSupport() {
+        if (!adminSaveEnabled()) {
+            pkexecAvailable = false;
+            pushAdminEditAvailable();
+            return;
+        }
+        new Thread(
+                        () -> {
+                            boolean ok;
+                            try {
+                                ok = com.editora.process.ProcessRunner.run(
+                                                        null,
+                                                        java.time.Duration.ofSeconds(5),
+                                                        List.of(com.editora.process.ElevatedSave.PKEXEC, "--version"))
+                                                .exit()
+                                        == 0;
+                            } catch (RuntimeException e) {
+                                ok = false;
+                            }
+                            boolean available = ok;
+                            Platform.runLater(() -> {
+                                pkexecAvailable = available;
+                                pushAdminEditAvailable();
+                            });
+                        },
+                        "pkexec-detect")
+                .start();
+    }
+
+    /** Pushes the current "Edit as Administrator" availability to every open buffer's banner. */
+    private void pushAdminEditAvailable() {
+        boolean available = elevationAvailable();
+        for (Tab t : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(t);
+            if (b != null) {
+                b.setAdminEditAvailable(available && isLocalBuffer(b));
+            }
+        }
+    }
+
     private boolean save(EditorBuffer buffer) {
         if (buffer.getPath() == null) {
             return saveAs(buffer);
         }
+        if (adminSaveApplicable(buffer.getPath())) {
+            saveAsAdmin(buffer); // async elevated write; the buffer stays dirty until it completes
+            return false;
+        }
         return writeBuffer(buffer, buffer.getPath());
+    }
+
+    /**
+     * Writes {@code buffer} to its (e.g. root-owned) file via the OS auth agent ({@code pkexec}/polkit),
+     * which prompts for the password itself — Editora never handles it. The bytes go to a private temp
+     * file, then {@code cat tmp > target} runs as root, truncating the target in place so its owner and
+     * permissions are preserved. Runs off the FX thread (the auth dialog blocks); the result is applied back
+     * on the FX thread.
+     */
+    private void saveAsAdmin(EditorBuffer buffer) {
+        Path target = buffer.getPath();
+        if (target == null) {
+            saveAs(buffer);
+            return;
+        }
+        if (!elevationAvailable()) {
+            setStatus(tr("status.admin.unavailable"));
+            return;
+        }
+        byte[] bytes = saveBytes(buffer); // pure transform + encode on the FX thread
+        setStatus(tr("status.admin.saving", target));
+        new Thread(
+                        () -> {
+                            Path tmp = null;
+                            int exit;
+                            String err;
+                            try {
+                                tmp = Files.createTempFile("editora-admin-", ".tmp");
+                                try {
+                                    Files.setPosixFilePermissions(
+                                            tmp,
+                                            java.util.Set.of(
+                                                    java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                                                    java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
+                                } catch (UnsupportedOperationException | IOException ignore) {
+                                    // Non-POSIX filesystem: the temp file keeps default permissions.
+                                }
+                                Files.write(tmp, bytes);
+                                var r = com.editora.process.ProcessRunner.run(
+                                        null,
+                                        java.time.Duration.ofMinutes(2),
+                                        com.editora.process.ElevatedSave.pkexecArgv(
+                                                com.editora.process.ElevatedSave.PKEXEC, tmp, target));
+                                exit = r.exit();
+                                err = r.err();
+                            } catch (IOException | RuntimeException e) {
+                                exit = -1;
+                                err = e.getMessage();
+                            } finally {
+                                if (tmp != null) {
+                                    try {
+                                        Files.deleteIfExists(tmp);
+                                    } catch (IOException ignore) {
+                                        // best-effort cleanup
+                                    }
+                                }
+                            }
+                            int code = exit;
+                            String detail = err;
+                            Platform.runLater(() -> onAdminSaveDone(buffer, target, code, detail));
+                        },
+                        "admin-save")
+                .start();
+    }
+
+    /** Applies the outcome of an elevated save on the FX thread (0 = ok, 126 = cancelled, else failed). */
+    private void onAdminSaveDone(EditorBuffer buffer, Path target, int exit, String err) {
+        if (exit == 0) {
+            historyCoordinator.record(buffer, HistoryRevision.REASON_SAVE);
+            buffer.markClean();
+            buffer.setDiskSnapshot(lastModifiedMillis(target), fileSize(target));
+            setStatus(tr("status.admin.saved", target));
+            git.refresh();
+            lspCoordinator.notifyDocumentSaved(buffer);
+            Tab tab = tabForBuffer(buffer);
+            if (tab != null) {
+                updateTabMeta(tab, buffer);
+            }
+        } else if (exit == 126) {
+            setStatus(tr("status.admin.cancelled")); // user dismissed the dialog / not authorized
+        } else {
+            setStatus(tr("status.admin.failed", err == null || err.isBlank() ? String.valueOf(exit) : err));
+        }
     }
 
     private boolean saveAs(EditorBuffer buffer) {
@@ -8497,6 +8672,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }));
         registry.register(Command.of("file.save", this::onSave));
         registry.register(Command.of("file.saveAs", this::onSaveAs));
+        registry.register(Command.of("file.saveAsAdmin", this::onSaveAsAdmin));
         registry.register(Command.of("buffer.close", this::onCloseTab));
         registry.register(Command.of("buffer.closeOthers", () -> closeOtherTabs(activeTab())));
         registry.register(Command.of("buffer.closeAll", this::closeAllTabs));
@@ -8777,6 +8953,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
         registry.register(Command.of("view.toggleMinimap", this::toggleMinimap));
         registry.register(Command.of("view.toggleWordWrap", this::toggleWordWrap));
+        registry.register(Command.of(
+                "view.toggleAdminSave",
+                () -> toggleSetting(
+                        "view.toggleAdminSave",
+                        () -> config.getSettings().isAdminSave(),
+                        v -> config.getSettings().setAdminSave(v),
+                        this::applyAdminSaveSupport)));
         registry.register(Command.of("view.toggleWhitespace", this::toggleWhitespace));
         registry.register(Command.of("view.toggleSpellCheck", this::toggleSpellCheck));
         registry.register(Command.of("view.toggleAutocomplete", this::toggleAutocomplete));

@@ -103,6 +103,8 @@ public class EditorBuffer implements TabContent {
 
     private Button enableEditingButton;
     private Label viewModeNote;
+    /** When true, a non-writable-on-disk file offers "Edit as Administrator" instead of a dead-end note. */
+    private boolean adminEditAvailable;
 
     /** IntelliJ-style "install language support?" banner (lazy), stacked above the view-mode bar; driven by
      *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. Generic (strings + runnables),
@@ -4536,6 +4538,18 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
+     * When true, a file that isn't writable on disk shows "Edit as Administrator" in the View-mode banner
+     * (Save then routes through an elevated write) rather than a dead-end "read-only on disk" note. The
+     * controller pushes this = admin-save enabled + the OS elevation tool is available + the file is local.
+     */
+    public void setAdminEditAvailable(boolean available) {
+        if (available != adminEditAvailable) {
+            adminEditAvailable = available;
+            updateViewModeBar();
+        }
+    }
+
+    /**
      * Shows/hides the MS-Word-style "View Mode" banner above the editor: visible only in user View mode
      * (not huge-file mode, which can't be made editable). The "Enable Editing" button appears only when
      * the file is writable; otherwise a "read-only on disk" note replaces it.
@@ -4547,10 +4561,15 @@ public class EditorBuffer implements TabContent {
                 viewModeBar = buildViewModeBar();
             }
             boolean canEdit = path == null || Files.isWritable(path);
-            enableEditingButton.setVisible(canEdit);
-            enableEditingButton.setManaged(canEdit);
-            viewModeNote.setVisible(!canEdit);
-            viewModeNote.setManaged(!canEdit);
+            // A non-writable file offers "Edit as Administrator" when elevation is available (Linux/pkexec),
+            // instead of a dead-end "read-only on disk" note. Enabling editing routes the eventual Save
+            // through the elevated write.
+            boolean adminOffer = !canEdit && adminEditAvailable;
+            enableEditingButton.setText(tr(adminOffer ? "viewmode.editAsAdmin" : "viewmode.enableEditing"));
+            enableEditingButton.setVisible(canEdit || adminOffer);
+            enableEditingButton.setManaged(canEdit || adminOffer);
+            viewModeNote.setVisible(!canEdit && !adminOffer);
+            viewModeNote.setManaged(!canEdit && !adminOffer);
         }
         viewModeBarVisible = show;
         refreshTopBars();
