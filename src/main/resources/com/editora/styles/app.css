@@ -1858,3 +1858,20 @@
 .notes-panel .tree-cell.notes-file-row {
     -fx-font-weight: bold;
 }
+
+/* Local History window (IntelliJ-style): revision list on the left, live diff on the right. */
+.history-window-left {
+    -fx-padding: 6;
+}
+.history-window-toolbar {
+    -fx-padding: 6 8 6 8;
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.history-window-header {
+    -fx-font-weight: bold;
+}
+.history-window-count {
+    -fx-text-fill: -color-fg-muted;
+}

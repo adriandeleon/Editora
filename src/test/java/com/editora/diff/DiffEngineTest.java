@@ -65,6 +65,31 @@ class DiffEngineTest {
     }
 
     @Test
+    void ignoreWhitespaceTreatsWhitespaceOnlyDiffsAsEqualButRendersOriginalText() {
+        List<String> left = List.of("  int  x = 1;", "y = 2;");
+        List<String> right = List.of("int x = 1;", "y = 2;"); // line 1 differs only in whitespace amount/indent
+        // Default: line 1 is a real change.
+        DiffModel def = DiffEngine.compute(left, right);
+        assertEquals(RowType.MODIFIED, def.rows().get(0).type());
+        // Ignore whitespace: line 1 counts as EQUAL, and the row still shows the original (left) text.
+        DiffModel ign = DiffEngine.compute(left, right, new DiffEngine.DiffOptions(true, true));
+        assertTrue(ign.isEmpty());
+        assertEquals(RowType.EQUAL, ign.rows().get(0).type());
+        assertEquals("  int  x = 1;", ign.rows().get(0).left()); // original spacing preserved in the render
+    }
+
+    @Test
+    void wordLevelOffProducesNoInlineRanges() {
+        DiffModel on = DiffEngine.compute(List.of("the quick fox"), List.of("the slow fox"));
+        assertEquals(1, on.rows().get(0).leftWordRanges().length); // word-level default: one changed word
+        DiffModel off = DiffEngine.compute(
+                List.of("the quick fox"), List.of("the slow fox"), new DiffEngine.DiffOptions(false, false));
+        assertEquals(RowType.MODIFIED, off.rows().get(0).type());
+        assertEquals(0, off.rows().get(0).leftWordRanges().length); // whole-line highlight (no word ranges)
+        assertEquals(0, off.rows().get(0).rightWordRanges().length);
+    }
+
+    @Test
     void changeBlockStartsMarkEachContiguousRun() {
         // equal, change, equal, add → two change blocks at rows 1 and 3.
         DiffModel m = DiffEngine.compute(List.of("a", "B", "c"), List.of("a", "b", "c", "d"));
