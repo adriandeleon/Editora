@@ -78,6 +78,22 @@ public final class Themes {
 
     private Themes() {}
 
+    /** Discovers user-defined themes under the config dir ({@code themes/} + {@code editor-themes/}). */
+    public static void loadUserThemes(java.nio.file.Path configDir) {
+        UserThemes.load(configDir);
+    }
+
+    /** All selectable app-theme names: the built-ins plus any user themes in {@code <configDir>/themes/}. */
+    public static List<String> names() {
+        var user = UserThemes.controlThemes().keySet();
+        if (user.isEmpty()) {
+            return NAMES;
+        }
+        List<String> out = new java.util.ArrayList<>(NAMES);
+        out.addAll(user);
+        return out;
+    }
+
     /** Theme instance for a display name, falling back to Primer Light for unknowns. */
     public static Theme themeFor(String name) {
         String key = name == null ? "" : name;
@@ -85,6 +101,10 @@ public final class Themes {
         if (bundled != null) {
             return new BundledTheme(
                     key, "/com/editora/styles/atlantafx-themes/" + bundled[0] + ".css", "true".equals(bundled[1]));
+        }
+        UserThemes.Entry user = UserThemes.controlThemes().get(key);
+        if (user != null) {
+            return new BundledTheme(key, user.stylesheetUrl(), user.dark()); // stylesheetUrl is a file: URL
         }
         return switch (key) {
             case "Primer Dark" -> new PrimerDark();
@@ -97,9 +117,12 @@ public final class Themes {
         };
     }
 
-    /** Normalized display name (returns {@link #DEFAULT} for unrecognized input). */
+    /** Normalized display name (returns {@link #DEFAULT} for unrecognized input, incl. a since-removed user theme). */
     public static String normalize(String name) {
-        return NAMES.contains(name) ? name : DEFAULT;
+        return name != null
+                        && (NAMES.contains(name) || UserThemes.controlThemes().containsKey(name))
+                ? name
+                : DEFAULT;
     }
 
     public static String stylesheetFor(String name) {
@@ -138,9 +161,14 @@ public final class Themes {
      * light→dark flash on startup with a dark theme).
      */
     public static javafx.scene.paint.Color backgroundFor(String name) {
-        String[] bundled = BUNDLED.get(normalize(name));
+        String norm = normalize(name);
+        String[] bundled = BUNDLED.get(norm);
         if (bundled != null) {
             return javafx.scene.paint.Color.web(bundled[2]);
+        }
+        UserThemes.Entry user = UserThemes.controlThemes().get(norm);
+        if (user != null) {
+            return user.background();
         }
         String hex =
                 switch (normalize(name)) {

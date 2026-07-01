@@ -6540,7 +6540,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         QuickOpen<String> picker = new QuickOpen<>(
                 "Set App Theme",
                 "Type to filter themes…",
-                () -> Themes.NAMES,
+                () -> Themes.names(),
                 name -> name,
                 name -> "",
                 this::applyAppTheme);
@@ -6553,12 +6553,21 @@ public class MainController implements com.editora.mcp.McpBridge {
         QuickOpen<String> picker = new QuickOpen<>(
                 "Set Editor Theme",
                 "Type to filter themes…",
-                () -> EditorThemes.NAMES,
+                () -> EditorThemes.names(),
                 name -> name,
                 name -> "",
                 this::applyEditorThemeChoice);
         picker.setOverlayHost(overlayHost);
         picker.show(stage);
+    }
+
+    /** Re-scans the user-theme folders (config dir) so newly-added themes appear without a restart. */
+    private void reloadUserThemes() {
+        UserThemes.load(config.getConfigDir());
+        if (settingsWindow != null) {
+            settingsWindow.syncThemes(); // rebuild the theme/editor-theme combos from the fresh list
+        }
+        setStatus(tr("status.userThemesReloaded"));
     }
 
     /** Applies a chrome theme and follows it with the matching editor theme (clears the user-set flag). */
@@ -8876,6 +8885,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("keymap.select", this::chooseKeymap));
         registry.register(Command.of("theme.setAppTheme", this::chooseAppTheme));
         registry.register(Command.of("theme.setEditorTheme", this::chooseEditorTheme));
+        registry.register(Command.of("theme.reloadUserThemes", this::reloadUserThemes));
         // Settings palette commands — a command-palette equivalent for every Settings-window control.
         registry.register(Command.of("appearance.setFont", this::chooseFont));
         registry.register(Command.of(

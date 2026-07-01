@@ -244,22 +244,56 @@ public final class EditorThemes {
 
     private EditorThemes() {}
 
-    /** Normalized name (returns {@link #DEFAULT} for unrecognized input). */
+    /** All selectable editor-theme names: the built-ins, plus user AtlantaFX themes (adaptive palette) and
+     *  user editor-override themes from the config folder. */
+    public static List<String> names() {
+        if (UserThemes.controlThemes().isEmpty() && UserThemes.editorThemes().isEmpty()) {
+            return NAMES;
+        }
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>(NAMES);
+        out.addAll(UserThemes.controlThemes().keySet()); // an AtlantaFX user theme → its adaptive editor theme
+        out.addAll(UserThemes.editorThemes().keySet()); // a hand-authored override theme
+        return List.copyOf(out);
+    }
+
+    /** The user theme entry for {@code name} (a control theme's adaptive palette, or an override theme), or null. */
+    private static UserThemes.Entry userEntry(String name) {
+        UserThemes.Entry c = UserThemes.controlThemes().get(name);
+        return c != null ? c : UserThemes.editorThemes().get(name);
+    }
+
+    /** Normalized name (returns {@link #DEFAULT} for unrecognized input, incl. a since-removed user theme). */
     public static String normalize(String name) {
-        return NAMES.contains(name) ? name : DEFAULT;
+        return name != null && (NAMES.contains(name) || userEntry(name) != null) ? name : DEFAULT;
     }
 
     /** The editor theme that matches an AtlantaFX theme name (used until the user picks one manually). */
     public static String defaultFor(String atlantaThemeName) {
-        return NAMES.contains(atlantaThemeName) ? atlantaThemeName : DEFAULT;
+        if (atlantaThemeName != null
+                && (NAMES.contains(atlantaThemeName)
+                        || UserThemes.controlThemes().containsKey(atlantaThemeName))) {
+            return atlantaThemeName; // a built-in or a user AtlantaFX theme pairs with the same-named editor theme
+        }
+        return DEFAULT;
     }
 
     /**
      * External-form URL of the override stylesheet for {@code name}, or {@code null} for the default
-     * theme (whose colors already live in {@code app.css} / {@code syntax.css}).
+     * theme (whose colors already live in {@code app.css} / {@code syntax.css}). User AtlantaFX themes use
+     * the shared {@code adaptive.css}; user editor-override themes use their own file.
      */
     public static String stylesheetFor(String name) {
-        String base = CSS.get(normalize(name));
+        String norm = normalize(name);
+        if (UserThemes.controlThemes().containsKey(norm)) {
+            return EditorThemes.class
+                    .getResource("/com/editora/styles/editor-themes/adaptive.css")
+                    .toExternalForm();
+        }
+        UserThemes.Entry override = UserThemes.editorThemes().get(norm);
+        if (override != null) {
+            return override.stylesheetUrl();
+        }
+        String base = CSS.get(norm);
         if (base == null) {
             return null;
         }
@@ -270,26 +304,31 @@ public final class EditorThemes {
 
     /** Current-line highlight color for {@code name}. */
     public static Color lineHighlightFor(String name) {
-        return Color.web(LINE_HIGHLIGHT.getOrDefault(normalize(name), "#dfe7f0"));
+        UserThemes.Entry u = userEntry(normalize(name));
+        return u != null ? u.lineHighlight() : Color.web(LINE_HIGHLIGHT.getOrDefault(normalize(name), "#dfe7f0"));
     }
 
     /** Editor background color for {@code name}. */
     public static Color editorBackgroundFor(String name) {
-        return Color.web(EDITOR_BG.getOrDefault(normalize(name), "#ffffff"));
+        UserThemes.Entry u = userEntry(normalize(name));
+        return u != null ? u.background() : Color.web(EDITOR_BG.getOrDefault(normalize(name), "#ffffff"));
     }
 
     /** Editor foreground/text color for {@code name}. */
     public static Color editorForegroundFor(String name) {
-        return Color.web(EDITOR_FG.getOrDefault(normalize(name), "#24292f"));
+        UserThemes.Entry u = userEntry(normalize(name));
+        return u != null ? u.foreground() : Color.web(EDITOR_FG.getOrDefault(normalize(name), "#24292f"));
     }
 
     /** Minimap block color for {@code name}. */
     public static Color minimapTextFor(String name) {
-        return Color.web(MINIMAP_TEXT.getOrDefault(normalize(name), "#9aa5b1"));
+        UserThemes.Entry u = userEntry(normalize(name));
+        return u != null ? u.minimapText() : Color.web(MINIMAP_TEXT.getOrDefault(normalize(name), "#9aa5b1"));
     }
 
     /** Minimap viewport-overlay color for {@code name}. */
     public static Color minimapViewportFor(String name) {
-        return Color.web(MINIMAP_VIEWPORT.getOrDefault(normalize(name), "#0969da24"));
+        UserThemes.Entry u = userEntry(normalize(name));
+        return u != null ? u.minimapViewport() : Color.web(MINIMAP_VIEWPORT.getOrDefault(normalize(name), "#0969da24"));
     }
 }
