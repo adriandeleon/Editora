@@ -37,12 +37,12 @@ class IndenterTest {
 
     @Test
     void luaIndentsAfterBlockOpeners() {
-        // `then`/`do`/`function(...)` open a block → next line indents one level (tab, no indent precedent).
-        assertEquals("\n\t", enterAtEnd("if x then", "lua"));
-        assertEquals("\n\t", enterAtEnd("for i = 1, 10 do", "lua"));
-        assertEquals("\n\t", enterAtEnd("local function f(a, b)", "lua"));
-        assertEquals("\n\t", enterAtEnd("while running do", "lua"));
-        assertEquals("\n\t", enterAtEnd("t = {", "lua"));
+        // `then`/`do`/`function(...)` open a block → next line indents one level (spaces, no indent precedent).
+        assertEquals("\n    ", enterAtEnd("if x then", "lua"));
+        assertEquals("\n    ", enterAtEnd("for i = 1, 10 do", "lua"));
+        assertEquals("\n    ", enterAtEnd("local function f(a, b)", "lua"));
+        assertEquals("\n    ", enterAtEnd("while running do", "lua"));
+        assertEquals("\n    ", enterAtEnd("t = {", "lua"));
         // A space-indented opener: unit is inferred as spaces, and the block indents one more level.
         assertEquals("\n        ", enterAtEnd("    if y then", "lua"));
         // A non-opening statement just inherits the indent.
@@ -68,7 +68,7 @@ class IndenterTest {
 
     @Test
     void bracesOpenerAddsLevel() {
-        assertEquals("\n\t", enterAtEnd("if (x) {", "java")); // no indent yet → tab unit
+        assertEquals("\n    ", enterAtEnd("if (x) {", "java")); // no indent yet → spaces unit
         assertEquals("\n        ", enterAtEnd("    if (x) {", "java")); // 4-space → 8 spaces
         assertEquals("\n\t\t", enterAtEnd("\twhile (true) {", "java"));
     }
@@ -77,39 +77,39 @@ class IndenterTest {
     void bracesPairSplit() {
         // caret between { and }
         Indenter.EnterEdit e = Indenter.enterEdit("class A {}", 9, "java", 4);
-        assertEquals("\n\t\n", e.insert());
-        assertEquals(2, e.caretOffset()); // caret on the indented middle line
+        assertEquals("\n    \n", e.insert());
+        assertEquals(5, e.caretOffset()); // caret on the indented middle line (newline + 4-space unit)
     }
 
     @Test
     void pythonColonOpens() {
-        assertEquals("\n\t", enterAtEnd("def f():", "python"));
+        assertEquals("\n    ", enterAtEnd("def f():", "python"));
         assertEquals("\n    ", enterAtEnd("    x = 1", "python")); // inherit, no opener
         assertEquals("\n        ", enterAtEnd("    if x:", "python"));
     }
 
     @Test
     void shellOpenersAndInheritance() {
-        assertEquals("\n\t", enterAtEnd("for x in y; do", "shell"));
-        assertEquals("\n\t", enterAtEnd("if [ -f a ]; then", "shell"));
+        assertEquals("\n    ", enterAtEnd("for x in y; do", "shell"));
+        assertEquals("\n    ", enterAtEnd("if [ -f a ]; then", "shell"));
         assertEquals("\n", enterAtEnd("echo hi", "shell"));
     }
 
     @Test
     void rubyOpeners() {
-        assertEquals("\n\t", enterAtEnd("def foo", "ruby"));
-        assertEquals("\n\t", enterAtEnd("[1,2].each do |i|", "ruby"));
-        assertEquals("\n\t", enterAtEnd("class Foo", "ruby"));
+        assertEquals("\n    ", enterAtEnd("def foo", "ruby"));
+        assertEquals("\n    ", enterAtEnd("[1,2].each do |i|", "ruby"));
+        assertEquals("\n    ", enterAtEnd("class Foo", "ruby"));
         assertEquals("\n", enterAtEnd("x = 1", "ruby"));
     }
 
     @Test
     void xmlOpenTagAndSplit() {
-        assertEquals("\n\t", enterAtEnd("<div>", "xml"));
+        assertEquals("\n    ", enterAtEnd("<div>", "xml"));
         assertEquals("\n", enterAtEnd("<br/>", "xml")); // self-closing
         assertEquals("\n", enterAtEnd("</div>", "xml")); // closing
         Indenter.EnterEdit e = Indenter.enterEdit("<a></a>", 3, "xml", 4); // caret between > and </a>
-        assertEquals("\n\t\n", e.insert());
+        assertEquals("\n    \n", e.insert());
     }
 
     @Test
@@ -120,21 +120,29 @@ class IndenterTest {
 
     @Test
     void trailingCommentDoesNotDefeatOpener() {
-        assertEquals("\n\t", enterAtEnd("if (x) { // go", "java"));
-        assertEquals("\n\t", enterAtEnd("def f(): # comment", "python"));
+        assertEquals("\n    ", enterAtEnd("if (x) { // go", "java"));
+        assertEquals("\n    ", enterAtEnd("def f(): # comment", "python"));
     }
 
     @Test
     void caretMidLineUsesCodeBeforeCaret() {
         // "a{|b" — before caret ends with '{' (opener), after = "b" (no closer) → indent, not split
-        assertEquals("\n\t", enter("a{b", 2, "java"));
+        assertEquals("\n    ", enter("a{b", 2, "java"));
     }
 
     @Test
     void detectUnitFromDocument() {
         assertEquals("    ", Indenter.indentUnit("    ", 4));
         assertEquals("\t", Indenter.indentUnit("\t", 4));
-        assertEquals("\t", Indenter.indentUnit("", 4)); // empty → tab default
+        assertEquals("    ", Indenter.indentUnit("", 4)); // no enclosing indent → spaces default
+    }
+
+    @Test
+    void detectUnitFallsBackToSpaces() {
+        assertEquals("\t", Indenter.detectUnit("\tfoo();", 4)); // first indented line uses a tab
+        assertEquals("    ", Indenter.detectUnit("    foo();", 4)); // ...uses spaces
+        assertEquals("    ", Indenter.detectUnit("", 4)); // no indentation → spaces (VSCode/IntelliJ default)
+        assertEquals("    ", Indenter.detectUnit("class A {}\n", 4)); // flat file, no indent → spaces
     }
 
     @Test
@@ -163,8 +171,8 @@ class IndenterTest {
 
     @Test
     void rubyMidKeywordsReopen() {
-        assertEquals("\n\t", enterAtEnd("else", "ruby")); // else body indents
-        assertEquals("\n\t", enterAtEnd("rescue", "ruby"));
+        assertEquals("\n    ", enterAtEnd("else", "ruby")); // else body indents
+        assertEquals("\n    ", enterAtEnd("rescue", "ruby"));
         assertEquals("\n", enterAtEnd("end", "ruby")); // end does not open
     }
 
@@ -212,7 +220,7 @@ class IndenterTest {
         Indenter.TabEdit e = Indenter.smartTab(text, 11, 11, "java", 4, false);
         assertEquals(11, e.from());
         assertEquals(11, e.to());
-        assertEquals("\t", e.replacement()); // one level (file has no spaces → tab unit)
+        assertEquals("    ", e.replacement()); // one level (no indentation → spaces unit)
     }
 
     @Test
@@ -240,8 +248,8 @@ class IndenterTest {
         Indenter.TabEdit e = Indenter.smartTab("foo", 3, 3, "java", 4, false);
         assertEquals(3, e.from());
         assertEquals(3, e.to());
-        assertEquals("\t", e.replacement());
-        assertEquals(4, e.selStart());
+        assertEquals("    ", e.replacement()); // no indentation → spaces unit
+        assertEquals(7, e.selStart()); // caret 3 + 4-space unit
     }
 
     @Test
@@ -256,7 +264,7 @@ class IndenterTest {
     @Test
     void smartTabBlockIndentsSelectedLinesAndDedents() {
         Indenter.TabEdit ind = Indenter.smartTab("a\nb\nc", 0, 3, "java", 4, false);
-        assertEquals("\ta\n\tb", ind.replacement());
+        assertEquals("    a\n    b", ind.replacement()); // no indentation → spaces unit
         assertEquals(0, ind.from());
         Indenter.TabEdit ded = Indenter.smartTab("\ta\n\tb\nc", 0, 5, "java", 4, true);
         assertEquals("a\nb", ded.replacement());
@@ -265,7 +273,7 @@ class IndenterTest {
     @Test
     void smartTabBlockSkipsBlankLines() {
         Indenter.TabEdit e = Indenter.smartTab("a\n\nb", 0, 4, "java", 4, false);
-        assertEquals("\ta\n\n\tb", e.replacement()); // the empty middle line is left alone
+        assertEquals("    a\n\n    b", e.replacement()); // the empty middle line is left alone (spaces unit)
     }
 
     @Test
