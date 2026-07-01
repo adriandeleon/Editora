@@ -325,21 +325,27 @@ final class HistoryCoordinator {
      */
     private void openLocalHistoryDiff(HistoryRevision revision) {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || revision == null) {
+        if (b == null || b.getPath() == null) {
             return;
         }
         Path target = b.getPath();
         String name = target.getFileName().toString();
-        diff.openDiff(
-                tr("history.diff.title", name),
-                tr("history.side.snapshot"),
-                tr("history.side.current"),
+        java.util.List<HistoryRevision> revs = ops.historyMap().getOrDefault(historyKey(target), java.util.List.of());
+        if (revs.isEmpty()) {
+            host.setStatus(tr("history.window.none"));
+            return;
+        }
+        LocalHistoryWindow window = new LocalHistoryWindow(
+                host.window(),
                 name,
-                name,
-                cb -> historyService.content(revision, text -> cb.accept(text == null ? "" : text)),
-                cb -> cb.accept(ops.currentTextOf(target)),
-                DiffViewerPane.EditableSide.RIGHT,
-                target);
+                target,
+                revs,
+                () -> ops.currentTextOf(target),
+                (rev, cb) -> historyService.content(rev, text -> cb.accept(text == null ? "" : text)),
+                diff::computeDiff,
+                this::restoreHistory,
+                host.settings());
+        window.show(revision);
     }
 
     /** Restores {@code revision}'s content into the active file via an undoable whole-file replace. */

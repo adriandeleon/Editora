@@ -31,11 +31,17 @@ public final class DiffService {
      * {@link DiffModel} on the FX thread — or {@code null} when either side exceeds {@link #MAX_LINES}.
      */
     public void compute(String leftText, String rightText, Consumer<DiffModel> onResult) {
+        compute(leftText, rightText, DiffEngine.DiffOptions.DEFAULT, onResult);
+    }
+
+    /** As {@link #compute(String, String, Consumer)}, with explicit {@link DiffEngine.DiffOptions}. */
+    public void compute(String leftText, String rightText, DiffEngine.DiffOptions opts, Consumer<DiffModel> onResult) {
         exec.submit(() -> {
             List<String> left = DiffEngine.lines(leftText);
             List<String> right = DiffEngine.lines(rightText);
-            DiffModel model =
-                    (left.size() > MAX_LINES || right.size() > MAX_LINES) ? null : DiffEngine.compute(left, right);
+            DiffModel model = (left.size() > MAX_LINES || right.size() > MAX_LINES)
+                    ? null
+                    : DiffEngine.compute(left, right, opts);
             Platform.runLater(() -> onResult.accept(model));
         });
     }

@@ -79,6 +79,15 @@ final class DiffCoordinator {
      * {@code rightName} (real file names) drive grammar + patch labels. The pane's refresher re-fetches both
      * sides and re-renders only when the content changed.
      */
+    /** Off-thread diff compute passthrough (used by the embedded Local History window's live re-diff). */
+    void computeDiff(
+            String left,
+            String right,
+            com.editora.diff.DiffEngine.DiffOptions opts,
+            java.util.function.Consumer<com.editora.diff.DiffModels.DiffModel> cb) {
+        diffService.compute(left, right, opts, cb);
+    }
+
     void openDiff(
             String title,
             String headerLeft,

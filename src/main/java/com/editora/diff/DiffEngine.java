@@ -37,12 +37,36 @@ public final class DiffEngine {
         return List.of(t.split("\n", -1));
     }
 
-    /** Computes the diff of two already-split line lists. */
+    /**
+     * Diff options. {@code ignoreWhitespace} compares lines with leading/trailing/collapsed whitespace
+     * removed (the rows still render the original text). {@code wordLevel} enables the intra-line
+     * {@link InlineDiff} word-range emphasis on MODIFIED rows (turn off for whole-line highlighting).
+     */
+    public record DiffOptions(boolean ignoreWhitespace, boolean wordLevel) {
+        public static final DiffOptions DEFAULT = new DiffOptions(false, true);
+    }
+
+    private static final InlineDiff.Spans NO_SPANS = new InlineDiff.Spans(new int[0][], new int[0][]);
+
+    /** Computes the diff of two already-split line lists (default options). */
     public static DiffModel compute(List<String> left, List<String> right) {
-        Patch<String> patch = DiffUtils.diff(left, right);
+        return compute(left, right, DiffOptions.DEFAULT);
+    }
+
+    /**
+     * Computes the diff with {@code opts}. When {@code ignoreWhitespace} is set, the Myers diff runs over
+     * whitespace-normalized lines — but because normalization is strictly one-to-one per line, the delta
+     * positions still index the original lists, so every emitted {@link Row} carries the <em>original</em>
+     * text (only the equality test changes). {@code wordLevel} gates the per-line {@link InlineDiff}.
+     */
+    public static DiffModel compute(List<String> left, List<String> right, DiffOptions opts) {
+        DiffOptions o = opts == null ? DiffOptions.DEFAULT : opts;
+        List<String> dl = o.ignoreWhitespace() ? normalizeAll(left) : left;
+        List<String> dr = o.ignoreWhitespace() ? normalizeAll(right) : right;
+        Patch<String> patch = DiffUtils.diff(dl, dr);
         List<Row> rows = new ArrayList<>();
-        int li = 0; // 0-based pointer into left
-        int ri = 0; // 0-based pointer into right
+        int li = 0; // 0-based pointer into left (original)
+        int ri = 0; // 0-based pointer into right (original)
         for (AbstractDelta<String> delta : patch.getDeltas()) {
             int srcPos = delta.getSource().getPosition();
             while (li < srcPos) { // equal stretch before this delta
@@ -50,36 +74,39 @@ public final class DiffEngine {
                 li++;
                 ri++;
             }
-            List<String> src = delta.getSource().getLines();
-            List<String> tgt = delta.getTarget().getLines();
+            // Slice text from the ORIGINAL lists by the delta's positions/sizes (not delta.getLines(),
+            // which would be the normalized text when ignoring whitespace).
+            int srcSize = delta.getSource().size();
+            int tgtSize = delta.getTarget().size();
             switch (delta.getType()) {
                 case INSERT -> {
-                    for (String s : tgt) {
-                        rows.add(Row.added(s, ri + 1));
+                    for (int k = 0; k < tgtSize; k++) {
+                        rows.add(Row.added(right.get(ri), ri + 1));
                         ri++;
                     }
                 }
                 case DELETE -> {
-                    for (String s : src) {
-                        rows.add(Row.removed(s, li + 1));
+                    for (int k = 0; k < srcSize; k++) {
+                        rows.add(Row.removed(left.get(li), li + 1));
                         li++;
                     }
                 }
                 case CHANGE -> {
-                    int n = Math.max(src.size(), tgt.size());
+                    int n = Math.max(srcSize, tgtSize);
                     for (int k = 0; k < n; k++) {
-                        boolean hasL = k < src.size();
-                        boolean hasR = k < tgt.size();
+                        boolean hasL = k < srcSize;
+                        boolean hasR = k < tgtSize;
                         if (hasL && hasR) {
-                            InlineDiff.Spans sp = InlineDiff.compute(src.get(k), tgt.get(k));
-                            rows.add(Row.modified(src.get(k), li + 1, tgt.get(k), ri + 1, sp.left(), sp.right()));
+                            InlineDiff.Spans sp =
+                                    o.wordLevel() ? InlineDiff.compute(left.get(li), right.get(ri)) : NO_SPANS;
+                            rows.add(Row.modified(left.get(li), li + 1, right.get(ri), ri + 1, sp.left(), sp.right()));
                             li++;
                             ri++;
                         } else if (hasL) {
-                            rows.add(Row.removed(src.get(k), li + 1));
+                            rows.add(Row.removed(left.get(li), li + 1));
                             li++;
                         } else {
-                            rows.add(Row.added(tgt.get(k), ri + 1));
+                            rows.add(Row.added(right.get(ri), ri + 1));
                             ri++;
                         }
                     }
@@ -95,6 +122,19 @@ public final class DiffEngine {
             ri++;
         }
         return finish(rows);
+    }
+
+    private static List<String> normalizeAll(List<String> lines) {
+        List<String> out = new ArrayList<>(lines.size());
+        for (String s : lines) {
+            out.add(normalize(s));
+        }
+        return out;
+    }
+
+    /** Leading/trailing whitespace stripped and internal whitespace runs collapsed to one space. */
+    static String normalize(String line) {
+        return line.strip().replaceAll("\\s+", " ");
     }
 
     private static DiffModel finish(List<Row> rows) {

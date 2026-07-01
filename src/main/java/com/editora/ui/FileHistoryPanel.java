@@ -275,13 +275,13 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         };
     }
 
-    private static String absoluteTime(long epochMillis) {
+    static String absoluteTime(long epochMillis) {
         return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
                 .format(java.time.LocalDateTime.ofInstant(
                         java.time.Instant.ofEpochMilli(epochMillis), java.time.ZoneId.systemDefault()));
     }
 
-    private static String reasonLabel(String reason) {
+    static String reasonLabel(String reason) {
         return switch (reason == null ? "" : reason) {
             case HistoryRevision.REASON_AUTOSAVE -> tr("history.reason.autosave");
             case HistoryRevision.REASON_EXTERNAL -> tr("history.reason.external");
@@ -291,7 +291,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         };
     }
 
-    private static String humanSize(long bytes) {
+    static String humanSize(long bytes) {
         if (bytes < 1024) {
             return bytes + " B";
         }
