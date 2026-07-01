@@ -401,6 +401,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         } else {
             roots = buildNodes(); // fallback: fold-region nesting + TextMate-scope names
         }
+        attachDocs(roots);
         sortNodes(roots);
         rebuildKindFilter();
         // A rebuild rebuilds the tree (applyFilter selects row 0); that must not move the editor caret,
@@ -479,6 +480,27 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             out.add(node);
         }
         return out;
+    }
+
+    /**
+     * Fills each node's doc from the leading comment above its declaration line, read from the buffer text.
+     * Works for both the LSP and heuristic outlines (either way a node carries the declaration's line).
+     */
+    private void attachDocs(List<StructureNode> nodes) {
+        if (buffer == null || nodes.isEmpty()) {
+            return;
+        }
+        List<String> lines = List.of(buffer.getContent().split("\n", -1));
+        attachDocs(nodes, lines);
+    }
+
+    private static void attachDocs(List<StructureNode> nodes, List<String> lines) {
+        for (StructureNode n : nodes) {
+            if (n.line() >= 0) {
+                n.setDoc(StructureDoc.commentAbove(lines, n.line()));
+            }
+            attachDocs(n.children(), lines);
+        }
     }
 
     /** Re-orders {@code nodes} (and their descendants) per the current {@link SortMode}. */
@@ -718,7 +740,18 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
+                setTooltip(null);
                 return;
+            }
+            // Show the cleaned leading doc comment (if any) as a hover tooltip.
+            if (item.doc() != null && !item.doc().isEmpty()) {
+                Tooltip tip = new Tooltip(item.doc());
+                tip.setWrapText(true);
+                tip.setMaxWidth(480);
+                tip.setShowDelay(javafx.util.Duration.millis(400));
+                setTooltip(tip);
+            } else {
+                setTooltip(null);
             }
             boolean real = item.kind() != null && item.line() >= 0;
             String sig = signature(item);
@@ -748,7 +781,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         /**
          * The signature to show after a callable symbol's name: the server's detail (e.g. {@code (String x) :
          * void}, wrapped in parens if it isn't already), or {@code "()"} when there's no detail. Empty for
-         * non-callable kinds, so fields/classes show just their name.
+         * non-callable kinds, so fields/classes show just their name — and also empty when the label already
+         * carries its own parameter list (jdtls names methods like {@code setX(Foo)}), so we don't append a
+         * redundant {@code ()} and end up with {@code setX(Foo)()}.
          */
         private static String signature(StructureNode n) {
             if (!isCallable(n.kind())) {
@@ -756,7 +791,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
             String d = n.detail() == null ? "" : n.detail().strip();
             if (d.isEmpty()) {
-                return "()";
+                return n.label() != null && n.label().indexOf('(') >= 0 ? "" : "()";
             }
             return d.startsWith("(") ? d : "(" + d + ")";
         }
@@ -767,13 +802,15 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** A node in the structure tree: a foldable region, its symbol label/kind, the line to navigate to, an
-     *  optional detail (the LSP signature, e.g. {@code (String x) : void}), and children. */
+     *  optional detail (the LSP signature, e.g. {@code (String x) : void}), an optional doc comment (the
+     *  cleaned leading comment above the declaration, shown as a tooltip), and children. */
     private static final class StructureNode {
         private final Region region;
         private final String label;
         private final String kind;
         private final int line;
         private final String detail;
+        private String doc = ""; // filled by attachDocs() from the buffer text; "" when none
         private final List<StructureNode> children = new ArrayList<>();
 
         StructureNode(Region region, String label, String kind, int line) {
@@ -806,6 +843,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
         String detail() {
             return detail;
+        }
+
+        String doc() {
+            return doc;
+        }
+
+        void setDoc(String doc) {
+            this.doc = doc == null ? "" : doc;
         }
 
         List<StructureNode> children() {

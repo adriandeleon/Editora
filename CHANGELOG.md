@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Doc comments in the Structure tool window.** Each item in the Structure outline now shows its leading
+  documentation comment as a hover tooltip when one is present — Javadoc/JSDoc/PHPDoc and plain block
+  comments (`/** … */`, `/* … */`), and runs of `//`, `#`, or `--` line comments above the declaration.
+  Annotation/decorator lines (`@Override`, `#[derive(...)]`, …) between the comment and the declaration are
+  skipped, and long comments are trimmed. Works for both LSP-served and heuristic outlines.
+
+### Fixed
+
+- **Structure tool window: methods no longer show a doubled `()`.** When a language server (e.g. jdtls)
+  already includes the parameter list in a method's name (`setX(Foo)`), the outline no longer appended a
+  redundant empty `()` — so it reads `setX(Foo)` instead of `setX(Foo)()`.
+
+### Added
+
 - **User-defined themes from the config folder.** Drop a theme CSS in your config directory and it shows up in the theme pickers, named from the file (`my-cool-theme.css` → "My Cool Theme"). Two folders: **`<configDir>/themes/*.css`** for a full AtlantaFX theme (a self-contained stylesheet defining `-color-*`) — it becomes both the app theme and its editor colors via the adaptive syntax palette (base colors parsed from the CSS); and **`<configDir>/editor-themes/*.css`** for a hand-authored editor override (`.editor-area` + `.text.<class>` rules, like the bundled ones) that appears in the Editor Theme picker only. Themes load at startup; the palette command **"Theme: Reload User Themes"** re-scans without a restart.
 
 - **Per-hunk selective restore in the Local History window.** The window's diff is now editable on the current-file side — the IntelliJ-style **apply chevrons** are back, so you can copy an individual fragment from a past revision into the file (single chevron per changed row, double at each hunk start), routed through the undoable buffer with Undo/Save. The diff re-computes after each apply so the remaining chevrons update; the whole-file **Revert** button still does a full restore.
