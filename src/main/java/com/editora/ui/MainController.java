@@ -7541,17 +7541,20 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Discovers the template's unknown variables; prompts for them via a wizard, else applies directly. */
     private void beginTemplate(com.editora.template.Template t, java.nio.file.Path targetDir) {
-        List<String> texts = new ArrayList<>();
+        List<com.editora.template.TemplateEngine.TemplateVar> vars;
         if (t.isMultiFile()) {
+            List<String> texts = new ArrayList<>();
             for (com.editora.template.TemplateFile f : t.files()) {
                 texts.add(f.path());
                 texts.add(f.body());
             }
+            vars = com.editora.template.TemplateEngine.discoverVariables(texts.toArray(new String[0]));
         } else {
-            texts.add(t.fileName());
-            texts.add(t.body());
+            // The file-name pattern's own ${baseName}/${fileName}/${extension} can't be derived for a new
+            // file, so prompt for them (the body's stay auto-derived) — otherwise ${baseName:Main}.java
+            // silently used its default and the user was never asked for the name.
+            vars = com.editora.template.TemplateEngine.discoverVariablesForNewFile(t.fileName(), t.body());
         }
-        var vars = com.editora.template.TemplateEngine.discoverVariables(texts.toArray(new String[0]));
         if (vars.isEmpty()) {
             applyTemplate(t, targetDir, java.util.Map.of());
             return;

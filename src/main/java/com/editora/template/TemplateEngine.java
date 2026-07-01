@@ -22,6 +22,14 @@ public final class TemplateEngine {
     /** Matches a {@code ${name}} or {@code ${name:default}} reference (name starts with a letter/_). */
     private static final Pattern VAR = Pattern.compile("\\$\\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\\}");
 
+    /**
+     * Built-ins that are normally <em>derived from the target file name</em> ({@code fileName},
+     * {@code baseName}, {@code extension}). When the <b>file-name pattern itself</b> references one of
+     * them, there is nothing to derive from yet (a new-from-template file has no name), so it must be
+     * prompted instead — see {@link #discoverVariablesForNewFile}.
+     */
+    private static final java.util.Set<String> FILE_IDENTITY = java.util.Set.of("fileName", "baseName", "extension");
+
     private TemplateEngine() {}
 
     /** A named variable a template references that is not a built-in: its {@code name} and default value. */
@@ -35,18 +43,45 @@ public final class TemplateEngine {
     public static List<TemplateVar> discoverVariables(String... texts) {
         Map<String, String> seen = new LinkedHashMap<>();
         for (String text : texts) {
-            if (text == null) {
+            collect(text, false, seen);
+        }
+        return toVars(seen);
+    }
+
+    /**
+     * Like {@link #discoverVariables}, but for creating a <em>new file</em> from a single-file template:
+     * a file-identity built-in ({@code fileName}/{@code baseName}/{@code extension}) referenced in the
+     * {@code fileNamePattern} is treated as a prompted variable, because there is no source file to
+     * derive it from yet. The same name used only in {@code otherTexts} (the body) is still auto-derived.
+     * The prompted answer then feeds both the file-name expansion and the body (the resolver checks the
+     * wizard answers before its built-ins), so {@code ${baseName:Main}.java} finally asks for the name.
+     */
+    public static List<TemplateVar> discoverVariablesForNewFile(String fileNamePattern, String... otherTexts) {
+        Map<String, String> seen = new LinkedHashMap<>();
+        collect(fileNamePattern, true, seen); // file-name pattern first, so its default (e.g. "Main") wins
+        for (String text : otherTexts) {
+            collect(text, false, seen);
+        }
+        return toVars(seen);
+    }
+
+    /** Collects non-built-in {@code ${name[:default]}} refs from {@code text}; when {@code allowFileIdentity}
+     *  is set, the file-identity built-ins are also collected (they can't be derived in this position). */
+    private static void collect(String text, boolean allowFileIdentity, Map<String, String> seen) {
+        if (text == null) {
+            return;
+        }
+        Matcher m = VAR.matcher(text);
+        while (m.find()) {
+            String name = m.group(1);
+            if (TemplateVariableResolver.isBuiltIn(name) && !(allowFileIdentity && FILE_IDENTITY.contains(name))) {
                 continue;
             }
-            Matcher m = VAR.matcher(text);
-            while (m.find()) {
-                String name = m.group(1);
-                if (TemplateVariableResolver.isBuiltIn(name)) {
-                    continue;
-                }
-                seen.putIfAbsent(name, m.group(2) == null ? "" : m.group(2));
-            }
+            seen.putIfAbsent(name, m.group(2) == null ? "" : m.group(2));
         }
+    }
+
+    private static List<TemplateVar> toVars(Map<String, String> seen) {
         List<TemplateVar> out = new ArrayList<>();
         seen.forEach((name, def) -> out.add(new TemplateVar(name, def)));
         return out;
