@@ -185,6 +185,13 @@ public class MainController implements com.editora.mcp.McpBridge {
     private FileBreadcrumb breadcrumb;
     private SettingsWindow settingsWindow;
     private final DebugLogWindow debugLogWindow = new DebugLogWindow();
+
+    /** Back/forward jump list of visited editor locations. */
+    private final NavigationHistory navHistory = new NavigationHistory();
+    /** True while a back/forward jump is executing — suppresses re-recording the jump into history. */
+    private boolean navigating;
+    /** True while {@code openAndGoto} drives {@code gotoInFile} — so only the outer call records the jump. */
+    private boolean suppressNavRecord;
     /** Shared in-scene overlay host for the command palette + pickers (replaces focus-stealing Popups). */
     private final OverlayHost overlayHost = new OverlayHost();
 
@@ -1463,11 +1470,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (area == null || line < 0 || line >= area.getParagraphs().size()) {
             return;
         }
+        NavigationHistory.Location origin = navigating ? null : captureCurrent();
         // Reveal the target if it's hidden inside a collapsed fold, so we don't scroll to a hidden line.
         if (buffer != null) {
             buffer.getFoldManager().unfoldContaining(line);
         }
         area.moveTo(line, 0);
+        if (!navigating && buffer != null && buffer.getPath() != null) {
+            recordJump(origin, new NavigationHistory.Location(buffer.getPath(), line, 0));
+        }
         Platform.runLater(() -> {
             try {
                 area.showParagraphAtTop(line);
@@ -2985,8 +2996,62 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
     private void openAndGoto(Path file, int line0, int col0) {
+        NavigationHistory.Location origin = navigating ? null : captureCurrent();
         openPath(file);
-        Platform.runLater(() -> gotoInFile(file, line0 + 1, col0 + 1));
+        Platform.runLater(() -> {
+            suppressNavRecord = true; // let this outer call own the recording, not the nested gotoInFile
+            gotoInFile(file, line0 + 1, col0 + 1);
+            suppressNavRecord = false;
+            if (!navigating) {
+                recordJump(origin, new NavigationHistory.Location(file, line0, col0));
+            }
+            navigating = false; // a back/forward jump has landed
+        });
+    }
+
+    /** The active file-backed buffer's current caret location (0-based), or {@code null} when none. */
+    private NavigationHistory.Location captureCurrent() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null) {
+            return null;
+        }
+        CodeArea a = b.getArea();
+        return a == null
+                ? null
+                : new NavigationHistory.Location(b.getPath(), a.getCurrentParagraph(), a.getCaretColumn());
+    }
+
+    /** Records a jump into the back/forward history: the {@code origin} we left, then the {@code dest}. */
+    private void recordJump(NavigationHistory.Location origin, NavigationHistory.Location dest) {
+        if (dest == null) {
+            return;
+        }
+        if (origin != null) {
+            navHistory.record(origin);
+        }
+        navHistory.record(dest);
+    }
+
+    /** {@code nav.back}: return to the previous location in the jump list. */
+    private void navBack() {
+        NavigationHistory.Location loc = navHistory.back();
+        if (loc == null) {
+            setStatus(tr("status.nav.noBack"));
+            return;
+        }
+        navigating = true;
+        openAndGoto(loc.path(), loc.line(), loc.column()); // clears `navigating` in its runLater
+    }
+
+    /** {@code nav.forward}: go to the next location in the jump list (after going back). */
+    private void navForward() {
+        NavigationHistory.Location loc = navHistory.forward();
+        if (loc == null) {
+            setStatus(tr("status.nav.noForward"));
+            return;
+        }
+        navigating = true;
+        openAndGoto(loc.path(), loc.line(), loc.column());
     }
 
     /** A stack-trace location double-clicked in the Run/Debug console: resolve + jump. An absolute
@@ -3871,6 +3936,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Jumps to {@code file}:{@code line1}:{@code col1}; {@code focusEditor} false leaves focus where it is. */
     private void gotoInFile(Path file, int line1, int col1, boolean focusEditor) {
+        NavigationHistory.Location origin = (suppressNavRecord || navigating) ? null : captureCurrent();
         Tab tab = tabForPath(file);
         if (tab == null) {
             return;
@@ -3889,6 +3955,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         int targetLine = line;
         int targetCol = col;
         area.moveTo(targetLine, targetCol);
+        if (!suppressNavRecord && !navigating) {
+            recordJump(origin, new NavigationHistory.Location(file, targetLine, targetCol));
+        }
         area.requestFollowCaret();
         Platform.runLater(() -> {
             try {
@@ -9123,6 +9192,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.markParagraph", this::markParagraph));
         registry.register(Command.of("nav.forwardSexp", () -> sexpMove(com.editora.editops.SexpNav::forward)));
         registry.register(Command.of("nav.backwardSexp", () -> sexpMove(com.editora.editops.SexpNav::backward)));
+        registry.register(Command.of("nav.back", this::navBack));
+        registry.register(Command.of("nav.forward", this::navForward));
         registry.register(
                 Command.of("nav.beginningOfDefun", () -> sexpMove(com.editora.editops.SexpNav::beginningOfDefun)));
         registry.register(Command.of("nav.endOfDefun", () -> sexpMove(com.editora.editops.SexpNav::endOfDefun)));
