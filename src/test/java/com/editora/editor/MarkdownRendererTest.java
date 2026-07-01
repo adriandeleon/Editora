@@ -10,6 +10,8 @@ import org.commonmark.node.Node;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -120,5 +122,30 @@ class MarkdownRendererTest {
         org.commonmark.node.Node doc3 = MarkdownRenderer.parseToDocument("just some prose here");
         org.commonmark.node.Paragraph p3 = (org.commonmark.node.Paragraph) doc3.getFirstChild();
         assertFalse(MarkdownRenderer.soleDisplayMath(MarkdownRenderer.paragraphText(p3)) != null, "prose");
+    }
+
+    @Test
+    void fenceInfoResolvesGrammar() {
+        assertNotNull(MarkdownRenderer.grammarForInfo("java"), "language name");
+        assertNotNull(MarkdownRenderer.grammarForInfo("JS"), "alias → extension, case-insensitive");
+        assertNotNull(MarkdownRenderer.grammarForInfo("python title=foo"), "first token only");
+        assertNull(MarkdownRenderer.grammarForInfo("no-such-language-xyz"), "unknown language");
+        assertNull(MarkdownRenderer.grammarForInfo(""), "blank");
+        assertNull(MarkdownRenderer.grammarForInfo(null), "null");
+    }
+
+    @Test
+    void codeFenceTokenizerProducesStyledRuns() {
+        var grammar = MarkdownRenderer.grammarForInfo("java");
+        assertNotNull(grammar);
+        var runs = MarkdownRenderer.tokenizeRuns("public class X { void main() {} }", grammar);
+        assertNotNull(runs, "tokenization succeeds");
+        assertFalse(runs.isEmpty(), "produced runs");
+        assertTrue(
+                runs.stream().anyMatch(r -> !r.classes().isEmpty()),
+                "at least one run carries a token style class (e.g. keyword)");
+        // The runs reconstruct the original text exactly.
+        String joined = runs.stream().map(MarkdownRenderer.Run::text).reduce("", String::concat);
+        assertTrue(joined.equals("public class X { void main() {} }"), "runs cover the whole input");
     }
 }

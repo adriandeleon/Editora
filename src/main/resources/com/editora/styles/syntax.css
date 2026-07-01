@@ -9,6 +9,13 @@
      - It must NOT use a descendant combinator: a combinator forces JavaFX to walk ancestors and
        defeats the per-node CSS style cache, which makes RichTextFX restyle every visible text segment
        on each scroll pulse — catastrophic scroll lag. The compound form matches by style class alone. */
+/* Fallback fill for untokenized runs in a Markdown-preview code block (punctuation/whitespace the
+   grammar leaves unstyled). Scoped to the preview TextFlow only (never the RichTextFX CodeArea, so the
+   per-node-cache/scroll concern above doesn't apply — these nodes are built once per render). Same
+   specificity (0,2,0) as the `.text.<class>` token rules below, which come later and so win for tokens;
+   plain `.text` runs match only this and take the preview's foreground (`-color-fg-default`, which the
+   md-light/md-dark preview themes redefine). */
+.md-code-block .text { -fx-fill: -color-fg-default; }
 .text.keyword    { -fx-fill: #cf222e; -fx-font-weight: bold; }
 .text.string     { -fx-fill: #0a3069; }
 .text.regexp     { -fx-fill: #0a3069; -fx-font-style: italic; }
