@@ -672,7 +672,7 @@ public class SettingsWindow {
         });
 
         themeCombo = new ComboBox<>();
-        themeCombo.getItems().setAll(Themes.NAMES);
+        themeCombo.getItems().setAll(Themes.names());
         themeCombo.setPrefWidth(220);
         themeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -691,7 +691,7 @@ public class SettingsWindow {
         });
 
         editorThemeCombo = new ComboBox<>();
-        editorThemeCombo.getItems().setAll(EditorThemes.NAMES);
+        editorThemeCombo.getItems().setAll(EditorThemes.names());
         editorThemeCombo.setPrefWidth(220);
         editorThemeCombo.valueProperty().addListener((obs, was, now) -> {
             if (now != null) {
@@ -5147,6 +5147,8 @@ public class SettingsWindow {
         boolean prev = loading;
         loading = true;
         try {
+            themeCombo.getItems().setAll(Themes.names()); // pick up user themes reloaded from the config folder
+            editorThemeCombo.getItems().setAll(EditorThemes.names());
             themeCombo.setValue(config.getSettings().getTheme());
             editorThemeCombo.setValue(
                     EditorThemes.normalize(config.getSettings().getEditorTheme()));

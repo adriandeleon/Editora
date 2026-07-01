@@ -86,6 +86,9 @@ public class App extends Application {
         // affect the system-language fallback.
         java.util.Locale.setDefault(java.util.Locale.forLanguageTag(com.editora.i18n.Messages.current()));
 
+        // Discover user-defined themes from <configDir>/themes + /editor-themes before the theme is applied,
+        // so a user theme saved as the active one resolves on launch (see ui/UserThemes).
+        Themes.loadUserThemes(shared.getConfigDir());
         Application.setUserAgentStylesheet(Themes.stylesheetFor(settings.getTheme()));
 
         KeymapManager keymap = new KeymapManager();
