@@ -20,6 +20,34 @@ public final class PathKeys {
     private PathKeys() {}
 
     /**
+     * Resolves a user-typed Save-As target (from the keyboard prompt) to an absolute path, or {@code null}
+     * when it's blank or not a valid path. A leading {@code ~} (alone or {@code ~/…}) expands to
+     * {@code userHome}; a relative path resolves against {@code baseDir} (the current file's folder, else the
+     * project root / home); the result is normalized. Pure so it's unit-tested without the toolkit.
+     */
+    public static Path resolveUserInput(String input, Path baseDir, String userHome) {
+        if (input == null) {
+            return null;
+        }
+        String s = input.trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        if (s.equals("~") || s.startsWith("~/") || s.startsWith("~\\")) {
+            s = userHome + s.substring(1);
+        }
+        try {
+            Path p = Path.of(s);
+            if (!p.isAbsolute()) {
+                p = (baseDir == null ? Path.of("").toAbsolutePath() : baseDir).resolve(p);
+            }
+            return p.normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
+    }
+
+    /**
      * A path for cross-source identity comparison: the real (symlink-resolved) path when it exists, else the
      * absolute-normalized form. Matching by {@code normalize()} alone misses a symlinked path that a tool
      * reports under its real URI.
