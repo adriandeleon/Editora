@@ -4132,7 +4132,20 @@ public class EditorBuffer implements TabContent {
             if (start == null || end == null) {
                 return null;
             }
-            double advance = (end.getMinX() - start.getMinX()) / refLen;
+            // When word wrap is on, a long line spans several visual rows, so column 0 and column refLen
+            // sit on *different* rows and their x-distance is no longer refLen glyph advances (it collapses,
+            // which dropped the ruler near the left edge). Average over the whole line only while it stays on
+            // one row; otherwise fall back to a single adjacent-column advance measured on the first row.
+            double advance;
+            if (Math.abs(end.getMinY() - start.getMinY()) < 1.0) {
+                advance = (end.getMinX() - start.getMinX()) / refLen; // unwrapped: precise, rounding averaged out
+            } else {
+                Bounds next = caretBounds(refPar, 1); // refLen >= 1, so column 1 is on the first visual row
+                if (next == null) {
+                    return null;
+                }
+                advance = next.getMinX() - start.getMinX();
+            }
             return start.getMinX() + col * advance;
         } catch (RuntimeException ignored) {
             // Viewport mid-layout; a later event will re-measure.
