@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-hunk selective restore in the Local History window.** The window's diff is now editable on the current-file side — the IntelliJ-style **apply chevrons** are back, so you can copy an individual fragment from a past revision into the file (single chevron per changed row, double at each hunk start), routed through the undoable buffer with Undo/Save. The diff re-computes after each apply so the remaining chevrons update; the whole-file **Revert** button still does a full restore.
+
 - **IntelliJ-style Local History window.** Opening a file's local history (double-click a revision in the File History tool window, or "Compare with Current") now opens a dedicated window with the revision list on the left and a live side-by-side diff of the selected revision vs. the current file on the right — selecting a revision re-diffs instantly. A toolbar shows the revision timestamp, an "N differences" count, **Ignore whitespace** and **Highlight words** toggles (both re-diff), and a **Revert** button (undoable whole-file restore); a **Search by content** box filters the revision list. The diff pane keeps its side-by-side/unified toggle and prev/next-change navigation. Backed by a new `DiffEngine.DiffOptions` (ignore-whitespace normalizes lines one-to-one so the original text still renders; word-level toggles the intra-line emphasis).
 
 - **19 new color themes.** The theme picker gains the MIT-licensed AtlantaFX community themes from the
