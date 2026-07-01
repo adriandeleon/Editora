@@ -83,4 +83,24 @@ class PathKeysTest {
         Path g = Files.writeString(tmp.resolve("z.md"), "elsewhere");
         assertNull(PathKeys.findKeyByIdentity(map, FileIdentity.of(g)));
     }
+
+    @Test
+    void resolveUserInputHandlesAbsoluteRelativeHomeAndBlank() {
+        Path base = Path.of("/home/me/project");
+        String home = "/home/me";
+        // Absolute stays put (normalized).
+        assertEquals(Path.of("/etc/hosts"), PathKeys.resolveUserInput("/etc/hosts", base, home));
+        // Relative resolves against the base dir.
+        assertEquals(Path.of("/home/me/project/notes.md"), PathKeys.resolveUserInput("notes.md", base, home));
+        assertEquals(Path.of("/home/me/project/sub/a.txt"), PathKeys.resolveUserInput("sub/a.txt", base, home));
+        // `..` segments normalize.
+        assertEquals(Path.of("/home/me/other.txt"), PathKeys.resolveUserInput("../other.txt", base, home));
+        // A leading ~ expands to the home dir.
+        assertEquals(Path.of("/home/me/x.md"), PathKeys.resolveUserInput("~/x.md", base, home));
+        assertEquals(Path.of("/home/me"), PathKeys.resolveUserInput("~", base, home));
+        // Whitespace is trimmed; blank/null return null.
+        assertEquals(Path.of("/home/me/project/t.md"), PathKeys.resolveUserInput("  t.md  ", base, home));
+        assertNull(PathKeys.resolveUserInput("   ", base, home));
+        assertNull(PathKeys.resolveUserInput(null, base, home));
+    }
 }

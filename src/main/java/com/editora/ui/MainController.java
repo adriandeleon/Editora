@@ -4901,6 +4901,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (file == null) {
             return false;
         }
+        return applySaveAsTarget(buffer, file);
+    }
+
+    /** Points {@code buffer} at {@code file}, refreshes its previews/tab/breadcrumb, and writes it. */
+    private boolean applySaveAsTarget(EditorBuffer buffer, Path file) {
         buffer.setPath(file);
         ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
         htmlPreview.ensureControl(buffer); // a save-as to .html now gets the "open in browser" globe
@@ -4915,6 +4920,71 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateProjectFolderView(); // global window: an untitled buffer just gained a folder to show
         }
         return ok;
+    }
+
+    /**
+     * The keyboard-first Save As: instead of the native file chooser (which the toolbar button uses), prompt
+     * for the target path in the in-scene overlay so the command palette / a keybinding stay mouse-free. The
+     * field is pre-filled with the current path (or the project folder + suggested name for an untitled
+     * buffer); a relative name resolves against that folder, {@code ~} expands to home. Confirms before
+     * overwriting a different existing file.
+     */
+    private void saveAsPrompt(EditorBuffer buffer) {
+        if (buffer == null) {
+            return;
+        }
+        if (buffer.getPath() != null && com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
+            setStatus(tr("status.remote.saveAsUnsupported"));
+            return;
+        }
+        Path base = saveAsBaseDir(buffer);
+        promptText(tr("dialog.saveAs.title"), tr("dialog.saveAs.prompt"), saveAsInitial(buffer, base), value -> {
+            Path target = com.editora.config.PathKeys.resolveUserInput(value, base, System.getProperty("user.home"));
+            if (target == null) {
+                setStatus(tr("status.saveAs.invalidPath"));
+                return;
+            }
+            Path current = buffer.getPath();
+            boolean overwritingOther = Files.exists(target)
+                    && (current == null || !com.editora.config.PathKeys.sameNormalized(target, current));
+            if (overwritingOther && !confirmOverwrite(target)) {
+                return;
+            }
+            applySaveAsTarget(buffer, target);
+        });
+    }
+
+    /** The folder a typed Save-As name resolves against: the current file's folder, else project root/home. */
+    private Path saveAsBaseDir(EditorBuffer buffer) {
+        Path p = buffer.getPath();
+        if (p != null && com.editora.vfs.Vfs.isLocal(p) && p.getParent() != null) {
+            return p.getParent();
+        }
+        Path root = projectPanel == null ? null : projectPanel.getRoot();
+        if (root != null && com.editora.vfs.Vfs.isLocal(root)) {
+            return root;
+        }
+        return Path.of(System.getProperty("user.home"));
+    }
+
+    /** The Save-As prompt's pre-filled value: the current absolute path, else the base folder + a name. */
+    private String saveAsInitial(EditorBuffer buffer, Path base) {
+        Path p = buffer.getPath();
+        if (p != null && com.editora.vfs.Vfs.isLocal(p)) {
+            return p.toString();
+        }
+        String name = buffer.getDisplayName() != null ? buffer.getDisplayName() : "untitled.txt";
+        return base.resolve(name).toString();
+    }
+
+    /** Native confirmation before overwriting an existing (different) file from the keyboard Save-As prompt. */
+    private boolean confirmOverwrite(Path target) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.initOwner(stage);
+        alert.setTitle(tr("dialog.saveAs.overwrite.title"));
+        alert.setHeaderText(tr("dialog.saveAs.overwrite.header", target.getFileName()));
+        alert.setContentText(tr("dialog.saveAs.overwrite.content"));
+        return alert.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
     }
 
     /**
@@ -8680,7 +8750,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }));
         registry.register(Command.of("file.save", this::onSave));
-        registry.register(Command.of("file.saveAs", this::onSaveAs));
+        // Palette / keybinding Save As is keyboard-first: prompt for the path in-scene (the toolbar button's
+        // FXML onAction still opens the native file chooser).
+        registry.register(Command.of("file.saveAs", () -> saveAsPrompt(activeBuffer())));
         registry.register(Command.of("file.saveAsAdmin", this::onSaveAsAdmin));
         registry.register(Command.of("buffer.close", this::onCloseTab));
         registry.register(Command.of("buffer.closeOthers", () -> closeOtherTabs(activeTab())));
