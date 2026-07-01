@@ -156,9 +156,11 @@ Editora is built with the help of AI coding tools.
   stripe, LSP/debug/HTTP/Git and multi-caret enables) are all restored when you turn it off.
 - **Text zoom** — scale the editor text on top of the font size (status-bar `− 100% +`, `C-=`/`C--`/`C-0`,
   Ctrl+mouse-wheel, or the palette); persists across restarts, separate from the font-size setting.
-- **Themes** — switchable AtlantaFX themes (Primer, Nord, Cupertino, Dracula), each
-  with a matching editor color theme (syntax + surface) that follows the app theme by
-  default and is independently selectable in Settings.
+- **Themes** — 26 switchable AtlantaFX themes: the built-in Primer, Nord, Cupertino and Dracula,
+  plus the community set (Blue, Navy, Army, the Spring/Summer/Fall/Winter seasonal pairs, Autumn,
+  Browny, News and Yacht). Each has a matching editor color theme (syntax + surface) that follows the
+  app theme by default and is independently selectable in Settings; the community themes use an
+  adaptive syntax palette drawn from each theme's own colors.
 - **Markdown preview** — IntelliJ-style 3-mode view (Editor / Editor + Preview / Preview) via a
   floating control top-right of the editor, rendered natively (CommonMark + GFM: tables, task lists,
   strikethrough, autolinks, plus **YAML front matter**, **footnotes**, **heading anchors**, and

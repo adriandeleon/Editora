@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **19 new color themes.** The theme picker gains the MIT-licensed AtlantaFX community themes from the
+  DLSC collection — **Blue**, **Navy**, **Army**, and the four **seasonal** sets (**Spring**, **Summer**,
+  **Fall**, **Winter**) in light/dark pairs, plus **Autumn**, **Browny**, **News** (dark) and **Yacht**
+  (light) — bringing the total to **26 app themes**. Each ships a matching syntax-highlighting theme: a
+  single **adaptive** editor palette draws every token color from the active theme's own AtlantaFX
+  `-color-*` variables, so the editor surface and syntax colors always coordinate with the chrome. Pick
+  one from Settings → Appearance or the `appearance.setTheme` / `appearance.setEditorTheme` palette
+  commands. (The GitHub colorblind/tritanopia variants are intentionally excluded — an adaptive
+  red/green token palette would defeat their accessibility purpose, and GitHub's default duplicates the
+  existing Primer Light.)
+
 ### Performance
 
 - **Dirty-state tracking no longer allocates the whole document on every keystroke.** The editor's modified-flag listener was bound to RichTextFX's `textProperty()`, which forces the full document `String` to be materialized on each change — an O(n) allocation per character on a very large single buffer (e.g. minified JS/CSS or a one-line JSON/log that slips past the line-count heavy-file tier). It now runs off `plainTextChanges` with a cheap `getLength()` gate, so the full text is only built in the rare near-clean state, never while typing. Behavior is unchanged (reverting an edit still clears the marker).

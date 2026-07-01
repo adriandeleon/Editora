@@ -164,6 +164,14 @@ AtlantaFX — atlantafx.base
     License: MIT
     https://github.com/mkpaz/atlantafx
 
+Bundled AtlantaFX community themes
+    The CSS files under src/main/resources/com/editora/styles/atlantafx-themes/
+    (Army, Autumn, Blacky, Blue, Browny, Fall, Navy, News, Spring, Summer,
+    Winter, Yacht — light/dark variants) are the compiled AtlantaFX theme
+    stylesheets vendored, unmodified, from the DLSC atlantafx-themes collection.
+    Copyright (c) 2022 mkpaz. License: MIT.
+    https://github.com/dlsc-software-consulting-gmbh/atlantafx-themes
+
 Jackson (jackson-databind, jackson-core, jackson-annotations)
     JSON (de)serialization for user settings.
     License: Apache License 2.0
