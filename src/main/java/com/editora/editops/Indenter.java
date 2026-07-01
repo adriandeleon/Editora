@@ -258,12 +258,13 @@ public final class Indenter {
         return closers.contains(word);
     }
 
-    /** One indent level: {@code tabSize} spaces when {@code enclosingIndent} is spaces-only, else a tab. */
+    /** One indent level: a tab when {@code enclosingIndent} contains a tab, else {@code tabSize} spaces
+     *  (so an empty enclosing indent defaults to spaces — "spaces unless detected otherwise"). */
     public static String indentUnit(String enclosingIndent, int tabSize) {
-        if (!enclosingIndent.isEmpty() && enclosingIndent.indexOf('\t') < 0) {
-            return " ".repeat(Math.max(1, tabSize));
+        if (enclosingIndent.indexOf('\t') >= 0) {
+            return "\t";
         }
-        return "\t";
+        return " ".repeat(Math.max(1, tabSize));
     }
 
     /**
@@ -408,7 +409,9 @@ public final class Indenter {
         return "\t";
     }
 
-    /** The document's indent unit: tab vs {@code tabSize} spaces, inferred from the first indented line. */
+    /** The document's indent unit, inferred from the first indented line: a tab if it starts with a tab,
+     *  else {@code tabSize} spaces. When the file has no indentation at all (empty/flat), it falls back to
+     *  <b>spaces</b> — matching VSCode/IntelliJ's "spaces unless the file is detected to use tabs" default. */
     public static String detectUnit(String text, int tabSize) {
         int limit = Math.min(text.length(), MAX_SCAN);
         int i = 0;
@@ -428,7 +431,7 @@ public final class Indenter {
             }
             i = nl + 1;
         }
-        return "\t";
+        return " ".repeat(Math.max(1, tabSize)); // no evidence → spaces (the VSCode/IntelliJ default)
     }
 
     /** Strips a trailing line comment ({@code //}, {@code #}, {@code --}) that is not inside a string. */
