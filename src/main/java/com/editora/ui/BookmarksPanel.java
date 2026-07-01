@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 import javafx.geometry.Pos;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
@@ -98,6 +99,18 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         filterField.textProperty().addListener((o, w, n) -> refresh());
         HBox.setHgrow(filterField, Priority.ALWAYS);
 
+        // Trailing clear ("✕") button — visible only while the filter has text (mirrors the Project/Notes panels).
+        Button clearFilter = new Button("✕");
+        clearFilter.getStyleClass().add("project-filter-clear");
+        clearFilter.setFocusTraversable(false);
+        clearFilter.setTooltip(new Tooltip(tr("project.filterClear")));
+        clearFilter.setOnAction(e -> {
+            filterField.clear();
+            filterField.requestFocus();
+        });
+        clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        clearFilter.managedProperty().bind(clearFilter.visibleProperty());
+
         // An info badge explaining that bookmarks are scoped to the active project/session.
         Label info = new Label("ⓘ");
         info.getStyleClass().add("info-badge");
@@ -105,7 +118,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         infoTip.setWrapText(true);
         infoTip.setMaxWidth(320);
         Tooltip.install(info, infoTip);
-        header = new HBox(6, filterField, info);
+        header = new HBox(6, filterField, clearFilter, info);
+        header.getStyleClass().add("project-filter-bar");
         header.setAlignment(Pos.CENTER_LEFT);
 
         tree.setShowRoot(false);

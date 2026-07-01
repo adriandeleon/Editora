@@ -15,11 +15,13 @@ import java.util.TreeSet;
 import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.control.Button;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.IndexedCell;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -90,6 +92,21 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         filterField.setPromptText(tr("structure.filterPrompt"));
         filterField.getStyleClass().add("structure-filter");
         filterField.textProperty().addListener((o, w, n) -> applyFilter(n));
+        // Trailing clear ("✕") button — visible only while the filter has text (mirrors the Project/Notes panels).
+        Button clearFilter = new Button("✕");
+        clearFilter.getStyleClass().add("project-filter-clear");
+        clearFilter.setFocusTraversable(false);
+        clearFilter.setTooltip(new Tooltip(tr("project.filterClear")));
+        clearFilter.setOnAction(e -> {
+            filterField.clear();
+            filterField.requestFocus();
+        });
+        clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        clearFilter.managedProperty().bind(clearFilter.visibleProperty());
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+        HBox filterBar = new HBox(6, filterField, clearFilter);
+        filterBar.getStyleClass().add("project-filter-bar");
+        filterBar.setAlignment(Pos.CENTER_LEFT);
 
         // Sort mode (Position / Name / Kind) — re-sorts and re-renders the outline.
         sortCombo.getItems().setAll(SortMode.POSITION, SortMode.NAME, SortMode.KIND);
@@ -144,7 +161,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         });
 
         setSpacing(4);
-        getChildren().addAll(toolbar, filterField, tree);
+        getChildren().addAll(toolbar, filterBar, tree);
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
     }
 
