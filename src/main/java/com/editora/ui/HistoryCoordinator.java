@@ -335,6 +335,12 @@ final class HistoryCoordinator {
             host.setStatus(tr("history.window.none"));
             return;
         }
+        // Per-hunk "apply change" (IntelliJ-style selective restore): copy a fragment from the snapshot
+        // into the current file through DiffCoordinator's undoable-buffer path (Undo/Save act on it too).
+        LocalHistoryWindow.ApplySupport apply = new LocalHistoryWindow.ApplySupport(
+                newText -> diff.applyToLocal(target, newText),
+                () -> diff.undoLocal(target),
+                () -> diff.saveLocal(target));
         LocalHistoryWindow window = new LocalHistoryWindow(
                 host.window(),
                 name,
@@ -344,6 +350,7 @@ final class HistoryCoordinator {
                 (rev, cb) -> historyService.content(rev, text -> cb.accept(text == null ? "" : text)),
                 diff::computeDiff,
                 this::restoreHistory,
+                apply,
                 host.settings());
         window.show(revision);
     }

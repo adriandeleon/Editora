@@ -178,7 +178,7 @@ final class DiffCoordinator {
     }
 
     /** Undoes the last applied change on {@code target}'s buffer (the buffer's own undo). */
-    private void undoLocal(Path target) {
+    void undoLocal(Path target) {
         EditorBuffer b = ops.openBufferFor(target);
         if (b != null && b.getArea().isUndoAvailable()) {
             b.getArea().undo();
@@ -187,7 +187,7 @@ final class DiffCoordinator {
     }
 
     /** Saves {@code target}'s buffer (persisting the applied changes) and re-diffs. */
-    private void saveLocal(Path target) {
+    void saveLocal(Path target) {
         EditorBuffer b = ops.openBufferFor(target);
         if (b == null) {
             return;

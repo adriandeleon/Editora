@@ -58,6 +58,13 @@ final class LocalHistoryWindow {
         void fetch(HistoryRevision rev, Consumer<String> onText);
     }
 
+    /**
+     * "Apply change" wiring for the diff's per-hunk chevrons (IntelliJ-style selective restore): {@code apply}
+     * writes the new whole-file text into the current file (undoable), {@code undo}/{@code save} act on that
+     * buffer. All route through {@code DiffCoordinator}'s undoable-buffer path. Null ⇒ the diff is read-only.
+     */
+    record ApplySupport(Consumer<String> apply, Runnable undo, Runnable save) {}
+
     private final Stage stage = new Stage();
     private final ObservableList<HistoryRevision> all = FXCollections.observableArrayList();
     private final FilteredList<HistoryRevision> filtered = new FilteredList<>(all);
@@ -77,6 +84,7 @@ final class LocalHistoryWindow {
     private final ContentFetcher fetcher;
     private final DiffComputer computer;
     private final Consumer<HistoryRevision> onRevert;
+    private final ApplySupport applySupport; // null ⇒ read-only diff (no per-hunk chevrons)
     private final Settings settings;
 
     private DiffViewerPane pane; // built on the first diff result
@@ -93,6 +101,7 @@ final class LocalHistoryWindow {
             ContentFetcher fetcher,
             DiffComputer computer,
             Consumer<HistoryRevision> onRevert,
+            ApplySupport applySupport,
             Settings settings) {
         this.fileName = fileName;
         this.target = target;
@@ -100,6 +109,7 @@ final class LocalHistoryWindow {
         this.fetcher = fetcher;
         this.computer = computer;
         this.onRevert = onRevert;
+        this.applySupport = applySupport;
         this.settings = settings;
         all.setAll(revisions);
         wordLevel.setSelected(true); // word-level emphasis on by default (matches the editor diff)
@@ -229,10 +239,35 @@ final class LocalHistoryWindow {
                         settings.getFontSize(),
                         settings.isShowLineNumbers(),
                         target == null ? null : target.toString());
+                // Per-hunk "apply change" chevrons on the current-file (right) side — IntelliJ-style
+                // selective restore. Each apply writes the whole-file result through the undoable buffer,
+                // then we re-diff so the remaining changes (and chevrons) update.
+                if (applySupport != null) {
+                    pane.setEditable(
+                            DiffViewerPane.EditableSide.RIGHT,
+                            newText -> {
+                                applySupport.apply().accept(newText);
+                                reDiffAfterEdit();
+                            },
+                            () -> {
+                                applySupport.undo().run();
+                                reDiffAfterEdit();
+                            },
+                            applySupport.save());
+                }
                 rightPane.setCenter(pane.node());
             } else {
                 pane.updateContent(snapshotText, baseText, model);
             }
+        });
+    }
+
+    /** After a per-hunk apply/undo changed the current file, re-baseline + re-diff (editableSide persists,
+     *  so the remaining chevrons update). */
+    private void reDiffAfterEdit() {
+        javafx.application.Platform.runLater(() -> {
+            baseText = currentText.get();
+            recompute();
         });
     }
 
