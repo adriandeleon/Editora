@@ -2,8 +2,14 @@ package com.editora.editor;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.CheckBox;
@@ -57,6 +63,9 @@ import org.commonmark.node.SoftLineBreak;
 import org.commonmark.node.StrongEmphasis;
 import org.commonmark.node.ThematicBreak;
 import org.commonmark.parser.Parser;
+import org.eclipse.tm4e.core.grammar.IGrammar;
+import org.fxmisc.richtext.model.StyleSpan;
+import org.fxmisc.richtext.model.StyleSpans;
 
 /**
  * Renders Markdown to native JavaFX nodes for the in-editor preview. Parsing (CommonMark + GFM
@@ -178,10 +187,10 @@ public final class MarkdownRenderer {
                 // Show at natural size, but never wider than the reading column.
                 return MermaidImages.node(stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, MAX_CONTENT_WIDTH));
             }
-            return codeBlock(f.getLiteral());
+            return highlightedCodeBlock(f.getLiteral(), f.getInfo());
         }
         if (node instanceof IndentedCodeBlock i) {
-            return codeBlock(i.getLiteral());
+            return codeBlock(i.getLiteral()); // indented blocks carry no language → plain
         }
         if (node instanceof ThematicBreak) {
             Separator s = new Separator();
@@ -332,6 +341,128 @@ public final class MarkdownRenderer {
         label.setWrapText(true);
         label.setMaxWidth(Double.MAX_VALUE);
         return label;
+    }
+
+    /** Above this many characters a fenced block renders as plain text (avoids tokenizing a huge block). */
+    private static final int MAX_HIGHLIGHT_CHARS = 50_000;
+
+    /** One tokenized run: its text + the token style classes ({@code .text.<class>}) to apply. */
+    record Run(String text, List<String> classes) {}
+
+    /** Off-FX daemon worker for code-block tokenization (tm4e access must not run on the FX thread). */
+    private static final ExecutorService CODE_HIGHLIGHT_POOL = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "md-code-highlight");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
+     * A fenced code block, syntax-highlighted with the TextMate grammar for its info string (`{@code ```java}`)
+     * when one is bundled. The code shows immediately as plain text; tokenizing runs <strong>off the FX
+     * thread</strong> (tm4e access must not happen on the FX thread — it would contend/deadlock with the
+     * editor's background highlighters and blocks the UI) and the styled {@code Text} runs (carrying the same
+     * {@code .text.<class>} classes the editor uses, so it tracks the active theme) are filled in on the FX
+     * thread when ready — mirroring {@code MermaidImages}' placeholder-then-fill. Falls back to the plain
+     * {@link #codeBlock} when the language is unknown/absent or the block is huge.
+     */
+    private static Node highlightedCodeBlock(String literal, String info) {
+        String code = stripTrailingNewline(literal);
+        IGrammar grammar = code.isEmpty() || code.length() > MAX_HIGHLIGHT_CHARS ? null : grammarForInfo(info);
+        if (grammar == null) {
+            return codeBlock(literal);
+        }
+        Text initial = new Text(code);
+        initial.getStyleClass().add("text");
+        TextFlow flow = new TextFlow(initial);
+        flow.getStyleClass().add("md-code-block");
+        flow.setMaxWidth(Double.MAX_VALUE);
+        CODE_HIGHLIGHT_POOL.execute(() -> {
+            List<Run> runs = tokenizeRuns(code, grammar);
+            if (runs == null) {
+                return; // tokenize failed — leave the plain text
+            }
+            Platform.runLater(() -> {
+                List<Text> nodes = new ArrayList<>(runs.size());
+                for (Run run : runs) {
+                    Text t = new Text(run.text());
+                    t.getStyleClass().add("text"); // token rules are `.text.<class>`; plain runs get the fallback
+                    t.getStyleClass().addAll(run.classes());
+                    nodes.add(t);
+                }
+                flow.getChildren().setAll(nodes);
+            });
+        });
+        return flow;
+    }
+
+    /** Off-thread: tokenizes {@code code} into styled runs, or {@code null} on failure. */
+    static List<Run> tokenizeRuns(String code, IGrammar grammar) {
+        try {
+            StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(code, grammar);
+            List<Run> runs = new ArrayList<>();
+            int pos = 0;
+            for (StyleSpan<Collection<String>> span : spans) {
+                int end = Math.min(code.length(), pos + span.getLength());
+                if (end <= pos) {
+                    continue;
+                }
+                runs.add(new Run(code.substring(pos, end), List.copyOf(span.getStyle())));
+                pos = end;
+            }
+            if (pos < code.length()) {
+                runs.add(new Run(code.substring(pos), List.of()));
+            }
+            return runs;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** Common fence info-string aliases → a file extension the {@link GrammarRegistry} recognizes. */
+    private static final Map<String, String> INFO_EXT = Map.ofEntries(
+            Map.entry("javascript", "js"),
+            Map.entry("js", "js"),
+            Map.entry("node", "js"),
+            Map.entry("typescript", "ts"),
+            Map.entry("ts", "ts"),
+            Map.entry("jsx", "jsx"),
+            Map.entry("tsx", "tsx"),
+            Map.entry("python", "py"),
+            Map.entry("py", "py"),
+            Map.entry("ruby", "rb"),
+            Map.entry("rb", "rb"),
+            Map.entry("rust", "rs"),
+            Map.entry("rs", "rs"),
+            Map.entry("golang", "go"),
+            Map.entry("go", "go"),
+            Map.entry("bash", "sh"),
+            Map.entry("shell", "sh"),
+            Map.entry("sh", "sh"),
+            Map.entry("zsh", "sh"),
+            Map.entry("cpp", "cpp"),
+            Map.entry("c++", "cpp"),
+            Map.entry("csharp", "cs"),
+            Map.entry("cs", "cs"),
+            Map.entry("c#", "cs"),
+            Map.entry("kotlin", "kt"),
+            Map.entry("kt", "kt"),
+            Map.entry("yml", "yaml"),
+            Map.entry("yaml", "yaml"),
+            Map.entry("markdown", "md"),
+            Map.entry("md", "md"));
+
+    /** The bundled grammar for a fence info string (first token, case-insensitive), or {@code null}. */
+    static IGrammar grammarForInfo(String info) {
+        if (info == null || info.isBlank()) {
+            return null;
+        }
+        String lang = info.trim().split("\\s+")[0].toLowerCase(Locale.ROOT);
+        GrammarRegistry reg = GrammarRegistry.shared();
+        IGrammar g = reg.forLanguageName(lang); // full language names: java, python, shell, typescript, …
+        if (g == null) {
+            g = reg.forFileName("x." + INFO_EXT.getOrDefault(lang, lang)); // extension-style: js, py, sh, …
+        }
+        return g;
     }
 
     /** YAML front matter rendered as a muted key/value metadata block at the top of the document. */
