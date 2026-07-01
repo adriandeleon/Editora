@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 45;
+    public static final int SCHEMA_VERSION = 46;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -56,6 +56,7 @@ public class Settings {
     private boolean showLineNumbers = true;
     private boolean showMinimap = true;
     private boolean showWhitespace = false;
+    private boolean wordWrap = false;
     /** Personal Notes feature: on by default — the tool window, commands, gutter/highlight, and the editor
      *  "Add Personal Note" menu items. */
     private boolean notesSupport = true;
@@ -452,6 +453,14 @@ public class Settings {
 
     public void setShowMinimap(boolean showMinimap) {
         this.showMinimap = showMinimap;
+    }
+
+    public boolean isWordWrap() {
+        return wordWrap;
+    }
+
+    public void setWordWrap(boolean wordWrap) {
+        this.wordWrap = wordWrap;
     }
 
     public boolean isShowWhitespace() {

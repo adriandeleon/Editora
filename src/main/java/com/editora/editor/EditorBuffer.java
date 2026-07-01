@@ -4022,6 +4022,14 @@ public class EditorBuffer implements TabContent {
         return visible && !largeFile && !heavyFile && mode != MarkdownViewMode.PREVIEW;
     }
 
+    /** Toggles soft word wrap on the editor surface (and the split view); the 80-column ruler stays visible. */
+    public void setWordWrap(boolean wrap) {
+        area.setWrapText(wrap);
+        if (area2 != null) {
+            area2.setWrapText(wrap);
+        }
+    }
+
     public void setMinimapVisible(boolean visible) {
         this.minimapVisible = visible;
         boolean effective = minimapEffective(visible, largeFile, heavyFile, markdownViewMode);

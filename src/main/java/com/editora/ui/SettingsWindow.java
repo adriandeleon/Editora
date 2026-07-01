@@ -170,6 +170,7 @@ public class SettingsWindow {
     private CheckBox lineHighlightCheck;
     private CheckBox lineNumbersCheck;
     private CheckBox minimapCheck;
+    private CheckBox wordWrapCheck;
     private CheckBox whitespaceCheck;
     private CheckBox notesCheck;
     private CheckBox noteIndicatorsCheck;
@@ -740,6 +741,7 @@ public class SettingsWindow {
         lineHighlightCheck = viewCheck(tr("settings.highlightLine"), Settings::setHighlightCurrentLine);
         lineNumbersCheck = viewCheck(tr("settings.showLineNumbers"), Settings::setShowLineNumbers);
         minimapCheck = viewCheck(tr("settings.showMinimap"), Settings::setShowMinimap);
+        wordWrapCheck = viewCheck(tr("settings.wordWrap"), Settings::setWordWrap);
         whitespaceCheck = viewCheck(tr("settings.showWhitespace"), Settings::setShowWhitespace);
         notesCheck = viewCheck(tr("settings.enableNotes"), Settings::setNotesSupport);
         noteIndicatorsCheck = viewCheck(tr("settings.showNoteIndicators"), Settings::setShowNoteIndicators);
@@ -1670,6 +1672,7 @@ public class SettingsWindow {
         row(p, Category.EDITOR, display, lineHighlightCheck, "highlight current line caret");
         row(p, Category.EDITOR, display, lineNumbersCheck, "line numbers gutter");
         row(p, Category.EDITOR, display, minimapCheck, "minimap overview");
+        row(p, Category.EDITOR, display, wordWrapCheck, "word wrap soft wrap long lines");
         row(p, Category.EDITOR, display, whitespaceCheck, "hidden characters whitespace spaces tabs eol");
         row(p, Category.EDITOR, display, noteIndicatorsCheck, "personal notes gutter marker highlight indicators");
         row(
@@ -4627,6 +4630,7 @@ public class SettingsWindow {
             lineHighlightCheck.setSelected(settings.isHighlightCurrentLine());
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
             minimapCheck.setSelected(settings.isShowMinimap());
+            wordWrapCheck.setSelected(settings.isWordWrap());
             whitespaceCheck.setSelected(settings.isShowWhitespace());
             notesCheck.setSelected(settings.isNotesSupport());
             noteIndicatorsCheck.setSelected(settings.isShowNoteIndicators());
@@ -5130,7 +5134,7 @@ public class SettingsWindow {
         applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
     }
 
-    private void syncViewChecks() {
+    void syncViewChecks() {
         boolean prev = loading;
         loading = true;
         try {
@@ -5139,6 +5143,7 @@ public class SettingsWindow {
             lineHighlightCheck.setSelected(s.isHighlightCurrentLine());
             lineNumbersCheck.setSelected(s.isShowLineNumbers());
             minimapCheck.setSelected(s.isShowMinimap());
+            wordWrapCheck.setSelected(s.isWordWrap());
             whitespaceCheck.setSelected(s.isShowWhitespace());
             notesCheck.setSelected(s.isNotesSupport());
             noteIndicatorsCheck.setSelected(s.isShowNoteIndicators());
