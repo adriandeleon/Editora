@@ -2284,7 +2284,8 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Languages offered in the Snippets-page picker (editable, so any language id can also be typed). */
+    /** Languages offered in the Snippets-page picker (this curated list plus any language that already
+     *  has a user snippet file). */
     private static final java.util.List<String> SNIPPET_LANGUAGES = java.util.List.of(
             "global",
             "java",
@@ -2329,13 +2330,12 @@ public class SettingsWindow {
 
     /** Master-detail editor: a language picker + the user's snippets for it on the left, a form on the right. */
     private javafx.scene.Node snippetsEditor() {
-        // Language picker (editable): the curated list, plus any languages that already have a user file.
+        // Language picker: the curated list, plus any languages that already have a user file.
         java.util.LinkedHashSet<String> langs = new java.util.LinkedHashSet<>(SNIPPET_LANGUAGES);
         if (snippetManager != null) {
             langs.addAll(snippetManager.userSnippetLanguages());
         }
         ComboBox<String> language = new ComboBox<>(javafx.collections.FXCollections.observableArrayList(langs));
-        language.setEditable(true);
         language.setValue(currentSnippetLang);
 
         ListView<com.editora.snippet.Snippet> list = new ListView<>(snippetItems);
