@@ -378,6 +378,8 @@ public class EditorBuffer implements TabContent {
     private String mdLintTooltipText;
     /** Injected handler for image files dropped onto a Markdown buffer (controller copies + inserts links). */
     private java.util.function.Consumer<java.util.List<java.io.File>> imageDropHandler;
+    /** Injected handler for a raw image / image URL dragged from a browser (image, url — either may be null). */
+    private java.util.function.BiConsumer<javafx.scene.image.Image, String> webImageDropHandler;
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     private boolean lspActive;
 
@@ -1981,34 +1983,65 @@ public class EditorBuffer implements TabContent {
         this.imageDropHandler = handler;
     }
 
-    /** Accepts dropped image files on a Markdown buffer (copy into {@code assets/} + insert {@code ![](…)}). */
+    /**
+     * Injects the handler for a raw image (or image URL) dragged from a web browser onto a Markdown buffer;
+     * the controller downloads/encodes it into {@code assets/} and inserts a link. Args: the dragged
+     * {@code Image} (or null) and the image URL/data-URI (or null) — at least one is non-null.
+     */
+    public void setWebImageDropHandler(java.util.function.BiConsumer<javafx.scene.image.Image, String> handler) {
+        this.webImageDropHandler = handler;
+    }
+
+    /** The image URL a browser drag carries (its URL, an {@code <img src>} in the HTML, or an image string). */
+    private static String webImageUrl(javafx.scene.input.Dragboard db) {
+        return com.editora.markdown.MarkdownImagePaste.imageUrlFromDrag(
+                db.hasUrl() ? db.getUrl() : null,
+                db.hasHtml() ? db.getHtml() : null,
+                db.hasString() ? db.getString() : null);
+    }
+
+    /**
+     * Accepts dropped images on a Markdown buffer (copy/download into {@code assets/} + insert {@code ![](…)}):
+     * image <em>files</em> from the OS, and a raw image / image URL dragged from a web browser.
+     */
     private void installImageDrop(CodeArea a) {
         a.addEventHandler(javafx.scene.input.DragEvent.DRAG_OVER, e -> {
-            if (imageDropHandler != null
-                    && isMarkdown()
-                    && isEditable()
-                    && e.getDragboard().hasFiles()
-                    && hasImageFile(e.getDragboard().getFiles())) {
+            if (!isMarkdown() || !isEditable()) {
+                return;
+            }
+            javafx.scene.input.Dragboard db = e.getDragboard();
+            boolean file = imageDropHandler != null && db.hasFiles() && hasImageFile(db.getFiles());
+            boolean web = webImageDropHandler != null && (db.hasImage() || webImageUrl(db) != null);
+            if (file || web) {
                 e.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
                 e.consume();
             }
         });
         a.addEventHandler(javafx.scene.input.DragEvent.DRAG_DROPPED, e -> {
-            if (imageDropHandler == null
-                    || !isMarkdown()
-                    || !isEditable()
-                    || !e.getDragboard().hasFiles()) {
+            if (!isMarkdown() || !isEditable()) {
                 return;
             }
-            java.util.List<java.io.File> images = e.getDragboard().getFiles().stream()
-                    .filter(EditorBuffer::isImageFile)
-                    .toList();
-            if (images.isEmpty()) {
-                return;
+            javafx.scene.input.Dragboard db = e.getDragboard();
+            // Prefer real image files (self-contained copy); fall back to a browser image (download/encode).
+            if (imageDropHandler != null && db.hasFiles()) {
+                java.util.List<java.io.File> images =
+                        db.getFiles().stream().filter(EditorBuffer::isImageFile).toList();
+                if (!images.isEmpty()) {
+                    imageDropHandler.accept(images);
+                    e.setDropCompleted(true);
+                    e.consume();
+                    return;
+                }
             }
-            imageDropHandler.accept(images);
-            e.setDropCompleted(true);
-            e.consume();
+            if (webImageDropHandler != null) {
+                String url = webImageUrl(db);
+                javafx.scene.image.Image img = db.hasImage() ? db.getImage() : null;
+                if (url != null || img != null) {
+                    webImageDropHandler.accept(img, url);
+                    e.setDropCompleted(true);
+                    e.consume();
+                }
+            }
         });
     }
 

@@ -139,6 +139,45 @@ public final class PreviewImageLoader {
         return head.contains("<svg");
     }
 
+    /**
+     * Fetches image bytes for a URL — an {@code http(s)} download (with a timeout + User-Agent) or a
+     * {@code data:} URI decoded inline. For a browser-image drop; call off the FX thread.
+     */
+    public static byte[] fetchBytes(String url) throws IOException {
+        return fetch(url);
+    }
+
+    /**
+     * Encodes a JavaFX {@code Image} to PNG bytes via headless Java2D (no {@code javafx.swing}): reads the
+     * pixels through a {@code PixelReader} into an ARGB {@link BufferedImage}, then {@code ImageIO}. Returns
+     * {@code null} when the image has no reader (still loading / broken). Read the pixels on the FX thread.
+     */
+    public static byte[] imageToPng(javafx.scene.image.Image img) {
+        if (img == null || img.getPixelReader() == null) {
+            return null;
+        }
+        int w = (int) Math.round(img.getWidth());
+        int h = (int) Math.round(img.getHeight());
+        if (w <= 0 || h <= 0) {
+            return null;
+        }
+        try {
+            javafx.scene.image.PixelReader reader = img.getPixelReader();
+            BufferedImage buf = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+            int[] row = new int[w];
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    row[x] = reader.getArgb(x, y);
+                }
+                buf.setRGB(0, y, w, 1, row, 0, w);
+            }
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            return javax.imageio.ImageIO.write(buf, "png", out) ? out.toByteArray() : null;
+        } catch (RuntimeException | java.io.IOException e) {
+            return null;
+        }
+    }
+
     private static byte[] fetch(String url) throws IOException {
         if (url.startsWith("data:")) {
             return decodeDataUri(url);
