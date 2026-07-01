@@ -158,6 +158,7 @@ public class SettingsWindow {
     private TextField shortcutFilter; // filters the shortcut list
     private VBox shortcutListBox; // rebuilt from shortcutActions.rows() on each change/filter
     private String recordingCommandId; // command id whose row is currently capturing a chord, or null
+    private String selectedShortcutId; // command id of the selected row (shows its Record/Reset), or null
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
@@ -1295,17 +1296,30 @@ public class SettingsWindow {
             Label chord = new Label(s.chord() == null ? tr("settings.shortcuts.unbound") : s.chord());
             chord.getStyleClass().add(s.chord() == null ? "shortcut-unbound" : "shortcut-chord");
             chord.setMinWidth(150);
-            Button record = new Button(tr("settings.shortcuts.record"));
-            record.setOnAction(e -> {
-                recordingCommandId = s.id();
-                refreshShortcuts();
+            row.getChildren().addAll(title, chord);
+            // Record/Reset are shown only for the selected row (click a row to reveal them), keeping the
+            // list uncluttered. Clicking the row selects it; the buttons then act on that command.
+            row.getStyleClass().add("shortcut-row-clickable");
+            row.setOnMouseClicked(e -> {
+                if (!s.id().equals(selectedShortcutId)) {
+                    selectedShortcutId = s.id();
+                    refreshShortcuts();
+                }
             });
-            Button reset = new Button(tr("settings.shortcuts.reset"));
-            reset.setOnAction(e -> {
-                shortcutActions.reset(s.id());
-                refreshShortcuts();
-            });
-            row.getChildren().addAll(title, chord, record, reset);
+            if (s.id().equals(selectedShortcutId)) {
+                row.getStyleClass().add("shortcut-row-selected");
+                Button record = new Button(tr("settings.shortcuts.record"));
+                record.setOnAction(e -> {
+                    recordingCommandId = s.id();
+                    refreshShortcuts();
+                });
+                Button reset = new Button(tr("settings.shortcuts.reset"));
+                reset.setOnAction(e -> {
+                    shortcutActions.reset(s.id());
+                    refreshShortcuts();
+                });
+                row.getChildren().addAll(record, reset);
+            }
         }
         return row;
     }

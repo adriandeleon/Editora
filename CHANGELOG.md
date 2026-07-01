@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Test coverage: added unit tests + ratcheted the JaCoCo floors.** New tests for `config` models/stores (`Breakpoint`, `BreakpointStore`, `RecentFiles`, plus `FileIdentity` null/empty branches) raised `config` line coverage to ~88%, and new `InstallService` tests cover `findBinary`/`makeExecutable`/`Result`. The per-package `jacoco-check` floors were ratcheted to sit a few points below the measured coverage (migration·diff 0.85→0.90, config split out at 0.86, template·editorconfig 0.80→0.82, completion·http·pdf 0.68→0.70).
 
 ### Changed
+- **Settings → Keymaps → Customize shortcuts now reveals the Record/Reset buttons only for the selected row.** Every command row used to show both buttons, cluttering the long list; a row's actions now appear only when you click to select it (the selected row is highlighted), so the list reads as a clean command + chord table.
 - **Save As from the command palette (or a keybinding) now prompts for the path in-scene** instead of opening the native file chooser, keeping the keyboard flow mouse-free. The field is pre-filled with the current file's path (or the project folder + suggested name for an untitled buffer); a bare name resolves against that folder and `~` expands to home. The **toolbar Save-As button still opens the native file chooser** (it's a mouse action), and overwriting a different existing file asks for confirmation.
 
 ### Fixed
