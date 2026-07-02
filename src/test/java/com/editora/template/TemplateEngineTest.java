@@ -100,4 +100,33 @@ class TemplateEngineTest {
     void resolveTargetPathRejectsTraversal() {
         assertNull(TemplateEngine.resolveTargetPath(Path.of("/work/proj"), "../escape.txt", vars(Map.of())));
     }
+
+    @Test
+    void expandCollapsesADoubledExtensionFromABaseNameWithItsOwnExtension() {
+        // The bug: ${baseName:document}.md + a baseName that already ends in ".md" produced "x.md.md".
+        assertEquals(
+                "todo-july-2-2026.md",
+                TemplateEngine.expand("${baseName:document}.md", vars(Map.of("baseName", "todo-july-2-2026.md"))));
+        // A plain baseName still gets the single extension appended.
+        assertEquals(
+                "todo-july-2-2026.md",
+                TemplateEngine.expand("${baseName:document}.md", vars(Map.of("baseName", "todo-july-2-2026"))));
+    }
+
+    @Test
+    void collapseDuplicateExtensionOnlyTouchesIdenticalTrailingExtensions() {
+        assertEquals("foo.md", TemplateEngine.collapseDuplicateExtension("foo.md.md"));
+        assertEquals("a/b/foo.js", TemplateEngine.collapseDuplicateExtension("a/b/foo.js.js"));
+        // Different extensions are left alone.
+        assertEquals("types.d.ts", TemplateEngine.collapseDuplicateExtension("types.d.ts"));
+        assertEquals("archive.tar.gz", TemplateEngine.collapseDuplicateExtension("archive.tar.gz"));
+        assertEquals("app.min.js", TemplateEngine.collapseDuplicateExtension("app.min.js"));
+        // Nothing to collapse.
+        assertEquals("foo.md", TemplateEngine.collapseDuplicateExtension("foo.md"));
+        assertEquals("noext", TemplateEngine.collapseDuplicateExtension("noext"));
+        // A dotted directory name is not mistaken for an extension.
+        assertEquals("a.b/foo", TemplateEngine.collapseDuplicateExtension("a.b/foo"));
+        assertNull(TemplateEngine.collapseDuplicateExtension(null));
+        assertEquals("", TemplateEngine.collapseDuplicateExtension(""));
+    }
 }
