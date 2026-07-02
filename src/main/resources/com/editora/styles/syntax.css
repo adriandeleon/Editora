@@ -54,6 +54,18 @@
 /* CSV/TSV field separators (source.csv grammar): a muted tint so column boundaries stand out. */
 .text.csv-delimiter { -fx-fill: -color-fg-subtle; }
 
+/* Rainbow CSV: per-column colors (cycled every 8) when rainbow highlighting is on — computed in Java
+   (CsvRainbow), not the grammar. Eight well-separated hues chosen to read on both light and dark editor
+   themes; the compound `.text.<class>` form (0,2,0) wins over the base fill like the token rules above. */
+.text.csv-col-0 { -fx-fill: #2563eb; }
+.text.csv-col-1 { -fx-fill: #dc2626; }
+.text.csv-col-2 { -fx-fill: #16a34a; }
+.text.csv-col-3 { -fx-fill: #9333ea; }
+.text.csv-col-4 { -fx-fill: #ea580c; }
+.text.csv-col-5 { -fx-fill: #0891b2; }
+.text.csv-col-6 { -fx-fill: #ca8a04; }
+.text.csv-col-7 { -fx-fill: #db2777; }
+
 /* LSP semantic tokens (Primer Light defaults). These OVERLAY the lexical TextMate classes — a
    semantically classified span carries only its `sem-*` class(es), so there's no conflict with the
    token rules above. Same compound `.text.<class>` form + cache rules. The modifier classes

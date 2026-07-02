@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rainbow CSV columns.** `.csv`/`.tsv` files are now colored **per column** in the editor — each column
+  gets a distinct color that cycles every eight, so field boundaries are easy to follow (like VS Code's
+  Rainbow CSV). On by default; toggle in Settings → Editor → CSV or the **Toggle Rainbow CSV Columns**
+  command.
+
 - **CSV grid: export menu.** Right-click the CSV Grid to **Export to PDF**, **Print**, **Export to Excel
   (.xlsx)**, or **Export to an ODF spreadsheet (.ods)** (also available as palette commands). Numbers are
   written as real spreadsheet numbers where safe — leading-zero codes (like ZIP codes) and
