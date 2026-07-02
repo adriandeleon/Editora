@@ -485,6 +485,92 @@ public final class LspManager {
         });
     }
 
+    /** A project-wide symbol match ({@code workspace/symbol}): name + container + lowercased kind + location. */
+    public record WorkspaceSymbolMatch(
+            String name, String container, String kind, Path file, int line, int character) {}
+
+    /** True if {@code file}'s server is ready and advertises {@code workspace/symbol} (Go to Symbol). */
+    public boolean supportsWorkspaceSymbols(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && workspaceSymbolProvider(s.capabilities());
+    }
+
+    /** Pure: whether the server advertises {@code workspace/symbol} (Boolean or options form). Null-safe. */
+    static boolean workspaceSymbolProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        return caps != null && eitherTrue(caps.getWorkspaceSymbolProvider());
+    }
+
+    /**
+     * Runs {@code workspace/symbol} on {@code anchorFile}'s server for {@code query} and delivers the matches
+     * on the FX thread. Empty when the file has no server. Handles both the legacy flat {@code SymbolInformation}
+     * and the modern {@code WorkspaceSymbol} response shapes (the latter may carry a range-less URI-only
+     * location, mapped to line 0).
+     */
+    public void workspaceSymbols(Path anchorFile, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
+        LanguageServerSession s = sessionFor(anchorFile);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.workspaceSymbol(query).whenComplete((result, error) -> {
+            List<WorkspaceSymbolMatch> out = new ArrayList<>();
+            if (error == null && result != null) {
+                if (result.isLeft()) {
+                    for (org.eclipse.lsp4j.SymbolInformation si : result.getLeft()) {
+                        addSymbol(out, si.getName(), si.getContainerName(), si.getKind(), si.getLocation());
+                    }
+                } else if (result.getRight() != null) {
+                    for (org.eclipse.lsp4j.WorkspaceSymbol ws : result.getRight()) {
+                        addSymbol(out, ws.getName(), ws.getContainerName(), ws.getKind(), ws.getLocation());
+                    }
+                }
+            }
+            Platform.runLater(() -> cb.accept(out));
+        });
+    }
+
+    /** Adds a {@code SymbolInformation} match (its location always carries a range). */
+    private static void addSymbol(
+            List<WorkspaceSymbolMatch> out,
+            String name,
+            String container,
+            org.eclipse.lsp4j.SymbolKind kind,
+            Location loc) {
+        if (loc == null) {
+            return;
+        }
+        Path p = uriToPath(loc.getUri());
+        if (p == null) {
+            return;
+        }
+        Position start = loc.getRange() != null ? loc.getRange().getStart() : new Position(0, 0);
+        out.add(new WorkspaceSymbolMatch(name, container, kindName(kind), p, start.getLine(), start.getCharacter()));
+    }
+
+    /** Adds a {@code WorkspaceSymbol} match whose location is {@code Either<Location, URI-only>}. */
+    private static void addSymbol(
+            List<WorkspaceSymbolMatch> out,
+            String name,
+            String container,
+            org.eclipse.lsp4j.SymbolKind kind,
+            org.eclipse.lsp4j.jsonrpc.messages.Either<Location, org.eclipse.lsp4j.WorkspaceSymbolLocation> loc) {
+        if (loc == null) {
+            return;
+        }
+        if (loc.isLeft()) {
+            addSymbol(out, name, container, kind, loc.getLeft());
+        } else if (loc.getRight() != null) {
+            Path p = uriToPath(loc.getRight().getUri());
+            if (p != null) {
+                out.add(new WorkspaceSymbolMatch(name, container, kindName(kind), p, 0, 0));
+            }
+        }
+    }
+
+    private static String kindName(org.eclipse.lsp4j.SymbolKind k) {
+        return k == null ? "" : k.toString().toLowerCase(java.util.Locale.ROOT);
+    }
+
     /** True if {@code file}'s server is ready and advertises range semantic tokens (viewport highlighting). */
     public boolean supportsSemanticTokens(Path file) {
         LanguageServerSession s = sessionFor(file);

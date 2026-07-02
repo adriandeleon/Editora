@@ -9629,6 +9629,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
         registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
         registry.register(Command.of("lsp.findReferences", () -> ifLsp(lspCoordinator::findReferences)));
+        registry.register(Command.of("lsp.gotoSymbol", () -> ifLsp(lspCoordinator::gotoSymbolInWorkspace)));
         registry.register(Command.of("lsp.hover", () -> ifLsp(lspCoordinator::showHover)));
         registry.register(Command.of("lsp.restartServers", () -> ifLsp(lspCoordinator::restartServers)));
         registry.register(Command.of("lsp.formatDocument", () -> ifLsp(lspCoordinator::formatDocument)));

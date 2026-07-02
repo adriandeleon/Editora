@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Go to Symbol in Workspace.** A new command opens a live search box that finds any symbol (class,
+  function, method, …) across the whole project by name and jumps to it — the LSP `workspace/symbol` feature,
+  like VS Code's `Ctrl-T` / IntelliJ's `Ctrl-N`. Available from the command palette in a code file with a
+  running language server.
+
 - **Ctrl/Cmd-click to go to definition.** In a code file with a running language server, holding
   Ctrl (or ⌘ on macOS) and clicking a symbol now jumps to its definition — the same gesture as VS Code /
   IntelliJ. It reuses the existing Go to Definition, so it also works across files and records a jump you can

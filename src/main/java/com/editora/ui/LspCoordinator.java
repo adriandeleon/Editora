@@ -780,6 +780,38 @@ final class LspCoordinator {
         });
     }
 
+    /**
+     * Opens the "Go to Symbol in Workspace" popup ({@code workspace/symbol}) — an incremental picker that
+     * re-queries the active file's language server as you type, jumping to the chosen symbol across files.
+     * Seeds the query from a single-line selection when present.
+     */
+    void gotoSymbolInWorkspace() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        if (!lspManager.supportsWorkspaceSymbols(b.getPath())) {
+            host.setStatus(tr("status.lsp.workspaceSymbolsUnsupported"));
+            return;
+        }
+        Path anchor = b.getPath();
+        String sel = b.getFocusedArea().getSelectedText();
+        String seed = sel != null && !sel.isBlank() && !sel.contains("\n") ? sel.trim() : "";
+        WorkspaceSymbolPopup popup = new WorkspaceSymbolPopup(host.overlayHost(), new WorkspaceSymbolPopup.Ops() {
+            @Override
+            public void query(
+                    String text, java.util.function.Consumer<java.util.List<LspManager.WorkspaceSymbolMatch>> cb) {
+                lspManager.workspaceSymbols(anchor, text, cb);
+            }
+
+            @Override
+            public void open(Path file, int line, int character) {
+                ops.openAndGoto(file, line, character);
+            }
+        });
+        popup.show(seed);
+    }
+
     void showHover() {
         EditorBuffer b = activeLspBuffer();
         if (b == null) {

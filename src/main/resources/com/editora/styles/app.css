@@ -1800,6 +1800,8 @@
 .fif-popup .fif-root-label { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; }
 .fif-popup .fif-status { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; }
 .fif-popup .fif-file { -fx-font-weight: bold; }
+.fif-popup .ws-symbol-name { -fx-font-weight: bold; }
+.fif-popup .ws-symbol-detail { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
 .fif-popup .fif-count { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
 .fif-popup .fif-match-row { -fx-padding: 0 0 0 16; }
 .fif-popup .fif-line {
