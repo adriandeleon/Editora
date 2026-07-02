@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bundled "Shell Script" and "Zsh Script" file templates.** New File From Template now includes shell
+  starters: a **Bash** one (`#!/usr/bin/env bash`, `set -euo pipefail`, a `main`/`main "$@"` scaffold →
+  `${baseName:script}.sh`) and a **Zsh** one (`#!/usr/bin/env zsh`, `emulate -L zsh` +
+  `setopt errexit nounset pipefail`, the same `main` scaffold → `${baseName:script}.zsh`); both prompt for
+  the file name. Available from the template picker, the toolbar, and the project-tree "New From Template…"
+  menu.
+
 - **Doc comments in the Structure tool window.** Each item in the Structure outline now shows its leading
   documentation comment as a hover tooltip when one is present — Javadoc/JSDoc/PHPDoc and plain block
   comments (`/** … */`, `/* … */`), and runs of `//`, `#`, or `--` line comments above the declaration.

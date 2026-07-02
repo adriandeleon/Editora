@@ -1,0 +1,19 @@
+{
+  "name": "Shell Script",
+  "description": "A Bash script with a strict-mode preamble and a main function",
+  "language": "shell",
+  "fileName": "${baseName:script}.sh",
+  "body": [
+    "#!/usr/bin/env bash",
+    "#",
+    "# ${summary:Script summary}",
+    "",
+    "set -euo pipefail",
+    "",
+    "main() {",
+    "    ${cursor}",
+    "}",
+    "",
+    "main \"$@\""
+  ]
+}
