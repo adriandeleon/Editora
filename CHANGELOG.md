@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Markdown "Insert Table" size picker no longer fills the editor.** The grid picker was stretched to
+  cover the whole code area; it now hugs the grid (with padding) and is centered.
+
 - **Structure tool window: methods no longer show a doubled `()`.** When a language server (e.g. jdtls)
   already includes the parameter list in a method's name (`setX(Foo)`), the outline no longer appended a
   redundant empty `()` — so it reads `setX(Foo)` instead of `setX(Foo)()`.
