@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Find in Files popup.** A keyboard-first overlay for multi-file content search (command
+  **"Find in Files (Popup)"**, palette-discoverable) — type a query, see results grouped by file, and
+  press Enter to jump straight to a match (Enter on a file header opens that file); Esc closes. It has
+  case / regex / whole-word toggles (no replace) and an editable **search-folder** field that defaults to
+  the project root in a project window, or the current file's folder otherwise, and can be pointed at any
+  folder. Reuses the same fast (ripgrep-backed) search engine as the Find in Files tool window and shares
+  its search history, and shows a **ripgrep** badge when that backend is active.
+
 - **Bundled "Shell Script" and "Zsh Script" file templates.** New File From Template now includes shell
   starters: a **Bash** one (`#!/usr/bin/env bash`, `set -euo pipefail`, a `main`/`main "$@"` scaffold →
   `${baseName:script}.sh`) and a **Zsh** one (`#!/usr/bin/env zsh`, `emulate -L zsh` +
