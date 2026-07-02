@@ -257,6 +257,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private ToolWindow searchToolWindow;
     private ToolWindow todoToolWindow;
+    private ToolWindow csvGridToolWindow;
     private MarkdownLintPanel markdownLintPanel;
     private ToolWindow markdownLintToolWindow;
     private final com.editora.editor.MarkdownLintService markdownLintService =
@@ -1573,6 +1574,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             debugCoordinator.updateDebugAvailability(); // Debug window only for a debuggable file / live session
             updateRunButton(); // show the Run button only for a compact source file
             updateBufferToolWindows(); // hide buffer-only tool windows when there's no actionable buffer
+            csvCoordinator.refreshFor(activeBuffer()); // re-target the CSV grid at the new active buffer
             historyCoordinator.refresh(); // re-gate + reload the Local File History list for the new active file
             maybeOfferInstall(activeBuffer()); // offer to install this language's LSP/DAP if it's missing
         });
@@ -1603,6 +1605,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 lspCoordinator.clearDiagnostics(closed.getPath());
                             }
                             logViewer.onBufferClosed(closed); // cancel tail-follow + drop per-buffer state
+                            csvCoordinator.onBufferClosed(closed); // drop the CSV grid's edit listener
                             closed.dispose();
                         }
                     }
@@ -1818,6 +1821,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::todo,
                 todoCoordinator.panel(),
                 "tool.todo");
+        csvGridToolWindow = new ToolWindow(
+                "csvGrid",
+                tr("toolwindow.csvGrid"),
+                ToolWindow.Side.BOTTOM,
+                Icons::table,
+                csvCoordinator.panel(),
+                "tool.csvGrid");
         markdownLintPanel = new MarkdownLintPanel(new MarkdownLintPanel.Actions() {
             @Override
             public void open(java.nio.file.Path file, int line, int col) {
@@ -1997,6 +2007,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // undoHistory.jump popup, the tool.undoHistory command, or Settings → Tool Windows
         toolWindows.register(searchToolWindow);
         toolWindows.register(todoToolWindow);
+        toolWindows.register(csvGridToolWindow);
         toolWindows.register(markdownLintToolWindow);
         toolWindows.register(problemsToolWindow);
         toolWindows.register(runToolWindow);
@@ -2498,6 +2509,34 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public String homeCollapsed(String absolutePath) {
             return MainController.this.homeCollapsed(absolutePath);
+        }
+    });
+
+    /** CSV/TSV grid preview feature; owns the grid panel + parse/refresh (the tool window stays here). */
+    private final CsvCoordinator csvCoordinator = new CsvCoordinator(coordinatorHost, new CsvCoordinator.Ops() {
+        @Override
+        public boolean isToolWindowOpen() {
+            return csvGridToolWindow != null && toolWindows.isOpen(csvGridToolWindow);
+        }
+
+        @Override
+        public void toggleToolWindow() {
+            toolWindows.toggle(csvGridToolWindow);
+        }
+
+        @Override
+        public void jumpTo(int line, int col) {
+            EditorBuffer b = activeBuffer();
+            if (b == null) {
+                return;
+            }
+            var area = b.getArea();
+            int paragraphs = area.getParagraphs().size();
+            int p = Math.max(0, Math.min(line, paragraphs - 1));
+            int c = Math.max(0, Math.min(col, area.getParagraphLength(p)));
+            area.moveTo(p, c);
+            area.requestFollowCaret();
+            area.requestFocus();
         }
     });
 
@@ -6044,6 +6083,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (markdownLintToolWindow != null) {
             toolWindows.setAvailable(markdownLintToolWindow, buffer && b.isMarkdown() && markdownLintEnabled());
         }
+        if (csvGridToolWindow != null) {
+            toolWindows.setAvailable(csvGridToolWindow, buffer && b.isCsv() && csvCoordinator.isEnabled());
+        }
         if (externalToolToolWindow != null) {
             toolWindows.setAvailable(externalToolToolWindow, buffer && externalToolsEnabled());
         }
@@ -8309,6 +8351,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         logViewer.applySupport();
         applyMcpSupport();
         todoCoordinator.applyHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
+        csvCoordinator.refreshFor(activeBuffer()); // re-gate + refresh the CSV grid after a settings change
         applyMarkdownLint(); // push Markdown-lint enabled state to every buffer
         applyAutoSave();
         applyAutocomplete();
@@ -9163,6 +9206,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("log.setRegexFilter", logViewer::setRegexFilter));
         registry.register(Command.of("log.clearFilter", logViewer::clearFilter));
         registry.register(Command.of("view.toggleLogViewer", logViewer::toggleViewer));
+        registry.register(Command.of(
+                "view.toggleCsvGrid",
+                () -> toggleSetting(
+                        "view.toggleCsvGrid",
+                        () -> config.getSettings().isCsvPreview(),
+                        config.getSettings()::setCsvPreview,
+                        () -> {
+                            updateBufferToolWindows();
+                            csvCoordinator.refreshFor(activeBuffer());
+                        })));
         registry.register(Command.of("mcp.copyEndpoint", () -> ifMcp(this::copyMcpEndpoint)));
         registry.register(Command.of("view.toggleMcp", this::toggleMcpSupport));
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
@@ -9321,6 +9374,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("search.inFiles", searchCoordinator::openToggle));
         registry.register(Command.of("search.inFilesPopup", searchCoordinator::showFindInFilesPopup));
         todoCoordinator.registerCommands(registry); // tool.todo + todo.refresh + todo.addPattern
+        csvCoordinator.registerCommands(registry); // tool.csvGrid (toggle the CSV grid preview window)
         registry.register(Command.of(
                 "view.toggleTodoHighlight",
                 () -> toggleSetting(

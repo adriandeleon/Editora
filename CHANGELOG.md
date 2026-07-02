@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which column the caret is in and how many the row has (RFC-4180 quote-aware, delimiter auto-detected).
   Clicking the segment, or the new **CSV: Copy as Markdown Table** command, copies the whole file to the
   clipboard as a GitHub-flavored Markdown table.
+- **CSV / TSV grid preview.** A new **CSV Grid** tool window shows the active `.csv`/`.tsv` file as a
+  read-only spreadsheet: a first-row-as-header toggle, a summary line (row/column counts + how many
+  columns are numeric vs. text), and double-click / Enter on a cell jumps the editor caret to that field.
+  Refreshes as you edit; on by default for CSV/TSV files (Settings → Editor → CSV, or the
+  **Toggle CSV Grid Preview** command).
 
 ### Changed
 

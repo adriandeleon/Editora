@@ -69,6 +69,18 @@ class CsvParserTest {
     }
 
     @Test
+    void fieldStartOffsetLocatesFieldBoundaries() {
+        String line = "aaa,bbb,ccc";
+        assertEquals(0, CsvParser.fieldStartOffset(line, ',', 0));
+        assertEquals(4, CsvParser.fieldStartOffset(line, ',', 1));
+        assertEquals(8, CsvParser.fieldStartOffset(line, ',', 2));
+        // Beyond the last field clamps to end of line.
+        assertEquals(line.length(), CsvParser.fieldStartOffset(line, ',', 9));
+        // Quoted delimiter is skipped: field 1 starts after the real comma.
+        assertEquals(6, CsvParser.fieldStartOffset("\"x,y\",z", ',', 1));
+    }
+
+    @Test
     void parseHandlesQuotesEscapesAndEmbeddedNewlines() {
         List<List<String>> rows = CsvParser.parse("a,b\n\"c,d\",\"e\"\"f\"\n\"multi\nline\",z", ',');
         assertEquals(3, rows.size());

@@ -1562,6 +1562,10 @@
 .todo-panel .todo-file-row { -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
 .todo-panel .todo-color-tag { -fx-background-radius: 2; -fx-border-color: -color-border-muted; -fx-border-radius: 2; }
 
+/* CSV grid preview tool window: a header-toggle + summary bar above a read-only TableView. */
+.csv-grid .csv-grid-bar { -fx-padding: 0 2 4 2; -fx-alignment: center-left; }
+.csv-grid .csv-grid-summary { -fx-text-fill: -color-fg-muted; }
+
 /* Markdown Lint tool window: a flat list of diagnostics with a severity dot. */
 .markdown-lint-panel .markdown-lint-summary { -fx-text-fill: -color-fg-muted; }
 .markdown-lint-panel .markdown-lint-tag { -fx-background-radius: 5; }

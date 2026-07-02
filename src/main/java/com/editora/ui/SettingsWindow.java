@@ -204,6 +204,7 @@ public class SettingsWindow {
     private CheckBox mathSupportCheck;
     private CheckBox editorConfigCheck;
     private CheckBox logViewerCheck;
+    private CheckBox csvGridCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
     private VBox markdownLintRulesBox;
@@ -865,6 +866,7 @@ public class SettingsWindow {
         mathSupportCheck = viewCheck(tr("settings.mathSupport"), Settings::setMathSupport);
         editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
         logViewerCheck = viewCheck(tr("settings.logViewer"), Settings::setLogViewer);
+        csvGridCheck = viewCheck(tr("settings.csvPreview"), Settings::setCsvPreview);
         todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
 
@@ -1738,6 +1740,8 @@ public class SettingsWindow {
                 logs,
                 logViewerCheck,
                 "log viewer server logs tail follow level highlighting filter apache spring boot");
+        Label csv = section(p, tr("settings.section.csv"));
+        row(p, Category.EDITOR, csv, csvGridCheck, "csv tsv grid table preview spreadsheet columns");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -4688,6 +4692,7 @@ public class SettingsWindow {
             mathSupportCheck.setSelected(settings.isMathSupport());
             editorConfigCheck.setSelected(settings.isEditorConfigSupport());
             logViewerCheck.setSelected(settings.isLogViewer());
+            csvGridCheck.setSelected(settings.isCsvPreview());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             rebuildTodoRows();
             rebuildMarkdownLintRules();
@@ -5189,6 +5194,7 @@ public class SettingsWindow {
             mathSupportCheck.setSelected(s.isMathSupport());
             editorConfigCheck.setSelected(s.isEditorConfigSupport());
             logViewerCheck.setSelected(s.isLogViewer());
+            csvGridCheck.setSelected(s.isCsvPreview());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             rebuildTodoRows();
             rebuildMarkdownLintRules();

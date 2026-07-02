@@ -81,6 +81,40 @@ public final class CsvParser {
     }
 
     /** Counts unquoted {@code delim} characters in {@code line[0, end)} (an RFC-4180 field-boundary scan). */
+    /**
+     * The char offset within {@code line} where field {@code fieldIndex} (0-based) starts, honoring
+     * RFC-4180 quotes — i.e. the position just after the {@code fieldIndex}-th unquoted delimiter (0 for the
+     * first field). If the line has fewer fields, returns {@code line.length()}. Used to place the caret at a
+     * clicked grid cell's field.
+     */
+    public static int fieldStartOffset(String line, char delim, int fieldIndex) {
+        if (line == null || fieldIndex <= 0) {
+            return 0;
+        }
+        int seps = 0;
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (inQuotes) {
+                if (c == '"') {
+                    if (i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                        i++;
+                    } else {
+                        inQuotes = false;
+                    }
+                }
+            } else if (c == '"') {
+                inQuotes = true;
+            } else if (c == delim) {
+                seps++;
+                if (seps == fieldIndex) {
+                    return i + 1;
+                }
+            }
+        }
+        return line.length();
+    }
+
     private static int separatorsBefore(String line, char delim, int end) {
         int seps = 0;
         boolean inQuotes = false;
