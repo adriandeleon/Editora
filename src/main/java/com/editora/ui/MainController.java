@@ -9297,6 +9297,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }));
         registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
         registry.register(Command.of("search.inFiles", searchCoordinator::openToggle));
+        registry.register(Command.of("search.inFilesPopup", searchCoordinator::showFindInFilesPopup));
         todoCoordinator.registerCommands(registry); // tool.todo + todo.refresh + todo.addPattern
         registry.register(Command.of(
                 "view.toggleTodoHighlight",

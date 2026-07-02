@@ -63,9 +63,11 @@ final class SearchCoordinator {
     private final Ops ops;
     private final SearchService service = new SearchService();
     private final SearchPanel panel;
+    private SearchInFilesPopup popup; // lazily built on first use of the popup command
 
     private List<String> ripgrepProbedCommand = null;
     private volatile boolean ripgrepAvailable = false;
+    private boolean backendRipgrep = false; // effective backend, pushed to the panel + the popup's badge
 
     SearchCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -107,14 +109,56 @@ final class SearchCoordinator {
         panel.setHistory(ops.searchHistory());
     }
 
-    /** Runs a multi-file search: open buffers (in-memory) + the active project root, results to the panel. */
-    private void runFileSearch(SearchQuery query, String includeGlobs, String excludeGlobs) {
+    /** Snapshots every open buffer's live text keyed by absolute path (unsaved edits win over disk). */
+    private Map<Path, String> collectOpenBuffers() {
         Map<Path, String> open = new HashMap<>();
         host.forEachBuffer(b -> {
             if (b.getPath() != null) {
                 open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
             }
         });
+        return open;
+    }
+
+    /**
+     * Opens the keyboard-first Find-in-Files popup overlay (the {@code search.inFilesPopup} command). Built
+     * lazily; the root field is re-seeded to the current scope on each show, and the query is pre-filled from
+     * a single-line editor selection. Reuses the same {@link SearchService} as the tool window.
+     */
+    void showFindInFilesPopup() {
+        if (host.overlayHost() == null) {
+            return;
+        }
+        if (popup == null) {
+            popup = new SearchInFilesPopup(host.overlayHost(), new SearchInFilesPopup.Ops() {
+                @Override
+                public Path defaultRoot() {
+                    return searchScopeRoot();
+                }
+
+                @Override
+                public void search(SearchQuery query, Path root, Consumer<SearchService.Outcome> onResult) {
+                    service.search(query, root, collectOpenBuffers(), onResult);
+                }
+
+                @Override
+                public void openMatch(Path file, int line, int col) {
+                    ops.openMatch(file, line, col, true);
+                }
+
+                @Override
+                public void recordSearch(String query) {
+                    ops.recordSearch(query);
+                }
+            });
+        }
+        popup.setBackendActive(backendRipgrep);
+        popup.show(selectedLineForSearch());
+    }
+
+    /** Runs a multi-file search: open buffers (in-memory) + the active project root, results to the panel. */
+    private void runFileSearch(SearchQuery query, String includeGlobs, String excludeGlobs) {
+        Map<Path, String> open = collectOpenBuffers();
         // Scope to THIS window's project root, else the active file's folder ("Current Folder").
         Path root = searchScopeRoot();
         refreshScope(); // keep the toolbar's "searching in" label in step with what we search
@@ -263,7 +307,7 @@ final class SearchCoordinator {
         if (cmd.equals(ripgrepProbedCommand)) {
             boolean effective = enabled && ripgrepAvailable;
             service.setBackend(effective, cmd, s.isSearchRespectGitignore());
-            panel.setBackendActive(effective);
+            applyBackendBadge(effective);
             return;
         }
         Thread t = new Thread(
@@ -281,6 +325,15 @@ final class SearchCoordinator {
                 "rg-detect");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** Records the effective backend and pushes the "ripgrep" badge to the panel + the popup (if built). */
+    private void applyBackendBadge(boolean effective) {
+        backendRipgrep = effective;
+        panel.setBackendActive(effective);
+        if (popup != null) {
+            popup.setBackendActive(effective);
+        }
     }
 
     /** Probe rg availability off-thread for the current command, delivering the result on the FX thread. */

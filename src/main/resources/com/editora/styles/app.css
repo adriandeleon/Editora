@@ -1779,6 +1779,22 @@
     -fx-font-size: 11px;
 }
 
+/* Find-in-Files popup overlay (reuses the .command-palette card chrome). Grouped file→match rows:
+   bold file headers with a muted count, indented match rows with a muted line number + preview. */
+.fif-popup .fif-toggles { -fx-padding: 0 0 2 0; }
+.fif-popup .fif-root-label { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; }
+.fif-popup .fif-status { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; }
+.fif-popup .fif-file { -fx-font-weight: bold; }
+.fif-popup .fif-count { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
+.fif-popup .fif-match-row { -fx-padding: 0 0 0 16; }
+.fif-popup .fif-line {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-family: monospace;
+    -fx-font-size: 0.85em;
+    -fx-min-width: 40;
+}
+.fif-popup .fif-preview { -fx-text-fill: -color-fg-default; }
+
 /* Undo History tool window */
 .undo-history-panel { -fx-padding: 0; }
 .undo-history-time { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; -fx-font-size: 0.85em; }
