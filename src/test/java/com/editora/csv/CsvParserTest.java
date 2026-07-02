@@ -5,6 +5,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CsvParserTest {
 
@@ -101,5 +103,30 @@ class CsvParserTest {
     void parseEmptyIsNoRows() {
         assertEquals(0, CsvParser.parse("", ',').size());
         assertEquals(0, CsvParser.parse(null, ',').size());
+    }
+
+    @Test
+    void formatRowQuotesWhenNeeded() {
+        assertEquals("a,b,c", CsvParser.formatRow(List.of("a", "b", "c"), ','));
+        // A field with the delimiter, a quote, or a newline gets wrapped (internal quotes doubled).
+        assertEquals("\"a,b\",c", CsvParser.formatRow(List.of("a,b", "c"), ','));
+        assertEquals("\"he said \"\"hi\"\"\",x", CsvParser.formatRow(List.of("he said \"hi\"", "x"), ','));
+        assertEquals("\"line1\nline2\"", CsvParser.formatRow(List.of("line1\nline2"), ','));
+        // Delimiter-specific: a comma in a TSV field needs no quoting; a tab does.
+        assertEquals("a,b\tc", CsvParser.formatRow(List.of("a,b", "c"), '\t'));
+        assertEquals("\"a\tb\"\tc", CsvParser.formatRow(List.of("a\tb", "c"), '\t'));
+    }
+
+    @Test
+    void formatRowRoundTripsThroughParse() {
+        List<String> fields = List.of("plain", "with,comma", "with\"quote", "");
+        String line = CsvParser.formatRow(fields, ',');
+        assertEquals(List.of(fields), CsvParser.parse(line, ','));
+    }
+
+    @Test
+    void hasMultilineFieldDetectsEmbeddedNewlines() {
+        assertFalse(CsvParser.hasMultilineField(CsvParser.parse("a,b\nc,d", ',')));
+        assertTrue(CsvParser.hasMultilineField(CsvParser.parse("\"a\nb\",c", ',')));
     }
 }
