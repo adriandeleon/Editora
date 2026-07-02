@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Release builds package from a clean tree, fixing a rare "dead keyboard" in the installer.** The
+  native-installer build fed jlink from an incrementally-compiled `target/`, where a synthetic
+  `$SwitchMap` class (emitted for a `switch` over an enum, e.g. the key dispatcher's) could go missing if
+  a background compiler or an interrupted build left `target/classes` inconsistent — javac won't
+  regenerate it while the source looks up-to-date. The packaged app then threw a `ClassNotFoundException`
+  on the first keypress. The release workflow now runs `clean` before `-Pdist`, guaranteeing every class
+  is regenerated. (Only the native installers could be affected, and only when built from a dirty tree;
+  `mvn javafx:run` and the fat jar were never affected.)
+
 - **Markdown "Insert Table" size picker no longer fills the editor.** The grid picker was stretched to
   cover the whole code area; it now hugs the grid (with padding) and is centered.
 
