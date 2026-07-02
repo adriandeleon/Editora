@@ -7,9 +7,18 @@ Maven, modular (JPMS, module `com.editora`).
 
 - Run the app: `mvn javafx:run`
 - Run tests: `mvn test`
-- Build app image / native installer: `mvn -Pdist package`
+- Build app image / native installer: **`mvn clean -Pdist package`** (`clean` is REQUIRED, not optional).
   - Produces `target/dist/Editora.app` (macOS); OS profiles auto-select DMG/MSI/DEB.
-  - Quick unpackaged bundle: `mvn -Pdist -DskipTests -Djpackage.type=APP_IMAGE package` ⇒ `target/dist/Editora.app`.
+  - Quick unpackaged bundle: `mvn clean -Pdist -DskipTests -Djpackage.type=APP_IMAGE package` ⇒ `target/dist/Editora.app`.
+  - **Always package from a clean `target/`.** The dist JAR (jlink's input for the `com.editora` module)
+    is built from `target/classes`; an **incremental** compile does **not** regenerate a synthetic
+    `$SwitchMap` inner class (e.g. `KeyDispatcher$1`, `QuickOpen$1`, `MarkdownViewToggle$1`, emitted for a
+    `switch` over an *external* enum) once it's missing — javac sees the `.java` as up-to-date and skips
+    it. Anything that leaves `target/classes` inconsistent — a background **jdtls/Eclipse** compiler
+    writing there, an interrupted build, a partial clean — then makes `-Pdist package` ship a jimage
+    **missing that class**, and the packaged app throws `ClassNotFoundException` on the **first keypress**
+    (dead keyboard). A `clean` regenerates every class and avoids it. `release.yml`'s `-Pdist` step runs
+    `clean` for this reason. (`mvn javafx:run` and the fat jar are immune — they don't jlink a stale JAR.)
   - **Both** also run the AOT-cache training step (a GUI window flashes for ~2.5 s, then the build
     injects `editora.aot`) — see the AOT-cache note under *Conventions → performance*. It's
     failure-tolerant, so on a display-less machine it just skips the cache.

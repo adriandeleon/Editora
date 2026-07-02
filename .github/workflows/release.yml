@@ -45,7 +45,12 @@ jobs:
 
       - name: Build native installer (-Pdist)
         shell: bash
-        run: ./mvnw -B --no-transfer-progress -Pdist -DskipTests package
+        # `clean` is REQUIRED, not just tidiness: an incremental compile does not regenerate a synthetic
+        # `$SwitchMap` inner class (e.g. KeyDispatcher$1 for an enum `switch`) that a prior/parallel build
+        # or an IDE compiler left deleted in target/classes — javac sees the .java as up-to-date and skips
+        # it. jlink then ships a jimage missing that class and the packaged app throws ClassNotFoundException
+        # on the first keypress. A clean target/ guarantees every class is regenerated.
+        run: ./mvnw -B --no-transfer-progress clean -Pdist -DskipTests package
 
       # Portable single-file Linux build from the AOT-trained app-image (no sandbox — host tools work;
       # see scripts/build-appimage.sh). Best-effort: continue-on-error so a flaky appimagetool / FUSE /
