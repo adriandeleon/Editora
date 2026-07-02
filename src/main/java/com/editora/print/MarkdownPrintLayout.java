@@ -79,24 +79,9 @@ public final class MarkdownPrintLayout {
         // Render to native nodes, then pull out the inner ".markdown-preview" VBox of blocks.
         Node wrap = MarkdownRenderer.renderDocument(ast, baseDir);
         VBox content = (VBox) ((StackPane) wrap).getChildren().get(0);
-        content.setMaxWidth(pw);
-        content.setPrefWidth(pw);
 
-        // Measure offscreen at the printable width, with the light preview theme + stylesheets.
-        StackPane measureRoot = new StackPane(content);
-        measureRoot.getStyleClass().add("md-light");
-        measureRoot.setPrefWidth(pw);
-        measureRoot.setMaxWidth(pw);
-        Scene measureScene = new Scene(new Group(measureRoot));
-        attachStyles(measureScene);
-        measureRoot.applyCss();
-        measureRoot.layout();
-
+        List<Double> heights = measureBlockHeights(content, pw, ph);
         List<Node> blocks = new ArrayList<>(content.getChildrenUnmodifiable());
-        List<Double> heights = new ArrayList<>();
-        for (Node b : blocks) {
-            heights.add(b.getLayoutBounds().getHeight());
-        }
         List<List<Integer>> packed = packBlocks(heights, ph);
 
         // Detach the blocks so they can be re-parented into per-page containers.
@@ -136,6 +121,35 @@ public final class MarkdownPrintLayout {
             pages.add(pageRoot);
         }
         return pages;
+    }
+
+    /**
+     * Lays out the preview {@code content} VBox (the inner {@code .markdown-preview} block list) at a
+     * <b>definite</b> width {@code pw} and returns each top-level block's laid-out height, used to paginate.
+     *
+     * <p>The measure scene is created at a fixed width (pw) and is <b>not</b> wrapped in a {@code Group}: a
+     * Group shrink-wraps to its child's intrinsic width, which for a percent-width table {@code GridPane}
+     * collapses the columns to a few characters, wrapping every cell and grossly over-measuring the table's
+     * height (so it got bumped to its own page, leaving the previous page mostly empty and not matching the
+     * on-screen preview). Block heights come from the VBox's per-child preferred heights, so the scene's
+     * height doesn't affect them. Runs on the FX thread.
+     */
+    public static List<Double> measureBlockHeights(VBox content, double pw, double ph) {
+        content.setMaxWidth(pw);
+        content.setPrefWidth(pw);
+        StackPane measureRoot = new StackPane(content);
+        measureRoot.getStyleClass().add("md-light");
+        measureRoot.setPrefWidth(pw);
+        measureRoot.setMaxWidth(pw);
+        Scene measureScene = new Scene(measureRoot, pw, Math.max(ph, 1));
+        attachStyles(measureScene);
+        measureRoot.applyCss();
+        measureRoot.layout();
+        List<Double> heights = new ArrayList<>();
+        for (Node b : content.getChildrenUnmodifiable()) {
+            heights.add(b.getLayoutBounds().getHeight());
+        }
+        return heights;
     }
 
     private static void attachStyles(Scene scene) {
