@@ -99,8 +99,33 @@ public final class TemplateEngine {
 
     /** Expands a single-line pattern (file name) to plain text — no tab stops, {@code ${cursor}} dropped. */
     public static String expand(String pattern, SnippetParser.Variables vars) {
-        return SnippetParser.parse((pattern == null ? "" : pattern).replace("${cursor}", ""), vars)
+        String out = SnippetParser.parse((pattern == null ? "" : pattern).replace("${cursor}", ""), vars)
                 .text();
+        return collapseDuplicateExtension(out);
+    }
+
+    /**
+     * Collapses a doubled trailing extension in a file name / path — {@code foo.md.md} → {@code foo.md}.
+     * A template pattern like {@code ${baseName:document}.md} appends {@code .md}; if the user typed a
+     * {@code baseName} that already ends in {@code .md}, the naive substitution yields {@code x.md.md}.
+     * Only collapses when the last two extensions are <em>identical</em> (so {@code types.d.ts},
+     * {@code foo.tar.gz}, {@code foo.min.js} are untouched), and only on the final path segment (a dotted
+     * directory name is left alone). Pure and unit-tested.
+     */
+    static String collapseDuplicateExtension(String name) {
+        if (name == null || name.isEmpty()) {
+            return name;
+        }
+        int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        String dir = slash >= 0 ? name.substring(0, slash + 1) : "";
+        String seg = slash >= 0 ? name.substring(slash + 1) : name;
+        int lastDot = seg.lastIndexOf('.');
+        if (lastDot <= 0) {
+            return name;
+        }
+        String ext = seg.substring(lastDot); // ".md"
+        String rest = seg.substring(0, lastDot); // "foo.md"
+        return rest.length() > ext.length() && rest.endsWith(ext) ? dir + rest : name;
     }
 
     /**

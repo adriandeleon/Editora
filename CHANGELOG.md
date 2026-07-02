@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **New File From Template no longer doubles the extension.** When a template's file-name pattern ends in
+  an extension (e.g. `${baseName}.md`) and you typed a name that already included it (`notes.md`), the new
+  file came out as `notes.md.md`. The engine now collapses a doubled trailing extension — but only when the
+  two extensions are identical, so `types.d.ts`, `foo.tar.gz`, and `app.min.js` are left alone.
+
 - **Release builds package from a clean tree, fixing a rare "dead keyboard" in the installer.** The
   native-installer build fed jlink from an incrementally-compiled `target/`, where a synthetic
   `$SwitchMap` class (emitted for a `switch` over an enum, e.g. the key dispatcher's) could go missing if
