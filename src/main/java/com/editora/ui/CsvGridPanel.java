@@ -11,6 +11,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TablePosition;
@@ -55,6 +56,17 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         void commit(int dataRow, int field, String value);
     }
 
+    /** Export actions for the right-click menu (each acts on the whole file/grid). */
+    interface ExportActions {
+        void exportPdf();
+
+        void printPreview();
+
+        void exportExcel();
+
+        void exportOds();
+    }
+
     private final Jump jump;
     private final CheckBox headerToggle = new CheckBox(tr("csvgrid.headerRow"));
     private final Label summary = new Label();
@@ -63,6 +75,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     private List<List<String>> rows = List.of();
     private boolean editable;
     private EditCommit editCommit = (r, f, v) -> {};
+    private ExportActions exportActions;
     /** Invoked when the tool window is shown (via {@link #focusFirstItem()}) so the coordinator can populate
      *  the grid from the current buffer even when the window was opened by the stripe, not a command. */
     private Runnable onShown = () -> {};
@@ -100,7 +113,16 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         });
         MenuItem reveal = new MenuItem(tr("csvgrid.reveal"));
         reveal.setOnAction(e -> jumpToFocusedCell());
-        table.setContextMenu(new ContextMenu(reveal));
+        MenuItem exportPdf = new MenuItem(tr("csvgrid.exportPdf"));
+        exportPdf.setOnAction(e -> runExport(ExportActions::exportPdf));
+        MenuItem print = new MenuItem(tr("csvgrid.print"));
+        print.setOnAction(e -> runExport(ExportActions::printPreview));
+        MenuItem exportExcel = new MenuItem(tr("csvgrid.exportExcel"));
+        exportExcel.setOnAction(e -> runExport(ExportActions::exportExcel));
+        MenuItem exportOds = new MenuItem(tr("csvgrid.exportOds"));
+        exportOds.setOnAction(e -> runExport(ExportActions::exportOds));
+        table.setContextMenu(
+                new ContextMenu(reveal, new SeparatorMenuItem(), exportPdf, print, exportExcel, exportOds));
         VBox.setVgrow(table, Priority.ALWAYS);
 
         getChildren().addAll(top, table);
@@ -134,6 +156,17 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     /** Sets the callback run when the tool window is shown (to populate the grid from the current buffer). */
     void setOnShown(Runnable onShown) {
         this.onShown = onShown == null ? () -> {} : onShown;
+    }
+
+    /** Injects the right-click export actions (PDF / Print / Excel / ODS). */
+    void setExportActions(ExportActions exportActions) {
+        this.exportActions = exportActions;
+    }
+
+    private void runExport(java.util.function.Consumer<ExportActions> action) {
+        if (exportActions != null) {
+            action.accept(exportActions);
+        }
     }
 
     private void rebuild() {

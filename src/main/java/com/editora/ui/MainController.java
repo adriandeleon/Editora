@@ -2538,6 +2538,26 @@ public class MainController implements com.editora.mcp.McpBridge {
             area.requestFollowCaret();
             area.requestFocus();
         }
+
+        @Override
+        public void exportPdf(String csvText, String baseName) {
+            csvExportPdf(csvText, baseName);
+        }
+
+        @Override
+        public void printCsv(String csvText) {
+            csvPrint(csvText);
+        }
+
+        @Override
+        public void exportExcel(java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName) {
+            csvExportSpreadsheet(rows, hasHeader, baseName, true);
+        }
+
+        @Override
+        public void exportOds(java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName) {
+            csvExportSpreadsheet(rows, hasHeader, baseName, false);
+        }
     });
 
     /** Find-in-Files feature; owns the search service/panel/backend (the tool window + commands stay here). */
@@ -7436,6 +7456,60 @@ public class MainController implements com.editora.mcp.McpBridge {
         cc.putString(md);
         Clipboard.getSystemClipboard().setContent(cc);
         setStatus(tr("status.csv.copied"));
+    }
+
+    /** Exports a CSV as a PDF by reusing the Markdown-table → PDF pipeline (the grid's right-click menu). */
+    private void csvExportPdf(String csvText, String baseName) {
+        String md = MarkdownTable.fromCsv(csvText);
+        if (md == null) {
+            setStatus(tr("status.csv.empty"));
+            return;
+        }
+        java.io.File f = choosePdfDestination(baseName);
+        if (f == null) {
+            return;
+        }
+        setStatus(tr("status.pdf.exporting"));
+        pdfService.exportMarkdown(
+                md, null, config.getSettings().getPdfPageSize(), null, f.toPath(), r -> reportPdf(r, f));
+    }
+
+    /** Opens the print preview for a CSV by reusing the Markdown-table → print pipeline. */
+    private void csvPrint(String csvText) {
+        String md = MarkdownTable.fromCsv(csvText);
+        if (md == null) {
+            setStatus(tr("status.csv.empty"));
+            return;
+        }
+        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        if (job == null) {
+            setStatus(tr("status.print.noPrinter"));
+            return;
+        }
+        setStatus(tr("status.print.preparing"));
+        printService.prepareMarkdown(md, null, prepared -> openPrintPreview(job, prepared));
+    }
+
+    /** Exports parsed CSV rows to a spreadsheet — {@code xlsx} true → Excel {@code .xlsx}, else ODF {@code .ods}. */
+    private void csvExportSpreadsheet(
+            java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName, boolean xlsx) {
+        if (rows == null || rows.isEmpty()) {
+            setStatus(tr("status.csv.empty"));
+            return;
+        }
+        String ext = xlsx ? "xlsx" : "ods";
+        String filter = xlsx ? "Excel" : "OpenDocument Spreadsheet";
+        java.io.File f = chooseOfficeDestination(baseName, ext, filter);
+        if (f == null) {
+            return;
+        }
+        setStatus(tr("status.office.exporting"));
+        java.util.function.Consumer<com.editora.office.OfficeExportService.Result> cb = r -> reportOffice(r, f);
+        if (xlsx) {
+            officeService.exportXlsx(rows, hasHeader, f.toPath(), cb);
+        } else {
+            officeService.exportOds(rows, hasHeader, f.toPath(), cb);
+        }
     }
 
     /** {@code markdown.toggleFormatBar}: flip the selection format-bar setting + re-sync every buffer. */

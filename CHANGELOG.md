@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CSV grid: export menu.** Right-click the CSV Grid to **Export to PDF**, **Print**, **Export to Excel
+  (.xlsx)**, or **Export to an ODF spreadsheet (.ods)** (also available as palette commands). Numbers are
+  written as real spreadsheet numbers where safe — leading-zero codes (like ZIP codes) and
+  thousands-separated values stay text so they aren't corrupted — and the header row is bold.
+
 - **CSV grid: editable headers + spreadsheet polish.** Column headers in the CSV Grid are now editable —
   double-click a header, type a new name, and it's written back to the file's first row. The grid also got a
   more spreadsheet-like look: a "#" row-number gutter, zebra striping, bold headers, and right-aligned
