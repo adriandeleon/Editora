@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CSV grid: editable headers + spreadsheet polish.** Column headers in the CSV Grid are now editable —
+  double-click a header, type a new name, and it's written back to the file's first row. The grid also got a
+  more spreadsheet-like look: a "#" row-number gutter, zebra striping, bold headers, and right-aligned
+  numeric columns.
+
 - **CSV / TSV syntax highlighting.** `.csv` and `.tsv` files now open as a proper "csv" language instead of
   plain text: quoted fields are colored as strings (with the `""` escape), bare numeric fields as numbers,
   and the field separators (comma / semicolon / tab / pipe) get a muted tint so column boundaries stand
