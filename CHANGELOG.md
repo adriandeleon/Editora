@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CSV grid: columns fit their content.** The CSV Grid now sizes each column to the width of its widest
+  cell (or header), so you rarely need to drag a column edge to read the data. Very long values are capped so
+  one giant field can't push the rest of the table off-screen, and you can still resize any column by hand.
+
 - **CSV: align / shrink columns.** Two new commands reformat a `.csv`/`.tsv` file so it's easy to read as a
   table: **CSV: Align Columns** pads each field with spaces so the delimiters line up in the editor, and
   **CSV: Shrink Columns** removes that padding again (fully reversible). Both preserve quoted fields, blank

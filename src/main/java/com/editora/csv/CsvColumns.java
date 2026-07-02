@@ -102,6 +102,26 @@ public final class CsvColumns {
         return count;
     }
 
+    /**
+     * The longest cell (in characters) in each column across <em>all</em> {@code rows} — including the header
+     * row, since it's displayed in the column head at the same width. One entry per column (the widest row's
+     * width); 0 for an all-empty column. Drives auto-sizing the grid columns to their content.
+     */
+    public static List<Integer> maxContentLengths(List<List<String>> rows) {
+        int cols = CsvParser.columnCount(rows);
+        List<Integer> out = new ArrayList<>(cols);
+        for (int c = 0; c < cols; c++) {
+            int max = 0;
+            for (List<String> row : rows) {
+                if (c < row.size()) {
+                    max = Math.max(max, row.get(c).length());
+                }
+            }
+            out.add(max);
+        }
+        return out;
+    }
+
     private static boolean isInteger(String v) {
         int i = (v.startsWith("+") || v.startsWith("-")) ? 1 : 0;
         if (i == v.length()) {
