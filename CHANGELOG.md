@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Local File History is now entirely in its tool window — no more separate window.** Opening a
+  revision's diff used to spawn a standalone "Local History" window alongside the File History tool
+  window. The tool window is now a split: the revision list on the left, and the live side-by-side diff of
+  the selected revision vs the current file on the right — with the Ignore-whitespace / Highlight-words
+  toggles, the "N differences" count, the per-hunk apply chevrons (selective restore), and the whole-file
+  Revert, all in one place. Selecting a revision shows its diff inline; nothing pops out into a second
+  window.
+
 ### Added
 
 - **Find in Files popup.** A keyboard-first overlay for multi-file content search (command

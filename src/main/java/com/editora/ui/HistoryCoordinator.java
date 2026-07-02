@@ -78,6 +78,57 @@ final class HistoryCoordinator {
         this.ops = ops;
         this.historyService = new HistoryService(new HistoryBlobStore(ops.blobsDir()));
         this.panel = new FileHistoryPanel(historyActions());
+        this.panel.setDiffSupport(diffSupport());
+    }
+
+    /** The right-pane diff machinery for {@link FileHistoryPanel} (revision content, off-thread diff, the
+     *  current file text, whole-file revert, and the per-hunk apply/undo/save through {@code DiffCoordinator}). */
+    private FileHistoryPanel.DiffSupport diffSupport() {
+        return new FileHistoryPanel.DiffSupport() {
+            @Override
+            public void fetchContent(HistoryRevision revision, java.util.function.Consumer<String> onText) {
+                historyService.content(revision, text -> onText.accept(text == null ? "" : text));
+            }
+
+            @Override
+            public void computeDiff(
+                    String left,
+                    String right,
+                    com.editora.diff.DiffEngine.DiffOptions opts,
+                    java.util.function.Consumer<com.editora.diff.DiffModels.DiffModel> onResult) {
+                diff.computeDiff(left, right, opts, onResult);
+            }
+
+            @Override
+            public String currentText(Path target) {
+                return ops.currentTextOf(target);
+            }
+
+            @Override
+            public void revert(HistoryRevision revision) {
+                restoreHistory(revision);
+            }
+
+            @Override
+            public void applyToLocal(Path target, String newText) {
+                diff.applyToLocal(target, newText);
+            }
+
+            @Override
+            public void undoLocal(Path target) {
+                diff.undoLocal(target);
+            }
+
+            @Override
+            public void saveLocal(Path target) {
+                diff.saveLocal(target);
+            }
+
+            @Override
+            public com.editora.config.Settings settings() {
+                return host.settings();
+            }
+        };
     }
 
     /** The File History tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
@@ -109,9 +160,9 @@ final class HistoryCoordinator {
         ops.setToolWindowAvailable(available);
         if (available) {
             List<HistoryRevision> revs = ops.historyMap().getOrDefault(historyKey(b.getPath()), List.of());
-            panel.setRevisions(revs, b.getPath().getFileName().toString());
+            panel.setRevisions(revs, b.getPath().getFileName().toString(), b.getPath());
         } else {
-            panel.setRevisions(List.of(), null);
+            panel.setRevisions(List.of(), null, null);
         }
     }
 
@@ -172,11 +223,6 @@ final class HistoryCoordinator {
             @Override
             public void refresh() {
                 HistoryCoordinator.this.refresh();
-            }
-
-            @Override
-            public void openDiff(HistoryRevision revision) {
-                openLocalHistoryDiff(revision);
             }
 
             @Override
@@ -315,44 +361,6 @@ final class HistoryCoordinator {
         } catch (IOException e) {
             return null;
         }
-    }
-
-    /**
-     * Opens a diff of {@code revision} (left, the snapshot) vs the active file's current text (right). The
-     * current side is editable so the diff's apply-chevrons let you copy individual fragments from the
-     * snapshot back into the file (IntelliJ-style selective restore); the panel's "Restore This Version"
-     * still does the whole-file revert.
-     */
-    private void openLocalHistoryDiff(HistoryRevision revision) {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null) {
-            return;
-        }
-        Path target = b.getPath();
-        String name = target.getFileName().toString();
-        java.util.List<HistoryRevision> revs = ops.historyMap().getOrDefault(historyKey(target), java.util.List.of());
-        if (revs.isEmpty()) {
-            host.setStatus(tr("history.window.none"));
-            return;
-        }
-        // Per-hunk "apply change" (IntelliJ-style selective restore): copy a fragment from the snapshot
-        // into the current file through DiffCoordinator's undoable-buffer path (Undo/Save act on it too).
-        LocalHistoryWindow.ApplySupport apply = new LocalHistoryWindow.ApplySupport(
-                newText -> diff.applyToLocal(target, newText),
-                () -> diff.undoLocal(target),
-                () -> diff.saveLocal(target));
-        LocalHistoryWindow window = new LocalHistoryWindow(
-                host.window(),
-                name,
-                target,
-                revs,
-                () -> ops.currentTextOf(target),
-                (rev, cb) -> historyService.content(rev, text -> cb.accept(text == null ? "" : text)),
-                diff::computeDiff,
-                this::restoreHistory,
-                apply,
-                host.settings());
-        window.show(revision);
     }
 
     /** Restores {@code revision}'s content into the active file via an undoable whole-file replace. */
