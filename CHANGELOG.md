@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the field separators (comma / semicolon / tab / pipe) get a muted tint so column boundaries stand
   out. First step of broader CSV support (a column readout, a table/grid preview, and grid editing are
   planned next).
+- **CSV / TSV column readout.** For a `.csv`/`.tsv` file the status bar shows a "Field N of M" segment —
+  which column the caret is in and how many the row has (RFC-4180 quote-aware, delimiter auto-detected).
+  Clicking the segment, or the new **CSV: Copy as Markdown Table** command, copies the whole file to the
+  clipboard as a GitHub-flavored Markdown table.
 
 ### Changed
 

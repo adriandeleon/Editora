@@ -61,6 +61,9 @@ public final class StatusBar extends HBox {
     private final Label mcp = segment("mcp.copyEndpoint", tr("statusbar.tip.mcp"));
 
     private final Label position = segment("nav.goToLine", tr("statusbar.tip.goToLine"));
+    /** CSV/TSV column indicator ("Field N of M"); clickable → copy the file as a Markdown table. */
+    private final Label csvField = segment("csv.copyAsMarkdownTable", tr("statusbar.tip.csvField"));
+
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
     private final Label indent = segment("buffer.setTabSize", tr("statusbar.tip.setTabSize"));
     private final Label endings = segment("buffer.convertLineEndings", tr("statusbar.tip.convertEndings"));
@@ -153,6 +156,7 @@ public final class StatusBar extends HBox {
                         readOnly,
                         zoomGroup(),
                         position,
+                        csvField,
                         language,
                         editorConfig,
                         indent,
@@ -424,6 +428,8 @@ public final class StatusBar extends HBox {
         editorConfig.setManaged(ecActive);
         zoomPercent.setText(Math.round(settings.get().getFontZoom() * 100) + "%");
         if (!hasBuffer) {
+            csvField.setVisible(false);
+            csvField.setManaged(false);
             return;
         }
         var area = buffer.getArea();
@@ -437,6 +443,22 @@ public final class StatusBar extends HBox {
         }
         position.setText(text);
         position.getTooltip().setText(tr("statusbar.tip.offset", area.getCaretPosition()));
+
+        // CSV/TSV column readout — "Field N of M". Cost is two single-line scans (the header row for the
+        // column count, the caret's line up to the caret for the field index), so it's cheap next to the
+        // O(n) file-size formatting already done here. Approximation: a field whose quotes span multiple
+        // physical lines is counted per line (RFC-4180 multi-line fields are rare in practice).
+        boolean csv = buffer.isCsv() && !simpleMode;
+        csvField.setVisible(csv);
+        csvField.setManaged(csv);
+        if (csv) {
+            String header = area.getText(0); // always ≥ 1 paragraph, even for an empty file
+            char delim = com.editora.csv.CsvParser.detectDelimiter(header);
+            int total = com.editora.csv.CsvParser.fieldCount(header, delim);
+            String cur = area.getText(area.getCurrentParagraph());
+            int idx = com.editora.csv.CsvParser.fieldIndexAt(cur, delim, area.getCaretColumn());
+            csvField.setText(tr("statusbar.csvField", idx, total));
+        }
 
         language.setText(displayLanguage(buffer.getLanguage()));
         endings.setText(buffer.getLineEnding());
