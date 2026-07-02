@@ -73,6 +73,9 @@ final class LspCoordinator {
         /** Shows/hides the Problems tool-window stripe button (active file is server-managed). */
         void setProblemsAvailable(boolean available);
 
+        /** Opens (shows + focuses) the References tool window after a multi-result Find References. */
+        void openReferencesWindow();
+
         /** Pushes the server's document-symbol outline (or {@code null} to fall back to the heuristic). */
         void setStructureSymbols(EditorBuffer buffer, java.util.List<com.editora.lsp.SymbolNode> symbols);
 
@@ -97,6 +100,7 @@ final class LspCoordinator {
     private final Map<Path, List<LspDiagnostic>> problems = new LinkedHashMap<>();
 
     private final ProblemsPanel problemsPanel;
+    private final ReferencesPanel referencesPanel;
 
     /** serverId → whether that server's command was found on this machine (per-server availability). */
     private final Map<String, Boolean> serverAvailable = new java.util.HashMap<>();
@@ -137,11 +141,17 @@ final class LspCoordinator {
         this.lspManager = lspManager;
         this.ops = ops;
         this.problemsPanel = new ProblemsPanel(ops::openAndGoto);
+        this.referencesPanel = new ReferencesPanel(ops::openAndGoto);
     }
 
     /** The Problems tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
     ProblemsPanel problemsPanel() {
         return problemsPanel;
+    }
+
+    /** The References tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
+    ReferencesPanel referencesPanel() {
+        return referencesPanel;
     }
 
     /** Live diagnostics map for the MCP bridge's {@code getDiagnostics} (read on the FX thread). */
@@ -768,16 +778,29 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.noReferences"));
                 return;
             }
-            QuickOpen<LspManager.Target> picker = new QuickOpen<>(
-                    tr("lsp.references.title"),
-                    tr("lsp.references.prompt"),
-                    () -> targets,
-                    t -> t.file().getFileName() + ":" + (t.line() + 1),
-                    t -> t.file().toString(),
-                    t -> ops.openAndGoto(t.file(), t.line(), t.character()));
-            picker.setOverlayHost(host.overlayHost());
-            picker.show(host.window());
+            if (targets.size() == 1) {
+                LspManager.Target t = targets.get(0); // a lone reference: jump straight there (IDE behavior)
+                ops.openAndGoto(t.file(), t.line(), t.character());
+                return;
+            }
+            List<ReferencesPanel.Reference> refs = new java.util.ArrayList<>(targets.size());
+            for (LspManager.Target t : targets) {
+                refs.add(new ReferencesPanel.Reference(t.file(), t.line(), t.character(), previewLine(t)));
+            }
+            referencesPanel.setReferences(refs);
+            ops.openReferencesWindow();
         });
+    }
+
+    /** A one-line preview of a reference — from the file's open buffer when one holds it (cheap, FX-safe,
+     *  reflects unsaved edits), else empty (closed files show just the line number; no disk I/O on the FX thread). */
+    private String previewLine(LspManager.Target t) {
+        EditorBuffer buffer = ops.bufferForPath(t.file());
+        if (buffer == null) {
+            return "";
+        }
+        String[] lines = buffer.getContent().split("\n", -1);
+        return t.line() >= 0 && t.line() < lines.length ? lines[t.line()].strip() : "";
     }
 
     /**

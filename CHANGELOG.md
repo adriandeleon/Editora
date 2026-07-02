@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **References tool window.** Find References now shows its results in a dedicated, browsable **References**
+  tool window — grouped by file, with a line + preview per reference — instead of a one-shot picker. Enter or
+  double-click jumps to a reference; if there's only a single reference, it jumps straight there.
+
 - **Go to Symbol in Workspace.** A new command opens a live search box that finds any symbol (class,
   function, method, …) across the whole project by name and jumps to it — the LSP `workspace/symbol` feature,
   like VS Code's `Ctrl-T` / IntelliJ's `Ctrl-N`. Available from the command palette in a code file with a
