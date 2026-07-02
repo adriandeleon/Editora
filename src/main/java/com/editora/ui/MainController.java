@@ -4153,6 +4153,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());
         buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
+        buffer.setTableFileExporter(this::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
         buffer.setInsertTableHandler(this::markdownInsertTable); // Markdown format-bar "insert table" button
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
         buffer.setHtmlPreviewDirtyListener(() -> htmlPreview.onBufferEdited(buffer));
@@ -7440,6 +7441,51 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** {@code markdown.tableExport*}: file-export the caret's GFM table ({@code format} = csv|xlsx|ods). */
+    private void markdownTableExport(String format) {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.canFormatMarkdown()) {
+            setStatus(tr("status.notMarkdown"));
+        } else if (!b.exportTableFile(format)) {
+            setStatus(tr("status.markdown.notTable"));
+        }
+    }
+
+    /**
+     * File-exports a Markdown table the buffer already rendered to {@code csv}. {@code format} = {@code csv}
+     * writes the CSV text; {@code xlsx}/{@code ods} parse it and reuse the spreadsheet writers. Wired into each
+     * buffer via {@code setTableFileExporter}.
+     */
+    private void exportMarkdownTableFile(String csv, String format) {
+        if (csv == null || csv.isBlank()) {
+            setStatus(tr("status.markdown.notTable"));
+            return;
+        }
+        EditorBuffer b = activeBuffer();
+        String base = b == null ? "table" : bufferBaseName(b);
+        switch (format) {
+            case "csv" -> exportCsvTextToFile(csv, base);
+            // A Markdown table always leads with a header row (toCsv drops the ---|--- divider).
+            case "xlsx" -> csvExportSpreadsheet(com.editora.csv.CsvParser.parse(csv, ','), true, base, true);
+            case "ods" -> csvExportSpreadsheet(com.editora.csv.CsvParser.parse(csv, ','), true, base, false);
+            default -> {}
+        }
+    }
+
+    /** Writes {@code csv} text to a user-chosen {@code .csv} file (the Markdown-table → CSV file export). */
+    private void exportCsvTextToFile(String csv, String base) {
+        java.io.File f = chooseOfficeDestination(base, "csv", "CSV");
+        if (f == null) {
+            return;
+        }
+        try {
+            java.nio.file.Files.writeString(f.toPath(), csv);
+            setStatus(tr("status.csv.exported", f.getName()));
+        } catch (java.io.IOException ex) {
+            setStatus(tr("status.csv.exportFailed", String.valueOf(ex.getMessage())));
+        }
+    }
+
     /** {@code csv.copyAsMarkdownTable}: copy the active CSV/TSV buffer to the clipboard as a GFM table. */
     private void csvCopyAsMarkdownTable() {
         EditorBuffer b = activeBuffer();
@@ -9455,6 +9501,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markdown.toc", this::markdownToc));
         registry.register(Command.of("markdown.tableFromCsv", this::markdownTableFromCsv));
         registry.register(Command.of("markdown.tableToCsv", this::markdownTableToCsv));
+        registry.register(Command.of("markdown.tableExportCsv", () -> markdownTableExport("csv")));
+        registry.register(Command.of("markdown.tableExportExcel", () -> markdownTableExport("xlsx")));
+        registry.register(Command.of("markdown.tableExportOds", () -> markdownTableExport("ods")));
         registry.register(Command.of("csv.copyAsMarkdownTable", this::csvCopyAsMarkdownTable));
         registry.register(Command.of("csv.align", this::csvAlign));
         registry.register(Command.of("csv.shrink", this::csvShrink));

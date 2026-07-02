@@ -1154,6 +1154,34 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
+    /** Injected file-export for the caret's Markdown table: {@code (csvText, format)}, {@code format} ∈
+     *  {@code csv}/{@code xlsx}/{@code ods}. The editor renders the table to CSV; the controller owns the
+     *  FileChooser + writers ({@code editor} can't depend on {@code ui}/{@code office}). */
+    private java.util.function.BiConsumer<String, String> tableFileExporter;
+
+    public void setTableFileExporter(java.util.function.BiConsumer<String, String> exporter) {
+        this.tableFileExporter = exporter;
+    }
+
+    /** Exports the caret's Markdown table to a file via the injected exporter ({@code format} =
+     *  {@code csv}/{@code xlsx}/{@code ods}); false when the caret isn't on a table or no exporter is wired. */
+    public boolean exportTableFile(String format) {
+        if (!canFormatMarkdown() || tableFileExporter == null) {
+            return false;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
+        if (b == null) {
+            return false;
+        }
+        String csv = MarkdownTable.toCsv(a.getText().substring(b[0], b[1]));
+        if (csv == null) {
+            return false;
+        }
+        tableFileExporter.accept(csv, format);
+        return true;
+    }
+
     /**
      * Inserts a Markdown table of contents (a nested list of heading links) wrapped in {@code <!-- toc -->}
      * markers at the caret, or — when the document already has such a marker block — regenerates it in place.
@@ -1470,7 +1498,16 @@ public class EditorBuffer implements TabContent {
                                 () -> tableSetAlignment(MarkdownTable.Align.RIGHT)),
                         new javafx.scene.control.SeparatorMenuItem(),
                         tableItem("command.markdown.tableFromCsv", MenuIcons.paste(), this::tableFromCsv),
-                        tableItem("command.markdown.tableToCsv", MenuIcons.copy(), this::tableToCsv));
+                        tableItem("command.markdown.tableToCsv", MenuIcons.copy(), this::tableToCsv),
+                        new javafx.scene.control.SeparatorMenuItem(),
+                        tableItem(
+                                "command.markdown.tableExportCsv", MenuIcons.download(), () -> exportTableFile("csv")),
+                        tableItem(
+                                "command.markdown.tableExportExcel",
+                                MenuIcons.download(),
+                                () -> exportTableFile("xlsx")),
+                        tableItem(
+                                "command.markdown.tableExportOds", MenuIcons.download(), () -> exportTableFile("ods")));
         return menu;
     }
 

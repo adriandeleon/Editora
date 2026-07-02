@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Markdown table: export to CSV / Excel / ODF file.** The editor's right-click **Table** submenu (and the
+  command palette) now export the Markdown table under the cursor to a **`.csv`**, **Excel `.xlsx`**, or
+  **OpenDocument `.ods`** file — alongside the existing "Copy as CSV" (clipboard).
+
 - **CSV grid: columns fit their content.** The CSV Grid now sizes each column to the width of its widest
   cell (or header), so you rarely need to drag a column edge to read the data. Very long values are capped so
   one giant field can't push the rest of the table off-screen, and you can still resize any column by hand.
