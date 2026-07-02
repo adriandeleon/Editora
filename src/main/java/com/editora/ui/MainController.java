@@ -7274,6 +7274,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         javafx.scene.layout.VBox card = new javafx.scene.layout.VBox(8);
         card.getStyleClass().add("table-size-picker");
         card.setPadding(new javafx.geometry.Insets(12));
+        // Hug the grid + padding — without a max-size cap the StackPane overlay stretches the card to fill
+        // the whole editor area (like QuickOpen's card, which caps to its preferred size).
+        card.setMaxSize(javafx.scene.layout.Region.USE_PREF_SIZE, javafx.scene.layout.Region.USE_PREF_SIZE);
         Label heading = new Label(tr("table.picker.prompt"));
         heading.getStyleClass().add("table-size-label");
         javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
@@ -7314,7 +7317,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         card.getChildren().addAll(heading, grid);
         card.getProperties().put("editora.ownsKeys", true);
-        overlayHost.show(card, () -> {}, () -> {});
+        overlayHost.show(card, true, () -> {}, () -> {}); // centered — it's a small grid, not a top palette
     }
 
     private void markdownInline(String marker) {
