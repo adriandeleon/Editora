@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ctrl/Cmd-click to go to definition.** In a code file with a running language server, holding
+  Ctrl (or ⌘ on macOS) and clicking a symbol now jumps to its definition — the same gesture as VS Code /
+  IntelliJ. It reuses the existing Go to Definition, so it also works across files and records a jump you can
+  step back from (Back / `nav.back`).
+
 - **Markdown table: export to CSV / Excel / ODF file.** The editor's right-click **Table** submenu (and the
   command palette) now export the Markdown table under the cursor to a **`.csv`**, **Excel `.xlsx`**, or
   **OpenDocument `.ods`** file — alongside the existing "Copy as CSV" (clipboard).
