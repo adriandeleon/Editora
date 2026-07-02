@@ -80,7 +80,6 @@ public final class CsvParser {
         return separatorsBefore(line, delim, col) + 1;
     }
 
-    /** Counts unquoted {@code delim} characters in {@code line[0, end)} (an RFC-4180 field-boundary scan). */
     /**
      * The char offset within {@code line} where field {@code fieldIndex} (0-based) starts, honoring
      * RFC-4180 quotes — i.e. the position just after the {@code fieldIndex}-th unquoted delimiter (0 for the
@@ -115,6 +114,7 @@ public final class CsvParser {
         return line.length();
     }
 
+    /** Counts unquoted {@code delim} characters in {@code line[0, end)} (an RFC-4180 field-boundary scan). */
     private static int separatorsBefore(String line, char delim, int end) {
         int seps = 0;
         boolean inQuotes = false;
@@ -200,6 +200,44 @@ public final class CsvParser {
             max = Math.max(max, r.size());
         }
         return max;
+    }
+
+    /**
+     * Serializes {@code fields} back into one CSV/TSV record line with {@code delim}, applying RFC-4180
+     * quoting: a field is wrapped in {@code "…"} (internal quotes doubled) when it contains the delimiter, a
+     * double quote, or a newline. Inverse of a single {@link #parse} record — used to write a grid cell edit
+     * back to the buffer.
+     */
+    public static String formatRow(List<String> fields, char delim) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < fields.size(); i++) {
+            if (i > 0) {
+                sb.append(delim);
+            }
+            sb.append(quoteField(fields.get(i) == null ? "" : fields.get(i), delim));
+        }
+        return sb.toString();
+    }
+
+    private static String quoteField(String s, char delim) {
+        boolean needsQuote =
+                s.indexOf(delim) >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0;
+        return needsQuote ? '"' + s.replace("\"", "\"\"") + '"' : s;
+    }
+
+    /**
+     * Whether any field in {@code rows} contains an embedded newline (a quoted multi-line field). When true,
+     * a parsed row no longer maps 1:1 to a physical text line, so the grid can't safely edit-in-place.
+     */
+    public static boolean hasMultilineField(List<List<String>> rows) {
+        for (List<String> row : rows) {
+            for (String cell : row) {
+                if (cell.indexOf('\n') >= 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static String firstNonBlankLine(String text) {

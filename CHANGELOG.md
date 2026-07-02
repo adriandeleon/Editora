@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   columns are numeric vs. text), and double-click / Enter on a cell jumps the editor caret to that field.
   Refreshes as you edit; on by default for CSV/TSV files (Settings → Editor → CSV, or the
   **Toggle CSV Grid Preview** command).
+- **Editable CSV grid.** The CSV Grid is now editable: double-click a cell, type a new value, and it writes
+  back to the file (undoable, with proper RFC-4180 quoting). Editing is available when the file is writable
+  and has no quoted multi-line fields; otherwise the grid stays read-only. Right-click **Reveal in editor**
+  jumps to a cell's location either way.
 
 ### Changed
 

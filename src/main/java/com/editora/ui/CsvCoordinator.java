@@ -11,11 +11,12 @@ import com.editora.csv.CsvParser;
 import com.editora.editor.EditorBuffer;
 
 /**
- * CSV/TSV grid preview (the second-tier CSV feature): a read-only spreadsheet view of the active
- * {@code .csv}/{@code .tsv} buffer in a tool window, refreshed on tab switch and (debounced) as the file is
- * edited. Extracted from {@link MainController} via the {@link CoordinatorHost} pattern: owns the
- * {@link CsvGridPanel} and the parse/refresh/click-jump logic; {@code MainController} keeps the
- * {@code ToolWindow} (built with {@link #panel()}), gates its stripe on a CSV buffer, and registers the
+ * CSV/TSV grid preview: a spreadsheet view of the active {@code .csv}/{@code .tsv} buffer in a tool window,
+ * refreshed on tab switch and (debounced) as the file is edited. Cells are editable when the buffer is
+ * writable and its rows map 1:1 to physical lines (see {@link #commitCell}); otherwise the grid is
+ * read-only with click-to-jump. Extracted from {@link MainController} via the {@link CoordinatorHost}
+ * pattern: owns the {@link CsvGridPanel} and the parse/refresh/edit/jump logic; {@code MainController} keeps
+ * the {@code ToolWindow} (built with {@link #panel()}), gates its stripe on a CSV buffer, and registers the
  * {@code view.toggleCsvGrid} setting toggle.
  */
 final class CsvCoordinator {
@@ -93,17 +94,55 @@ final class CsvCoordinator {
 
     private void rebuild(EditorBuffer active) {
         if (active == null || !active.isCsv() || !isEnabled()) {
+            panel.setEditable(false, null);
             panel.setData(List.of());
             return;
         }
         String text = active.getContent();
         if (text.length() > MAX_PREVIEW_CHARS) {
+            panel.setEditable(false, null);
             panel.setData(List.of()); // too large — the placeholder shows the empty message
             host.setStatus(com.editora.i18n.Messages.tr("status.csv.gridTooLarge"));
             return;
         }
         delimiter = CsvParser.detectDelimiter(text);
-        panel.setData(CsvParser.parse(text, delimiter));
+        List<List<String>> rows = CsvParser.parse(text, delimiter);
+        // In-place editing is safe only when each parsed row maps 1:1 to a physical line — i.e. no quoted
+        // multi-line field merged two lines — and the buffer is writable. Otherwise the grid stays read-only.
+        boolean canEdit = active.isEditable() && !CsvParser.hasMultilineField(rows);
+        panel.setEditable(canEdit, this::commitCell);
+        panel.setData(rows);
+    }
+
+    /**
+     * Writes a grid cell edit back to the buffer: rebuild the edited row's physical line (fields re-quoted
+     * per RFC-4180) and replace exactly that paragraph via an undoable {@code replaceText}. The subsequent
+     * text-change fires the debounced re-parse, resyncing the grid.
+     */
+    private void commitCell(int dataRow, int field, String value) {
+        EditorBuffer active = host.activeBuffer();
+        if (active == null || !active.isCsv() || !active.isEditable()) {
+            return;
+        }
+        var area = active.getArea();
+        int line = panel.isHeaderRow() ? dataRow + 1 : dataRow;
+        if (line < 0 || line >= area.getParagraphs().size()) {
+            return;
+        }
+        String lineText = area.getText(line);
+        List<List<String>> parsed = CsvParser.parse(lineText, delimiter);
+        List<String> fields = parsed.isEmpty() ? new java.util.ArrayList<>() : new java.util.ArrayList<>(parsed.get(0));
+        while (fields.size() <= field) {
+            fields.add("");
+        }
+        fields.set(field, value);
+        String newLine = CsvParser.formatRow(fields, delimiter);
+        if (newLine.equals(lineText)) {
+            return; // no-op (e.g. re-committing the same value)
+        }
+        int start = area.getAbsolutePosition(line, 0);
+        int end = start + area.getParagraphLength(line);
+        area.replaceText(start, end, newLine); // undoable; marks the buffer dirty
     }
 
     /** A grid cell was activated: place the caret at that field's start in the active buffer. */
