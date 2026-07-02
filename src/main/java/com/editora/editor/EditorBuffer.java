@@ -754,19 +754,33 @@ public class EditorBuffer implements TabContent {
                 hideFormatBar(); // don't consume — let other Escape behavior run
             }
         });
-        // Ctrl/Cmd-click opens a Markdown link under the pointer in the external browser.
+        // Ctrl/Cmd-click: open a Markdown link in the browser, or (in a code buffer with a live language
+        // server) jump to the definition of the clicked symbol — the IDE "go to definition" gesture.
         a.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
-            if (isMarkdown() && e.isShortcutDown() && e.getButton() == MouseButton.PRIMARY) {
-                try {
-                    int off = a.hit(e.getX(), e.getY()).getInsertionIndex();
+            if (!e.isShortcutDown() || e.getButton() != MouseButton.PRIMARY) {
+                return;
+            }
+            try {
+                int off = a.hit(e.getX(), e.getY()).getInsertionIndex();
+                if (isMarkdown()) {
                     String url = MarkdownInline.linkAround(a.getText(), off);
                     if (url != null) {
                         openUrlHandler.accept(url);
                         e.consume();
                     }
-                } catch (RuntimeException ignored) {
-                    // hit-test off the text — ignore
+                    return;
                 }
+                if (isLspActive()) {
+                    // Move the caret to the clicked symbol + focus this area, then fire go-to-definition
+                    // (the controller reads getFocusedArea()'s caret). Deferred so focus/caret settle first.
+                    a.moveTo(off);
+                    a.requestFocus();
+                    Runnable go = lspGotoDefinitionAction;
+                    javafx.application.Platform.runLater(go::run);
+                    e.consume();
+                }
+            } catch (RuntimeException ignored) {
+                // hit-test off the text — ignore
             }
         });
     }
