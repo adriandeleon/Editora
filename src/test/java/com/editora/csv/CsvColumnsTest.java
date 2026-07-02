@@ -52,6 +52,23 @@ class CsvColumnsTest {
     }
 
     @Test
+    void raggedRowsAreCountedAgainstTheHeaderWidth() {
+        // Header has 3 cols; row "1,2" (2) and "9,8,7,6" (4) are ragged; "a,b,c" (3) is fine.
+        List<List<String>> rows = CsvParser.parse("h1,h2,h3\na,b,c\n1,2\n9,8,7,6", ',');
+        assertEquals(3, CsvColumns.expectedColumns(rows, true));
+        assertEquals(2, CsvColumns.raggedRowCount(rows, true));
+        // Without a header the first data row sets the width (3); the header line then counts as a data row.
+        assertEquals(2, CsvColumns.raggedRowCount(rows, false)); // "1,2" and "9,8,7,6" still differ from 3
+    }
+
+    @Test
+    void raggedCountZeroForConsistentOrEmpty() {
+        assertEquals(0, CsvColumns.raggedRowCount(CsvParser.parse("a,b\nc,d\ne,f", ','), true));
+        assertEquals(0, CsvColumns.raggedRowCount(List.of(), true));
+        assertEquals(0, CsvColumns.expectedColumns(List.of(), true));
+    }
+
+    @Test
     void decimalAcceptsScientificNotationIntegerDoesNot() {
         List<List<String>> sci = CsvParser.parse("1e3\n2.5E-2", ',');
         assertEquals(List.of(ColumnType.DECIMAL), CsvColumns.inferTypes(sci, false));

@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
@@ -15,6 +16,7 @@ import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TablePosition;
+import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.cell.TextFieldTableCell;
@@ -32,15 +34,16 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * Grid preview of a CSV/TSV buffer — a spreadsheet-style {@link TableView} built from the parsed rows, with
- * a "first row is a header" toggle and a summary line (row/column counts + a lightweight column type
- * profile). The parsing is done by the coordinator (off the parse-once path); this panel only renders
- * {@code List<List<String>>}.
+ * a "first row is a header" toggle, a filter box, per-column sorting, a summary line (row/column counts + a
+ * lightweight column type profile + an inconsistent-column count), and inconsistent-("ragged")-row
+ * highlighting. Parsing is done by the coordinator; this panel only renders {@code List<List<String>>}.
  *
- * <p>When the coordinator marks the grid <b>editable</b> (an editable buffer whose rows map 1:1 to physical
- * lines — no quoted multi-line fields), cells become {@link TextFieldTableCell}s and committing an edit calls
- * back through {@link EditCommit} to rewrite that row in the buffer (undoable). Otherwise the grid is
- * read-only and double-click / Enter jumps the editor caret to the cell's field; the right-click
- * "Reveal in editor" item jumps in either mode.
+ * <p>Each row is wrapped in a {@link Row} carrying its <b>original data-row index</b>, so filtering and
+ * sorting reorder the view without breaking the caret-jump / edit-write-back mapping (both resolve back to
+ * the original line via {@code Row.index}). When the coordinator marks the grid <b>editable</b>, cells become
+ * {@link TextFieldTableCell}s and a committed edit calls {@link EditCommit}; column headers rename on
+ * double-click (writing the buffer's line 0). Otherwise the grid is read-only and double-click / Enter (or
+ * the right-click "Reveal in editor") jumps the editor caret to the cell's field.
  */
 final class CsvGridPanel extends VBox implements ToolWindowContent {
 
@@ -67,18 +70,28 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         void exportOds();
     }
 
+    /** A data row plus its original 0-based index (stable through sort/filter, so edits/jumps map back). */
+    private record Row(int index, List<String> cells) {}
+
     private final Jump jump;
     private final CheckBox headerToggle = new CheckBox(tr("csvgrid.headerRow"));
+    private final TextField filterField = new TextField();
     private final Label summary = new Label();
-    private final TableView<List<String>> table = new TableView<>();
+    private final TableView<Row> table = new TableView<>();
 
     private List<List<String>> rows = List.of();
     private boolean editable;
     private EditCommit editCommit = (r, f, v) -> {};
     private ExportActions exportActions;
-    /** Invoked when the tool window is shown (via {@link #focusFirstItem()}) so the coordinator can populate
-     *  the grid from the current buffer even when the window was opened by the stripe, not a command. */
     private Runnable onShown = () -> {};
+
+    // View state (survives rebuilds so an edit's re-parse keeps the current sort/filter).
+    private int sortColumn = -1; // -1 = unsorted; else 0-based data column
+    private boolean sortAscending = true;
+    private int expectedCols; // for ragged-row highlighting
+    private final List<Row> allRows = new ArrayList<>(); // unfiltered/unsorted data rows
+    private final List<Label> headerLabels = new ArrayList<>();
+    private final List<String> baseTitles = new ArrayList<>();
 
     CsvGridPanel(Jump jump) {
         this.jump = jump;
@@ -90,17 +103,22 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         headerToggle.getStyleClass().add("csv-grid-header-toggle");
         headerToggle.selectedProperty().addListener((o, was, is) -> rebuild());
 
+        filterField.setPromptText(tr("csvgrid.filterPrompt"));
+        filterField.getStyleClass().add("csv-grid-filter");
+        filterField.setPrefColumnCount(14);
+        filterField.textProperty().addListener((o, was, is) -> applyView());
+
         summary.getStyleClass().add("csv-grid-summary");
-        HBox top = new HBox(8, headerToggle, spacer(), summary);
+        HBox top = new HBox(8, headerToggle, filterField, spacer(), summary);
         top.getStyleClass().add("csv-grid-bar");
+        top.setAlignment(Pos.CENTER_LEFT);
 
         // "striped" is AtlantaFX's zebra-row style class; "csv-grid-table" carries our border/padding tweaks.
         table.getStyleClass().addAll("csv-grid-table", "striped");
         table.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
         table.getSelectionModel().setCellSelectionEnabled(true);
         table.setPlaceholder(new Label(tr("csvgrid.empty")));
-        // Double-click / Enter jumps to the field — but only in read-only mode; when editable, those
-        // gestures start/commit a cell edit instead. "Reveal in editor" (context menu) jumps in either mode.
+        table.setRowFactory(t -> raggedAwareRow());
         table.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2 && !editable) {
                 jumpToFocusedCell();
@@ -111,8 +129,24 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
                 jumpToFocusedCell();
             }
         });
+        buildContextMenu();
+        VBox.setVgrow(table, Priority.ALWAYS);
+
+        getChildren().addAll(top, table);
+    }
+
+    private void buildContextMenu() {
         MenuItem reveal = new MenuItem(tr("csvgrid.reveal"));
         reveal.setOnAction(e -> jumpToFocusedCell());
+        MenuItem sortAsc = new MenuItem(tr("csvgrid.sortAsc"));
+        sortAsc.setOnAction(e -> sortByFocusedColumn(true));
+        MenuItem sortDesc = new MenuItem(tr("csvgrid.sortDesc"));
+        sortDesc.setOnAction(e -> sortByFocusedColumn(false));
+        MenuItem clearSort = new MenuItem(tr("csvgrid.clearSort"));
+        clearSort.setOnAction(e -> {
+            sortColumn = -1;
+            applyView();
+        });
         MenuItem exportPdf = new MenuItem(tr("csvgrid.exportPdf"));
         exportPdf.setOnAction(e -> runExport(ExportActions::exportPdf));
         MenuItem print = new MenuItem(tr("csvgrid.print"));
@@ -121,11 +155,17 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         exportExcel.setOnAction(e -> runExport(ExportActions::exportExcel));
         MenuItem exportOds = new MenuItem(tr("csvgrid.exportOds"));
         exportOds.setOnAction(e -> runExport(ExportActions::exportOds));
-        table.setContextMenu(
-                new ContextMenu(reveal, new SeparatorMenuItem(), exportPdf, print, exportExcel, exportOds));
-        VBox.setVgrow(table, Priority.ALWAYS);
-
-        getChildren().addAll(top, table);
+        table.setContextMenu(new ContextMenu(
+                reveal,
+                new SeparatorMenuItem(),
+                sortAsc,
+                sortDesc,
+                clearSort,
+                new SeparatorMenuItem(),
+                exportPdf,
+                print,
+                exportExcel,
+                exportOds));
     }
 
     private static Region spacer() {
@@ -171,18 +211,22 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
 
     private void rebuild() {
         table.getColumns().clear();
-        table.setItems(FXCollections.observableArrayList());
+        headerLabels.clear();
+        baseTitles.clear();
+        allRows.clear();
         int cols = 0;
         for (List<String> r : rows) {
             cols = Math.max(cols, r.size());
         }
         if (rows.isEmpty() || cols == 0) {
+            table.setItems(FXCollections.observableArrayList());
             summary.setText(tr("csvgrid.empty"));
             return;
         }
         boolean header = headerToggle.isSelected();
         List<String> headerRow = header ? rows.get(0) : null;
         List<ColumnType> types = CsvColumns.inferTypes(rows, header);
+        expectedCols = CsvColumns.expectedColumns(rows, header);
 
         table.getColumns().add(rowNumberColumn());
         for (int c = 0; c < cols; c++) {
@@ -191,11 +235,12 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
                     header && col < headerRow.size() && !headerRow.get(col).isBlank()
                             ? headerRow.get(col)
                             : tr("csvgrid.column", col + 1);
+            baseTitles.add(title);
             boolean numeric = col < types.size() && CsvColumns.isNumeric(types.get(col));
-            TableColumn<List<String>, String> tc = new TableColumn<>();
+            TableColumn<Row, String> tc = new TableColumn<>();
             tc.setGraphic(headerNode(tc, col, title, header)); // editable header label (double-click to rename)
             tc.setCellValueFactory(cd -> new ReadOnlyStringWrapper(
-                    col < cd.getValue().size() ? cd.getValue().get(col) : ""));
+                    col < cd.getValue().cells().size() ? cd.getValue().cells().get(col) : ""));
             tc.setPrefWidth(120);
             tc.setSortable(false);
             tc.setCellFactory(dataCellFactory(numeric));
@@ -204,50 +249,158 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
             }
             table.getColumns().add(tc);
         }
-        List<List<String>> data = header ? rows.subList(1, rows.size()) : rows;
-        table.setItems(FXCollections.observableArrayList(new ArrayList<>(data)));
-        summary.setText(summaryText(rows.size() - (header ? 1 : 0), cols, types));
+        // Wrap each data row with its original 0-based index (stable through sort/filter).
+        int start = header ? 1 : 0;
+        for (int r = start; r < rows.size(); r++) {
+            allRows.add(new Row(r - start, rows.get(r)));
+        }
+        if (sortColumn >= cols) {
+            sortColumn = -1;
+        }
+        applyView();
     }
 
-    /** A non-editable leading "#" column showing 1-based data-row numbers (spreadsheet gutter). */
-    private TableColumn<List<String>, String> rowNumberColumn() {
-        TableColumn<List<String>, String> num = new TableColumn<>("#");
+    /** Applies the current filter + sort to {@link #allRows} → the visible items, and refreshes the summary. */
+    private void applyView() {
+        String query = filterField.getText() == null
+                ? ""
+                : filterField.getText().trim().toLowerCase(Locale.ROOT);
+        List<Row> view = new ArrayList<>();
+        for (Row row : allRows) {
+            if (query.isEmpty() || rowMatches(row, query)) {
+                view.add(row);
+            }
+        }
+        if (sortColumn >= 0) {
+            int col = sortColumn;
+            view.sort((a, b) -> {
+                int cmp = compareCells(cell(a, col), cell(b, col));
+                return sortAscending ? cmp : -cmp;
+            });
+        }
+        table.setItems(FXCollections.observableArrayList(view));
+        refreshHeaderArrows();
+        int cols = baseTitles.size();
+        int ragged = CsvColumns.raggedRowCount(rows, headerToggle.isSelected());
+        summary.setText(summaryText(
+                allRows.size(), view.size(), cols, CsvColumns.inferTypes(rows, headerToggle.isSelected()), ragged));
+    }
+
+    private static boolean rowMatches(Row row, String lowerQuery) {
+        for (String cell : row.cells()) {
+            if (cell.toLowerCase(Locale.ROOT).contains(lowerQuery)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String cell(Row row, int col) {
+        return col < row.cells().size() ? row.cells().get(col) : "";
+    }
+
+    /** Numeric when both cells parse as numbers, else case-insensitive text. */
+    private static int compareCells(String a, String b) {
+        Double na = tryNumber(a);
+        Double nb = tryNumber(b);
+        if (na != null && nb != null) {
+            return Double.compare(na, nb);
+        }
+        return a.compareToIgnoreCase(b);
+    }
+
+    private static Double tryNumber(String s) {
+        String t = s.trim();
+        if (t.isEmpty()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(t);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private void sortByFocusedColumn(boolean ascending) {
+        TablePosition<?, ?> pos =
+                table.getFocusModel() == null ? null : table.getFocusModel().getFocusedCell();
+        if (pos == null) {
+            return;
+        }
+        int col = pos.getColumn() - 1; // column 0 is the "#" gutter
+        if (col < 0 || col >= baseTitles.size()) {
+            return;
+        }
+        sortColumn = col;
+        sortAscending = ascending;
+        applyView();
+    }
+
+    /** Appends a ▲/▼ arrow to the sorted column's header label; clears the others. */
+    private void refreshHeaderArrows() {
+        for (int i = 0; i < headerLabels.size(); i++) {
+            String base = i < baseTitles.size() ? baseTitles.get(i) : "";
+            String arrow = i == sortColumn ? (sortAscending ? "  ▲" : "  ▼") : "";
+            headerLabels.get(i).setText(base + arrow);
+        }
+    }
+
+    /** A table row that flags an inconsistent-column ("ragged") data row via {@code .csv-grid-ragged-row}. */
+    private TableRow<Row> raggedAwareRow() {
+        return new TableRow<>() {
+            @Override
+            protected void updateItem(Row item, boolean empty) {
+                super.updateItem(item, empty);
+                boolean ragged = !empty
+                        && item != null
+                        && expectedCols > 0
+                        && item.cells().size() != expectedCols;
+                pseudoClassStateChanged(RAGGED, ragged);
+            }
+        };
+    }
+
+    private static final javafx.css.PseudoClass RAGGED = javafx.css.PseudoClass.getPseudoClass("csv-ragged");
+
+    /** A non-editable leading "#" column showing each row's original 1-based data-row number. */
+    private TableColumn<Row, String> rowNumberColumn() {
+        TableColumn<Row, String> num = new TableColumn<>("#");
         num.setSortable(false);
         num.setEditable(false);
         num.setPrefWidth(48);
         num.setReorderable(false);
         num.getStyleClass().add("csv-grid-rownum");
-        num.setCellValueFactory(cd -> new ReadOnlyStringWrapper(""));
+        num.setCellValueFactory(
+                cd -> new ReadOnlyStringWrapper(String.valueOf(cd.getValue().index() + 1)));
         num.setCellFactory(c -> {
-            TableCell<List<String>, String> cell = new TableCell<>() {
+            TableCell<Row, String> cell = new TableCell<>() {
                 @Override
                 protected void updateItem(String v, boolean empty) {
                     super.updateItem(v, empty);
-                    setText(empty || getIndex() < 0 ? null : String.valueOf(getIndex() + 1));
+                    setText(empty ? null : v);
                 }
             };
-            cell.getStyleClass().add("csv-grid-rownum-cell"); // added once, not per updateItem
+            cell.getStyleClass().add("csv-grid-rownum-cell");
             return cell;
         });
         return num;
     }
 
     /** Cell factory for a data column: {@link TextFieldTableCell} when editable, right-aligned for numbers. */
-    private Callback<TableColumn<List<String>, String>, TableCell<List<String>, String>> dataCellFactory(
-            boolean numeric) {
-        Callback<TableColumn<List<String>, String>, TableCell<List<String>, String>> base =
+    private Callback<TableColumn<Row, String>, TableCell<Row, String>> dataCellFactory(boolean numeric) {
+        Callback<TableColumn<Row, String>, TableCell<Row, String>> base =
                 editable ? TextFieldTableCell.forTableColumn() : c -> defaultTextCell();
         if (!numeric) {
             return base;
         }
         return column -> {
-            TableCell<List<String>, String> cell = base.call(column);
+            TableCell<Row, String> cell = base.call(column);
             cell.setAlignment(Pos.CENTER_RIGHT);
             return cell;
         };
     }
 
-    private static TableCell<List<String>, String> defaultTextCell() {
+    private static TableCell<Row, String> defaultTextCell() {
         return new TableCell<>() {
             @Override
             protected void updateItem(String v, boolean empty) {
@@ -259,19 +412,24 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
 
     /** The header graphic for a data column — a bold label that, when the grid is editable and a header row
      *  exists, becomes an inline text field on double-click and commits the new header to the buffer's line 0. */
-    private Label headerNode(TableColumn<List<String>, String> tc, int field, String title, boolean hasHeader) {
+    private Label headerNode(TableColumn<Row, String> tc, int field, String title, boolean hasHeader) {
         Label label = new Label(title);
         label.getStyleClass().add("csv-grid-col-header");
         label.setMaxWidth(Double.MAX_VALUE);
         label.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2 && editable && hasHeader) {
-                startHeaderEdit(tc, field, label.getText());
+                startHeaderEdit(tc, field, baseTitles.get(field));
             }
         });
+        if (field < headerLabels.size()) {
+            headerLabels.set(field, label);
+        } else {
+            headerLabels.add(label);
+        }
         return label;
     }
 
-    private void startHeaderEdit(TableColumn<List<String>, String> tc, int field, String current) {
+    private void startHeaderEdit(TableColumn<Row, String> tc, int field, String current) {
         TextField tf = new TextField(current);
         tf.getStyleClass().add("csv-grid-col-editor");
         tf.setOnAction(a -> finishHeaderEdit(tc, tf, field));
@@ -290,18 +448,19 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         tf.selectAll();
     }
 
-    private void finishHeaderEdit(TableColumn<List<String>, String> tc, TextField tf, int field) {
+    private void finishHeaderEdit(TableColumn<Row, String> tc, TextField tf, int field) {
         if (tc.getGraphic() != tf) {
             return; // already committed/cancelled — the Enter + focus-loss double-fire guard
         }
         String value = tf.getText();
         String display = value.isBlank() ? tr("csvgrid.column", field + 1) : value;
+        baseTitles.set(field, display);
         tc.setGraphic(headerNode(tc, field, display, true));
         editCommit.commit(-1, field, value); // -1 → the header row (line 0)
     }
 
-    /** "{rows} rows × {cols} cols · {n} number, {m} text" — the lightweight column profile. */
-    private static String summaryText(int dataRows, int cols, List<ColumnType> types) {
+    /** "{shown}/{total} rows × {cols} cols · {n} number, {m} text[ · {r} inconsistent]". */
+    private static String summaryText(int total, int shown, int cols, List<ColumnType> types, int ragged) {
         int numeric = 0;
         int text = 0;
         for (ColumnType t : types) {
@@ -311,36 +470,39 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
                 text++;
             }
         }
-        return tr("csvgrid.summary", dataRows, cols, numeric, text);
+        String rowsPart = shown == total ? String.valueOf(total) : shown + "/" + total;
+        String base = tr("csvgrid.summary", rowsPart, cols, numeric, text);
+        return ragged > 0 ? base + " " + tr("csvgrid.ragged", ragged) : base;
     }
 
-    /** A cell edit was committed ({@code viewRow} = index into the visible items = the data row). Update the
-     *  item so the cell shows the new value immediately, then write it back through the coordinator. */
+    /** A cell edit was committed ({@code viewRow} = index into the visible items). Update the row's cell so it
+     *  shows immediately, then write it back through the coordinator using the row's <em>original</em> index. */
     private void onCellCommitted(int viewRow, int col, String value) {
         if (viewRow < 0 || viewRow >= table.getItems().size()) {
             return;
         }
-        List<String> item = table.getItems().get(viewRow);
-        while (item.size() <= col) {
-            item.add("");
+        Row row = table.getItems().get(viewRow);
+        List<String> cells = row.cells();
+        while (cells.size() <= col) {
+            cells.add("");
         }
-        item.set(col, value);
+        cells.set(col, value);
         table.refresh();
-        editCommit.commit(viewRow, col, value);
+        editCommit.commit(row.index(), col, value);
     }
 
     private void jumpToFocusedCell() {
         TablePosition<?, ?> pos =
                 table.getFocusModel() == null ? null : table.getFocusModel().getFocusedCell();
-        if (pos == null || pos.getRow() < 0) {
+        if (pos == null || pos.getRow() < 0 || pos.getRow() >= table.getItems().size()) {
             return;
         }
-        int dataRow = pos.getRow();
+        Row row = table.getItems().get(pos.getRow());
         // Column 0 is the "#" row-number gutter, so the data field is the visible column minus one.
         int field = Math.max(0, pos.getColumn() - 1);
-        // Map the grid's data row back to a document paragraph: the header (if any) occupies line 0, so the
-        // first data row is line 1. Approximate for CSV whose quoted fields span physical lines.
-        int lineIndex = headerToggle.isSelected() ? dataRow + 1 : dataRow;
+        // Map the row back to a document paragraph via its ORIGINAL index (stable through sort/filter): the
+        // header (if any) occupies line 0, so the first data row is line 1.
+        int lineIndex = headerToggle.isSelected() ? row.index() + 1 : row.index();
         jump.jump(lineIndex, field);
     }
 
