@@ -117,7 +117,8 @@ final class CsvCoordinator {
     /**
      * Writes a grid cell edit back to the buffer: rebuild the edited row's physical line (fields re-quoted
      * per RFC-4180) and replace exactly that paragraph via an undoable {@code replaceText}. The subsequent
-     * text-change fires the debounced re-parse, resyncing the grid.
+     * text-change fires the debounced re-parse, resyncing the grid. {@code dataRow == -1} edits the header
+     * row (line 0).
      */
     private void commitCell(int dataRow, int field, String value) {
         EditorBuffer active = host.activeBuffer();
@@ -125,7 +126,7 @@ final class CsvCoordinator {
             return;
         }
         var area = active.getArea();
-        int line = panel.isHeaderRow() ? dataRow + 1 : dataRow;
+        int line = dataRow < 0 ? 0 : (panel.isHeaderRow() ? dataRow + 1 : dataRow);
         if (line < 0 || line >= area.getParagraphs().size()) {
             return;
         }
