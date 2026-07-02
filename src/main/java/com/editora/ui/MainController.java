@@ -298,6 +298,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             new com.editora.lsp.LspManager(this::onLspDiagnostics, this::onLspServerStatus);
 
     private ToolWindow problemsToolWindow;
+    private ToolWindow referencesToolWindow;
     /** Run: streams a runnable file's output; see {@link RunCoordinator}. The tool window stays here. */
     private ToolWindow runToolWindow;
     /** External Tools: the feature coordinator owns the service/panel/commands (see {@link ExternalToolCoordinator}). */
@@ -1854,6 +1855,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::problems,
                 lspCoordinator.problemsPanel(),
                 "tool.problems");
+        referencesToolWindow = new ToolWindow(
+                "references",
+                tr("toolwindow.references"),
+                ToolWindow.Side.BOTTOM,
+                Icons::find,
+                lspCoordinator.referencesPanel(),
+                "tool.references");
         runToolWindow = new ToolWindow(
                 "run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runCoordinator.panel(), "tool.run");
         debugCoordinator = new DebugCoordinator(
@@ -2010,6 +2018,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(csvGridToolWindow);
         toolWindows.register(markdownLintToolWindow);
         toolWindows.register(problemsToolWindow);
+        toolWindows.register(referencesToolWindow, false); // default-hidden; shown on demand by Find References
         toolWindows.register(runToolWindow);
         toolWindows.setAvailable(runToolWindow, false); // shown only when the active file is a compact source
         toolWindows.register(debugToolWindow);
@@ -2694,6 +2703,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public void setProblemsAvailable(boolean available) {
                     if (problemsToolWindow != null) {
                         toolWindows.setAvailable(problemsToolWindow, available);
+                    }
+                    if (referencesToolWindow != null) {
+                        toolWindows.setAvailable(referencesToolWindow, available);
+                    }
+                }
+
+                @Override
+                public void openReferencesWindow() {
+                    if (referencesToolWindow != null) {
+                        toolWindows.open(referencesToolWindow);
                     }
                 }
 
@@ -9627,6 +9646,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Command.of("tool.debug", () -> debugCoordinator.ifDebug(() -> toolWindows.toggle(debugToolWindow))));
         // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
         registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
+        registry.register(Command.of("tool.references", () -> ifLsp(() -> toolWindows.toggle(referencesToolWindow))));
         registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
         registry.register(Command.of("lsp.findReferences", () -> ifLsp(lspCoordinator::findReferences)));
         registry.register(Command.of("lsp.gotoSymbol", () -> ifLsp(lspCoordinator::gotoSymbolInWorkspace)));
