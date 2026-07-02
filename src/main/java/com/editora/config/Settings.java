@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 48;
+    public static final int SCHEMA_VERSION = 49;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -179,6 +179,8 @@ public class Settings {
     private boolean logViewer = true;
     /** CSV/TSV grid preview tool window (read-only spreadsheet view of {@code .csv}/{@code .tsv}): on by default. */
     private boolean csvPreview = true;
+    /** Rainbow per-column coloring in the editor for {@code .csv}/{@code .tsv} files: on by default. */
+    private boolean csvRainbow = true;
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
      *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
     private boolean mcpSupport = false;
@@ -397,6 +399,14 @@ public class Settings {
 
     public void setCsvPreview(boolean csvPreview) {
         this.csvPreview = csvPreview;
+    }
+
+    public boolean isCsvRainbow() {
+        return csvRainbow;
+    }
+
+    public void setCsvRainbow(boolean csvRainbow) {
+        this.csvRainbow = csvRainbow;
     }
 
     public boolean isLogViewer() {

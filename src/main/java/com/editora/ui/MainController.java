@@ -8302,6 +8302,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setUserDictionaryEnabled(s.isPersonalDictionary());
         buffer.setTechnicalDictionaryEnabled(s.isTechnicalDictionary());
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
+        buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
     }
 
@@ -9290,6 +9291,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                             updateBufferToolWindows();
                             csvCoordinator.refreshFor(activeBuffer());
                         })));
+        registry.register(Command.of(
+                "view.toggleCsvRainbow",
+                () -> toggleSetting(
+                        "view.toggleCsvRainbow",
+                        () -> config.getSettings().isCsvRainbow(),
+                        config.getSettings()::setCsvRainbow,
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of("mcp.copyEndpoint", () -> ifMcp(this::copyMcpEndpoint)));
         registry.register(Command.of("view.toggleMcp", this::toggleMcpSupport));
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));

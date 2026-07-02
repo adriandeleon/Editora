@@ -205,6 +205,7 @@ public class SettingsWindow {
     private CheckBox editorConfigCheck;
     private CheckBox logViewerCheck;
     private CheckBox csvGridCheck;
+    private CheckBox csvRainbowCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
     private VBox markdownLintRulesBox;
@@ -867,6 +868,7 @@ public class SettingsWindow {
         editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
         logViewerCheck = viewCheck(tr("settings.logViewer"), Settings::setLogViewer);
         csvGridCheck = viewCheck(tr("settings.csvPreview"), Settings::setCsvPreview);
+        csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
 
@@ -1742,6 +1744,7 @@ public class SettingsWindow {
                 "log viewer server logs tail follow level highlighting filter apache spring boot");
         Label csv = section(p, tr("settings.section.csv"));
         row(p, Category.EDITOR, csv, csvGridCheck, "csv tsv grid table preview spreadsheet columns");
+        row(p, Category.EDITOR, csv, csvRainbowCheck, "csv tsv rainbow column colors coloring highlight");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -4693,6 +4696,7 @@ public class SettingsWindow {
             editorConfigCheck.setSelected(settings.isEditorConfigSupport());
             logViewerCheck.setSelected(settings.isLogViewer());
             csvGridCheck.setSelected(settings.isCsvPreview());
+            csvRainbowCheck.setSelected(settings.isCsvRainbow());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             rebuildTodoRows();
             rebuildMarkdownLintRules();
@@ -5195,6 +5199,7 @@ public class SettingsWindow {
             editorConfigCheck.setSelected(s.isEditorConfigSupport());
             logViewerCheck.setSelected(s.isLogViewer());
             csvGridCheck.setSelected(s.isCsvPreview());
+            csvRainbowCheck.setSelected(s.isCsvRainbow());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             rebuildTodoRows();
             rebuildMarkdownLintRules();

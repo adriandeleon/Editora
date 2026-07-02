@@ -2692,6 +2692,19 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Per-column "rainbow" coloring for CSV/TSV buffers (replaces the source.csv grammar highlighting). */
+    private boolean csvRainbow;
+
+    /** Enables/disables rainbow per-column CSV coloring; re-highlights the whole buffer on a change. */
+    public void setCsvRainbowEnabled(boolean on) {
+        boolean want = on && isCsv();
+        if (want != csvRainbow) {
+            csvRainbow = want;
+            invalidateHighlighting();
+            applyHighlighting();
+        }
+    }
+
     /** Whether a level/regex filter is currently narrowing the visible lines. */
     public boolean isLogFiltered() {
         return logFiltered;
@@ -6190,6 +6203,27 @@ public class EditorBuffer implements TabContent {
         lineStates.clear();
     }
 
+    /** Applies per-column rainbow CSV coloring over the whole document (a cheap O(n) FX-thread pass — no
+     *  grammar state, so no incremental machinery; runs on the same debounced highlight pulse). */
+    private void applyCsvRainbow() {
+        lineStates.clear();
+        if (!symbols.isEmpty()) {
+            symbols = List.of();
+            onSymbolsChanged.run();
+        }
+        String text = area.getText();
+        int len = text.length();
+        if (len == 0) {
+            return;
+        }
+        char delim = com.editora.csv.CsvParser.detectDelimiter(text);
+        StyleSpans<Collection<String>> spans = CsvRainbow.buildSpans(text, delim, CsvRainbow.COLORS);
+        if (spans.length() == len) {
+            area.setStyleSpans(0, spans);
+            scheduleBraceMatch();
+        }
+    }
+
     private void applyHighlighting() {
         if (largeFile) {
             // Large-file mode: leave the document as plain text and drop any structure symbols/state.
@@ -6198,6 +6232,10 @@ public class EditorBuffer implements TabContent {
                 symbols = List.of();
                 onSymbolsChanged.run();
             }
+            return;
+        }
+        if (csvRainbow && isCsv() && !heavyFile) {
+            applyCsvRainbow();
             return;
         }
         if (grammar == null) {
