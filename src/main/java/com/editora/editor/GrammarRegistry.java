@@ -178,6 +178,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.hcl.terraform", "terraform");
         scopeToResource.put("source.toml", "toml");
         scopeToResource.put("source.http", "http");
+        scopeToResource.put("source.csv", "csv");
         scopeToResource.put("source.systemd", "systemd");
         scopeToResource.put("source.desktop", "desktop");
         scopeToResource.put("source.dotenv", "dotenv");
@@ -228,6 +229,7 @@ public final class GrammarRegistry {
         mapExtensions("source.hcl.terraform", "tf", "tfvars", "hcl");
         mapExtensions("source.toml", "toml", "tml");
         mapExtensions("source.http", "http", "rest");
+        mapExtensions("source.csv", "csv", "tsv");
         // systemd unit files — each unit type is its own extension (.service/.socket/.timer/…),
         // plus systemd-networkd's .network/.netdev/.link and nspawn containers.
         mapExtensions(
