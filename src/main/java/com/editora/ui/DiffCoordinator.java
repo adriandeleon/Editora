@@ -23,9 +23,10 @@ import static com.editora.i18n.Messages.tr;
  * (through an undoable editor buffer with Undo/Save), the compare entry points (vs HEAD / vs commit /
  * compare-with-file / Git-panel rows / a commit's file), patch export, and merge-conflict resolution.
  *
- * <p>Git-backed diffs reach the repo via the shared {@link GitCoordinator} (passed in). {@code openDiff} +
- * the {@link DiffSide} interface are package-visible so the Local File History flow ({@code MainController})
- * can reuse them. {@code MainController} keeps the {@code diff.*}/{@code merge.resolve} command registrations
+ * <p>Git-backed diffs reach the repo via the shared {@link GitCoordinator} (passed in). {@code computeDiff}
+ * + {@code applyToLocal}/{@code undoLocal}/{@code saveLocal} are package-visible so the Local File History
+ * tool window ({@code FileHistoryPanel}, via {@code HistoryCoordinator}) reuses them for its inline revision
+ * diff + per-hunk apply chevrons. {@code MainController} keeps the {@code diff.*}/{@code merge.resolve} command registrations
  * and the tab-menu / Git-panel / project-tree entry points (delegating here), and calls
  * {@link #refreshOpenDiffs()} on window focus-regain + after a git mutation.
  */
