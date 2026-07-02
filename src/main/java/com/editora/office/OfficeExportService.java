@@ -39,6 +39,18 @@ public final class OfficeExportService {
         run(() -> OdtWriter.write(markdown, baseDir, mmdcCommand, out), onResult);
     }
 
+    /** Exports parsed CSV/TSV {@code rows} to an Excel {@code .xlsx} (POI); {@code hasHeader} bolds row 0. */
+    public void exportXlsx(
+            java.util.List<java.util.List<String>> rows, boolean hasHeader, Path out, Consumer<Result> onResult) {
+        run(() -> XlsxWriter.write(rows, hasHeader, out), onResult);
+    }
+
+    /** Exports parsed CSV/TSV {@code rows} to an OpenDocument Spreadsheet {@code .ods} (hand-rolled ZIP). */
+    public void exportOds(
+            java.util.List<java.util.List<String>> rows, boolean hasHeader, Path out, Consumer<Result> onResult) {
+        run(() -> OdsWriter.write(rows, hasHeader, out), onResult);
+    }
+
     private interface Job {
         void run() throws Exception;
     }

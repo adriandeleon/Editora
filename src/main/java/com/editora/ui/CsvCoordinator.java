@@ -21,7 +21,7 @@ import com.editora.editor.EditorBuffer;
  */
 final class CsvCoordinator {
 
-    /** Window hooks beyond {@link CoordinatorHost} (the CSV grid tool window + the caret jump). */
+    /** Window hooks beyond {@link CoordinatorHost} (the CSV grid tool window + the caret jump + exports). */
     interface Ops {
         boolean isToolWindowOpen();
 
@@ -29,6 +29,18 @@ final class CsvCoordinator {
 
         /** Moves the active buffer's caret to {@code line} (0-based paragraph) / {@code col} (char offset). */
         void jumpTo(int line, int col);
+
+        /** Exports the CSV as a PDF (reuses the Markdown-table → PDF pipeline; a FileChooser picks the file). */
+        void exportPdf(String csvText, String baseName);
+
+        /** Opens the print preview for the CSV (reuses the Markdown-table → print pipeline). */
+        void printCsv(String csvText);
+
+        /** Exports parsed {@code rows} to Excel ({@code .xlsx}); {@code baseName} seeds the FileChooser. */
+        void exportExcel(java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName);
+
+        /** Exports parsed {@code rows} to an OpenDocument spreadsheet ({@code .ods}). */
+        void exportOds(java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName);
     }
 
     /** Above this size the whole-file parse + TableView build is skipped (the huge-file guard idiom). */
@@ -53,6 +65,27 @@ final class CsvCoordinator {
         this.ops = ops;
         this.panel = new CsvGridPanel(this::jumpToField);
         this.panel.setOnShown(() -> rebuild(host.activeBuffer())); // populate when the window is shown
+        this.panel.setExportActions(new CsvGridPanel.ExportActions() {
+            @Override
+            public void exportPdf() {
+                CsvCoordinator.this.exportPdf();
+            }
+
+            @Override
+            public void printPreview() {
+                CsvCoordinator.this.printCsv();
+            }
+
+            @Override
+            public void exportExcel() {
+                CsvCoordinator.this.exportExcel();
+            }
+
+            @Override
+            public void exportOds() {
+                CsvCoordinator.this.exportOds();
+            }
+        });
         debounce.setOnFinished(e -> {
             if (ops.isToolWindowOpen()) {
                 rebuild(host.activeBuffer());
@@ -70,6 +103,41 @@ final class CsvCoordinator {
 
     void registerCommands(CommandRegistry registry) {
         registry.register(Command.of("tool.csvGrid", ops::toggleToolWindow));
+        registry.register(Command.of("csv.exportPdf", this::exportPdf));
+        registry.register(Command.of("csv.print", this::printCsv));
+        registry.register(Command.of("csv.exportExcel", this::exportExcel));
+        registry.register(Command.of("csv.exportOds", this::exportOds));
+    }
+
+    // --- exports (right-click menu + palette commands) --------------------------------------------------
+
+    private void exportPdf() {
+        withCsv(b -> ops.exportPdf(b.getContent(), host.bufferBaseName(b)));
+    }
+
+    private void printCsv() {
+        withCsv(b -> ops.printCsv(b.getContent()));
+    }
+
+    private void exportExcel() {
+        withCsv(b -> ops.exportExcel(currentRows(b), panel.isHeaderRow(), host.bufferBaseName(b)));
+    }
+
+    private void exportOds() {
+        withCsv(b -> ops.exportOds(currentRows(b), panel.isHeaderRow(), host.bufferBaseName(b)));
+    }
+
+    /** Runs {@code action} on the active buffer when it's a CSV/TSV file and the feature is on. */
+    private void withCsv(java.util.function.Consumer<EditorBuffer> action) {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && b.isCsv() && isEnabled()) {
+            action.accept(b);
+        }
+    }
+
+    /** Parses the buffer with the grid's current delimiter (kept in sync by {@link #rebuild}). */
+    private java.util.List<java.util.List<String>> currentRows(EditorBuffer b) {
+        return CsvParser.parse(b.getContent(), CsvParser.detectDelimiter(b.getContent()));
     }
 
     /**
