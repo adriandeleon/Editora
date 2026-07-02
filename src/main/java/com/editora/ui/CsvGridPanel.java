@@ -227,8 +227,9 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         List<String> headerRow = header ? rows.get(0) : null;
         List<ColumnType> types = CsvColumns.inferTypes(rows, header);
         expectedCols = CsvColumns.expectedColumns(rows, header);
+        List<Integer> contentLengths = CsvColumns.maxContentLengths(rows);
 
-        table.getColumns().add(rowNumberColumn());
+        table.getColumns().add(rowNumberColumn(rows.size()));
         for (int c = 0; c < cols; c++) {
             final int col = c;
             String title =
@@ -241,7 +242,11 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
             tc.setGraphic(headerNode(tc, col, title, header)); // editable header label (double-click to rename)
             tc.setCellValueFactory(cd -> new ReadOnlyStringWrapper(
                     col < cd.getValue().cells().size() ? cd.getValue().cells().get(col) : ""));
-            tc.setPrefWidth(120);
+            // Auto-size to the widest of (content, header title + its arrow/rename affordance) so a column
+            // rarely needs a manual resize; the header is bold, so give the title a little extra headroom.
+            int contentChars = col < contentLengths.size() ? contentLengths.get(col) : 0;
+            int chars = Math.max(contentChars, title.length() + HEADER_EXTRA_CHARS);
+            tc.setPrefWidth(columnWidthFor(chars));
             tc.setSortable(false);
             tc.setCellFactory(dataCellFactory(numeric));
             if (editable) {
@@ -362,12 +367,28 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
 
     private static final javafx.css.PseudoClass RAGGED = javafx.css.PseudoClass.getPseudoClass("csv-ragged");
 
+    // Column auto-sizing: an approximate advance for the grid's UI font + cell padding, clamped so a column
+    // fits its content without a manual resize but a very long value can't blow the table off-screen.
+    private static final double CHAR_PX = 7.5;
+    private static final double CELL_PADDING = 22;
+    private static final double MIN_COL_WIDTH = 56;
+    private static final double MAX_COL_WIDTH = 600;
+    private static final int HEADER_EXTRA_CHARS = 3; // room for the sort ▲/▼ (and the bold header's heavier glyphs)
+
+    /** Pixel width for a column whose widest cell is {@code chars} characters, clamped to a sane range. */
+    static double columnWidthFor(int chars) {
+        double w = Math.max(0, chars) * CHAR_PX + CELL_PADDING;
+        return Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, w));
+    }
+
     /** A non-editable leading "#" column showing each row's original 1-based data-row number. */
-    private TableColumn<Row, String> rowNumberColumn() {
+    private TableColumn<Row, String> rowNumberColumn(int totalPhysicalRows) {
         TableColumn<Row, String> num = new TableColumn<>("#");
         num.setSortable(false);
         num.setEditable(false);
-        num.setPrefWidth(48);
+        // Fit the largest row number (e.g. 5 digits for a 10k-row file) so the gutter never truncates.
+        num.setPrefWidth(Math.max(
+                40, String.valueOf(Math.max(1, totalPhysicalRows)).length() * CHAR_PX + 22));
         num.setReorderable(false);
         num.getStyleClass().add("csv-grid-rownum");
         num.setCellValueFactory(

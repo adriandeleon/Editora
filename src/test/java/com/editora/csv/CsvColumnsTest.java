@@ -69,6 +69,17 @@ class CsvColumnsTest {
     }
 
     @Test
+    void maxContentLengthsIncludeTheHeaderAndWidestCell() {
+        // col0: max("name"=4, "Alexander"=9, "Bo"=2) = 9; col1: max("city"=4, "SF"=2, "London"=6) = 6.
+        List<List<String>> rows = CsvParser.parse("name,city\nAlexander,SF\nBo,London", ',');
+        assertEquals(List.of(9, 6), CsvColumns.maxContentLengths(rows));
+        // Empty input → empty list; a ragged/short row doesn't index out of bounds.
+        assertEquals(List.of(), CsvColumns.maxContentLengths(List.of()));
+        List<List<String>> ragged = CsvParser.parse("a,bb,ccc\nx", ',');
+        assertEquals(List.of(1, 2, 3), CsvColumns.maxContentLengths(ragged));
+    }
+
+    @Test
     void decimalAcceptsScientificNotationIntegerDoesNot() {
         List<List<String>> sci = CsvParser.parse("1e3\n2.5E-2", ',');
         assertEquals(List.of(ColumnType.DECIMAL), CsvColumns.inferTypes(sci, false));
