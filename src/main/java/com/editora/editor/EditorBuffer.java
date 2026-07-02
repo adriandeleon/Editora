@@ -1801,6 +1801,11 @@ public class EditorBuffer implements TabContent {
         return "html".equals(language);
     }
 
+    /** A delimiter-separated-values file (.csv/.tsv) — drives the status-bar column readout + CSV commands. */
+    public boolean isCsv() {
+        return "csv".equals(language);
+    }
+
     /** Whether this buffer supports the 3-mode preview: Markdown always, Mermaid only while the feature
      *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off). */
     public boolean hasPreview() {

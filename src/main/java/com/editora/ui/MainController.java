@@ -7378,6 +7378,24 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** {@code csv.copyAsMarkdownTable}: copy the active CSV/TSV buffer to the clipboard as a GFM table. */
+    private void csvCopyAsMarkdownTable() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isCsv()) {
+            setStatus(tr("status.csv.notCsv"));
+            return;
+        }
+        String md = MarkdownTable.fromCsv(b.getContent());
+        if (md == null) {
+            setStatus(tr("status.csv.empty"));
+            return;
+        }
+        ClipboardContent cc = new ClipboardContent();
+        cc.putString(md);
+        Clipboard.getSystemClipboard().setContent(cc);
+        setStatus(tr("status.csv.copied"));
+    }
+
     /** {@code markdown.toggleFormatBar}: flip the selection format-bar setting + re-sync every buffer. */
     private void toggleMarkdownFormatBar() {
         Settings s = config.getSettings();
@@ -9261,6 +9279,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markdown.toc", this::markdownToc));
         registry.register(Command.of("markdown.tableFromCsv", this::markdownTableFromCsv));
         registry.register(Command.of("markdown.tableToCsv", this::markdownTableToCsv));
+        registry.register(Command.of("csv.copyAsMarkdownTable", this::csvCopyAsMarkdownTable));
         registry.register(Command.of("markdown.toggleFormatBar", this::toggleMarkdownFormatBar));
         registry.register(Command.of("view.textZoomIn", () -> textZoom(1)));
         registry.register(Command.of("view.textZoomOut", () -> textZoom(-1)));
