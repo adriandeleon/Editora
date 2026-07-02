@@ -10,6 +10,7 @@ import org.eclipse.lsp4j.ServerCapabilities;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +37,21 @@ class LspManagerTest {
         ServerCapabilities caps = new ServerCapabilities();
         caps.setCompletionProvider(new CompletionOptions(false, List.of(".", "<", "/")));
         assertEquals(Set.of('.', '<', '/'), LspManager.triggerCharsOf(caps));
+    }
+
+    @Test
+    void workspaceSymbolProviderDetectedFromEitherForm() {
+        assertFalse(LspManager.workspaceSymbolProvider(null));
+        assertFalse(LspManager.workspaceSymbolProvider(new ServerCapabilities())); // unset
+        ServerCapabilities bool = new ServerCapabilities();
+        bool.setWorkspaceSymbolProvider(true);
+        assertTrue(LspManager.workspaceSymbolProvider(bool));
+        ServerCapabilities off = new ServerCapabilities();
+        off.setWorkspaceSymbolProvider(false);
+        assertFalse(LspManager.workspaceSymbolProvider(off));
+        ServerCapabilities opts = new ServerCapabilities();
+        opts.setWorkspaceSymbolProvider(new org.eclipse.lsp4j.WorkspaceSymbolOptions()); // options form → supported
+        assertTrue(LspManager.workspaceSymbolProvider(opts));
     }
 
     @Test

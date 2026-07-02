@@ -292,6 +292,7 @@ final class LanguageServerSession implements LanguageClient {
         org.eclipse.lsp4j.WorkspaceClientCapabilities ws = new org.eclipse.lsp4j.WorkspaceClientCapabilities();
         ws.setConfiguration(true);
         ws.setDidChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationCapabilities());
+        ws.setSymbol(new org.eclipse.lsp4j.SymbolCapabilities()); // we answer workspace/symbol (Go to Symbol)
         cc.setWorkspace(ws);
         return cc;
     }
@@ -481,6 +482,20 @@ final class LanguageServerSession implements LanguageClient {
         }
         ReferenceParams params = new ReferenceParams(new TextDocumentIdentifier(uri), pos, new ReferenceContext(true));
         return server.getTextDocumentService().references(params);
+    }
+
+    /** Project-wide symbol search ({@code workspace/symbol}) for {@code query}; empty when not ready/on error. */
+    CompletableFuture<
+                    org.eclipse.lsp4j.jsonrpc.messages.Either<
+                            List<? extends org.eclipse.lsp4j.SymbolInformation>,
+                            List<? extends org.eclipse.lsp4j.WorkspaceSymbol>>>
+            workspaceSymbol(String query) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(List.of()));
+        }
+        return server.getWorkspaceService()
+                .symbol(new org.eclipse.lsp4j.WorkspaceSymbolParams(query))
+                .exceptionally(t -> org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(List.of()));
     }
 
     /** Document symbols ({@code textDocument/documentSymbol}) for {@code uri} — empty when not ready/on error. */
