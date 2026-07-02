@@ -1,0 +1,30 @@
+{
+  "name": "CSV",
+  "scopeName": "source.csv",
+  "fileTypes": ["csv", "tsv"],
+  "comment": "Authored for Editora. Delimiter-agnostic: colors quoted fields, bare numbers, and the field separators (comma / semicolon / tab / pipe) — column-position tinting is done by the editor overlay, not the grammar (TextMate can't count columns). Multi-line quoted fields are handled by the grid parser, not here.",
+  "patterns": [
+    {
+      "comment": "Quoted field; a doubled quote is the RFC-4180 escape.",
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.csv",
+      "patterns": [
+        {
+          "match": "\"\"",
+          "name": "constant.character.escape.csv"
+        }
+      ]
+    },
+    {
+      "comment": "A bare numeric field (integer / decimal / scientific), anchored between field separators.",
+      "match": "(?:^|(?<=[,;\\t|]))\\s*[+-]?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\s*(?=$|[,;\\t|])",
+      "name": "constant.numeric.csv"
+    },
+    {
+      "comment": "The field separator.",
+      "match": "[,;\\t|]",
+      "name": "punctuation.separator.field.csv"
+    }
+  ]
+}

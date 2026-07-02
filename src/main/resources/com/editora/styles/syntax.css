@@ -51,6 +51,9 @@
 .text.log-trace     { -fx-fill: -color-fg-subtle; }
 .text.log-timestamp { -fx-fill: -color-accent-fg; }
 
+/* CSV/TSV field separators (source.csv grammar): a muted tint so column boundaries stand out. */
+.text.csv-delimiter { -fx-fill: -color-fg-subtle; }
+
 /* LSP semantic tokens (Primer Light defaults). These OVERLAY the lexical TextMate classes — a
    semantically classified span carries only its `sem-*` class(es), so there's no conflict with the
    token rules above. Same compound `.text.<class>` form + cache rules. The modifier classes

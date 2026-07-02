@@ -49,6 +49,15 @@ class GrammarRegistryTest {
     }
 
     @Test
+    void csvGrammarLoads() {
+        // Loads csv.tmLanguage.json end-to-end (JSON parse + Oniguruma compile — incl. the number
+        // pattern's field-boundary lookbehind) and resolves for both .csv and .tsv.
+        assertNotNull(GrammarRegistry.shared().forLanguageName("csv"));
+        assertNotNull(GrammarRegistry.shared().forFileName("data.csv"));
+        assertNotNull(GrammarRegistry.shared().forFileName("export.tsv"));
+    }
+
+    @Test
     void linuxConfigGrammarsLoad() {
         // Each loads end-to-end (JSON parse + Oniguruma compile) and resolves by name/extension.
         assertNotNull(GrammarRegistry.shared().forLanguageName("desktop"));

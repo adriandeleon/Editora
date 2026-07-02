@@ -348,6 +348,11 @@ public final class TextMateHighlighter {
         if (scope.startsWith("support")) {
             return "type";
         }
+        // CSV/TSV field separators (only the bundled source.csv grammar emits this scope) — a muted tint so
+        // the column boundaries stand out from the field text.
+        if (scope.startsWith("punctuation.separator.field.csv")) {
+            return "csv-delimiter";
+        }
         // Log-viewer levels + timestamps (only the bundled source.log grammar emits these scopes).
         if (scope.startsWith("markup.error") || scope.startsWith("markup.fatal")) {
             return "log-error";

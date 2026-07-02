@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CSV / TSV syntax highlighting.** `.csv` and `.tsv` files now open as a proper "csv" language instead of
+  plain text: quoted fields are colored as strings (with the `""` escape), bare numeric fields as numbers,
+  and the field separators (comma / semicolon / tab / pipe) get a muted tint so column boundaries stand
+  out. First step of broader CSV support (a column readout, a table/grid preview, and grid editing are
+  planned next).
+
 ### Changed
 
 - **Local File History is now entirely in its tool window — no more separate window.** Opening a

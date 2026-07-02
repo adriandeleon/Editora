@@ -107,6 +107,9 @@ public final class LanguageRegistry {
             // HTTP request files (JetBrains/VS Code REST format).
             Map.entry("http", "http"),
             Map.entry("rest", "http"),
+            // Delimiter-separated values — one grammar handles comma/semicolon/tab/pipe.
+            Map.entry("csv", "csv"),
+            Map.entry("tsv", "csv"),
             // systemd unit files — INI-like; no delimiter folding (like ini).
             Map.entry("service", "systemd"),
             Map.entry("socket", "systemd"),
