@@ -73,6 +73,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Revert, all in one place. Selecting a revision shows its diff inline; nothing pops out into a second
   window.
 
+### Fixed
+
+- **Markdown print preview: tables no longer get pushed to their own page.** When printing (or print-
+  previewing) a Markdown file, a table could be bumped onto the next page even when it easily fit under the
+  preceding heading, leaving the first page mostly blank. The page-layout measurement was collapsing the
+  table's columns and over-estimating its height; it now measures at the real page width, so the printed
+  output matches the on-screen preview.
+
 ### Added
 
 - **Find in Files popup.** A keyboard-first overlay for multi-file content search (command
