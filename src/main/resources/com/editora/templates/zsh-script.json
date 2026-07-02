@@ -1,0 +1,20 @@
+{
+  "name": "Zsh Script",
+  "description": "A Zsh script with a strict-mode preamble and a main function",
+  "language": "shell",
+  "fileName": "${baseName:script}.zsh",
+  "body": [
+    "#!/usr/bin/env zsh",
+    "#",
+    "# ${summary:Script summary}",
+    "",
+    "emulate -L zsh",
+    "setopt errexit nounset pipefail",
+    "",
+    "main() {",
+    "    ${cursor}",
+    "}",
+    "",
+    "main \"$@\""
+  ]
+}

@@ -36,6 +36,30 @@ class TemplateRegistryTest {
     }
 
     @Test
+    void loadsShellScriptTemplate(@TempDir Path dir) {
+        Template shell = byId(registry(dir), "shell-script");
+        assertNotNull(shell);
+        assertEquals("Shell Script", shell.name());
+        assertEquals("shell", shell.language());
+        assertEquals("${baseName:script}.sh", shell.fileName());
+        assertFalse(shell.isMultiFile());
+        assertTrue(shell.body().contains("#!/usr/bin/env bash"));
+        assertTrue(shell.body().contains("${cursor}"));
+    }
+
+    @Test
+    void loadsZshScriptTemplate(@TempDir Path dir) {
+        Template zsh = byId(registry(dir), "zsh-script");
+        assertNotNull(zsh);
+        assertEquals("Zsh Script", zsh.name());
+        assertEquals("shell", zsh.language());
+        assertEquals("${baseName:script}.zsh", zsh.fileName());
+        assertFalse(zsh.isMultiFile());
+        assertTrue(zsh.body().contains("#!/usr/bin/env zsh"));
+        assertTrue(zsh.body().contains("${cursor}"));
+    }
+
+    @Test
     void loadsMultiFileTemplate(@TempDir Path dir) {
         Template bundle = byId(registry(dir), "html-bundle");
         assertNotNull(bundle);
