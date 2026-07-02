@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Rainbow CSV). On by default; toggle in Settings → Editor → CSV or the **Toggle Rainbow CSV Columns**
   command.
 
+- **CSV grid: sort, filter, and inconsistent-row highlighting.** The CSV Grid now has a filter box that
+  live-filters rows as you type, a right-click **Sort Ascending / Descending / Clear Sort** on any column
+  (numbers sort numerically), and rows whose field count doesn't match the header are tinted red with an
+  "N inconsistent" count in the summary line — so ragged CSVs are easy to spot. Sorting and filtering only
+  change the view; editing a cell and jumping to the editor still land on the right line.
+
 - **CSV grid: export menu.** Right-click the CSV Grid to **Export to PDF**, **Print**, **Export to Excel
   (.xlsx)**, or **Export to an ODF spreadsheet (.ods)** (also available as palette commands). Numbers are
   written as real spreadsheet numbers where safe — leading-zero codes (like ZIP codes) and

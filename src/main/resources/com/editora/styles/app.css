@@ -1572,6 +1572,10 @@
 /* Leading "#" row-number gutter: muted, centered, subtle background — like a spreadsheet's row headers. */
 .csv-grid-rownum-cell { -fx-text-fill: -color-fg-muted; -fx-background-color: -color-bg-subtle; -fx-alignment: center; -fx-font-size: 0.9em; }
 .csv-grid-table .csv-grid-col-editor { -fx-font-weight: bold; }
+.csv-grid .csv-grid-filter { -fx-pref-height: 24; }
+/* Inconsistent-column ("ragged") rows: a faint warning wash so a wrong field count stands out. */
+.csv-grid-table .table-row-cell:csv-ragged { -fx-background-color: -color-danger-subtle; }
+.csv-grid-table .table-row-cell:csv-ragged:selected { -fx-background-color: -color-danger-muted; }
 
 /* Markdown Lint tool window: a flat list of diagnostics with a severity dot. */
 .markdown-lint-panel .markdown-lint-summary { -fx-text-fill: -color-fg-muted; }

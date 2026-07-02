@@ -72,6 +72,36 @@ public final class CsvColumns {
         return t == ColumnType.INTEGER || t == ColumnType.DECIMAL;
     }
 
+    /**
+     * The expected field count for a well-formed row: the header row's field count when {@code hasHeader},
+     * else the first row's. Returns 0 for empty input. Rows whose size differs are "ragged"/inconsistent.
+     */
+    public static int expectedColumns(List<List<String>> rows, boolean hasHeader) {
+        if (rows.isEmpty()) {
+            return 0;
+        }
+        return rows.get(0).size();
+    }
+
+    /**
+     * Counts the <em>data</em> rows whose field count differs from {@link #expectedColumns} — the
+     * inconsistent-column ("ragged") rows a CSV linter flags. The header row itself is never counted.
+     */
+    public static int raggedRowCount(List<List<String>> rows, boolean hasHeader) {
+        int expected = expectedColumns(rows, hasHeader);
+        if (expected == 0) {
+            return 0;
+        }
+        int start = hasHeader ? 1 : 0;
+        int count = 0;
+        for (int r = start; r < rows.size(); r++) {
+            if (rows.get(r).size() != expected) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private static boolean isInteger(String v) {
         int i = (v.startsWith("+") || v.startsWith("-")) ? 1 : 0;
         if (i == v.length()) {
