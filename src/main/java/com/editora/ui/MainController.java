@@ -7458,6 +7458,47 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.csv.copied"));
     }
 
+    /** {@code csv.align}: pad the active CSV/TSV so its column delimiters line up (Rainbow-CSV Align). */
+    private void csvAlign() {
+        csvReformat(true);
+    }
+
+    /** {@code csv.shrink}: strip column-alignment padding from the active CSV/TSV (reverses {@link #csvAlign}). */
+    private void csvShrink() {
+        csvReformat(false);
+    }
+
+    /** Aligns ({@code align=true}) or shrinks the active CSV buffer's text via {@code CsvAlign}, undoable. */
+    private void csvReformat(boolean align) {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isCsv()) {
+            setStatus(tr("status.csv.notCsv"));
+            return;
+        }
+        if (!activeEditable()) {
+            return;
+        }
+        String text = b.getContent();
+        if (text.isEmpty()) {
+            setStatus(tr("status.csv.empty"));
+            return;
+        }
+        char delim = com.editora.csv.CsvParser.detectDelimiter(text);
+        // A quoted multi-line field means a record no longer maps to one physical line — line-based
+        // align/shrink would corrupt it, so refuse (mirrors the grid's edit guard).
+        if (com.editora.csv.CsvParser.hasMultilineField(com.editora.csv.CsvParser.parse(text, delim))) {
+            setStatus(tr("status.csv.multiline"));
+            return;
+        }
+        String out = align ? com.editora.csv.CsvAlign.align(text, delim) : com.editora.csv.CsvAlign.shrink(text, delim);
+        if (out.equals(text)) {
+            setStatus(tr(align ? "status.csv.alignNoChange" : "status.csv.shrinkNoChange"));
+            return;
+        }
+        b.getArea().replaceText(out); // whole-document replace (undoable)
+        setStatus(tr(align ? "status.csv.aligned" : "status.csv.shrunk"));
+    }
+
     /** Exports a CSV as a PDF by reusing the Markdown-table → PDF pipeline (the grid's right-click menu). */
     private void csvExportPdf(String csvText, String baseName) {
         String md = MarkdownTable.fromCsv(csvText);
@@ -9415,6 +9456,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markdown.tableFromCsv", this::markdownTableFromCsv));
         registry.register(Command.of("markdown.tableToCsv", this::markdownTableToCsv));
         registry.register(Command.of("csv.copyAsMarkdownTable", this::csvCopyAsMarkdownTable));
+        registry.register(Command.of("csv.align", this::csvAlign));
+        registry.register(Command.of("csv.shrink", this::csvShrink));
         registry.register(Command.of("markdown.toggleFormatBar", this::toggleMarkdownFormatBar));
         registry.register(Command.of("view.textZoomIn", () -> textZoom(1)));
         registry.register(Command.of("view.textZoomOut", () -> textZoom(-1)));

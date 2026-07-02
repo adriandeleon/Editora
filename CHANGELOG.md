@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CSV: align / shrink columns.** Two new commands reformat a `.csv`/`.tsv` file so it's easy to read as a
+  table: **CSV: Align Columns** pads each field with spaces so the delimiters line up in the editor, and
+  **CSV: Shrink Columns** removes that padding again (fully reversible). Both preserve quoted fields, blank
+  lines, and the trailing newline, and are undoable. (Files with a quoted field that spans multiple lines
+  are left alone, since aligning them would split a record across lines.)
+
 - **Rainbow CSV columns.** `.csv`/`.tsv` files are now colored **per column** in the editor — each column
   gets a distinct color that cycles every eight, so field boundaries are easy to follow (like VS Code's
   Rainbow CSV). On by default; toggle in Settings → Editor → CSV or the **Toggle Rainbow CSV Columns**
