@@ -44,6 +44,13 @@ final class TodoCoordinator {
 
         /** Home-collapsed display form of an absolute path (shared with the search-scope label). */
         String homeCollapsed(String absolutePath);
+
+        /**
+         * Opens {@code file}, and if its 1-based {@code line} still reads exactly {@code expectedLine}, replaces
+         * that paragraph with {@code newLine} as one undoable edit (marks the buffer dirty), then runs
+         * {@code afterApply}. A no-op with a status message when the line changed since the scan.
+         */
+        void applyLineEdit(Path file, int line, String expectedLine, String newLine, Runnable afterApply);
     }
 
     private final CoordinatorHost host;
@@ -69,7 +76,42 @@ final class TodoCoordinator {
             public void refresh() {
                 runScan();
             }
+
+            @Override
+            public void setPriority(Path file, TodoMatch m, String priority) {
+                applyEdit(
+                        file,
+                        m,
+                        com.editora.todo.TodoEdit.withPriority(m.lineText(), m.col() - 1, m.parsed(), priority));
+            }
+
+            @Override
+            public void setKeyword(Path file, TodoMatch m, String keyword) {
+                applyEdit(
+                        file, m, com.editora.todo.TodoEdit.withKeyword(m.lineText(), m.col() - 1, m.parsed(), keyword));
+            }
+
+            @Override
+            public void editDescription(Path file, TodoMatch m) {
+                host.promptText(
+                        tr("todo.editDescription.title"),
+                        tr("todo.editDescription.label"),
+                        m.parsed().description(),
+                        text -> applyEdit(
+                                file,
+                                m,
+                                com.editora.todo.TodoEdit.withDescription(
+                                        m.lineText(), m.col() - 1, m.parsed(), text)));
+            }
         });
+    }
+
+    /** Rewrites the match's source line (undoable) via the controller, then re-scans if the panel is open. */
+    private void applyEdit(Path file, TodoMatch m, String newLine) {
+        if (m.parsed() == null || newLine.equals(m.lineText())) {
+            return;
+        }
+        ops.applyLineEdit(file, m.line(), m.lineText(), newLine, this::refreshPanelIfOpen);
     }
 
     TodoPanel panel() {

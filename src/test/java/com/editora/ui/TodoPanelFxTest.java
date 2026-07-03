@@ -31,6 +31,15 @@ class TodoPanelFxTest {
 
         @Override
         public void refresh() {}
+
+        @Override
+        public void setPriority(Path file, TodoMatch match, String priority) {}
+
+        @Override
+        public void setKeyword(Path file, TodoMatch match, String keyword) {}
+
+        @Override
+        public void editDescription(Path file, TodoMatch match) {}
     };
 
     @BeforeAll

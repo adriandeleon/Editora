@@ -43,6 +43,15 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         void openMatch(Path file, int line, int col);
 
         void refresh();
+
+        /** Sets (or clears, when {@code priority} is null) the match's {@code (priority)} in the source. */
+        void setPriority(Path file, TodoMatch match, String priority);
+
+        /** Rewrites the match's keyword to {@code DONE} (mark done) or back to {@code TODO} (reopen). */
+        void setKeyword(Path file, TodoMatch match, String keyword);
+
+        /** Prompts for and replaces the match's description text in the source. */
+        void editDescription(Path file, TodoMatch match);
     }
 
     /** A tree row: a group header ({@code match == null}) or a single match under it. */
@@ -104,7 +113,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
 
         tree.setShowRoot(false);
         tree.setRoot(new TreeItem<>());
-        tree.setCellFactory(t -> new RowCell());
+        tree.setCellFactory(t -> new RowCell(actions));
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 activateSelected();
@@ -259,6 +268,12 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
 
     /** Renders a group header (label + count, file icon under "by file") or a structured match row. */
     private static final class RowCell extends TreeCell<Row> {
+        private final Actions actions;
+
+        RowCell(Actions actions) {
+            this.actions = actions;
+        }
+
         @Override
         protected void updateItem(Row row, boolean empty) {
             super.updateItem(row, empty);
@@ -266,13 +281,46 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
             if (empty || row == null) {
                 setText(null);
                 setGraphic(null);
+                setContextMenu(null);
                 return;
             }
             if (row.match() == null) {
+                setContextMenu(null);
                 renderHeader(row);
             } else {
                 renderMatch(row);
+                setContextMenu(row.match().parsed() == null ? null : buildMatchMenu(row));
             }
+        }
+
+        /** Edit menu for a structured match: Mark Done / Reopen, set priority, edit description. */
+        private javafx.scene.control.ContextMenu buildMatchMenu(Row row) {
+            TodoMatch m = row.match();
+            Path file = row.file();
+            boolean done =
+                    com.editora.todo.TodoPatterns.DONE_KEYWORD.equals(m.parsed().keyword());
+            javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+
+            javafx.scene.control.MenuItem doneItem =
+                    new javafx.scene.control.MenuItem(done ? tr("todo.menu.reopen") : tr("todo.menu.markDone"));
+            doneItem.setOnAction(
+                    e -> actions.setKeyword(file, m, done ? "TODO" : com.editora.todo.TodoPatterns.DONE_KEYWORD));
+
+            javafx.scene.control.Menu priorityMenu = new javafx.scene.control.Menu(tr("todo.menu.priority"));
+            for (String p : com.editora.todo.TodoComment.PRIORITY_ORDER) {
+                javafx.scene.control.MenuItem it = new javafx.scene.control.MenuItem(tr("todo.priority." + p));
+                it.setOnAction(e -> actions.setPriority(file, m, p));
+                priorityMenu.getItems().add(it);
+            }
+            javafx.scene.control.MenuItem none = new javafx.scene.control.MenuItem(tr("todo.priority.none"));
+            none.setOnAction(e -> actions.setPriority(file, m, null));
+            priorityMenu.getItems().add(none);
+
+            javafx.scene.control.MenuItem editDesc = new javafx.scene.control.MenuItem(tr("todo.menu.editDescription"));
+            editDesc.setOnAction(e -> actions.editDescription(file, m));
+
+            menu.getItems().addAll(doneItem, priorityMenu, editDesc);
+            return menu;
         }
 
         private void renderHeader(Row row) {
