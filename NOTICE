@@ -28,7 +28,13 @@ desktop, and dotenv are under the MIT License). It also includes the SSH config
 grammar (ssh-config.tmLanguage.json), which shiki aggregates from
 textmate/ssh-config.tmbundle, distributed under that project's permissive
 license ("Permission to copy, use, modify, sell and distribute this software is
-granted ... provided 'as is' without warranty").
+granted ... provided 'as is' without warranty"), and the plain-text developer
+format grammars (all MIT): diff (diff.tmLanguage.json) and Makefile
+(makefile.tmLanguage.json), both aggregated from Microsoft Visual Studio Code
+(© Microsoft Corporation); Protocol Buffers (proto.tmLanguage.json) from
+zxh0/vscode-proto3; GraphQL (graphql.tmLanguage.json) from
+graphql/vscode-graphql (© GraphQL Contributors); and just
+(just.tmLanguage.json) from nefrob/vscode-just.
 
 The following grammars were instead obtained from the Eclipse tm4e
 "language_pack" (which curates grammars for the tm4e engine used here):
@@ -77,8 +83,10 @@ without warranty."
 The fstab, hosts, and Debian/Ubuntu grammars (fstab.tmLanguage.json,
 hosts.tmLanguage.json, deb822.tmLanguage.json, apt-sources.tmLanguage.json,
 interfaces.tmLanguage.json, debian-changelog.tmLanguage.json) — like the HTTP
-grammar (http.tmLanguage.json) — were written for Editora and are covered by
-Editora's own MIT License (above). The .properties files reuse the INI grammar.
+grammar (http.tmLanguage.json), the Java properties grammar
+(properties.tmLanguage.json), and the Git attributes grammar
+(gitattributes.tmLanguage.json) — were written for Editora and are covered by
+Editora's own MIT License (above).
 
 These remain under their original upstream licenses (predominantly MIT). All
 grammars are redistributed unmodified except markdown.tmLanguage.json (three
@@ -90,7 +98,8 @@ Languages bundled: Java, XML, shell, PowerShell, DOS batch, Python, Groovy,
 Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL,
 systemd, desktop entries, dotenv, SSH config, Git config, crontab, Caddyfile,
 fstab, hosts, .properties, deb822 (Debian control / APT sources), APT
-sources.list, network interfaces, Debian changelog.
+sources.list, network interfaces, Debian changelog, unified diff/patch,
+Makefile, justfile, Protocol Buffers, GraphQL, .gitattributes.
 
 ================================================================================
 Bundled fonts

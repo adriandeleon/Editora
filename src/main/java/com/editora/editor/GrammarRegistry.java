@@ -50,8 +50,6 @@ public final class GrammarRegistry {
         // The resource base name doubles as the language name (see LanguageRegistry), so the
         // inverse of scopeToResource resolves a language name to its scope.
         scopeToResource.forEach((scope, resource) -> languageNameToScope.put(resource, scope));
-        // ".properties" files are highlighted with the INI grammar but are their own language name.
-        languageNameToScope.put("properties", "source.ini");
         registry = new Registry(new IRegistryOptions() {
             @Override
             public IGrammarSource getGrammarSource(String scopeName) {
@@ -194,6 +192,13 @@ public final class GrammarRegistry {
         scopeToResource.put("source.debian-changelog", "debian-changelog");
         scopeToResource.put("source.log", "log");
         scopeToResource.put("source.ignore", "ignore"); // .gitignore / .dockerignore / .npmignore / …
+        scopeToResource.put("source.diff", "diff");
+        scopeToResource.put("source.makefile", "makefile");
+        scopeToResource.put("source.just", "just");
+        scopeToResource.put("source.proto", "proto");
+        scopeToResource.put("source.graphql", "graphql");
+        scopeToResource.put("source.java-properties", "properties");
+        scopeToResource.put("source.gitattributes", "gitattributes");
 
         // file extension -> scope name
         mapExtensions("source.java", "java");
@@ -215,7 +220,10 @@ public final class GrammarRegistry {
         mapExtensions("source.css", "css");
         mapExtensions("text.html.basic", "html", "htm", "xhtml");
         mapExtensions("source.yaml", "yaml", "yml");
-        mapExtensions("source.ini", "ini", "cfg", "conf", "properties");
+        mapExtensions("source.ini", "ini", "cfg", "conf");
+        // Java .properties — its own grammar (Unicode escapes, ':' separator, continuation lines);
+        // previously highlighted via the INI grammar.
+        mapExtensions("source.java-properties", "properties");
         mapExtensions("source.sql", "sql", "ddl", "dml");
         mapExtensions("source.mermaid", "mmd", "mermaid");
         // The TypeScript grammar tokenizes plain JS well, so .js/.mjs/.cjs reuse source.ts and
@@ -253,8 +261,19 @@ public final class GrammarRegistry {
         mapExtensions("source.desktop", "desktop", "directory");
         // Server/application log files.
         mapExtensions("source.log", "log");
-        // dotenv (.env / .env.*), Caddyfile, crontab (.cron), git/ssh config, fstab, hosts are all
-        // name/location-determined and handled by ConfigFileType (see scopeForFileName), not by extension.
+        // Unified diffs / patches.
+        mapExtensions("source.diff", "diff", "patch");
+        // Makefiles — bare "Makefile"/"GNUmakefile" handled by ConfigFileType; these are the extensions.
+        mapExtensions("source.makefile", "mk", "mak", "make");
+        // just command-runner files — bare "justfile" handled by ConfigFileType.
+        mapExtensions("source.just", "just");
+        // Protocol Buffers.
+        mapExtensions("source.proto", "proto");
+        // GraphQL schemas/queries.
+        mapExtensions("source.graphql", "graphql", "gql", "graphqls");
+        // dotenv (.env / .env.*), Caddyfile, crontab (.cron), git/ssh config, fstab, hosts, Makefile,
+        // justfile, and .gitattributes are all name/location-determined and handled by ConfigFileType
+        // (see scopeForFileName), not by extension.
     }
 
     private void mapExtensions(String scope, String... extensions) {

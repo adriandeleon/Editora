@@ -65,6 +65,8 @@ public final class FoldRegions {
                     "php",
                     "terraform",
                     "caddyfile",
+                    "proto",
+                    "graphql",
                     "javascript",
                     "typescript",
                     "javascriptreact",

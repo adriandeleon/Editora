@@ -372,6 +372,23 @@ public final class TextMateHighlighter {
         if (scope.startsWith("constant.other.timestamp")) {
             return "log-timestamp";
         }
+        // Unified-diff lines (only the bundled source.diff grammar emits these scopes): added/removed
+        // lines tint green/red, hunk ranges + file headers stand out from the unchanged context lines.
+        if (scope.startsWith("markup.inserted")) {
+            return "diff-inserted";
+        }
+        if (scope.startsWith("markup.deleted")) {
+            return "diff-deleted";
+        }
+        if (scope.startsWith("markup.changed")) {
+            return "diff-changed";
+        }
+        if (scope.startsWith("meta.diff.range")) {
+            return "diff-range";
+        }
+        if (scope.startsWith("meta.diff") || scope.startsWith("meta.separator.diff")) {
+            return "diff-header";
+        }
         if (scope.startsWith("markup.bold")) {
             return "bold";
         }

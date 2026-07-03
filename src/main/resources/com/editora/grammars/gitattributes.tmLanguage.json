@@ -1,0 +1,76 @@
+{
+  "name": "gitattributes",
+  "scopeName": "source.gitattributes",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.gitattributes",
+      "match": "^\\s*#.*$"
+    },
+    {
+      "comment": "Macro definition: [attr]macroname attr1 attr2 ...",
+      "match": "^\\s*(\\[attr\\])([^\\s]+)",
+      "captures": {
+        "1": {
+          "name": "keyword.control.macro.gitattributes"
+        },
+        "2": {
+          "name": "entity.name.type.macro.gitattributes"
+        }
+      }
+    },
+    {
+      "comment": "The pattern (first token on the line) — same glob syntax as .gitignore.",
+      "begin": "^\\s*(?![#\\[])(?=\\S)",
+      "end": "(?=\\s|$)",
+      "patterns": [
+        {
+          "name": "keyword.operator.glob.gitattributes",
+          "match": "\\*\\*|[*?]"
+        },
+        {
+          "name": "constant.character.range.gitattributes",
+          "match": "\\[[^\\]]*\\]"
+        },
+        {
+          "name": "punctuation.separator.path.gitattributes",
+          "match": "/"
+        },
+        {
+          "name": "string.unquoted.pattern.gitattributes",
+          "match": "[^\\s*?\\[/]+"
+        }
+      ]
+    },
+    {
+      "comment": "attr=value — name, assignment, value.",
+      "match": "([A-Za-z0-9_.-]+)(=)([^\\s]*)",
+      "captures": {
+        "1": {
+          "name": "entity.other.attribute-name.gitattributes"
+        },
+        "2": {
+          "name": "punctuation.separator.key-value.gitattributes"
+        },
+        "3": {
+          "name": "string.unquoted.value.gitattributes"
+        }
+      }
+    },
+    {
+      "comment": "-attr unsets, !attr unspecifies.",
+      "match": "([-!])([A-Za-z0-9_.-]+)",
+      "captures": {
+        "1": {
+          "name": "keyword.operator.negation.gitattributes"
+        },
+        "2": {
+          "name": "entity.other.attribute-name.gitattributes"
+        }
+      }
+    },
+    {
+      "name": "entity.other.attribute-name.gitattributes",
+      "match": "[A-Za-z0-9_.-]+"
+    }
+  ]
+}

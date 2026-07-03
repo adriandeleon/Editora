@@ -183,4 +183,26 @@ class ConfigFileTypeTest {
         assertNull(ConfigFileType.resolve(".eslintrc.json")); // extension map → json
         assertNull(ConfigFileType.resolve("source.c")); // ends with "c", not "rc"
     }
+
+    @Test
+    void makefileJustfileAndGitattributesByName() {
+        // Makefile — extension-less names (case-insensitive) + the "Makefile.<suffix>" form.
+        assertEquals("makefile", ConfigFileType.resolve("Makefile"));
+        assertEquals("makefile", ConfigFileType.resolve("makefile"));
+        assertEquals("makefile", ConfigFileType.resolve("GNUmakefile"));
+        assertEquals("makefile", ConfigFileType.resolve("Makefile.inc"));
+        assertEquals("makefile", ConfigFileType.resolve("/proj/Makefile"));
+        // justfile — bare and dotfile forms.
+        assertEquals("just", ConfigFileType.resolve("justfile"));
+        assertEquals("just", ConfigFileType.resolve("Justfile"));
+        assertEquals("just", ConfigFileType.resolve(".justfile"));
+        assertEquals("just", ConfigFileType.resolve("/proj/justfile"));
+        // Git attributes — ".gitattributes" anywhere + the repo-local ".git/info/attributes".
+        assertEquals("gitattributes", ConfigFileType.resolve(".gitattributes"));
+        assertEquals("gitattributes", ConfigFileType.resolve("/proj/.gitattributes"));
+        assertEquals("gitattributes", ConfigFileType.resolve("/repo/.git/info/attributes"));
+        // A bare "attributes" outside .git must not match.
+        assertNull(ConfigFileType.resolve("attributes"));
+        assertNull(ConfigFileType.resolve("/etc/attributes"));
+    }
 }

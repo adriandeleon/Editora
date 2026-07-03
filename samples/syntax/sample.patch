@@ -1,0 +1,20 @@
+diff --git a/src/greeter.py b/src/greeter.py
+index 3b18e51..9ae2f7c 100644
+--- a/src/greeter.py
++++ b/src/greeter.py
+@@ -1,7 +1,8 @@
+ """A tiny greeter."""
+
+-def greet(name):
+-    return "Hello, " + name
++def greet(name: str) -> str:
++    """Return a friendly greeting."""
++    return f"Hello, {name}!"
+
+ if __name__ == "__main__":
+     print(greet("Editora"))
+@@ -12,4 +13,3 @@
+ # trailing section
+ VERSION = "1.0"
+-DEBUG = True
+Only in b/src: helper.py

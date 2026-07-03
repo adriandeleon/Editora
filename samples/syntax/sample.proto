@@ -1,0 +1,56 @@
+// Sample Protocol Buffers definition (proto3) — messages, enums, services, options.
+syntax = "proto3";
+
+package editora.sample.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option java_package = "com.editora.sample.v1";
+option java_multiple_files = true;
+
+// A user account.
+message User {
+  string id = 1;
+  string display_name = 2;
+  repeated string emails = 3;
+  Status status = 4;
+  google.protobuf.Timestamp created_at = 5;
+
+  map<string, string> attributes = 6;
+
+  oneof avatar {
+    string avatar_url = 7;
+    bytes avatar_png = 8;
+  }
+
+  /* Nested message. */
+  message Address {
+    string street = 1;
+    string city = 2;
+    string country = 3;
+  }
+  Address address = 9;
+
+  reserved 20 to 29;
+  reserved "legacy_field";
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+  SUSPENDED = 2;
+}
+
+service UserService {
+  rpc GetUser(GetUserRequest) returns (User);
+  rpc ListUsers(ListUsersRequest) returns (stream User);
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message ListUsersRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}

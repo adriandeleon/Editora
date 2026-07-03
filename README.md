@@ -63,10 +63,13 @@ Editora is built with the help of AI coding tools.
   (On macOS, the Option dead keys `Option`+`e`/`i`/`u`/`n`/`` ` `` are intercepted by the OS for
   accent composition, so a few `M-`-chords like `M-e` aren't reachable by keyboard there — the
   command palette still works.)
-- **Syntax highlighting** — TextMate grammars (via [tm4e](https://github.com/eclipse/tm4e)) for 30+
-  languages: Java, TypeScript/JavaScript, XML, shell, PowerShell, DOS batch, Python, Groovy, Kotlin,
-  Ruby, PHP, C, C++, Rust, Go, C#, Lua, Markdown, JSON, CSS, HTML, YAML, INI, TOML, SQL, Dockerfile,
-  Terraform/HCL, Mermaid, and `.http`.
+- **Syntax highlighting** — TextMate grammars (via [tm4e](https://github.com/eclipse/tm4e)) for 40+
+  languages and formats: Java, TypeScript/JavaScript, XML, shell, PowerShell, DOS batch, Python,
+  Groovy, Kotlin, Ruby, PHP, C, C++, Rust, Go, C#, Lua, Markdown, JSON, CSS, HTML, YAML, INI, TOML,
+  SQL, Dockerfile, Terraform/HCL, Mermaid, `.http`, unified diffs (`.diff`/`.patch` — added/removed
+  lines tint green/red), Makefile, justfile, Protocol Buffers (`.proto`), GraphQL, Java
+  `.properties`, `.gitignore`/`.gitattributes`, dotenv, and common Linux/tool config files
+  (systemd units, SSH/Git config, crontab, hosts, fstab, …).
 - **Bundled fonts** — JetBrains Mono (default), Cascadia Code, Fira Code, IBM Plex Mono,
   and Source Code Pro ship with the app; no system install required.
 - **Editor view options** — 80-column ruler and current-line highlight.

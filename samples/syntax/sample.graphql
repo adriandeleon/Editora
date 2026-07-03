@@ -1,0 +1,67 @@
+# Sample GraphQL schema + operations — types, interfaces, enums, directives, fragments.
+"""
+A user of the system.
+"""
+type User implements Node {
+  id: ID!
+  name: String!
+  email: String @deprecated(reason: "Use `emails` instead.")
+  emails: [String!]!
+  role: Role = MEMBER
+  posts(first: Int = 10, after: String): PostConnection!
+}
+
+interface Node {
+  id: ID!
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+input NewPost {
+  title: String!
+  body: String
+  tags: [String!]
+}
+
+union SearchResult = User | Post
+
+type Post implements Node {
+  id: ID!
+  title: String!
+  author: User!
+}
+
+type PostConnection {
+  edges: [Post!]!
+  totalCount: Int!
+}
+
+type Query {
+  me: User
+  node(id: ID!): Node
+  search(term: String!): [SearchResult!]!
+}
+
+type Mutation {
+  createPost(input: NewPost!): Post!
+}
+
+# An operation with a fragment and variables.
+query CurrentUser($withPosts: Boolean! = true) {
+  me {
+    ...userFields
+    posts(first: 5) @include(if: $withPosts) {
+      totalCount
+    }
+  }
+}
+
+fragment userFields on User {
+  id
+  name
+  role
+}

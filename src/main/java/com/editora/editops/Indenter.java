@@ -169,6 +169,8 @@ public final class Indenter {
                     "sql",
                     "batchfile",
                     "terraform",
+                    "proto",
+                    "graphql",
                     "javascript",
                     "typescript",
                     "javascriptreact",

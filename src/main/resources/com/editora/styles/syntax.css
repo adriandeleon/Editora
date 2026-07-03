@@ -54,6 +54,14 @@
 /* CSV/TSV field separators (source.csv grammar): a muted tint so column boundaries stand out. */
 .text.csv-delimiter { -fx-fill: -color-fg-subtle; }
 
+/* Unified diff / patch files (source.diff grammar). Semantic looked-up colors (the log-* convention)
+   so they track the active theme with no per-editor-theme override. */
+.text.diff-inserted { -fx-fill: -color-success-fg; }
+.text.diff-deleted  { -fx-fill: -color-danger-fg; }
+.text.diff-changed  { -fx-fill: -color-warning-fg; }
+.text.diff-range    { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
+.text.diff-header   { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
+
 /* Rainbow CSV: per-column colors (cycled every 8) when rainbow highlighting is on — computed in Java
    (CsvRainbow), not the grammar. Eight well-separated hues chosen to read on both light and dark editor
    themes; the compound `.text.<class>` form (0,2,0) wins over the base fill like the token rules above. */

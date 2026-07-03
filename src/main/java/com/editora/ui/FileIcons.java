@@ -415,8 +415,9 @@ public final class FileIcons {
             case "terraform" -> "terraform";
             case "mermaid" -> "mermaid";
             case "sql" -> "storage";
-            case "ini", "properties", "toml", "systemd", "desktop" -> "settings";
-            case "rust", "lua", "groovy", "http" -> "code";
+            case "ini", "properties", "toml", "systemd", "desktop", "gitattributes" -> "settings";
+            case "rust", "lua", "groovy", "http", "proto", "graphql", "diff" -> "code";
+            case "makefile", "just" -> "terminal";
             default -> "generic";
         };
     }
