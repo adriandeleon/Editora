@@ -236,6 +236,13 @@ Editora is built with the help of AI coding tools.
   archive, PDF, table, … glyph, or a generic document fallback) everywhere it's listed: editor tabs, the
   Project tree, the Open-Files / Recent pickers, the Switcher, and the file/folder finders. Monochrome
   single-path glyphs that track the light/dark theme (Simple Icons + Material Design Icons).
+- **TODO Comment Manager** — `TODO`, `FIXME`, `HACK`, `NOTE`, `XXX` (and your own keywords) are highlighted
+  wherever they appear, and understood in the IntelliJ-style structured form `KEYWORD [tag] (priority) description`
+  — e.g. `// TODO [auth] (high) fix token refresh` — with each part colored (tag underlined; priority by level).
+  The **TODO tool window** (`M-g o`) lists every match with a **Group by** selector (File / Priority / Tag /
+  Keyword), and right-clicking a match edits it in your source: **Mark Done** (→ `DONE`) / Reopen, set the
+  priority, or edit the description — as one undoable edit. Configure the keywords/colors in
+  Settings → Editor → TODO Highlighting.
 - **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
   Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`
   is a cross-file jump picker. Reorder bookmarks (and file groups) in the tool window with Alt+Up/Down,
