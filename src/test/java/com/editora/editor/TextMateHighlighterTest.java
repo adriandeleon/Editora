@@ -46,6 +46,21 @@ class TextMateHighlighterTest {
         assertNull(TextMateHighlighter.styleForScopes(null));
     }
 
+    @Test
+    void diffScopesMapToDiffClasses() {
+        assertEquals(
+                "diff-inserted", TextMateHighlighter.styleForScopes(List.of("source.diff", "markup.inserted.diff")));
+        assertEquals("diff-deleted", TextMateHighlighter.styleForScopes(List.of("source.diff", "markup.deleted.diff")));
+        assertEquals("diff-changed", TextMateHighlighter.styleForScopes(List.of("source.diff", "markup.changed.diff")));
+        assertEquals(
+                "diff-range", TextMateHighlighter.styleForScopes(List.of("source.diff", "meta.diff.range.unified")));
+        assertEquals(
+                "diff-header",
+                TextMateHighlighter.styleForScopes(List.of("source.diff", "meta.diff.header.from-file")));
+        // markup.inserted must not shadow the log-info mapping (shared "markup.in" prefix).
+        assertEquals("log-info", TextMateHighlighter.styleForScopes(List.of("source.log", "markup.info.log")));
+    }
+
     // --- end-to-end tokenization through a real grammar ---
 
     @Test
@@ -91,6 +106,31 @@ class TextMateHighlighterTest {
                 new Case("Dockerfile", "FROM alpine:3\nRUN echo hi\n", "keyword"),
                 new Case("main.tf", "resource \"aws_s3_bucket\" \"b\" {\n  bucket = \"x\"\n}\n", "string"),
                 new Case("config.toml", "[server]\nport = 8080\n", "number"))) {
+            IGrammar g = GrammarRegistry.shared().forFileName(c.file());
+            assertNotNull(g, c.file() + " grammar should load");
+            StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(c.text(), g);
+            assertNotNull(spans, c.file() + " should tokenize");
+            assertEquals(c.text().length(), spans.length());
+            assertTrue(hasStyle(spans, c.expectStyle()), c.file() + " expected a " + c.expectStyle() + " span");
+        }
+    }
+
+    @Test
+    void plainTextFormatGrammarsTokenize() {
+        // The 2026-07 plain-text-format batch: vendored diff/makefile/just/proto/graphql grammars plus
+        // the in-house properties/gitattributes ones — each loads and produces the expected span kind.
+        record Case(String file, String text, String expectStyle) {}
+        for (Case c : List.of(
+                new Case("fix.patch", "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-old line\n+new line\n", "diff-inserted"),
+                new Case("fix.patch", "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-old line\n+new line\n", "diff-deleted"),
+                new Case("fix.patch", "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-old\n+new\n", "diff-range"),
+                new Case("Makefile", "# build\nall: main.o\n\tcc -o app main.o\n", "comment"),
+                new Case("justfile", "# recipes\nbuild:\n    cargo build\n", "comment"),
+                new Case("api.proto", "syntax = \"proto3\";\nmessage User {\n  string name = 1;\n}\n", "string"),
+                new Case("schema.graphql", "type Query {\n  user(id: ID!): User\n}\n", "keyword"),
+                new Case("app.properties", "# config\ngreeting = hello\\u0021\n", "comment"),
+                new Case("app.properties", "greeting = hello\\u0021 \\\n  continued\n", "escape"),
+                new Case(".gitattributes", "# attrs\n*.png binary\n*.java diff=java\n", "attribute"))) {
             IGrammar g = GrammarRegistry.shared().forFileName(c.file());
             assertNotNull(g, c.file() + " grammar should load");
             StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(c.text(), g);

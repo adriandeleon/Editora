@@ -3,6 +3,15 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Plain-text developer formats — syntax highlighting for unified diffs (`.diff`/`.patch`, green/red
+      added/removed lines via new `.text.diff-*` semantic classes), Makefile (`Makefile`/`GNUmakefile`/`.mk`),
+      justfile, Protocol Buffers (`.proto`), GraphQL (`.graphql`/`.gql`), and `.gitattributes`
+      (+ `.git/info/attributes`); a dedicated Java `.properties` grammar (Unicode escapes, `:` separator,
+      `\`-continuations) replaces the INI borrow. Proto/GraphQL fold + auto-indent as brace languages;
+      comment toggling wired for all. Grammars vendored MIT from shiki tm-grammars (diff/make/proto/graphql/
+      just); properties/gitattributes written in-house.
+      *Deferred: "open this .patch in the diff viewer" action, LSP servers (buf / graphql-lsp), Makefile
+      forced-tab indent for brand-new files (existing files detect tabs).*
 - [x] Sample corpus for manual feature testing — a curated, feature-organized `samples/` folder (syntax per
       language, folding, indent, markdown, mermaid, todo, spell, search, editorconfig, http, log, diff,
       encodings) with a `README.md` manifest. `SamplesCorpusTest` guards manifest↔files sync + core-language

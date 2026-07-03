@@ -129,10 +129,25 @@ public final class LanguageRegistry {
             // XDG desktop entries / KDE .directory files.
             Map.entry("desktop", "desktop"),
             Map.entry("directory", "desktop"),
-            // Java/INI-style .properties (highlighted with the INI grammar; see GrammarRegistry).
+            // Java .properties — its own grammar (Unicode escapes, ':' separator, continuations).
             Map.entry("properties", "properties"),
             // Server/application logs — the log viewer skins these (level highlighting, tail-follow).
-            Map.entry("log", "log"));
+            Map.entry("log", "log"),
+            // Unified diffs / patches.
+            Map.entry("diff", "diff"),
+            Map.entry("patch", "diff"),
+            // Makefiles — bare "Makefile"/"GNUmakefile" handled by ConfigFileType.
+            Map.entry("mk", "makefile"),
+            Map.entry("mak", "makefile"),
+            Map.entry("make", "makefile"),
+            // just command-runner files — bare "justfile" handled by ConfigFileType.
+            Map.entry("just", "just"),
+            // Protocol Buffers (brace-delimited; folds like C-family sources).
+            Map.entry("proto", "proto"),
+            // GraphQL schemas/queries (brace-delimited).
+            Map.entry("graphql", "graphql"),
+            Map.entry("gql", "graphql"),
+            Map.entry("graphqls", "graphql"));
 
     private LanguageRegistry() {}
 

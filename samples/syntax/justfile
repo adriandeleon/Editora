@@ -1,0 +1,23 @@
+# Sample justfile — settings, variables, recipes with args and dependencies.
+set shell := ["bash", "-c"]
+
+version := "1.2.3"
+target  := env_var_or_default("TARGET", "debug")
+
+# build the app
+build:
+    cargo build --profile {{target}}
+
+# run the test suite (depends on build)
+test filter="": build
+    cargo test {{filter}}
+
+release: (tag version)
+    cargo publish
+
+tag v:
+    git tag -a "v{{v}}" -m "release v{{v}}"
+
+[private]
+clean:
+    rm -rf target

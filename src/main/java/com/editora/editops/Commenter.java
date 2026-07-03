@@ -41,7 +41,8 @@ public final class Commenter {
                     "javascript",
                     "typescript",
                     "javascriptreact",
-                    "typescriptreact" -> new CommentStyle("//", "/*", "*/");
+                    "typescriptreact",
+                    "proto" -> new CommentStyle("//", "/*", "*/");
             case "css" -> new CommentStyle(null, "/*", "*/");
             case "sql" -> new CommentStyle("--", "/*", "*/");
             case "lua" -> new CommentStyle("--", "--[[", "]]");
@@ -65,7 +66,12 @@ public final class Commenter {
                     "properties",
                     "deb822",
                     "apt-sources",
-                    "interfaces" -> new CommentStyle("#", null, null);
+                    "interfaces",
+                    "makefile",
+                    "just",
+                    "gitattributes",
+                    "ignore",
+                    "graphql" -> new CommentStyle("#", null, null);
             case "powershell" -> new CommentStyle("#", "<#", "#>");
             case "ini" -> new CommentStyle(";", null, null);
             case "batchfile" -> new CommentStyle("REM", null, null);

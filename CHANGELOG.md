@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **More plain-text developer formats.** Syntax highlighting for **unified diffs** (`.diff`/`.patch` —
+  added/removed lines tint green/red, hunk headers stand out), **Makefiles** (`Makefile`/`GNUmakefile`/`.mk`),
+  **justfiles**, **Protocol Buffers** (`.proto`), **GraphQL** (`.graphql`/`.gql`), and **`.gitattributes`**
+  (including a repo's `.git/info/attributes`). Java **`.properties`** files get a dedicated grammar
+  (`:` and `=` separators, Unicode escapes, backslash line-continuations) instead of borrowing the INI one.
+  Proto and GraphQL also fold on braces and auto-indent like C-family code, and comment toggling
+  (`M-;`) works in all of them.
+
 - **Compare / Annotate in the Project tree.** The Project tool window's file **Git** submenu now also offers
   **Compare with Branch…** (diff the file against its version on any local or remote branch), **Compare with
   Revision…** (diff against a commit from the file's history), and **Annotate** (open the file and show inline

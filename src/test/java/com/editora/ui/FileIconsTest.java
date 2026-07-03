@@ -66,6 +66,19 @@ class FileIconsTest {
     }
 
     @Test
+    void plainTextFormats() {
+        assertEquals("code", FileIcons.iconKeyFor("changes.diff"));
+        assertEquals("code", FileIcons.iconKeyFor("fix.patch"));
+        assertEquals("code", FileIcons.iconKeyFor("api.proto"));
+        assertEquals("code", FileIcons.iconKeyFor("schema.graphql"));
+        assertEquals("code", FileIcons.iconKeyFor("query.gql"));
+        assertEquals("terminal", FileIcons.iconKeyFor("Makefile"));
+        assertEquals("terminal", FileIcons.iconKeyFor("rules.mk"));
+        assertEquals("terminal", FileIcons.iconKeyFor("justfile"));
+        assertEquals("settings", FileIcons.iconKeyFor(".gitattributes"));
+    }
+
+    @Test
     void pathsAreReducedToTheLastSegment() {
         assertEquals("java", FileIcons.iconKeyFor("/home/me/src/Main.java"));
         assertEquals("python", FileIcons.iconKeyFor("C:\\project\\script.py"));
@@ -75,7 +88,6 @@ class FileIconsTest {
     @Test
     void unknownAndNullFallBackToGeneric() {
         assertEquals("generic", FileIcons.iconKeyFor("data.unknownext"));
-        assertEquals("generic", FileIcons.iconKeyFor("Makefile")); // no extension, not a known special
         assertEquals("generic", FileIcons.iconKeyFor("noextension"));
         assertEquals("generic", FileIcons.iconKeyFor(null));
     }

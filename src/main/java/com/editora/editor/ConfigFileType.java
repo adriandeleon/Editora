@@ -42,6 +42,19 @@ public final class ConfigFileType {
         if (lower.equals(".env") || lower.startsWith(".env.") || lower.endsWith(".env")) {
             return "dotenv";
         }
+        // Makefile — extension-less ("Makefile"/"makefile"/"GNUmakefile") or a suffix form
+        // ("Makefile.inc"); the .mk/.mak/.make extensions are matched by the extension map.
+        if (lower.equals("makefile") || lower.equals("gnumakefile") || lower.startsWith("makefile.")) {
+            return "makefile";
+        }
+        // just command-runner file — "justfile"/".justfile" (case-insensitive by convention).
+        if (lower.equals("justfile") || lower.equals(".justfile")) {
+            return "just";
+        }
+        // Git attributes — ".gitattributes" anywhere, or the repo-local ".git/info/attributes".
+        if (lower.equals(".gitattributes") || (lower.equals("attributes") && hasAncestor(norm, ".git"))) {
+            return "gitattributes";
+        }
         // SSH client/daemon config — explicit names anywhere, "config" under a .ssh dir, or any file in
         // a drop-in dir (ssh_config.d / sshd_config.d, or .ssh/config.d). A bare "config" is matched only
         // via the .ssh ancestor (too generic otherwise).

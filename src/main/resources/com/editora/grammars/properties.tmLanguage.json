@@ -1,0 +1,45 @@
+{
+  "name": "properties",
+  "scopeName": "source.java-properties",
+  "patterns": [
+    {
+      "comment": "Comment lines start with # or ! (java.util.Properties).",
+      "name": "comment.line.number-sign.properties",
+      "match": "^\\s*[#!].*$"
+    },
+    {
+      "comment": "key [=|:|whitespace] value — the value block stays open across \\-continued lines.",
+      "begin": "^\\s*((?:[^\\\\=:\\s]|\\\\.)+)\\s*([=:])?[ \\t]*",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.key.properties",
+          "patterns": [
+            {
+              "name": "constant.character.escape.properties",
+              "match": "\\\\."
+            }
+          ]
+        },
+        "2": {
+          "name": "punctuation.separator.key-value.properties"
+        }
+      },
+      "end": "(?<!\\\\)$",
+      "contentName": "string.unquoted.value.properties",
+      "patterns": [
+        {
+          "name": "constant.character.escape.unicode.properties",
+          "match": "\\\\u[0-9A-Fa-f]{4}"
+        },
+        {
+          "name": "constant.character.escape.continuation.properties",
+          "match": "\\\\$"
+        },
+        {
+          "name": "constant.character.escape.properties",
+          "match": "\\\\."
+        }
+      ]
+    }
+  ]
+}

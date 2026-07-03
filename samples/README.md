@@ -27,6 +27,13 @@ as plain text (expected).
 `samples/syntax/sample.ps1`, `samples/syntax/sample.bat`, `samples/syntax/sample.groovy`,
 `samples/syntax/sample.ini`
 
+Plain-text developer formats: `samples/syntax/sample.patch` (unified diff — added/removed lines
+tint green/red), `samples/syntax/Makefile` (recipe lines are real tabs), `samples/syntax/justfile`,
+`samples/syntax/sample.proto`, `samples/syntax/sample.graphql`, `samples/syntax/sample.properties`
+(both `=`/`:` separators, escapes, backslash continuations). There is deliberately no
+`.gitattributes` sample — a real one would change Git's behavior for this folder (see
+*Conventions*); open any repo's `.gitattributes` to see that grammar.
+
 ## folding/ — nested fold regions
 
 - `samples/folding/deeply-nested.json` — collapse/expand several nested levels; the gutter chevrons

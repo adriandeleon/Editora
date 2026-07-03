@@ -88,9 +88,39 @@ class GrammarRegistryTest {
         assertNotNull(GrammarRegistry.shared().forLanguageName("fstab"));
         assertNotNull(GrammarRegistry.shared().forFileName("/etc/fstab"));
         assertNotNull(GrammarRegistry.shared().forLanguageName("hosts"));
-        // ".properties" reuses the INI grammar.
+        // ".properties" has its own Java-properties grammar (see plainTextFormatGrammarsLoad).
         assertNotNull(GrammarRegistry.shared().forFileName("app.properties"));
         assertNotNull(GrammarRegistry.shared().forLanguageName("properties"));
+    }
+
+    @Test
+    void plainTextFormatGrammarsLoad() {
+        // Unified diffs / patches (vendored source.diff).
+        assertNotNull(GrammarRegistry.shared().forLanguageName("diff"));
+        assertNotNull(GrammarRegistry.shared().forFileName("changes.diff"));
+        assertNotNull(GrammarRegistry.shared().forFileName("fix.patch"));
+        // Makefile — bare names via ConfigFileType, plus the .mk extension.
+        assertNotNull(GrammarRegistry.shared().forLanguageName("makefile"));
+        assertNotNull(GrammarRegistry.shared().forFileName("Makefile"));
+        assertNotNull(GrammarRegistry.shared().forFileName("GNUmakefile"));
+        assertNotNull(GrammarRegistry.shared().forFileName("rules.mk"));
+        // justfile.
+        assertNotNull(GrammarRegistry.shared().forLanguageName("just"));
+        assertNotNull(GrammarRegistry.shared().forFileName("justfile"));
+        assertNotNull(GrammarRegistry.shared().forFileName(".justfile"));
+        // Protocol Buffers + GraphQL.
+        assertNotNull(GrammarRegistry.shared().forLanguageName("proto"));
+        assertNotNull(GrammarRegistry.shared().forFileName("api.proto"));
+        assertNotNull(GrammarRegistry.shared().forLanguageName("graphql"));
+        assertNotNull(GrammarRegistry.shared().forFileName("schema.graphql"));
+        assertNotNull(GrammarRegistry.shared().forFileName("query.gql"));
+        // Java .properties — its own grammar now (no longer the INI grammar).
+        assertNotNull(GrammarRegistry.shared().forLanguageName("properties"));
+        assertNotNull(GrammarRegistry.shared().forFileName("app.properties"));
+        // .gitattributes (in-house grammar) + the repo-local .git/info/attributes.
+        assertNotNull(GrammarRegistry.shared().forLanguageName("gitattributes"));
+        assertNotNull(GrammarRegistry.shared().forFileName(".gitattributes"));
+        assertNotNull(GrammarRegistry.shared().forFileName("/repo/.git/info/attributes"));
     }
 
     @Test
