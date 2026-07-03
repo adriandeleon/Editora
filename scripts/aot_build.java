@@ -133,6 +133,11 @@ public class aot_build {
             cmd.addAll(List.of(
                     "-Xmx2g", "-XX:+UseSerialGC",
                     "--enable-native-access=javafx.graphics",
+                    // Mirror the packaged launcher's javaOptions (see pom.xml dist profile): lets the macOS
+                    // "Open With" handler reach the internal com.sun.glass.ui API. Harmless on other OSes.
+                    // (com.editora.MacOpenFiles degrades gracefully without it, but include it so the cache
+                    // matches the shipped app and covers the handler's classes.)
+                    "--add-exports=javafx.graphics/com.sun.glass.ui=com.editora",
                     "-Dprism.maxvram=2G", "-Dprism.maxTextureSize=16384",
                     "-Deditora.aotTrainExit=true",
                     "-XX:AOTCacheOutput=" + aot,
