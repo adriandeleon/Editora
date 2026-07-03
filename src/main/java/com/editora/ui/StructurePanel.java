@@ -92,6 +92,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         filterField.setPromptText(tr("structure.filterPrompt"));
         filterField.getStyleClass().add("structure-filter");
         filterField.textProperty().addListener((o, w, n) -> applyFilter(n));
+        FilterFieldNav.install(filterField, tree, this::activateSelected); // Down/Enter → into / open the results
         // Trailing clear ("✕") button — visible only while the filter has text (mirrors the Project/Notes panels).
         Button clearFilter = new Button("✕");
         clearFilter.getStyleClass().add("project-filter-clear");
@@ -212,16 +213,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     @Override
     public void focusFirstItem() {
-        if (tree.getExpandedItemCount() > 0 && tree.getSelectionModel().isEmpty()) {
-            suppressNavigation = true; // highlight the first symbol without jumping the editor
-            try {
-                tree.getSelectionModel().select(0);
-                tree.scrollTo(0);
-            } finally {
-                suppressNavigation = false;
-            }
-        }
-        tree.requestFocus();
+        // Land on the search field so the user can type to filter immediately; Down/Enter move into / open
+        // the results (see FilterFieldNav in build()).
+        filterField.requestFocus();
     }
 
     // --- Keyboard handling (Emacs defaults) ---

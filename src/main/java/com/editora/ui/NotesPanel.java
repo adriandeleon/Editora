@@ -70,6 +70,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         filterField.setPromptText(tr("notes.filterPrompt"));
         filterField.getStyleClass().add("notes-filter");
         filterField.textProperty().addListener((o, w, n) -> refresh());
+        FilterFieldNav.install(filterField, tree, this::activateSelected); // Down/Enter → into / open the results
         // Trailing clear ("✕") button — visible only while the filter has text (mirrors the Project panel).
         Button clear = new Button("✕");
         clear.getStyleClass().add("project-filter-clear");
@@ -114,10 +115,9 @@ public class NotesPanel extends VBox implements ToolWindowContent {
 
     @Override
     public void focusFirstItem() {
-        if (!tree.getRoot().getChildren().isEmpty()) {
-            tree.requestFocus();
-            tree.getSelectionModel().select(tree.getRoot().getChildren().get(0));
-        }
+        // Land on the filter field so the user can type to filter immediately; Down/Enter move into / open
+        // the results (see FilterFieldNav in build()).
+        filterField.requestFocus();
     }
 
     /** Rebuilds the tree from the persisted notes map, applying the filter. */

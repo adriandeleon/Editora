@@ -97,6 +97,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         filterField.setPromptText(tr("bookmarks.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
         filterField.textProperty().addListener((o, w, n) -> refresh());
+        FilterFieldNav.install(filterField, tree, this::activateSelected); // Down/Enter → into / open the results
         HBox.setHgrow(filterField, Priority.ALWAYS);
 
         // Trailing clear ("✕") button — visible only while the filter has text (mirrors the Project/Notes panels).
@@ -224,11 +225,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     @Override
     public void focusFirstItem() {
-        if (tree.getExpandedItemCount() > 0 && tree.getSelectionModel().isEmpty()) {
-            tree.getSelectionModel().select(0);
-            tree.scrollTo(0);
-        }
-        tree.requestFocus();
+        // Land on the filter field so the user can type to filter immediately; Down/Enter move into / open
+        // the results (see FilterFieldNav in the constructor).
+        filterField.requestFocus();
     }
 
     // --- keyboard navigation (mirrors StructurePanel) ---
