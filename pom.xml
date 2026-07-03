@@ -376,6 +376,21 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
+                <executions>
+                    <!-- App.MacEventHandler uses the internal com.sun.glass.ui API (the only headless-safe
+                         hook for macOS Finder "Open With"; java.awt.Desktop can't be used under
+                         java.awt.headless=true). Scope the export to the MAIN compile only — the test compile
+                         runs on the classpath (unnamed module), where a =com.editora target wouldn't apply. -->
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <compilerArgs>
+                                <arg>--add-exports</arg>
+                                <arg>javafx.graphics/com.sun.glass.ui=com.editora</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -549,6 +564,10 @@
                     <mainClass>com.editora/com.editora.App</mainClass>
                     <options>
                         <option>--enable-native-access=javafx.graphics</option>
+                        <!-- Let App.MacEventHandler reach the internal com.sun.glass.ui open-files hook (macOS
+                             Finder "Open With"). Harmless on other OSes. Mirrored in the dist launcher. -->
+                        <option>--add-exports</option>
+                        <option>javafx.graphics/com.sun.glass.ui=com.editora</option>
                         <!-- Prism pipeline order, per-OS (see the os-* profiles): macOS gets Metal first
                              (es2/sw fallback), Windows keeps Direct3D, Linux es2. Mirrors the dist build so
                              dev == prod; on macOS this is what fixes the M-series es2 RTT glitches. -->
@@ -1052,6 +1071,31 @@
                      es2/sw remain as fallbacks if Metal ever fails to init. -->
                 <prism.pipeline>mtl,es2,sw</prism.pipeline>
             </properties>
+            <!-- macOS-only: add file associations to the APP_IMAGE jpackage step so Editora.app declares
+                 CFBundleDocumentTypes in its Info.plist and shows up in Finder's "Open With" menu. This must
+                 run on the APP_IMAGE phase (that's where the .app's Info.plist is generated); the later DMG
+                 app-image wrap just packages the finished .app. Contributed here (not in the shared `dist`
+                 profile) so non-macOS installer builds stay byte-identical. Merges into the same
+                 `jpackage-app-image` execution by id when os-mac and dist are both active. -->
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <version>${jpackage.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>jpackage-app-image</id>
+                                <configuration>
+                                    <fileAssociations>
+                                        <fileAssociation>${project.basedir}/packaging/mac/file-associations.properties</fileAssociation>
+                                    </fileAssociations>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <profile>
             <id>os-windows</id>
@@ -1193,6 +1237,9 @@
                                     </modulePaths>
                                     <javaOptions>
                                         <javaOption>--enable-native-access=javafx.graphics</javaOption>
+                                        <!-- Let App.MacEventHandler reach the internal com.sun.glass.ui
+                                             open-files hook (macOS Finder "Open With"). Harmless elsewhere. -->
+                                        <javaOption>--add-exports=javafx.graphics/com.sun.glass.ui=com.editora</javaOption>
                                         <!-- Raise the Prism texture caps: the default 512 MB VRAM pool
                                              could be exhausted by many open files' GPU textures, after
                                              which JavaFX NPEs in the render thread (black screen). These

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **macOS "Open With" support.** The packaged `Editora.app` now registers as a handler for common text and
+  source files, so Editora appears in Finder's right-click **Open With** menu (and the "Always Open With"
+  picker). Opening a file that way launches or focuses Editora and opens the file — even though macOS delivers
+  it as an Apple Event rather than a command-line argument. It's offered as an *alternate* handler, so it
+  doesn't take over your existing default editor. (Move `Editora.app` to `/Applications` so macOS registers it.)
+
 - **More plain-text developer formats.** Syntax highlighting for **unified diffs** (`.diff`/`.patch` —
   added/removed lines tint green/red, hunk headers stand out), **Makefiles** (`Makefile`/`GNUmakefile`/`.mk`),
   **justfiles**, **Protocol Buffers** (`.proto`), **GraphQL** (`.graphql`/`.gql`), and **`.gitattributes`**
