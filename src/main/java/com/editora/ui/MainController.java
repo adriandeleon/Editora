@@ -1554,6 +1554,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             EditorBuffer buffer = bufferOf(now);
             if (buffer != null) {
                 buffer.setRenderingActive(true);
+                buffer.onTabShown(); // force a repaint: a switched-to area can come up blank until the next pulse
             }
             fileInfoPanel.attach(buffer);
             structurePanel.attach(buffer);

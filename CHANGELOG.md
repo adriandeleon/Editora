@@ -136,6 +136,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Blank editor after switching tabs.** Clicking a tab could occasionally show a blank editor until you
+  clicked it a second time to give it focus. The editor area now repaints on the layout pulse right after the
+  tab is shown, so its content appears on the first click (without moving the scroll position or stealing
+  focus from a Find-in-Files preview).
+
 - **Markdown print preview: tables no longer get pushed to their own page.** When printing (or print-
   previewing) a Markdown file, a table could be bumped onto the next page even when it easily fit under the
   preceding heading, leaving the first page mostly blank. The page-layout measurement was collapsing the
