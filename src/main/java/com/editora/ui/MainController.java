@@ -1696,6 +1696,24 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public void gitCompareWithBranch(Path file) {
+                git.ifEnabled(() -> diffCoordinator.diffPathVsBranch(file));
+            }
+
+            @Override
+            public void gitCompareWithRevision(Path file) {
+                git.ifEnabled(() -> diffCoordinator.diffPathVsCommit(file));
+            }
+
+            @Override
+            public void gitAnnotate(Path file) {
+                git.ifEnabled(() -> {
+                    openPath(file);
+                    git.annotateActive();
+                });
+            }
+
+            @Override
             public void gitStage(Path file) {
                 git.ifEnabled(() -> git.gitStagePath(file));
             }

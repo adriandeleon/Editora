@@ -91,6 +91,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         void gitCompareWithHead(Path file);
 
+        /** Diff {@code file} against its version on a branch chosen from the repo. */
+        void gitCompareWithBranch(Path file);
+
+        /** Diff {@code file} against a commit chosen from its history. */
+        void gitCompareWithRevision(Path file);
+
+        /** Open {@code file} and show inline blame annotations (enables blame if it's off). */
+        void gitAnnotate(Path file);
+
         void gitStage(Path file);
 
         void gitUnstage(Path file);
@@ -952,6 +961,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
                 compareHead.setGraphic(Icons.diff());
                 compareHead.setOnAction(e -> fileActions.gitCompareWithHead(file));
+                MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
+                compareBranch.setGraphic(Icons.diff());
+                compareBranch.setOnAction(e -> fileActions.gitCompareWithBranch(file));
+                MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
+                compareRevision.setGraphic(Icons.diff());
+                compareRevision.setOnAction(e -> fileActions.gitCompareWithRevision(file));
+                MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
+                annotate.setGraphic(Icons.blame());
+                annotate.setOnAction(e -> fileActions.gitAnnotate(file));
                 MenuItem fileHistory = new MenuItem(tr("project.menu.git.fileHistory"));
                 fileHistory.setGraphic(Icons.gitLog());
                 fileHistory.setOnAction(e -> fileActions.gitShowFileHistory(file));
@@ -963,6 +981,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                                 ignore,
                                 new javafx.scene.control.SeparatorMenuItem(),
                                 compareHead,
+                                compareBranch,
+                                compareRevision,
+                                annotate,
                                 fileHistory);
                 menu.getItems().add(git);
 

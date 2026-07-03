@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Compare / Annotate in the Project tree.** The Project tool window's file **Git** submenu now also offers
+  **Compare with Branch…** (diff the file against its version on any local or remote branch), **Compare with
+  Revision…** (diff against a commit from the file's history), and **Annotate** (open the file and show inline
+  Git blame) — alongside the existing Compare with HEAD.
+
 - **Git actions in the Project tree.** Right-clicking a file in the Project tool window now offers a **Git**
   submenu with **Stage**, **Unstage**, **Revert…** (discard changes — untracked files are removed, tracked
   files reset to HEAD, with a confirmation), and **Add to .gitignore**, alongside Compare with HEAD and Show

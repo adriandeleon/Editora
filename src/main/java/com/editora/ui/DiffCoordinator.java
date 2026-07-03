@@ -3,7 +3,9 @@ package com.editora.ui;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import javafx.stage.FileChooser;
@@ -286,16 +288,24 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
+        diffPathVsCommit(b.getPath());
+    }
+
+    /** Diff a project-tree file against a commit chosen from its history. */
+    void diffPathVsCommit(Path path) {
+        if (path == null || Files.isDirectory(path)) {
+            host.setStatus(tr("status.diff.noFile"));
+            return;
+        }
         if (git.reportIfNoRepo()) {
             return;
         }
         Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
-        String rel = GitService.repoRelative(root, b.getPath());
+        String rel = GitService.repoRelative(root, path);
         if (rel == null) {
             host.setStatus(tr("status.diff.notInRepo"));
             return;
         }
-        Path path = b.getPath();
         String name = path.getFileName().toString();
         git.service().log(root, path, 80, commits -> {
             if (commits.isEmpty()) {
@@ -316,6 +326,54 @@ final class DiffCoordinator {
                             name,
                             name,
                             cb -> git.service().show(root, chosen.hash() + ":" + rel, cb),
+                            cb -> cb.accept(worktreeText(path)),
+                            DiffViewerPane.EditableSide.RIGHT,
+                            path));
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
+    /** Diff a project-tree file against its version on a branch chosen from the repo's branches. */
+    void diffPathVsBranch(Path path) {
+        if (path == null || Files.isDirectory(path)) {
+            host.setStatus(tr("status.diff.noFile"));
+            return;
+        }
+        if (git.reportIfNoRepo()) {
+            return;
+        }
+        Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
+        String rel = GitService.repoRelative(root, path);
+        if (rel == null) {
+            host.setStatus(tr("status.diff.notInRepo"));
+            return;
+        }
+        String name = path.getFileName().toString();
+        git.service().branches(root, branches -> {
+            List<String> names = new ArrayList<>();
+            for (GitService.BranchInfo bi : branches.local()) {
+                names.add(bi.name());
+            }
+            names.addAll(branches.remote());
+            if (names.isEmpty()) {
+                host.setStatus(tr("status.diff.noBranches"));
+                return;
+            }
+            Set<String> remote = Set.copyOf(branches.remote());
+            QuickOpen<String> picker = new QuickOpen<>(
+                    tr("diff.branchPickerTitle"),
+                    tr("diff.branchPickerPrompt"),
+                    () -> names,
+                    b -> b,
+                    b -> tr(remote.contains(b) ? "diff.branch.remote" : "diff.branch.local"),
+                    chosen -> openDiff(
+                            tr("diff.title.vsBranch", name, chosen),
+                            chosen,
+                            tr("diff.side.working"),
+                            name,
+                            name,
+                            cb -> git.service().show(root, chosen + ":" + rel, cb),
                             cb -> cb.accept(worktreeText(path)),
                             DiffViewerPane.EditableSide.RIGHT,
                             path));
