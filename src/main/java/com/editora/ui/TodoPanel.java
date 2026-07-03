@@ -1,10 +1,13 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
@@ -14,19 +17,24 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
+import javafx.util.StringConverter;
 
+import com.editora.todo.TodoColors;
+import com.editora.todo.TodoGrouping;
 import com.editora.todo.TodoMatch;
 import com.editora.todo.TodoService;
 
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The "TODO" results tool window: every configured-pattern match grouped by file, each row tagged with
- * its pattern's color (Enter / double-click jumps to it). Auto-scoped by the controller — the open
- * project's tree when one is open, else the open buffers. Mirrors {@link SearchPanel}
- * ({@link ToolWindowContent}); work is routed back to the controller via {@link Actions}.
+ * The "TODO" results tool window, an IntelliJ-style Comment Manager list: every configured-keyword match,
+ * groupable by <b>file / priority / tag / keyword</b> (a top selector), each match row rendered with its
+ * structured parts colored ({@code KEYWORD [tag] (priority) description}) + a muted {@code file:line}. Enter /
+ * double-click jumps to it. Auto-scoped by the controller — the open project's tree when one is open, else the
+ * open buffers. Mirrors {@link SearchPanel} ({@link ToolWindowContent}); work is routed back via {@link Actions}.
  */
 public final class TodoPanel extends VBox implements ToolWindowContent {
 
@@ -37,18 +45,17 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         void refresh();
     }
 
-    /** A tree row: a file header ({@code match == null}) or a single match under it. */
-    private record Row(Path file, TodoMatch match) {}
+    /** A tree row: a group header ({@code match == null}) or a single match under it. */
+    private record Row(String header, Path file, TodoMatch match) {}
 
     private final Actions actions;
     private final Label summary = new Label();
     private final Label scopeLabel = new Label();
+    private final ComboBox<TodoGrouping.GroupBy> groupBy = new ComboBox<>();
     private final TreeView<Row> tree = new TreeView<>();
 
-    // Cached last scan + the active file, so the tree can be re-sorted (active file first) on a tab switch
-    // without re-scanning. activeFile is the normalized as-walked form (matches the scan's file keys).
     private TodoService.Outcome lastOutcome;
-    private java.nio.file.Path activeFile;
+    private Path activeFile;
 
     public TodoPanel(Actions actions) {
         this.actions = actions;
@@ -60,9 +67,6 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     }
 
     private void build() {
-        // The folder being scanned (the open project's tree, else open files only), so the user always
-        // knows the scope — mirrors Find in Files. Set by the controller via setScope; reuses the
-        // .search-scope-* styling. Ellipsized with a full-path tooltip.
         Label scopePrefix = new Label(tr("todo.scopeLabel"));
         scopePrefix.getStyleClass().add("search-scope-prefix");
         scopeLabel.getStyleClass().add("search-scope-path");
@@ -72,6 +76,22 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         scopeRow.setAlignment(Pos.CENTER_LEFT);
         scopeRow.getStyleClass().add("search-scope-row");
 
+        Label groupLabel = new Label(tr("todo.groupBy"));
+        groupBy.getItems().setAll(TodoGrouping.GroupBy.values());
+        groupBy.getSelectionModel().select(TodoGrouping.GroupBy.FILE);
+        groupBy.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(TodoGrouping.GroupBy g) {
+                return g == null ? "" : tr("todo.groupBy." + g.name().toLowerCase(java.util.Locale.ROOT));
+            }
+
+            @Override
+            public TodoGrouping.GroupBy fromString(String s) {
+                return null;
+            }
+        });
+        groupBy.valueProperty().addListener((o, a, b) -> rebuild());
+
         Button refreshBtn = new Button();
         refreshBtn.setGraphic(Icons.refresh());
         refreshBtn.getStyleClass().add("todo-refresh");
@@ -79,7 +99,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         refreshBtn.setOnAction(e -> actions.refresh());
         summary.getStyleClass().add("todo-summary");
         HBox.setHgrow(summary, Priority.ALWAYS);
-        HBox toolbar = new HBox(6, summary, refreshBtn);
+        HBox toolbar = new HBox(6, groupLabel, groupBy, summary, refreshBtn);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
         tree.setShowRoot(false);
@@ -96,8 +116,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         getChildren().addAll(scopeRow, toolbar, tree);
     }
 
-    /** Sets the displayed scan-scope folder. {@code display} is a friendly label (e.g. {@code ~/proj}),
-     *  {@code fullPath} the absolute path shown as a tooltip (null for the open-files-only scope). */
+    /** Sets the displayed scan-scope folder. */
     public void setScope(String display, String fullPath) {
         scopeLabel.setText(display == null ? "" : display);
         scopeLabel.setTooltip(fullPath == null || fullPath.isBlank() ? null : new Tooltip(fullPath));
@@ -170,12 +189,8 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         rebuild();
     }
 
-    /**
-     * Sets the active file so its group sorts to the top, mirroring the IDE convention of surfacing the file
-     * you're looking at first. Pass the normalized as-walked path (matches the scan's file keys). Re-sorts the
-     * existing tree without re-scanning.
-     */
-    public void setActiveFile(java.nio.file.Path normalizedActive) {
+    /** Sets the active file so its group sorts to the top under "group by file". Re-sorts without re-scanning. */
+    public void setActiveFile(Path normalizedActive) {
         if (java.util.Objects.equals(activeFile, normalizedActive)) {
             return;
         }
@@ -185,22 +200,34 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    private TodoGrouping.GroupBy currentGroupBy() {
+        TodoGrouping.GroupBy g = groupBy.getValue();
+        return g == null ? TodoGrouping.GroupBy.FILE : g;
+    }
+
     private void rebuild() {
         TodoService.Outcome outcome = lastOutcome;
         if (outcome == null) {
             return;
         }
-        // Active file's group first, then the scan's original order (a stable sort preserves it).
-        java.util.List<TodoService.FileTodos> files = new java.util.ArrayList<>(outcome.files());
-        files.sort(java.util.Comparator.comparingInt(fr -> ActiveFileOrder.isActive(fr.file(), activeFile) ? 0 : 1));
-        TreeItem<Row> root = new TreeItem<>();
-        for (TodoService.FileTodos fr : files) {
-            TreeItem<Row> fileItem = new TreeItem<>(new Row(fr.file(), null));
-            fileItem.setExpanded(true);
+        List<TodoGrouping.Entry> entries = new ArrayList<>();
+        for (TodoService.FileTodos fr : outcome.files()) {
             for (TodoMatch m : fr.matches()) {
-                fileItem.getChildren().add(new TreeItem<>(new Row(fr.file(), m)));
+                entries.add(new TodoGrouping.Entry(fr.file(), m));
             }
-            root.getChildren().add(fileItem);
+        }
+        TodoGrouping.GroupBy by = currentGroupBy();
+        List<TodoGrouping.Group> groups = TodoGrouping.group(entries, by, activeFile);
+
+        TreeItem<Row> root = new TreeItem<>();
+        for (TodoGrouping.Group g : groups) {
+            String header = g.label().isEmpty() ? emptyGroupLabel(by) : g.label();
+            TreeItem<Row> groupItem = new TreeItem<>(new Row(header, g.file(), null));
+            groupItem.setExpanded(true);
+            for (TodoGrouping.Entry e : g.entries()) {
+                groupItem.getChildren().add(new TreeItem<>(new Row(null, e.file(), e.match())));
+            }
+            root.getChildren().add(groupItem);
         }
         tree.setRoot(root);
         summary.setText(
@@ -212,16 +239,25 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                                 outcome.fileCount()));
     }
 
+    /** The localized "no tag / no priority" bucket header for the current grouping. */
+    private static String emptyGroupLabel(TodoGrouping.GroupBy by) {
+        return switch (by) {
+            case PRIORITY -> tr("todo.noPriority");
+            case TAG -> tr("todo.noTag");
+            default -> tr("todo.noKeyword"); // keyword/file groups always have a label; a safe fallback
+        };
+    }
+
     @Override
     public void focusFirstItem() {
-        actions.refresh(); // auto-scan whenever the tool window is shown (any entry point)
+        actions.refresh();
         tree.requestFocus();
         if (tree.getExpandedItemCount() > 0) {
             tree.getSelectionModel().select(0);
         }
     }
 
-    /** Renders a file header (name + match count) or a match line (color tag + line number + preview). */
+    /** Renders a group header (label + count, file icon under "by file") or a structured match row. */
     private static final class RowCell extends TreeCell<Row> {
         @Override
         protected void updateItem(Row row, boolean empty) {
@@ -233,32 +269,74 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                 return;
             }
             if (row.match() == null) {
-                int count =
-                        getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
-                setGraphic(null);
-                setText(row.file().getFileName() + "  (" + count + ")");
-                if (!getStyleClass().contains("todo-file-row")) {
-                    getStyleClass().add("todo-file-row");
-                }
+                renderHeader(row);
             } else {
-                TodoMatch m = row.match();
-                Region tag = new Region();
-                tag.getStyleClass().add("todo-color-tag");
-                tag.setMinSize(10, 10);
-                tag.setPrefSize(10, 10);
-                tag.setMaxSize(10, 10);
-                tag.setStyle("-fx-background-color: " + safeColor(m.color()) + ";");
-                setGraphic(tag);
-                String preview = m.lineText().strip();
-                if (preview.length() > 200) {
-                    preview = preview.substring(0, 200) + "…";
-                }
-                setText(m.line() + ":  " + preview);
+                renderMatch(row);
             }
         }
 
-        private static String safeColor(String web) {
-            return web == null || web.isBlank() ? "#E5C07B" : web;
+        private void renderHeader(Row row) {
+            int count = getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
+            setText(row.header() + "  (" + count + ")");
+            setGraphic(row.file() == null ? null : FileIcons.forFileName(fileLabel(row.file())));
+            if (!getStyleClass().contains("todo-file-row")) {
+                getStyleClass().add("todo-file-row");
+            }
+        }
+
+        private void renderMatch(Row row) {
+            TodoMatch m = row.match();
+            TextFlow flow = new TextFlow();
+            flow.getStyleClass().add("todo-row-flow");
+            var parsed = m.parsed();
+            if (parsed != null) {
+                addRun(flow, parsed.keyword(), m.color(), true, false);
+                if (parsed.hasTag()) {
+                    addRun(flow, " [" + parsed.tag() + "]", TodoColors.TAG_COLOR, false, true);
+                }
+                if (parsed.hasPriority()) {
+                    addRun(
+                            flow,
+                            " (" + parsed.priority() + ")",
+                            TodoColors.priorityColor(parsed.priority()),
+                            false,
+                            false);
+                }
+                if (!parsed.description().isEmpty()) {
+                    addRun(flow, " " + parsed.description(), null, false, false);
+                }
+            } else {
+                addRun(flow, m.lineText().strip(), m.color(), false, false);
+            }
+            Text loc = addRun(flow, "  — " + fileLabel(row.file()) + ":" + m.line(), null, false, false);
+            loc.getStyleClass().add("todo-row-location");
+            setText(null);
+            setGraphic(flow);
+        }
+
+        private static Text addRun(TextFlow flow, String s, String colorWeb, boolean bold, boolean underline) {
+            Text t = new Text(s);
+            t.getStyleClass().add("todo-run");
+            String style = "";
+            if (colorWeb != null && !colorWeb.isBlank()) {
+                style += "-fx-fill: " + colorWeb + ";";
+            }
+            if (bold) {
+                style += "-fx-font-weight: bold;";
+            }
+            if (!style.isEmpty()) {
+                t.setStyle(style);
+            }
+            t.setUnderline(underline);
+            flow.getChildren().add(t);
+            return t;
+        }
+
+        private static String fileLabel(Path p) {
+            if (p == null) {
+                return "";
+            }
+            return p.getFileName() == null ? p.toString() : p.getFileName().toString();
         }
     }
 }
