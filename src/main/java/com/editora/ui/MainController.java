@@ -2570,7 +2570,53 @@ public class MainController implements com.editora.mcp.McpBridge {
         public String homeCollapsed(String absolutePath) {
             return MainController.this.homeCollapsed(absolutePath);
         }
+
+        @Override
+        public void applyLineEdit(
+                java.nio.file.Path file, int line, String expectedLine, String newLine, Runnable afterApply) {
+            applyTodoLineEdit(file, line, expectedLine, newLine, afterApply);
+        }
     });
+
+    /**
+     * Rewrites a single source line for a TODO tool-window edit (set priority / mark done / edit description):
+     * opens the file so the change is visible, verifies the target line still reads {@code expectedLine}, then
+     * replaces that paragraph with {@code newLine} as one undoable edit (marks the buffer dirty). A no-op with a
+     * status when the line moved/changed since the scan (the panel re-scans via {@code afterApply}).
+     */
+    private void applyTodoLineEdit(
+            java.nio.file.Path file, int line, String expectedLine, String newLine, Runnable afterApply) {
+        openPath(file);
+        Platform.runLater(() -> {
+            EditorBuffer b = activeBuffer();
+            if (b == null
+                    || b.getPath() == null
+                    || !canonicalPath(b.getPath()).equals(canonicalPath(file))
+                    || !activeEditable()) {
+                return;
+            }
+            org.fxmisc.richtext.CodeArea area = b.getArea();
+            int idx = line - 1;
+            int paragraphs = area.getParagraphs().size();
+            if (idx < 0 || idx >= paragraphs) {
+                return;
+            }
+            String current = area.getParagraph(idx).getText();
+            if (!current.equals(expectedLine)) {
+                setStatus(tr("status.todo.lineChanged"));
+                if (afterApply != null) {
+                    afterApply.run();
+                }
+                return;
+            }
+            int start = area.getAbsolutePosition(idx, 0);
+            area.replaceText(start, start + current.length(), newLine); // undoable; marks the buffer dirty
+            setStatus(tr("status.todo.edited"));
+            if (afterApply != null) {
+                afterApply.run();
+            }
+        });
+    }
 
     /** CSV/TSV grid preview feature; owns the grid panel + parse/refresh (the tool window stays here). */
     private final CsvCoordinator csvCoordinator = new CsvCoordinator(coordinatorHost, new CsvCoordinator.Ops() {

@@ -9,14 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **More default TODO keywords + structured comments (Comment Manager, in progress).** The built-in TODO
+- **More default TODO keywords + structured comments (Comment Manager).** The built-in TODO
   highlight keywords now include **HACK, NOTE, XXX** and **DONE** alongside TODO/FIXME (existing custom
   patterns are kept; the defaults grow on upgrade). Editora now recognizes the IntelliJ-style
   `KEYWORD [tag] (priority) description` comment format — e.g. `// TODO [auth] (high) fix token refresh` —
   and **colors each part** in the editor: the keyword in its pattern color, the `[tag]` in blue (underlined),
   and the `(priority)` by level (critical→red, high→orange, medium→amber, low→cyan). The **TODO tool window**
   now shows each match with those parts colored and a **"Group by"** selector — **File, Priority, Tag, or
-  Keyword** — so you can, for example, see every critical item across the project together.
+  Keyword** — so you can, for example, see every critical item across the project together. **Right-click a
+  match** to edit it directly in your source: **Mark Done** (rewrites the keyword to `DONE`) / **Reopen**,
+  **set the priority**, or **edit the description** — each applied as one undoable edit to the file.
 
 - **Image viewer.** Opening a raster image (`.png`, `.jpg`/`.jpeg`, `.gif`, `.bmp`) now renders the picture in
   a read-only tab instead of dumping its binary bytes into a text buffer. A small top bar zooms out / in /
