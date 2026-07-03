@@ -9178,6 +9178,117 @@ public class MainController implements com.editora.mcp.McpBridge {
         return line == null || line.isBlank() ? null : line;
     }
 
+    /** The string-manipulation command ids, in the order the {@code edit.stringOps} picker lists them. */
+    private static final java.util.List<String> STRING_OP_IDS = java.util.List.of(
+            "edit.case.cycle",
+            "edit.case.camel",
+            "edit.case.pascal",
+            "edit.case.snake",
+            "edit.case.screamingSnake",
+            "edit.case.kebab",
+            "edit.case.dot",
+            "edit.case.swap",
+            "edit.sortLinesAsc",
+            "edit.sortLinesDesc",
+            "edit.sortLinesByLength",
+            "edit.reverseLines",
+            "edit.shuffleLines",
+            "edit.removeDuplicateLines",
+            "edit.removeEmptyLines",
+            "edit.trimTrailingWhitespace");
+
+    /**
+     * Applies a pure token transform ({@link com.editora.editops.StringCase} — the case-style
+     * commands) to the selection, or to the identifier at the caret when nothing is selected; the
+     * result is re-selected so repeated invocations (the {@code edit.case.cycle} gesture) keep
+     * acting on the same token. One undoable {@code replaceText}, guarded by {@link #activeEditable()}.
+     */
+    private void caseOp(java.util.function.UnaryOperator<String> op) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        var sel = area.getSelection();
+        int from;
+        int to;
+        if (sel.getLength() > 0) {
+            from = sel.getStart();
+            to = sel.getEnd();
+        } else {
+            int[] token = com.editora.editops.StringCase.tokenAt(area.getText(), area.getCaretPosition());
+            if (token == null) {
+                setStatus(tr("status.stringops.noTarget"));
+                return;
+            }
+            from = token[0];
+            to = token[1];
+        }
+        String before = area.getText().substring(from, to);
+        String after = op.apply(before);
+        if (after.equals(before)) {
+            setStatus(tr("status.stringops.noChange"));
+            return;
+        }
+        area.replaceText(from, to, after);
+        area.selectRange(from, from + after.length());
+        area.requestFocus();
+    }
+
+    /**
+     * Applies a pure whole-line transform ({@link com.editora.editops.LineTransforms} — sort /
+     * reverse / shuffle / dedupe / filter / trim) to the selection extended to full-line bounds, or
+     * to the whole buffer when nothing is selected. One undoable {@code replaceText}; the
+     * transformed lines are re-selected. Guarded by {@link #activeEditable()}.
+     */
+    private void lineTransform(java.util.function.UnaryOperator<String> op) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        String text = area.getText();
+        var sel = area.getSelection();
+        int from;
+        int to;
+        if (sel.getLength() > 0) {
+            int[] bounds = com.editora.editops.LineTransforms.lineBounds(text, sel.getStart(), sel.getEnd());
+            from = bounds[0];
+            to = bounds[1];
+        } else {
+            from = 0;
+            to = text.length();
+        }
+        String before = text.substring(from, to);
+        String after = op.apply(before);
+        if (after.equals(before)) {
+            setStatus(tr("status.stringops.noChange"));
+            return;
+        }
+        area.replaceText(from, to, after);
+        area.selectRange(from, from + after.length());
+        area.requestFocus();
+    }
+
+    /** {@code edit.stringOps} (`C-c x`): one picker over all string-manipulation commands (the Alt+M popup). */
+    private void stringOpsPicker() {
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("command.edit.stringOps"),
+                tr("palette.stringops.prompt"),
+                () -> new java.util.ArrayList<>(STRING_OP_IDS),
+                id -> tr("command." + id),
+                id -> tr("command." + id + ".desc"),
+                id -> registry.run(id));
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
     /** Emacs {@code set-fill-column} (`C-x f`): prompt for the fill column, persist it. */
     private void setFillColumn() {
         promptText(
@@ -9956,6 +10067,48 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.fillParagraph", this::fillParagraph));
         registry.register(Command.of("edit.fillRegion", this::fillRegion));
         registry.register(Command.of("edit.setFillColumn", this::setFillColumn));
+        // String manipulation (the String-Manipulation-plugin family): case-style conversions on the
+        // selection/token at the caret + whole-line sorts/filters, all also reachable via one picker.
+        registry.register(Command.of("edit.stringOps", this::stringOpsPicker));
+        registry.register(Command.of("edit.case.cycle", () -> caseOp(com.editora.editops.StringCase::cycle)));
+        registry.register(Command.of(
+                "edit.case.camel",
+                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.CAMEL, s))));
+        registry.register(Command.of(
+                "edit.case.pascal",
+                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.PASCAL, s))));
+        registry.register(Command.of(
+                "edit.case.snake",
+                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.SNAKE, s))));
+        registry.register(Command.of(
+                "edit.case.screamingSnake",
+                () -> caseOp(s ->
+                        com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.SCREAMING_SNAKE, s))));
+        registry.register(Command.of(
+                "edit.case.kebab",
+                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.KEBAB, s))));
+        registry.register(Command.of(
+                "edit.case.dot",
+                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.DOT, s))));
+        registry.register(Command.of("edit.case.swap", () -> caseOp(com.editora.editops.StringCase::swapCase)));
+        registry.register(Command.of(
+                "edit.sortLinesAsc", () -> lineTransform(com.editora.editops.LineTransforms::sortAscending)));
+        registry.register(Command.of(
+                "edit.sortLinesDesc", () -> lineTransform(com.editora.editops.LineTransforms::sortDescending)));
+        registry.register(Command.of(
+                "edit.sortLinesByLength", () -> lineTransform(com.editora.editops.LineTransforms::sortByLength)));
+        registry.register(
+                Command.of("edit.reverseLines", () -> lineTransform(com.editora.editops.LineTransforms::reverse)));
+        registry.register(Command.of(
+                "edit.shuffleLines",
+                () -> lineTransform(t -> com.editora.editops.LineTransforms.shuffle(t, new java.util.Random()))));
+        registry.register(Command.of(
+                "edit.removeDuplicateLines",
+                () -> lineTransform(com.editora.editops.LineTransforms::removeDuplicates)));
+        registry.register(Command.of(
+                "edit.removeEmptyLines", () -> lineTransform(com.editora.editops.LineTransforms::removeEmpty)));
+        registry.register(Command.of(
+                "edit.trimTrailingWhitespace", () -> lineTransform(com.editora.editops.LineTransforms::trimTrailing)));
         // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
         // a second press toggles to the true line start (column 0).
         registry.register(Command.of(
