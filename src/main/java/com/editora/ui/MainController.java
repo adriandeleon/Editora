@@ -2347,6 +2347,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void setProjectGitStatus(java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> byPath) {
+            if (projectPanel != null) {
+                projectPanel.setGitStatus(byPath);
+            }
+        }
+
+        @Override
         public void refreshOpenDiffs() {
             diffCoordinator.refreshOpenDiffs();
         }

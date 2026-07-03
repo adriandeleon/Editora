@@ -58,6 +58,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final BiConsumer<Path, Path> onFileRenamed;
     private final Consumer<Path> onFileDeleted;
     private final java.util.function.Predicate<Path> isModified;
+    /** Git working-tree status per file (absolute normalized path → status), for IntelliJ-style tree coloring;
+     *  empty when Git is off / not a repo. Pushed by the Git coordinator on each status refresh. */
+    private java.util.Map<Path, com.editora.git.GitFileStatus> gitStatus = java.util.Map.of();
+    /** Directories that contain at least one Git-changed descendant (colored to hint at nested changes). */
+    private java.util.Set<Path> gitChangedDirs = java.util.Set.of();
     /** Injected by MainController: snapshot a regular file into Local History just before it's deleted. */
     private Consumer<Path> onBeforeDelete = p -> {};
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
@@ -214,6 +219,28 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Re-renders the visible tree cells so each file's modified marker/color reflects current state. */
     public void refreshModified() {
+        tree.refresh();
+    }
+
+    /**
+     * Sets the per-file Git working-tree status (absolute normalized path → {@link com.editora.git.GitFileStatus},
+     * from {@code GitFileStatus.byPath}) used to color the tree IntelliJ-style, and re-renders the cells. Also
+     * derives the set of directories that contain a changed descendant (so folders hint at nested changes).
+     * Pushed by the Git coordinator on each status refresh; an empty map clears the coloring (Git off / clean).
+     */
+    public void setGitStatus(java.util.Map<Path, com.editora.git.GitFileStatus> byPath) {
+        gitStatus = byPath == null ? java.util.Map.of() : byPath;
+        java.util.Set<Path> dirs = new java.util.HashSet<>();
+        for (Path file : gitStatus.keySet()) {
+            for (Path dir = file.getParent();
+                    dir != null && !dir.equals(root) && root != null && dir.startsWith(root);
+                    dir = dir.getParent()) {
+                if (!dirs.add(dir)) {
+                    break; // this ancestor (and everything above it) is already recorded
+                }
+            }
+        }
+        gitChangedDirs = dirs;
         tree.refresh();
     }
 
@@ -790,6 +817,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         return all;
     }
 
+    /** All mutually-exclusive style classes a tree cell may carry (cleared before re-adding on each render). */
+    private static final String[] CELL_CLASSES = {
+        "folder-cell",
+        "file-cell",
+        "modified-file",
+        "git-status-added",
+        "git-status-modified",
+        "git-status-deleted",
+        "git-status-renamed",
+        "git-status-untracked",
+        "git-status-dir-changed"
+    };
+
     private final class PathCell extends TreeCell<Path> {
         @Override
         protected void updateItem(Path item, boolean empty) {
@@ -798,7 +838,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 setText(null);
                 setGraphic(null);
                 setContextMenu(null);
-                getStyleClass().removeAll("folder-cell", "file-cell", "modified-file");
+                getStyleClass().removeAll(CELL_CLASSES);
                 return;
             }
             // Reuse the lazy tree node's cached leaf flag (avoids a Files.isDirectory stat per cell
@@ -807,10 +847,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // An open file with unsaved changes: mark it like a dirty tab ("• " + amber italic).
             boolean dirty = !isDir && isModified != null && isModified.test(item);
             // Mark the cell so the stylesheet can theme the folder vs. file icon color.
-            getStyleClass().removeAll("folder-cell", "file-cell", "modified-file");
+            getStyleClass().removeAll(CELL_CLASSES);
             getStyleClass().add(isDir ? "folder-cell" : "file-cell");
             if (dirty) {
-                getStyleClass().add("modified-file");
+                getStyleClass().add("modified-file"); // unsaved-in-editor takes precedence over the Git color
+            } else if (!gitStatus.isEmpty() || !gitChangedDirs.isEmpty()) {
+                Path norm = item.toAbsolutePath().normalize();
+                if (isDir) {
+                    if (gitChangedDirs.contains(norm)) {
+                        getStyleClass().add("git-status-dir-changed");
+                    }
+                } else {
+                    com.editora.git.GitFileStatus st = gitStatus.get(norm);
+                    if (st != null) {
+                        getStyleClass().add(st.cssClass());
+                    }
+                }
             }
             // In filtered (flat) mode, show each match's path relative to the project root.
             boolean isRoot = item.equals(root);
