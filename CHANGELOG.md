@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **String manipulation commands** (the JetBrains *String Manipulation* plugin family). Case-style
+  conversions on the selection — or the identifier at the caret — to **camelCase / PascalCase / snake_case /
+  SCREAMING_SNAKE_CASE / kebab-case / dot.case**, plus **Cycle Case Style** (repeated invocations step the
+  same token through the styles) and **Swap Case**; and whole-line transforms on the selected lines (or the
+  whole file): **sort ascending/descending** (numeric-aware — `file2` before `file10` — and
+  case-insensitive), **sort by length**, **reverse**, **shuffle**, **remove duplicate lines**, **remove
+  empty lines**, and **trim trailing whitespace**. Every operation is its own palette command and
+  key-bindable; **Edit: String Manipulation…** (`C-c x`) opens one filterable picker over all of them.
+  Each transform applies as a single undoable edit and re-selects its result.
+
 - **Hex viewer for binary files.** Opening a binary file (an executable, archive, `.class`, `.pdf`, …) now
   shows a read-only `offset | hex | ASCII` dump instead of dumping its bytes as garbage text — completing the
   image-viewer story. Binaries are detected by content (a NUL byte / high control-character density, with a

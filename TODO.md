@@ -3,6 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] String manipulation commands (the JetBrains String-Manipulation plugin family, P1) — case-style
+      conversions on the selection/identifier at the caret (camelCase/PascalCase/snake_case/
+      SCREAMING_SNAKE_CASE/kebab-case/dot.case + Cycle Case Style + Swap Case) and whole-line transforms
+      on the selection/whole file (sort asc/desc — natural numeric order, case-insensitive — sort by
+      length, reverse, shuffle, remove duplicate/empty lines, trim trailing whitespace). Each its own
+      palette command; one filterable picker `Edit: String Manipulation…` (`C-c x`). Pure/unit-tested
+      `editops/StringCase` + `editops/LineTransforms`; single undoable edit, result re-selected.
+      *Deferred (P2/P3): escape/unescape (Java/JSON/XML/HTML) + URL/Base64/unicode-escape encode/decode +
+      diacritics→ASCII, align-by-separator, keep/remove lines matching a pattern, increment numbers /
+      sequences across multi-carets, multi-caret fan-out.*
 - [x] Plain-text developer formats — syntax highlighting for unified diffs (`.diff`/`.patch`, green/red
       added/removed lines via new `.text.diff-*` semantic classes), Makefile (`Makefile`/`GNUmakefile`/`.mk`),
       justfile, Protocol Buffers (`.proto`), GraphQL (`.graphql`/`.gql`), and `.gitattributes`

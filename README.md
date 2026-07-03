@@ -109,6 +109,12 @@ Editora is built with the help of AI coding tools.
   fixups (`M-\`, `M-SPC`), delete-blank-lines (`C-x C-o`), open-line (`C-o`), kill-whole-line (`C-S-DEL`),
   zap-to-char (`M-z`), balanced-expression motion (`C-M-f`/`C-M-b`, mark/kill-sexp), defun motion
   (`C-M-a`/`C-M-e`), and mark-paragraph / mark-whole-buffer. All palette-discoverable and rebindable.
+- **String manipulation** — case-style conversions on the selection or the identifier at the caret
+  (camelCase / PascalCase / snake_case / SCREAMING_SNAKE_CASE / kebab-case / dot.case, a *Cycle Case Style*
+  that steps a token through the styles on repeated presses, swap case) plus whole-line transforms on the
+  selection or whole file (sort ascending/descending — numeric-aware and case-insensitive — sort by length,
+  reverse, shuffle, remove duplicate/empty lines, trim trailing whitespace). All individual palette commands,
+  or one filterable picker: "Edit: String Manipulation…" (`C-c x`).
 - **Multiple cursors & column selection** — VS Code–style multi-caret editing: add a caret at the next
   occurrence of the selection / above / below, type or edit everywhere at once, `Esc` to collapse; plus
   Alt-drag column/box selection. (Powered by a personal RichTextFX fork.)
