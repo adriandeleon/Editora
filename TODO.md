@@ -4,10 +4,12 @@ A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
 - [x] Auto Rename Tag (VS Code parity) — editing an HTML/XML tag name mirrors the rename onto the
-      paired open/close tag, per keystroke. Pure/unit-tested `editops/TagRename`: positional stack
-      pairing over a single forward lex (comments/CDATA/doctype/PI/quoted attrs/self-closing skipped;
-      HTML void + raw-text elements handled) with an old-name guard (the change is reverted to get the
-      pre-edit name; the pair must still bear it) so half-typed new tags never rename the wrong closer.
+      paired open/close tag, per keystroke. Pure/unit-tested `editops/TagRename`: the pre-edit (old)
+      name is reconstructed by reverting the change, then the pair is found by same-name depth counting
+      over a single forward lex — only old-name tags participate, so real-world HTML's unclosed
+      optional-close tags (`<li>`/`<p>`/…) can't misalign the match (v1 paired positionally and any
+      unclosed tag suppressed the mirror) — comments/CDATA/doctype/PI/quoted attrs/self-closing skipped,
+      HTML void + raw-text elements handled; half-typed new tags never rename the wrong closer.
       Wired in `EditorBuffer` on the immediate `plainTextChanges` pulse (html/xml only, off in
       large/huge files, suppressed during undo/redo); `Settings.autoRenameTag` (default on, schema
       50→51) + Settings → Editor checkbox + palette `view.toggleAutoRenameTag`.
