@@ -124,11 +124,38 @@ final class TodoCoordinator {
         b.setTodoHighlightEnabled(highlightOn);
     }
 
-    /** Maps pure scanner matches to the editor's neutral highlight marks (offsets + 0-based line + color). */
+    /**
+     * Maps pure scanner matches to the editor's neutral highlight marks: the keyword offsets + 0-based line +
+     * color, plus the absolute {@code [tag]} / {@code (priority)} spans (with their part colors) when the
+     * comment parsed structurally, so the overlay can color each part. Part offsets are line-relative in the
+     * parse, so they're rebased to absolute via the line start ({@code keywordStart − (col − 1)}).
+     */
     private static List<TodoMark> toTodoMarks(List<TodoMatch> matches) {
         List<TodoMark> out = new ArrayList<>(matches.size());
         for (TodoMatch m : matches) {
-            out.add(new TodoMark(m.start(), m.end(), Math.max(0, m.line() - 1), m.lineText(), m.color()));
+            int line0 = Math.max(0, m.line() - 1);
+            com.editora.todo.TodoComment p = m.parsed();
+            if (p == null) {
+                out.add(new TodoMark(m.start(), m.end(), line0, m.lineText(), m.color()));
+                continue;
+            }
+            int lineStart = m.start() - (m.col() - 1); // absolute offset of the line's first char
+            int tagStart = p.hasTag() ? lineStart + p.tagStart() : -1;
+            int tagEnd = p.hasTag() ? lineStart + p.tagEnd() : -1;
+            int priStart = p.hasPriority() ? lineStart + p.priorityStart() : -1;
+            int priEnd = p.hasPriority() ? lineStart + p.priorityEnd() : -1;
+            out.add(new TodoMark(
+                    m.start(),
+                    m.end(),
+                    line0,
+                    m.lineText(),
+                    m.color(),
+                    tagStart,
+                    tagEnd,
+                    p.hasTag() ? com.editora.todo.TodoColors.TAG_COLOR : null,
+                    priStart,
+                    priEnd,
+                    com.editora.todo.TodoColors.priorityColor(p.priority())));
         }
         return out;
     }
