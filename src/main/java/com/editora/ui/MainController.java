@@ -1697,7 +1697,22 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void gitStage(Path file) {
-                git.ifEnabled(() -> gitStageForPath(file));
+                git.ifEnabled(() -> git.gitStagePath(file));
+            }
+
+            @Override
+            public void gitUnstage(Path file) {
+                git.ifEnabled(() -> git.gitUnstagePath(file));
+            }
+
+            @Override
+            public void gitRevert(Path file) {
+                git.ifEnabled(() -> git.gitRevertPath(file));
+            }
+
+            @Override
+            public void gitAddToGitignore(Path file) {
+                git.ifEnabled(() -> git.addToGitignore(file));
             }
         });
         projectToolWindow = new ToolWindow(
@@ -3564,19 +3579,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         openGitLog(file);
-    }
-
-    /** Project-tree Git ▸ Stage File for {@code file}: {@code git add -- <relpath>}. */
-    private void gitStageForPath(Path file) {
-        if (file == null || Files.isDirectory(file) || git.repoRoot() == null) {
-            setStatus(tr("status.noGitFile"));
-            return;
-        }
-        git.gitOp(
-                "Staged " + file.getFileName(),
-                "add",
-                "--",
-                git.repoRoot().relativize(file.toAbsolutePath()).toString());
     }
 
     /** The current text of {@code file}: the open buffer's live text when open, else the on-disk content. */

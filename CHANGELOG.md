@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Git actions in the Project tree.** Right-clicking a file in the Project tool window now offers a **Git**
+  submenu with **Stage**, **Unstage**, **Revert…** (discard changes — untracked files are removed, tracked
+  files reset to HEAD, with a confirmation), and **Add to .gitignore**, alongside Compare with HEAD and Show
+  File History. Folders offer **Stage** and **Revert…** of the whole subtree. Actions enable or disable based
+  on the file's real Git status, and the whole submenu is hidden when the folder isn't a Git repository.
+
 - **Git status colors in the Project tree.** Files in the Project tool window are now colored by their Git
   status — added (green), modified (blue), deleted (gray), renamed (violet), and untracked (olive) — and a
   folder that contains changes is tinted, just like IntelliJ. Updates as you edit, stage, commit, or switch
