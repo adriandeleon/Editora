@@ -70,6 +70,9 @@ final class GitCoordinator {
 
         void setGitPanelStatus(GitStatus status);
 
+        /** Pushes the per-file Git working-tree status to the Project tree for IntelliJ-style file coloring. */
+        void setProjectGitStatus(java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> byPath);
+
         /** Re-diffs any open diff tabs (a mutation moved HEAD/index/working). */
         void refreshOpenDiffs();
 
@@ -198,6 +201,7 @@ final class GitCoordinator {
             branchName = "";
             upstream = "";
             ops.setGitPanelStatus(null);
+            ops.setProjectGitStatus(java.util.Map.of()); // Git turned off → clear the Project tree coloring
             host.forEachBuffer(b -> {
                 b.setChangeBars(null);
                 b.setBlame(null);
@@ -249,6 +253,7 @@ final class GitCoordinator {
             upstream = "";
             ops.setStatusBarBranch(null, 0, 0);
             ops.setGitPanelStatus(null);
+            ops.setProjectGitStatus(java.util.Map.of()); // clear the tree's file coloring (outside a repo / Git off)
             if (b != null) {
                 b.setChangeBars(null);
                 b.setBlame(null);
@@ -260,6 +265,7 @@ final class GitCoordinator {
         upstream = status.upstream();
         ops.setStatusBarBranch(status.branch(), status.ahead(), status.behind());
         ops.setGitPanelStatus(status);
+        ops.setProjectGitStatus(com.editora.git.GitFileStatus.byPath(status, state.root())); // color the tree
         if (b != null && b.getPath() != null) {
             // An empty map still marks the buffer as tracked (reserves the slot); hunk text feeds the
             // change-bar hover tooltip.

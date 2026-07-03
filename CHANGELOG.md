@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Git status colors in the Project tree.** Files in the Project tool window are now colored by their Git
+  status — added (green), modified (blue), deleted (gray), renamed (violet), and untracked (olive) — and a
+  folder that contains changes is tinted, just like IntelliJ. Updates as you edit, stage, commit, or switch
+  branches; rides the Git integration (nothing to turn on).
+
 - **References tool window.** Find References now shows its results in a dedicated, browsable **References**
   tool window — grouped by file, with a line + preview per reference — instead of a one-shot picker. Enter or
   double-click jumps to a reference; if there's only a single reference, it jumps straight there.
