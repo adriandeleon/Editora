@@ -225,6 +225,12 @@ public class aot_build {
      * public.text + public.source-code: every text/source file conforms to one of those, so the app becomes
      * an eligible (Alternate-rank, so non-default) editor for all of them. Best-effort — a PlistBuddy failure
      * logs and continues (the app still runs, just without the association).
+     *
+     * <p><b>Must re-codesign afterward.</b> jpackage ad-hoc-signs the .app during the app-image build (before
+     * this runs); editing Info.plist invalidates that seal (its hash is part of the signature), and macOS then
+     * rejects the app as tampered ("could not verify … free of malware", spctl: "invalid Info.plist") and
+     * won't launch it. So we re-run `codesign --force --deep --sign -` to re-seal the bundle with the modified
+     * plist. (arm64 apps must be signed to run at all; ad-hoc is fine for a locally-built, un-notarized app.)
      */
     private static void fixMacDocumentTypes(Path imageRoot) {
         Path plist = imageRoot.resolve("Contents").resolve("Info.plist");
@@ -248,9 +254,16 @@ public class aot_build {
                 "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:0 string public.text",
                 "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:1 string public.source-code",
                 plist.toString());
-        System.out.println(ok
-                ? "[aot] Open-With: declared CFBundleDocumentTypes (public.text, public.source-code)"
-                : "[aot] Open-With: PlistBuddy edit failed — app ships without the file association");
+        if (!ok) {
+            System.out.println("[aot] Open-With: PlistBuddy edit failed — app ships without the file association");
+            return;
+        }
+        System.out.println("[aot] Open-With: declared CFBundleDocumentTypes (public.text, public.source-code)");
+        // Re-seal the bundle: the plist edit broke jpackage's ad-hoc signature, which macOS would reject.
+        boolean signed = runQuiet("codesign", "--force", "--deep", "--sign", "-", imageRoot.toString());
+        System.out.println(signed
+                ? "[aot] Open-With: re-codesigned the app image (ad-hoc)"
+                : "[aot] Open-With: codesign re-seal FAILED — the app may be rejected by Gatekeeper");
     }
 
     /** Runs a command, discarding output; returns true on exit 0. Never throws. */
@@ -307,10 +320,18 @@ public class aot_build {
     }
 
     private static void copyRecursive(Path src, Path dst) throws IOException {
+        // Files.walk does not descend into symlinks, but must copy them VERBATIM: the jlink runtime dedups
+        // its legal/* license files as symlinks, and following them (turning each into a regular file) breaks
+        // the app's codesign seal — macOS then rejects the delivered app as tampered. So recreate symlinks as
+        // links, not copies. (The DMG path is unaffected: jpackage does its own symlink-preserving copy.)
         try (Stream<Path> s = Files.walk(src)) {
             for (Path p : (Iterable<Path>) s::iterator) {
                 Path target = dst.resolve(src.relativize(p).toString());
-                if (Files.isDirectory(p)) {
+                if (Files.isSymbolicLink(p)) {
+                    Files.createDirectories(target.getParent());
+                    Files.deleteIfExists(target);
+                    Files.createSymbolicLink(target, Files.readSymbolicLink(p));
+                } else if (Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS)) {
                     Files.createDirectories(target);
                 } else {
                     Files.createDirectories(target.getParent());
