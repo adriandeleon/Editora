@@ -3627,6 +3627,24 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * Nudges the just-revealed editor area to repaint after a {@code TabPane} tab switch. Flowless's
+     * {@code VirtualFlow} lays out synchronously while the tab content is being swapped in — before its
+     * viewport bounds are established — so it can present <em>blank</em> until the next layout pulse (which,
+     * before this, only a second click into the area supplied). A deferred {@code requestLayout} runs on the
+     * following pulse, once bounds are set, forcing a re-measure + repaint of the visible paragraphs. It does
+     * <em>not</em> move the scroll position or steal focus, so a Find-in-Files preview that keeps focus in its
+     * results tree is unaffected. Called by the controller on tab selection.
+     */
+    public void onTabShown() {
+        javafx.application.Platform.runLater(() -> {
+            area.requestLayout();
+            if (area2 != null) {
+                area2.requestLayout();
+            }
+        });
+    }
+
     /** Sets the minimap's block and viewport-overlay colors (the minimap is canvas-drawn, not CSS). */
     public void setMinimapColors(Color text, Color viewport) {
         this.minimapText = text;
