@@ -1575,6 +1575,10 @@
 .todo-panel .todo-refresh { -fx-padding: 2 6 2 6; -fx-background-radius: 4; }
 .todo-panel .todo-file-row { -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
 .todo-panel .todo-color-tag { -fx-background-radius: 2; -fx-border-color: -color-border-muted; -fx-border-radius: 2; }
+/* Structured match row (KEYWORD [tag] (priority) description — file:line). Part colors are set inline
+   from the pattern/priority/tag colors; only the default text + the muted trailing location live here. */
+.todo-panel .todo-run { -fx-fill: -color-fg-default; }
+.todo-panel .todo-row-location { -fx-fill: -color-fg-muted; }
 
 /* CSV grid preview tool window: a header-toggle + summary bar above a spreadsheet-style TableView. */
 .csv-grid .csv-grid-bar { -fx-padding: 0 2 4 2; -fx-alignment: center-left; }

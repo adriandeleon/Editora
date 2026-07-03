@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   patterns are kept; the defaults grow on upgrade). Editora now recognizes the IntelliJ-style
   `KEYWORD [tag] (priority) description` comment format — e.g. `// TODO [auth] (high) fix token refresh` —
   and **colors each part** in the editor: the keyword in its pattern color, the `[tag]` in blue (underlined),
-  and the `(priority)` by level (critical→red, high→orange, medium→amber, low→cyan). Grouping these in the
-  TODO tool window comes next.
+  and the `(priority)` by level (critical→red, high→orange, medium→amber, low→cyan). The **TODO tool window**
+  now shows each match with those parts colored and a **"Group by"** selector — **File, Priority, Tag, or
+  Keyword** — so you can, for example, see every critical item across the project together.
 
 - **Image viewer.** Opening a raster image (`.png`, `.jpg`/`.jpeg`, `.gif`, `.bmp`) now renders the picture in
   a read-only tab instead of dumping its binary bytes into a text buffer. A small top bar zooms out / in /
