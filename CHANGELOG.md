@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **More default TODO keywords + structured comments (Comment Manager, in progress).** The built-in TODO
+  highlight keywords now include **HACK, NOTE, XXX** and **DONE** alongside TODO/FIXME (existing custom
+  patterns are kept; the defaults grow on upgrade). Groundwork also lands for the IntelliJ-style
+  `KEYWORD [tag] (priority) description` comment format — e.g. `// TODO [auth] (high) fix token refresh` —
+  which upcoming changes will color per-part and group in the TODO tool window.
+
 - **Image viewer.** Opening a raster image (`.png`, `.jpg`/`.jpeg`, `.gif`, `.bmp`) now renders the picture in
   a read-only tab instead of dumping its binary bytes into a text buffer. A small top bar zooms out / in /
   fit-to-window / actual size (and **Ctrl**+mouse-wheel zooms); large images scroll, small ones center. SVG is

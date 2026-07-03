@@ -95,4 +95,29 @@ class ConfigMigrationsTest {
         ConfigMigrations.backup(f, 2);
         assertEquals("original-backup", Files.readString(bak), "first backup is preserved");
     }
+
+    @Test
+    void growTodoDefaultKeywordsAppendsMissingKeywordsPreservingCustomEntries() {
+        ObjectNode settings = mapper.createObjectNode();
+        ArrayNode patterns = settings.putArray("todoPatterns");
+        patterns.add(mapper.createObjectNode().put("name", "TODO").put("pattern", "\\bTODO\\b"));
+        patterns.add(mapper.createObjectNode().put("name", "MINE").put("pattern", "\\bMINE\\b")); // custom, kept
+
+        ObjectNode out = (ObjectNode) ConfigMigrations.growTodoDefaultKeywords(settings);
+        ArrayNode result = (ArrayNode) out.get("todoPatterns");
+        java.util.List<String> names = new java.util.ArrayList<>();
+        result.forEach(n -> names.add(n.get("name").asText()));
+
+        assertTrue(names.contains("MINE"), "a custom keyword is untouched");
+        assertEquals(1, names.stream().filter("TODO"::equals).count(), "an existing default isn't duplicated");
+        for (String kw : new String[] {"FIXME", "HACK", "NOTE", "XXX", "DONE"}) {
+            assertTrue(names.contains(kw), "missing default keyword " + kw + " is appended");
+        }
+    }
+
+    @Test
+    void growTodoDefaultKeywordsNoOpsWhenPatternsAbsent() {
+        ObjectNode settings = mapper.createObjectNode().put("x", 1); // no todoPatterns ⇒ defaults() supplies them
+        assertFalse(ConfigMigrations.growTodoDefaultKeywords(settings).has("todoPatterns"));
+    }
 }

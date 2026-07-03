@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 49;
+    public static final int SCHEMA_VERSION = 50;
 
     private int schemaVersion = SCHEMA_VERSION;
 

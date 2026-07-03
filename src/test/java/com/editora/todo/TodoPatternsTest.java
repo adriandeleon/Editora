@@ -10,14 +10,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TodoPatternsTest {
 
     @Test
-    void defaultsAreTodoAndFixme() {
+    void defaultsAreTheStandardKeywords() {
         List<TodoPattern> d = TodoPatterns.defaults();
-        assertEquals(2, d.size());
-        assertEquals("TODO", d.get(0).getName());
-        assertEquals("FIXME", d.get(1).getName());
-        assertTrue(d.get(0).isCaseSensitive(), "defaults are case-sensitive");
-        assertTrue(d.get(1).isCaseSensitive(), "defaults are case-sensitive");
-        assertEquals(2, TodoPatterns.compile(d).size());
+        List<String> names = d.stream().map(TodoPattern::getName).toList();
+        assertEquals(List.of("TODO", "FIXME", "HACK", "NOTE", "XXX", "DONE"), names);
+        assertTrue(d.stream().allMatch(TodoPattern::isCaseSensitive), "defaults are case-sensitive");
+        assertEquals(d.size(), TodoPatterns.compile(d).size(), "all defaults compile");
+        assertEquals("DONE", TodoPatterns.DONE_KEYWORD);
     }
 
     @Test
