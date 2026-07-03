@@ -1558,6 +1558,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                     buffer); // upgrade the outline to LSP symbols when the server supports them
             statusBar.attach(buffer);
             breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
+            // Sort the Problems / TODO tool windows so the active file's group is on top (IDE convention).
+            // Problems is keyed by canonical (LSP) paths; TODO by as-walked (scan) paths.
+            Path activePath = buffer == null ? null : buffer.getPath();
+            lspCoordinator.setProblemsActiveFile(activePath == null ? null : canonicalPath(activePath));
+            todoCoordinator.setActiveFile(
+                    activePath == null ? null : activePath.toAbsolutePath().normalize());
             updateWindowTitle(); // show the active file's name + path in the window title bar
             updateProjectFolderView(); // global window: retarget the tree at the new file's folder
             searchCoordinator.refreshScope(); // Find-in-Files "current folder" tracks the active file

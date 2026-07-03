@@ -76,6 +76,11 @@ final class TodoCoordinator {
         return panel;
     }
 
+    /** Sorts the TODO tree so the active file's group is on top (pass the normalized path; on tab switch). */
+    void setActiveFile(java.nio.file.Path normalizedActive) {
+        panel.setActiveFile(normalizedActive);
+    }
+
     void registerCommands(CommandRegistry registry) {
         this.registry = registry;
         registry.register(Command.of("tool.todo", ops::toggleToolWindow));

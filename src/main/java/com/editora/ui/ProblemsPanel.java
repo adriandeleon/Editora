@@ -47,6 +47,11 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
     private final Label summary = new Label();
     private final TreeView<Row> tree = new TreeView<>();
 
+    // Cached last diagnostics + the active file, so the tree can be re-sorted (active file first) on a tab
+    // switch without new diagnostics arriving. activeFile is the canonical form (matches the LSP keys).
+    private Map<Path, List<LspDiagnostic>> lastByFile = Map.of();
+    private Path activeFile;
+
     public ProblemsPanel(Actions actions) {
         this.actions = actions;
         getStyleClass().add("problems-panel");
@@ -135,12 +140,30 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
     /** Rebuilds the tree, grouping the per-file diagnostics by language → file (called on the FX thread). */
     public void setProblems(Map<Path, List<LspDiagnostic>> byFile) {
+        lastByFile = byFile == null ? Map.of() : byFile;
+        rebuild();
+    }
+
+    /**
+     * Sets the active file so its language group (and the file within it) sorts to the top, mirroring the
+     * IDE convention of surfacing the file you're looking at first. Pass the <b>canonical</b> path (it must
+     * match the LSP diagnostic keys). Re-sorts the existing tree without needing fresh diagnostics.
+     */
+    public void setActiveFile(Path canonicalActive) {
+        if (java.util.Objects.equals(activeFile, canonicalActive)) {
+            return;
+        }
+        activeFile = canonicalActive;
+        rebuild();
+    }
+
+    private void rebuild() {
         // Bucket the non-empty files by display language name (TreeMap keeps the language headers sorted).
         Map<String, List<Path>> byLanguage = new TreeMap<>();
         Map<Path, List<LspDiagnostic>> kept = new HashMap<>();
         int total = 0;
         int files = 0;
-        for (var entry : byFile.entrySet()) {
+        for (var entry : lastByFile.entrySet()) {
             List<LspDiagnostic> diags = entry.getValue();
             if (diags == null || diags.isEmpty()) {
                 continue;
@@ -152,12 +175,22 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
                     .computeIfAbsent(languageOf(entry.getKey()), k -> new ArrayList<>())
                     .add(entry.getKey());
         }
+        // Order language headers: the active file's language first, then the rest alphabetically (TreeMap).
+        List<String> langOrder = new ArrayList<>(byLanguage.keySet());
+        String activeLang = activeFile == null ? null : languageOf(activeFile);
+        if (activeLang != null && langOrder.remove(activeLang)) {
+            langOrder.add(0, activeLang);
+        }
         TreeItem<Row> root = new TreeItem<>();
-        for (var langEntry : byLanguage.entrySet()) {
-            TreeItem<Row> langItem = new TreeItem<>(new Row(langEntry.getKey(), null, null));
+        for (String language : langOrder) {
+            TreeItem<Row> langItem = new TreeItem<>(new Row(language, null, null));
             langItem.setExpanded(true);
-            List<Path> paths = langEntry.getValue();
-            paths.sort(Comparator.comparing(p -> p.getFileName().toString().toLowerCase(Locale.ROOT)));
+            List<Path> paths = byLanguage.get(language);
+            // Active file first, then alphabetical by name.
+            paths.sort(ActiveFileOrder.activeFirst(
+                    p -> p,
+                    activeFile,
+                    Comparator.comparing(p -> p.getFileName().toString().toLowerCase(Locale.ROOT))));
             for (Path file : paths) {
                 List<LspDiagnostic> sorted = new ArrayList<>(kept.get(file));
                 sorted.sort((a, b) -> a.startLine() != b.startLine()
