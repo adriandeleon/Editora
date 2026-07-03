@@ -153,6 +153,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private boolean loading;
     /** Show hidden (dot) files/folders in the tree + filter search. Toggled from Settings. */
     private boolean showHidden;
+    /** Skip {@code .gitignore}d files/folders in the filter search (default on; the shared Search setting). */
+    private boolean respectGitignore = true;
 
     public ProjectPanel(
             Consumer<Path> onOpenFile,
@@ -214,6 +216,30 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         });
         filterDebounce.setOnFinished(e -> rebuildBody());
+        // Since focus lands on the filter field (focusFirstItem), Down/Up move into the results and Enter
+        // opens the selected (or first) match, so the whole flow is keyboard-only.
+        filterField.setOnKeyPressed(e -> {
+            switch (e.getCode()) {
+                case DOWN -> {
+                    if (tree.getExpandedItemCount() > 0) {
+                        if (tree.getSelectionModel().isEmpty()) {
+                            tree.getSelectionModel().select(0);
+                        }
+                        tree.requestFocus();
+                        tree.scrollTo(tree.getSelectionModel().getSelectedIndex());
+                    }
+                    e.consume();
+                }
+                case ENTER -> {
+                    if (tree.getSelectionModel().isEmpty() && tree.getExpandedItemCount() > 0) {
+                        tree.getSelectionModel().select(0);
+                    }
+                    openSelected();
+                    e.consume();
+                }
+                default -> {}
+            }
+        });
 
         // Trailing clear button — visible only while the filter has text; clicking it empties the filter
         // (which restores the lazy tree via the debounce) and returns focus to the field.
@@ -350,6 +376,20 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * Whether the filter search skips {@code .gitignore}d files/folders (the shared {@code searchRespectGitignore}
+     * Setting, default on). Only affects the filtered results — the full lazy tree still shows every file.
+     */
+    public void setRespectGitignore(boolean respectGitignore) {
+        if (this.respectGitignore == respectGitignore) {
+            return;
+        }
+        this.respectGitignore = respectGitignore;
+        if (root != null && filtering) {
+            rebuildBody(); // re-run the current filter with the new exclusion
+        }
+    }
+
     /** Rebuilds the body: placeholder (no project), filtered flat results, or the lazy tree. */
     private void rebuildBody() {
         long gen = searchGen.incrementAndGet(); // invalidate any in-flight search
@@ -368,11 +408,16 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // Walk off the FX thread (up to MAX_VISIT entries); apply results back under the gen guard.
             Path searchRoot = root;
             boolean includeHidden = showHidden;
+            boolean useGitignore = respectGitignore && com.editora.vfs.Vfs.isLocal(root);
             TreeItem<Path> pending = new TreeItem<>(root);
             pending.setExpanded(true);
             tree.setRoot(pending);
             searchExecutor.submit(() -> {
-                List<Path> matches = search(searchRoot, q, includeHidden);
+                // Load the root .gitignore off the FX thread (reads one file); NONE = no exclusion.
+                com.editora.search.GitignoreFilter gitignore = useGitignore
+                        ? com.editora.search.GitignoreFilter.load(searchRoot)
+                        : com.editora.search.GitignoreFilter.NONE;
+                List<Path> matches = search(searchRoot, q, includeHidden, gitignore);
                 Platform.runLater(() -> {
                     if (gen != searchGen.get()) {
                         return; // a newer query (or a tree switch) superseded this one
@@ -511,7 +556,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * Package-visible for tests.
      */
     static List<Path> search(Path root, String query, boolean includeHidden) {
+        return search(root, query, includeHidden, com.editora.search.GitignoreFilter.NONE);
+    }
+
+    /**
+     * As above, additionally skipping paths matched by {@code gitignore} (the repo-root {@code .gitignore};
+     * pass {@link com.editora.search.GitignoreFilter#NONE} to disable). An ignored directory is not descended
+     * into and an ignored file is not matched, so {@code target/}, {@code node_modules/}, {@code *.log}, … drop
+     * out of the filter results. Package-visible for tests.
+     */
+    static List<Path> search(
+            Path root, String query, boolean includeHidden, com.editora.search.GitignoreFilter gitignore) {
         String q = query.toLowerCase(Locale.ROOT);
+        boolean useGitignore = gitignore != null && !gitignore.isEmpty();
         List<Path> matches = new ArrayList<>();
         record Dir(Path path, int depth) {}
         java.util.Deque<Dir> queue = new java.util.ArrayDeque<>();
@@ -526,7 +583,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     }
                     String name = p.getFileName().toString();
                     boolean hidden = name.startsWith(".");
-                    if (Files.isDirectory(p, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                    boolean dir = Files.isDirectory(p, java.nio.file.LinkOption.NOFOLLOW_LINKS);
+                    if (useGitignore
+                            && gitignore.ignored(
+                                    root.relativize(p).toString().replace(java.io.File.separatorChar, '/'), dir)) {
+                        continue; // .gitignore'd (e.g. target/, node_modules/, *.log) — skip file + subtree
+                    }
+                    if (dir) {
                         if (current.depth() + 1 < MAX_DEPTH && (includeHidden || !hidden)) {
                             queue.add(new Dir(p, current.depth() + 1)); // descend later — shallower first
                         }
@@ -592,11 +655,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     @Override
     public void focusFirstItem() {
-        if (tree.getExpandedItemCount() > 0 && tree.getSelectionModel().isEmpty()) {
-            tree.getSelectionModel().select(0);
-            tree.scrollTo(0);
-        }
-        tree.requestFocus();
+        // Land on the filter field so the user can type to filter immediately (IDE convention). Down / Enter
+        // then move into / open the results (see the filter field's key handler in buildFilter).
+        filterField.requestFocus();
     }
 
     private void move(int delta) {
