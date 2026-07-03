@@ -15,6 +15,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 
 import com.editora.editor.TabContent;
+import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
@@ -47,7 +48,9 @@ public final class HexViewerPane implements TabContent {
         area.setEditable(false);
         area.setWrapText(false);
         area.getStyleClass().add("hex-viewer-area");
-        root.setCenter(area);
+        // A bare CodeArea virtualizes but shows no scrollbars; wrap it like the editor does so the dump
+        // scrolls vertically (65k+ rows) and horizontally (a narrow window clips the ASCII column).
+        root.setCenter(new VirtualizedScrollPane<>(area));
         load();
     }
 
