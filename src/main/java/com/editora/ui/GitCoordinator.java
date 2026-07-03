@@ -347,6 +347,19 @@ final class GitCoordinator {
         });
     }
 
+    /** Annotates the active buffer — enables inline blame if it's off (the project-tree "Annotate" action). */
+    void annotateActive() {
+        ifEnabled(() -> {
+            var s = host.settings();
+            if (!s.isGitBlameInline()) {
+                s.setGitBlameInline(true);
+                host.requestSave();
+                ops.syncBlameCheck();
+            }
+            applyBlame();
+        });
+    }
+
     /** Opens the read-only diff of the active file at the caret line's commit vs its parent. */
     void blameShowCommit() {
         EditorBuffer b = host.activeBuffer();
