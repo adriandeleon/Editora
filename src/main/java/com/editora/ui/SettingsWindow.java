@@ -2197,6 +2197,11 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.todo"));
         Label todoHl = section(p, tr("settings.section.todo"));
         row(p, Category.TODO, todoHl, todoHighlightCheck, "todo fixme highlight patterns tags comments annotations");
+        Label syntaxNote = note(tr("settings.todoSyntax"));
+        syntaxNote.setWrapText(true);
+        syntaxNote.setMaxWidth(560);
+        syntaxNote.managedProperty().bind(syntaxNote.visibleProperty());
+        p.getChildren().add(syntaxNote); // not a search row, so filter() never fights the visibility binding
         row(p, Category.TODO, todoHl, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
         return p;
     }
