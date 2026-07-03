@@ -92,6 +92,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         void gitCompareWithHead(Path file);
 
         void gitStage(Path file);
+
+        void gitUnstage(Path file);
+
+        /** Revert local changes to {@code file} (git checkout / clean an untracked file); confirms first. */
+        void gitRevert(Path file);
+
+        /** Add {@code file} (a directory gets a trailing {@code /}) to the repo-root {@code .gitignore}. */
+        void gitAddToGitignore(Path file);
     }
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
@@ -929,25 +937,46 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
                 Menu git = new Menu(tr("project.menu.git"));
                 git.setGraphic(Icons.git());
-                MenuItem fileHistory = new MenuItem(tr("project.menu.git.fileHistory"));
-                fileHistory.setGraphic(Icons.gitLog());
-                fileHistory.setOnAction(e -> fileActions.gitShowFileHistory(file));
-                MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
-                compareHead.setGraphic(Icons.diff());
-                compareHead.setOnAction(e -> fileActions.gitCompareWithHead(file));
                 MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
                 stage.setGraphic(Icons.stageAll());
                 stage.setOnAction(e -> fileActions.gitStage(file));
-                git.getItems().addAll(fileHistory, compareHead, stage);
+                MenuItem unstage = new MenuItem(tr("project.menu.git.unstage"));
+                unstage.setGraphic(Icons.remove());
+                unstage.setOnAction(e -> fileActions.gitUnstage(file));
+                MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
+                revert.setGraphic(Icons.undo());
+                revert.setOnAction(e -> fileActions.gitRevert(file));
+                MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
+                ignore.setGraphic(Icons.git());
+                ignore.setOnAction(e -> fileActions.gitAddToGitignore(file));
+                MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
+                compareHead.setGraphic(Icons.diff());
+                compareHead.setOnAction(e -> fileActions.gitCompareWithHead(file));
+                MenuItem fileHistory = new MenuItem(tr("project.menu.git.fileHistory"));
+                fileHistory.setGraphic(Icons.gitLog());
+                fileHistory.setOnAction(e -> fileActions.gitShowFileHistory(file));
+                git.getItems()
+                        .addAll(
+                                stage,
+                                unstage,
+                                revert,
+                                ignore,
+                                new javafx.scene.control.SeparatorMenuItem(),
+                                compareHead,
+                                fileHistory);
                 menu.getItems().add(git);
 
-                // Disable to match the live feature toggles, mirroring the tab context menu.
+                // Disable to match the live feature toggles + the file's actual status.
                 menu.setOnShowing(e -> {
                     localHistory.setDisable(!fileActions.localHistoryEnabled());
                     git.setDisable(!fileActions.gitAvailable()); // grey out the Git submenu when there's no VCS
+                    com.editora.git.GitFileStatus st =
+                            gitStatus.get(file.toAbsolutePath().normalize());
+                    revert.setDisable(st == null); // nothing to revert on a clean file
+                    ignore.setDisable(st != com.editora.git.GitFileStatus.UNTRACKED); // ignore = for new files
                 });
             }
-            // On a folder: Local History shows the folder-history view (files under it, incl. deleted).
+            // On a folder: Local History (folder view) + Git Stage/Revert of the whole subtree.
             if (fileActions != null && isDir) {
                 Path dir = treeItem.getValue();
                 menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
@@ -955,7 +984,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 folderHistory.setGraphic(Icons.history());
                 folderHistory.setOnAction(e -> fileActions.showLocalHistory(dir));
                 menu.getItems().add(folderHistory);
-                menu.setOnShowing(e -> folderHistory.setDisable(!fileActions.localHistoryEnabled()));
+
+                Menu git = new Menu(tr("project.menu.git"));
+                git.setGraphic(Icons.git());
+                MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
+                stage.setGraphic(Icons.stageAll());
+                stage.setOnAction(e -> fileActions.gitStage(dir));
+                MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
+                revert.setGraphic(Icons.undo());
+                revert.setOnAction(e -> fileActions.gitRevert(dir));
+                git.getItems().addAll(stage, revert);
+                menu.getItems().add(git);
+
+                menu.setOnShowing(e -> {
+                    folderHistory.setDisable(!fileActions.localHistoryEnabled());
+                    boolean gitOn = fileActions.gitAvailable();
+                    git.setDisable(!gitOn);
+                    revert.setDisable(
+                            !gitChangedDirs.contains(dir.toAbsolutePath().normalize()));
+                });
             }
             return menu;
         }

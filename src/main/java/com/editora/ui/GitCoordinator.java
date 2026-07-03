@@ -113,6 +113,10 @@ final class GitCoordinator {
     private final GitService service = new GitService();
 
     private Path repoRoot;
+    /** The last computed per-file status (absolute normalized path → status); used by the Project-tree
+     *  actions to tell whether a file is untracked (so Revert = clean vs. checkout). */
+    private java.util.Map<Path, com.editora.git.GitFileStatus> lastStatusByPath = java.util.Map.of();
+
     private String branchName = "";
     private String upstream = "";
     private boolean supportApplied;
@@ -201,6 +205,7 @@ final class GitCoordinator {
             branchName = "";
             upstream = "";
             ops.setGitPanelStatus(null);
+            lastStatusByPath = java.util.Map.of();
             ops.setProjectGitStatus(java.util.Map.of()); // Git turned off → clear the Project tree coloring
             host.forEachBuffer(b -> {
                 b.setChangeBars(null);
@@ -253,6 +258,7 @@ final class GitCoordinator {
             upstream = "";
             ops.setStatusBarBranch(null, 0, 0);
             ops.setGitPanelStatus(null);
+            lastStatusByPath = java.util.Map.of();
             ops.setProjectGitStatus(java.util.Map.of()); // clear the tree's file coloring (outside a repo / Git off)
             if (b != null) {
                 b.setChangeBars(null);
@@ -265,7 +271,8 @@ final class GitCoordinator {
         upstream = status.upstream();
         ops.setStatusBarBranch(status.branch(), status.ahead(), status.behind());
         ops.setGitPanelStatus(status);
-        ops.setProjectGitStatus(com.editora.git.GitFileStatus.byPath(status, state.root())); // color the tree
+        lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, state.root());
+        ops.setProjectGitStatus(lastStatusByPath); // color the tree
         if (b != null && b.getPath() != null) {
             // An empty map still marks the buffer as tracked (reserves the slot); hunk text feeds the
             // change-bar hover tooltip.
@@ -657,6 +664,76 @@ final class GitCoordinator {
             return;
         }
         discardChanges(repoRoot.relativize(file.toAbsolutePath()).toString(), false);
+    }
+
+    // --- Project-tree file/folder actions (act on a given path, not the active buffer) ------------
+
+    /** Repo-relative (forward-slash) path for {@code file}, or {@code null} when there's no repo/path. */
+    private String rel(Path file) {
+        if (file == null || repoRoot == null) {
+            return null;
+        }
+        return repoRoot.relativize(file.toAbsolutePath()).toString().replace(java.io.File.separatorChar, '/');
+    }
+
+    /** {@code git add -- <path>} for a file or folder (the Project-tree "Stage" action). */
+    void gitStagePath(Path file) {
+        String rel = rel(file);
+        if (rel == null || reportIfNoRepo()) {
+            return;
+        }
+        gitOp("Staged " + file.getFileName(), "add", "--", rel);
+    }
+
+    /** {@code git reset -q HEAD -- <path>} for a file or folder (the Project-tree "Unstage" action). */
+    void gitUnstagePath(Path file) {
+        String rel = rel(file);
+        if (rel == null || reportIfNoRepo()) {
+            return;
+        }
+        gitOp("Unstaged " + file.getFileName(), "reset", "-q", "HEAD", "--", rel);
+    }
+
+    /**
+     * Reverts local changes to {@code file} (the Project-tree "Revert" action) — {@code git clean} for an
+     * untracked file (delete it), else {@code git checkout} (discard worktree changes). Confirms first (via
+     * {@link #discardChanges}). A directory reverts the tracked changes under it.
+     */
+    void gitRevertPath(Path file) {
+        String rel = rel(file);
+        if (rel == null || reportIfNoRepo()) {
+            return;
+        }
+        boolean untracked =
+                lastStatusByPath.get(file.toAbsolutePath().normalize()) == com.editora.git.GitFileStatus.UNTRACKED;
+        discardChanges(rel, untracked);
+    }
+
+    /**
+     * Adds {@code file} (a directory gets a trailing {@code /}) to the repo-root {@code .gitignore}, creating
+     * it if absent — the Project-tree "Add to .gitignore" action. A no-op when the entry is already present.
+     * Writes the small file on the FX thread then refreshes so the now-ignored file drops from the tree color.
+     */
+    void addToGitignore(Path file) {
+        String rel = rel(file);
+        if (rel == null || reportIfNoRepo()) {
+            return;
+        }
+        String entry = com.editora.git.GitIgnore.entryFor(rel, java.nio.file.Files.isDirectory(file));
+        Path ignore = repoRoot.resolve(".gitignore");
+        try {
+            String existing = java.nio.file.Files.exists(ignore) ? java.nio.file.Files.readString(ignore) : "";
+            String updated = com.editora.git.GitIgnore.withEntry(existing, entry);
+            if (updated == null) {
+                host.setStatus(tr("status.git.alreadyIgnored", entry));
+                return;
+            }
+            java.nio.file.Files.writeString(ignore, updated);
+            host.setStatus(tr("status.git.addedToGitignore", entry));
+            afterMutation();
+        } catch (java.io.IOException e) {
+            gitError("Could not update .gitignore", String.valueOf(e.getMessage()));
+        }
     }
 
     // --- stash -------------------------------------------------------------------------------------
