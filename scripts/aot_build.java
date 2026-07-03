@@ -78,6 +78,13 @@ public class aot_build {
         Files.createDirectories(destDir);
         Path imageRoot = imageRoot(imageDir, appName, win); // Editora.app (mac) or Editora dir
 
+        // macOS "Open With": declare the SYSTEM UTIs public.text / public.source-code in the .app's
+        // Info.plist so Finder offers Editora for any text/source file (see fixMacDocumentTypes).
+        boolean mac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+        if (mac) {
+            fixMacDocumentTypes(imageRoot);
+        }
+
         // Ensure the Linux app image carries OUR icon. The jpackage app-image phase can leave the
         // default JavaApp.png at lib/<name>.png (the panteleyev plugin's <icon> didn't take), and the
         // installer wrap runs `jpackage --app-image`, which IGNORES --icon — so the .deb would ship the
@@ -208,6 +215,56 @@ public class aot_build {
     }
 
     // ---- helpers ----
+
+    /**
+     * Rewrites the macOS app image's Info.plist so Editora appears in Finder's "Open With" menu for text
+     * and source files. jpackage's --file-associations would declare per-extension CUSTOM UTIs
+     * (com.editora.txt, …) conforming to public.data — but Launch Services never offers an app for a file
+     * already typed as a system UTI (a .txt is public.plain-text, which does not conform to com.editora.txt),
+     * so it wouldn't show up. Instead we declare a single CFBundleDocumentTypes entry using the SYSTEM UTIs
+     * public.text + public.source-code: every text/source file conforms to one of those, so the app becomes
+     * an eligible (Alternate-rank, so non-default) editor for all of them. Best-effort — a PlistBuddy failure
+     * logs and continues (the app still runs, just without the association).
+     */
+    private static void fixMacDocumentTypes(Path imageRoot) {
+        Path plist = imageRoot.resolve("Contents").resolve("Info.plist");
+        if (!Files.isRegularFile(plist)) {
+            System.out.println("[aot] no Info.plist at " + plist + " — skipping Open-With association");
+            return;
+        }
+        String pb = "/usr/libexec/PlistBuddy";
+        // Drop anything jpackage may have written (harmless no-ops if absent); tolerate failure.
+        runQuiet(pb, "-c", "Delete :UTExportedTypeDeclarations", plist.toString());
+        runQuiet(pb, "-c", "Delete :UTImportedTypeDeclarations", plist.toString());
+        runQuiet(pb, "-c", "Delete :CFBundleDocumentTypes", plist.toString());
+        boolean ok = runQuiet(
+                pb,
+                "-c", "Add :CFBundleDocumentTypes array",
+                "-c", "Add :CFBundleDocumentTypes:0 dict",
+                "-c", "Add :CFBundleDocumentTypes:0:CFBundleTypeName string Text or source file",
+                "-c", "Add :CFBundleDocumentTypes:0:CFBundleTypeRole string Editor",
+                "-c", "Add :CFBundleDocumentTypes:0:LSHandlerRank string Alternate",
+                "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes array",
+                "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:0 string public.text",
+                "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:1 string public.source-code",
+                plist.toString());
+        System.out.println(ok
+                ? "[aot] Open-With: declared CFBundleDocumentTypes (public.text, public.source-code)"
+                : "[aot] Open-With: PlistBuddy edit failed — app ships without the file association");
+    }
+
+    /** Runs a command, discarding output; returns true on exit 0. Never throws. */
+    private static boolean runQuiet(String... cmd) {
+        try {
+            Process p = new ProcessBuilder(cmd)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            return p.waitFor(30, TimeUnit.SECONDS) && p.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     private static Path imageRoot(Path imageDir, String appName, boolean win) throws IOException {
         // macOS: <imageDir>/Editora.app ; Linux/Windows: <imageDir>/Editora

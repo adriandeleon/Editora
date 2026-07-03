@@ -1071,31 +1071,13 @@
                      es2/sw remain as fallbacks if Metal ever fails to init. -->
                 <prism.pipeline>mtl,es2,sw</prism.pipeline>
             </properties>
-            <!-- macOS-only: add file associations to the APP_IMAGE jpackage step so Editora.app declares
-                 CFBundleDocumentTypes in its Info.plist and shows up in Finder's "Open With" menu. This must
-                 run on the APP_IMAGE phase (that's where the .app's Info.plist is generated); the later DMG
-                 app-image wrap just packages the finished .app. Contributed here (not in the shared `dist`
-                 profile) so non-macOS installer builds stay byte-identical. Merges into the same
-                 `jpackage-app-image` execution by id when os-mac and dist are both active. -->
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.panteleyev</groupId>
-                        <artifactId>jpackage-maven-plugin</artifactId>
-                        <version>${jpackage.plugin.version}</version>
-                        <executions>
-                            <execution>
-                                <id>jpackage-app-image</id>
-                                <configuration>
-                                    <fileAssociations>
-                                        <fileAssociation>${project.basedir}/packaging/mac/file-associations.properties</fileAssociation>
-                                    </fileAssociations>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
+            <!-- macOS "Open With": Editora.app's Info.plist CFBundleDocumentTypes is written by
+                 scripts/aot_build.java (fixMacDocumentTypes), NOT jpackage's file-associations. jpackage
+                 emits per-extension *custom* UTIs (com.editora.txt, ...) that conform to public.data, a
+                 known limitation: Launch Services never offers the app for a file already typed as a system
+                 UTI (a .txt is public.plain-text), so it would not appear in Open With. aot_build injects a
+                 single CFBundleDocumentTypes entry declaring the *system* UTIs public.text / public.source-code
+                 instead, which every text/source file conforms to. -->
         </profile>
         <profile>
             <id>os-windows</id>
