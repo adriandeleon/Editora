@@ -1397,7 +1397,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         String app = windowProject == null ? "Editora" : windowProject.name() + " — Editora";
         EditorBuffer b = activeBuffer();
         if (b == null) {
-            stage.setTitle(app);
+            // A non-buffer tab: show an image viewer's file path; else just the app name (Welcome, etc.).
+            Path img = tabPath(tabPane.getSelectionModel().getSelectedItem());
+            stage.setTitle(img != null ? homeCollapsed(img.toString()) + " — " + app : app);
             return;
         }
         Path p = b.getPath();
@@ -3919,12 +3921,23 @@ public class MainController implements com.editora.mcp.McpBridge {
         int activeIndex = 0;
         for (int i = 0; i < files.size(); i++) {
             WorkspaceState.OpenFile f = files.get(i);
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(Path.of(f.getPath())); // sets the tab title/language; content comes later
+            Path p = Path.of(f.getPath());
             boolean active = f.getPath().equals(activePath);
             if (active) {
                 activeIndex = i;
             }
+            // A raster image restores into the read-only image viewer (a null buffer placeholder keeps the
+            // per-file fill indices aligned; fillSessionFiles skips nulls).
+            if (ImageFormats.isSupported(p.getFileName().toString())) {
+                Tab tab = openImageTab(p, active);
+                if (f.isPinned()) {
+                    pinned.add(tab);
+                }
+                buffers.add(null);
+                continue;
+            }
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setPath(p); // sets the tab title/language; content comes later
             Tab tab = addBuffer(buffer, active);
             if (f.isPinned()) {
                 pinned.add(tab);
@@ -3952,7 +3965,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         Platform.runLater(() -> {
             int i = order.get(k);
-            fillSessionBuffer(files.get(i), buffers.get(i));
+            EditorBuffer buffer = buffers.get(i);
+            if (buffer != null) { // null = an image-viewer tab; nothing to fill
+                fillSessionBuffer(files.get(i), buffer);
+            }
             fillSessionFiles(files, buffers, order, k + 1);
         });
     }
@@ -4574,6 +4590,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.alreadyOpen", file.getFileName()));
             return;
         }
+        // A raster image opens in the read-only image viewer instead of dumping its bytes into a text buffer.
+        if (ImageFormats.isSupported(file.getFileName().toString())) {
+            openImageTab(file, true);
+            if (recentFiles != null) {
+                recentFiles.add(file);
+            }
+            setStatus(tr("status.opened", file));
+            return;
+        }
         try {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
@@ -4599,6 +4624,20 @@ public class MainController implements com.editora.mcp.McpBridge {
                 recentFiles.remove(file);
             }
         }
+    }
+
+    /** Opens {@code file} in a read-only {@link ImageViewerPane} tab (raster images render, not their bytes). */
+    private Tab openImageTab(Path file, boolean select) {
+        ImageViewerPane pane = new ImageViewerPane(file);
+        Tab tab = addContentTab(pane, select);
+        tab.setOnClosed(e -> pane.dispose()); // release the decoded image's GPU texture when the tab closes
+        Platform.runLater(pane::relayout); // fit-to-window once the tab is laid out
+        return tab;
+    }
+
+    /** The {@link ImageViewerPane} in {@code tab}, or {@code null} for a buffer / non-image tab. */
+    private static ImageViewerPane imagePaneOf(Tab tab) {
+        return tab != null && tab.getUserData() instanceof ImageViewerPane pane ? pane : null;
     }
 
     /**
@@ -5682,13 +5721,22 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Tab tabForPath(Path file) {
         String target = pathKey(file);
         for (Tab tab : tabPane.getTabs()) {
-            EditorBuffer buffer = bufferOf(tab);
-            Path p = buffer == null ? null : buffer.getPath();
+            Path p = tabPath(tab); // buffer path, else an image-viewer tab's path
             if (p != null && pathKey(p).equals(target)) {
                 return tab;
             }
         }
         return null;
+    }
+
+    /** The file backing {@code tab} (a buffer's path or an image viewer's path), or {@code null} for neither. */
+    private static Path tabPath(Tab tab) {
+        EditorBuffer buffer = bufferOf(tab);
+        if (buffer != null) {
+            return buffer.getPath();
+        }
+        ImageViewerPane image = imagePaneOf(tab);
+        return image == null ? null : image.getPath();
     }
 
     /** A provider-safe identity key for a path: the canonical string for a local file, the {@code sftp://}
@@ -5769,20 +5817,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
-            if (buffer != null && buffer.getPath() != null) {
-                files.add(new WorkspaceState.OpenFile(
-                        buffer.getPath().toAbsolutePath().toString(),
-                        buffer.getArea().getCaretPosition(),
-                        pinned.contains(tab)));
+            Path p = tabPath(tab); // buffer or image-viewer path (image tabs restore too)
+            if (p != null) {
+                int caret = buffer != null ? buffer.getArea().getCaretPosition() : 0;
+                files.add(new WorkspaceState.OpenFile(p.toAbsolutePath().toString(), caret, pinned.contains(tab)));
             }
         }
         WorkspaceState state = config.getWorkspaceState();
         state.setOpenFiles(files);
-        EditorBuffer active = activeBuffer();
-        state.setActiveFile(
-                active != null && active.getPath() != null
-                        ? active.getPath().toAbsolutePath().toString()
-                        : "");
+        Path activePath = tabPath(tabPane.getSelectionModel().getSelectedItem());
+        state.setActiveFile(activePath != null ? activePath.toAbsolutePath().toString() : "");
         persistWindowBounds(state);
         toolWindows.persistDividers(); // capture a divider dragged but left open (close() only saves on hide)
         config.save(); // durable flush on quit — not coalesced

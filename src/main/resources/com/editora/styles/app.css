@@ -1922,3 +1922,29 @@
 .history-window-count {
     -fx-text-fill: -color-fg-muted;
 }
+
+/* Read-only image viewer (ui/ImageViewerPane) — raster images render instead of showing bytes. */
+.image-viewer { -fx-background-color: -color-bg-default; }
+.image-viewer-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.image-viewer-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 2 8 2 8;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+.image-viewer-btn:hover { -fx-background-color: -color-bg-inset; }
+.image-viewer-zoom { -fx-text-fill: -color-fg-muted; -fx-padding: 0 4 0 6; }
+.image-viewer-readonly {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.85em;
+    -fx-background-color: -color-bg-inset;
+    -fx-background-radius: 4;
+    -fx-padding: 1 8 1 8;
+}
+.image-viewer-holder { -fx-background-color: -color-bg-default; }
+.image-viewer-error { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }

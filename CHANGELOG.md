@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Image viewer.** Opening a raster image (`.png`, `.jpg`/`.jpeg`, `.gif`, `.bmp`) now renders the picture in
+  a read-only tab instead of dumping its binary bytes into a text buffer. A small top bar zooms out / in /
+  fit-to-window / actual size (and **Ctrl**+mouse-wheel zooms); large images scroll, small ones center. SVG is
+  deliberately left as editable text. Image tabs are restored across sessions like any other tab.
+
 - **Filter/search box focused on open.** Opening the **Project**, **Structure**, **Bookmarks**, or **Personal
   Notes** tool window now puts keyboard focus on its filter/search box so you can type to filter immediately;
   **Down** moves into the results and **Enter** opens the selected (or first) one.
