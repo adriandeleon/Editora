@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Hex viewer for binary files.** Opening a binary file (an executable, archive, `.class`, `.pdf`, …) now
+  shows a read-only `offset | hex | ASCII` dump instead of dumping its bytes as garbage text — completing the
+  image-viewer story. Binaries are detected by content (a NUL byte / high control-character density, with a
+  BOM guard so UTF-16 text isn't misrouted), large files show their first slice with a truncation note, and
+  the **View: Open as Hex** command force-opens any file's bytes as hex. Hex tabs restore across sessions.
+
 - **More default TODO keywords + structured comments (Comment Manager).** The built-in TODO
   highlight keywords now include **HACK, NOTE, XXX** and **DONE** alongside TODO/FIXME (existing custom
   patterns are kept; the defaults grow on upgrade). Editora now recognizes the IntelliJ-style

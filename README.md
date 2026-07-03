@@ -232,6 +232,9 @@ Editora is built with the help of AI coding tools.
 - **Image viewer** — opening a raster image (`.png`, `.jpg`/`.jpeg`, `.gif`, `.bmp`) renders the picture in a
   read-only tab instead of dumping its binary bytes as text, with zoom out/in/fit/actual-size (and Ctrl+wheel
   zoom). SVG stays editable text.
+- **Hex viewer** — opening a binary file (executable, archive, `.class`, `.pdf`, …) shows a read-only
+  `offset | hex | ASCII` dump instead of garbage text. Binaries are detected by content; large files show
+  their first slice with a truncation note. "View: Open as Hex" force-opens any file's bytes as hex.
 - **File-type icons** — every file shows a glyph for its type (the Java/Python/CSS/… logo, an image,
   archive, PDF, table, … glyph, or a generic document fallback) everywhere it's listed: editor tabs, the
   Project tree, the Open-Files / Recent pickers, the Switcher, and the file/folder finders. Monochrome

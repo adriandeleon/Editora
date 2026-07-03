@@ -1952,3 +1952,28 @@
 }
 .image-viewer-holder { -fx-background-color: -color-bg-default; }
 .image-viewer-error { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
+
+/* Read-only hex viewer for binary files (offset | hex | ASCII). */
+.hex-viewer { -fx-background-color: -color-bg-default; }
+.hex-viewer-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.hex-viewer-size { -fx-text-fill: -color-fg-default; }
+.hex-viewer-truncated { -fx-text-fill: -color-warning-fg; -fx-font-size: 0.9em; }
+.hex-viewer-readonly {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.85em;
+    -fx-background-color: -color-bg-inset;
+    -fx-background-radius: 4;
+    -fx-padding: 1 8 1 8;
+}
+.hex-viewer-error { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
+/* The dump area: monospace, theme background/foreground, no line-number gutter. */
+.hex-viewer-area {
+    -fx-font-family: "JetBrains Mono", "Consolas", "Menlo", monospace;
+    -fx-background-color: -color-bg-default;
+}
+.hex-viewer-area .text { -fx-fill: -color-fg-default; }
+.hex-viewer-area .caret { -fx-stroke: -color-fg-default; }

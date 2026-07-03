@@ -3983,6 +3983,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 buffers.add(null);
                 continue;
             }
+            // A binary file restores into the read-only hex viewer (null placeholder keeps the fill indices
+            // aligned, like the image-viewer case; fillSessionFiles skips nulls).
+            if (looksBinaryFile(p)) {
+                Tab tab = openHexTab(p, active);
+                if (f.isPinned()) {
+                    pinned.add(tab);
+                }
+                buffers.add(null);
+                continue;
+            }
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(p); // sets the tab title/language; content comes later
             Tab tab = addBuffer(buffer, active);
@@ -4646,6 +4656,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.opened", file));
             return;
         }
+        // A binary file opens in the read-only hex viewer instead of dumping its bytes as garbage text.
+        if (looksBinaryFile(file)) {
+            openHexTab(file, true);
+            if (recentFiles != null) {
+                recentFiles.add(file);
+            }
+            setStatus(tr("status.opened", file));
+            return;
+        }
         try {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
@@ -4685,6 +4704,45 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The {@link ImageViewerPane} in {@code tab}, or {@code null} for a buffer / non-image tab. */
     private static ImageViewerPane imagePaneOf(Tab tab) {
         return tab != null && tab.getUserData() instanceof ImageViewerPane pane ? pane : null;
+    }
+
+    /** Opens {@code file} in a read-only {@link HexViewerPane} tab (a binary shows its bytes, not garbage text). */
+    private Tab openHexTab(Path file, boolean select) {
+        HexViewerPane pane = new HexViewerPane(file);
+        Tab tab = addContentTab(pane, select);
+        tab.setOnClosed(e -> pane.dispose());
+        return tab;
+    }
+
+    /** The {@link HexViewerPane} in {@code tab}, or {@code null} for a buffer / non-hex tab. */
+    private static HexViewerPane hexPaneOf(Tab tab) {
+        return tab != null && tab.getUserData() instanceof HexViewerPane pane ? pane : null;
+    }
+
+    /**
+     * True when {@code file} looks like a binary (so it opens in the hex viewer, not as garbage text): reads a
+     * small sample and applies the {@link BinarySniff} heuristic. Unreadable ⇒ false (the text path reports the
+     * error). Skipped for the huge-file case is unnecessary — only a bounded {@link BinarySniff#SAMPLE_BYTES}
+     * prefix is read regardless of file size.
+     */
+    private static boolean looksBinaryFile(Path file) {
+        try (java.io.InputStream in = java.nio.file.Files.newInputStream(file)) {
+            return BinarySniff.looksBinary(in.readNBytes(BinarySniff.SAMPLE_BYTES));
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Command {@code view.openAsHex}: opens the active file's bytes in a read-only hex tab (forces hex even
+     *  for a text file). No-op with a status when the active tab has no file (an untitled buffer / Welcome). */
+    private void openActiveAsHex() {
+        Path p = tabPath(tabPane.getSelectionModel().getSelectedItem());
+        if (p == null) {
+            setStatus(tr("status.hex.noFile"));
+            return;
+        }
+        openHexTab(p, true);
+        setStatus(tr("status.opened", p));
     }
 
     /**
@@ -5776,14 +5834,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         return null;
     }
 
-    /** The file backing {@code tab} (a buffer's path or an image viewer's path), or {@code null} for neither. */
+    /** The file backing {@code tab} (a buffer / image viewer / hex viewer path), or {@code null} for none. */
     private static Path tabPath(Tab tab) {
         EditorBuffer buffer = bufferOf(tab);
         if (buffer != null) {
             return buffer.getPath();
         }
         ImageViewerPane image = imagePaneOf(tab);
-        return image == null ? null : image.getPath();
+        if (image != null) {
+            return image.getPath();
+        }
+        HexViewerPane hex = hexPaneOf(tab);
+        return hex == null ? null : hex.getPath();
     }
 
     /** A provider-safe identity key for a path: the canonical string for a local file, the {@code sftp://}
@@ -9690,6 +9752,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.welcome", this::showWelcome));
         registry.register(Command.of("view.messageLog", statusBar::showMessageLog));
         registry.register(Command.of("view.debugLog", this::showDebugLog));
+        registry.register(Command.of("view.openAsHex", this::openActiveAsHex));
         registry.register(Command.of("tool.project", () -> {
             if (projectsEnabled()) {
                 toolWindows.toggle(projectToolWindow);
