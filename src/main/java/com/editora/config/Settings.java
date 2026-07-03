@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 50;
+    public static final int SCHEMA_VERSION = 51;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -181,6 +181,8 @@ public class Settings {
     private boolean csvPreview = true;
     /** Rainbow per-column coloring in the editor for {@code .csv}/{@code .tsv} files: on by default. */
     private boolean csvRainbow = true;
+    /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
+    private boolean autoRenameTag = true;
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
      *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
     private boolean mcpSupport = false;
@@ -407,6 +409,14 @@ public class Settings {
 
     public void setCsvRainbow(boolean csvRainbow) {
         this.csvRainbow = csvRainbow;
+    }
+
+    public boolean isAutoRenameTag() {
+        return autoRenameTag;
+    }
+
+    public void setAutoRenameTag(boolean autoRenameTag) {
+        this.autoRenameTag = autoRenameTag;
     }
 
     public boolean isLogViewer() {

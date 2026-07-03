@@ -88,8 +88,8 @@ public enum ConfigSchema {
                     Map.entry(46, (Migration) ConfigMigrations::identity), // v46→47: + adminSave (additive)
                     Map.entry(47, (Migration) ConfigMigrations::identity), // v47→48: + csvPreview (additive)
                     Map.entry(48, (Migration) ConfigMigrations::identity), // v48→49: + csvRainbow (additive)
-                    Map.entry(
-                            49, (Migration) ConfigMigrations::growTodoDefaultKeywords))), // v49→50: grow TODO keywords
+                    Map.entry(49, (Migration) ConfigMigrations::growTodoDefaultKeywords), // v49→50: grow TODO keywords
+                    Map.entry(50, (Migration) ConfigMigrations::identity))), // v50→51: + autoRenameTag (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
