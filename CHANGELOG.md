@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Auto Rename Tag** (the VS Code behavior). Editing an HTML/XML tag name now renames the paired
+  open/close tag live as you type — nested and same-name sibling tags pair correctly, comments, CDATA,
+  doctypes, quoted attribute values, self-closing tags, HTML void elements (`<br>`, `<img>`, …) and
+  `<script>`/`<style>` content are all skipped, and an old-name guard makes sure typing a brand-new tag
+  never renames an unrelated one. On by default for `.html`/`.xml`-family files (Settings → Editor,
+  palette "Toggle Auto Rename Tag"); inert in read-only and very large files.
+
 - **String manipulation commands** (the JetBrains *String Manipulation* plugin family). Case-style
   conversions on the selection — or the identifier at the caret — to **camelCase / PascalCase / snake_case /
   SCREAMING_SNAKE_CASE / kebab-case / dot.case**, plus **Cycle Case Style** (repeated invocations step the

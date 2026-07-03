@@ -3,6 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Auto Rename Tag (VS Code parity) — editing an HTML/XML tag name mirrors the rename onto the
+      paired open/close tag, per keystroke. Pure/unit-tested `editops/TagRename`: positional stack
+      pairing over a single forward lex (comments/CDATA/doctype/PI/quoted attrs/self-closing skipped;
+      HTML void + raw-text elements handled) with an old-name guard (the change is reverted to get the
+      pre-edit name; the pair must still bear it) so half-typed new tags never rename the wrong closer.
+      Wired in `EditorBuffer` on the immediate `plainTextChanges` pulse (html/xml only, off in
+      large/huge files, suppressed during undo/redo); `Settings.autoRenameTag` (default on, schema
+      50→51) + Settings → Editor checkbox + palette `view.toggleAutoRenameTag`.
+      *Deferred: JSX/TSX tags, surviving a fully-emptied tag name (retyping from `<>` loses the link),
+      single-undo-step mirroring (the user edit + mirror are two undo entries).*
 - [x] String manipulation commands (the JetBrains String-Manipulation plugin family, P1) — case-style
       conversions on the selection/identifier at the caret (camelCase/PascalCase/snake_case/
       SCREAMING_SNAKE_CASE/kebab-case/dot.case + Cycle Case Style + Swap Case) and whole-line transforms

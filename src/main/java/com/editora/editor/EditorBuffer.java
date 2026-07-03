@@ -646,6 +646,9 @@ public class EditorBuffer implements TabContent {
         area.plainTextChanges()
                 .subscribe(c -> dirty.set(area.getLength() != cleanText.length()
                         || !area.getText().equals(cleanText)));
+        // Auto-rename tag: mirror a tag-name edit onto the paired open/close tag (html/xml only —
+        // the handler's first checks are two cheap boolean/string compares for every other buffer).
+        area.plainTextChanges().subscribe(this::maybeMirrorTagRename);
         area.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
             scheduleBraceMatch();
@@ -2740,6 +2743,57 @@ public class EditorBuffer implements TabContent {
         boolean want = on && isLog();
         if (want || logOverlay != null) {
             logOverlay().setActive(want);
+        }
+    }
+
+    /** Auto-rename-tag: editing an HTML/XML tag name mirrors the rename onto the paired tag. */
+    private boolean autoRenameTag;
+
+    /** Re-entrancy guard: the mirrored {@code replaceText} must not itself trigger another mirror. */
+    private boolean applyingTagRename;
+
+    /** Enables/disables the paired-tag auto-rename (pushed from the controller's view settings). */
+    public void setAutoRenameTag(boolean on) {
+        autoRenameTag = on;
+    }
+
+    /**
+     * After each document change, mirrors a tag-name edit onto the paired open/close tag (the VS
+     * Code Auto Rename Tag behavior) via the pure {@link com.editora.editops.TagRename}. Runs only
+     * for editable html/xml buffers below the large-file tier, never during undo/redo (undoing the
+     * user's edit and the mirror separately must not re-mirror), and never re-entrantly. Cost when
+     * it doesn't apply is one boolean/language check; the document lex runs only when the change
+     * sits inside a tag name.
+     */
+    private void maybeMirrorTagRename(org.fxmisc.richtext.model.PlainTextChange c) {
+        if (!autoRenameTag || applyingTagRename || largeFile || hugeFile || !isEditable()) {
+            return;
+        }
+        String lang = getLanguage();
+        boolean html = "html".equals(lang);
+        if (!html && !"xml".equals(lang)) {
+            return;
+        }
+        if (area.getUndoManager().isPerformingAction()
+                || (area2 != null && area2.getUndoManager().isPerformingAction())) {
+            return;
+        }
+        com.editora.editops.TagRename.Mirror m = com.editora.editops.TagRename.mirror(
+                area.getText(), c.getPosition(), c.getRemoved(), c.getInserted(), html);
+        if (m == null) {
+            return;
+        }
+        CodeArea a = getFocusedArea();
+        int anchor = a.getAnchor();
+        int caret = a.getCaretPosition();
+        int delta = m.name().length() - (m.to() - m.from());
+        applyingTagRename = true;
+        try {
+            a.replaceText(m.from(), m.to(), m.name());
+            // replaceText moved this view's caret to the mirror — put it back where the user was.
+            a.selectRange(anchor >= m.to() ? anchor + delta : anchor, caret >= m.to() ? caret + delta : caret);
+        } finally {
+            applyingTagRename = false;
         }
     }
 
