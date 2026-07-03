@@ -45,11 +45,23 @@ public final class TodoPatterns {
         return out;
     }
 
-    /** The built-in defaults: TODO (amber) and FIXME (red), both whole-word and case-sensitive. */
+    /**
+     * The built-in default keywords — TODO, FIXME, HACK, NOTE, XXX (plus DONE, the "marked done" state) —
+     * each whole-word and case-sensitive, mirroring the IntelliJ "Comment Manager" defaults. The order and
+     * names are also the source of truth for {@link #DEFAULT_KEYWORDS} (the migration that grows an existing
+     * user's list) and {@link #DONE_KEYWORD}.
+     */
     public static List<TodoPattern> defaults() {
         List<TodoPattern> list = new ArrayList<>();
-        list.add(new TodoPattern("TODO", "\\bTODO\\b", "#E5C07B", true, true));
-        list.add(new TodoPattern("FIXME", "\\bFIXME\\b", "#E06C75", true, true));
+        list.add(new TodoPattern("TODO", "\\bTODO\\b", "#E5C07B", true, true)); // amber
+        list.add(new TodoPattern("FIXME", "\\bFIXME\\b", "#E06C75", true, true)); // red
+        list.add(new TodoPattern("HACK", "\\bHACK\\b", "#D19A66", true, true)); // orange
+        list.add(new TodoPattern("NOTE", "\\bNOTE\\b", "#61AFEF", true, true)); // blue
+        list.add(new TodoPattern("XXX", "\\bXXX\\b", "#C678DD", true, true)); // magenta
+        list.add(new TodoPattern(DONE_KEYWORD, "\\bDONE\\b", "#98C379", true, true)); // green (done state)
         return list;
     }
+
+    /** The keyword an item's keyword is rewritten to when it is "marked done" from the tool window. */
+    public static final String DONE_KEYWORD = "DONE";
 }

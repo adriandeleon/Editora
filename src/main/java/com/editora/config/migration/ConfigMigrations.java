@@ -149,4 +149,42 @@ public final class ConfigMigrations {
         o.set("openProjectIds", ids);
         return o;
     }
+
+    /**
+     * v49 → v50 for {@code settings.toml}: grow an existing user's {@code todoPatterns} to include the new
+     * built-in keyword defaults (HACK / NOTE / XXX / DONE) that joined TODO / FIXME, appending any whose
+     * {@code name} isn't already present (custom entries are untouched, order preserved). Absent
+     * {@code todoPatterns} needs nothing — the read path merges onto {@link com.editora.todo.TodoPatterns#defaults()},
+     * which already lists every keyword.
+     */
+    static JsonNode growTodoDefaultKeywords(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        JsonNode node = o.get("todoPatterns");
+        if (node == null || !node.isArray()) {
+            return input;
+        }
+        ArrayNode arr = (ArrayNode) node;
+        java.util.Set<String> present = new java.util.HashSet<>();
+        for (JsonNode e : arr) {
+            JsonNode nm = e.get("name");
+            if (nm != null && nm.isTextual()) {
+                present.add(nm.asText());
+            }
+        }
+        for (com.editora.todo.TodoPattern p : com.editora.todo.TodoPatterns.defaults()) {
+            if (present.contains(p.getName())) {
+                continue;
+            }
+            ObjectNode t = JsonNodeFactory.instance.objectNode();
+            t.put("name", p.getName());
+            t.put("pattern", p.getPattern());
+            t.put("color", p.getColor());
+            t.put("caseSensitive", p.isCaseSensitive());
+            t.put("enabled", p.isEnabled());
+            arr.add(t);
+        }
+        return o;
+    }
 }

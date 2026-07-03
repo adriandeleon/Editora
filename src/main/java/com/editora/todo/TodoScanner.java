@@ -50,7 +50,9 @@ public final class TodoScanner {
                     from = s + 1; // zero-length match — step past it so we can't loop forever
                     continue;
                 }
-                out.add(new TodoMatch(lineStart + s, lineStart + e, line, s + 1, lineText, c.name(), c.color()));
+                TodoComment parsed = TodoComment.parse(lineText, s, e);
+                out.add(new TodoMatch(
+                        lineStart + s, lineStart + e, line, s + 1, lineText, c.name(), c.color(), parsed));
                 from = e;
             }
         }
