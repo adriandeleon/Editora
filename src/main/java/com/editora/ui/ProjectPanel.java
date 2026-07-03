@@ -216,30 +216,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         });
         filterDebounce.setOnFinished(e -> rebuildBody());
-        // Since focus lands on the filter field (focusFirstItem), Down/Up move into the results and Enter
-        // opens the selected (or first) match, so the whole flow is keyboard-only.
-        filterField.setOnKeyPressed(e -> {
-            switch (e.getCode()) {
-                case DOWN -> {
-                    if (tree.getExpandedItemCount() > 0) {
-                        if (tree.getSelectionModel().isEmpty()) {
-                            tree.getSelectionModel().select(0);
-                        }
-                        tree.requestFocus();
-                        tree.scrollTo(tree.getSelectionModel().getSelectedIndex());
-                    }
-                    e.consume();
-                }
-                case ENTER -> {
-                    if (tree.getSelectionModel().isEmpty() && tree.getExpandedItemCount() > 0) {
-                        tree.getSelectionModel().select(0);
-                    }
-                    openSelected();
-                    e.consume();
-                }
-                default -> {}
-            }
-        });
+        // Focus lands on the filter field (focusFirstItem); Down moves into the results and Enter opens the
+        // selected (or first) match, so the whole flow is keyboard-only (shared with Structure/Bookmarks/Notes).
+        FilterFieldNav.install(filterField, tree, this::openSelected);
 
         // Trailing clear button — visible only while the filter has text; clicking it empties the filter
         // (which restores the lazy tree via the debounce) and returns focus to the field.

@@ -9,10 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Project filter: focus + skip .gitignore.** Opening the Project tool window now puts the keyboard focus on
-  the filter box so you can type to filter immediately (Down / Enter move into and open the results), and the
-  filter skips `.gitignore`d files and folders (`target/`, `node_modules/`, `*.log`, …) by default — governed
-  by the same "respect .gitignore" search setting. The full project tree still shows every file.
+- **Filter/search box focused on open.** Opening the **Project**, **Structure**, **Bookmarks**, or **Personal
+  Notes** tool window now puts keyboard focus on its filter/search box so you can type to filter immediately;
+  **Down** moves into the results and **Enter** opens the selected (or first) one.
+
+- **Project filter skips .gitignore.** The Project tool window's filter now skips `.gitignore`d files and
+  folders (`target/`, `node_modules/`, `*.log`, …) by default — governed by the same "respect .gitignore"
+  search setting. The full project tree still shows every file.
 
 - **Active file first in Problems & TODO.** In the Problems and TODO tool windows, the file you're currently
   editing now sorts to the top of the list, so its diagnostics / TODOs are the first thing you see (matching
