@@ -116,6 +116,26 @@ class TagRenameTest {
         assertNull(TagRename.mirror(text, 4, "", "x", true));
     }
 
+    // --- real-world HTML: optional close tags (the bug positional pairing had) ---
+
+    @Test
+    void unclosedOptionalCloseTagsDoNotBreakThePairing() {
+        // <li>/<p> without closers are valid HTML5 — the edited tag must still find its own pair.
+        assertEquals("<ulx><li>a<li>b</ulx>", typeHtml("<ul|><li>a<li>b</ul>", "x"));
+        assertEquals("<divx><p>one<p>two</divx>", typeHtml("<div|><p>one<p>two</div>", "x"));
+        assertEquals("<divx><p>a</divx>", typeHtml("<div|><p>a</div>", "x"));
+    }
+
+    @Test
+    void closerRenameAlsoSurvivesUnclosedTags() {
+        assertEquals("<ulx><li>a<li>b</ulx>", typeHtml("<ul><li>a<li>b</ul|>", "x"));
+    }
+
+    @Test
+    void editingAnUnclosedOptionalCloseTagHasNoMirror() {
+        assertNull(typeHtml("<ul><li|>a<li>b</ul>", "x"));
+    }
+
     // --- skipped constructs ---
 
     @Test
