@@ -3950,6 +3950,22 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** A startup file to open, with an optional 1-based line/column ({@code 0} = unspecified). */
+    /**
+     * Opens OS-delivered files in this window (macOS Finder "Open With" — routed here by
+     * {@code App.installMacOpenFilesHandler} → {@code WindowManager.openExternalFiles}). Each path is opened
+     * like any other file (an already-open file just re-focuses its tab); paths are normalized to absolute.
+     */
+    public void openExternalFiles(java.util.List<Path> files) {
+        if (files == null) {
+            return;
+        }
+        for (Path f : files) {
+            if (f != null) {
+                openPath(f.toAbsolutePath().normalize());
+            }
+        }
+    }
+
     public record OpenTarget(Path file, int line, int column) {}
 
     /** A one-shot action run after {@link #openInitialBuffer()} finishes restoring the session. */

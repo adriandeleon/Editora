@@ -113,6 +113,170 @@ public class App extends Application {
                 newFileArg(rawArgs),
                 simpleFlag(rawArgs),
                 singleWindowArg(rawArgs));
+
+        // macOS: receive files opened via Finder's "Open With" (a CFBundleDocumentTypes association added by
+        // the packaged app — see packaging/mac/file-associations.properties). Finder delivers the path as an
+        // AppKit "openFiles" Apple Event, NOT as a command-line argument, so the argv path (fileTargets) never
+        // sees it. Registered after the window(s) are built so a cold-launch's buffered event lands in a real
+        // window. (Windows/Linux pass the file as argv, already handled by fileTargets — this is macOS-only.)
+        if (isMac()) {
+            installMacOpenFilesHandler(windows);
+        }
+    }
+
+    /**
+     * Installs a Glass {@code openFiles} handler (macOS) that routes Finder "Open With" files into the focused
+     * window. It <b>wraps</b> JavaFX's own event handler ({@link MacEventHandler} delegates every other event
+     * — quit, activate, preferences, … — to it) so Cmd-Q and the rest keep working; only {@code openFiles} is
+     * augmented. Uses the internal {@code com.sun.glass.ui} API (there's no public JavaFX hook, and
+     * {@code java.awt.Desktop.setOpenFileHandler} can't be used — the app runs {@code java.awt.headless=true}
+     * for the SVG guard). Any failure is logged and ignored — it must never break launch.
+     */
+    private static void installMacOpenFilesHandler(com.editora.ui.WindowManager windows) {
+        try {
+            com.sun.glass.ui.Application app = com.sun.glass.ui.Application.GetApplication();
+            if (app == null) {
+                return;
+            }
+            app.setEventHandler(new MacEventHandler(app.getEventHandler(), files -> {
+                if (files == null || files.length == 0) {
+                    return;
+                }
+                java.util.List<java.nio.file.Path> paths = new java.util.ArrayList<>();
+                for (String f : files) {
+                    if (f != null && !f.isBlank()) {
+                        paths.add(java.nio.file.Path.of(f));
+                    }
+                }
+                if (!paths.isEmpty()) {
+                    javafx.application.Platform.runLater(() -> windows.openExternalFiles(paths));
+                }
+            }));
+        } catch (Throwable t) {
+            // Internal API / non-standard runtime — the feature is optional, never fatal.
+            Logger.getLogger(App.class.getName()).log(Level.FINE, "macOS open-files handler unavailable", t);
+        }
+    }
+
+    /**
+     * A Glass {@code Application.EventHandler} that forwards {@code handleOpenFilesAction} to a callback and
+     * <b>delegates every other method to the wrapped handler</b> (JavaFX's own, which drives Cmd-Q, activate,
+     * preferences, …). Overriding the full surface — rather than just {@code handleOpenFilesAction} — is
+     * required because {@code setEventHandler} <em>replaces</em> the handler wholesale, so an un-forwarded
+     * method would silently drop JavaFX's default behavior for that event.
+     */
+    private static final class MacEventHandler extends com.sun.glass.ui.Application.EventHandler {
+        private final com.sun.glass.ui.Application.EventHandler delegate;
+        private final java.util.function.Consumer<String[]> onOpenFiles;
+
+        MacEventHandler(
+                com.sun.glass.ui.Application.EventHandler delegate, java.util.function.Consumer<String[]> onOpenFiles) {
+            this.delegate = delegate;
+            this.onOpenFiles = onOpenFiles;
+        }
+
+        @Override
+        public void handleOpenFilesAction(com.sun.glass.ui.Application app, long time, String[] files) {
+            if (delegate != null) {
+                delegate.handleOpenFilesAction(app, time, files);
+            }
+            try {
+                onOpenFiles.accept(files);
+            } catch (Throwable t) {
+                Logger.getLogger(App.class.getName()).log(Level.FINE, "open-files handling failed", t);
+            }
+        }
+
+        @Override
+        public void handleWillFinishLaunchingAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleWillFinishLaunchingAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleDidFinishLaunchingAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleDidFinishLaunchingAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleWillBecomeActiveAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleWillBecomeActiveAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleDidBecomeActiveAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleDidBecomeActiveAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleWillResignActiveAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleWillResignActiveAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleDidResignActiveAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleDidResignActiveAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleDidReceiveMemoryWarning(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleDidReceiveMemoryWarning(app, time);
+            }
+        }
+
+        @Override
+        public void handleWillHideAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleWillHideAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleDidHideAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleDidHideAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleWillUnhideAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleWillUnhideAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleDidUnhideAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleDidUnhideAction(app, time);
+            }
+        }
+
+        @Override
+        public void handleQuitAction(com.sun.glass.ui.Application app, long time) {
+            if (delegate != null) {
+                delegate.handleQuitAction(app, time);
+            }
+        }
+
+        @Override
+        public void handlePreferencesChanged(java.util.Map<String, Object> map) {
+            if (delegate != null) {
+                delegate.handlePreferencesChanged(map);
+            }
+        }
     }
 
     /** True when running on macOS (used to opt the UI chrome into the native system font). */

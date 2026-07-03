@@ -248,6 +248,37 @@ public class WindowManager {
         return stage;
     }
 
+    /**
+     * Opens OS-delivered files (macOS Finder "Open With" → the AppKit {@code openFiles} Apple Event) into the
+     * focused window, building the no-project window if none is open. On macOS the path arrives via an Apple
+     * Event rather than a command-line argument, so {@code App.installMacOpenFilesHandler} routes it here.
+     */
+    public void openExternalFiles(List<Path> files) {
+        if (files == null || files.isEmpty()) {
+            return;
+        }
+        Holder target = focusedHolder();
+        if (target == null) {
+            openOrFocusGlobal(); // nothing open (or nothing focused) — land the files in the global window
+            target = focusedHolder();
+        }
+        if (target == null) {
+            return;
+        }
+        target.controller().openExternalFiles(files);
+        focus(target.stage());
+    }
+
+    /** The currently-focused window, else the most recently built one (null when no window is open). */
+    private Holder focusedHolder() {
+        for (Holder h : windows) {
+            if (h.stage() != null && h.stage().isFocused()) {
+                return h;
+            }
+        }
+        return windows.isEmpty() ? null : windows.get(windows.size() - 1);
+    }
+
     /** Directory holding per-window session files for untitled no-project windows ({@code windows/<uuid>.json}). */
     private Path windowsDir() {
         return shared.getConfigDir().resolve("windows");
