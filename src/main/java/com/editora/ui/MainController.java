@@ -1276,6 +1276,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Shows/hides all project UI per the "Enable projects" setting: toolbar icon + combo, tool window. */
     private void applyProjectSupport() {
         projectPanel.setShowHidden(config.getSettings().isProjectShowHidden()); // hidden-files toggle (init + apply)
+        projectPanel.setRespectGitignore(
+                config.getSettings().isSearchRespectGitignore()); // skip .gitignore'd files in the filter search
         boolean on = projectsEnabled();
         // Turning projects off just hides the project chrome — each window keeps editing its open files
         // (windows no longer share one session that could be "stranded"). On the next launch with projects

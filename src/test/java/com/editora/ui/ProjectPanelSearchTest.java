@@ -73,4 +73,26 @@ class ProjectPanelSearchTest {
         assertTrue(containsName(ProjectPanel.search(root, "readme", false), "README.md"));
         assertFalse(ProjectPanel.search(root, "nomatch", false).stream().anyMatch(p -> true));
     }
+
+    @Test
+    void gitignoredFilesAndDirsSkippedWhenRespectingGitignore(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve(".gitignore"), "target/\n*.log\n");
+        Files.writeString(root.resolve("Main.java"), "x\n");
+        Files.writeString(root.resolve("app.log"), "x\n");
+        Files.createDirectories(root.resolve("target"));
+        Files.writeString(root.resolve("target/Main.class"), "x\n");
+
+        var gi = com.editora.search.GitignoreFilter.load(root);
+        // Ignored file + a file inside an ignored dir are gone; a tracked file remains.
+        assertTrue(containsName(ProjectPanel.search(root, "main", false, gi), "Main.java"), "tracked file found");
+        assertFalse(containsName(ProjectPanel.search(root, "app", false, gi), "app.log"), "*.log skipped");
+        assertFalse(
+                containsName(ProjectPanel.search(root, "main", false, gi), "Main.class"), "target/ subtree skipped");
+
+        // With NONE, nothing is excluded (the pre-feature behavior).
+        var none = com.editora.search.GitignoreFilter.NONE;
+        assertTrue(containsName(ProjectPanel.search(root, "app", false, none), "app.log"), "no filter → *.log kept");
+        assertTrue(
+                containsName(ProjectPanel.search(root, "main", false, none), "Main.class"), "no filter → target kept");
+    }
 }
