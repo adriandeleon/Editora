@@ -45,6 +45,11 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     private final Label scopeLabel = new Label();
     private final TreeView<Row> tree = new TreeView<>();
 
+    // Cached last scan + the active file, so the tree can be re-sorted (active file first) on a tab switch
+    // without re-scanning. activeFile is the normalized as-walked form (matches the scan's file keys).
+    private TodoService.Outcome lastOutcome;
+    private java.nio.file.Path activeFile;
+
     public TodoPanel(Actions actions) {
         this.actions = actions;
         getStyleClass().add("todo-panel");
@@ -161,8 +166,35 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
 
     /** Populates the tree from a scan outcome (called on the FX thread by the controller). */
     public void setResults(TodoService.Outcome outcome) {
+        lastOutcome = outcome;
+        rebuild();
+    }
+
+    /**
+     * Sets the active file so its group sorts to the top, mirroring the IDE convention of surfacing the file
+     * you're looking at first. Pass the normalized as-walked path (matches the scan's file keys). Re-sorts the
+     * existing tree without re-scanning.
+     */
+    public void setActiveFile(java.nio.file.Path normalizedActive) {
+        if (java.util.Objects.equals(activeFile, normalizedActive)) {
+            return;
+        }
+        activeFile = normalizedActive;
+        if (lastOutcome != null) {
+            rebuild();
+        }
+    }
+
+    private void rebuild() {
+        TodoService.Outcome outcome = lastOutcome;
+        if (outcome == null) {
+            return;
+        }
+        // Active file's group first, then the scan's original order (a stable sort preserves it).
+        java.util.List<TodoService.FileTodos> files = new java.util.ArrayList<>(outcome.files());
+        files.sort(java.util.Comparator.comparingInt(fr -> ActiveFileOrder.isActive(fr.file(), activeFile) ? 0 : 1));
         TreeItem<Row> root = new TreeItem<>();
-        for (TodoService.FileTodos fr : outcome.files()) {
+        for (TodoService.FileTodos fr : files) {
             TreeItem<Row> fileItem = new TreeItem<>(new Row(fr.file(), null));
             fileItem.setExpanded(true);
             for (TodoMatch m : fr.matches()) {

@@ -159,6 +159,11 @@ final class LspCoordinator {
         return problems;
     }
 
+    /** Sorts the Problems tree so the active file's group is on top (pass the canonical path; on tab switch). */
+    void setProblemsActiveFile(Path canonicalActive) {
+        problemsPanel.setActiveFile(canonicalActive);
+    }
+
     /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
     void onDiagnostics(Path file, List<LspDiagnostic> diagnostics) {
         if (!ops.lspFeatureEnabled()) {

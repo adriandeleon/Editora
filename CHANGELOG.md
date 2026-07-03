@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Active file first in Problems & TODO.** In the Problems and TODO tool windows, the file you're currently
+  editing now sorts to the top of the list, so its diagnostics / TODOs are the first thing you see (matching
+  the IDE convention). Re-orders automatically as you switch tabs.
+
 - **macOS "Open With" support.** The packaged `Editora.app` now registers as a handler for common text and
   source files, so Editora appears in Finder's right-click **Open With** menu (and the "Always Open With"
   picker). Opening a file that way launches or focuses Editora and opens the file — even though macOS delivers
