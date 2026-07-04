@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Auto Close Tags.** Typing the `>` that completes an HTML/XML open tag now inserts the matching
+  closing tag after the caret (`<body` + `>` → `<body>|</body>`), with the caret left between the
+  tags. Closers, self-closing `/>`, doctypes/comments, HTML void elements (`<br>`, `<img>`, …) and a
+  `>` typed inside an attribute string are all left alone. Works in macro replay too. On by default
+  for `.html`/`.xml`-family files (Settings → Editor, palette "Toggle Auto Close Tags").
+
 - **Embedded AI agent (ACP) — chat with Claude Code inside Editora.** A new **AI Agent** tool window
   drives any [Agent Client Protocol](https://agentclientprotocol.com) agent over stdio — the default
   command is `claude-code-acp` (Claude Code's ACP adapter; `npm i -g @zed-industries/claude-code-acp`),

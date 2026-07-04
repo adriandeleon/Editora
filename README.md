@@ -96,6 +96,9 @@ Editora is built with the help of AI coding tools.
   `Filter by Pattern` / `Clear Filter` / `View as Log` in the palette.
 - **Word/line-level undo** — undo/redo breaks at word, whitespace, and newline boundaries (and after a typing pause), so one undo removes a word or line rather than a whole typing burst.
 - **Undo History** — an *Undo History* tool window (`M-g u`) lists in-session document checkpoints; double-click or Enter jumps back to any recent state.
+- **Auto Close Tags** — typing the `>` of an HTML/XML open tag inserts the matching closing tag and
+  leaves the caret between them; void elements, self-closing tags, comments/doctypes, and `>` inside
+  attribute strings are left alone. On by default (Settings → Editor; "Toggle Auto Close Tags").
 - **Auto Rename Tag** — editing an HTML/XML tag name renames the paired open/close tag as you type
   (VS Code behavior); comments, CDATA, quoted attributes, void elements, and `<script>`/`<style>`
   content are skipped, and a brand-new tag never renames an unrelated one. On by default
