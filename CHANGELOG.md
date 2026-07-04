@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **AI connection check no longer hangs on a slow endpoint.** The Settings → AI Actions health check
+  now bounds the wait for a response (30 s) — a slow-to-start local server (e.g. LM Studio loading a
+  large model) or an unreachable endpoint resolves to a red "Not working: …" instead of sticking on
+  "Checking connection…" forever. Real AI requests gained a 120 s time-to-first-response cap too
+  (unchanged for a healthy streaming generation, which streams to completion after the first token).
+
 ### Added
 
 - **AI connection status (green/red).** The Settings → AI Actions page now shows a live health-check

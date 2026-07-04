@@ -108,6 +108,7 @@ public final class AiService {
                             "Reply with OK.",
                             1,
                             java.util.List.of()),
+                    AiClient.PING_TIMEOUT,
                     () -> false,
                     new AiClient.Listener() {
                         @Override
