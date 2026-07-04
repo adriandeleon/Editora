@@ -65,6 +65,8 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
 
     private TodoService.Outcome lastOutcome;
     private Path activeFile;
+    /** Notified when the user changes the "Group by" dimension, so the coordinator can persist it. */
+    private java.util.function.Consumer<TodoGrouping.GroupBy> onGroupByChanged;
 
     public TodoPanel(Actions actions) {
         this.actions = actions;
@@ -99,7 +101,12 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                 return null;
             }
         });
-        groupBy.valueProperty().addListener((o, a, b) -> rebuild());
+        groupBy.valueProperty().addListener((o, a, b) -> {
+            rebuild();
+            if (onGroupByChanged != null && b != null) {
+                onGroupByChanged.accept(b);
+            }
+        });
 
         Button refreshBtn = new Button();
         refreshBtn.setGraphic(Icons.refresh());
@@ -123,6 +130,19 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
 
         getChildren().addAll(scopeRow, toolbar, tree);
+    }
+
+    /** Selects the "Group by" dimension. Call before {@link #setGroupByChangeHandler} to restore a saved value
+     *  without re-persisting it (the handler is still null when this fires the listener). */
+    public void setGroupBy(TodoGrouping.GroupBy g) {
+        if (g != null && g != groupBy.getValue()) {
+            groupBy.getSelectionModel().select(g);
+        }
+    }
+
+    /** Registers the callback fired when the user changes the "Group by" dimension (coordinator persists it). */
+    public void setGroupByChangeHandler(java.util.function.Consumer<TodoGrouping.GroupBy> handler) {
+        this.onGroupByChanged = handler;
     }
 
     /** Sets the displayed scan-scope folder. */
