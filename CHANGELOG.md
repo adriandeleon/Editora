@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Local LLMs for the AI features (LM Studio, Ollama, vLLM).** The AI actions and inline completion
+  can now talk to a **local OpenAI-compatible server** instead of the Anthropic API — pick
+  *Local (OpenAI-compatible)* under Settings → AI Actions → **Provider**. The default endpoint is LM
+  Studio's local server (`http://127.0.0.1:1234/v1/chat/completions`) and **no API key is required**;
+  the endpoint is configurable for Ollama/vLLM/llama.cpp. Leave the model fields blank to use whatever
+  model the server has loaded, or name one explicitly. The OpenAI chat-completions streaming dialect
+  (SSE `data:` chunks → `[DONE]`, `choices[].delta.content`, `finish_reason`) is handled alongside the
+  Anthropic Messages format; commit-message generation, explain/rewrite selection, and ghost-text
+  completion all work against either. Palette: *AI: Set Provider* / *AI: Set Endpoint*. Schema 56→57,
+  additive.
+
 - **AI inline completion (ghost text).** After a short typing pause with the caret at the end of a
   line, a muted single-line AI suggestion appears at the caret — **Tab accepts it**, Esc or typing
   dismisses it (the same ghost-text presentation prose autocomplete already uses). Requests are

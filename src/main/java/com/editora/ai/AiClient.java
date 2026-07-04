@@ -22,9 +22,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public final class AiClient {
 
-    /** The Messages API endpoint. */
-    static final String ENDPOINT = "https://api.anthropic.com/v1/messages";
-
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
 
     /** Receives the streamed response (on the calling thread — the service marshals to FX). */
@@ -42,18 +39,31 @@ public final class AiClient {
             HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
 
     /**
-     * Sends {@code request} (a {@link AiRequests#streamingRequest} body) and streams the reply into
-     * {@code listener}, polling {@code cancelled} between events so a stale generation stops reading.
+     * Sends {@code request} (an {@link AiRequests#requestFor} body matching {@code provider}'s dialect)
+     * to {@code endpoint} and streams the reply into {@code listener}, polling {@code cancelled}
+     * between events so a stale generation stops reading. For {@link AiProvider#OPENAI} the key is
+     * optional (local servers) and sent as a bearer token when present.
      */
-    public void stream(String apiKey, JsonNode request, BooleanSupplier cancelled, Listener listener) {
+    public void stream(
+            AiProvider provider,
+            String endpoint,
+            String apiKey,
+            JsonNode request,
+            BooleanSupplier cancelled,
+            Listener listener) {
         HttpRequest req;
         try {
-            req = HttpRequest.newBuilder(URI.create(ENDPOINT))
-                    .header("x-api-key", apiKey)
-                    .header("anthropic-version", "2023-06-01")
+            HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(endpoint))
                     .header("content-type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(request)))
-                    .build();
+                    .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(request)));
+            if (provider == AiProvider.OPENAI) {
+                if (apiKey != null && !apiKey.isBlank()) {
+                    b.header("Authorization", "Bearer " + apiKey);
+                }
+            } else {
+                b.header("x-api-key", apiKey).header("anthropic-version", "2023-06-01");
+            }
+            req = b.build();
         } catch (Exception e) {
             listener.onError(String.valueOf(e.getMessage()));
             return;
@@ -75,6 +85,27 @@ public final class AiClient {
                     }
                     SseParser.Event event = parser.feed(line);
                     if (event == null) {
+                        continue;
+                    }
+                    if (provider == AiProvider.OPENAI) {
+                        if (OpenAiSse.isDone(event.data())) {
+                            listener.onDone(stopReason);
+                            return;
+                        }
+                        JsonNode chunk = mapper.readTree(event.data());
+                        String error = OpenAiSse.errorMessage(chunk);
+                        if (error != null) {
+                            listener.onError(error);
+                            return;
+                        }
+                        String delta = OpenAiSse.textDelta(chunk);
+                        if (delta != null && !delta.isEmpty()) {
+                            listener.onText(delta);
+                        }
+                        String finish = OpenAiSse.finishReason(chunk);
+                        if (finish != null) {
+                            stopReason = finish;
+                        }
                         continue;
                     }
                     JsonNode data = mapper.readTree(event.data());
