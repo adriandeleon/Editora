@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Embedded AI agent (ACP) — chat with Claude Code inside Editora.** A new **AI Agent** tool window
+  drives any [Agent Client Protocol](https://agentclientprotocol.com) agent over stdio — the default
+  command is `claude-code-acp` (Claude Code's ACP adapter; `npm i -g @zed-industries/claude-code-acp`),
+  and Gemini CLI or any other ACP agent works by changing the command. The transcript streams the
+  agent's replies and tool activity; Enter sends, Shift+Enter inserts a newline; Stop cancels a turn and
+  New Session starts fresh. The integration is editor-aware: the agent's **file reads serve open
+  buffers' unsaved text**, and its **edits to open files apply as undoable buffer edits** (one `C-z`
+  reverts; you review and save) — writes to files you don't have open go to disk and refresh the
+  Project tree. Agent permission requests pop a dialog with the agent's own options. Off by default
+  (Settings → AI Agent, Beta) with a configurable command; the agent process is tracked like the LSP
+  servers (killed on window close / app exit, reaped after a crash). Commands: **AI Agent** window
+  toggle, *Agent: New Session*, *Agent: Stop*, *Toggle AI Agent*, *Agent: Set Command*.
+
 - **MCP server: six new tools — an AI agent can now edit, save, and navigate, not just read.** The
   embedded Model Context Protocol server grows from six to twelve tools: `edit_buffer` applies an
   **undoable** text edit to an open buffer (exact-match str-replace — the old text must occur exactly

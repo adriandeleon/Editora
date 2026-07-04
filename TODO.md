@@ -72,6 +72,12 @@ A backlog of planned features and improvements. Unordered within each section.
       utf-16le/be, round-tripped on read & save), `max_line_length` (column ruler), and on-save
       `trim_trailing_whitespace` / `insert_final_newline`. Glob sections (`*` `**` `?` `[seq]` `{a,b}`
       `{n1..n2}`). On by default; Settings → Editor + **View: Toggle EditorConfig**. Local files only
+- [x] Embedded AI agent (ACP) — an Agent Client Protocol client (newline-delimited JSON-RPC over stdio)
+      driving a user-installed agent (default: Claude Code via `claude-code-acp`) in an **AI Agent** chat
+      tool window; fs reads serve open buffers' live text, fs writes apply as undoable buffer edits,
+      permission requests pop a dialog. Off by default (Settings → AI Agent). No new dependency.
+      *(Next: rich transcript (markdown/tool-call cards), diff-preview for edits, session persistence,
+      agent-side MCP server pass-through, multiple sessions.)*
 - [x] MCP server — a minimal Model Context Protocol server (loopback HTTP + bearer-token auth) embedded in
       the editor, exposing live state + the command registry to an LLM agent (twelve tools, incl. undoable
       buffer edits + save + open/navigate + symbols + git status); off by default

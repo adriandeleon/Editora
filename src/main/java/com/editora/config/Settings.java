@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 51;
+    public static final int SCHEMA_VERSION = 52;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -186,6 +186,11 @@ public class Settings {
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
      *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
     private boolean mcpSupport = false;
+    /** Embedded AI agent (an ACP agent — e.g. Claude Code — in the AI Agent chat tool window): off by
+     *  default. The agent is an external, user-installed CLI, never bundled. */
+    private boolean agentSupport = false;
+    /** The ACP agent command (tokenized, quote-aware); blank = {@code claude-code-acp} on PATH. */
+    private String agentCommand = "";
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -445,6 +450,22 @@ public class Settings {
 
     public void setMcpSupport(boolean mcpSupport) {
         this.mcpSupport = mcpSupport;
+    }
+
+    public boolean isAgentSupport() {
+        return agentSupport;
+    }
+
+    public void setAgentSupport(boolean agentSupport) {
+        this.agentSupport = agentSupport;
+    }
+
+    public String getAgentCommand() {
+        return agentCommand == null ? "" : agentCommand;
+    }
+
+    public void setAgentCommand(String agentCommand) {
+        this.agentCommand = agentCommand;
     }
 
     public String getIjhttpCommand() {

@@ -330,6 +330,12 @@ Editora is built with the help of AI coding tools.
   *who* published — not a sandbox. See [`docs/plugins.md`](docs/plugins.md), the reference
   [`examples/example-plugin/`](examples/example-plugin/), and the live registry (every plugin's source +
   a signed `index.json`) at [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins).
+- **AI Agent** _(Beta)_ — chat with an embedded coding agent over the
+  [Agent Client Protocol](https://agentclientprotocol.com) (ACP). The default command is
+  `claude-code-acp` (Claude Code's ACP adapter; any ACP agent works via Settings → AI Agent). The
+  agent's file reads see open buffers' unsaved text, and its edits to open files apply as **undoable
+  buffer edits** you review and save; permission requests pop a dialog. Off by default; the agent is a
+  user-installed external tool, never bundled.
 - **MCP server** _(Beta)_ — embed a [Model Context Protocol](https://modelcontextprotocol.io) server in the
   running editor so an LLM agent (Claude Code, etc.) can observe live editor state, edit files, and drive the
   command registry. A small **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** exposes twelve
