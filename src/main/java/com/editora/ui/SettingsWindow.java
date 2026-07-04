@@ -209,6 +209,7 @@ public class SettingsWindow {
     private CheckBox csvGridCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox autoRenameTagCheck;
+    private CheckBox autoCloseTagsCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
     private VBox markdownLintRulesBox;
@@ -878,6 +879,7 @@ public class SettingsWindow {
         csvGridCheck = viewCheck(tr("settings.csvPreview"), Settings::setCsvPreview);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
+        autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
         todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
 
@@ -1743,6 +1745,12 @@ public class SettingsWindow {
                 multiCaretCheck,
                 "multiple cursors carets column box selection alt drag vs code");
         row(p, Category.EDITOR, display, autoRenameTagCheck, "auto rename tag html xml paired close mirror vs code");
+        row(
+                p,
+                Category.EDITOR,
+                display,
+                autoCloseTagsCheck,
+                "auto close tags html xml closing tag insert body vs code");
         Label indent = section(p, tr("settings.section.indentation"));
         row(
                 p,
@@ -4787,6 +4795,7 @@ public class SettingsWindow {
             csvGridCheck.setSelected(settings.isCsvPreview());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
+            autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             rebuildTodoRows();
             rebuildMarkdownLintRules();
@@ -5325,6 +5334,7 @@ public class SettingsWindow {
             csvGridCheck.setSelected(s.isCsvPreview());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());
+            autoCloseTagsCheck.setSelected(s.isAutoCloseTags());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             rebuildTodoRows();
             rebuildMarkdownLintRules();

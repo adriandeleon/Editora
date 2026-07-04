@@ -2749,6 +2749,40 @@ public class EditorBuffer implements TabContent {
     /** Auto-rename-tag: editing an HTML/XML tag name mirrors the rename onto the paired tag. */
     private boolean autoRenameTag;
 
+    /** Auto-close tags: typing the {@code >} of an HTML/XML open tag inserts the matching closer. */
+    private boolean autoCloseTags;
+
+    /** Enables/disables tag auto-closing (pushed from the controller's view settings). */
+    public void setAutoCloseTags(boolean on) {
+        autoCloseTags = on;
+    }
+
+    /**
+     * Typing the {@code >} that completes an open tag inserts {@code </name>} after the caret (the
+     * VS Code auto-closing-tags behavior), leaving the caret between the tags. Gated to editable
+     * html/xml buffers; the decision is the pure {@link com.editora.editops.TagAutoClose} over a
+     * bounded window before the caret, so the per-keystroke cost is one short backward scan.
+     */
+    private boolean applyTagAutoClose(CodeArea a) {
+        if (!autoCloseTags || a.getSelection().getLength() > 0) {
+            return false;
+        }
+        String lang = getLanguage();
+        boolean html = "html".equals(lang);
+        if (!html && !"xml".equals(lang)) {
+            return false;
+        }
+        int caret = a.getCaretPosition();
+        int from = Math.max(0, caret - com.editora.editops.TagAutoClose.MAX_TAG_SCAN);
+        String closer = com.editora.editops.TagAutoClose.closer(a.getText(from, caret), html);
+        if (closer == null) {
+            return false;
+        }
+        a.replaceText(caret, caret, ">" + closer);
+        a.moveTo(caret + 1);
+        return true;
+    }
+
     /** Re-entrancy guard: the mirrored {@code replaceText} must not itself trigger another mirror. */
     private boolean applyingTagRename;
 
@@ -5198,6 +5232,9 @@ public class EditorBuffer implements TabContent {
      * macro replay ({@link #typeChar}).
      */
     private boolean applyAutoCloseTyped(CodeArea a, char c) {
+        if (c == '>' && applyTagAutoClose(a)) {
+            return true; // html/xml: the > completed an open tag and the closer was inserted
+        }
         if (AutoClose.closerFor(c) == 0 && !AutoClose.isCloser(c)) {
             return false; // not a bracket or quote
         }

@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 53;
+    public static final int SCHEMA_VERSION = 54;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -183,6 +183,8 @@ public class Settings {
     private boolean csvRainbow = true;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
+    /** Auto-close HTML/XML tags (typing an open tag's {@code >} inserts the closer): on by default. */
+    private boolean autoCloseTags = true;
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
      *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
     private boolean mcpSupport = false;
@@ -429,6 +431,14 @@ public class Settings {
 
     public void setAutoRenameTag(boolean autoRenameTag) {
         this.autoRenameTag = autoRenameTag;
+    }
+
+    public boolean isAutoCloseTags() {
+        return autoCloseTags;
+    }
+
+    public void setAutoCloseTags(boolean autoCloseTags) {
+        this.autoCloseTags = autoCloseTags;
     }
 
     public boolean isLogViewer() {

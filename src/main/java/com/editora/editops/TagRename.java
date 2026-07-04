@@ -28,8 +28,8 @@ public final class TagRename {
     /** Longest tag name considered (bounds the backward region walk). */
     private static final int MAX_NAME = 256;
 
-    /** HTML void elements — no close tag, treated as self-closing. */
-    private static final Set<String> VOID_ELEMENTS = Set.of(
+    /** HTML void elements — no close tag, treated as self-closing (shared with {@link TagAutoClose}). */
+    static final Set<String> VOID_ELEMENTS = Set.of(
             "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track",
             "wbr");
 

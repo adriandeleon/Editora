@@ -3,6 +3,14 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Auto Close Tags (VS Code parity) — typing the `>` completing an HTML/XML open tag inserts
+      `</name>` after the caret. Pure/unit-tested `editops/TagAutoClose` (one forward pass over a
+      bounded pre-caret window; quote state tracked only inside tags so apostrophes in text and
+      `>`/`<` inside closed attribute strings can't derail it; skips closers, `/>`, doctype/comment/PI,
+      HTML void elements). Wired into `EditorBuffer.applyAutoCloseTyped` so the live key filter and
+      macro replay share it; `Settings.autoCloseTags` (default on, schema 51→52) + Settings → Editor
+      checkbox + palette `view.toggleAutoCloseTags`.
+      *Deferred: `</` closing-tag name completion, JSX/TSX.*
 - [x] Auto Rename Tag (VS Code parity) — editing an HTML/XML tag name mirrors the rename onto the
       paired open/close tag, per keystroke. Pure/unit-tested `editops/TagRename`: the pre-edit (old)
       name is reconstructed by reverting the change, then the pair is found by same-name depth counting
