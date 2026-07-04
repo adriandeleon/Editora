@@ -23,6 +23,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public final class AiClient {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
+    /** Generous default response-headers timeout (a reasoning model can be slow to first token). */
+    static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofSeconds(120);
+    /** Short timeout for the Settings connection check — it must resolve quickly, not hang. */
+    public static final Duration PING_TIMEOUT = Duration.ofSeconds(30);
 
     /** Receives the streamed response (on the calling thread — the service marshals to FX). */
     public interface Listener {
@@ -51,9 +55,27 @@ public final class AiClient {
             JsonNode request,
             BooleanSupplier cancelled,
             Listener listener) {
+        stream(provider, endpoint, apiKey, request, DEFAULT_RESPONSE_TIMEOUT, cancelled, listener);
+    }
+
+    /**
+     * As {@link #stream(AiProvider, String, String, JsonNode, BooleanSupplier, Listener)}, with an explicit
+     * response timeout. The timeout bounds the wait for the response <em>headers</em> (not the streamed
+     * body), so a dead / slow-to-start endpoint fails fast instead of hanging forever — while a long,
+     * healthy generation still streams to completion. {@code onError} fires on timeout.
+     */
+    public void stream(
+            AiProvider provider,
+            String endpoint,
+            String apiKey,
+            JsonNode request,
+            Duration responseTimeout,
+            BooleanSupplier cancelled,
+            Listener listener) {
         HttpRequest req;
         try {
             HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(endpoint))
+                    .timeout(responseTimeout)
                     .header("content-type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(request)));
             if (provider == AiProvider.OPENAI) {
