@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP server: six new tools — an AI agent can now edit, save, and navigate, not just read.** The
+  embedded Model Context Protocol server grows from six to twelve tools: `edit_buffer` applies an
+  **undoable** text edit to an open buffer (exact-match str-replace — the old text must occur exactly
+  once unless `replace_all` — or a whole-buffer rewrite; one `C-z` reverts it), `save_buffer` writes an
+  open buffer to disk (untitled buffers are refused rather than popping a Save-As dialog), `open_file`
+  opens a file and optionally jumps to a line/column, `get_selection` reports the active buffer's caret
+  and selection, `document_symbols` returns a file's LSP symbol outline, and `git_status` reports the
+  branch, ahead/behind counts, and changed files. The security-notice dialog now discloses that a
+  connected agent can edit and save files, not just read them. Everything stays loopback-only +
+  bearer-token-gated and off by default (Settings → MCP Server).
+
 - **Auto Rename Tag** (the VS Code behavior). Editing an HTML/XML tag name now renames the paired
   open/close tag live as you type — nested and same-name sibling tags pair correctly, real-world HTML's
   unclosed optional-close tags (`<li>`, `<p>`, …) don't break the pairing, comments, CDATA,

@@ -73,7 +73,8 @@ A backlog of planned features and improvements. Unordered within each section.
       `trim_trailing_whitespace` / `insert_final_newline`. Glob sections (`*` `**` `?` `[seq]` `{a,b}`
       `{n1..n2}`). On by default; Settings → Editor + **View: Toggle EditorConfig**. Local files only
 - [x] MCP server — a minimal Model Context Protocol server (loopback HTTP + bearer-token auth) embedded in
-      the editor, exposing live state + the command registry to an LLM agent (six tools); off by default
+      the editor, exposing live state + the command registry to an LLM agent (twelve tools, incl. undoable
+      buffer edits + save + open/navigate + symbols + git status); off by default
       behind a security notice (Settings → MCP Server). No new dependency
 - [x] Local file history — IntelliJ-style snapshots of local files on save / auto-save / before an
       external reload, independent of any VCS; a **File History** tool window (`M-g l`) lists revisions
@@ -302,12 +303,14 @@ A backlog of planned features and improvements. Unordered within each section.
   per-plugin/TOFU signing, auto-update.*
 - [x] External Tools support
 - [x] MCP support — a minimal **Model Context Protocol** server embedded in the editor (loopback HTTP +
-      bearer-token auth) so an LLM agent (Claude Code, …) can observe state + drive the command registry.
-      Six tools: `list_open_files`, `read_buffer`, `get_diagnostics`, `find_in_files`, `list_commands`,
-      `execute_command`; writes `<configDir>/mcp-endpoint.json` for discovery; status-bar indicator
-      (click to copy the connection command). Off by default behind a security-notice dialog
-      (Settings → MCP Server; `view.toggleMcp` / `mcp.copyEndpoint`). No new dependency (`jdk.httpserver`).
-      (Next: more tools, resources/prompts, stdio transport.)
+      bearer-token auth) so an LLM agent (Claude Code, …) can observe state, edit files, and drive the
+      command registry. Twelve tools — reads `list_open_files` / `read_buffer` / `get_selection` /
+      `get_diagnostics` / `document_symbols` / `git_status` / `find_in_files` / `list_commands`, writes
+      `edit_buffer` (undoable str-replace / whole-buffer edits) / `save_buffer`, actions `open_file`
+      (with line:col navigation) / `execute_command`; writes `<configDir>/mcp-endpoint.json` for discovery;
+      status-bar indicator (click to copy the connection command). Off by default behind a security-notice
+      dialog (Settings → MCP Server; `view.toggleMcp` / `mcp.copyEndpoint`). No new dependency
+      (`jdk.httpserver`). (Next: resources/prompts, stdio transport, TODO-scan + open-tabs tools.)
 
 ## Packaging
 - [ ] Sign native installers
