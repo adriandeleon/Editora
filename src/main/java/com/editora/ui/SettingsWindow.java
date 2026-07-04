@@ -277,6 +277,13 @@ public class SettingsWindow {
     private TextField aiCompletionModelField;
     private ComboBox<String> aiProviderCombo;
     private TextField aiEndpointField;
+    private Label aiStatusLabel;
+    /** Injected by MainController: runs a live connection check, delivering (ok, message) on the FX thread. */
+    private java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> aiConnectionProbe;
+    /** Coalesces rapid field edits into a single connection check (~600 ms after the last keystroke). */
+    private final javafx.animation.PauseTransition aiStatusDebounce =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
+
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -1003,6 +1010,7 @@ public class SettingsWindow {
         aiCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setAiSupport(now);
             apply();
+            scheduleAiStatus();
         });
         aiProviderCombo = new ComboBox<>();
         aiProviderCombo.getItems().addAll("anthropic", "openai");
@@ -1021,25 +1029,30 @@ public class SettingsWindow {
             if (!loading && now != null) {
                 config.getSettings().setAiProvider(now);
                 apply();
+                scheduleAiStatus();
             }
         });
+        aiStatusDebounce.setOnFinished(e -> refreshAiStatus());
         aiEndpointField = new TextField();
         aiEndpointField.setPromptText(tr("settings.ai.endpointPrompt"));
         aiEndpointField.textProperty().addListener((obs, was, now) -> {
             config.getSettings().setAiEndpoint(now);
             apply();
+            scheduleAiStatus();
         });
         aiModelField = new TextField();
         aiModelField.setPromptText("claude-opus-4-8");
         aiModelField.textProperty().addListener((obs, was, now) -> {
             config.getSettings().setAiModel(now);
             apply();
+            scheduleAiStatus();
         });
         aiApiKeyField = new javafx.scene.control.PasswordField();
         aiApiKeyField.setPromptText(tr("settings.ai.apiKeyPrompt"));
         aiApiKeyField.textProperty().addListener((obs, was, now) -> {
             config.getSettings().setAiApiKey(now);
             apply();
+            scheduleAiStatus();
         });
         aiInlineCheck = new CheckBox(tr("settings.ai.inline"));
         aiInlineCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -3497,9 +3510,46 @@ public class SettingsWindow {
         return p;
     }
 
+    /** Injected by MainController: runs a live AI connection check (green/red status on the AI page). */
+    public void setAiConnectionProbe(
+            java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> probe) {
+        this.aiConnectionProbe = probe;
+    }
+
+    /** Debounced connection re-check after a field edit (avoids a network call per keystroke). */
+    private void scheduleAiStatus() {
+        if (!loading) {
+            aiStatusDebounce.playFromStart();
+        }
+    }
+
+    /** Fires the live connection check now, showing a "checking…" state until the result lands. */
+    private void refreshAiStatus() {
+        if (aiStatusLabel == null || aiConnectionProbe == null) {
+            return;
+        }
+        aiStatusLabel.getStyleClass().setAll("settings-git-status");
+        aiStatusLabel.setText(tr("settings.ai.checking"));
+        aiConnectionProbe.accept(this::syncAiStatus);
+    }
+
+    /** Colors the AI status label green/red (the Git/Mermaid/LSP idiom): connected vs the error message. */
+    private void syncAiStatus(boolean ok, String message) {
+        if (aiStatusLabel == null) {
+            return;
+        }
+        aiStatusLabel.getStyleClass().setAll("settings-git-status", ok ? "settings-git-found" : "settings-git-missing");
+        aiStatusLabel.setText(ok ? tr("settings.ai.connected") : tr("settings.ai.connectFailed", message));
+    }
+
     private VBox aiPage() {
         VBox p = page(tr("settings.cat.ai"));
         row(p, Category.AI, null, aiCheck, "ai actions anthropic claude commit message explain rewrite enable");
+        aiStatusLabel = new Label(tr("settings.ai.statusUnknown"));
+        aiStatusLabel.getStyleClass().add("settings-git-status");
+        aiStatusLabel.setWrapText(true);
+        aiStatusLabel.setMaxWidth(440);
+        row(p, Category.AI, null, aiStatusLabel, "ai connection status test green red working reachable");
         row(
                 p,
                 Category.AI,
@@ -4909,6 +4959,7 @@ public class SettingsWindow {
             aiProviderCombo.setValue(
                     com.editora.ai.AiProvider.from(settings.getAiProvider()).id());
             aiEndpointField.setText(settings.getAiEndpoint());
+            javafx.application.Platform.runLater(this::refreshAiStatus); // check once the fields are populated
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
                 pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());

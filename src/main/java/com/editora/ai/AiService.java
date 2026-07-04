@@ -83,6 +83,58 @@ public final class AiService {
                 }));
     }
 
+    /** The result of a connection check: whether the endpoint accepted a minimal request, plus a message
+     *  (a stop reason on success, or the HTTP/connection error on failure). */
+    public record Ping(boolean ok, String message) {}
+
+    /**
+     * Sends a tiny (1-token) request to verify the provider/endpoint/key/model actually work — the
+     * Settings green/red health check. Never touches the generation counter, so it can't cancel (or be
+     * cancelled by) a real generation; the result is posted to the FX thread exactly once.
+     */
+    public void ping(
+            AiProvider provider, String endpoint, String apiKey, String model, java.util.function.Consumer<Ping> cb) {
+        exec.submit(() -> {
+            boolean[] delivered = {false};
+            client.stream(
+                    provider,
+                    endpoint,
+                    apiKey,
+                    AiRequests.requestFor(
+                            mapper,
+                            provider,
+                            model,
+                            "You are a health check.",
+                            "Reply with OK.",
+                            1,
+                            java.util.List.of()),
+                    () -> false,
+                    new AiClient.Listener() {
+                        @Override
+                        public void onText(String delta) {
+                            // content is irrelevant — a streaming 200 means the endpoint works
+                        }
+
+                        @Override
+                        public void onDone(String stopReason) {
+                            deliver(true, stopReason);
+                        }
+
+                        @Override
+                        public void onError(String message) {
+                            deliver(false, message);
+                        }
+
+                        private void deliver(boolean ok, String message) {
+                            if (!delivered[0]) {
+                                delivered[0] = true;
+                                Platform.runLater(() -> cb.accept(new Ping(ok, message)));
+                            }
+                        }
+                    });
+        });
+    }
+
     /** Cancels the in-flight generation (the reader stops at the next event boundary). */
     public void cancel() {
         generation.incrementAndGet();

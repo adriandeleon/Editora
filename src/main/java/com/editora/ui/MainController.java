@@ -545,6 +545,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
         this.settingsWindow.setRipgrepProbe(
                 searchCoordinator::probeRipgrep); // Settings → Search found/not-found status
+        this.settingsWindow.setAiConnectionProbe(
+                aiCoordinator::checkConnection); // Settings → AI Actions green/red connection status
         this.settingsWindow.setOnKeymapChanged(this::reloadKeymap); // picker/combo → live keymap switch
         this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
             @Override
@@ -10056,6 +10058,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().getAiEndpoint(),
                         v -> config.getSettings().setAiEndpoint(v),
                         null)));
+        registry.register(Command.of("ai.testConnection", aiCoordinator::testConnection));
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
         registry.register(Command.of("view.toggleMinimap", this::toggleMinimap));
