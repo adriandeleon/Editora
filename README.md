@@ -339,6 +339,8 @@ Editora is built with the help of AI coding tools.
   **AI inline completion**: after a typing pause, a muted one-line ghost suggestion at the caret — Tab
   accepts (its own fast model, default `claude-haiku-4-5`). Off by default (Settings → AI Actions); model
   configurable (default `claude-opus-4-8`); API key from `ANTHROPIC_API_KEY` or a Settings override.
+  **Local models**: switch the Provider to *Local (OpenAI-compatible)* to run every AI feature against
+  LM Studio, Ollama, or any local OpenAI-compatible server — no API key, configurable endpoint.
 - **AI Agent** _(Beta)_ — chat with an embedded coding agent over the
   [Agent Client Protocol](https://agentclientprotocol.com) (ACP). The default command is
   `claude-code-acp` (Claude Code's ACP adapter; any ACP agent works via Settings → AI Agent). The

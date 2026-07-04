@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 56;
+    public static final int SCHEMA_VERSION = 57;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -207,6 +207,12 @@ public class Settings {
     private boolean aiInlineCompletion = false;
     /** The model for inline completion; blank = the built-in default (claude-haiku-4-5 — latency). */
     private String aiCompletionModel = "";
+    /** The AI wire dialect: {@code "anthropic"} (default) or {@code "openai"} — an OpenAI-compatible
+     *  local server such as LM Studio, Ollama, or vLLM (no API key required). */
+    private String aiProvider = "";
+    /** The AI endpoint URL; blank = the provider's default (Anthropic's API, or LM Studio's local
+     *  {@code http://127.0.0.1:1234/v1/chat/completions}). */
+    private String aiEndpoint = "";
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -530,6 +536,22 @@ public class Settings {
 
     public void setAiCompletionModel(String aiCompletionModel) {
         this.aiCompletionModel = aiCompletionModel;
+    }
+
+    public String getAiProvider() {
+        return aiProvider == null ? "" : aiProvider;
+    }
+
+    public void setAiProvider(String aiProvider) {
+        this.aiProvider = aiProvider;
+    }
+
+    public String getAiEndpoint() {
+        return aiEndpoint == null ? "" : aiEndpoint;
+    }
+
+    public void setAiEndpoint(String aiEndpoint) {
+        this.aiEndpoint = aiEndpoint;
     }
 
     public String getIjhttpCommand() {

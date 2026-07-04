@@ -36,12 +36,21 @@ public final class AiService {
     private final AtomicLong generation = new AtomicLong();
 
     /** Streams one generation; a later {@link #cancel}/generate supersedes it (stale callbacks dropped). */
-    public void generate(String apiKey, String model, String system, String user, Callbacks cb) {
-        generate(apiKey, model, system, user, AiRequests.MAX_TOKENS, java.util.List.of(), cb);
+    public void generate(
+            AiProvider provider,
+            String endpoint,
+            String apiKey,
+            String model,
+            String system,
+            String user,
+            Callbacks cb) {
+        generate(provider, endpoint, apiKey, model, system, user, AiRequests.MAX_TOKENS, java.util.List.of(), cb);
     }
 
     /** The full form: an explicit output cap + stop sequences (inline completion stops at end-of-line). */
     public void generate(
+            AiProvider provider,
+            String endpoint,
             String apiKey,
             String model,
             String system,
@@ -51,8 +60,10 @@ public final class AiService {
             Callbacks cb) {
         long gen = generation.incrementAndGet();
         exec.submit(() -> client.stream(
+                provider,
+                endpoint,
                 apiKey,
-                AiRequests.streamingRequest(mapper, model, system, user, maxTokens, stopSequences),
+                AiRequests.requestFor(mapper, provider, model, system, user, maxTokens, stopSequences),
                 () -> gen != generation.get(),
                 new AiClient.Listener() {
                     @Override

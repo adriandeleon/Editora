@@ -10031,6 +10031,31 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().getAiCompletionModel(),
                         v -> config.getSettings().setAiCompletionModel(v),
                         null)));
+        registry.register(Command.of(
+                "ai.setProvider",
+                () -> chooseSetting(
+                        "ai.setProvider",
+                        () -> List.of("anthropic", "openai"),
+                        id -> tr("settings.ai.provider." + id),
+                        id -> {
+                            config.getSettings().setAiProvider(id);
+                            requestSave();
+                            applyAutocomplete(); // re-gate inline completion (key requirement changed)
+                            if (settingsWindow != null) {
+                                settingsWindow.syncAll();
+                            }
+                            setStatus(tr(
+                                    "status.settingChanged",
+                                    commandTitle("ai.setProvider"),
+                                    tr("settings.ai.provider." + id)));
+                        })));
+        registry.register(Command.of(
+                "ai.setEndpoint",
+                () -> promptStringSetting(
+                        "ai.setEndpoint",
+                        () -> config.getSettings().getAiEndpoint(),
+                        v -> config.getSettings().setAiEndpoint(v),
+                        null)));
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
         registry.register(Command.of("view.toggleMinimap", this::toggleMinimap));

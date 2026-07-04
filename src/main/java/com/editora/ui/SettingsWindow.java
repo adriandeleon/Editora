@@ -275,6 +275,8 @@ public class SettingsWindow {
     private TextField aiApiKeyField;
     private CheckBox aiInlineCheck;
     private TextField aiCompletionModelField;
+    private ComboBox<String> aiProviderCombo;
+    private TextField aiEndpointField;
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -1000,6 +1002,31 @@ public class SettingsWindow {
         aiCheck = new CheckBox(tr("settings.ai.enable"));
         aiCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setAiSupport(now);
+            apply();
+        });
+        aiProviderCombo = new ComboBox<>();
+        aiProviderCombo.getItems().addAll("anthropic", "openai");
+        aiProviderCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String id) {
+                return id == null ? "" : tr("settings.ai.provider." + id);
+            }
+
+            @Override
+            public String fromString(String s) {
+                return s;
+            }
+        });
+        aiProviderCombo.valueProperty().addListener((obs, was, now) -> {
+            if (!loading && now != null) {
+                config.getSettings().setAiProvider(now);
+                apply();
+            }
+        });
+        aiEndpointField = new TextField();
+        aiEndpointField.setPromptText(tr("settings.ai.endpointPrompt"));
+        aiEndpointField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAiEndpoint(now);
             apply();
         });
         aiModelField = new TextField();
@@ -3477,6 +3504,22 @@ public class SettingsWindow {
                 p,
                 Category.AI,
                 null,
+                labeledRow(tr("settings.ai.provider"), aiProviderCombo),
+                "ai provider anthropic openai local lm studio ollama vllm");
+        row(
+                p,
+                Category.AI,
+                null,
+                labeledRow(tr("settings.ai.endpoint"), aiEndpointField),
+                "ai endpoint url local server lm studio ollama port");
+        Label providerNote = note(tr("settings.ai.providerNote"));
+        providerNote.setWrapText(true);
+        providerNote.setMaxWidth(440);
+        row(p, Category.AI, null, providerNote, "ai provider local lm studio no api key endpoint");
+        row(
+                p,
+                Category.AI,
+                null,
                 exePathRow(tr("settings.ai.model"), aiModelField),
                 "ai model anthropic claude opus id");
         row(
@@ -4092,6 +4135,14 @@ public class SettingsWindow {
     }
 
     /** A "[label] [path field] [Browse…]" row for picking a CLI executable. */
+    /** A simple "label: control" row (no Browse button), used for the AI provider combo + endpoint URL. */
+    private HBox labeledRow(String label, javafx.scene.control.Control control) {
+        HBox.setHgrow(control, Priority.ALWAYS);
+        HBox box = new HBox(6, new Label(label), control);
+        box.setAlignment(Pos.CENTER_LEFT);
+        return box;
+    }
+
     private HBox exePathRow(String label, TextField field) {
         Button browse = new Button(tr("settings.mermaid.browse"));
         browse.setOnAction(e -> {
@@ -4855,6 +4906,9 @@ public class SettingsWindow {
             aiApiKeyField.setText(settings.getAiApiKey());
             aiInlineCheck.setSelected(settings.isAiInlineCompletion());
             aiCompletionModelField.setText(settings.getAiCompletionModel());
+            aiProviderCombo.setValue(
+                    com.editora.ai.AiProvider.from(settings.getAiProvider()).id());
+            aiEndpointField.setText(settings.getAiEndpoint());
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
                 pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());
@@ -5269,6 +5323,10 @@ public class SettingsWindow {
             aiApiKeyField.setText(config.getSettings().getAiApiKey());
             aiInlineCheck.setSelected(config.getSettings().isAiInlineCompletion());
             aiCompletionModelField.setText(config.getSettings().getAiCompletionModel());
+            aiProviderCombo.setValue(
+                    com.editora.ai.AiProvider.from(config.getSettings().getAiProvider())
+                            .id());
+            aiEndpointField.setText(config.getSettings().getAiEndpoint());
         } finally {
             loading = prev;
         }

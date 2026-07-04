@@ -85,6 +85,11 @@ A backlog of planned features and improvements. Unordered within each section.
       128-token cap, generation-guarded (typing supersedes the in-flight request); its own fast model
       (default `claude-haiku-4-5`). Off by default under Settings → AI Actions. *(Next: multi-line
       ghost rendering, accept-word-by-word, per-language enable list.)*
+- [x] Local LLM support (LM Studio / Ollama / vLLM) — an OpenAI-compatible provider for every AI feature
+      (actions + inline completion): AiProvider enum + OpenAiSse reader (data-only SSE, `[DONE]`,
+      `choices[].delta.content`, `finish_reason`→Anthropic stops), provider-aware AiClient headers/body,
+      Settings.aiProvider/aiEndpoint (default LM Studio localhost, no key). Palette AI: Set Provider /
+      Set Endpoint. *(Next: base/FIM completion models, per-request timeout tuning, model-list picker.)*
 - [x] AI actions (direct Anthropic API) — streamed one-shot features over `java.net.http` (no SDK, no new
       dependency): commit-message generation from the staged diff (into the Commit window), explain
       selection (into a Markdown buffer), rewrite selection per instruction (one undoable edit, aborts if

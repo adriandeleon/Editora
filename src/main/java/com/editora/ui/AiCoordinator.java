@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
+import com.editora.ai.AiProvider;
 import com.editora.ai.AiRequests;
 import com.editora.ai.AiService;
 import com.editora.editor.EditorBuffer;
@@ -63,9 +64,11 @@ final class AiCoordinator {
         return host.settings().isAiSupport() && !host.simpleModeActive();
     }
 
-    /** The effective inline-completion gate: master + sub-toggle + a usable API key. */
+    /** The effective inline-completion gate: master + sub-toggle + a key when the provider needs one. */
     boolean isInlineCompletionEnabled() {
-        return isEnabled() && host.settings().isAiInlineCompletion() && !apiKey().isEmpty();
+        return isEnabled()
+                && host.settings().isAiInlineCompletion()
+                && (!provider().requiresApiKey() || !apiKey().isEmpty());
     }
 
     /** {@code EditorBuffer.AiCompletionProvider}: one short, stop-at-newline completion per idle pause.
@@ -77,6 +80,8 @@ final class AiCoordinator {
         }
         StringBuilder out = new StringBuilder();
         completionService.generate(
+                provider(),
+                endpoint(),
                 apiKey(),
                 completionModel(),
                 AiRequests.completionSystem(),
@@ -103,7 +108,22 @@ final class AiCoordinator {
 
     private String completionModel() {
         String configured = host.settings().getAiCompletionModel();
-        return configured == null || configured.isBlank() ? DEFAULT_COMPLETION_MODEL : configured.trim();
+        if (configured != null && !configured.isBlank()) {
+            return configured.trim();
+        }
+        // OpenAI-compatible: a blank model is omitted from the request (LM Studio serves the loaded model).
+        return provider() == AiProvider.ANTHROPIC ? DEFAULT_COMPLETION_MODEL : "";
+    }
+
+    /** The configured wire dialect (Anthropic vs an OpenAI-compatible local server). */
+    private AiProvider provider() {
+        return AiProvider.from(host.settings().getAiProvider());
+    }
+
+    /** The configured endpoint, or the provider's default (Anthropic's API / LM Studio's local port). */
+    private String endpoint() {
+        String configured = host.settings().getAiEndpoint();
+        return configured == null || configured.isBlank() ? provider().defaultEndpoint() : configured.trim();
     }
 
     /** {@code ai.cancel}: drop the in-flight generation. */
@@ -130,6 +150,8 @@ final class AiCoordinator {
                 StringBuilder out = new StringBuilder();
                 start(tr("status.ai.generatingCommit"));
                 service.generate(
+                        provider(),
+                        endpoint(),
                         apiKey(),
                         model(),
                         AiRequests.commitMessageSystem(),
@@ -175,6 +197,8 @@ final class AiCoordinator {
             ops.openTab(target);
             start(tr("status.ai.explaining"));
             service.generate(
+                    provider(),
+                    endpoint(),
                     apiKey(),
                     model(),
                     AiRequests.explainSystem(),
@@ -226,6 +250,8 @@ final class AiCoordinator {
                 StringBuilder out = new StringBuilder();
                 start(tr("status.ai.rewriting"));
                 service.generate(
+                        provider(),
+                        endpoint(),
                         apiKey(),
                         model(),
                         AiRequests.rewriteSystem(),
@@ -270,7 +296,7 @@ final class AiCoordinator {
             host.setStatus(tr("status.ai.disabled"));
             return;
         }
-        if (apiKey().isEmpty()) {
+        if (provider().requiresApiKey() && apiKey().isEmpty()) {
             host.setStatus(tr("status.ai.noApiKey"));
             return;
         }
@@ -312,7 +338,10 @@ final class AiCoordinator {
 
     private String model() {
         String configured = host.settings().getAiModel();
-        return configured == null || configured.isBlank() ? DEFAULT_MODEL : configured.trim();
+        if (configured != null && !configured.isBlank()) {
+            return configured.trim();
+        }
+        return provider() == AiProvider.ANTHROPIC ? DEFAULT_MODEL : "";
     }
 
     /** Window close: cancel any stream + stop the worker threads. */

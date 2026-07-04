@@ -86,6 +86,56 @@ public final class AiRequests {
                 + (language == null || language.isEmpty() ? "code" : language) + ":\n\n" + truncate(code);
     }
 
+    /** The request body for {@code provider}'s dialect (one system prompt + one user turn, streamed). */
+    public static ObjectNode requestFor(
+            ObjectMapper m,
+            AiProvider provider,
+            String model,
+            String system,
+            String user,
+            int maxTokens,
+            java.util.List<String> stopSequences) {
+        return provider == AiProvider.OPENAI
+                ? openAiStreamingRequest(m, model, system, user, maxTokens, stopSequences)
+                : streamingRequest(m, model, system, user, maxTokens, stopSequences);
+    }
+
+    /**
+     * An OpenAI-compatible chat-completions request (LM Studio, Ollama, vLLM): the system prompt is a
+     * leading {@code system} message and stops go under {@code stop}. A blank {@code model} is omitted
+     * entirely — LM Studio then serves the currently loaded model (Ollama requires an explicit name).
+     */
+    public static ObjectNode openAiStreamingRequest(
+            ObjectMapper m,
+            String model,
+            String system,
+            String user,
+            int maxTokens,
+            java.util.List<String> stopSequences) {
+        ObjectNode sys = m.createObjectNode();
+        sys.put("role", "system");
+        sys.put("content", system);
+        ObjectNode msg = m.createObjectNode();
+        msg.put("role", "user");
+        msg.put("content", user);
+        ArrayNode messages = m.createArrayNode();
+        messages.add(sys);
+        messages.add(msg);
+        ObjectNode r = m.createObjectNode();
+        if (model != null && !model.isBlank()) {
+            r.put("model", model.strip());
+        }
+        r.put("max_tokens", maxTokens);
+        r.put("stream", true);
+        r.set("messages", messages);
+        if (!stopSequences.isEmpty()) {
+            ArrayNode stops = m.createArrayNode();
+            stopSequences.forEach(stops::add);
+            r.set("stop", stops);
+        }
+        return r;
+    }
+
     /** Output cap for inline completion — one short line, never an essay. */
     public static final int COMPLETION_MAX_TOKENS = 128;
 
