@@ -102,6 +102,7 @@ public class SettingsWindow {
         MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS),
         WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, true),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
+        AGENT(tr("settings.cat.agent"), Group.LANGUAGES_TOOLS, true),
         // Version control
         GIT(tr("settings.cat.git"), Group.VERSION_CONTROL, true),
         // System
@@ -265,6 +266,8 @@ public class SettingsWindow {
     private CheckBox httpCheck;
     private CheckBox htmlPreviewCheck;
     private CheckBox mcpCheck;
+    private CheckBox agentCheck;
+    private TextField agentCommandField;
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -974,6 +977,18 @@ public class SettingsWindow {
             apply();
         });
 
+        agentCheck = new CheckBox(tr("settings.agent.enable"));
+        agentCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAgentSupport(now);
+            apply();
+        });
+        agentCommandField = new TextField();
+        agentCommandField.setPromptText("claude-code-acp");
+        agentCommandField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAgentCommand(now);
+            apply();
+        });
+
         pluginCheck = new CheckBox(tr("settings.enablePlugins"));
         pluginCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setPluginSupport(now);
@@ -1156,6 +1171,7 @@ public class SettingsWindow {
         pages.put(Category.REMOTE, remotePage());
         pages.put(Category.PLUGINS, pluginsPage());
         pages.put(Category.MCP, mcpPage());
+        pages.put(Category.AGENT, agentPage());
         pages.put(Category.ADVANCED, advancedPage());
     }
 
@@ -3394,6 +3410,22 @@ public class SettingsWindow {
         return p;
     }
 
+    private VBox agentPage() {
+        VBox p = page(tr("settings.cat.agent"));
+        row(p, Category.AGENT, null, agentCheck, "ai agent acp claude code chat enable assistant");
+        row(
+                p,
+                Category.AGENT,
+                null,
+                exePathRow(tr("settings.agent.command"), agentCommandField),
+                "ai agent acp command executable claude-code-acp path");
+        Label hint = note(tr("settings.agent.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.AGENT, null, hint, "ai agent acp claude code install npm chat tool window");
+        return p;
+    }
+
     private VBox pluginsPage() {
         VBox p = page(tr("settings.cat.plugins"));
         Label warn = note(tr("settings.plugins.note"));
@@ -4734,6 +4766,8 @@ public class SettingsWindow {
             httpCheck.setSelected(settings.isHttpClientSupport());
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             mcpCheck.setSelected(settings.isMcpSupport());
+            agentCheck.setSelected(settings.isAgentSupport());
+            agentCommandField.setText(settings.getAgentCommand());
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
                 pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());
@@ -5117,6 +5151,20 @@ public class SettingsWindow {
         loading = true;
         try {
             mcpCheck.setSelected(config.getSettings().isMcpSupport());
+        } finally {
+            loading = prev;
+        }
+    }
+
+    public void syncAgentCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            agentCheck.setSelected(config.getSettings().isAgentSupport());
+            agentCommandField.setText(config.getSettings().getAgentCommand());
         } finally {
             loading = prev;
         }

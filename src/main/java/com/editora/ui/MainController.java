@@ -304,6 +304,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** External Tools: the feature coordinator owns the service/panel/commands (see {@link ExternalToolCoordinator}). */
     private ToolWindow externalToolToolWindow;
 
+    private ToolWindow agentToolWindow;
+
     private ToolWindow remoteToolWindow;
     /** Debug (DAP): drives Java debugging layered on the jdtls LSP session. Stays a field (SettingsWindow +
      *  window-dispose reach it); the {@link DebugCoordinator} operates on it (mirrors lspManager/LspCoordinator). */
@@ -604,6 +606,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         htmlPreview.applySupport(); // HTML "open in browser" control off when disabled (default)
         logViewer.applySupport(); // log-viewer control + level overlay (default on for .log files)
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
+        applyAgentSupport(); // AI Agent chat window off when disabled (default)
         lspCoordinator.applySupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
         debugCoordinator
                 .applySupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on
@@ -1037,6 +1040,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         htmlPreview.shutdown(); // stop the HTML-preview HTTP server + worker
         logViewer.shutdown(); // stop any log tail-follow poll thread
         stopMcpIfOwner(); // stop the MCP server if this window owns it
+        agentCoordinator.shutdown(); // kill the ACP agent process tree
         pdfService.shutdown();
         officeService.shutdown();
         printService.shutdown();
@@ -2044,6 +2048,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::remote,
                 remoteCoordinator.panel(),
                 "tool.remote");
+        agentToolWindow = new ToolWindow(
+                "agent",
+                tr("toolwindow.agent"),
+                ToolWindow.Side.RIGHT,
+                Icons::agent,
+                agentCoordinator.panel(),
+                "tool.agent");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
@@ -2072,6 +2083,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(externalToolToolWindow, false); // stripe off by default; reachable via the
         // tool.externalTools command / externalTool.run picker / Settings → Tool Windows
         toolWindows.register(remoteToolWindow, false); // off by default (niche); always available — no buffer needed
+        toolWindows.register(
+                agentToolWindow, false); // stripe off by default; shown via tool.agent / Settings → AI Agent
+        toolWindows.setAvailable(agentToolWindow, agentCoordinator.isEnabled());
         updateBufferToolWindows(); // hide buffer-only windows until there's an actionable buffer (no Welcome flash)
         // Detect a *user* open/close of the HTTP window (vs. our own auto show/hide, guarded by
         // httpAutoMutating) so a manual close is remembered per .http buffer and a manual open clears it.
@@ -2884,6 +2898,48 @@ public class MainController implements com.editora.mcp.McpBridge {
                     config.save();
                 }
             });
+
+    // --- AI Agent (an embedded ACP agent — Claude Code etc. — in the chat tool window) -------------
+
+    private final AgentCoordinator agentCoordinator = new AgentCoordinator(coordinatorHost, new AgentCoordinator.Ops() {
+        @Override
+        public Path projectRoot() {
+            Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
+            return active == null ? null : Path.of(active.root());
+        }
+
+        @Override
+        public EditorBuffer bufferForPath(String path) {
+            return openBufferForPath(path);
+        }
+
+        @Override
+        public void toggleToolWindow() {
+            toolWindows.toggle(agentToolWindow);
+        }
+
+        @Override
+        public void openToolWindow(boolean focus) {
+            if (focus) {
+                toolWindows.open(agentToolWindow, true);
+            } else {
+                toolWindows.open(agentToolWindow);
+            }
+        }
+
+        @Override
+        public void refreshProjectTree() {
+            projectPanel.refreshTree();
+        }
+    });
+
+    /** Applies the AI Agent feature gate: tears down a disabled agent + re-gates its tool window. */
+    private void applyAgentSupport() {
+        agentCoordinator.applySupport();
+        if (agentToolWindow != null) {
+            toolWindows.setAvailable(agentToolWindow, agentCoordinator.isEnabled());
+        }
+    }
 
     // --- MCP server (loopback HTTP, exposes editor state + commands to an LLM agent) --------------
 
@@ -8889,6 +8945,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         htmlPreview.applySupport();
         logViewer.applySupport();
         applyMcpSupport();
+        applyAgentSupport();
         todoCoordinator.applyHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
         csvCoordinator.refreshFor(activeBuffer()); // re-gate + refresh the CSV grid after a settings change
         applyMarkdownLint(); // push Markdown-lint enabled state to every buffer
@@ -9882,6 +9939,23 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of("mcp.copyEndpoint", () -> ifMcp(this::copyMcpEndpoint)));
         registry.register(Command.of("view.toggleMcp", this::toggleMcpSupport));
+        registry.register(Command.of("tool.agent", agentCoordinator::toggleToolWindow));
+        registry.register(Command.of("agent.newSession", agentCoordinator::newSession));
+        registry.register(Command.of("agent.stop", agentCoordinator::stopTurn));
+        registry.register(Command.of(
+                "view.toggleAgent",
+                () -> toggleSetting(
+                        "view.toggleAgent",
+                        () -> config.getSettings().isAgentSupport(),
+                        v -> config.getSettings().setAgentSupport(v),
+                        this::applyAgentSupport)));
+        registry.register(Command.of(
+                "agent.setCommand",
+                () -> promptStringSetting(
+                        "agent.setCommand",
+                        () -> config.getSettings().getAgentCommand(),
+                        v -> config.getSettings().setAgentCommand(v),
+                        this::applyAgentSupport)));
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
         registry.register(Command.of("view.toggleMinimap", this::toggleMinimap));
