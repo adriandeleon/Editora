@@ -53,6 +53,25 @@ class AiRequestsTest {
     }
 
     @Test
+    void completionRequestCarriesStopSequencesAndCap() {
+        ObjectNode r = AiRequests.streamingRequest(
+                m, "claude-haiku-4-5", "sys", "u", AiRequests.COMPLETION_MAX_TOKENS, java.util.List.of("\n"));
+        assertEquals(AiRequests.COMPLETION_MAX_TOKENS, r.get("max_tokens").asInt());
+        assertEquals("\n", r.get("stop_sequences").get(0).asText());
+        // the 4-arg form omits stop_sequences entirely
+        assertTrue(AiRequests.streamingRequest(m, "x", "s", "u").get("stop_sequences") == null);
+    }
+
+    @Test
+    void completionPromptMarksCursorBetweenPrefixAndSuffix() {
+        String user = AiRequests.completionUser("java", "int x = ", ";");
+        assertTrue(user.contains("int x = <CURSOR>;"));
+        assertTrue(user.startsWith("Language: java"));
+        assertTrue(AiRequests.completionUser("", "a", "b").startsWith("Language: plain text"));
+        assertTrue(AiRequests.completionSystem().contains("ONLY the text to insert"));
+    }
+
+    @Test
     void truncateCapsHugeInput() {
         String huge = "x".repeat(AiRequests.MAX_INPUT_CHARS + 100);
         String out = AiRequests.truncate(huge);

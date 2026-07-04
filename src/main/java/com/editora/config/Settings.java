@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 54;
+    public static final int SCHEMA_VERSION = 55;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -200,6 +200,11 @@ public class Settings {
     /** Anthropic API key override; blank = the ANTHROPIC_API_KEY environment variable. Stored in
      *  settings.toml as plain text — prefer the environment variable on shared machines. */
     private String aiApiKey = "";
+    /** AI inline ghost-text completion (a short continuation after a typing pause): off by default;
+     *  effective only when {@link #aiSupport} is on and an API key is available. */
+    private boolean aiInlineCompletion = false;
+    /** The model for inline completion; blank = the built-in default (claude-haiku-4-5 — latency). */
+    private String aiCompletionModel = "";
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -507,6 +512,22 @@ public class Settings {
 
     public void setAiApiKey(String aiApiKey) {
         this.aiApiKey = aiApiKey;
+    }
+
+    public boolean isAiInlineCompletion() {
+        return aiInlineCompletion;
+    }
+
+    public void setAiInlineCompletion(boolean aiInlineCompletion) {
+        this.aiInlineCompletion = aiInlineCompletion;
+    }
+
+    public String getAiCompletionModel() {
+        return aiCompletionModel == null ? "" : aiCompletionModel;
+    }
+
+    public void setAiCompletionModel(String aiCompletionModel) {
+        this.aiCompletionModel = aiCompletionModel;
     }
 
     public String getIjhttpCommand() {

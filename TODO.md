@@ -80,6 +80,11 @@ A backlog of planned features and improvements. Unordered within each section.
       utf-16le/be, round-tripped on read & save), `max_line_length` (column ruler), and on-save
       `trim_trailing_whitespace` / `insert_final_newline`. Glob sections (`*` `**` `?` `[seq]` `{a,b}`
       `{n1..n2}`). On by default; Settings → Editor + **View: Toggle EditorConfig**. Local files only
+- [x] AI inline completion — ghost-text continuations at the caret after a ~600 ms pause (Tab accepts),
+      riding the existing prose-ghost presentation; windowed prefix/suffix prompt, stop-at-newline,
+      128-token cap, generation-guarded (typing supersedes the in-flight request); its own fast model
+      (default `claude-haiku-4-5`). Off by default under Settings → AI Actions. *(Next: multi-line
+      ghost rendering, accept-word-by-word, per-language enable list.)*
 - [x] AI actions (direct Anthropic API) — streamed one-shot features over `java.net.http` (no SDK, no new
       dependency): commit-message generation from the staged diff (into the Commit window), explain
       selection (into a Markdown buffer), rewrite selection per instruction (one undoable edit, aborts if

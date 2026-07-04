@@ -21,6 +21,17 @@ public final class AiRequests {
 
     /** A streaming Messages API request: one system prompt + one user turn. */
     public static ObjectNode streamingRequest(ObjectMapper m, String model, String system, String user) {
+        return streamingRequest(m, model, system, user, MAX_TOKENS, java.util.List.of());
+    }
+
+    /** The full form: an explicit output cap + optional stop sequences (inline completion stops at EOL). */
+    public static ObjectNode streamingRequest(
+            ObjectMapper m,
+            String model,
+            String system,
+            String user,
+            int maxTokens,
+            java.util.List<String> stopSequences) {
         ObjectNode msg = m.createObjectNode();
         msg.put("role", "user");
         msg.put("content", user);
@@ -28,10 +39,15 @@ public final class AiRequests {
         messages.add(msg);
         ObjectNode r = m.createObjectNode();
         r.put("model", model);
-        r.put("max_tokens", MAX_TOKENS);
+        r.put("max_tokens", maxTokens);
         r.put("stream", true);
         r.put("system", system);
         r.set("messages", messages);
+        if (!stopSequences.isEmpty()) {
+            ArrayNode stops = m.createArrayNode();
+            stopSequences.forEach(stops::add);
+            r.set("stop_sequences", stops);
+        }
         return r;
     }
 
@@ -68,6 +84,21 @@ public final class AiRequests {
     public static String rewriteUser(String language, String instruction, String code) {
         return "Instruction: " + instruction + "\n\nRewrite this "
                 + (language == null || language.isEmpty() ? "code" : language) + ":\n\n" + truncate(code);
+    }
+
+    /** Output cap for inline completion — one short line, never an essay. */
+    public static final int COMPLETION_MAX_TOKENS = 128;
+
+    public static String completionSystem() {
+        return "You are an inline code-completion engine. The user gives text before and after a <CURSOR>"
+                + " marker. Reply with ONLY the text to insert at the cursor — no explanation, no markdown"
+                + " fences, no repetition of the surrounding text. Prefer completing the current line or"
+                + " statement. Reply with nothing when no useful continuation exists.";
+    }
+
+    public static String completionUser(String language, String prefix, String suffix) {
+        return "Language: " + (language == null || language.isEmpty() ? "plain text" : language) + "\n\n" + prefix
+                + "<CURSOR>" + suffix;
     }
 
     // --- helpers --------------------------------------------------------------------------------------

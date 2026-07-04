@@ -4548,6 +4548,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         buffer.setCompletionProvider(completion::complete);
+        buffer.setAiCompletionProvider(aiCoordinator::inlineComplete);
+        buffer.setAiCompletionEnabled(aiCoordinator.isInlineCompletionEnabled());
         buffer.setMenuContributor(
                 () -> pluginCoordinator.editorMenuItems(buffer)); // plugin-contributed right-click items
         Settings acs = config.getSettings();
@@ -9025,12 +9027,14 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void applyAutocomplete() {
         Settings s = config.getSettings();
         boolean mermaidAc = mermaid.effectiveAutocomplete();
+        boolean aiInline = aiCoordinator.isInlineCompletionEnabled();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 buffer.setAutocomplete(
                         s.isAutocomplete(), s.isAutocompleteProse(), s.isAutocompleteSnippets(), mermaidAc);
                 buffer.setCompletionDocEnabled(s.isCompletionDoc());
+                buffer.setAiCompletionEnabled(aiInline);
             }
         }
     }
@@ -10012,6 +10016,20 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "ai.setModel",
                         () -> config.getSettings().getAiModel(),
                         v -> config.getSettings().setAiModel(v),
+                        null)));
+        registry.register(Command.of(
+                "view.toggleAiCompletion",
+                () -> toggleSetting(
+                        "view.toggleAiCompletion",
+                        () -> config.getSettings().isAiInlineCompletion(),
+                        v -> config.getSettings().setAiInlineCompletion(v),
+                        this::applyAutocomplete)));
+        registry.register(Command.of(
+                "ai.setCompletionModel",
+                () -> promptStringSetting(
+                        "ai.setCompletionModel",
+                        () -> config.getSettings().getAiCompletionModel(),
+                        v -> config.getSettings().setAiCompletionModel(v),
                         null)));
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
