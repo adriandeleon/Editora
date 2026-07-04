@@ -136,6 +136,14 @@ public final class AiRequests {
         return r;
     }
 
+    /** A minimal, <em>non-streaming</em> request for the Settings connection check (dialect-aware). */
+    public static ObjectNode pingRequest(ObjectMapper m, AiProvider provider, String model) {
+        ObjectNode r =
+                requestFor(m, provider, model, "You are a health check.", "Reply with OK.", 1, java.util.List.of());
+        r.put("stream", false);
+        return r;
+    }
+
     /** Output cap for inline completion — one short line, never an essay. */
     public static final int COMPLETION_MAX_TOKENS = 128;
 
