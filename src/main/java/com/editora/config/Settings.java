@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 52;
+    public static final int SCHEMA_VERSION = 53;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -191,6 +191,13 @@ public class Settings {
     private boolean agentSupport = false;
     /** The ACP agent command (tokenized, quote-aware); blank = {@code claude-code-acp} on PATH. */
     private String agentCommand = "";
+    /** Direct-API AI actions (commit-message generation, explain/rewrite selection): off by default. */
+    private boolean aiSupport = false;
+    /** The Anthropic model id for the AI actions; blank = the built-in default (claude-opus-4-8). */
+    private String aiModel = "";
+    /** Anthropic API key override; blank = the ANTHROPIC_API_KEY environment variable. Stored in
+     *  settings.toml as plain text — prefer the environment variable on shared machines. */
+    private String aiApiKey = "";
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -466,6 +473,30 @@ public class Settings {
 
     public void setAgentCommand(String agentCommand) {
         this.agentCommand = agentCommand;
+    }
+
+    public boolean isAiSupport() {
+        return aiSupport;
+    }
+
+    public void setAiSupport(boolean aiSupport) {
+        this.aiSupport = aiSupport;
+    }
+
+    public String getAiModel() {
+        return aiModel == null ? "" : aiModel;
+    }
+
+    public void setAiModel(String aiModel) {
+        this.aiModel = aiModel;
+    }
+
+    public String getAiApiKey() {
+        return aiApiKey == null ? "" : aiApiKey;
+    }
+
+    public void setAiApiKey(String aiApiKey) {
+        this.aiApiKey = aiApiKey;
     }
 
     public String getIjhttpCommand() {

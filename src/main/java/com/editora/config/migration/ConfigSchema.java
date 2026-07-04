@@ -91,7 +91,9 @@ public enum ConfigSchema {
                     Map.entry(49, (Migration) ConfigMigrations::growTodoDefaultKeywords), // v49→50: grow TODO keywords
                     Map.entry(50, (Migration) ConfigMigrations::identity), // v50→51: + autoRenameTag (additive)
                     Map.entry(51, (Migration)
-                            ConfigMigrations::identity))), // v51→52: + agentSupport/agentCommand (additive)
+                            ConfigMigrations::identity), // v51→52: + agentSupport/agentCommand (additive)
+                    Map.entry(52, (Migration)
+                            ConfigMigrations::identity))), // v52→53: + aiSupport/aiModel/aiApiKey (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

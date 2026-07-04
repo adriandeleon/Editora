@@ -1041,6 +1041,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         logViewer.shutdown(); // stop any log tail-follow poll thread
         stopMcpIfOwner(); // stop the MCP server if this window owns it
         agentCoordinator.shutdown(); // kill the ACP agent process tree
+        aiCoordinator.shutdown(); // cancel any in-flight AI generation
         pdfService.shutdown();
         officeService.shutdown();
         printService.shutdown();
@@ -2940,6 +2941,36 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.setAvailable(agentToolWindow, agentCoordinator.isEnabled());
         }
     }
+
+    // --- AI actions (direct Anthropic API: commit message / explain / rewrite) ---------------------
+
+    private final AiCoordinator aiCoordinator = new AiCoordinator(coordinatorHost, new AiCoordinator.Ops() {
+        @Override
+        public Path repoRoot() {
+            return git.repoRoot();
+        }
+
+        @Override
+        public void stagedDiff(Path root, java.util.function.Consumer<String> onResult) {
+            git.service().run(root, r -> onResult.accept(r.ok() ? r.out() : null), "diff", "--cached");
+        }
+
+        @Override
+        public void setCommitMessage(String message) {
+            gitPanel.setCommitMessage(message);
+        }
+
+        @Override
+        public void openCommitWindow() {
+            toolWindows.open(commitToolWindow, true);
+            gitPanel.focusCommitMessage();
+        }
+
+        @Override
+        public void openTab(EditorBuffer buffer) {
+            addBuffer(buffer, true);
+        }
+    });
 
     // --- MCP server (loopback HTTP, exposes editor state + commands to an LLM agent) --------------
 
@@ -9956,6 +9987,24 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().getAgentCommand(),
                         v -> config.getSettings().setAgentCommand(v),
                         this::applyAgentSupport)));
+        registry.register(Command.of("ai.generateCommitMessage", aiCoordinator::generateCommitMessage));
+        registry.register(Command.of("ai.explainSelection", aiCoordinator::explainSelection));
+        registry.register(Command.of("ai.rewriteSelection", aiCoordinator::rewriteSelection));
+        registry.register(Command.of("ai.cancel", aiCoordinator::cancel));
+        registry.register(Command.of(
+                "view.toggleAi",
+                () -> toggleSetting(
+                        "view.toggleAi",
+                        () -> config.getSettings().isAiSupport(),
+                        v -> config.getSettings().setAiSupport(v),
+                        null)));
+        registry.register(Command.of(
+                "ai.setModel",
+                () -> promptStringSetting(
+                        "ai.setModel",
+                        () -> config.getSettings().getAiModel(),
+                        v -> config.getSettings().setAiModel(v),
+                        null)));
         registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
         registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
         registry.register(Command.of("view.toggleMinimap", this::toggleMinimap));

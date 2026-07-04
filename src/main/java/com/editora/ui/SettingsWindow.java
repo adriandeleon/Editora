@@ -111,6 +111,7 @@ public class SettingsWindow {
         REMOTE(tr("settings.cat.remote"), Group.SYSTEM, true),
         PLUGINS(tr("settings.cat.plugins"), Group.SYSTEM),
         MCP(tr("settings.cat.mcp"), Group.SYSTEM, true),
+        AI(tr("settings.cat.ai"), Group.LANGUAGES_TOOLS, true),
         ADVANCED(tr("settings.cat.advanced"), Group.SYSTEM);
 
         final String display;
@@ -268,6 +269,9 @@ public class SettingsWindow {
     private CheckBox mcpCheck;
     private CheckBox agentCheck;
     private TextField agentCommandField;
+    private CheckBox aiCheck;
+    private TextField aiModelField;
+    private TextField aiApiKeyField;
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -989,6 +993,24 @@ public class SettingsWindow {
             apply();
         });
 
+        aiCheck = new CheckBox(tr("settings.ai.enable"));
+        aiCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAiSupport(now);
+            apply();
+        });
+        aiModelField = new TextField();
+        aiModelField.setPromptText("claude-opus-4-8");
+        aiModelField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAiModel(now);
+            apply();
+        });
+        aiApiKeyField = new javafx.scene.control.PasswordField();
+        aiApiKeyField.setPromptText(tr("settings.ai.apiKeyPrompt"));
+        aiApiKeyField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAiApiKey(now);
+            apply();
+        });
+
         pluginCheck = new CheckBox(tr("settings.enablePlugins"));
         pluginCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setPluginSupport(now);
@@ -1172,6 +1194,7 @@ public class SettingsWindow {
         pages.put(Category.PLUGINS, pluginsPage());
         pages.put(Category.MCP, mcpPage());
         pages.put(Category.AGENT, agentPage());
+        pages.put(Category.AI, aiPage());
         pages.put(Category.ADVANCED, advancedPage());
     }
 
@@ -3426,6 +3449,32 @@ public class SettingsWindow {
         return p;
     }
 
+    private VBox aiPage() {
+        VBox p = page(tr("settings.cat.ai"));
+        row(p, Category.AI, null, aiCheck, "ai actions anthropic claude commit message explain rewrite enable");
+        row(
+                p,
+                Category.AI,
+                null,
+                exePathRow(tr("settings.ai.model"), aiModelField),
+                "ai model anthropic claude opus id");
+        row(
+                p,
+                Category.AI,
+                null,
+                exePathRow(tr("settings.ai.apiKey"), aiApiKeyField),
+                "ai api key anthropic token credential");
+        Label keyNote = note(tr("settings.ai.apiKeyNote"));
+        keyNote.setWrapText(true);
+        keyNote.setMaxWidth(440);
+        row(p, Category.AI, null, keyNote, "ai api key environment variable plain text security");
+        Label hint = note(tr("settings.ai.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.AI, null, hint, "ai commit message explain rewrite selection anthropic streaming");
+        return p;
+    }
+
     private VBox pluginsPage() {
         VBox p = page(tr("settings.cat.plugins"));
         Label warn = note(tr("settings.plugins.note"));
@@ -4768,6 +4817,9 @@ public class SettingsWindow {
             mcpCheck.setSelected(settings.isMcpSupport());
             agentCheck.setSelected(settings.isAgentSupport());
             agentCommandField.setText(settings.getAgentCommand());
+            aiCheck.setSelected(settings.isAiSupport());
+            aiModelField.setText(settings.getAiModel());
+            aiApiKeyField.setText(settings.getAiApiKey());
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
                 pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());
@@ -5165,6 +5217,21 @@ public class SettingsWindow {
         try {
             agentCheck.setSelected(config.getSettings().isAgentSupport());
             agentCommandField.setText(config.getSettings().getAgentCommand());
+        } finally {
+            loading = prev;
+        }
+    }
+
+    public void syncAiCheck() {
+        if (!built) {
+            return;
+        }
+        boolean prev = loading;
+        loading = true;
+        try {
+            aiCheck.setSelected(config.getSettings().isAiSupport());
+            aiModelField.setText(config.getSettings().getAiModel());
+            aiApiKeyField.setText(config.getSettings().getAiApiKey());
         } finally {
             loading = prev;
         }

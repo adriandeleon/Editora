@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **AI actions — one-shot Anthropic-API features, no agent required.** Three streamed, palette-driven
+  actions that call the Anthropic Messages API directly (a hand-rolled `java.net.http` client — no SDK,
+  no new dependency): **AI: Generate Commit Message** turns the staged diff into a commit message and
+  drops it into the Commit window for review; **AI: Explain Selection** streams an explanation of the
+  selected code into a new Markdown buffer; **AI: Rewrite Selection…** rewrites the selection per your
+  instruction as a **single undoable edit** (aborted safely if the buffer changed while generating), and
+  **AI: Cancel** stops an in-flight generation. Off by default (Settings → AI Actions, Beta) with a
+  configurable model (default `claude-opus-4-8`) and an API key from `ANTHROPIC_API_KEY` or a Settings
+  override (stored in plain text — the environment variable is preferred). Separate from (and
+  complementary to) the AI Agent chat window.
+
 - **Embedded AI agent (ACP) — chat with Claude Code inside Editora.** A new **AI Agent** tool window
   drives any [Agent Client Protocol](https://agentclientprotocol.com) agent over stdio — the default
   command is `claude-code-acp` (Claude Code's ACP adapter; `npm i -g @zed-industries/claude-code-acp`),

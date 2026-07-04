@@ -330,6 +330,11 @@ Editora is built with the help of AI coding tools.
   *who* published — not a sandbox. See [`docs/plugins.md`](docs/plugins.md), the reference
   [`examples/example-plugin/`](examples/example-plugin/), and the live registry (every plugin's source +
   a signed `index.json`) at [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins).
+- **AI actions** _(Beta)_ — one-shot AI features that call the Anthropic API directly (streamed, no SDK):
+  generate a **commit message** from the staged diff into the Commit window, **explain the selection** in
+  a new Markdown buffer, or **rewrite the selection** per an instruction as a single undoable edit. Off by
+  default (Settings → AI Actions); model configurable (default `claude-opus-4-8`); API key from
+  `ANTHROPIC_API_KEY` or a Settings override.
 - **AI Agent** _(Beta)_ — chat with an embedded coding agent over the
   [Agent Client Protocol](https://agentclientprotocol.com) (ACP). The default command is
   `claude-code-acp` (Claude Code's ACP adapter; any ACP agent works via Settings → AI Agent). The
