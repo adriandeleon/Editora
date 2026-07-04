@@ -80,6 +80,12 @@ A backlog of planned features and improvements. Unordered within each section.
       utf-16le/be, round-tripped on read & save), `max_line_length` (column ruler), and on-save
       `trim_trailing_whitespace` / `insert_final_newline`. Glob sections (`*` `**` `?` `[seq]` `{a,b}`
       `{n1..n2}`). On by default; Settings → Editor + **View: Toggle EditorConfig**. Local files only
+- [x] AI actions (direct Anthropic API) — streamed one-shot features over `java.net.http` (no SDK, no new
+      dependency): commit-message generation from the staged diff (into the Commit window), explain
+      selection (into a Markdown buffer), rewrite selection per instruction (one undoable edit, aborts if
+      the buffer changed). Off by default (Settings → AI Actions); model + API-key settings with palette
+      parity. *(Next: inline ghost-text completion (Tier 4), diff-preview for rewrites, keychain key
+      storage, token/cost readout.)*
 - [x] Embedded AI agent (ACP) — an Agent Client Protocol client (newline-delimited JSON-RPC over stdio)
       driving a user-installed agent (default: Claude Code via `claude-code-acp`) in an **AI Agent** chat
       tool window; fs reads serve open buffers' live text, fs writes apply as undoable buffer edits,

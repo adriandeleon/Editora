@@ -302,6 +302,12 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         message.requestFocus();
     }
 
+    /** Replaces the commit message box's content (AI-generated message; the user edits before committing). */
+    public void setCommitMessage(String text) {
+        message.setText(text == null ? "" : text);
+        message.positionCaret(message.getLength());
+    }
+
     private static String statusLetter(FileEntry e) {
         if (e.untracked()) {
             return "U";
