@@ -8823,6 +8823,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
+        buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
         applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
     }
 
@@ -9936,6 +9937,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleAutoRenameTag",
                         () -> config.getSettings().isAutoRenameTag(),
                         config.getSettings()::setAutoRenameTag,
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleAutoCloseTags",
+                () -> toggleSetting(
+                        "view.toggleAutoCloseTags",
+                        () -> config.getSettings().isAutoCloseTags(),
+                        config.getSettings()::setAutoCloseTags,
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of("mcp.copyEndpoint", () -> ifMcp(this::copyMcpEndpoint)));
         registry.register(Command.of("view.toggleMcp", this::toggleMcpSupport));
