@@ -13,6 +13,7 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TodoMark;
 import com.editora.editor.TodoMatcher;
+import com.editora.todo.TodoGrouping;
 import com.editora.todo.TodoMatch;
 import com.editora.todo.TodoPattern;
 import com.editora.todo.TodoPatterns;
@@ -104,6 +105,41 @@ final class TodoCoordinator {
                                         m.lineText(), m.col() - 1, m.parsed(), text)));
             }
         });
+        // Persist any group-by change the user makes. The lambda reads settings lazily (config isn't set at
+        // construction time — the coordinator is a MainController field), and the restore below is guarded so
+        // it doesn't re-save the value it just restored.
+        panel.setGroupByChangeHandler(g -> {
+            if (restoringGroupBy) {
+                return;
+            }
+            host.settings().setTodoGroupBy(g.name());
+            host.requestSave();
+        });
+    }
+
+    /** True while {@link #restoreGroupByOnce} is programmatically setting the group-by (suppresses re-saving). */
+    private boolean restoringGroupBy;
+
+    private boolean groupByRestored;
+
+    /** Restores the persisted "Group by" dimension once, on the first {@link #applyHighlight} (config is ready). */
+    private void restoreGroupByOnce() {
+        if (groupByRestored) {
+            return;
+        }
+        groupByRestored = true;
+        restoringGroupBy = true;
+        panel.setGroupBy(parseGroupBy(host.settings().getTodoGroupBy()));
+        restoringGroupBy = false;
+    }
+
+    /** Parses a persisted "Group by" name back to the enum, defaulting to {@code FILE} for anything unknown. */
+    private static TodoGrouping.GroupBy parseGroupBy(String name) {
+        try {
+            return TodoGrouping.GroupBy.valueOf(name);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return TodoGrouping.GroupBy.FILE;
+        }
     }
 
     /** Rewrites the match's source line (undoable) via the controller, then re-scans if the panel is open. */
@@ -149,6 +185,7 @@ final class TodoCoordinator {
     /** Compiles the configured patterns and pushes the highlight matcher + on/off to every buffer. On by
      *  default; the project / open-files scan in the TODO tool window is lazy (refreshed on demand). */
     void applyHighlight() {
+        restoreGroupByOnce(); // first apply (init) runs after config is set — safe to read the saved group-by
         Settings s = host.settings();
         highlightOn = s.isTodoHighlight();
         List<TodoPatterns.Compiled> compiled = highlightOn ? TodoPatterns.compile(s.getTodoPatterns()) : List.of();

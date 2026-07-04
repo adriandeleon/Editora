@@ -96,7 +96,8 @@ public enum ConfigSchema {
                     Map.entry(53, (Migration)
                             ConfigMigrations::identity), // v53→54: + aiSupport/aiModel/aiApiKey (additive)
                     Map.entry(54, (Migration)
-                            ConfigMigrations::identity))), // v54→55: + aiInlineCompletion/aiCompletionModel (additive)
+                            ConfigMigrations::identity), // v54→55: + aiInlineCompletion/aiCompletionModel (additive)
+                    Map.entry(55, (Migration) ConfigMigrations::identity))), // v55→56: + todoGroupBy (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

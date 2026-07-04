@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 55;
+    public static final int SCHEMA_VERSION = 56;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -100,6 +100,8 @@ public class Settings {
     private boolean todoHighlight = true;
     /** The highlight patterns (regex + color); defaults to TODO (amber) + FIXME (red). */
     private java.util.List<com.editora.todo.TodoPattern> todoPatterns = com.editora.todo.TodoPatterns.defaults();
+    /** The TODO tool window's "Group by" dimension (FILE/PRIORITY/TAG/KEYWORD); persisted across sessions. */
+    private String todoGroupBy = "FILE";
 
     private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
     /** Lint Markdown buffers (squiggles + the Markdown Lint tool window). */
@@ -729,6 +731,14 @@ public class Settings {
 
     public void setTodoPatterns(java.util.List<com.editora.todo.TodoPattern> todoPatterns) {
         this.todoPatterns = todoPatterns;
+    }
+
+    public String getTodoGroupBy() {
+        return todoGroupBy == null ? "FILE" : todoGroupBy;
+    }
+
+    public void setTodoGroupBy(String todoGroupBy) {
+        this.todoGroupBy = todoGroupBy;
     }
 
     public java.util.List<com.editora.externaltool.ExternalTool> getExternalTools() {
