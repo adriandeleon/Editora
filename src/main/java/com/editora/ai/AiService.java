@@ -95,44 +95,9 @@ public final class AiService {
     public void ping(
             AiProvider provider, String endpoint, String apiKey, String model, java.util.function.Consumer<Ping> cb) {
         exec.submit(() -> {
-            boolean[] delivered = {false};
-            client.stream(
-                    provider,
-                    endpoint,
-                    apiKey,
-                    AiRequests.requestFor(
-                            mapper,
-                            provider,
-                            model,
-                            "You are a health check.",
-                            "Reply with OK.",
-                            1,
-                            java.util.List.of()),
-                    AiClient.PING_TIMEOUT,
-                    () -> false,
-                    new AiClient.Listener() {
-                        @Override
-                        public void onText(String delta) {
-                            // content is irrelevant — a streaming 200 means the endpoint works
-                        }
-
-                        @Override
-                        public void onDone(String stopReason) {
-                            deliver(true, stopReason);
-                        }
-
-                        @Override
-                        public void onError(String message) {
-                            deliver(false, message);
-                        }
-
-                        private void deliver(boolean ok, String message) {
-                            if (!delivered[0]) {
-                                delivered[0] = true;
-                                Platform.runLater(() -> cb.accept(new Ping(ok, message)));
-                            }
-                        }
-                    });
+            String error = client.check(
+                    provider, endpoint, apiKey, AiRequests.pingRequest(mapper, provider, model), AiClient.PING_TIMEOUT);
+            Platform.runLater(() -> cb.accept(new Ping(error == null, error == null ? "" : error)));
         });
     }
 

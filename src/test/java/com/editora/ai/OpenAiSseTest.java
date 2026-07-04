@@ -74,6 +74,18 @@ class OpenAiSseTest {
     }
 
     @Test
+    void pingRequestIsNonStreamingInBothDialects() {
+        var openai = AiRequests.pingRequest(m, AiProvider.OPENAI, "");
+        assertFalse(openai.get("stream").asBoolean());
+        assertFalse(openai.has("model")); // blank model omitted → server uses the loaded model
+        assertEquals("system", openai.get("messages").get(0).get("role").asText());
+        var anthropic = AiRequests.pingRequest(m, AiProvider.ANTHROPIC, "claude-opus-4-8");
+        assertFalse(anthropic.get("stream").asBoolean());
+        assertEquals("claude-opus-4-8", anthropic.get("model").asText());
+        assertEquals(1, anthropic.get("max_tokens").asInt());
+    }
+
+    @Test
     void requestForSelectsDialect() {
         assertTrue(AiRequests.requestFor(m, AiProvider.OPENAI, "x", "s", "u", 64, java.util.List.of())
                 .has("messages"));

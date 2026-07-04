@@ -166,6 +166,46 @@ public final class AiClient {
         }
     }
 
+    /**
+     * A blocking, <em>non-streaming</em> health check: POSTs {@code request} and returns null on HTTP 200,
+     * else a human-readable error. Unlike {@link #stream}, the {@code timeout} bounds the <em>entire</em>
+     * exchange (a non-streaming body handler receives the whole response before {@code send} returns), so
+     * a slow local server warming up a model can't leave the caller hanging — it fails with a clear
+     * "timed out" instead. Used by the Settings connection check.
+     */
+    public String check(
+            AiProvider provider, String endpoint, String apiKey, JsonNode request, java.time.Duration timeout) {
+        try {
+            HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(endpoint))
+                    .timeout(timeout)
+                    .header("content-type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(request)));
+            if (provider == AiProvider.OPENAI) {
+                if (apiKey != null && !apiKey.isBlank()) {
+                    b.header("Authorization", "Bearer " + apiKey);
+                }
+            } else {
+                b.header("x-api-key", apiKey).header("anthropic-version", "2023-06-01");
+            }
+            HttpResponse<String> resp = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+            return resp.statusCode() == 200 ? null : errorBodyString(resp.statusCode(), resp.body());
+        } catch (java.net.http.HttpTimeoutException e) {
+            return "timed out";
+        } catch (Exception e) {
+            return String.valueOf(e.getMessage());
+        }
+    }
+
+    /** Parses an {@code error.message} out of a String error body (Anthropic + OpenAI share the shape). */
+    private String errorBodyString(int status, String body) {
+        try {
+            String msg = mapper.readTree(body).path("error").path("message").asText("");
+            return "HTTP " + status + (msg.isEmpty() ? "" : ": " + msg);
+        } catch (Exception e) {
+            return "HTTP " + status;
+        }
+    }
+
     private String errorBody(HttpResponse<java.io.InputStream> resp) {
         try (var in = resp.body()) {
             JsonNode body = mapper.readTree(in);
