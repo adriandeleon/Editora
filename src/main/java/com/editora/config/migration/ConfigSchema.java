@@ -94,7 +94,9 @@ public enum ConfigSchema {
                             ConfigMigrations::identity), // v51→52: + agentSupport/agentCommand (additive)
                     Map.entry(52, (Migration) ConfigMigrations::identity), // v52→53: + autoCloseTags (additive)
                     Map.entry(53, (Migration)
-                            ConfigMigrations::identity))), // v53→54: + aiSupport/aiModel/aiApiKey (additive)
+                            ConfigMigrations::identity), // v53→54: + aiSupport/aiModel/aiApiKey (additive)
+                    Map.entry(54, (Migration)
+                            ConfigMigrations::identity))), // v54→55: + aiInlineCompletion/aiCompletionModel (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

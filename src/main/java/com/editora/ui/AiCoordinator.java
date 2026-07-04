@@ -23,6 +23,9 @@ final class AiCoordinator {
     /** The default model for all AI actions (user-overridable via Settings / {@code ai.setModel}). */
     static final String DEFAULT_MODEL = "claude-opus-4-8";
 
+    /** The default model for inline completion — the fastest tier, since latency is the whole game. */
+    static final String DEFAULT_COMPLETION_MODEL = "claude-haiku-4-5";
+
     /** The AI-specific window services beyond {@link CoordinatorHost}. */
     interface Ops {
         /** The active Git repo root, or null (Git off / not a repo). */
@@ -44,6 +47,10 @@ final class AiCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final AiService service = new AiService();
+    /** Inline completion streams on its own service so it can never cancel (or be cancelled by) an
+     *  explicit action like commit-message generation; each keystroke's request supersedes the last. */
+    private final AiService completionService = new AiService();
+
     private boolean busy;
 
     AiCoordinator(CoordinatorHost host, Ops ops) {
@@ -54,6 +61,49 @@ final class AiCoordinator {
     /** Whether the AI actions are enabled (the setting, suppressed in Simple UI mode). */
     boolean isEnabled() {
         return host.settings().isAiSupport() && !host.simpleModeActive();
+    }
+
+    /** The effective inline-completion gate: master + sub-toggle + a usable API key. */
+    boolean isInlineCompletionEnabled() {
+        return isEnabled() && host.settings().isAiInlineCompletion() && !apiKey().isEmpty();
+    }
+
+    /** {@code EditorBuffer.AiCompletionProvider}: one short, stop-at-newline completion per idle pause.
+     *  Errors are silent by design — an inline suggester must never nag; the buffer's generation guard
+     *  drops a stale result. */
+    void inlineComplete(String language, String prefix, String suffix, Consumer<String> onResult) {
+        if (!isInlineCompletionEnabled()) {
+            return;
+        }
+        StringBuilder out = new StringBuilder();
+        completionService.generate(
+                apiKey(),
+                completionModel(),
+                AiRequests.completionSystem(),
+                AiRequests.completionUser(language, prefix, suffix),
+                AiRequests.COMPLETION_MAX_TOKENS,
+                java.util.List.of("\n"),
+                new AiService.Callbacks() {
+                    @Override
+                    public void onText(String delta) {
+                        out.append(delta);
+                    }
+
+                    @Override
+                    public void onDone(String stopReason) {
+                        onResult.accept(out.toString());
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        // silent — see the method note
+                    }
+                });
+    }
+
+    private String completionModel() {
+        String configured = host.settings().getAiCompletionModel();
+        return configured == null || configured.isBlank() ? DEFAULT_COMPLETION_MODEL : configured.trim();
     }
 
     /** {@code ai.cancel}: drop the in-flight generation. */
@@ -265,8 +315,9 @@ final class AiCoordinator {
         return configured == null || configured.isBlank() ? DEFAULT_MODEL : configured.trim();
     }
 
-    /** Window close: cancel any stream + stop the worker thread. */
+    /** Window close: cancel any stream + stop the worker threads. */
     void shutdown() {
         service.shutdown();
+        completionService.shutdown();
     }
 }

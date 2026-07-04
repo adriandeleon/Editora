@@ -273,6 +273,8 @@ public class SettingsWindow {
     private CheckBox aiCheck;
     private TextField aiModelField;
     private TextField aiApiKeyField;
+    private CheckBox aiInlineCheck;
+    private TextField aiCompletionModelField;
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -1010,6 +1012,17 @@ public class SettingsWindow {
         aiApiKeyField.setPromptText(tr("settings.ai.apiKeyPrompt"));
         aiApiKeyField.textProperty().addListener((obs, was, now) -> {
             config.getSettings().setAiApiKey(now);
+            apply();
+        });
+        aiInlineCheck = new CheckBox(tr("settings.ai.inline"));
+        aiInlineCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAiInlineCompletion(now);
+            apply();
+        });
+        aiCompletionModelField = new TextField();
+        aiCompletionModelField.setPromptText("claude-haiku-4-5");
+        aiCompletionModelField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAiCompletionModel(now);
             apply();
         });
 
@@ -3476,6 +3489,17 @@ public class SettingsWindow {
         keyNote.setWrapText(true);
         keyNote.setMaxWidth(440);
         row(p, Category.AI, null, keyNote, "ai api key environment variable plain text security");
+        row(p, Category.AI, null, aiInlineCheck, "ai inline ghost completion suggestion copilot autocomplete");
+        row(
+                p,
+                Category.AI,
+                null,
+                exePathRow(tr("settings.ai.completionModel"), aiCompletionModelField),
+                "ai inline completion model haiku fast latency");
+        Label inlineNote = note(tr("settings.ai.inlineHint"));
+        inlineNote.setWrapText(true);
+        inlineNote.setMaxWidth(440);
+        row(p, Category.AI, null, inlineNote, "ai inline ghost completion tab accept cost");
         Label hint = note(tr("settings.ai.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
@@ -4829,6 +4853,8 @@ public class SettingsWindow {
             aiCheck.setSelected(settings.isAiSupport());
             aiModelField.setText(settings.getAiModel());
             aiApiKeyField.setText(settings.getAiApiKey());
+            aiInlineCheck.setSelected(settings.isAiInlineCompletion());
+            aiCompletionModelField.setText(settings.getAiCompletionModel());
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
                 pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());
@@ -5241,6 +5267,8 @@ public class SettingsWindow {
             aiCheck.setSelected(config.getSettings().isAiSupport());
             aiModelField.setText(config.getSettings().getAiModel());
             aiApiKeyField.setText(config.getSettings().getAiApiKey());
+            aiInlineCheck.setSelected(config.getSettings().isAiInlineCompletion());
+            aiCompletionModelField.setText(config.getSettings().getAiCompletionModel());
         } finally {
             loading = prev;
         }

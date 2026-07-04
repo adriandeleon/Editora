@@ -37,10 +37,22 @@ public final class AiService {
 
     /** Streams one generation; a later {@link #cancel}/generate supersedes it (stale callbacks dropped). */
     public void generate(String apiKey, String model, String system, String user, Callbacks cb) {
+        generate(apiKey, model, system, user, AiRequests.MAX_TOKENS, java.util.List.of(), cb);
+    }
+
+    /** The full form: an explicit output cap + stop sequences (inline completion stops at end-of-line). */
+    public void generate(
+            String apiKey,
+            String model,
+            String system,
+            String user,
+            int maxTokens,
+            java.util.List<String> stopSequences,
+            Callbacks cb) {
         long gen = generation.incrementAndGet();
         exec.submit(() -> client.stream(
                 apiKey,
-                AiRequests.streamingRequest(mapper, model, system, user),
+                AiRequests.streamingRequest(mapper, model, system, user, maxTokens, stopSequences),
                 () -> gen != generation.get(),
                 new AiClient.Listener() {
                     @Override

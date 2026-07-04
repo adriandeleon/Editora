@@ -290,6 +290,12 @@ public class EditorBuffer implements TabContent {
     /** Inline "ghost text" suggestion (prose buffers): a single muted suffix drawn after the caret. */
     private Label ghostLabel;
 
+    /** AI inline completion (any buffer): provider + gate + stale-result guard (see ui.AiCoordinator). */
+    private AiCompletionProvider aiCompletionProvider;
+
+    private boolean aiCompletionEnabled;
+    private long aiCompletionGen;
+
     private String ghostSuffix;
     private CodeArea ghostArea;
     /** The two document offsets currently carrying the {@code brace-match} style, or null. */
@@ -5567,6 +5573,29 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    // ---- AI inline completion (ghost text from an AI provider; see ui.AiCoordinator) ----
+
+    /** Requests a short AI continuation of the text around the caret; the result must be delivered on
+     *  the FX thread (null/empty = nothing to show). Kept editor-neutral so {@code editor} stays free
+     *  of {@code ai}/{@code ui}. */
+    public interface AiCompletionProvider {
+        void complete(String language, String prefix, String suffix, java.util.function.Consumer<String> onResult);
+    }
+
+    /** Injects the AI completion lookup (set by the controller), mirroring {@link #setCompletionProvider}. */
+    public void setAiCompletionProvider(AiCompletionProvider provider) {
+        this.aiCompletionProvider = provider;
+    }
+
+    /** Applies the effective AI-inline-completion gate (feature on + key present, pushed by the controller). */
+    public void setAiCompletionEnabled(boolean enabled) {
+        this.aiCompletionEnabled = enabled;
+        if (!enabled) {
+            aiCompletionGen++; // drop any in-flight request's result
+            hideGhost();
+        }
+    }
+
     private CompletionPopup completionPopup() {
         if (completionPopup == null) {
             completionPopup = new CompletionPopup();
@@ -5795,6 +5824,13 @@ public class EditorBuffer implements TabContent {
                 updateCompletion(a, false);
             }
         });
+        // AI inline completion rides a longer pause (~600 ms) so it never races the local popup/ghost;
+        // each edit bumps the generation, superseding the in-flight request. Zero work while disabled.
+        a.multiPlainChanges().successionEnds(Duration.ofMillis(600)).subscribe(ignored -> {
+            if (a.isFocused()) {
+                maybeRequestAiCompletion(a);
+            }
+        });
         // Any caret move or scroll invalidates the inline ghost's position; clear it (the debounce
         // re-shows it after the next pause in typing). The popup manages its own key/caret handling.
         a.caretPositionProperty().addListener((o, ov, nv) -> {
@@ -5938,6 +5974,58 @@ public class EditorBuffer implements TabContent {
         docPopupActive = completionDocEnabled; // arm the doc popup for this session (Ctrl+Q toggles it)
         completionPopup().setQuery(prefix);
         completionPopup().show(a.getScene().getWindow(), caretScreen, items, 0);
+    }
+
+    /** Prompt-window sizes for AI inline completion (chars before/after the caret). */
+    private static final int AI_COMPLETION_PREFIX_CHARS = 4000;
+
+    private static final int AI_COMPLETION_SUFFIX_CHARS = 1000;
+
+    /**
+     * Fires one AI inline-completion request after a typing pause: only in an editable, non-large buffer
+     * with the caret at end-of-line content (the prose-ghost convention — the suggestion never overlaps
+     * following text) and no completion popup open. The async result shows as ghost text (Tab accepts)
+     * only if the caret hasn't moved and no newer request superseded it.
+     */
+    private void maybeRequestAiCompletion(CodeArea a) {
+        if (!aiCompletionEnabled
+                || aiCompletionProvider == null
+                || largeFile
+                || !isEditable()
+                || hasActiveSnippet()
+                || a.getSelection().getLength() > 0
+                || completionPopupShowing()) {
+            return;
+        }
+        int caret = a.getCaretPosition();
+        if (caret == 0) {
+            return; // nothing to continue yet
+        }
+        String text = a.getText();
+        int lineEnd = caret;
+        while (lineEnd < text.length() && text.charAt(lineEnd) != '\n') {
+            lineEnd++;
+        }
+        if (!text.substring(caret, lineEnd).isBlank()) {
+            return;
+        }
+        String prefix = text.substring(Math.max(0, caret - AI_COMPLETION_PREFIX_CHARS), caret);
+        String suffix = text.substring(caret, Math.min(text.length(), caret + AI_COMPLETION_SUFFIX_CHARS));
+        long gen = ++aiCompletionGen;
+        aiCompletionProvider.complete(language, prefix, suffix, result -> {
+            if (gen != aiCompletionGen
+                    || result == null
+                    || result.isBlank()
+                    || !a.isFocused()
+                    || a.getCaretPosition() != caret
+                    || completionPopupShowing()) {
+                return;
+            }
+            String oneLine = result.lines().findFirst().orElse("").stripTrailing();
+            if (!oneLine.isEmpty()) {
+                showGhost(a, oneLine);
+            }
+        });
     }
 
     /** The suffix of the best word completion that continues {@code prefix}, or null if none qualifies. */

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **AI inline completion (ghost text).** After a short typing pause with the caret at the end of a
+  line, a muted single-line AI suggestion appears at the caret — **Tab accepts it**, Esc or typing
+  dismisses it (the same ghost-text presentation prose autocomplete already uses). Requests are
+  strictly bounded: one per ~600 ms idle pause, a windowed prefix/suffix prompt, a one-line stop
+  sequence, and a small output cap — and each keystroke supersedes the in-flight request, so stale
+  suggestions never appear. Runs on its own fast model (default `claude-haiku-4-5`, configurable)
+  independent of the AI-actions model, and never competes with the local snippet/dictionary popup.
+  Off by default (Settings → AI Actions → "Enable AI inline completion"; palette "Toggle AI Inline
+  Completion"); needs the AI Actions feature + an API key; inert in large files and read-only buffers.
+
 - **AI actions — one-shot Anthropic-API features, no agent required.** Three streamed, palette-driven
   actions that call the Anthropic Messages API directly (a hand-rolled `java.net.http` client — no SDK,
   no new dependency): **AI: Generate Commit Message** turns the staged diff into a commit message and
