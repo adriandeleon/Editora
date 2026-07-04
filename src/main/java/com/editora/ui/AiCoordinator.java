@@ -344,6 +344,35 @@ final class AiCoordinator {
         return provider() == AiProvider.ANTHROPIC ? DEFAULT_MODEL : "";
     }
 
+    /**
+     * Runs a live connection check for the configured provider/endpoint/key/model and delivers
+     * {@code (ok, message)} on the FX thread — green when the endpoint accepts a minimal request, red
+     * with the error otherwise. Reports the gate state (disabled / no key) without a network call.
+     */
+    void checkConnection(java.util.function.BiConsumer<Boolean, String> onResult) {
+        if (!isEnabled()) {
+            onResult.accept(false, tr("status.ai.disabled"));
+            return;
+        }
+        if (provider().requiresApiKey() && apiKey().isEmpty()) {
+            onResult.accept(false, tr("status.ai.noApiKey"));
+            return;
+        }
+        service.ping(
+                provider(),
+                endpoint(),
+                apiKey(),
+                model(),
+                ping -> onResult.accept(ping.ok(), ping.ok() ? tr("settings.ai.connected") : ping.message()));
+    }
+
+    /** {@code ai.testConnection}: run the check and echo the result to the status bar. */
+    void testConnection() {
+        host.setStatus(tr("status.ai.testing"));
+        checkConnection((ok, message) ->
+                host.setStatus(ok ? tr("status.ai.connected") : tr("status.ai.connectFailed", message)));
+    }
+
     /** Window close: cancel any stream + stop the worker threads. */
     void shutdown() {
         service.shutdown();

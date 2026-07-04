@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **AI connection status (green/red).** The Settings → AI Actions page now shows a live health-check
+  indicator under the enable checkbox: green **Connected** when the configured provider/endpoint/key
+  (and model) actually accept a request, red **Not working: …** with the error otherwise (a wrong
+  endpoint path, a refused connection, a bad key, an unknown model). It checks when the page opens and
+  re-checks — debounced — after you edit the provider, endpoint, key, or model, so a misconfigured
+  local server (LM Studio/Ollama) or a typo'd URL is obvious immediately instead of failing silently at
+  first use. Also a palette command **AI: Test Connection** that reports to the status bar. The probe is
+  a tiny one-token request and never disturbs a real generation.
+
 - **Local LLMs for the AI features (LM Studio, Ollama, vLLM).** The AI actions and inline completion
   can now talk to a **local OpenAI-compatible server** instead of the Anthropic API — pick
   *Local (OpenAI-compatible)* under Settings → AI Actions → **Provider**. The default endpoint is LM

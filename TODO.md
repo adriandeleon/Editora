@@ -85,6 +85,10 @@ A backlog of planned features and improvements. Unordered within each section.
       128-token cap, generation-guarded (typing supersedes the in-flight request); its own fast model
       (default `claude-haiku-4-5`). Off by default under Settings → AI Actions. *(Next: multi-line
       ghost rendering, accept-word-by-word, per-language enable list.)*
+- [x] AI connection status — a live green/red health check on Settings → AI Actions (and palette
+      AI: Test Connection): a tiny one-token ping to the configured provider/endpoint/key/model,
+      re-checked on page-open and debounced on edits. Surfaces a wrong endpoint / bad key / unknown
+      model immediately. Mirrors the Git/Mermaid/LSP found-not-found status idiom.
 - [x] Local LLM support (LM Studio / Ollama / vLLM) — an OpenAI-compatible provider for every AI feature
       (actions + inline completion): AiProvider enum + OpenAiSse reader (data-only SSE, `[DONE]`,
       `choices[].delta.content`, `finish_reason`→Anthropic stops), provider-aware AiClient headers/body,
