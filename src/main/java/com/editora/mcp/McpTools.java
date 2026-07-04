@@ -70,6 +70,46 @@ final class McpTools {
                 "Run a registered command by id (edits go through the undo stack). See list_commands.",
                 obj().set("id", strProp("The command id, e.g. \"file.save\".")),
                 "id"));
+        ObjectNode openProps = obj();
+        openProps.set("path", strProp("Absolute path of the file to open."));
+        openProps.set("line", intProp("Optional 1-based line to move the caret to."));
+        openProps.set("col", intProp("Optional 1-based column (used only with 'line')."));
+        tools.add(toolReq(
+                "open_file",
+                "Open a file in the editor, optionally moving the caret to a line/column.",
+                openProps,
+                "path"));
+        ObjectNode editProps = obj();
+        editProps.set("path", strProp("Absolute path of an open file; omit for the active buffer."));
+        editProps.set(
+                "old_text",
+                strProp("Exact text to replace (must occur exactly once unless replace_all)."
+                        + " Omit or pass \"\" to replace the whole buffer."));
+        editProps.set("new_text", strProp("Replacement text."));
+        editProps.set("replace_all", boolProp("Replace every occurrence of old_text (default false)."));
+        tools.add(toolReq(
+                "edit_buffer",
+                "Apply an undoable text edit to an open buffer (the user can undo it with one C-z)."
+                        + " Omit 'path' for the active buffer.",
+                editProps,
+                "new_text"));
+        tools.add(tool(
+                "save_buffer",
+                "Save an open buffer to its file on disk. Omit 'path' for the active buffer.",
+                obj().set("path", strProp("Absolute path of an open file; omit for the active buffer."))));
+        tools.add(tool(
+                "get_selection",
+                "Get the active buffer's caret position and current selection (1-based lines/columns).",
+                obj()));
+        tools.add(tool(
+                "document_symbols",
+                "Get a file's symbol outline (classes/methods/fields) from its language server."
+                        + " Omit 'path' for the active buffer's file. Empty when no server serves the file.",
+                obj().set("path", strProp("Absolute path of an open file; omit for the active buffer."))));
+        tools.add(tool(
+                "git_status",
+                "Get the Git status for the editor's context: branch, upstream, ahead/behind, changed files.",
+                obj()));
         ObjectNode r = m.createObjectNode();
         r.set("tools", tools);
         return r;
@@ -91,6 +131,12 @@ final class McpTools {
             case "find_in_files" -> findResult(args);
             case "list_commands" -> commandsResult();
             case "execute_command" -> executeResult(text(args, "id"));
+            case "open_file" -> openFileResult(args);
+            case "edit_buffer" -> editBufferResult(args);
+            case "save_buffer" -> saveBufferResult(text(args, "path"));
+            case "get_selection" -> selectionResult();
+            case "document_symbols" -> symbolsResult(text(args, "path"));
+            case "git_status" -> gitStatusResult();
             default -> errorResult("Unknown tool: " + name);
         };
     }
@@ -178,6 +224,101 @@ final class McpTools {
                 : errorResult("No such command: " + id);
     }
 
+    private ObjectNode openFileResult(JsonNode args) {
+        String path = text(args, "path");
+        if (path == null) {
+            return errorResult("open_file requires a 'path'.");
+        }
+        boolean opened = bridge.openFile(path, intArg(args, "line"), intArg(args, "col"));
+        return opened
+                ? textResult(m.createObjectNode().put("opened", true).put("path", path))
+                : errorResult("No such file: " + path);
+    }
+
+    private ObjectNode editBufferResult(JsonNode args) {
+        String newText = args != null && args.hasNonNull("new_text")
+                ? args.get("new_text").asText()
+                : null;
+        if (newText == null) {
+            return errorResult("edit_buffer requires 'new_text'.");
+        }
+        String error =
+                bridge.editBuffer(text(args, "path"), text(args, "old_text"), newText, bool(args, "replace_all"));
+        return error == null ? textResult(m.createObjectNode().put("applied", true)) : errorResult(error);
+    }
+
+    private ObjectNode saveBufferResult(String path) {
+        String error = bridge.saveBuffer(path);
+        return error == null ? textResult(m.createObjectNode().put("saved", true)) : errorResult(error);
+    }
+
+    private ObjectNode selectionResult() {
+        McpBridge.Selection s = bridge.getSelection();
+        if (s == null) {
+            return errorResult("No active buffer.");
+        }
+        ObjectNode o = m.createObjectNode();
+        o.put("path", s.path());
+        o.put("title", s.title());
+        o.put("caretLine", s.caretLine());
+        o.put("caretCol", s.caretCol());
+        o.put("selStartLine", s.selStartLine());
+        o.put("selStartCol", s.selStartCol());
+        o.put("selEndLine", s.selEndLine());
+        o.put("selEndCol", s.selEndCol());
+        o.put("selectedText", s.selectedText());
+        return textResult(o);
+    }
+
+    private ObjectNode symbolsResult(String path) {
+        return textResult(symbolArray(bridge.documentSymbols(path)));
+    }
+
+    private ArrayNode symbolArray(List<McpBridge.Symbol> symbols) {
+        ArrayNode arr = m.createArrayNode();
+        for (McpBridge.Symbol s : symbols) {
+            ObjectNode o = m.createObjectNode();
+            o.put("name", s.name());
+            if (!s.detail().isEmpty()) {
+                o.put("detail", s.detail());
+            }
+            o.put("kind", s.kind());
+            o.put("line", s.line());
+            o.put("endLine", s.endLine());
+            if (!s.children().isEmpty()) {
+                o.set("children", symbolArray(s.children()));
+            }
+            arr.add(o);
+        }
+        return arr;
+    }
+
+    private ObjectNode gitStatusResult() {
+        McpBridge.GitState g = bridge.gitStatus();
+        ObjectNode o = m.createObjectNode();
+        o.put("repo", g.repo());
+        if (g.repo()) {
+            o.put("root", g.root());
+            o.put("branch", g.branch());
+            o.put("upstream", g.upstream());
+            o.put("ahead", g.ahead());
+            o.put("behind", g.behind());
+            ArrayNode files = m.createArrayNode();
+            for (McpBridge.GitFileState f : g.files()) {
+                ObjectNode fo = m.createObjectNode();
+                fo.put("path", f.path());
+                fo.put("index", f.index());
+                fo.put("worktree", f.worktree());
+                if (f.origPath() != null) {
+                    fo.put("origPath", f.origPath());
+                }
+                files.add(fo);
+            }
+            o.set("files", files);
+        }
+        return textResult(o);
+    }
+
     // --- result + schema helpers ------------------------------------------------------------------
 
     /** Wraps {@code data} (serialized to pretty JSON) as a single MCP text content block. */
@@ -245,6 +386,10 @@ final class McpTools {
         return m.createObjectNode().put("type", "boolean").put("description", description);
     }
 
+    private ObjectNode intProp(String description) {
+        return m.createObjectNode().put("type", "integer").put("description", description);
+    }
+
     private static String text(JsonNode args, String field) {
         if (args == null || !args.hasNonNull(field)) {
             return null;
@@ -255,5 +400,10 @@ final class McpTools {
 
     private static boolean bool(JsonNode args, String field) {
         return args != null && args.hasNonNull(field) && args.get(field).asBoolean(false);
+    }
+
+    /** Reads an optional integer argument; 0 when absent (callers treat {@code <= 0} as "not given"). */
+    private static int intArg(JsonNode args, String field) {
+        return args != null && args.hasNonNull(field) ? args.get(field).asInt(0) : 0;
     }
 }

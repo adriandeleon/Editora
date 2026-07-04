@@ -124,6 +124,18 @@ public final class GitService {
         });
     }
 
+    /**
+     * Like {@link #refresh} but with no gutter diff and <em>no generation guard</em> — the callback always
+     * fires, so a caller blocking on the result (the MCP bridge) can't be starved by a concurrent UI
+     * refresh. Posted on the FX thread like every other callback.
+     */
+    public void status(Path contextPath, Consumer<RepoState> onResult) {
+        exec.submit(() -> {
+            RepoState state = computeRefresh(contextPath, null);
+            Platform.runLater(() -> onResult.accept(state));
+        });
+    }
+
     private RepoState computeRefresh(Path contextPath, Path diffFile) {
         if (!gitAvailable() || contextPath == null) {
             return RepoState.NONE;

@@ -29,6 +29,35 @@ public interface McpBridge {
     /** A registered command the agent can run via {@code execute_command}. */
     record CommandInfo(String id, String title, String description) {}
 
+    /** The active buffer's caret + selection (1-based lines/cols; with no selection the range collapses
+     *  to the caret and {@code selectedText} is empty). */
+    record Selection(
+            String path,
+            String title,
+            int caretLine,
+            int caretCol,
+            int selStartLine,
+            int selStartCol,
+            int selEndLine,
+            int selEndCol,
+            String selectedText) {}
+
+    /** One node of a file's LSP symbol outline (1-based lines for agent consumption). */
+    record Symbol(String name, String detail, String kind, int line, int endLine, List<Symbol> children) {}
+
+    /** One changed file from {@code git status} (porcelain-v2 index/worktree letters as 1-char strings). */
+    record GitFileState(String path, String index, String worktree, String origPath) {}
+
+    /** The Git status for the window's context; {@code repo} false when Git is off or there is no repo. */
+    record GitState(
+            boolean repo,
+            String root,
+            String branch,
+            String upstream,
+            int ahead,
+            int behind,
+            List<GitFileState> files) {}
+
     /** All open buffers, with which one is active. */
     List<OpenFile> listOpenFiles();
 
@@ -47,4 +76,30 @@ public interface McpBridge {
 
     /** Runs the command with {@code id} on the FX thread; false when no such command exists. */
     boolean executeCommand(String id);
+
+    /** Opens {@code path} in the editor and, when {@code line > 0}, moves the caret to the 1-based
+     *  {@code line}/{@code col}; false when the file doesn't exist. */
+    boolean openFile(String path, int line, int col);
+
+    /**
+     * Applies an undoable text edit to the open buffer for {@code path} (or the active buffer when null).
+     * An empty/absent {@code oldText} replaces the whole buffer with {@code newText}; otherwise
+     * {@code oldText} must occur exactly once unless {@code replaceAll}. Returns null on success, else a
+     * human-readable error.
+     */
+    String editBuffer(String path, String oldText, String newText, boolean replaceAll);
+
+    /** Saves the open buffer for {@code path} (or the active buffer when null) to its file. Returns null
+     *  on success, else a human-readable error (untitled buffers can't be saved over MCP). */
+    String saveBuffer(String path);
+
+    /** The active buffer's caret + selection, or null when there is no active buffer. */
+    Selection getSelection();
+
+    /** The LSP symbol outline for {@code path} (or the active buffer's file when null); empty when the
+     *  file isn't served by a ready language server. */
+    List<Symbol> documentSymbols(String path);
+
+    /** The Git status for this window's context (branch, ahead/behind, changed files). */
+    GitState gitStatus();
 }

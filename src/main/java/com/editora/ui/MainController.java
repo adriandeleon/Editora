@@ -3114,6 +3114,159 @@ public class MainController implements com.editora.mcp.McpBridge {
         return mcpOnFx(() -> registry.run(id));
     }
 
+    @Override
+    public boolean openFile(String path, int line, int col) {
+        Path file = Path.of(path);
+        if (!java.nio.file.Files.exists(file)) {
+            return false;
+        }
+        return mcpOnFx(() -> {
+            openPath(file);
+            // Navigate only for text buffers — an image/hex/binary tab has no caret to move.
+            if (line > 0 && openBufferForPath(file.toString()) != null) {
+                gotoInFile(file, line, Math.max(col, 1));
+            }
+            return true;
+        });
+    }
+
+    @Override
+    public String editBuffer(String path, String oldText, String newText, boolean replaceAll) {
+        return mcpOnFx(() -> {
+            EditorBuffer b = path == null ? activeBuffer() : openBufferForPath(path);
+            if (b == null) {
+                return path == null ? "No active buffer." : "No open buffer for: " + path;
+            }
+            if (!b.isEditable()) {
+                return "Buffer is read-only.";
+            }
+            CodeArea area = b.getArea();
+            String replacement = newText == null ? "" : newText;
+            if (oldText == null || oldText.isEmpty()) {
+                area.replaceText(replacement); // whole-buffer rewrite, one undo step
+                return null;
+            }
+            String text = area.getText();
+            int first = text.indexOf(oldText);
+            if (first < 0) {
+                return "old_text not found in the buffer.";
+            }
+            if (replaceAll) {
+                area.replaceText(text.replace(oldText, replacement));
+                return null;
+            }
+            if (text.indexOf(oldText, first + 1) >= 0) {
+                return "old_text occurs more than once; pass replace_all or a longer, unique old_text.";
+            }
+            area.replaceText(first, first + oldText.length(), replacement);
+            return null;
+        });
+    }
+
+    @Override
+    public String saveBuffer(String path) {
+        return mcpOnFx(() -> {
+            EditorBuffer b = path == null ? activeBuffer() : openBufferForPath(path);
+            if (b == null) {
+                return path == null ? "No active buffer." : "No open buffer for: " + path;
+            }
+            if (b.getPath() == null) {
+                // save() would open a Save-As dialog — never pop UI from an agent call.
+                return "Untitled buffer has no file path; Save As must be done in the editor.";
+            }
+            return save(b) ? null : "Save did not complete (elevated write pending or the write failed).";
+        });
+    }
+
+    @Override
+    public Selection getSelection() {
+        return mcpOnFx(() -> {
+            EditorBuffer b = activeBuffer();
+            if (b == null) {
+                return null;
+            }
+            CodeArea area = b.getFocusedArea() != null ? b.getFocusedArea() : b.getArea();
+            var fwd = org.fxmisc.richtext.model.TwoDimensional.Bias.Forward;
+            var sel = area.getSelection();
+            var sp = area.offsetToPosition(sel.getStart(), fwd);
+            var ep = area.offsetToPosition(sel.getEnd(), fwd);
+            return new Selection(
+                    b.getPath() == null ? null : b.getPath().toString(),
+                    b.getTitle(),
+                    area.getCurrentParagraph() + 1,
+                    area.getCaretColumn() + 1,
+                    sp.getMajor() + 1,
+                    sp.getMinor() + 1,
+                    ep.getMajor() + 1,
+                    ep.getMinor() + 1,
+                    area.getSelectedText());
+        });
+    }
+
+    @Override
+    public java.util.List<Symbol> documentSymbols(String path) {
+        java.util.concurrent.CompletableFuture<java.util.List<com.editora.lsp.SymbolNode>> fut =
+                new java.util.concurrent.CompletableFuture<>();
+        javafx.application.Platform.runLater(() -> {
+            Path target = path != null
+                    ? Path.of(path)
+                    : (activeBuffer() == null ? null : activeBuffer().getPath());
+            if (target == null
+                    || !lspEnabled()
+                    || !lspManager.isManaged(target)
+                    || !lspManager.supportsDocumentSymbols(target)) {
+                fut.complete(java.util.List.of());
+                return;
+            }
+            lspManager.documentSymbols(target, fut::complete);
+        });
+        try {
+            return mapMcpSymbols(fut.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /** Maps the LSP outline to the bridge's neutral records, shifting lines to 1-based. */
+    private static java.util.List<Symbol> mapMcpSymbols(java.util.List<com.editora.lsp.SymbolNode> in) {
+        java.util.List<Symbol> out = new java.util.ArrayList<>(in.size());
+        for (com.editora.lsp.SymbolNode n : in) {
+            out.add(new Symbol(
+                    n.name(), n.detail(), n.kind(), n.line() + 1, n.endLine() + 1, mapMcpSymbols(n.children())));
+        }
+        return out;
+    }
+
+    @Override
+    public GitState gitStatus() {
+        java.util.concurrent.CompletableFuture<com.editora.git.GitService.RepoState> fut =
+                new java.util.concurrent.CompletableFuture<>();
+        javafx.application.Platform.runLater(() -> {
+            Path context = git.isEnabled() ? git.contextPath() : null;
+            if (context == null) {
+                fut.complete(com.editora.git.GitService.RepoState.NONE);
+                return;
+            }
+            git.service().status(context, fut::complete);
+        });
+        com.editora.git.GitService.RepoState state;
+        try {
+            state = fut.get(15, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        if (!state.isRepo()) {
+            return new GitState(false, null, null, null, 0, 0, java.util.List.of());
+        }
+        com.editora.git.GitStatus st = state.status();
+        java.util.List<GitFileState> files = new java.util.ArrayList<>();
+        for (com.editora.git.GitStatus.FileEntry f : st.files()) {
+            files.add(
+                    new GitFileState(f.path(), String.valueOf(f.index()), String.valueOf(f.worktree()), f.origPath()));
+        }
+        return new GitState(true, state.root().toString(), st.branch(), st.upstream(), st.ahead(), st.behind(), files);
+    }
+
     /** Finds the open buffer whose file matches {@code path} (by canonical path), or null. */
     private EditorBuffer openBufferForPath(String path) {
         Path key = canonicalPath(Path.of(path));

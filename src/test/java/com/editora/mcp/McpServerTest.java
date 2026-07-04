@@ -25,6 +25,7 @@ class McpServerTest {
     /** A bridge returning fixed data so the server can be tested off the FX thread. */
     static final class FakeBridge implements McpBridge {
         volatile String lastExecuted;
+        volatile String lastEdit;
 
         @Override
         public List<OpenFile> listOpenFiles() {
@@ -55,6 +56,37 @@ class McpServerTest {
         public boolean executeCommand(String id) {
             lastExecuted = id;
             return "file.save".equals(id);
+        }
+
+        @Override
+        public boolean openFile(String path, int line, int col) {
+            return "/tmp/a.java".equals(path);
+        }
+
+        @Override
+        public String editBuffer(String path, String oldText, String newText, boolean replaceAll) {
+            lastEdit = oldText + "->" + newText;
+            return null;
+        }
+
+        @Override
+        public String saveBuffer(String path) {
+            return null;
+        }
+
+        @Override
+        public Selection getSelection() {
+            return new Selection("/tmp/a.java", "a.java", 1, 6, 1, 1, 1, 6, "hello");
+        }
+
+        @Override
+        public List<Symbol> documentSymbols(String path) {
+            return List.of(new Symbol("A", "", "class", 1, 10, List.of()));
+        }
+
+        @Override
+        public GitState gitStatus() {
+            return new GitState(true, "/tmp", "main", "origin/main", 1, 0, List.of());
         }
     }
 
