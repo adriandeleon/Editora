@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Find-in-Files popup: include/exclude globs.** The keyboard-first *Find in Files* popup now has the same
+  comma-separated **include / exclude glob** fields as the tool window (e.g. `*.java, src/**` / `**/test/**`),
+  narrowing the search live as you type.
+
 - **Remote-file (SFTP) status indicator.** When the active file lives on a remote host, the status bar now
   shows a **⇅ SFTP** badge (with the `host:/path` in its tooltip; click it to manage connections), so it's
   clear at a glance that you're editing over SFTP. (The tab already showed a cloud icon + path tooltip.)

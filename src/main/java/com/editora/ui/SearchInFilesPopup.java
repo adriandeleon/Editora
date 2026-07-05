@@ -59,8 +59,14 @@ final class SearchInFilesPopup {
         /** The folder to seed the search root with on open (project root, else the active file's folder). */
         Path defaultRoot();
 
-        /** Runs the multi-file search off-thread; {@code onResult} is delivered on the FX thread. */
-        void search(SearchQuery query, Path root, Consumer<SearchService.Outcome> onResult);
+        /** Runs the multi-file search off-thread with comma-separated include/exclude globs; {@code onResult}
+         *  is delivered on the FX thread. */
+        void search(
+                SearchQuery query,
+                Path root,
+                String includeGlobs,
+                String excludeGlobs,
+                Consumer<SearchService.Outcome> onResult);
 
         /** Opens {@code file} and jumps to {@code line}/{@code col} (1-based), focusing the editor. */
         void openMatch(Path file, int line, int col);
@@ -81,6 +87,10 @@ final class SearchInFilesPopup {
     private final CheckBox regex = new CheckBox(".*");
     private final CheckBox wholeWord = new CheckBox("W");
     private final TextField rootField = new TextField();
+    /** Comma-separated include / exclude globs (e.g. {@code *.java, src/**}), mirroring the Find-in-Files panel. */
+    private final TextField include = new TextField();
+
+    private final TextField exclude = new TextField();
     /** Shown only when ripgrep is the effective backend (pushed from the coordinator), mirroring the panel. */
     private final Label backendBadge = new Label("ripgrep");
 
@@ -136,6 +146,15 @@ final class SearchInFilesPopup {
         HBox rootRow = new HBox(6, rootLabel, rootField);
         rootRow.setAlignment(Pos.CENTER_LEFT);
 
+        include.setPromptText(tr("search.includePrompt"));
+        exclude.setPromptText(tr("search.excludePrompt"));
+        include.textProperty().addListener((o, a, b) -> debounce.playFromStart());
+        exclude.textProperty().addListener((o, a, b) -> debounce.playFromStart());
+        HBox.setHgrow(include, Priority.ALWAYS);
+        HBox.setHgrow(exclude, Priority.ALWAYS);
+        HBox globRow = new HBox(6, include, exclude);
+        globRow.setAlignment(Pos.CENTER_LEFT);
+
         list.setItems(rows);
         list.setFixedCellSize(CELL_HEIGHT);
         list.setCellFactory(v -> new ResultCell());
@@ -147,7 +166,7 @@ final class SearchInFilesPopup {
         Label hint = new Label(tr("search.popupHint"));
         hint.getStyleClass().add("palette-hint");
 
-        VBox card = new VBox(6, title, query, toggles, rootRow, list, status, hint);
+        VBox card = new VBox(6, title, query, toggles, rootRow, globRow, list, status, hint);
         card.getStyleClass().addAll("command-palette", "fif-popup");
         card.setPrefWidth(CARD_WIDTH);
         card.setMaxSize(CARD_WIDTH, Region.USE_PREF_SIZE);
@@ -276,7 +295,7 @@ final class SearchInFilesPopup {
         status.setText(tr("search.searching"));
         SearchQuery sq = new SearchQuery(q, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
         Path scope = root;
-        ops.search(sq, scope, outcome -> populate(outcome, scope));
+        ops.search(sq, scope, include.getText(), exclude.getText(), outcome -> populate(outcome, scope));
     }
 
     private void populate(SearchService.Outcome outcome, Path root) {
