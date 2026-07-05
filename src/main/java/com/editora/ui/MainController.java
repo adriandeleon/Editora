@@ -4909,6 +4909,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.opened", file));
             return;
         }
+        openTextBuffer(file);
+    }
+
+    /** Loads {@code file} into a new text {@link EditorBuffer} tab (the normal text path, bypassing the
+     *  image/binary routing in {@link #openPath}). Used by {@code openPath}'s fall-through and by the
+     *  {@code view.openAsText} command (which forces a text open even for a binary / already-hex file). */
+    private void openTextBuffer(Path file) {
         try {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
@@ -4934,6 +4941,18 @@ public class MainController implements com.editora.mcp.McpBridge {
                 recentFiles.remove(file);
             }
         }
+    }
+
+    /** Command {@code view.openAsText}: opens the active file's bytes in a normal text buffer, bypassing the
+     *  image/binary auto-routing (for a file mis-detected as binary, or to read a binary's raw text). No-op
+     *  with a status when the active tab has no file. */
+    private void openActiveAsText() {
+        Path p = tabPath(tabPane.getSelectionModel().getSelectedItem());
+        if (p == null) {
+            setStatus(tr("status.hex.noFile"));
+            return;
+        }
+        openTextBuffer(p);
     }
 
     /** Opens {@code file} in a read-only {@link ImageViewerPane} tab (raster images render, not their bytes). */
@@ -10202,6 +10221,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.messageLog", statusBar::showMessageLog));
         registry.register(Command.of("view.debugLog", this::showDebugLog));
         registry.register(Command.of("view.openAsHex", this::openActiveAsHex));
+        registry.register(Command.of("view.openAsText", this::openActiveAsText));
         registry.register(Command.of("tool.project", () -> {
             if (projectsEnabled()) {
                 toolWindows.toggle(projectToolWindow);

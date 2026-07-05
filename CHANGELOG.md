@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first use. Also a palette command **AI: Test Connection** that reports to the status bar. The probe is
   a tiny one-token request and never disturbs a real generation.
 
+- **View: Open as Text** — a palette command that opens the current file as plain text, bypassing the
+  image/hex viewer. The counterpart to *Open as Hex*: use it when a text file is mis-detected as binary, or
+  to read a binary's raw text.
+
 - **Local LLMs for the AI features (LM Studio, Ollama, vLLM).** The AI actions and inline completion
   can now talk to a **local OpenAI-compatible server** instead of the Anthropic API — pick
   *Local (OpenAI-compatible)* under Settings → AI Actions → **Provider**. The default endpoint is LM
