@@ -4,6 +4,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuItem;
+
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
@@ -91,6 +94,28 @@ final class ExternalToolCoordinator {
         }
         stale.forEach(registry::remove);
         registerToolCommands();
+    }
+
+    /** Right-click "External Tools" submenu for the editor context menu: one item per enabled tool, each
+     *  running it on the active buffer. Empty when the feature is off (Simple UI) or no tool is enabled —
+     *  so the menu shows nothing (mirrors the plugin contributor). */
+    List<MenuItem> editorMenuItems() {
+        if (!isEnabled()) {
+            return List.of();
+        }
+        List<ExternalTool> tools = enabledTools();
+        if (tools.isEmpty()) {
+            return List.of();
+        }
+        Menu submenu = new Menu(tr("editmenu.externalTools"));
+        submenu.setGraphic(Icons.tools());
+        for (ExternalTool t : tools) {
+            ExternalTool tool = t;
+            MenuItem item = new MenuItem(t.getName());
+            item.setOnAction(e -> run(tool));
+            submenu.getItems().add(item);
+        }
+        return List.of(submenu);
     }
 
     private List<ExternalTool> enabledTools() {
