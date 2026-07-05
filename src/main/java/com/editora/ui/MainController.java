@@ -9969,6 +9969,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("log.setLevelFilter", logViewer::setLevelFilter));
         registry.register(Command.of("log.setRegexFilter", logViewer::setRegexFilter));
         registry.register(Command.of("log.clearFilter", logViewer::clearFilter));
+        registry.register(Command.of("log.nextError", logViewer::jumpToNextError));
+        registry.register(Command.of("log.previousError", logViewer::jumpToPreviousError));
         registry.register(Command.of("view.toggleLogViewer", logViewer::toggleViewer));
         registry.register(Command.of(
                 "view.toggleCsvGrid",

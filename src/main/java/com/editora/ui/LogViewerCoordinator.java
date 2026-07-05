@@ -253,6 +253,29 @@ final class LogViewerCoordinator {
         });
     }
 
+    void jumpToNextError() {
+        jumpError(true);
+    }
+
+    void jumpToPreviousError() {
+        jumpError(false);
+    }
+
+    /** Moves the caret to the next/previous line at WARN or higher in the active log (wrapping). */
+    private void jumpError(boolean forward) {
+        ifLog(() -> {
+            EditorBuffer b = host.activeBuffer();
+            int from = b.getFocusedArea().getCurrentParagraph();
+            int target =
+                    com.editora.logviewer.LogNavigation.nextLevelLine(b.getContent(), from, forward, LogLevel.WARN);
+            if (target < 0) {
+                host.setStatus(tr("status.log.noError"));
+                return;
+            }
+            b.jumpToLine(target);
+        });
+    }
+
     private String currentRegexText(EditorBuffer buffer) {
         LogControlBar bar = logBars.get(buffer);
         return bar == null ? null : bar.regexText();

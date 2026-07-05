@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Log viewer: jump to next/previous error.** Two palette commands — **Log: Next Error** / **Log: Previous
+  Error** — move the caret to the next/previous line at WARNING level or higher in a `.log` file (wrapping
+  around), so you can hop between problems without scrolling.
+
 - **AI connection status (green/red).** The Settings → AI Actions page now shows a live health-check
   indicator under the enable checkbox: green **Connected** when the configured provider/endpoint/key
   (and model) actually accept a request, red **Not working: …** with the error otherwise (a wrong
