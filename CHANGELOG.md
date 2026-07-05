@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Remote-file (SFTP) status indicator.** When the active file lives on a remote host, the status bar now
+  shows a **⇅ SFTP** badge (with the `host:/path` in its tooltip; click it to manage connections), so it's
+  clear at a glance that you're editing over SFTP. (The tab already showed a cloud icon + path tooltip.)
+
 - **Macro recording indicator.** While recording a keyboard macro (`F3`), the status bar now shows a red
   **● REC** badge so it's obvious you're recording; click it to stop (or `F4`).
 
