@@ -17,6 +17,15 @@ public interface McpBridge {
     /** One open tab/buffer. {@code path} is null for an unsaved (untitled) buffer. */
     record OpenFile(String path, String title, String language, boolean dirty, boolean active) {}
 
+    /** One tab in the strip — including non-editor tabs. {@code type} is {@code editor}/{@code image}/
+     *  {@code hex}/{@code diff}/{@code merge}/{@code welcome}/{@code other}; {@code path} is null when the
+     *  tab has no file (Welcome, an untitled buffer). */
+    record TabInfo(String type, String title, String path, boolean active) {}
+
+    /** One scanned TODO/highlight match (1-based line/col). {@code keyword}/{@code tag}/{@code priority}
+     *  are the parsed comment structure ({@code null} when absent). */
+    record TodoItem(String file, int line, int col, String keyword, String tag, String priority, String text) {}
+
     /** A buffer's live (possibly unsaved) text plus identity. */
     record BufferContent(String path, String title, String language, boolean dirty, String text) {}
 
@@ -102,4 +111,12 @@ public interface McpBridge {
 
     /** The Git status for this window's context (branch, ahead/behind, changed files). */
     GitState gitStatus();
+
+    /** Every open tab in the strip, including non-editor tabs (Welcome, image, hex, diff), with which one
+     *  is active. */
+    List<TabInfo> listTabs();
+
+    /** Scans the window's project tree (plus open buffers' unsaved text) for the configured TODO/highlight
+     *  patterns; empty when TODO highlighting is off. */
+    List<TodoItem> todoScan();
 }

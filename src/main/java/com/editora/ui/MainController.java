@@ -3365,6 +3365,73 @@ public class MainController implements com.editora.mcp.McpBridge {
         return new GitState(true, state.root().toString(), st.branch(), st.upstream(), st.ahead(), st.behind(), files);
     }
 
+    @Override
+    public java.util.List<TabInfo> listTabs() {
+        return mcpOnFx(() -> {
+            Tab active = tabPane.getSelectionModel().getSelectedItem();
+            java.util.List<TabInfo> out = new java.util.ArrayList<>();
+            for (Tab tab : tabPane.getTabs()) {
+                Path p = tabPath(tab);
+                out.add(new TabInfo(tabType(tab), bufferTitle(tab), p == null ? null : p.toString(), tab == active));
+            }
+            return out;
+        });
+    }
+
+    @Override
+    public java.util.List<TodoItem> todoScan() {
+        java.util.concurrent.CompletableFuture<com.editora.todo.TodoService.Outcome> fut =
+                new java.util.concurrent.CompletableFuture<>();
+        javafx.application.Platform.runLater(() -> todoCoordinator.scanForMcp(fut::complete));
+        com.editora.todo.TodoService.Outcome outcome;
+        try {
+            outcome = fut.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        java.util.List<TodoItem> out = new java.util.ArrayList<>();
+        for (com.editora.todo.TodoService.FileTodos ft : outcome.files()) {
+            String file = ft.file().toString();
+            for (com.editora.todo.TodoMatch m : ft.matches()) {
+                com.editora.todo.TodoComment c = m.parsed();
+                out.add(new TodoItem(
+                        file,
+                        m.line() + 1,
+                        m.col() + 1,
+                        c == null ? m.patternName() : c.keyword(),
+                        c == null ? null : c.tag(),
+                        c == null ? null : c.priority(),
+                        m.lineText()));
+            }
+        }
+        return out;
+    }
+
+    /** The MCP {@code type} label for a tab: {@code editor}/{@code image}/{@code hex}/{@code diff}/
+     *  {@code merge}/{@code welcome}/{@code other}. */
+    private static String tabType(Tab tab) {
+        if (bufferOf(tab) != null) {
+            return "editor";
+        }
+        if (imagePaneOf(tab) != null) {
+            return "image";
+        }
+        if (hexPaneOf(tab) != null) {
+            return "hex";
+        }
+        Object data = tab == null ? null : tab.getUserData();
+        if (data instanceof DiffViewerPane) {
+            return "diff";
+        }
+        if (data instanceof MergeViewerPane) {
+            return "merge";
+        }
+        if (data instanceof WelcomePane) {
+            return "welcome";
+        }
+        return "other";
+    }
+
     /** Finds the open buffer whose file matches {@code path} (by canonical path), or null. */
     private EditorBuffer openBufferForPath(String path) {
         Path key = canonicalPath(Path.of(path));

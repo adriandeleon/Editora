@@ -110,6 +110,16 @@ final class McpTools {
                 "git_status",
                 "Get the Git status for the editor's context: branch, upstream, ahead/behind, changed files.",
                 obj()));
+        tools.add(tool(
+                "list_tabs",
+                "List every open tab, including non-editor tabs (Welcome, image, hex, diff), with each tab's"
+                        + " type and which one is active.",
+                obj()));
+        tools.add(tool(
+                "todo_scan",
+                "Scan the active project (and open buffers' unsaved text) for TODO/FIXME-style highlight"
+                        + " patterns; returns each match's file, line/col, keyword, tag, priority, and line text.",
+                obj()));
         ObjectNode r = m.createObjectNode();
         r.set("tools", tools);
         return r;
@@ -137,6 +147,8 @@ final class McpTools {
             case "get_selection" -> selectionResult();
             case "document_symbols" -> symbolsResult(text(args, "path"));
             case "git_status" -> gitStatusResult();
+            case "list_tabs" -> tabsResult();
+            case "todo_scan" -> todoScanResult();
             default -> errorResult("Unknown tool: " + name);
         };
     }
@@ -150,6 +162,35 @@ final class McpTools {
             o.put("language", f.language());
             o.put("dirty", f.dirty());
             o.put("active", f.active());
+            arr.add(o);
+        }
+        return textResult(arr);
+    }
+
+    private ObjectNode tabsResult() {
+        ArrayNode arr = m.createArrayNode();
+        for (McpBridge.TabInfo t : bridge.listTabs()) {
+            ObjectNode o = m.createObjectNode();
+            o.put("type", t.type());
+            o.put("title", t.title());
+            o.put("path", t.path());
+            o.put("active", t.active());
+            arr.add(o);
+        }
+        return textResult(arr);
+    }
+
+    private ObjectNode todoScanResult() {
+        ArrayNode arr = m.createArrayNode();
+        for (McpBridge.TodoItem t : bridge.todoScan()) {
+            ObjectNode o = m.createObjectNode();
+            o.put("file", t.file());
+            o.put("line", t.line());
+            o.put("col", t.col());
+            o.put("keyword", t.keyword());
+            o.put("tag", t.tag());
+            o.put("priority", t.priority());
+            o.put("text", t.text());
             arr.add(o);
         }
         return textResult(arr);

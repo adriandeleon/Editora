@@ -88,6 +88,16 @@ class McpServerTest {
         public GitState gitStatus() {
             return new GitState(true, "/tmp", "main", "origin/main", 1, 0, List.of());
         }
+
+        @Override
+        public List<TabInfo> listTabs() {
+            return List.of();
+        }
+
+        @Override
+        public List<TodoItem> todoScan() {
+            return List.of();
+        }
     }
 
     @Test

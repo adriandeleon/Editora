@@ -26,6 +26,8 @@ class McpToolsTest {
         Selection selection;
         List<Symbol> symbols = List.of();
         GitState gitState = new GitState(false, null, null, null, 0, 0, List.of());
+        List<TabInfo> tabs = List.of();
+        List<TodoItem> todos = List.of();
 
         String openedPath;
         int openedLine;
@@ -103,6 +105,16 @@ class McpToolsTest {
         public GitState gitStatus() {
             return gitState;
         }
+
+        @Override
+        public List<TabInfo> listTabs() {
+            return tabs;
+        }
+
+        @Override
+        public List<TodoItem> todoScan() {
+            return todos;
+        }
     }
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -147,9 +159,35 @@ class McpToolsTest {
                 "save_buffer",
                 "get_selection",
                 "document_symbols",
-                "git_status")) {
+                "git_status",
+                "list_tabs",
+                "todo_scan")) {
             assertTrue(names.contains(expected), "missing tool: " + expected);
         }
+    }
+
+    @Test
+    void listTabsIncludesNonEditorTabs() throws Exception {
+        bridge.tabs = List.of(
+                new McpBridge.TabInfo("editor", "Main.java", "/p/Main.java", true),
+                new McpBridge.TabInfo("welcome", "Welcome", null, false));
+        JsonNode arr = payload(call("list_tabs", null));
+        assertEquals(2, arr.size());
+        assertEquals("editor", arr.get(0).get("type").asText());
+        assertTrue(arr.get(0).get("active").asBoolean());
+        assertEquals("welcome", arr.get(1).get("type").asText());
+        assertTrue(arr.get(1).get("path").isNull());
+    }
+
+    @Test
+    void todoScanReportsMatches() throws Exception {
+        bridge.todos = List.of(new McpBridge.TodoItem("/p/a.java", 12, 5, "TODO", "auth", "!", "// TODO(auth)!: fix"));
+        JsonNode arr = payload(call("todo_scan", null));
+        assertEquals(1, arr.size());
+        assertEquals("/p/a.java", arr.get(0).get("file").asText());
+        assertEquals(12, arr.get(0).get("line").asInt());
+        assertEquals("TODO", arr.get(0).get("keyword").asText());
+        assertEquals("auth", arr.get(0).get("tag").asText());
     }
 
     @Test
