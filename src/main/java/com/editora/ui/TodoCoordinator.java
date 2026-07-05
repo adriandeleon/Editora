@@ -276,6 +276,26 @@ final class TodoCoordinator {
         });
     }
 
+    /** One-off TODO scan for the MCP bridge — same scope/patterns as {@link #runScan} but delivering the
+     *  raw {@link TodoService.Outcome} to {@code cb} (no panel/status side-effects). Empty when the feature
+     *  is off. FX-thread call; {@code cb} fires on the FX thread. */
+    void scanForMcp(java.util.function.Consumer<TodoService.Outcome> cb) {
+        Settings s = host.settings();
+        if (!s.isTodoHighlight()) {
+            cb.accept(new TodoService.Outcome(List.of(), 0, 0, false));
+            return;
+        }
+        List<TodoPatterns.Compiled> compiled = TodoPatterns.compile(s.getTodoPatterns());
+        Map<Path, String> open = new HashMap<>();
+        host.forEachBuffer(b -> {
+            if (b.getPath() != null) {
+                open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
+            }
+        });
+        service.setRespectGitignore(s.isSearchRespectGitignore());
+        service.scan(compiled, ops.projectRoot(), open, cb);
+    }
+
     /** Pushes the current TODO scan scope to the panel's label: this window's project tree (when one is
      *  open), else the open-files-only scope — matching what {@link #runScan} actually scans. */
     private void refreshScope() {

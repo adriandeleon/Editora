@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP: `list_tabs` and `todo_scan` tools.** The MCP bridge gains two read tools — `list_tabs` (every
+  open tab including non-editor tabs — Welcome/image/hex/diff — with each tab's type + which is active)
+  and `todo_scan` (scans the project + open buffers for the configured TODO/FIXME highlight patterns,
+  returning file/line/col/keyword/tag/priority/text) — bringing the tool count to fourteen.
+
 - **External Tools: editor right-click submenu.** The editor context menu now shows an **External Tools**
   submenu listing every enabled tool, so you can run one on the active file without the palette or a
   keybinding (hidden when no tool is enabled or in Simple UI mode).

@@ -349,9 +349,9 @@ Editora is built with the help of AI coding tools.
   user-installed external tool, never bundled.
 - **MCP server** _(Beta)_ — embed a [Model Context Protocol](https://modelcontextprotocol.io) server in the
   running editor so an LLM agent (Claude Code, etc.) can observe live editor state, edit files, and drive the
-  command registry. A small **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** exposes twelve
-  tools — reads (`list_open_files`, `read_buffer`, `get_selection`, `get_diagnostics`, `document_symbols`,
-  `git_status`, `find_in_files`, `list_commands`), writes (`edit_buffer` — undoable str-replace edits —
+  command registry. A small **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** exposes fourteen
+  tools — reads (`list_open_files`, `list_tabs`, `read_buffer`, `get_selection`, `get_diagnostics`,
+  `document_symbols`, `git_status`, `todo_scan`, `find_in_files`, `list_commands`), writes (`edit_buffer` — undoable str-replace edits —
   `save_buffer`), and actions (`open_file`, `execute_command`) — and writes its endpoint to
   `<configDir>/mcp-endpoint.json` for discovery. A status-bar
   **MCP** indicator shows when it's running (click to copy the connection command). Off by default and
