@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 57;
+    public static final int SCHEMA_VERSION = 58;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -102,6 +102,13 @@ public class Settings {
     private java.util.List<com.editora.todo.TodoPattern> todoPatterns = com.editora.todo.TodoPatterns.defaults();
     /** The TODO tool window's "Group by" dimension (FILE/PRIORITY/TAG/KEYWORD); persisted across sessions. */
     private String todoGroupBy = "FILE";
+    /** Per-part highlight colors for a structured TODO comment (web hex); defaults from {@code TodoColors}. */
+    private String todoTagColor = com.editora.todo.TodoColors.TAG_COLOR;
+
+    private String todoPriorityCriticalColor = com.editora.todo.TodoColors.priorityColor("critical");
+    private String todoPriorityHighColor = com.editora.todo.TodoColors.priorityColor("high");
+    private String todoPriorityMediumColor = com.editora.todo.TodoColors.priorityColor("medium");
+    private String todoPriorityLowColor = com.editora.todo.TodoColors.priorityColor("low");
 
     private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
     /** Lint Markdown buffers (squiggles + the Markdown Lint tool window). */
@@ -761,6 +768,46 @@ public class Settings {
 
     public void setTodoGroupBy(String todoGroupBy) {
         this.todoGroupBy = todoGroupBy;
+    }
+
+    public String getTodoTagColor() {
+        return todoTagColor;
+    }
+
+    public void setTodoTagColor(String todoTagColor) {
+        this.todoTagColor = todoTagColor;
+    }
+
+    public String getTodoPriorityCriticalColor() {
+        return todoPriorityCriticalColor;
+    }
+
+    public void setTodoPriorityCriticalColor(String c) {
+        this.todoPriorityCriticalColor = c;
+    }
+
+    public String getTodoPriorityHighColor() {
+        return todoPriorityHighColor;
+    }
+
+    public void setTodoPriorityHighColor(String c) {
+        this.todoPriorityHighColor = c;
+    }
+
+    public String getTodoPriorityMediumColor() {
+        return todoPriorityMediumColor;
+    }
+
+    public void setTodoPriorityMediumColor(String c) {
+        this.todoPriorityMediumColor = c;
+    }
+
+    public String getTodoPriorityLowColor() {
+        return todoPriorityLowColor;
+    }
+
+    public void setTodoPriorityLowColor(String c) {
+        this.todoPriorityLowColor = c;
     }
 
     public java.util.List<com.editora.externaltool.ExternalTool> getExternalTools() {

@@ -7583,6 +7583,58 @@ public class MainController implements com.editora.mcp.McpBridge {
         picker.show(stage);
     }
 
+    /** Palette entry for the TODO per-part colors: pick a part (tag / priority level), then enter a web-hex
+     *  color; applies live to every buffer and syncs an open Settings window. */
+    private void chooseTodoPartColor() {
+        chooseSetting(
+                "todo.setPartColor",
+                () -> List.of("tag", "critical", "high", "medium", "low"),
+                id -> tr("settings.todo.part." + id),
+                part -> {
+                    Settings s = config.getSettings();
+                    String current =
+                            switch (part) {
+                                case "tag" -> s.getTodoTagColor();
+                                case "critical" -> s.getTodoPriorityCriticalColor();
+                                case "high" -> s.getTodoPriorityHighColor();
+                                case "medium" -> s.getTodoPriorityMediumColor();
+                                case "low" -> s.getTodoPriorityLowColor();
+                                default -> "";
+                            };
+                    promptText(
+                            commandTitle("todo.setPartColor"),
+                            tr("settings.todo.part." + part),
+                            current,
+                            hex -> applyTodoPartColor(part, hex));
+                });
+    }
+
+    /** Validates a web-hex color and stores it in the given TODO part's setting, then re-highlights. */
+    private void applyTodoPartColor(String part, String hex) {
+        if (hex == null || !hex.strip().matches("#[0-9a-fA-F]{6}")) {
+            setStatus(tr("status.todo.badColor"));
+            return;
+        }
+        String c = hex.strip();
+        Settings s = config.getSettings();
+        switch (part) {
+            case "tag" -> s.setTodoTagColor(c);
+            case "critical" -> s.setTodoPriorityCriticalColor(c);
+            case "high" -> s.setTodoPriorityHighColor(c);
+            case "medium" -> s.setTodoPriorityMediumColor(c);
+            case "low" -> s.setTodoPriorityLowColor(c);
+            default -> {
+                return;
+            }
+        }
+        requestSave();
+        todoCoordinator.applyHighlight();
+        if (settingsWindow != null) {
+            settingsWindow.syncTodoPartColors();
+        }
+        setStatus(tr("status.settingChanged", tr("settings.todo.part." + part), c));
+    }
+
     /** Picker for the global indent style (Detect / Spaces / Tabs); applies live to every buffer. */
     private void chooseIndentStyle() {
         chooseSetting(
@@ -10341,6 +10393,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isTodoHighlight(),
                         v -> config.getSettings().setTodoHighlight(v),
                         todoCoordinator::applyHighlight)));
+        registry.register(Command.of("todo.setPartColor", this::chooseTodoPartColor));
         registry.register(Command.of("tool.markdownLint", this::toggleMarkdownLintWindow));
         registry.register(Command.of("markdownLint.refresh", () -> {
             if (!toolWindows.isOpen(markdownLintToolWindow)) {

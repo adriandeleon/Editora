@@ -212,6 +212,11 @@ public class SettingsWindow {
     private CheckBox autoCloseTagsCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
+    private javafx.scene.control.ColorPicker todoTagColorPicker;
+    private javafx.scene.control.ColorPicker todoCriticalColorPicker;
+    private javafx.scene.control.ColorPicker todoHighColorPicker;
+    private javafx.scene.control.ColorPicker todoMediumColorPicker;
+    private javafx.scene.control.ColorPicker todoLowColorPicker;
     private VBox markdownLintRulesBox;
     /** Working copy of the External Tools list, edited live by the master-detail page. */
     private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
@@ -2306,7 +2311,72 @@ public class SettingsWindow {
         syntaxNote.managedProperty().bind(syntaxNote.visibleProperty());
         p.getChildren().add(syntaxNote); // not a search row, so filter() never fights the visibility binding
         row(p, Category.TODO, todoHl, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
+        Label partColors = section(p, tr("settings.section.todoPartColors"));
+        row(
+                p,
+                Category.TODO,
+                partColors,
+                todoPartColorsEditor(),
+                "todo tag priority critical high medium low part color");
         return p;
+    }
+
+    /** The five per-part color pickers ({@code [tag]} + the four {@code (priority)} levels) for a structured
+     *  TODO comment; each writes its {@code Settings} field and applies live. */
+    private javafx.scene.Node todoPartColorsEditor() {
+        Settings s = config.getSettings();
+        todoTagColorPicker =
+                partColorPicker(s.getTodoTagColor(), c -> config.getSettings().setTodoTagColor(c));
+        todoCriticalColorPicker = partColorPicker(
+                s.getTodoPriorityCriticalColor(), c -> config.getSettings().setTodoPriorityCriticalColor(c));
+        todoHighColorPicker = partColorPicker(
+                s.getTodoPriorityHighColor(), c -> config.getSettings().setTodoPriorityHighColor(c));
+        todoMediumColorPicker = partColorPicker(
+                s.getTodoPriorityMediumColor(), c -> config.getSettings().setTodoPriorityMediumColor(c));
+        todoLowColorPicker = partColorPicker(
+                s.getTodoPriorityLowColor(), c -> config.getSettings().setTodoPriorityLowColor(c));
+        VBox box = new VBox(
+                6,
+                partColorRow(tr("settings.todo.part.tag"), todoTagColorPicker),
+                partColorRow(tr("settings.todo.part.critical"), todoCriticalColorPicker),
+                partColorRow(tr("settings.todo.part.high"), todoHighColorPicker),
+                partColorRow(tr("settings.todo.part.medium"), todoMediumColorPicker),
+                partColorRow(tr("settings.todo.part.low"), todoLowColorPicker));
+        return box;
+    }
+
+    private javafx.scene.control.ColorPicker partColorPicker(String web, java.util.function.Consumer<String> setter) {
+        javafx.scene.control.ColorPicker cp = new javafx.scene.control.ColorPicker(parseColor(web));
+        cp.setPrefWidth(56);
+        cp.valueProperty().addListener((o, a, b) -> {
+            setter.accept(toHex(b));
+            apply();
+        });
+        return cp;
+    }
+
+    private static javafx.scene.layout.HBox partColorRow(String label, javafx.scene.control.ColorPicker picker) {
+        Label l = new Label(label);
+        l.setMinWidth(96);
+        javafx.scene.layout.HBox h = new javafx.scene.layout.HBox(8, l, picker);
+        h.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        return h;
+    }
+
+    /** Re-reads the five TODO part-color pickers from settings (after a palette color change). */
+    public void syncTodoPartColors() {
+        Settings s = config.getSettings();
+        setPicker(todoTagColorPicker, s.getTodoTagColor());
+        setPicker(todoCriticalColorPicker, s.getTodoPriorityCriticalColor());
+        setPicker(todoHighColorPicker, s.getTodoPriorityHighColor());
+        setPicker(todoMediumColorPicker, s.getTodoPriorityMediumColor());
+        setPicker(todoLowColorPicker, s.getTodoPriorityLowColor());
+    }
+
+    private static void setPicker(javafx.scene.control.ColorPicker picker, String web) {
+        if (picker != null) {
+            picker.setValue(parseColor(web));
+        }
     }
 
     /** LANGUAGES & TOOLS ▸ Web: HTML live preview + the built-in HTTP client (merged). */
