@@ -3,6 +3,9 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
+import javafx.animation.PauseTransition;
+import javafx.util.Duration;
+
 import com.editora.ai.AiProvider;
 import com.editora.ai.AiRequests;
 import com.editora.ai.AiService;
@@ -43,6 +46,9 @@ final class AiCoordinator {
 
         /** Opens {@code buffer} in a new, selected editor tab. */
         void openTab(EditorBuffer buffer);
+
+        /** Shows/hides the Commit tool window's "Generate Commit Message" (AI) button. */
+        void setCommitAiAvailable(boolean available);
     }
 
     private final CoordinatorHost host;
@@ -53,15 +59,72 @@ final class AiCoordinator {
     private final AiService completionService = new AiService();
 
     private boolean busy;
+    /** Cached result of the last connectivity probe (see {@link #applySupport}) — never re-checked per
+     *  selection/keystroke, only at init and (debounced) on a Settings edit. Backs the floating selection
+     *  Explain/Rewrite bar's availability. */
+    private boolean connected;
+    /** The provider/endpoint/key/model combination the last probe (scheduled or completed) was for — lets
+     *  {@link #applySupport} tell "the AI config actually changed" from "some unrelated Settings field was
+     *  edited", so typing in, say, the tab-size field doesn't re-ping the network. */
+    private String probeSignature;
+    /** Debounces the network probe after a config edit (matches the Settings page's own AI-status
+     *  debounce): a keystroke in the endpoint/key/model field must not ping the server per character. */
+    private final PauseTransition probeDebounce = new PauseTransition(Duration.millis(600));
 
     AiCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
+        probeDebounce.setOnFinished(e -> probeNow());
     }
 
     /** Whether the AI actions are enabled (the setting, suppressed in Simple UI mode). */
     boolean isEnabled() {
         return host.settings().isAiSupport() && !host.simpleModeActive();
+    }
+
+    /** The effective gate for the floating selection Explain/Rewrite bar: enabled + last-known reachable. */
+    boolean isActionsAvailable() {
+        return isEnabled() && connected;
+    }
+
+    /**
+     * Pushes the cached selection-actions-bar availability to every open buffer, and — only when the
+     * provider/endpoint/key/model actually changed since the last probe — (re)schedules a debounced
+     * connectivity re-probe. Called at init and on every settings apply, mirroring
+     * {@code MermaidCoordinator}/{@code HtmlPreviewCoordinator}'s detect-then-gate idiom, but this one is
+     * itself debounced: {@code apply()} fires on every keystroke in <em>any</em> Settings field (not just
+     * AI's), so a naive re-probe here would ping the network while the user types in an unrelated field —
+     * or, worse, once per character while editing the AI endpoint/key/model fields themselves.
+     */
+    void applySupport() {
+        if (!isEnabled()) {
+            probeDebounce.stop();
+            connected = false;
+            probeSignature = null; // force a fresh probe the next time AI is (re)enabled
+            pushAvailability();
+            return;
+        }
+        pushAvailability(); // reflect the cached result now
+        String signature = provider() + "|" + endpoint() + "|" + apiKey() + "|" + model();
+        if (!signature.equals(probeSignature)) {
+            probeSignature = signature;
+            probeDebounce.playFromStart();
+        }
+    }
+
+    /** Pushes {@link #isActionsAvailable()} to every open buffer's selection bar + the Commit window's
+     *  "Generate Commit Message" button. */
+    private void pushAvailability() {
+        boolean available = isActionsAvailable();
+        host.forEachBuffer(b -> b.setAiActionsEnabled(available));
+        ops.setCommitAiAvailable(available);
+    }
+
+    private void probeNow() {
+        checkConnection((ok, message) -> {
+            connected = ok;
+            pushAvailability();
+        });
     }
 
     /** The effective inline-completion gate: master + sub-toggle + a key when the provider needs one. */
@@ -195,6 +258,7 @@ final class AiCoordinator {
             EditorBuffer target = new EditorBuffer();
             target.setDisplayName("explanation.md");
             ops.openTab(target);
+            target.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.PREVIEW);
             start(tr("status.ai.explaining"));
             service.generate(
                     provider(),
@@ -375,6 +439,7 @@ final class AiCoordinator {
 
     /** Window close: cancel any stream + stop the worker threads. */
     void shutdown() {
+        probeDebounce.stop();
         service.shutdown();
         completionService.shutdown();
     }

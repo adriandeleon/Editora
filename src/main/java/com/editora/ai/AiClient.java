@@ -87,7 +87,7 @@ public final class AiClient {
             }
             req = b.build();
         } catch (Exception e) {
-            listener.onError(String.valueOf(e.getMessage()));
+            listener.onError(AiErrors.describe(e));
             return;
         }
         try {
@@ -162,7 +162,7 @@ public final class AiClient {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            listener.onError(String.valueOf(e.getMessage()));
+            listener.onError(AiErrors.describe(e));
         }
     }
 
@@ -189,10 +189,11 @@ public final class AiClient {
             }
             HttpResponse<String> resp = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
             return resp.statusCode() == 200 ? null : errorBodyString(resp.statusCode(), resp.body());
-        } catch (java.net.http.HttpTimeoutException e) {
-            return "timed out";
         } catch (Exception e) {
-            return String.valueOf(e.getMessage());
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return AiErrors.describe(e);
         }
     }
 

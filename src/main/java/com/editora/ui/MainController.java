@@ -618,6 +618,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         logViewer.applySupport(); // log-viewer control + level overlay (default on for .log files)
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
         applyAgentSupport(); // AI Agent chat window off when disabled (default)
+        aiCoordinator.applySupport(); // floating selection Explain/Rewrite bar off when disabled (default)
         lspCoordinator.applySupport(); // configure the LSP manager; servers/diagnostics off when disabled (default)
         debugCoordinator
                 .applySupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on
@@ -1855,6 +1856,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         gitPanel.setOnClone(git::cloneRepo);
+        gitPanel.setOnGenerateCommitMessage(aiCoordinator::generateCommitMessage);
         commitToolWindow = new ToolWindow(
                 "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
         gitLogPanel = new GitLogPanel(gitLogOps = gitLogActions());
@@ -2989,6 +2991,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void openTab(EditorBuffer buffer) {
             addBuffer(buffer, true);
+        }
+
+        @Override
+        public void setCommitAiAvailable(boolean available) {
+            gitPanel.setAiAvailable(available);
         }
     });
 
@@ -4623,6 +4630,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());
         buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
+        buffer.setAiActionHandlers(aiCoordinator::explainSelection, aiCoordinator::rewriteSelection); // AI sel. bar
         buffer.setTableFileExporter(this::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
         buffer.setInsertTableHandler(this::markdownInsertTable); // Markdown format-bar "insert table" button
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
@@ -9017,6 +9025,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setUserDictionaryEnabled(s.isPersonalDictionary());
         buffer.setTechnicalDictionaryEnabled(s.isTechnicalDictionary());
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
+        buffer.setAiActionsEnabled(aiCoordinator.isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
@@ -9143,6 +9152,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         logViewer.applySupport();
         applyMcpSupport();
         applyAgentSupport();
+        aiCoordinator.applySupport(); // re-probe connectivity + re-gate the floating selection Explain/Rewrite bar
         todoCoordinator.applyHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
         csvCoordinator.refreshFor(activeBuffer()); // re-gate + refresh the CSV grid after a settings change
         applyMarkdownLint(); // push Markdown-lint enabled state to every buffer

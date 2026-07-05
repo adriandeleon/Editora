@@ -86,6 +86,14 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private final Label aheadLabel = new Label();
 
     private Button pushButton;
+    private Runnable onGenerateCommitMessage = () -> {};
+    /** Shown only while {@link #setAiAvailable} says AI Actions is enabled + reachable; sits in its own
+     *  thin toolbar row directly above the commit message box (not the repo-wide header). */
+    private final Button aiCommitButton =
+            iconButton(Icons.aiGenerate(), tr("gitpanel.aiCommitTip"), () -> onGenerateCommitMessage.run());
+
+    private final HBox messageToolbar = new HBox(aiCommitButton);
+
     private final StackPane placeholderPane;
     private final Label placeholder = new Label(tr("gitpanel.placeholder"));
     private final Button cloneButton = new Button(tr("gitpanel.clone"));
@@ -119,6 +127,12 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             }
         });
         VBox.setVgrow(tree, Priority.ALWAYS);
+
+        aiCommitButton.setVisible(false); // hidden until setAiAvailable(true) — off by default
+        aiCommitButton.setManaged(false);
+        messageToolbar.setVisible(false);
+        messageToolbar.setManaged(false);
+        messageToolbar.setAlignment(Pos.CENTER_RIGHT);
 
         message.setPromptText(tr("gitpanel.commitPrompt"));
         message.getStyleClass().add("git-commit-message");
@@ -177,6 +191,21 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         this.onClone = onClone == null ? () -> {} : onClone;
     }
 
+    /** Sets the action run by the header's "Generate Commit Message" (AI) button. */
+    public void setOnGenerateCommitMessage(Runnable onGenerateCommitMessage) {
+        this.onGenerateCommitMessage = onGenerateCommitMessage == null ? () -> {} : onGenerateCommitMessage;
+    }
+
+    /** Shows/hides the "Generate Commit Message" (AI) toolbar row above the message box — the effective
+     *  gate (AI Actions enabled + a cached connectivity probe), pushed from the controller; never
+     *  toggled per-selection/keystroke. */
+    public void setAiAvailable(boolean available) {
+        aiCommitButton.setVisible(available);
+        aiCommitButton.setManaged(available);
+        messageToolbar.setVisible(available);
+        messageToolbar.setManaged(available);
+    }
+
     /**
      * Rebuilds the panel from {@code status}. A {@code null} or non-repo status shows the
      * "Not a Git repository" placeholder and hides the commit UI.
@@ -205,8 +234,11 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 status.files().stream().filter(FileEntry::untracked).toList());
         tree.setRoot(root);
 
-        commitButton.setDisable(status.files().stream().noneMatch(FileEntry::staged));
+        boolean hasStaged = status.files().stream().anyMatch(FileEntry::staged);
+        commitButton.setDisable(!hasStaged);
         commitButton.setText(tr("gitpanel.commit"));
+        // Nothing to summarize without a staged diff — grey it out instead of silently no-op'ing on click.
+        aiCommitButton.setDisable(!hasStaged);
 
         if (root.getChildren().isEmpty()) {
             Label clean = new Label(tr("gitpanel.clean"));
@@ -214,9 +246,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             clean.setWrapText(true);
             StackPane cleanPane = new StackPane(clean);
             VBox.setVgrow(cleanPane, Priority.ALWAYS);
-            getChildren().setAll(header, cleanPane, message, commitButton);
+            getChildren().setAll(header, cleanPane, messageToolbar, message, commitButton);
         } else {
-            getChildren().setAll(header, tree, message, commitButton);
+            getChildren().setAll(header, tree, messageToolbar, message, commitButton);
         }
     }
 

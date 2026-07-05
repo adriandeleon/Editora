@@ -3614,7 +3614,9 @@ public class SettingsWindow {
 
     private VBox aiPage() {
         VBox p = page(tr("settings.cat.ai"));
-        row(p, Category.AI, null, aiCheck, "ai actions anthropic claude commit message explain rewrite enable");
+        HBox aiEnableRow = new HBox(6, aiCheck, infoIcon(tr("settings.ai.actionsTooltip")));
+        aiEnableRow.setAlignment(Pos.CENTER_LEFT);
+        row(p, Category.AI, null, aiEnableRow, "ai actions anthropic claude commit message explain rewrite enable");
         aiStatusLabel = new Label(tr("settings.ai.statusUnknown"));
         aiStatusLabel.getStyleClass().add("settings-git-status");
         aiStatusLabel.setWrapText(true);
@@ -4687,6 +4689,18 @@ public class SettingsWindow {
         Label l = new Label(text);
         l.getStyleClass().add("settings-hint");
         return l;
+    }
+
+    /** A small "i" info glyph carrying a hover {@link Tooltip} — for a compact detail that would otherwise
+     *  need its own {@link #note} line (e.g. listing exactly which commands a toggle enables). */
+    private static Node infoIcon(String tooltipText) {
+        Node icon = Icons.about();
+        icon.getStyleClass().add("settings-info-icon");
+        Tooltip tip = new Tooltip(tooltipText);
+        tip.setWrapText(true);
+        tip.setMaxWidth(320);
+        Tooltip.install(icon, tip);
+        return icon;
     }
 
     private static Region spacer() {

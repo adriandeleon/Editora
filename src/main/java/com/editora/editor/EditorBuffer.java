@@ -243,6 +243,15 @@ public class EditorBuffer implements TabContent {
 
     private boolean formatBarEnabled = true;
     private boolean formatBarUpdatePending;
+    /** Floating AI selection-actions bar (Explain/Rewrite), lazily created; shown on any non-empty
+     *  selection while AI Actions is enabled + a cached connectivity probe says the endpoint is reachable
+     *  (see {@code AiCoordinator.applySupport} — never re-probed per selection). */
+    private AiActionsBar aiActionsBar;
+
+    private boolean aiActionsEnabled;
+    private boolean aiActionsBarUpdatePending;
+    private Runnable aiExplainHandler = () -> {};
+    private Runnable aiRewriteHandler = () -> {};
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
     private java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Injected by the controller: opens the table-size picker, then inserts a table. */
@@ -740,11 +749,22 @@ public class EditorBuffer implements TabContent {
         return v < 0 ? 0 : (v > 1 ? 1 : v);
     }
 
-    /** Show/reposition the Markdown format bar as the selection or scroll changes (coalesced per pulse). */
+    /** Show/reposition the Markdown format bar + the AI selection-actions bar as the selection or scroll
+     *  changes (each coalesced per pulse; {@link #updateFormatBar()} always runs first so the AI bar can
+     *  stack above it when both apply to the same selection). */
     private void installFormatBarListeners(CodeArea a) {
-        a.selectionProperty().addListener((obs, old, now) -> scheduleFormatBar());
-        a.estimatedScrollYProperty().addListener((obs, old, now) -> scheduleFormatBar());
-        a.estimatedScrollXProperty().addListener((obs, old, now) -> scheduleFormatBar());
+        a.selectionProperty().addListener((obs, old, now) -> {
+            scheduleFormatBar();
+            scheduleAiActionsBar();
+        });
+        a.estimatedScrollYProperty().addListener((obs, old, now) -> {
+            scheduleFormatBar();
+            scheduleAiActionsBar();
+        });
+        a.estimatedScrollXProperty().addListener((obs, old, now) -> {
+            scheduleFormatBar();
+            scheduleAiActionsBar();
+        });
         a.estimatedScrollYProperty().addListener((obs, old, now) -> {
             if (semanticActive) {
                 semanticScrollDebounce.playFromStart(); // re-request tokens for the scrolled-to region
@@ -753,6 +773,7 @@ public class EditorBuffer implements TabContent {
         a.focusedProperty().addListener((obs, was, now) -> {
             if (!now) {
                 hideFormatBar();
+                hideAiActionsBar();
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
@@ -761,6 +782,7 @@ public class EditorBuffer implements TabContent {
             }
             if (e.getCode() == KeyCode.ESCAPE) {
                 hideFormatBar(); // don't consume — let other Escape behavior run
+                hideAiActionsBar();
             }
         });
         // Ctrl/Cmd-click: open a Markdown link in the browser, or (in a code buffer with a live language
@@ -877,6 +899,101 @@ public class EditorBuffer implements TabContent {
         double y = local.getMinY() - h - 4;
         if (y < 0) {
             y = local.getMaxY() + 4; // no room above the selection — place below it
+        }
+        bar.resizeRelocate(x, y, w, h);
+        bar.toFront();
+    }
+
+    /** Injects the Explain/Rewrite callbacks (wired once from the controller, like {@link #setOpenUrlHandler}) —
+     *  each is a no-arg action reading the current selection off {@link #getFocusedArea()} itself. */
+    public void setAiActionHandlers(Runnable onExplainSelection, Runnable onRewriteSelection) {
+        this.aiExplainHandler = onExplainSelection == null ? () -> {} : onExplainSelection;
+        this.aiRewriteHandler = onRewriteSelection == null ? () -> {} : onRewriteSelection;
+    }
+
+    /** {@link AiActionsBar}'s Explain button. */
+    void requestExplainSelection() {
+        aiExplainHandler.run();
+    }
+
+    /** {@link AiActionsBar}'s Rewrite button. */
+    void requestRewriteSelection() {
+        aiRewriteHandler.run();
+    }
+
+    /** Enables/disables the floating AI selection-actions bar — the effective gate (setting + a cached
+     *  connectivity probe), pushed from the controller; never toggled per-selection/keystroke. */
+    public void setAiActionsEnabled(boolean enabled) {
+        this.aiActionsEnabled = enabled;
+        if (!enabled) {
+            hideAiActionsBar();
+        } else {
+            scheduleAiActionsBar();
+        }
+    }
+
+    private void scheduleAiActionsBar() {
+        if (aiActionsBarUpdatePending) {
+            return;
+        }
+        aiActionsBarUpdatePending = true;
+        Platform.runLater(this::updateAiActionsBar);
+    }
+
+    private void hideAiActionsBar() {
+        if (aiActionsBar != null) {
+            aiActionsBar.node().setVisible(false);
+        }
+    }
+
+    private void updateAiActionsBar() {
+        aiActionsBarUpdatePending = false;
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        boolean show = aiActionsEnabled
+                && !hugeFile
+                && markdownViewMode != MarkdownViewMode.PREVIEW
+                && a.getSelection().getLength() > 0;
+        if (!show) {
+            hideAiActionsBar();
+            return;
+        }
+        int selStart = a.getSelection().getStart();
+        Bounds screen = a.getCharacterBoundsOnScreen(selStart, Math.min(a.getLength(), selStart + 1))
+                .orElse(null);
+        if (screen == null) {
+            hideAiActionsBar();
+            return;
+        }
+        javafx.scene.layout.AnchorPane targetPane = (a == area2 && root2 != null) ? root2 : root;
+        Bounds local = targetPane.screenToLocal(screen);
+        if (local == null) {
+            hideAiActionsBar();
+            return;
+        }
+        if (aiActionsBar == null) {
+            aiActionsBar = new AiActionsBar(this);
+        }
+        aiActionsBar.setEditable(isEditable());
+        javafx.scene.Node bar = aiActionsBar.node();
+        if (bar.getParent() != targetPane) {
+            if (bar.getParent() instanceof javafx.scene.layout.AnchorPane ap) {
+                ap.getChildren().remove(bar);
+            }
+            targetPane.getChildren().add(bar);
+        }
+        bar.setVisible(true);
+        bar.applyCss();
+        double w = bar.prefWidth(-1);
+        double h = bar.prefHeight(-1);
+        double x = Math.max(0, Math.min(local.getMinX(), Math.max(0, targetPane.getWidth() - w)));
+        // The Markdown format bar anchors at the same point — updateFormatBar() runs first (see
+        // installFormatBarListeners), so stack above it when both apply to the same selection.
+        double stackAbove = (formatBar != null && formatBar.node().isVisible())
+                ? formatBar.node().getLayoutBounds().getHeight() + 4
+                : 0;
+        double y = local.getMinY() - h - 4 - stackAbove;
+        if (y < 0) {
+            y = local.getMaxY() + 4 + stackAbove;
         }
         bar.resizeRelocate(x, y, w, h);
         bar.toFront();
@@ -2989,6 +3106,7 @@ public class EditorBuffer implements TabContent {
         boolean changed = this.markdownViewMode != target;
         this.markdownViewMode = target;
         scheduleFormatBar(); // hide the format bar when entering pure PREVIEW, re-evaluate otherwise
+        scheduleAiActionsBar(); // same, for the AI selection-actions bar
         if (target == MarkdownViewMode.EDITOR) {
             unsubscribePreview();
         } else {
