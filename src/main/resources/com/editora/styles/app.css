@@ -1147,6 +1147,17 @@
     -fx-background-color: -color-danger-muted;
 }
 
+/* Remote (SFTP) file indicator — shown only for a remote buffer. */
+.status-bar .status-remote {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+    -fx-background-color: -color-accent-subtle;
+    -fx-background-radius: 4;
+}
+.status-bar .status-remote:hover {
+    -fx-background-color: -color-accent-muted;
+}
+
 /* Read-only (View mode) toggle: muted "Editable" by default, amber/bold "Read-Only" when active. */
 .status-bar .status-readonly.active {
     -fx-text-fill: #bf8700;

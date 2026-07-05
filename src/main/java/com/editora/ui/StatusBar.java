@@ -61,6 +61,9 @@ public final class StatusBar extends HBox {
     private final Label mcp = segment("mcp.copyEndpoint", tr("statusbar.tip.mcp"));
     /** "● REC" indicator shown only while a keyboard macro is being recorded; clickable → stop recording. */
     private final Label macroRec = segment("macro.stopRecording", tr("statusbar.tip.macroRec"));
+    /** Remote-file indicator (⇅ SFTP); shown only for a remote buffer, clickable → manage connections. Its
+     *  tooltip carries the {@code host:/path}. */
+    private final Label remote = segment("remote.manageConnections", tr("statusbar.tip.remote"));
 
     private final Label position = segment("nav.goToLine", tr("statusbar.tip.goToLine"));
     /** CSV/TSV column indicator ("Field N of M"); clickable → copy the file as a Markdown table. */
@@ -133,6 +136,11 @@ public final class StatusBar extends HBox {
         macroRec.setVisible(false); // shown only while a macro is being recorded
         macroRec.setManaged(false);
 
+        remote.getStyleClass().add("status-remote");
+        remote.setText(tr("statusbar.remote"));
+        remote.setVisible(false); // shown only for a remote (SFTP) buffer
+        remote.setManaged(false);
+
         lspProgress.getStyleClass().add("status-lsp-progress");
         lspProgress.setPrefWidth(90);
         lspProgress.setMaxHeight(10);
@@ -155,6 +163,7 @@ public final class StatusBar extends HBox {
                         echo,
                         spacer,
                         macroRec,
+                        remote,
                         debugProgress,
                         debug,
                         lspProgress,
@@ -390,6 +399,12 @@ public final class StatusBar extends HBox {
     public void refresh() {
         EditorBuffer buffer = activeBuffer.get();
         boolean hasBuffer = buffer != null;
+        // Remote-file (SFTP) indicator: shown for a remote buffer, with host:/path in its tooltip.
+        java.nio.file.Path path = hasBuffer ? buffer.getPath() : null;
+        boolean isRemote = com.editora.vfs.Vfs.isRemote(path) && !simpleMode;
+        remote.setVisible(isRemote);
+        remote.setManaged(isRemote);
+        remote.setTooltip(isRemote ? new Tooltip(com.editora.vfs.Vfs.displayLabel(path)) : null);
         position.setVisible(hasBuffer);
         position.setManaged(hasBuffer);
         // Ln/Col and the file size follow buffer presence even in Simple mode (kept visible there).
