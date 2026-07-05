@@ -137,8 +137,19 @@ final class SearchCoordinator {
                 }
 
                 @Override
-                public void search(SearchQuery query, Path root, Consumer<SearchService.Outcome> onResult) {
-                    service.search(query, root, collectOpenBuffers(), onResult);
+                public void search(
+                        SearchQuery query,
+                        Path root,
+                        String includeGlobs,
+                        String excludeGlobs,
+                        Consumer<SearchService.Outcome> onResult) {
+                    service.search(
+                            query,
+                            root,
+                            collectOpenBuffers(),
+                            Globs.split(includeGlobs),
+                            Globs.split(excludeGlobs),
+                            onResult);
                 }
 
                 @Override
