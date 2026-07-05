@@ -4562,7 +4562,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAiCompletionProvider(aiCoordinator::inlineComplete);
         buffer.setAiCompletionEnabled(aiCoordinator.isInlineCompletionEnabled());
         buffer.setMenuContributor(
-                () -> pluginCoordinator.editorMenuItems(buffer)); // plugin-contributed right-click items
+                () -> { // External Tools submenu + plugin-contributed right-click items
+                    List<javafx.scene.control.MenuItem> extra =
+                            new ArrayList<>(externalToolCoordinator.editorMenuItems());
+                    extra.addAll(pluginCoordinator.editorMenuItems(buffer));
+                    return extra;
+                });
         Settings acs = config.getSettings();
         buffer.setAutocomplete(
                 acs.isAutocomplete(),

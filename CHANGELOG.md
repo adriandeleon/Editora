@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **External Tools: editor right-click submenu.** The editor context menu now shows an **External Tools**
+  submenu listing every enabled tool, so you can run one on the active file without the palette or a
+  keybinding (hidden when no tool is enabled or in Simple UI mode).
+
 - **Find-in-Files popup: include/exclude globs.** The keyboard-first *Find in Files* popup now has the same
   comma-separated **include / exclude glob** fields as the tool window (e.g. `*.java, src/**` / `**/test/**`),
   narrowing the search live as you type.
