@@ -70,6 +70,34 @@ final class AceJumpOverlay extends Region {
         area.getProperties().put("editora.ownsKeys", Boolean.TRUE);
     }
 
+    /** Begins AceJump line-mode (avy-goto-line): every visible line is labeled immediately (no char step);
+     *  typing a label jumps the caret to that line's first non-whitespace character. */
+    void startLine() {
+        if (active) {
+            return;
+        }
+        active = true;
+        typed = "";
+        labelToOffset.clear();
+        setVisible(true);
+        area.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        List<Integer> offsets = visibleLineStarts();
+        if (offsets.isEmpty()) {
+            exit();
+            return;
+        }
+        if (offsets.size() == 1) {
+            jump(offsets.get(0));
+            return;
+        }
+        List<String> labels = AceLabels.labels(offsets.size(), AceLabels.DEFAULT_ALPHABET);
+        for (int i = 0; i < labels.size(); i++) {
+            labelToOffset.put(labels.get(i), offsets.get(i));
+        }
+        awaitingChar = false; // labels are already assigned — skip the char-selection step
+        scheduleRedraw();
+    }
+
     private void exit() {
         active = false;
         awaitingChar = false;
@@ -166,6 +194,31 @@ final class AceJumpOverlay extends Region {
                         out.add(area.getAbsolutePosition(p, i));
                     }
                 }
+            }
+        } catch (RuntimeException ignored) {
+            // viewport mid-layout
+        }
+        return out;
+    }
+
+    /** The offset of the first non-whitespace character of each visible, non-folded line (line start for a
+     *  blank/all-whitespace line) — the jump targets for line-mode. */
+    private List<Integer> visibleLineStarts() {
+        List<Integer> out = new ArrayList<>();
+        try {
+            int total = area.getParagraphs().size();
+            int first = Math.max(0, area.firstVisibleParToAllParIndex());
+            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
+            for (int p = first; p <= last; p++) {
+                if (area.isFolded(p)) {
+                    continue;
+                }
+                String line = area.getParagraph(p).getText();
+                int col = 0;
+                while (col < line.length() && Character.isWhitespace(line.charAt(col))) {
+                    col++;
+                }
+                out.add(area.getAbsolutePosition(p, Math.min(col, line.length())));
             }
         } catch (RuntimeException ignored) {
             // viewport mid-layout

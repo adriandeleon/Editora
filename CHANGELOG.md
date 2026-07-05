@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **AceJump line-mode (avy-goto-line).** A new `nav.aceJumpLine` command (`M-g L`) labels every visible
+  line at once — type a label to jump the caret to that line's first non-whitespace character. Complements
+  the existing character-mode AceJump (`M-g j`).
+
 - **MCP: `list_tabs` and `todo_scan` tools.** The MCP bridge gains two read tools — `list_tabs` (every
   open tab including non-editor tabs — Welcome/image/hex/diff — with each tab's type + which is active)
   and `todo_scan` (scans the project + open buffers for the configured TODO/FIXME highlight patterns,

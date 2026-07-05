@@ -2143,6 +2143,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         b.startAceJump();
     }
 
+    private void startAceJumpLine() {
+        EditorBuffer b = activeBuffer();
+        if (b == null) {
+            return;
+        }
+        setStatus(tr("acejump.promptLine"));
+        b.startAceJumpLine();
+    }
+
     private Region placeholder(String text) {
         Label label = new Label(text);
         label.getStyleClass().add("tool-window-placeholder");
@@ -10356,6 +10365,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         v -> config.getSettings().setMathSupport(v),
                         this::applyMathSupport)));
         registry.register(Command.of("nav.aceJump", this::startAceJump));
+        registry.register(Command.of("nav.aceJumpLine", this::startAceJumpLine));
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
         registry.register(Command.of("file.run", runCoordinator::runActiveFile));
         registry.register(Command.of("file.runWithArgs", runCoordinator::runActiveFileWithArgs));

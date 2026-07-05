@@ -1806,6 +1806,12 @@ public class EditorBuffer implements TabContent {
         aceJump().start();
     }
 
+    /** Starts AceJump line-mode: every visible line is labeled at once; type a label to jump to that line
+     *  (its first non-whitespace character). */
+    public void startAceJumpLine() {
+        aceJump().startLine();
+    }
+
     /** The node to place in the scene: the read-only banner (when shown) above the editor view. */
     public Region getNode() {
         return outer;

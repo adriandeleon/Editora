@@ -94,6 +94,7 @@
   "M-g b": "bookmarks.jump",
   "M-g n": "notes.jump",
   "M-g j": "nav.aceJump",
+  "M-g L": "nav.aceJumpLine",
   "M-g h": "tool.gitLog",
   "M-g l": "tool.fileHistory",
   "M-g u": "tool.undoHistory",
