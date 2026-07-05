@@ -83,6 +83,13 @@ final class Icons {
                 + "2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z");
     }
 
+    /** A 4-point "sparkle" star (AI-generated content indicator) — the Commit panel's Generate Commit
+     *  Message with AI button. Thin, near-center waist (unlike a rotated square) so it reads as a spiky
+     *  sparkle rather than a diamond at toolbar size. */
+    static Node aiGenerate() {
+        return of("M12,2 L13,11 L22,12 L13,13 L12,22 L11,13 L2,12 L11,11 Z");
+    }
+
     /** Clock-with-arrow "history" glyph (Material "history") for the Git Log tool window. */
     static Node gitLog() {
         return of("M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 "

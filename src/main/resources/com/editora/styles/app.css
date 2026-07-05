@@ -1268,6 +1268,12 @@
     -fx-text-fill: -color-fg-muted;
 }
 
+/* Small "i" info glyph next to a Settings row, carrying a hover tooltip with extra detail. */
+.settings-info-icon {
+    -fx-cursor: hand;
+    -fx-opacity: 0.7;
+}
+
 /* Compact up/down reorder buttons in the tool-window placement rows. */
 .reorder-button {
     -fx-font-size: 10px;
@@ -1494,6 +1500,20 @@
 }
 .markdown-format-bar .md-fmt-heading {
     -fx-min-width: 96;
+}
+
+/* ---- AI selection-actions bar (floating, anchored above the selection) ---- */
+.ai-actions-bar {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 10, 0.1, 0, 2);
+}
+.ai-actions-bar .ai-actions-btn {
+    -fx-padding: 2 7 2 7;
+    -fx-background-radius: 4;
 }
 
 /* ---- Markdown table-size picker (the Typora/Word-style grid overlay) ---- */
