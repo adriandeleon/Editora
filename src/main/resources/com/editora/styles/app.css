@@ -1136,6 +1136,17 @@
     -fx-background-color: -color-success-muted;
 }
 
+/* "● REC" macro-recording indicator (shown only while recording). */
+.status-bar .status-macro-rec {
+    -fx-text-fill: -color-danger-fg;
+    -fx-font-weight: bold;
+    -fx-background-color: -color-danger-subtle;
+    -fx-background-radius: 4;
+}
+.status-bar .status-macro-rec:hover {
+    -fx-background-color: -color-danger-muted;
+}
+
 /* Read-only (View mode) toggle: muted "Editable" by default, amber/bold "Read-Only" when active. */
 .status-bar .status-readonly.active {
     -fx-text-fill: #bf8700;

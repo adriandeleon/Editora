@@ -403,8 +403,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.config = config;
         this.registry = registry;
         this.keymap = keymap;
-        this.macroCoordinator =
-                new MacroCoordinator(config, registry, coordinatorHost, this::refreshSavedMacroCommandsAllWindows);
+        this.macroCoordinator = new MacroCoordinator(config, registry, coordinatorHost, new MacroCoordinator.Ops() {
+            @Override
+            public void refreshAllWindows() {
+                refreshSavedMacroCommandsAllWindows();
+            }
+
+            @Override
+            public void setRecordingIndicator(boolean recording) {
+                statusBar.setMacroRecording(recording);
+            }
+        });
         // Built here (not as a field initializer) because NotesPanel's constructor reads config.getNotes().
         this.notesCoordinator = new NotesCoordinator(coordinatorHost, new NotesCoordinator.Ops() {
             @Override

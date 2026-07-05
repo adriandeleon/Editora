@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Macro recording indicator.** While recording a keyboard macro (`F3`), the status bar now shows a red
+  **● REC** badge so it's obvious you're recording; click it to stop (or `F4`).
+
 - **Log viewer: jump to next/previous error.** Two palette commands — **Log: Next Error** / **Log: Previous
   Error** — move the caret to the next/previous line at WARNING level or higher in a `.log` file (wrapping
   around), so you can hop between problems without scrolling.

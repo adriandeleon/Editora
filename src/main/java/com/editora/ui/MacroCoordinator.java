@@ -21,9 +21,12 @@ import static com.editora.i18n.Messages.tr;
  */
 final class MacroCoordinator {
 
-    /** Window hook beyond {@link CoordinatorHost}: re-register {@code macro.run.*} in every open window. */
+    /** Window hooks beyond {@link CoordinatorHost}: re-register {@code macro.run.*} in every open window, and
+     *  show/hide the status-bar "● REC" recording indicator. */
     interface Ops {
         void refreshAllWindows();
+
+        void setRecordingIndicator(boolean recording);
     }
 
     private final CoordinatorHost host;
@@ -66,6 +69,7 @@ final class MacroCoordinator {
             return;
         }
         service.startRecording();
+        ops.setRecordingIndicator(true);
         host.setStatus(tr("status.macro.recording"));
     }
 
@@ -75,6 +79,7 @@ final class MacroCoordinator {
             return;
         }
         int n = service.stopRecording();
+        ops.setRecordingIndicator(false);
         host.setStatus(tr("status.macro.recorded", n));
     }
 
