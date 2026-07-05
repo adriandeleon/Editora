@@ -189,7 +189,13 @@ final class TodoCoordinator {
         Settings s = host.settings();
         highlightOn = s.isTodoHighlight();
         List<TodoPatterns.Compiled> compiled = highlightOn ? TodoPatterns.compile(s.getTodoPatterns()) : List.of();
-        matcher = text -> toTodoMarks(TodoScanner.scan(text, compiled));
+        com.editora.todo.TodoPartColors partColors = com.editora.todo.TodoPartColors.of(
+                s.getTodoTagColor(),
+                s.getTodoPriorityCriticalColor(),
+                s.getTodoPriorityHighColor(),
+                s.getTodoPriorityMediumColor(),
+                s.getTodoPriorityLowColor());
+        matcher = text -> toTodoMarks(TodoScanner.scan(text, compiled), partColors);
         host.forEachBuffer(this::applyToBuffer);
         refreshPanelIfOpen();
     }
@@ -209,7 +215,7 @@ final class TodoCoordinator {
      * comment parsed structurally, so the overlay can color each part. Part offsets are line-relative in the
      * parse, so they're rebased to absolute via the line start ({@code keywordStart − (col − 1)}).
      */
-    private static List<TodoMark> toTodoMarks(List<TodoMatch> matches) {
+    private static List<TodoMark> toTodoMarks(List<TodoMatch> matches, com.editora.todo.TodoPartColors partColors) {
         List<TodoMark> out = new ArrayList<>(matches.size());
         for (TodoMatch m : matches) {
             int line0 = Math.max(0, m.line() - 1);
@@ -231,10 +237,10 @@ final class TodoCoordinator {
                     m.color(),
                     tagStart,
                     tagEnd,
-                    p.hasTag() ? com.editora.todo.TodoColors.TAG_COLOR : null,
+                    p.hasTag() ? partColors.tag() : null,
                     priStart,
                     priEnd,
-                    com.editora.todo.TodoColors.priorityColor(p.priority())));
+                    partColors.priorityColor(p.priority())));
         }
         return out;
     }

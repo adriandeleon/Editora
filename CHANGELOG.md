@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Configurable TODO per-part colors.** The highlight color for a structured TODO comment's `[tag]` and
+  each `(priority)` level (critical/high/medium/low) is now user-configurable — a **TODO Part Colors**
+  section in Settings → Editor → TODO with five color pickers, plus a palette command `todo.setPartColor`
+  (pick a part → `#RRGGBB`). Applies live to every buffer.
+
 - **AceJump line-mode (avy-goto-line).** A new `nav.aceJumpLine` command (`M-g L`) labels every visible
   line at once — type a label to jump the caret to that line's first non-whitespace character. Complements
   the existing character-mode AceJump (`M-g j`).
