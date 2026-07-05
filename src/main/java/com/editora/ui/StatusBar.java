@@ -59,6 +59,8 @@ public final class StatusBar extends HBox {
 
     /** MCP server running indicator; clickable → copy the connection command. Hidden when the server is off. */
     private final Label mcp = segment("mcp.copyEndpoint", tr("statusbar.tip.mcp"));
+    /** "● REC" indicator shown only while a keyboard macro is being recorded; clickable → stop recording. */
+    private final Label macroRec = segment("macro.stopRecording", tr("statusbar.tip.macroRec"));
 
     private final Label position = segment("nav.goToLine", tr("statusbar.tip.goToLine"));
     /** CSV/TSV column indicator ("Field N of M"); clickable → copy the file as a Markdown table. */
@@ -126,6 +128,11 @@ public final class StatusBar extends HBox {
         mcp.setVisible(false); // shown only while the MCP server is running
         mcp.setManaged(false);
 
+        macroRec.getStyleClass().add("status-macro-rec");
+        macroRec.setText(tr("statusbar.macroRec"));
+        macroRec.setVisible(false); // shown only while a macro is being recorded
+        macroRec.setManaged(false);
+
         lspProgress.getStyleClass().add("status-lsp-progress");
         lspProgress.setPrefWidth(90);
         lspProgress.setMaxHeight(10);
@@ -147,6 +154,7 @@ public final class StatusBar extends HBox {
                 .addAll(
                         echo,
                         spacer,
+                        macroRec,
                         debugProgress,
                         debug,
                         lspProgress,
@@ -339,6 +347,12 @@ public final class StatusBar extends HBox {
         boolean show = mcpRunning && !simpleMode;
         mcp.setVisible(show);
         mcp.setManaged(show);
+    }
+
+    /** Shows/hides the "● REC" macro-recording indicator (shown only while a macro is being recorded). */
+    public void setMacroRecording(boolean recording) {
+        macroRec.setVisible(recording);
+        macroRec.setManaged(recording);
     }
 
     /** Shows/updates the Debug segment ({@code state} non-blank → "Debug: state"; null/blank → hidden). */
