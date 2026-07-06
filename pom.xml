@@ -1078,6 +1078,47 @@
                  UTI (a .txt is public.plain-text), so it would not appear in Open With. aot_build injects a
                  single CFBundleDocumentTypes entry declaring the *system* UTIs public.text / public.source-code
                  instead, which every text/source file conforms to. -->
+            <build>
+                <plugins>
+                    <!-- jpackage's app-version flag sets CFBundleVersion/CFBundleShortVersionString on
+                         macOS, and jpackage REJECTS a version whose first component is zero/negative ("The
+                         first number in an app-version cannot be zero or negative"), so a pre-1.0
+                         project.version like 0.9.0 fails both the jpackage-maven-plugin app-image build
+                         below AND aot_build.java's later DMG-wrap invocation. Bump a leading "0." to "1."
+                         (0.9.0 to 1.9.0) into jpackage.appVersion, used by both instead of
+                         ${project.version} directly; cosmetic macOS bundle metadata only, the public
+                         release version (tag, CHANGELOG, About dialog, DMG filename via the CI "Resolve
+                         version" step) is unaffected. A version already >=1.x (no leading "0.") passes
+                         through unchanged. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>mac-jpackage-app-version</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <exportAntProperties>true</exportAntProperties>
+                                    <target>
+                                        <loadresource property="jpackage.appVersion">
+                                            <propertyresource name="project.version"/>
+                                            <filterchain>
+                                                <tokenfilter>
+                                                    <replaceregex pattern="^0\." replace="1." flags="g"/>
+                                                </tokenfilter>
+                                            </filterchain>
+                                        </loadresource>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <profile>
             <id>os-windows</id>
@@ -1087,6 +1128,8 @@
                 <jpackage.icon>${project.basedir}/branding/editora.ico</jpackage.icon>
                 <!-- Keep Direct3D first on Windows (Metal is macOS-only); es2/sw fallback. -->
                 <prism.pipeline>d3d,es2,sw</prism.pipeline>
+                <!-- Windows/Linux jpackage accepts a leading-zero version fine — unlike macOS (see os-mac). -->
+                <jpackage.appVersion>${project.version}</jpackage.appVersion>
             </properties>
         </profile>
         <profile>
@@ -1101,6 +1144,7 @@
                 <jpackage.icon>${project.basedir}/branding/editora.png</jpackage.icon>
                 <!-- es2 first on Linux (no Metal/Direct3D there); sw fallback. -->
                 <prism.pipeline>es2,sw</prism.pipeline>
+                <jpackage.appVersion>${project.version}</jpackage.appVersion>
             </properties>
         </profile>
 
@@ -1210,7 +1254,7 @@
                                 <configuration>
                                     <type>APP_IMAGE</type>
                                     <name>Editora</name>
-                                    <appVersion>${project.version}</appVersion>
+                                    <appVersion>${jpackage.appVersion}</appVersion>
                                     <vendor>Editora</vendor>
                                     <icon>${jpackage.icon}</icon>
                                     <module>com.editora/com.editora.App</module>
@@ -1312,7 +1356,7 @@
                                         <argument>${project.basedir}/scripts/aot_build.java</argument>
                                         <argument>${project.build.directory}/aot-image</argument>
                                         <argument>Editora</argument>
-                                        <argument>${project.version}</argument>
+                                        <argument>${jpackage.appVersion}</argument>
                                         <argument>${jpackage.type}</argument>
                                         <argument>${jpackage.icon}</argument>
                                         <argument>${project.build.directory}/dist</argument>
