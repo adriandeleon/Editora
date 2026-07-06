@@ -40,8 +40,16 @@ A backlog of planned features and improvements. Unordered within each section.
       `\`-continuations) replaces the INI borrow. Proto/GraphQL fold + auto-indent as brace languages;
       comment toggling wired for all. Grammars vendored MIT from shiki tm-grammars (diff/make/proto/graphql/
       just); properties/gitattributes written in-house.
-      *Deferred: "open this .patch in the diff viewer" action, LSP servers (buf / graphql-lsp), Makefile
-      forced-tab indent for brand-new files (existing files detect tabs).*
+      *Deferred: LSP servers (buf / graphql-lsp), Makefile forced-tab indent for brand-new files (existing
+      files detect tabs).*
+- [x] "Open this .patch in the diff viewer" — a right-click "Open in Diff Viewer" item (shown only for a
+      `.patch`/`.diff` file) parses the buffer's own unified-diff text and opens its first file-section as a
+      read-only structured diff (side-by-side, word-level highlighting, prev/next-change nav) instead of just
+      syntax-highlighted diff text. New pure/unit-tested `diff/PatchParser` (the reverse of `PatchWriter`)
+      reconstructs each file's old/new line sequences — tolerant of a bare `diff -u` file, a git `diff --git`
+      preamble, several files back to back, `/dev/null` add/delete sides, and a "\ No newline at end of file"
+      marker — then feeds them straight back into the existing `DiffEngine` pipeline. Palette-only
+      `diff.openPatchFile`; a multi-file patch shows a status note and just the first file (v1 scope).
 - [x] Sample corpus for manual feature testing — a curated, feature-organized `samples/` folder (syntax per
       language, folding, indent, markdown, mermaid, todo, spell, search, editorconfig, http, log, diff,
       encodings) with a `README.md` manifest. `SamplesCorpusTest` guards manifest↔files sync + core-language

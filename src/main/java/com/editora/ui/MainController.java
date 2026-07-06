@@ -6051,6 +6051,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem compareWith = new MenuItem(tr("menu.compareWith"));
         compareWith.setGraphic(Icons.diff());
         compareWith.setOnAction(e -> diffCoordinator.compareActiveWithFile());
+        MenuItem openPatch = new MenuItem(tr("menu.openInDiffViewer"));
+        openPatch.setGraphic(Icons.diff());
+        openPatch.setOnAction(e -> diffCoordinator.openPatchFile(buffer));
         MenuItem history = new MenuItem(tr("command.git.fileHistory"));
         history.setGraphic(Icons.gitLog());
         history.setOnAction(e -> git.ifEnabled(this::showFileHistory));
@@ -6076,6 +6079,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 diffHead,
                 diffCommit,
                 compareWith,
+                openPatch,
                 history,
                 new SeparatorMenuItem(),
                 reveal,
@@ -6094,6 +6098,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             copyPath.setDisable(!hasPath);
             rename.setDisable(!hasPath);
             compareWith.setDisable(!hasPath); // not a Git action — works on any two files
+            // Only shown for a .patch/.diff file — parses the buffer's own (possibly unsaved) text.
+            openPatch.setVisible(hasPath
+                    && PatchFiles.isPatchFile(buffer.getPath().getFileName().toString()));
             // Git-only items (Compare with HEAD, Show File History) are hidden entirely when there's no VCS
             // available for this file (Git off, or not inside a repo) — not just disabled.
             boolean gitFile = hasPath && git.isAvailable();
@@ -10558,6 +10565,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of(
                 "diff.previousChange", () -> diffCoordinator.withActiveDiff(DiffViewerPane::goPreviousChange)));
         registry.register(Command.of("diff.compareWith", diffCoordinator::compareActiveWithFile));
+        registry.register(Command.of("diff.openPatchFile", () -> diffCoordinator.openPatchFile(activeBuffer())));
         registry.register(Command.of("diff.vsCommit", () -> git.ifEnabled(diffCoordinator::diffActiveVsCommit)));
         registry.register(Command.of("merge.resolve", diffCoordinator::resolveConflicts));
         registry.register(Command.of("switcher.show", () -> switcher.show(stage, false)));

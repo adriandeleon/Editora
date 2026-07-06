@@ -11,7 +11,9 @@ import java.util.function.Consumer;
 import javafx.stage.FileChooser;
 
 import com.editora.diff.ConflictParser;
+import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffService;
+import com.editora.diff.PatchParser;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
 import com.editora.git.GitFormat;
@@ -247,6 +249,65 @@ final class DiffCoordinator {
                 cb -> cb.accept(worktreeText(path)),
                 DiffViewerPane.EditableSide.RIGHT,
                 path);
+    }
+
+    /**
+     * Opens a {@code .patch}/{@code .diff} buffer's first file-section as a read-only structured diff tab
+     * (side-by-side, word-level highlighting, prev/next-change nav) — parsed from the buffer's live
+     * (possibly unsaved) text via {@link PatchParser}, not re-read from disk. The reconstructed old/new
+     * line sequences feed straight into the normal {@link DiffEngine} pipeline, so the tab behaves like any
+     * other diff view (just not editable/refreshable — there's no live "other side" to track). No-op with
+     * a status when the text doesn't parse as a unified diff; notes when a multi-file patch shows only the
+     * first file (v1 scope — one file section per tab).
+     */
+    void openPatchFile(EditorBuffer buffer) {
+        if (buffer == null) {
+            host.setStatus(tr("status.diff.noFile"));
+            return;
+        }
+        List<PatchParser.FilePatch> files = PatchParser.parse(buffer.getContent());
+        if (files.isEmpty()) {
+            host.setStatus(tr("status.diff.patchUnparsable"));
+            return;
+        }
+        PatchParser.FilePatch fp = files.get(0);
+        String oldLabel = cleanPatchLabel(fp.oldPath());
+        String newLabel = cleanPatchLabel(fp.newPath());
+        String fallback = buffer.getTitle();
+        String leftName = !oldLabel.isEmpty() ? oldLabel : (!newLabel.isEmpty() ? newLabel : fallback);
+        String rightName = !newLabel.isEmpty() ? newLabel : leftName;
+        String leftText = String.join("\n", fp.oldLines());
+        String rightText = String.join("\n", fp.newLines());
+        diffService.compute(leftText, rightText, model -> {
+            if (model == null) {
+                host.setStatus(tr("status.diff.tooLarge"));
+                return;
+            }
+            DiffViewerPane pane = new DiffViewerPane(
+                    tr("diff.title.patch", rightName),
+                    null,
+                    null,
+                    leftName,
+                    rightName,
+                    leftText,
+                    rightText,
+                    model,
+                    host.settings().getFontFamily(),
+                    host.settings().getFontSize(),
+                    host.settings().isShowLineNumbers(),
+                    rightName);
+            pane.setOnExportPatch(this::exportPatch);
+            ops.addDiffTab(pane);
+            host.setStatus(
+                    files.size() > 1
+                            ? tr("status.diff.patchMultiFile", files.size(), rightName)
+                            : tr("status.opened", rightName));
+        });
+    }
+
+    /** {@code ""} for a missing/{@code /dev/null} patch-file label, else the label unchanged. */
+    private static String cleanPatchLabel(String path) {
+        return path == null || path.isBlank() || "/dev/null".equals(path) ? "" : path;
     }
 
     /** Pick a second file and diff it against the active file. */

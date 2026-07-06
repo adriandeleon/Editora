@@ -289,8 +289,9 @@ Editora is built with the help of AI coding tools.
   dropdown. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
 - **Diff viewer & merge** _(Beta)_ — compare files in a dedicated tab: side-by-side or unified, with word-level
   intra-line highlights, prev/next-change navigation, apply-a-hunk / apply-all (undoable), live refresh,
-  and patch export. Diff against `HEAD` (`C-x v =`), another commit, or any other file; a separate
-  merge-conflict resolver accepts ours / theirs / both per conflict.
+  and patch export. Diff against `HEAD` (`C-x v =`), another commit, or any other file; open a `.patch`/
+  `.diff` file's own content as a structured diff (right-click a patch tab → "Open in Diff Viewer"); a
+  separate merge-conflict resolver accepts ours / theirs / both per conflict.
 - **Local file history** — IntelliJ-style snapshots of local files, taken on save, auto-save, and before an
   external-change reload, independent of any VCS. A **File History** tool window (`M-g l`) lists each revision
   (date/time, reason, size; the latest tagged *Current*); double-click for a read-only diff against the

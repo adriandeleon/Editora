@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Open a `.patch`/`.diff` file in the structured diff viewer.** A right-click "Open in Diff Viewer"
+  item (shown only for a `.patch`/`.diff` file, plus the palette-only `diff.openPatchFile` command) parses
+  the active buffer's unified diff and opens its first file-section as a read-only side-by-side diff — with
+  word-level highlighting and prev/next-change navigation — instead of just plain syntax-highlighted diff
+  text. Works on the buffer's own (possibly unsaved) text; a multi-file patch shows a status note and just
+  the first file.
+
 - **Configurable TODO per-part colors.** The highlight color for a structured TODO comment's `[tag]` and
   each `(priority)` level (critical/high/medium/low) is now user-configurable — a **TODO Part Colors**
   section in Settings → Editor → TODO with five color pickers, plus a palette command `todo.setPartColor`
