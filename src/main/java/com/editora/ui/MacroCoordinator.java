@@ -80,6 +80,13 @@ final class MacroCoordinator {
         }
         int n = service.stopRecording();
         ops.setRecordingIndicator(false);
+        if (n > 0) {
+            // Always persist the just-recorded macro under a fixed name, so it's immediately visible in
+            // Settings → Macros (and palette-/key-bindable) without an explicit "name and save" — the next
+            // recording overwrites this same entry; nameAndSave() below renames it away to keep it.
+            service.saveLast(tr("macro.unnamedName"));
+            ops.refreshAllWindows();
+        }
         host.setStatus(tr("status.macro.recorded", n));
     }
 
@@ -132,6 +139,13 @@ final class MacroCoordinator {
             }
             Macro m = service.saveLast(name);
             if (m != null) {
+                // stopRecording() auto-saved this same recording under the fixed placeholder name — drop
+                // that entry now that it has a real one, so there's no leftover duplicate (unless the user
+                // chose the placeholder name itself).
+                String unnamed = tr("macro.unnamedName");
+                if (!m.name().equals(unnamed)) {
+                    service.delete(unnamed);
+                }
                 ops.refreshAllWindows();
                 host.setStatus(tr("status.macro.saved", m.name()));
             }
