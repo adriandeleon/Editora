@@ -111,6 +111,22 @@ public final class AcpJson {
         return p;
     }
 
+    /** {@code session/set_model}. */
+    public static ObjectNode setModelParams(ObjectMapper m, String sessionId, String modelId) {
+        ObjectNode p = m.createObjectNode();
+        p.put("sessionId", sessionId);
+        p.put("modelId", modelId);
+        return p;
+    }
+
+    /** {@code session/set_mode}. */
+    public static ObjectNode setModeParams(ObjectMapper m, String sessionId, String modeId) {
+        ObjectNode p = m.createObjectNode();
+        p.put("sessionId", sessionId);
+        p.put("modeId", modeId);
+        return p;
+    }
+
     /** {@code session/request_permission} response: the user picked {@code optionId}, or cancelled (null). */
     public static ObjectNode permissionOutcome(ObjectMapper m, String optionId) {
         ObjectNode outcome = m.createObjectNode();
@@ -137,17 +153,38 @@ public final class AcpJson {
         TOOL_CALL,
         /** A tool call changed state ({@code tool_call_update}) — {@code text} is the new status. */
         TOOL_CALL_UPDATE,
-        /** The agent published/updated its plan — {@code text} is the flattened entries. */
+        /** The agent published/updated its plan — {@code text} is the flattened entries, {@code planEntries}
+         *  the structured form (status per entry). */
         PLAN,
+        /** The session's mode changed ({@code current_mode_update}) — {@code text} is the new mode id. */
+        MODE_CHANGED,
         /** Anything unrecognized (forward-compatible: ignored by the UI). */
         OTHER
     }
 
-    /** One parsed {@code session/update} notification. */
-    public record Update(String sessionId, UpdateKind kind, String text) {}
+    /** One parsed {@code session/update} notification. {@code planEntries} is non-empty only for
+     *  {@link UpdateKind#PLAN}. */
+    public record Update(String sessionId, UpdateKind kind, String text, List<PlanEntry> planEntries) {}
 
     /** A permission option offered by {@code session/request_permission}. */
     public record PermissionOption(String optionId, String name, String kind) {}
+
+    /** One selectable model, as offered by {@code session/new}'s {@code models.availableModels}. */
+    public record ModelInfo(String modelId, String name, String description) {}
+
+    /** One selectable mode, as offered by {@code session/new}'s {@code modes.availableModes}. */
+    public record ModeInfo(String id, String name, String description) {}
+
+    /** One plan task: {@code status} is {@code pending}/{@code in_progress}/{@code completed}. */
+    public record PlanEntry(String content, String status) {}
+
+    /** The parsed {@code session/new} result: the new session id plus its model/mode catalogs. */
+    public record SessionInfo(
+            String sessionId,
+            List<ModelInfo> models,
+            String currentModelId,
+            List<ModeInfo> modes,
+            String currentModeId) {}
 
     /** Parses a {@code session/update} notification's params; never throws (unknown → OTHER). */
     public static Update parseUpdate(JsonNode params) {
@@ -155,16 +192,20 @@ public final class AcpJson {
         JsonNode update = params == null ? null : params.get("update");
         String type = textOf(update, "sessionUpdate");
         if (update == null || type == null) {
-            return new Update(sessionId, UpdateKind.OTHER, "");
+            return new Update(sessionId, UpdateKind.OTHER, "", List.of());
         }
         return switch (type) {
-            case "agent_message_chunk" -> new Update(sessionId, UpdateKind.AGENT_MESSAGE, contentText(update));
-            case "agent_thought_chunk" -> new Update(sessionId, UpdateKind.AGENT_THOUGHT, contentText(update));
-            case "tool_call" -> new Update(sessionId, UpdateKind.TOOL_CALL, toolCallLabel(update));
+            case "agent_message_chunk" ->
+                new Update(sessionId, UpdateKind.AGENT_MESSAGE, contentText(update), List.of());
+            case "agent_thought_chunk" ->
+                new Update(sessionId, UpdateKind.AGENT_THOUGHT, contentText(update), List.of());
+            case "tool_call" -> new Update(sessionId, UpdateKind.TOOL_CALL, toolCallLabel(update), List.of());
             case "tool_call_update" ->
-                new Update(sessionId, UpdateKind.TOOL_CALL_UPDATE, textOrEmpty(update, "status"));
-            case "plan" -> new Update(sessionId, UpdateKind.PLAN, planText(update));
-            default -> new Update(sessionId, UpdateKind.OTHER, "");
+                new Update(sessionId, UpdateKind.TOOL_CALL_UPDATE, textOrEmpty(update, "status"), List.of());
+            case "plan" -> new Update(sessionId, UpdateKind.PLAN, planText(update), parsePlanEntries(update));
+            case "current_mode_update" ->
+                new Update(sessionId, UpdateKind.MODE_CHANGED, textOrEmpty(update, "currentModeId"), List.of());
+            default -> new Update(sessionId, UpdateKind.OTHER, "", List.of());
         };
     }
 
@@ -200,6 +241,39 @@ public final class AcpJson {
         return title != null ? title : "";
     }
 
+    /** Parses {@code session/new}'s result: the session id plus its model/mode catalogs. Null-safe
+     *  throughout — a missing/absent {@code models}/{@code modes} object yields an empty catalog. */
+    public static SessionInfo parseSessionInfo(JsonNode result) {
+        String sessionId = textOf(result, "sessionId");
+        List<ModelInfo> models = new ArrayList<>();
+        String currentModelId = null;
+        JsonNode modelsNode = result == null ? null : result.get("models");
+        if (modelsNode != null) {
+            currentModelId = textOf(modelsNode, "currentModelId");
+            JsonNode avail = modelsNode.get("availableModels");
+            if (avail != null && avail.isArray()) {
+                for (JsonNode mo : avail) {
+                    models.add(new ModelInfo(
+                            textOrEmpty(mo, "modelId"), textOrEmpty(mo, "name"), textOrEmpty(mo, "description")));
+                }
+            }
+        }
+        List<ModeInfo> modes = new ArrayList<>();
+        String currentModeId = null;
+        JsonNode modesNode = result == null ? null : result.get("modes");
+        if (modesNode != null) {
+            currentModeId = textOf(modesNode, "currentModeId");
+            JsonNode avail = modesNode.get("availableModes");
+            if (avail != null && avail.isArray()) {
+                for (JsonNode md : avail) {
+                    modes.add(new ModeInfo(
+                            textOrEmpty(md, "id"), textOrEmpty(md, "name"), textOrEmpty(md, "description")));
+                }
+            }
+        }
+        return new SessionInfo(sessionId, models, currentModelId, modes, currentModeId);
+    }
+
     private static String toolCallLabel(JsonNode update) {
         String title = textOf(update, "title");
         if (title != null && !title.isEmpty()) {
@@ -224,6 +298,18 @@ public final class AcpJson {
             }
         }
         return sb.toString();
+    }
+
+    /** The structured plan entries (content + status) — a {@code plan} update always replaces the whole list. */
+    private static List<PlanEntry> parsePlanEntries(JsonNode update) {
+        List<PlanEntry> out = new ArrayList<>();
+        JsonNode entries = update.get("entries");
+        if (entries != null && entries.isArray()) {
+            for (JsonNode e : entries) {
+                out.add(new PlanEntry(textOrEmpty(e, "content"), textOrEmpty(e, "status")));
+            }
+        }
+        return out;
     }
 
     private static String textOf(JsonNode node, String field) {

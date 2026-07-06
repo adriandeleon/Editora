@@ -10162,6 +10162,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.agent", agentCoordinator::toggleToolWindow));
         registry.register(Command.of("agent.newSession", agentCoordinator::newSession));
         registry.register(Command.of("agent.stop", agentCoordinator::stopTurn));
+        registry.register(Command.of("agent.selectModel", agentCoordinator::pickModel));
+        registry.register(Command.of("agent.selectMode", agentCoordinator::pickMode));
         registry.register(Command.of(
                 "view.toggleAgent",
                 () -> toggleSetting(
@@ -10176,6 +10178,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().getAgentCommand(),
                         v -> config.getSettings().setAgentCommand(v),
                         this::applyAgentSupport)));
+        registry.register(Command.of(
+                "view.toggleAgentContext",
+                () -> toggleSetting(
+                        "view.toggleAgentContext",
+                        () -> config.getSettings().isAgentIncludeContext(),
+                        v -> config.getSettings().setAgentIncludeContext(v),
+                        null))); // read fresh on the next sendPrompt call — nothing cached to re-push
         registry.register(Command.of("ai.generateCommitMessage", aiCoordinator::generateCommitMessage));
         registry.register(Command.of("ai.explainSelection", aiCoordinator::explainSelection));
         registry.register(Command.of("ai.rewriteSelection", aiCoordinator::rewriteSelection));

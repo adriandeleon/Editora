@@ -18,6 +18,7 @@ import com.editora.agent.AcpClient;
 import com.editora.agent.AcpJson;
 import com.editora.editor.EditorBuffer;
 import com.editora.run.ProgramArgs;
+import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -66,6 +67,10 @@ final class AgentCoordinator implements AcpClient.Host {
     private AgentPanel panel;
     private volatile AcpClient client;
     private volatile String sessionId;
+    private volatile List<AcpJson.ModelInfo> models = List.of();
+    private volatile List<AcpJson.ModeInfo> modes = List.of();
+    private volatile String currentModelId;
+    private volatile String currentModeId;
 
     AgentCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -80,7 +85,7 @@ final class AgentCoordinator implements AcpClient.Host {
     /** The chat tool window's content (built lazily; {@code MainController} wraps it in a {@code ToolWindow}). */
     AgentPanel panel() {
         if (panel == null) {
-            panel = new AgentPanel(this::stopTurn, this::newSession);
+            panel = new AgentPanel(this::stopTurn, this::newSession, this::pickModel, this::pickMode);
             panel.setOnSend(this::sendPrompt);
             applyPanelFont();
         }
@@ -118,7 +123,14 @@ final class AgentCoordinator implements AcpClient.Host {
                 c.cancel(sid);
             }
             sessionId = null;
+            models = List.of();
+            modes = List.of();
+            currentModelId = null;
+            currentModeId = null;
             panel().clearTranscript();
+            panel().clearPlan();
+            panel().setModelLabel(null);
+            panel().setModeLabel(null);
             panel().setBusy(false);
             host.setStatus(tr("status.agent.newSession"));
         });
@@ -135,16 +147,109 @@ final class AgentCoordinator implements AcpClient.Host {
         });
     }
 
-    /** Sends one prompt turn (the panel blocks re-entry while a turn is running). */
+    /** {@code agent.selectModel}: opens a picker over the session's available models (shared by the
+     *  header label click and the palette command). */
+    void pickModel() {
+        ifAgent(() -> {
+            if (models.isEmpty()) {
+                host.setStatus(tr("status.agent.noModels"));
+                return;
+            }
+            QuickOpen<AcpJson.ModelInfo> picker = new QuickOpen<>(
+                    tr("command.agent.selectModel"),
+                    tr("palette.agent.selectModelPrompt"),
+                    () -> models,
+                    AcpJson.ModelInfo::name,
+                    AcpJson.ModelInfo::description,
+                    this::setModel);
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
+    /** {@code agent.selectMode}: opens a picker over the session's available modes (shared by the header
+     *  label click and the palette command). */
+    void pickMode() {
+        ifAgent(() -> {
+            if (modes.isEmpty()) {
+                host.setStatus(tr("status.agent.noModes"));
+                return;
+            }
+            QuickOpen<AcpJson.ModeInfo> picker = new QuickOpen<>(
+                    tr("command.agent.selectMode"),
+                    tr("palette.agent.selectModePrompt"),
+                    () -> modes,
+                    AcpJson.ModeInfo::name,
+                    AcpJson.ModeInfo::description,
+                    this::setMode);
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
+    /** Switches the running session's active model. */
+    private void setModel(AcpJson.ModelInfo model) {
+        AcpClient c = client;
+        String sid = sessionId;
+        if (c == null || sid == null) {
+            return;
+        }
+        c.setModel(sid, model.modelId())
+                .whenComplete((v, err) -> Platform.runLater(() -> {
+                    if (err == null) {
+                        currentModelId = model.modelId();
+                        panel().setModelLabel(model.name());
+                    } else {
+                        host.setStatus(tr(
+                                "status.agent.failed",
+                                String.valueOf(rootCause(err).getMessage())));
+                    }
+                }));
+    }
+
+    /** Switches the running session's active mode. */
+    private void setMode(AcpJson.ModeInfo mode) {
+        AcpClient c = client;
+        String sid = sessionId;
+        if (c == null || sid == null) {
+            return;
+        }
+        c.setMode(sid, mode.id())
+                .whenComplete((v, err) -> Platform.runLater(() -> {
+                    if (err == null) {
+                        currentModeId = mode.id();
+                        panel().setModeLabel(mode.name());
+                    } else {
+                        host.setStatus(tr(
+                                "status.agent.failed",
+                                String.valueOf(rootCause(err).getMessage())));
+                    }
+                }));
+    }
+
+    /** Max chars of quoted selection text included in the context header (bounds token cost). */
+    private static final int SELECTION_PREVIEW_LIMIT = 200;
+
+    /**
+     * Sends one prompt turn (the panel blocks re-entry while a turn is running). When
+     * {@code Settings.agentIncludeContext} is on, the active buffer's path/cursor/selection is prefixed
+     * to what's actually sent to the agent (never merged into the echoed transcript line) so the common
+     * "explain this line" case works without the agent having to ask which file.
+     */
     void sendPrompt(String text) {
         if (!isEnabled()) {
             host.setStatus(tr("status.agent.disabled"));
             return;
         }
         panel().appendLine("❯ " + text);
+        String context = host.settings().isAgentIncludeContext() ? activeBufferContext() : null;
+        if (context != null) {
+            panel().appendLine(context);
+        }
+        String composed = context == null ? text : context + "\n\n" + text;
         panel().setBusy(true);
         ensureSession()
-                .thenCompose(sid -> client.prompt(sid, text))
+                .thenCompose(sid -> client.prompt(sid, composed))
                 .whenComplete((stopReason, error) -> Platform.runLater(() -> {
                     panel().setBusy(false);
                     if (error != null) {
@@ -155,6 +260,49 @@ final class AgentCoordinator implements AcpClient.Host {
                         panel().appendLine(tr("agent.turnCancelled"));
                     }
                 }));
+    }
+
+    /** The active buffer's context header, or null if there is no active editor buffer (e.g. the Welcome
+     *  tab). Recomputed on every call — the active buffer/caret can change between turns in one session. */
+    private String activeBufferContext() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null) {
+            return null;
+        }
+        CodeArea area = b.getFocusedArea() != null ? b.getFocusedArea() : b.getArea();
+        return formatContext(bufferLabel(b), area.getCurrentParagraph() + 1, area.getSelectedText());
+    }
+
+    /** The path shown to the agent: relativized against {@link #sessionCwd()} (the same frame of
+     *  reference the agent's own tools use) when possible, else the absolute path, else the buffer's
+     *  title (an untitled or remote buffer, where a cwd-relative path would be meaningless). */
+    private String bufferLabel(EditorBuffer b) {
+        Path path = b.getPath();
+        if (path == null || !host.isLocalBuffer(b)) {
+            return b.getTitle();
+        }
+        try {
+            Path rel = sessionCwd().toAbsolutePath().relativize(path.toAbsolutePath());
+            if (!rel.startsWith("..")) {
+                return rel.toString();
+            }
+        } catch (IllegalArgumentException ignored) {
+            // different filesystem roots (e.g. Windows drive letters) — fall through to the absolute path
+        }
+        return path.toString();
+    }
+
+    /** Pure: builds the one-line context header. Package-private + static so it's directly unit-tested
+     *  (the {@link #slice} idiom), even though it resolves through {@code tr(...)}. */
+    static String formatContext(String label, int line, String selectedText) {
+        StringBuilder sb = new StringBuilder(tr("agent.context.header", label, line));
+        if (selectedText != null && !selectedText.isEmpty()) {
+            String preview = selectedText.length() > SELECTION_PREVIEW_LIMIT
+                    ? selectedText.substring(0, SELECTION_PREVIEW_LIMIT) + "…"
+                    : selectedText;
+            sb.append(tr("agent.context.selected", preview.replace("\n", "\\n")));
+        }
+        return sb.toString();
     }
 
     /** The running client's session, starting the agent + a session on first use (off the FX thread). */
@@ -178,15 +326,26 @@ final class AgentCoordinator implements AcpClient.Host {
                         lifecycleExec)
                 .thenCompose(fresh -> fresh.initialize()
                         .thenCompose(init -> fresh.newSession(cwd))
-                        .thenApply(newSid -> {
-                            if (newSid == null) {
+                        .thenApply(info -> {
+                            if (info.sessionId() == null) {
                                 fresh.dispose();
                                 throw new CompletionException(new IOException(tr("status.agent.noSession")));
                             }
                             client = fresh;
-                            sessionId = newSid;
-                            return newSid;
+                            sessionId = info.sessionId();
+                            models = info.models();
+                            modes = info.modes();
+                            currentModelId = info.currentModelId();
+                            currentModeId = info.currentModeId();
+                            Platform.runLater(this::refreshPanelHeader);
+                            return info.sessionId();
                         }));
+    }
+
+    /** Pushes the current model/mode display state to the panel header (after a fresh session starts). */
+    private void refreshPanelHeader() {
+        panel().setModelLabel(modelDisplayName(models, currentModelId));
+        panel().setModeLabel(modeDisplayName(modes, currentModeId));
     }
 
     /** The configured agent command (quote-aware tokens; blank ⇒ {@link #DEFAULT_COMMAND}). */
@@ -226,10 +385,10 @@ final class AgentCoordinator implements AcpClient.Host {
                         panel().appendLine("⚙ ✗ " + tr("agent.toolFailed"));
                     }
                 }
-                case PLAN -> {
-                    if (!update.text().isEmpty()) {
-                        panel().appendLine("· " + update.text().replace("\n", "\n· "));
-                    }
+                case PLAN -> panel().setPlan(update.planEntries());
+                case MODE_CHANGED -> {
+                    currentModeId = update.text();
+                    panel().setModeLabel(modeDisplayName(modes, update.text()));
                 }
                 case AGENT_THOUGHT, OTHER -> {
                     // thoughts are noisy in a plain transcript; unknown updates are ignored (forward-compatible)
@@ -325,6 +484,32 @@ final class AgentCoordinator implements AcpClient.Host {
         return String.join("\n", java.util.Arrays.copyOfRange(lines, from, to));
     }
 
+    /** The display name for {@code modelId} (falls back to the bare id if not found, empty if null). Pure. */
+    static String modelDisplayName(List<AcpJson.ModelInfo> models, String modelId) {
+        if (modelId == null) {
+            return "";
+        }
+        for (AcpJson.ModelInfo m : models) {
+            if (m.modelId().equals(modelId)) {
+                return m.name();
+            }
+        }
+        return modelId;
+    }
+
+    /** The display name for {@code modeId} (falls back to the bare id if not found, empty if null). Pure. */
+    static String modeDisplayName(List<AcpJson.ModeInfo> modes, String modeId) {
+        if (modeId == null) {
+            return "";
+        }
+        for (AcpJson.ModeInfo mo : modes) {
+            if (mo.id().equals(modeId)) {
+                return mo.name();
+            }
+        }
+        return modeId;
+    }
+
     /** Runs {@code task} on the FX thread and blocks (with a timeout) for its result — for the fs bridge,
      *  which the agent calls on its own request threads. */
     private static <T> T fxCall(java.util.function.Supplier<T> task) throws Exception {
@@ -361,11 +546,18 @@ final class AgentCoordinator implements AcpClient.Host {
         AcpClient c = client;
         client = null;
         sessionId = null;
+        models = List.of();
+        modes = List.of();
+        currentModelId = null;
+        currentModeId = null;
         if (c != null) {
             c.dispose();
         }
         if (panel != null) {
             panel.setBusy(false);
+            panel.setModelLabel(null);
+            panel.setModeLabel(null);
+            panel.clearPlan();
         }
     }
 

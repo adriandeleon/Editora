@@ -1755,6 +1755,21 @@
     -fx-padding: 3 6 3 6;
 }
 
+/* AI Agent header's clickable Model/Mode labels (same hover spirit as .status-segment-clickable). */
+.agent-panel .agent-header-label {
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 3 6 3 6;
+}
+.agent-panel .agent-header-label:hover {
+    -fx-background-color: -color-bg-inset;
+    -fx-cursor: hand;
+}
+
+/* AI Agent plan checklist rows — muted by default; completed dims further, in-progress reads as active. */
+.plan-entry-pending { -fx-text-fill: -color-fg-default; }
+.plan-entry-in_progress { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; }
+.plan-entry-completed { -fx-text-fill: -color-fg-muted; }
+
 /* Green play glyph for the gutter Run marker (compact source main line) + the right-click Run item. */
 .run-marker { -fx-fill: #3fb950; }
 .fold-gutter .run-slot:hover .run-marker { -fx-fill: #56d364; }

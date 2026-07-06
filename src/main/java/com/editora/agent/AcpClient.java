@@ -114,12 +114,10 @@ public final class AcpClient {
         return request("initialize", AcpJson.initializeParams(mapper));
     }
 
-    /** {@code session/new} → the new session's id. */
-    public CompletableFuture<String> newSession(Path sessionCwd) {
+    /** {@code session/new} → the new session's id plus its model/mode catalogs. */
+    public CompletableFuture<AcpJson.SessionInfo> newSession(Path sessionCwd) {
         return request("session/new", AcpJson.newSessionParams(mapper, sessionCwd.toString()))
-                .thenApply(result -> result != null && result.hasNonNull("sessionId")
-                        ? result.get("sessionId").asText()
-                        : null);
+                .thenApply(AcpJson::parseSessionInfo);
     }
 
     /** {@code session/prompt} → the turn's stop reason (e.g. {@code end_turn}/{@code cancelled}). */
@@ -133,6 +131,18 @@ public final class AcpClient {
     /** {@code session/cancel} (fire-and-forget; the in-flight prompt resolves with {@code cancelled}). */
     public void cancel(String sessionId) {
         send(AcpJson.notification(mapper, "session/cancel", AcpJson.cancelParams(mapper, sessionId)));
+    }
+
+    /** {@code session/set_model} — switches the running session's active model. Result body is ignored. */
+    public CompletableFuture<Void> setModel(String sessionId, String modelId) {
+        return request("session/set_model", AcpJson.setModelParams(mapper, sessionId, modelId))
+                .thenApply(result -> null);
+    }
+
+    /** {@code session/set_mode} — switches the running session's active mode. Result body is ignored. */
+    public CompletableFuture<Void> setMode(String sessionId, String modeId) {
+        return request("session/set_mode", AcpJson.setModeParams(mapper, sessionId, modeId))
+                .thenApply(result -> null);
     }
 
     private CompletableFuture<JsonNode> request(String method, JsonNode params) {
