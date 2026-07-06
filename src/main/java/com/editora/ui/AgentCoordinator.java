@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -11,12 +12,15 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import javafx.application.Platform;
+import javafx.collections.ObservableList;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 
 import com.editora.agent.AcpClient;
 import com.editora.agent.AcpJson;
+import com.editora.config.AgentSessionHistory;
 import com.editora.editor.EditorBuffer;
+import com.editora.git.RelativeTime;
 import com.editora.run.ProgramArgs;
 import org.fxmisc.richtext.CodeArea;
 
@@ -53,6 +57,13 @@ final class AgentCoordinator implements AcpClient.Host {
 
         /** Refreshes the Project tree after the agent wrote a file the editor doesn't have open. */
         void refreshProjectTree();
+
+        /** Records a prompt in {@code sessionId} in the persisted resume history (title set once from
+         *  {@code candidateLabel}; position/timestamp bumped on every call). FX-thread only. */
+        void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt);
+
+        /** The persisted resume history, most-recently-used first (backs the resume picker). */
+        ObservableList<AgentSessionHistory.Entry> sessionHistory();
     }
 
     private final CoordinatorHost host;
@@ -85,7 +96,8 @@ final class AgentCoordinator implements AcpClient.Host {
     /** The chat tool window's content (built lazily; {@code MainController} wraps it in a {@code ToolWindow}). */
     AgentPanel panel() {
         if (panel == null) {
-            panel = new AgentPanel(this::stopTurn, this::newSession, this::pickModel, this::pickMode);
+            panel = new AgentPanel(
+                    this::stopTurn, this::newSession, this::pickModel, this::pickMode, this::resumeSessionPicker);
             panel.setOnSend(this::sendPrompt);
             applyPanelFont();
         }
@@ -114,24 +126,14 @@ final class AgentCoordinator implements AcpClient.Host {
         ifAgent(ops::toggleToolWindow);
     }
 
-    /** {@code agent.newSession}: drop the current conversation and start fresh on the next prompt. */
+    /** {@code agent.newSession}: dispose the current conversation (killing its process tree) and start
+     *  fresh on the next prompt. Reuses {@link #disposeClient()} for a clean teardown — this both fixes
+     *  a process leak (New Session used to only fire {@code session/cancel} and never dispose the old
+     *  {@code AcpClient}/OS process, so it was silently orphaned) and shares one teardown path with resume. */
     void newSession() {
         ifAgent(() -> {
-            AcpClient c = client;
-            String sid = sessionId;
-            if (c != null && sid != null) {
-                c.cancel(sid);
-            }
-            sessionId = null;
-            models = List.of();
-            modes = List.of();
-            currentModelId = null;
-            currentModeId = null;
+            disposeClient();
             panel().clearTranscript();
-            panel().clearPlan();
-            panel().setModelLabel(null);
-            panel().setModeLabel(null);
-            panel().setBusy(false);
             host.setStatus(tr("status.agent.newSession"));
         });
     }
@@ -230,6 +232,9 @@ final class AgentCoordinator implements AcpClient.Host {
     /** Max chars of quoted selection text included in the context header (bounds token cost). */
     private static final int SELECTION_PREVIEW_LIMIT = 200;
 
+    /** Max chars of the first prompt kept as a session's title in the resume history. */
+    private static final int SESSION_LABEL_LIMIT = 80;
+
     /**
      * Sends one prompt turn (the panel blocks re-entry while a turn is running). When
      * {@code Settings.agentIncludeContext} is on, the active buffer's path/cursor/selection is prefixed
@@ -247,9 +252,21 @@ final class AgentCoordinator implements AcpClient.Host {
             panel().appendLine(context);
         }
         String composed = context == null ? text : context + "\n\n" + text;
+        // sessionCwd() reads the active buffer/tabs (FX-thread-only), so it's captured here — before the
+        // async chain, which may resolve on a background thread when a fresh process is spawned.
+        String cwd = sessionCwd().toString();
+        long now = Instant.now().getEpochSecond();
         panel().setBusy(true);
         ensureSession()
-                .thenCompose(sid -> client.prompt(sid, composed))
+                .thenCompose(sid -> {
+                    // Persist for resume as soon as the session exists — before the turn completes, so a
+                    // crash mid-turn still leaves the session resumable. Title (from the first prompt) is
+                    // set once by the store; later prompts only bump ordering/timestamp. rememberSession
+                    // mutates an ObservableList, so it must run on the FX thread regardless of which
+                    // thread this stage completes on.
+                    Platform.runLater(() -> ops.rememberSession(sid, cwd, sessionLabel(text), now));
+                    return client.prompt(sid, composed);
+                })
                 .whenComplete((stopReason, error) -> Platform.runLater(() -> {
                     panel().setBusy(false);
                     if (error != null) {
@@ -260,6 +277,16 @@ final class AgentCoordinator implements AcpClient.Host {
                         panel().appendLine(tr("agent.turnCancelled"));
                     }
                 }));
+    }
+
+    /** Pure: a session's one-line resume-history title from its first prompt — trimmed, newlines
+     *  flattened to spaces, truncated to {@link #SESSION_LABEL_LIMIT} with an ellipsis. */
+    static String sessionLabel(String firstPrompt) {
+        if (firstPrompt == null) {
+            return "";
+        }
+        String flat = firstPrompt.strip().replaceAll("\\s+", " ");
+        return flat.length() > SESSION_LABEL_LIMIT ? flat.substring(0, SESSION_LABEL_LIMIT) + "…" : flat;
     }
 
     /** The active buffer's context header, or null if there is no active editor buffer (e.g. the Welcome
@@ -312,34 +339,140 @@ final class AgentCoordinator implements AcpClient.Host {
         if (c != null && c.isAlive() && sid != null) {
             return CompletableFuture.completedFuture(sid);
         }
-        List<String> command = commandTokens();
         Path cwd = sessionCwd();
-        return CompletableFuture.supplyAsync(
-                        () -> {
-                            AcpClient fresh = new AcpClient(command, cwd, this);
-                            if (!fresh.start()) {
-                                throw new CompletionException(
-                                        new IOException(tr("status.agent.startFailed", command.get(0))));
-                            }
-                            return fresh;
-                        },
-                        lifecycleExec)
+        return spawnClient(cwd)
                 .thenCompose(fresh -> fresh.initialize()
                         .thenCompose(init -> fresh.newSession(cwd))
-                        .thenApply(info -> {
-                            if (info.sessionId() == null) {
-                                fresh.dispose();
-                                throw new CompletionException(new IOException(tr("status.agent.noSession")));
-                            }
-                            client = fresh;
-                            sessionId = info.sessionId();
-                            models = info.models();
-                            modes = info.modes();
-                            currentModelId = info.currentModelId();
-                            currentModeId = info.currentModeId();
-                            Platform.runLater(this::refreshPanelHeader);
-                            return info.sessionId();
-                        }));
+                        .thenApply(info -> adoptSession(fresh, info)));
+    }
+
+    /** Spawns + starts a fresh ACP process (off the FX thread, on {@link #lifecycleExec}); completes
+     *  exceptionally with {@code status.agent.startFailed} if the process won't start. Shared by the
+     *  fresh-session ({@link #ensureSession}) and resume ({@link #resumeSession}) paths. */
+    private CompletableFuture<AcpClient> spawnClient(Path cwd) {
+        List<String> command = commandTokens();
+        return CompletableFuture.supplyAsync(
+                () -> {
+                    AcpClient fresh = new AcpClient(command, cwd, this);
+                    if (!fresh.start()) {
+                        throw new CompletionException(new IOException(tr("status.agent.startFailed", command.get(0))));
+                    }
+                    return fresh;
+                },
+                lifecycleExec);
+    }
+
+    /** Adopts a freshly-initialized session: validates the id, promotes {@code fresh} to the live
+     *  {@link #client}, stores the model/mode catalogs, and refreshes the header. Disposes {@code fresh}
+     *  and throws {@code status.agent.noSession} if the info carries no session id. Returns the session id.
+     *  Shared by {@link #ensureSession} and {@link #resumeSession}. */
+    private String adoptSession(AcpClient fresh, AcpJson.SessionInfo info) {
+        if (info.sessionId() == null) {
+            fresh.dispose();
+            throw new CompletionException(new IOException(tr("status.agent.noSession")));
+        }
+        client = fresh;
+        sessionId = info.sessionId();
+        models = info.models();
+        modes = info.modes();
+        currentModelId = info.currentModelId();
+        currentModeId = info.currentModeId();
+        Platform.runLater(this::refreshPanelHeader);
+        return info.sessionId();
+    }
+
+    /** {@code agent.resumeSession}: opens a picker over the persisted session history to reopen a past
+     *  chat. Palette-gated like {@link #pickModel}/{@link #pickMode}. */
+    void resumeSessionPicker() {
+        ifAgent(() -> {
+            if (ops.sessionHistory().isEmpty()) {
+                host.setStatus(tr("status.agent.noHistory"));
+                return;
+            }
+            QuickOpen<AgentSessionHistory.Entry> picker = new QuickOpen<>(
+                    tr("command.agent.resumeSession"),
+                    tr("palette.agent.resumeSessionPrompt"),
+                    () -> ops.sessionHistory(),
+                    AgentCoordinator::displayLabel,
+                    e -> sessionDetail(e, Instant.now().getEpochSecond()),
+                    this::resumeSession);
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
+    /** Reopens a past chat: tears down the current session, spawns a fresh process, and drives
+     *  {@code session/resume}. The transcript starts empty (ACP resume does not replay history — a known
+     *  v1 limitation); the agent retains full context internally, so the next prompt works normally. */
+    private void resumeSession(AgentSessionHistory.Entry entry) {
+        if (entry == null) {
+            return;
+        }
+        if (entry.sessionId().equals(sessionId)) {
+            host.setStatus(tr("status.agent.resumed", displayLabel(entry)));
+            return;
+        }
+        disposeClient();
+        panel().clearTranscript();
+        panel().setBusy(true);
+        Path cwd = Path.of(entry.cwd());
+        spawnClient(cwd)
+                .thenCompose(fresh -> fresh.initialize()
+                        .thenCompose(init -> fresh.resumeSession(entry.sessionId(), cwd))
+                        .thenApply(info -> adoptSession(fresh, info)))
+                .whenComplete((sid, error) -> Platform.runLater(() -> {
+                    panel().setBusy(false);
+                    if (error != null) {
+                        disposeClient();
+                        host.setStatus(tr(
+                                "status.agent.failed",
+                                String.valueOf(rootCause(error).getMessage())));
+                    } else {
+                        ops.rememberSession(
+                                entry.sessionId(),
+                                entry.cwd(),
+                                entry.label(),
+                                Instant.now().getEpochSecond());
+                        host.setStatus(tr("status.agent.resumed", displayLabel(entry)));
+                    }
+                }));
+    }
+
+    /** A non-blank display title for an entry (falls back to the "Untitled session" placeholder). Pure. */
+    static String displayLabel(AgentSessionHistory.Entry entry) {
+        return entry.label() == null || entry.label().isBlank() ? tr("agent.untitledSession") : entry.label();
+    }
+
+    /** Pure: the picker's secondary line for a session — "<relative time> · <home-collapsed cwd>". */
+    static String sessionDetail(AgentSessionHistory.Entry entry, long nowSeconds) {
+        return relativeTimeLabel(entry.updatedAt(), nowSeconds) + " · " + homeCollapsed(entry.cwd());
+    }
+
+    /** Pure: localizes a {@link RelativeTime} bucket to an {@code agent.time.*} string. */
+    static String relativeTimeLabel(long epochSeconds, long nowSeconds) {
+        RelativeTime.Span span = RelativeTime.of(epochSeconds, nowSeconds);
+        long v = span.value();
+        return switch (span.unit()) {
+            case NOW -> tr("agent.time.now");
+            case MINUTES -> tr("agent.time.minutesAgo", v);
+            case HOURS -> tr("agent.time.hoursAgo", v);
+            case DAYS -> tr("agent.time.daysAgo", v);
+            case WEEKS -> tr("agent.time.weeksAgo", v);
+            case MONTHS -> tr("agent.time.monthsAgo", v);
+            case YEARS -> tr("agent.time.yearsAgo", v);
+        };
+    }
+
+    /** Pure: home-collapses an absolute path for compact display (mirrors the identical private helper
+     *  already duplicated in {@code MainController}/{@code SearchCoordinator}). */
+    static String homeCollapsed(String full) {
+        if (full == null) {
+            return "";
+        }
+        String home = System.getProperty("user.home", "");
+        return !home.isEmpty() && (full.equals(home) || full.startsWith(home + java.io.File.separator))
+                ? "~" + full.substring(home.length())
+                : full;
     }
 
     /** Pushes the current model/mode display state to the panel header (after a fresh session starts). */

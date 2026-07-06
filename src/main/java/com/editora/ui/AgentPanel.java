@@ -40,10 +40,16 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private final Button sendButton = new Button();
     private final Button stopButton = new Button();
     private final Button newSessionButton = new Button();
+    private final Button historyButton = new Button();
     /** Receives the prompt text when the user sends (coordinator → agent). */
     private Consumer<String> onSend;
 
-    public AgentPanel(Runnable onStop, Runnable onNewSession, Runnable onPickModel, Runnable onPickMode) {
+    public AgentPanel(
+            Runnable onStop,
+            Runnable onNewSession,
+            Runnable onPickModel,
+            Runnable onPickMode,
+            Runnable onResumeSession) {
         getStyleClass().add("agent-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(6);
@@ -57,9 +63,11 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         stopButton.setText(tr("agent.stop"));
         stopButton.setDisable(true);
         stopButton.setOnAction(e -> onStop.run());
+        historyButton.setText(tr("agent.history"));
+        historyButton.setOnAction(e -> onResumeSession.run());
         newSessionButton.setText(tr("agent.newSession"));
         newSessionButton.setOnAction(e -> onNewSession.run());
-        HBox header = new HBox(8, status, modelLabel, modeLabel, spacer(), newSessionButton, stopButton);
+        HBox header = new HBox(8, status, modelLabel, modeLabel, spacer(), historyButton, newSessionButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
 
         planBox.setManaged(false);

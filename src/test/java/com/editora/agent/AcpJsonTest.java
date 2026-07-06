@@ -165,6 +165,15 @@ class AcpJsonTest {
     }
 
     @Test
+    void resumeSessionParamsShape() {
+        ObjectNode p = AcpJson.resumeSessionParams(m, "s1", "/home/u/proj");
+        assertEquals("s1", p.get("sessionId").asText());
+        assertEquals("/home/u/proj", p.get("cwd").asText());
+        assertTrue(p.get("mcpServers").isArray());
+        assertEquals(0, p.get("mcpServers").size());
+    }
+
+    @Test
     void unknownUpdateKindIsOtherNeverThrows() throws Exception {
         AcpJson.Update u = AcpJson.parseUpdate(
                 m.readTree("{\"sessionId\":\"s\",\"update\":{\"sessionUpdate\":\"something_new\"}}"));

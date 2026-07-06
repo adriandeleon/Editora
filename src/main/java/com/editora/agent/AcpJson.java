@@ -91,6 +91,17 @@ public final class AcpJson {
         return p;
     }
 
+    /** {@code session/resume}: the session id to reopen, its working directory (absolute), + no
+     *  client-provided MCP servers. The adapter finds the on-disk transcript by id, so a fresh process
+     *  can resume a session created by an already-exited one. */
+    public static ObjectNode resumeSessionParams(ObjectMapper m, String sessionId, String cwd) {
+        ObjectNode p = m.createObjectNode();
+        p.put("sessionId", sessionId);
+        p.put("cwd", cwd);
+        p.set("mcpServers", m.createArrayNode());
+        return p;
+    }
+
     /** {@code session/prompt}: one text content block. */
     public static ObjectNode promptParams(ObjectMapper m, String sessionId, String text) {
         ObjectNode block = m.createObjectNode();

@@ -120,6 +120,22 @@ public final class AcpClient {
                 .thenApply(AcpJson::parseSessionInfo);
     }
 
+    /** {@code session/resume} → the reopened session's model/mode catalogs. The response omits the
+     *  session id (the caller already knows it), so {@code sessionId} is spliced back into the parsed
+     *  {@link AcpJson.SessionInfo}. */
+    public CompletableFuture<AcpJson.SessionInfo> resumeSession(String sessionId, Path sessionCwd) {
+        return request("session/resume", AcpJson.resumeSessionParams(mapper, sessionId, sessionCwd.toString()))
+                .thenApply(result -> {
+                    AcpJson.SessionInfo parsed = AcpJson.parseSessionInfo(result);
+                    return new AcpJson.SessionInfo(
+                            sessionId,
+                            parsed.models(),
+                            parsed.currentModelId(),
+                            parsed.modes(),
+                            parsed.currentModeId());
+                });
+    }
+
     /** {@code session/prompt} → the turn's stop reason (e.g. {@code end_turn}/{@code cancelled}). */
     public CompletableFuture<String> prompt(String sessionId, String text) {
         return request("session/prompt", AcpJson.promptParams(mapper, sessionId, text))
