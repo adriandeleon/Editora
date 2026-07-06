@@ -359,6 +359,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private RecentFiles recentFiles;
     /** Persistent Find-in-Files query history (backs the query combo's dropdown). */
     private com.editora.config.SearchHistory searchHistory;
+    /** Persistent AI Agent chat-session history (backs the resume picker). */
+    private com.editora.config.AgentSessionHistory agentSessionHistory;
     /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
     private WelcomePane welcomePane;
     /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
@@ -874,6 +876,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void setupRecentFiles() {
         recentFiles = new RecentFiles(config.getConfigDir());
         searchHistory = new com.editora.config.SearchHistory(config.getConfigDir());
+        agentSessionHistory = new com.editora.config.AgentSessionHistory(config.getConfigDir());
         searchCoordinator.refreshHistory(); // bind the query combo's dropdown to history
         recentButton.setGraphic(Icons.recent());
         recentButton.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
@@ -2953,6 +2956,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void refreshProjectTree() {
             projectPanel.refreshTree();
+        }
+
+        @Override
+        public void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt) {
+            if (agentSessionHistory != null) {
+                agentSessionHistory.remember(sessionId, cwd, candidateLabel, updatedAt);
+            }
+        }
+
+        @Override
+        public javafx.collections.ObservableList<com.editora.config.AgentSessionHistory.Entry> sessionHistory() {
+            return agentSessionHistory != null
+                    ? agentSessionHistory.getList()
+                    : javafx.collections.FXCollections.observableArrayList();
         }
     });
 
@@ -10171,6 +10188,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("agent.stop", agentCoordinator::stopTurn));
         registry.register(Command.of("agent.selectModel", agentCoordinator::pickModel));
         registry.register(Command.of("agent.selectMode", agentCoordinator::pickMode));
+        registry.register(Command.of("agent.resumeSession", agentCoordinator::resumeSessionPicker));
         registry.register(Command.of(
                 "view.toggleAgent",
                 () -> toggleSetting(

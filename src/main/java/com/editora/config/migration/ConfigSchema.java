@@ -2,6 +2,7 @@ package com.editora.config.migration;
 
 import java.util.Map;
 
+import com.editora.config.AgentSessionHistory;
 import com.editora.config.BookmarkStore;
 import com.editora.config.BreakpointStore;
 import com.editora.config.ConnectionStore;
@@ -114,6 +115,7 @@ public enum ConfigSchema {
     // v1 → v2 added the per-revision label (additive; absent rows default to "").
     HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     SEARCH_HISTORY(SearchHistory.SCHEMA_VERSION, 1, Map.of()),
+    AGENT_SESSIONS(AgentSessionHistory.SCHEMA_VERSION, 1, Map.of()),
     MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;
