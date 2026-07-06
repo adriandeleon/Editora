@@ -23,8 +23,14 @@ release:
     branch: master
     tagName: 'v{{projectVersion}}'
     releaseName: 'Editora {{projectVersion}}'
-    # Re-running on the same tag replaces the assets instead of failing.
-    overwrite: true
+    # GitHub's Immutable Releases (GA Oct 2025) reject asset uploads once a release is published, so
+    # JReleaser's default create-then-upload-loop flow 422s on every asset ("Cannot upload assets to an
+    # immutable release"). This makes JReleaser create the release as a draft, upload every asset while
+    # it's still a (mutable) draft, then publish — the flow GitHub's own docs prescribe for immutable repos.
+    # Mutually exclusive with `overwrite` (JReleaser itself rejects the combination: an immutable release
+    # can't be overwritten by definition) — a re-run on the same tag now needs the prior release deleted
+    # first (`gh release delete v<version>`), not overwritten in place.
+    immutableRelease: true
     # Tags like v1.0.0-rc1 are published as pre-releases.
     prerelease:
       pattern: '.*-rc.*'

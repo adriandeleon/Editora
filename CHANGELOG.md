@@ -29,6 +29,15 @@ First tagged release.
   "Could not checkout branch main" even after every platform's installer build succeeded.
   `jreleaser.yml`'s `release.github` now sets `branch: master` explicitly.
 
+- **Release job failed with "Cannot upload assets to an immutable release."** GitHub's Immutable Releases
+  feature (GA October 2025) rejects any asset upload once a release is published, but JReleaser's default
+  flow publishes the release *before* uploading each installer — so every asset upload 422'd and the whole
+  release failed after all five platform builds had already succeeded. `jreleaser.yml`'s `release.github`
+  now sets `immutableRelease: true`, which makes JReleaser create the release as a draft, upload every
+  asset while it's still a mutable draft, then publish — the flow GitHub's own docs prescribe. This is
+  mutually exclusive with the previous `overwrite: true` (removed), so re-running on the same tag now
+  needs the prior release deleted first (`gh release delete v<version>`) rather than overwritten in place.
+
 - **AI connection check no longer hangs on a slow endpoint.** The Settings → AI Actions health check is
   now a **non-streaming** request whose 30 s timeout bounds the *entire* exchange — so a local server
   that sends response headers immediately but is slow to produce the first token (LM Studio warming up a
