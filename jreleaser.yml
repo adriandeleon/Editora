@@ -18,6 +18,9 @@ release:
   github:
     owner: adriandeleon
     name: Editora
+    # JReleaser defaults to "main" when unset; this repo's default branch is "master" — without this,
+    # the release job fails with "Could not checkout branch main".
+    branch: master
     tagName: 'v{{projectVersion}}'
     releaseName: 'Editora {{projectVersion}}'
     # Re-running on the same tag replaces the assets instead of failing.

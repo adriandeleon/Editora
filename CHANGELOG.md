@@ -24,6 +24,10 @@ First tagged release.
   app's own `--version`/About dialog all correctly show `0.9.0`. Linux and Windows are untouched (jpackage
   accepts a leading-zero version there).
 
+- **Release job failed to check out branch `main`.** JReleaser defaults to a branch named `main` when none
+  is configured; this repo's default branch is `master`, so the final "Release" job failed with
+  "Could not checkout branch main" even after every platform's installer build succeeded.
+  `jreleaser.yml`'s `release.github` now sets `branch: master` explicitly.
 
 - **AI connection check no longer hangs on a slow endpoint.** The Settings → AI Actions health check is
   now a **non-streaming** request whose 30 s timeout bounds the *entire* exchange — so a local server
