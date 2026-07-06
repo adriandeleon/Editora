@@ -1080,16 +1080,17 @@
                  instead, which every text/source file conforms to. -->
             <build>
                 <plugins>
-                    <!-- jpackage's app-version flag sets CFBundleVersion/CFBundleShortVersionString on
-                         macOS, and jpackage REJECTS a version whose first component is zero/negative ("The
-                         first number in an app-version cannot be zero or negative"), so a pre-1.0
-                         project.version like 0.9.0 fails both the jpackage-maven-plugin app-image build
-                         below AND aot_build.java's later DMG-wrap invocation. Bump a leading "0." to "1."
-                         (0.9.0 to 1.9.0) into jpackage.appVersion, used by both instead of
-                         ${project.version} directly; cosmetic macOS bundle metadata only, the public
-                         release version (tag, CHANGELOG, About dialog, DMG filename via the CI "Resolve
-                         version" step) is unaffected. A version already >=1.x (no leading "0.") passes
-                         through unchanged. -->
+                    <!-- jpackage's own app-version flag REJECTS a version whose first component is
+                         zero/negative ("The first number in an app-version cannot be zero or negative"),
+                         on BOTH the jpackage-maven-plugin app-image build below AND aot_build.java's later
+                         DMG-wrap invocation — so a pre-1.0 project.version like 0.9.0 fails both. Bump a
+                         leading "0." to "1." (0.9.0 to 1.9.0) into jpackage.appVersion, passed to both
+                         jpackage calls instead of ${project.version} directly (a version already >=1.x
+                         passes through unchanged). This placeholder only satisfies jpackage's CLI
+                         validation — aot_build.java's fixMacBundleMetadata immediately rewrites the built
+                         app's Info.plist CFBundleVersion/CFBundleShortVersionString back to the TRUE
+                         ${project.version} (passed separately, see the aot-train-and-deliver execution
+                         below) before the DMG wrap runs, so the delivered app never shows the placeholder. -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-antrun-plugin</artifactId>
@@ -1357,6 +1358,7 @@
                                         <argument>${project.build.directory}/aot-image</argument>
                                         <argument>Editora</argument>
                                         <argument>${jpackage.appVersion}</argument>
+                                        <argument>${project.version}</argument>
                                         <argument>${jpackage.type}</argument>
                                         <argument>${jpackage.icon}</argument>
                                         <argument>${project.build.directory}/dist</argument>

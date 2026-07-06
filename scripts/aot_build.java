@@ -14,8 +14,15 @@
 // -XX:AOTCache file degrades gracefully to a normal, uncached start). Only the installer wrap, the
 // actual deliverable, fails the build on error.
 //
-// Args: <imageDir> <appName> <appVersion> <installerType> <iconPath|-> <destDir> <moduleMain>
-//   Run via:  java scripts/aot_build.java target/aot-image Editora 1.0.0 DMG branding/editora.icns target/dist com.editora/com.editora.App
+// Args: <imageDir> <appName> <appVersion> <publicVersion> <installerType> <iconPath|-> <destDir> <moduleMain>
+//   Run via:  java scripts/aot_build.java target/aot-image Editora 1.0.0 1.0.0 DMG branding/editora.icns target/dist com.editora/com.editora.App
+//
+// <appVersion> is what's handed to jpackage's own --app-version flag on BOTH jpackage invocations (the
+// app-image build, already done by the time this runs, and this file's own DMG/MSI/DEB wrap below) —
+// jpackage rejects a version whose first number is zero/negative, so on a pre-1.0 <publicVersion> (e.g.
+// 0.9.0) the caller (pom.xml's os-mac profile) passes a bumped placeholder here (e.g. 1.9.0) instead.
+// <publicVersion> is the TRUE release version; on macOS it's rewritten back into the app's Info.plist
+// (see fixMacBundleMetadata) before the DMG wrap, so the placeholder never reaches the delivered app.
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -26,17 +33,19 @@ import java.util.stream.Stream;
 public class aot_build {
 
     public static void main(String[] rawArgs) throws Exception {
-        if (rawArgs.length < 7) {
-            System.err.println("[aot] usage: imageDir appName appVersion installerType iconPath destDir moduleMain");
+        if (rawArgs.length < 8) {
+            System.err.println(
+                    "[aot] usage: imageDir appName appVersion publicVersion installerType iconPath destDir moduleMain");
             System.exit(2);
         }
         Path imageDir   = Path.of(rawArgs[0]);
         String appName  = rawArgs[1];
         String appVer   = rawArgs[2];
-        String type     = rawArgs[3];
-        String icon     = rawArgs[4];
-        Path destDir    = Path.of(rawArgs[5]);
-        String module   = rawArgs[6];
+        String publicVer = rawArgs[3];
+        String type     = rawArgs[4];
+        String icon     = rawArgs[5];
+        Path destDir    = Path.of(rawArgs[6]);
+        String module   = rawArgs[7];
 
         if (!Files.isDirectory(imageDir)) {
             System.err.println("[aot] image dir not found: " + imageDir + " — skipping AOT step");
@@ -78,11 +87,14 @@ public class aot_build {
         Files.createDirectories(destDir);
         Path imageRoot = imageRoot(imageDir, appName, win); // Editora.app (mac) or Editora dir
 
-        // macOS "Open With": declare the SYSTEM UTIs public.text / public.source-code in the .app's
-        // Info.plist so Finder offers Editora for any text/source file (see fixMacDocumentTypes).
+        // macOS "Open With" + bundle version (see fixMacBundleMetadata): declares the SYSTEM UTIs
+        // public.text / public.source-code so Finder offers Editora for any text/source file, and
+        // rewrites the Info.plist version back to the true publicVer (jpackage's --app-version rejects a
+        // pre-1.0 version, so appVer may be a bumped placeholder baked into the plist by the app-image
+        // build above).
         boolean mac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
         if (mac) {
-            fixMacDocumentTypes(imageRoot);
+            fixMacBundleMetadata(imageRoot, publicVer);
         }
 
         // Ensure the Linux app image carries OUR icon. The jpackage app-image phase can leave the
@@ -217,25 +229,41 @@ public class aot_build {
     // ---- helpers ----
 
     /**
-     * Rewrites the macOS app image's Info.plist so Editora appears in Finder's "Open With" menu for text
-     * and source files. jpackage's --file-associations would declare per-extension CUSTOM UTIs
+     * Rewrites the macOS app image's Info.plist for two things, sharing one re-codesign:
+     *
+     * <p><b>1. "Open With".</b> Declares CFBundleDocumentTypes so Editora appears in Finder's "Open With"
+     * menu for text/source files. jpackage's --file-associations would declare per-extension CUSTOM UTIs
      * (com.editora.txt, …) conforming to public.data — but Launch Services never offers an app for a file
      * already typed as a system UTI (a .txt is public.plain-text, which does not conform to com.editora.txt),
-     * so it wouldn't show up. Instead we declare a single CFBundleDocumentTypes entry using the SYSTEM UTIs
-     * public.text + public.source-code: every text/source file conforms to one of those, so the app becomes
-     * an eligible (Alternate-rank, so non-default) editor for all of them. Best-effort — a PlistBuddy failure
-     * logs and continues (the app still runs, just without the association).
+     * so it wouldn't show up. Instead we declare a single entry using the SYSTEM UTIs public.text +
+     * public.source-code: every text/source file conforms to one of those, so the app becomes an eligible
+     * (Alternate-rank, so non-default) editor for all of them.
      *
-     * <p><b>Must re-codesign afterward.</b> jpackage ad-hoc-signs the .app during the app-image build (before
-     * this runs); editing Info.plist invalidates that seal (its hash is part of the signature), and macOS then
-     * rejects the app as tampered ("could not verify … free of malware", spctl: "invalid Info.plist") and
-     * won't launch it. So we re-run `codesign --force --deep --sign -` to re-seal the bundle with the modified
-     * plist. (arm64 apps must be signed to run at all; ad-hoc is fine for a locally-built, un-notarized app.)
+     * <p><b>2. The true bundle version.</b> jpackage's own --app-version flag rejects a version whose first
+     * number is zero/negative ("The first number in an app-version cannot be zero or negative"), on BOTH
+     * the app-image build (already done by the time this runs) and this file's own DMG/MSI/DEB wrap below
+     * — so on a pre-1.0 publicVersion (e.g. 0.9.0) the app is necessarily built with a bumped placeholder
+     * (e.g. 1.9.0, computed by pom.xml's os-mac profile) baked into CFBundleVersion/
+     * CFBundleShortVersionString. This rewrites both back to the true publicVersion, so Finder "Get Info" /
+     * mdls / System Settings show the real release number, not the jpackage-safe placeholder. Verified
+     * empirically that jpackage's DMG-wrap (`--app-image <path> --app-version <placeholder>`) does NOT
+     * re-touch an already-correct Info.plist — it only uses --app-version for its own CLI validation and
+     * for naming the raw .dmg file (which the release workflow renames anyway) — so setting the true
+     * version here, before wrapInstaller runs below, survives untouched into the delivered installer's
+     * embedded .app.
+     *
+     * <p>Each half is best-effort — a PlistBuddy failure logs and continues (the app still runs, just
+     * without that fix). <b>Must re-codesign afterward</b> if either half succeeded: jpackage ad-hoc-signs
+     * the .app during the app-image build (before this runs); editing Info.plist invalidates that seal (its
+     * hash is part of the signature), and macOS then rejects the app as tampered ("could not verify … free
+     * of malware", spctl: "invalid Info.plist") and won't launch it. So we re-run
+     * `codesign --force --deep --sign -` to re-seal the bundle with the modified plist. (arm64 apps must be
+     * signed to run at all; ad-hoc is fine for a locally-built, un-notarized app.)
      */
-    private static void fixMacDocumentTypes(Path imageRoot) {
+    private static void fixMacBundleMetadata(Path imageRoot, String publicVersion) {
         Path plist = imageRoot.resolve("Contents").resolve("Info.plist");
         if (!Files.isRegularFile(plist)) {
-            System.out.println("[aot] no Info.plist at " + plist + " — skipping Open-With association");
+            System.out.println("[aot] no Info.plist at " + plist + " — skipping Open-With association + version fix");
             return;
         }
         String pb = "/usr/libexec/PlistBuddy";
@@ -243,7 +271,7 @@ public class aot_build {
         runQuiet(pb, "-c", "Delete :UTExportedTypeDeclarations", plist.toString());
         runQuiet(pb, "-c", "Delete :UTImportedTypeDeclarations", plist.toString());
         runQuiet(pb, "-c", "Delete :CFBundleDocumentTypes", plist.toString());
-        boolean ok = runQuiet(
+        boolean docTypesOk = runQuiet(
                 pb,
                 "-c", "Add :CFBundleDocumentTypes array",
                 "-c", "Add :CFBundleDocumentTypes:0 dict",
@@ -254,16 +282,25 @@ public class aot_build {
                 "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:0 string public.text",
                 "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:1 string public.source-code",
                 plist.toString());
-        if (!ok) {
-            System.out.println("[aot] Open-With: PlistBuddy edit failed — app ships without the file association");
-            return;
+        System.out.println(docTypesOk
+                ? "[aot] Open-With: declared CFBundleDocumentTypes (public.text, public.source-code)"
+                : "[aot] Open-With: PlistBuddy edit failed — app ships without the file association");
+        boolean versionOk = runQuiet(
+                pb,
+                "-c", "Set :CFBundleShortVersionString " + publicVersion,
+                "-c", "Set :CFBundleVersion " + publicVersion,
+                plist.toString());
+        System.out.println(versionOk
+                ? "[aot] bundle version -> " + publicVersion
+                : "[aot] bundle version rewrite FAILED — the app may show the internal jpackage placeholder version");
+        if (!docTypesOk && !versionOk) {
+            return; // nothing changed — the pre-existing signature is still valid
         }
-        System.out.println("[aot] Open-With: declared CFBundleDocumentTypes (public.text, public.source-code)");
-        // Re-seal the bundle: the plist edit broke jpackage's ad-hoc signature, which macOS would reject.
+        // Re-seal the bundle: either plist edit broke jpackage's ad-hoc signature, which macOS would reject.
         boolean signed = runQuiet("codesign", "--force", "--deep", "--sign", "-", imageRoot.toString());
         System.out.println(signed
-                ? "[aot] Open-With: re-codesigned the app image (ad-hoc)"
-                : "[aot] Open-With: codesign re-seal FAILED — the app may be rejected by Gatekeeper");
+                ? "[aot] re-codesigned the app image (ad-hoc)"
+                : "[aot] codesign re-seal FAILED — the app may be rejected by Gatekeeper");
     }
 
     /** Runs a command, discarding output; returns true on exit 0. Never throws. */
