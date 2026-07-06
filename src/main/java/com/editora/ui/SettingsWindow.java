@@ -1474,6 +1474,14 @@ public class SettingsWindow {
         this.onMacrosChanged = handler == null ? () -> {} : handler;
     }
 
+    /** Re-reads the Macros page's list from the store — called after a macro changes from outside this
+     *  window (e.g. a recording auto-saves "unnamed macro" on F4), so an already-open Settings window
+     *  reflects it live instead of only on the next time the page is built. Harmless if never opened —
+     *  {@link #macroItems} is a plain field, not lazily created with the page. */
+    public void refreshMacrosList() {
+        macroItems.setAll(config.getMacroStore().macros);
+    }
+
     private VBox macrosPage() {
         VBox p = page(tr("settings.cat.macros"));
         row(
@@ -1771,6 +1779,17 @@ public class SettingsWindow {
     private void deleteMacro(ListView<com.editora.macro.Macro> list) {
         com.editora.macro.Macro sel = list.getSelectionModel().getSelectedItem();
         if (sel == null) {
+            return;
+        }
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("settings.macro.deleteConfirm", sel.name()),
+                ButtonType.OK,
+                ButtonType.CANCEL);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("settings.macro.deleteConfirmTitle"));
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
         com.editora.config.MacroStore store = config.getMacroStore();

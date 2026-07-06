@@ -9780,9 +9780,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     // --- Keyboard macros (record / replay / save / run): see MacroCoordinator ---
 
     /** Drops stale {@code macro.run.*} commands and re-registers the current saved set; called per window by
-     *  {@link WindowManager}'s macros broadcast. Delegates to the coordinator. */
+     *  {@link WindowManager}'s macros broadcast. Delegates to the coordinator, and refreshes this window's
+     *  Settings → Macros list too (so an already-open Settings window shows a just-recorded macro live). */
     void refreshSavedMacroCommands() {
         macroCoordinator.refreshCommands();
+        settingsWindow.refreshMacrosList();
     }
 
     /** After the saved-macro set changes, re-register the synthetic commands in every open window. */
