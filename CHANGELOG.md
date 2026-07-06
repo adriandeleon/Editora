@@ -7,21 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-07-06
+## [0.9.1] - 2026-07-06
 
-First tagged release.
+First tagged release. (`v0.9.0` was cut and pushed first, but a JReleaser misconfiguration published it
+as an immutable GitHub Release before the asset uploads failed; GitHub permanently reserves a tag once
+it has backed an immutable release, even after both the release and the tag are deleted, so `v0.9.0`
+itself can never be reused on this repository — see the fixes below. This release ships as `0.9.1`
+instead.)
 
 ### Fixed
 
 - **macOS release build failure on a pre-1.0 version.** jpackage rejects an `--app-version` whose first
-  number is zero or negative, so a `0.x.y` `pom.xml` version (like this release's `0.9.0`) failed the
+  number is zero or negative, so a `0.x.y` `pom.xml` version (like this release's `0.9.1`) failed the
   macOS legs of the release build with "The first number in an app-version cannot be zero or negative" —
   on both the app-image build *and* the DMG wrap step, since jpackage enforces the rule on every
   invocation. The macOS build now passes jpackage a bumped placeholder (a leading `0.` to `1.`, e.g.
-  `1.9.0`) purely to satisfy that CLI check, then immediately rewrites the built app's `Info.plist`
+  `1.9.1`) purely to satisfy that CLI check, then immediately rewrites the built app's `Info.plist`
   (`CFBundleVersion`/`CFBundleShortVersionString`) back to the true version before wrapping the DMG — so
   the placeholder never reaches the delivered app: Finder "Get Info", `mdls`, System Settings, and the
-  app's own `--version`/About dialog all correctly show `0.9.0`. Linux and Windows are untouched (jpackage
+  app's own `--version`/About dialog all correctly show `0.9.1`. Linux and Windows are untouched (jpackage
   accepts a leading-zero version there).
 
 - **Release job failed to check out branch `main`.** JReleaser defaults to a branch named `main` when none
