@@ -81,9 +81,18 @@ computes a bundle-metadata-only `jpackage.appVersion` via a `maven-antrun-plugin
 `loadresource`/`propertyresource`/`tokenfilter replaceregex`, `initialize` phase, `exportAntProperties`)
 that bumps a leading `0.` to `1.` (`0.9.0`→`1.9.0`); `os-windows`/`os-linux` just alias it to
 `${project.version}`. Both jpackage invocations — the `jpackage-app-image` execution and
-`aot_build.java`'s later DMG-wrap call — read `${jpackage.appVersion}`, not `${project.version}`, so the
-in-app `--version`/About dialog and the CI-renamed installer filename (via the `Resolve version` step
-above) stay the real semver regardless. A final job
+`aot_build.java`'s later DMG-wrap call — read `${jpackage.appVersion}` for their `--app-version` flag
+(confirmed empirically: the DMG-wrap bundler enforces the same zero/negative-first-number rule even in
+`--app-image <path>` mode, so the placeholder is unavoidable on *both* calls). But the placeholder must
+never reach the delivered app: `aot_build.java`'s **`fixMacBundleMetadata`** (which already rewrites
+`CFBundleDocumentTypes` for "Open With" — see below) also rewrites `CFBundleVersion`/
+`CFBundleShortVersionString` back to the TRUE version (passed as a separate `publicVersion` argument,
+`${project.version}`, distinct from the `appVersion` placeholder) right after the app-image build,
+*before* the DMG wrap runs — confirmed empirically that jpackage's DMG-wrap does **not** re-touch an
+already-correct `Info.plist` (it only uses `--app-version` for its own CLI validation and to name the raw
+`.dmg` file, which the `Resolve version`-based rename above replaces anyway), so the delivered `.app`'s
+Finder "Get Info" / `mdls` / System Settings, plus the in-app `--version`/About dialog, all show the real
+semver — never the placeholder. A final job
 hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) which creates the
 GitHub release with all installers + fat jars + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
 build (the `dist` profile is reused as-is) and there is **no `pom.xml`/Maven change**, so the normal
