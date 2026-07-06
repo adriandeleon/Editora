@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 58;
+    public static final int SCHEMA_VERSION = 59;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -202,6 +202,10 @@ public class Settings {
     private boolean agentSupport = false;
     /** The ACP agent command (tokenized, quote-aware); blank = {@code claude-code-acp} on PATH. */
     private String agentCommand = "";
+    /** Prefix each agent prompt with a one-line "Context: &lt;path&gt;, cursor at line N[, selected:
+     *  &quot;…&quot;]" header (not shown as if the user typed it) so the agent knows the active buffer
+     *  without asking: on by default. */
+    private boolean agentIncludeContext = true;
     /** Direct-API AI actions (commit-message generation, explain/rewrite selection): off by default. */
     private boolean aiSupport = false;
     /** The Anthropic model id for the AI actions; blank = the built-in default (claude-opus-4-8). */
@@ -503,6 +507,14 @@ public class Settings {
 
     public void setAgentCommand(String agentCommand) {
         this.agentCommand = agentCommand;
+    }
+
+    public boolean isAgentIncludeContext() {
+        return agentIncludeContext;
+    }
+
+    public void setAgentIncludeContext(boolean agentIncludeContext) {
+        this.agentIncludeContext = agentIncludeContext;
     }
 
     public boolean isAiSupport() {

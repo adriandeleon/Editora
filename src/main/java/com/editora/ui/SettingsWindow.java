@@ -275,6 +275,7 @@ public class SettingsWindow {
     private CheckBox mcpCheck;
     private CheckBox agentCheck;
     private TextField agentCommandField;
+    private CheckBox agentIncludeContextCheck;
     private CheckBox aiCheck;
     private TextField aiModelField;
     private TextField aiApiKeyField;
@@ -1008,6 +1009,11 @@ public class SettingsWindow {
         agentCommandField.setPromptText("claude-code-acp");
         agentCommandField.textProperty().addListener((obs, was, now) -> {
             config.getSettings().setAgentCommand(now);
+            apply();
+        });
+        agentIncludeContextCheck = new CheckBox(tr("settings.agent.includeContext"));
+        agentIncludeContextCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAgentIncludeContext(now);
             apply();
         });
 
@@ -3592,6 +3598,12 @@ public class SettingsWindow {
                 null,
                 exePathRow(tr("settings.agent.command"), agentCommandField),
                 "ai agent acp command executable claude-code-acp path");
+        row(
+                p,
+                Category.AGENT,
+                null,
+                agentIncludeContextCheck,
+                "ai agent acp context cursor line selection file attach prompt");
         Label hint = note(tr("settings.agent.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
@@ -5054,6 +5066,7 @@ public class SettingsWindow {
             mcpCheck.setSelected(settings.isMcpSupport());
             agentCheck.setSelected(settings.isAgentSupport());
             agentCommandField.setText(settings.getAgentCommand());
+            agentIncludeContextCheck.setSelected(settings.isAgentIncludeContext());
             aiCheck.setSelected(settings.isAiSupport());
             aiModelField.setText(settings.getAiModel());
             aiApiKeyField.setText(settings.getAiApiKey());

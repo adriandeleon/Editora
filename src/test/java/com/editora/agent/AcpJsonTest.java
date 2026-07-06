@@ -90,9 +90,78 @@ class AcpJsonTest {
     void parsesPlanEntries() throws Exception {
         AcpJson.Update u = AcpJson.parseUpdate(
                 m.readTree("{\"sessionId\":\"s\",\"update\":{\"sessionUpdate\":\"plan\",\"entries\":"
-                        + "[{\"content\":\"step one\"},{\"content\":\"step two\"}]}}"));
+                        + "[{\"content\":\"step one\",\"status\":\"completed\"},"
+                        + "{\"content\":\"step two\",\"status\":\"in_progress\"},"
+                        + "{\"content\":\"step three\"}]}}"));
         assertEquals(AcpJson.UpdateKind.PLAN, u.kind());
-        assertEquals("step one\nstep two", u.text());
+        assertEquals("step one\nstep two\nstep three", u.text());
+        assertEquals(3, u.planEntries().size());
+        assertEquals(
+                new AcpJson.PlanEntry("step one", "completed"), u.planEntries().get(0));
+        assertEquals(
+                new AcpJson.PlanEntry("step two", "in_progress"),
+                u.planEntries().get(1));
+        // a missing "status" field defaults to empty string (textOrEmpty semantics), never null
+        assertEquals(new AcpJson.PlanEntry("step three", ""), u.planEntries().get(2));
+    }
+
+    @Test
+    void nonPlanUpdatesHaveEmptyPlanEntries() throws Exception {
+        AcpJson.Update u = AcpJson.parseUpdate(m.readTree("{\"sessionId\":\"s1\",\"update\":{\"sessionUpdate\":"
+                + "\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"hi\"}}}"));
+        assertEquals(List.of(), u.planEntries());
+    }
+
+    @Test
+    void parsesModeChangedUpdate() throws Exception {
+        AcpJson.Update u = AcpJson.parseUpdate(
+                m.readTree(
+                        "{\"sessionId\":\"s\",\"update\":{\"sessionUpdate\":\"current_mode_update\",\"currentModeId\":\"plan\"}}"));
+        assertEquals(AcpJson.UpdateKind.MODE_CHANGED, u.kind());
+        assertEquals("plan", u.text());
+    }
+
+    @Test
+    void parsesSessionInfoModelsAndModes() throws Exception {
+        JsonNode result = m.readTree("{\"sessionId\":\"s1\","
+                + "\"models\":{\"currentModelId\":\"opus\",\"availableModels\":["
+                + "{\"modelId\":\"opus\",\"name\":\"Claude Opus\",\"description\":\"Most capable\"},"
+                + "{\"modelId\":\"sonnet\",\"name\":\"Claude Sonnet\",\"description\":\"Balanced\"}]},"
+                + "\"modes\":{\"currentModeId\":\"default\",\"availableModes\":["
+                + "{\"id\":\"default\",\"name\":\"Default\",\"description\":\"Standard behavior\"},"
+                + "{\"id\":\"plan\",\"name\":\"Plan Mode\",\"description\":\"Planning, no execution\"}]}}");
+        AcpJson.SessionInfo info = AcpJson.parseSessionInfo(result);
+        assertEquals("s1", info.sessionId());
+        assertEquals("opus", info.currentModelId());
+        assertEquals(2, info.models().size());
+        assertEquals(
+                new AcpJson.ModelInfo("opus", "Claude Opus", "Most capable"),
+                info.models().get(0));
+        assertEquals("default", info.currentModeId());
+        assertEquals(2, info.modes().size());
+        assertEquals(
+                new AcpJson.ModeInfo("plan", "Plan Mode", "Planning, no execution"),
+                info.modes().get(1));
+    }
+
+    @Test
+    void parseSessionInfoIsNullSafe() {
+        AcpJson.SessionInfo info = AcpJson.parseSessionInfo(null);
+        assertNull(info.sessionId());
+        assertEquals(List.of(), info.models());
+        assertNull(info.currentModelId());
+        assertEquals(List.of(), info.modes());
+        assertNull(info.currentModeId());
+    }
+
+    @Test
+    void setModelAndSetModeParamsShape() {
+        ObjectNode modelParams = AcpJson.setModelParams(m, "s1", "opus");
+        assertEquals("s1", modelParams.get("sessionId").asText());
+        assertEquals("opus", modelParams.get("modelId").asText());
+        ObjectNode modeParams = AcpJson.setModeParams(m, "s1", "plan");
+        assertEquals("s1", modeParams.get("sessionId").asText());
+        assertEquals("plan", modeParams.get("modeId").asText());
     }
 
     @Test

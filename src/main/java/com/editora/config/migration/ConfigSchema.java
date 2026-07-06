@@ -99,7 +99,8 @@ public enum ConfigSchema {
                             ConfigMigrations::identity), // v54→55: + aiInlineCompletion/aiCompletionModel (additive)
                     Map.entry(55, (Migration) ConfigMigrations::identity), // v55→56: + todoGroupBy (additive)
                     Map.entry(56, (Migration) ConfigMigrations::identity), // v56→57: + aiProvider/aiEndpoint (additive)
-                    Map.entry(57, (Migration) ConfigMigrations::identity))), // v57→58: + TODO part colors (additive)
+                    Map.entry(57, (Migration) ConfigMigrations::identity), // v57→58: + TODO part colors (additive)
+                    Map.entry(58, (Migration) ConfigMigrations::identity))), // v58→59: + agentIncludeContext (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

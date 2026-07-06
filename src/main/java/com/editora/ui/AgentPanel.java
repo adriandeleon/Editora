@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 import javafx.geometry.Insets;
@@ -12,6 +13,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+
+import com.editora.agent.AcpJson;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -29,6 +32,9 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 400_000;
 
     private final Label status = new Label();
+    private final Label modelLabel = new Label();
+    private final Label modeLabel = new Label();
+    private final VBox planBox = new VBox(2);
     private final TextArea transcript = new TextArea();
     private final TextArea input = new TextArea();
     private final Button sendButton = new Button();
@@ -37,20 +43,27 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     /** Receives the prompt text when the user sends (coordinator → agent). */
     private Consumer<String> onSend;
 
-    public AgentPanel(Runnable onStop, Runnable onNewSession) {
+    public AgentPanel(Runnable onStop, Runnable onNewSession, Runnable onPickModel, Runnable onPickMode) {
         getStyleClass().add("agent-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(6);
         setPadding(new Insets(6));
 
         status.getStyleClass().add("agent-status");
+        modelLabel.getStyleClass().add("agent-header-label");
+        modelLabel.setOnMouseClicked(e -> onPickModel.run());
+        modeLabel.getStyleClass().add("agent-header-label");
+        modeLabel.setOnMouseClicked(e -> onPickMode.run());
         stopButton.setText(tr("agent.stop"));
         stopButton.setDisable(true);
         stopButton.setOnAction(e -> onStop.run());
         newSessionButton.setText(tr("agent.newSession"));
         newSessionButton.setOnAction(e -> onNewSession.run());
-        HBox header = new HBox(8, status, spacer(), newSessionButton, stopButton);
+        HBox header = new HBox(8, status, modelLabel, modeLabel, spacer(), newSessionButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
+
+        planBox.setManaged(false);
+        planBox.setVisible(false);
 
         transcript.setEditable(false);
         transcript.setWrapText(true);
@@ -75,7 +88,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         HBox.setHgrow(input, Priority.ALWAYS);
 
         VBox.setVgrow(transcript, Priority.ALWAYS);
-        getChildren().addAll(header, transcript, inputRow);
+        getChildren().addAll(header, planBox, transcript, inputRow);
         setBusy(false);
         status.setText(tr("agent.idle"));
     }
@@ -132,6 +145,48 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         stopButton.setDisable(!busy);
         sendButton.setDisable(busy);
         status.setText(tr(busy ? "agent.running" : "agent.idle"));
+    }
+
+    /** Sets the model-picker label's text (e.g. "Model: Claude Opus"); {@code null}/blank shows a placeholder. */
+    public void setModelLabel(String name) {
+        modelLabel.setText(tr("agent.modelLabel", name == null || name.isEmpty() ? "—" : name));
+    }
+
+    /** Sets the mode-picker label's text (e.g. "Mode: Plan"); {@code null}/blank shows a placeholder. */
+    public void setModeLabel(String name) {
+        modeLabel.setText(tr("agent.modeLabel", name == null || name.isEmpty() ? "—" : name));
+    }
+
+    /** Renders the agent's current plan as a checklist (one line per entry, status glyph prefixed).
+     *  Each {@code plan} update is a full replacement, never incremental, so this replaces the whole
+     *  checklist wholesale rather than appending. */
+    public void setPlan(List<AcpJson.PlanEntry> entries) {
+        planBox.getChildren().clear();
+        for (AcpJson.PlanEntry e : entries) {
+            Label line = new Label(glyphFor(e.status()) + " " + e.content());
+            line.getStyleClass()
+                    .add("plan-entry-" + (e.status() == null || e.status().isEmpty() ? "pending" : e.status()));
+            line.setWrapText(true);
+            planBox.getChildren().add(line);
+        }
+        boolean show = !entries.isEmpty();
+        planBox.setManaged(show);
+        planBox.setVisible(show);
+    }
+
+    /** Clears the plan checklist (a new session starts with no plan shown). */
+    public void clearPlan() {
+        setPlan(List.of());
+    }
+
+    /** The checkbox-style glyph for a plan entry's status. Package-private + static: pure, no FX toolkit
+     *  needed, so it's directly unit-tested. */
+    static String glyphFor(String status) {
+        return switch (status == null ? "" : status) {
+            case "completed" -> "☑";
+            case "in_progress" -> "◐";
+            default -> "☐"; // "pending" and any unrecognized status
+        };
     }
 
     @Override
