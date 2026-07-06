@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-06
+
+First tagged release.
+
 ### Fixed
 
 - **AI connection check no longer hangs on a slow endpoint.** The Settings → AI Actions health check is

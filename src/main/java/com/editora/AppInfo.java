@@ -11,7 +11,7 @@ import java.util.Properties;
 public final class AppInfo {
 
     public static final String NAME = "Editora";
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = "0.9.0";
     /** Project home page (the website's custom domain). */
     public static final String HOMEPAGE = "https://editora-project.dev";
     /** Copyright notice (matches the bundled {@code LICENSE} file). */
