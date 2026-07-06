@@ -74,7 +74,16 @@ fat jar via `-Pfatjar` (`Editora-<version>-<target>.jar`). Installers are rename
 `Editora-<version>-<target>.<ext>` per target — one consistent `Editora-<version>-<target>` prefix
 across all artifacts (jpackage's DMG/MSI names omit the version + arch; the
 version comes from a `Resolve version` step — the tag minus `v`, else the pom version) and uploaded as
-artifacts alongside the fat jar; a final job
+artifacts alongside the fat jar. **macOS pre-1.0 app-version:** jpackage's `--app-version` (which becomes
+`CFBundleVersion`/`CFBundleShortVersionString`) rejects a version whose first number is zero/negative, so a
+`0.x.y` `pom.xml` version fails jpackage on macOS only (Linux/Windows accept it fine) — the `os-mac` profile
+computes a bundle-metadata-only `jpackage.appVersion` via a `maven-antrun-plugin` execution (Ant
+`loadresource`/`propertyresource`/`tokenfilter replaceregex`, `initialize` phase, `exportAntProperties`)
+that bumps a leading `0.` to `1.` (`0.9.0`→`1.9.0`); `os-windows`/`os-linux` just alias it to
+`${project.version}`. Both jpackage invocations — the `jpackage-app-image` execution and
+`aot_build.java`'s later DMG-wrap call — read `${jpackage.appVersion}`, not `${project.version}`, so the
+in-app `--version`/About dialog and the CI-renamed installer filename (via the `Resolve version` step
+above) stay the real semver regardless. A final job
 hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) which creates the
 GitHub release with all installers + fat jars + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
 build (the `dist` profile is reused as-is) and there is **no `pom.xml`/Maven change**, so the normal

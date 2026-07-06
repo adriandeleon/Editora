@@ -13,6 +13,15 @@ First tagged release.
 
 ### Fixed
 
+- **macOS release build failure on a pre-1.0 version.** jpackage rejects an `--app-version` whose first
+  number is zero or negative, so a `0.x.y` `pom.xml` version (like this release's `0.9.0`) failed the
+  macOS legs of the release build with "The first number in an app-version cannot be zero or negative."
+  The macOS build now uses a bundle-metadata-only `jpackage.appVersion` (a leading `0.` bumped to `1.`, e.g.
+  `1.9.0`) for jpackage's internal `CFBundleVersion`/`CFBundleShortVersionString`; the public release
+  version — the git tag, this CHANGELOG, and the app's own `--version`/About dialog — is unaffected. Linux
+  and Windows are untouched (jpackage accepts a leading-zero version there).
+
+
 - **AI connection check no longer hangs on a slow endpoint.** The Settings → AI Actions health check is
   now a **non-streaming** request whose 30 s timeout bounds the *entire* exchange — so a local server
   that sends response headers immediately but is slow to produce the first token (LM Studio warming up a
