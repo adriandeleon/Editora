@@ -335,6 +335,10 @@ Editora is built with the help of AI coding tools.
   *who* published — not a sandbox. See [`docs/plugins.md`](docs/plugins.md), the reference
   [`examples/example-plugin/`](examples/example-plugin/), and the live registry (every plugin's source +
   a signed `index.json`) at [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins).
+- **AI** _(Beta)_ — AI Agent and AI actions live under one **AI** group in Settings, gated by a single
+  master **Enable AI** switch (off by default; palette `view.toggleAiEnabled`) that turns off *every* AI
+  feature at once — agent chat, commit-message generation, explain/rewrite selection, and inline
+  completion — regardless of their own settings below it. Does not affect the MCP server.
 - **AI actions** _(Beta)_ — one-shot AI features that call the Anthropic API directly (streamed, no SDK):
   generate a **commit message** from the staged diff into the Commit window, **explain the selection** in
   a new Markdown buffer, or **rewrite the selection** per an instruction as a single undoable edit. Plus

@@ -10202,6 +10202,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of("mcp.copyEndpoint", () -> ifMcp(this::copyMcpEndpoint)));
         registry.register(Command.of("view.toggleMcp", this::toggleMcpSupport));
+        registry.register(Command.of(
+                "view.toggleAiEnabled",
+                () -> toggleSetting(
+                        "view.toggleAiEnabled",
+                        () -> config.getSettings().isAiEnabled(),
+                        v -> config.getSettings().setAiEnabled(v),
+                        () -> {
+                            applyAgentSupport();
+                            aiCoordinator.applySupport();
+                        })));
         registry.register(Command.of("tool.agent", agentCoordinator::toggleToolWindow));
         registry.register(Command.of("agent.newSession", agentCoordinator::newSession));
         registry.register(Command.of("agent.stop", agentCoordinator::stopTurn));
