@@ -240,14 +240,14 @@ public final class LspManager {
                 }
             }
             // Per-server initializationOptions:
-            //  - jdtls gets the java-debug plugin bundle (when debugging is on) so it registers the
-            //    vscode.java.* debug commands.
+            //  - jdtls gets `settings.java.autobuild.enabled=false` always, plus the java-debug plugin
+            //    bundle when debugging is on (see javaInitOptions).
             //  - gopls ships semantic tokens DISABLED and only advertises semanticTokensProvider when its
             //    `semanticTokens` option is set at initialize (confirmed: the flat key works, `ui.` doesn't);
             //    enabling it is free — gopls computes tokens only when we request them.
             Object initOptions = null;
-            if ("java".equals(serverId) && !debugBundles.isEmpty()) {
-                initOptions = Map.of("bundles", debugBundles);
+            if ("java".equals(serverId)) {
+                initOptions = javaInitOptions(debugBundles);
             } else if ("go".equals(serverId)) {
                 initOptions = Map.of("semanticTokens", true);
             }
@@ -724,6 +724,26 @@ public final class LspManager {
             }
         }
         return out;
+    }
+
+    /**
+     * jdtls's {@code initializationOptions}: {@code settings.java.autobuild.enabled=false} always, plus
+     * the java-debug plugin {@code bundles} when {@code debugBundles} is non-empty. Editora only needs
+     * jdtls for per-file diagnostics/completion/hover/nav — never its on-disk build output — but by
+     * default jdtls runs a full incremental Eclipse workspace <em>build</em> on save/change, which m2e
+     * points at the project's own configured Maven/Gradle output directory (e.g. {@code target/classes}
+     * for a Maven project — the exact same directory {@code mvn}/{@code gradle} CLI builds write to).
+     * Racing jdtls's ECJ builder against a CLI build there can leave that directory missing classes (most
+     * visibly javac's synthetic enum-switch-map inner classes, since ECJ doesn't regenerate them in
+     * lockstep) even right after a clean CLI build. Disabling autobuild stops jdtls from ever touching
+     * that directory; live per-file diagnostics still work via reconcile-on-type, which isn't gated by it.
+     * Pure + package-private so it's directly unit-tested.
+     */
+    static Map<String, Object> javaInitOptions(List<String> debugBundles) {
+        Map<String, Object> autobuildOff = Map.of("java", Map.of("autobuild", Map.of("enabled", false)));
+        return debugBundles.isEmpty()
+                ? Map.of("settings", autobuildOff)
+                : Map.of("bundles", debugBundles, "settings", autobuildOff);
     }
 
     /**

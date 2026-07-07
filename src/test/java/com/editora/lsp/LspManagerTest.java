@@ -1,6 +1,7 @@
 package com.editora.lsp;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.lsp4j.CompletionOptions;
@@ -15,7 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Unit tests for {@link LspManager}'s pure capability helpers (trigger chars, semantic-tokens gate). */
+/** Unit tests for {@link LspManager}'s pure capability helpers (trigger chars, semantic-tokens gate,
+ *  jdtls initializationOptions). */
 class LspManagerTest {
 
     private static SemanticTokensWithRegistrationOptions stProvider(boolean withLegend, Boolean range, Boolean full) {
@@ -100,5 +102,28 @@ class LspManagerTest {
         ServerCapabilities noLegend = new ServerCapabilities();
         noLegend.setSemanticTokensProvider(stProvider(false, true, true));
         assertNull(LspManager.semanticTokensProvider(noLegend)); // can't decode without a legend
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void javaInitOptionsAlwaysDisablesAutobuildNoDebugBundles() {
+        Map<String, Object> opts = LspManager.javaInitOptions(List.of());
+        assertFalse(opts.containsKey("bundles"));
+        Map<String, Object> settings = (Map<String, Object>) opts.get("settings");
+        Map<String, Object> java = (Map<String, Object>) settings.get("java");
+        Map<String, Object> autobuild = (Map<String, Object>) java.get("autobuild");
+        assertEquals(Boolean.FALSE, autobuild.get("enabled"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void javaInitOptionsIncludesBundlesWhenDebugging() {
+        List<String> jars = List.of("/path/to/java-debug.jar");
+        Map<String, Object> opts = LspManager.javaInitOptions(jars);
+        assertEquals(jars, opts.get("bundles"));
+        Map<String, Object> settings = (Map<String, Object>) opts.get("settings");
+        Map<String, Object> java = (Map<String, Object>) settings.get("java");
+        Map<String, Object> autobuild = (Map<String, Object>) java.get("autobuild");
+        assertEquals(Boolean.FALSE, autobuild.get("enabled")); // autobuild stays off even while debugging
     }
 }
