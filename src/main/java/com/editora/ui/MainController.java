@@ -2956,6 +2956,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void openPath(Path file) {
+            MainController.this.openPath(file);
+        }
+
+        @Override
         public void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt) {
             if (agentSessionHistory != null) {
                 agentSessionHistory.remember(sessionId, cwd, candidateLabel, updatedAt);
