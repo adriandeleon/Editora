@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finishes. `EditorBuffer` gained a centered spinner + message overlay (`setPreviewLoading`), shown from
   just before the request starts until it ends (success or error).
 
+### Changed
+
+- **The gutter Run play glyph is 20% bigger** (scale 1.014 → 1.217), making the clickable green run
+  target easier to see and click.
+
 ### Fixed
 
 - **AI Agent header buttons (History / New Session / Stop) took up too much width.** They're now

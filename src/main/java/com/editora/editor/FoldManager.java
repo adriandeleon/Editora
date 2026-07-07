@@ -786,8 +786,8 @@ public final class FoldManager {
         SVGPath svg = new SVGPath();
         svg.setContent(RUN_GLYPH_PATH);
         svg.getStyleClass().add("run-marker");
-        svg.setScaleX(1.014); // 30% larger than before (0.78) so the Run target is easier to click; still fits the slot
-        svg.setScaleY(1.014);
+        svg.setScaleX(1.217); // 20% bigger than before (1.014) so the Run target is easier to click
+        svg.setScaleY(1.217);
         return new Group(svg);
     }
 
