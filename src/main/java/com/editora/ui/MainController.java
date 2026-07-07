@@ -2510,15 +2510,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public EditorBuffer openBackgroundBuffer(Path target) {
-                    try {
-                        EditorBuffer buffer = new EditorBuffer();
-                        buffer.setPath(target);
-                        loadInto(buffer, target);
-                        addBuffer(buffer, false); // background: keep the diff tab focused
-                        return buffer;
-                    } catch (IOException e) {
-                        return null;
-                    }
+                    return MainController.this.openBackgroundBuffer(target);
                 }
 
                 @Override
@@ -2956,6 +2948,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void refreshProjectTree() {
             projectPanel.refreshTree();
+        }
+
+        @Override
+        public EditorBuffer openBackgroundBuffer(Path target) {
+            return MainController.this.openBackgroundBuffer(target);
         }
 
         @Override
@@ -3640,6 +3637,21 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
         return null;
+    }
+
+    /** Opens {@code target} (assumed not already open — callers check {@link #openBufferFor} first) as a
+     *  new, unfocused background tab. Used when something other than the user opens a file the editor
+     *  doesn't have a tab for yet (a diff's compare-with-local target, an AI agent's newly-written file). */
+    private EditorBuffer openBackgroundBuffer(Path target) {
+        try {
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setPath(target);
+            loadInto(buffer, target);
+            addBuffer(buffer, false); // background: keep the caller's current tab focused
+            return buffer;
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /** Toggles the IntelliJ-style branch dropdown, fetching local + remote branches off-thread first. */
