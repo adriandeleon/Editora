@@ -58,6 +58,11 @@ final class AgentCoordinator implements AcpClient.Host {
         /** Refreshes the Project tree after the agent wrote a file the editor doesn't have open. */
         void refreshProjectTree();
 
+        /** Opens {@code target} as a new, unfocused background tab (creating the {@link EditorBuffer} and
+         *  loading its just-written content) — so a brand-new file the agent created is immediately
+         *  visible, without stealing focus from the chat. FX-thread only. */
+        EditorBuffer openBackgroundBuffer(Path target);
+
         /** Records a prompt in {@code sessionId} in the persisted resume history (title set once from
          *  {@code candidateLabel}; position/timestamp bumped on every call). FX-thread only. */
         void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt);
@@ -567,7 +572,13 @@ final class AgentCoordinator implements AcpClient.Host {
             Files.createDirectories(file.getParent());
         }
         Files.writeString(file, body);
-        Platform.runLater(ops::refreshProjectTree);
+        // No open buffer matched this path (a brand-new file, or an unsaved/untitled buffer the agent
+        // couldn't have targeted since it has no path yet) — open it as a background tab so the user
+        // actually sees what the agent wrote, instead of it only landing on disk with no visible tab.
+        Platform.runLater(() -> {
+            ops.refreshProjectTree();
+            ops.openBackgroundBuffer(file);
+        });
     }
 
     @Override
