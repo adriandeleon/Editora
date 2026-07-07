@@ -105,13 +105,10 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         modelLabel.setOnMouseClicked(e -> onPickModel.run());
         modeLabel.getStyleClass().add("agent-header-label");
         modeLabel.setOnMouseClicked(e -> onPickMode.run());
-        stopButton.setText(tr("agent.stop"));
+        iconButton(historyButton, Icons.history(), "agent.history", onResumeSession);
+        iconButton(newSessionButton, Icons.newFile(), "agent.newSession", onNewSession);
+        iconButton(stopButton, Icons.debugStop(), "agent.stop", onStop);
         stopButton.setDisable(true);
-        stopButton.setOnAction(e -> onStop.run());
-        historyButton.setText(tr("agent.history"));
-        historyButton.setOnAction(e -> onResumeSession.run());
-        newSessionButton.setText(tr("agent.newSession"));
-        newSessionButton.setOnAction(e -> onNewSession.run());
         HBox header = new HBox(
                 8, status, agentLabel, modelLabel, modeLabel, spacer(), historyButton, newSessionButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -362,5 +359,15 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         Region r = new Region();
         HBox.setHgrow(r, Priority.ALWAYS);
         return r;
+    }
+
+    /** Icon-only header button (mirrors {@code DebugPanel.btn}): the {@code key}'s translated string
+     *  becomes the tooltip instead of the button's (now absent) text, keeping the header compact. */
+    private static void iconButton(Button b, Node icon, String key, Runnable action) {
+        b.setGraphic(icon);
+        b.setTooltip(new Tooltip(tr(key)));
+        b.getStyleClass().addAll("flat", "agent-toolbar-button");
+        b.setFocusTraversable(false);
+        b.setOnAction(e -> action.run());
     }
 }
