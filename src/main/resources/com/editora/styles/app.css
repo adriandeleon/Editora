@@ -1770,6 +1770,9 @@
     -fx-background-color: -color-bg-inset;
     -fx-cursor: hand;
 }
+/* History / New Session / Stop are icon-only (see AgentPanel.iconButton) — narrow padding keeps the
+   header compact, matching the Debug panel's icon-only toolbar buttons. */
+.agent-panel .agent-toolbar-button { -fx-padding: 3 6 3 6; }
 
 /* AI Agent plan checklist rows — muted by default; completed dims further, in-progress reads as active. */
 .plan-entry-pending { -fx-text-fill: -color-fg-default; }

@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **AI Agent header buttons (History / New Session / Stop) took up too much width.** They're now
+  icon-only (matching the Debug panel's icon-only toolbar buttons), with the translated label moved to
+  a tooltip instead of being lost — hover to see what each does.
+
 - **CSV grid preview could stay open on a non-CSV file after a restart.** If the CSV/TSV grid tool
   window was left open in the previous session, it was force-reopened at startup (session restore) before
   the first real buffer loaded — at that point every buffer-gated tool window is provisionally marked
