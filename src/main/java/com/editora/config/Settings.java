@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 60;
+    public static final int SCHEMA_VERSION = 61;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -197,6 +197,12 @@ public class Settings {
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
      *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
     private boolean mcpSupport = false;
+    /** Master AI kill switch: off by default. When off, {@link #agentSupport}/{@link #aiSupport} (and
+     *  everything they gate — the AI Agent chat window, commit-message generation, explain/rewrite
+     *  selection, inline ghost-text completion) are effectively disabled regardless of their own
+     *  settings, mirroring the autocomplete master/sub-toggle pattern. Deliberately does not cover
+     *  {@link #mcpSupport} — that lets an *external* agent drive Editora, not Editora calling out to AI. */
+    private boolean aiEnabled = false;
     /** Embedded AI agent (an ACP agent — e.g. Claude Code — in the AI Agent chat tool window): off by
      *  default. The agent is an external, user-installed CLI, never bundled. */
     private boolean agentSupport = false;
@@ -501,6 +507,14 @@ public class Settings {
 
     public void setMcpSupport(boolean mcpSupport) {
         this.mcpSupport = mcpSupport;
+    }
+
+    public boolean isAiEnabled() {
+        return aiEnabled;
+    }
+
+    public void setAiEnabled(boolean aiEnabled) {
+        this.aiEnabled = aiEnabled;
     }
 
     public boolean isAgentSupport() {

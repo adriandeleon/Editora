@@ -77,9 +77,10 @@ final class AiCoordinator {
         probeDebounce.setOnFinished(e -> probeNow());
     }
 
-    /** Whether the AI actions are enabled (the setting, suppressed in Simple UI mode). */
+    /** Whether the AI actions are enabled (the master AI kill switch + the feature's own setting,
+     *  suppressed in Simple UI mode). */
     boolean isEnabled() {
-        return host.settings().isAiSupport() && !host.simpleModeActive();
+        return host.settings().isAiEnabled() && host.settings().isAiSupport() && !host.simpleModeActive();
     }
 
     /** The effective gate for the floating selection Explain/Rewrite bar: enabled + last-known reachable. */

@@ -103,7 +103,8 @@ public enum ConfigSchema {
                     Map.entry(57, (Migration) ConfigMigrations::identity), // v57→58: + TODO part colors (additive)
                     Map.entry(58, (Migration) ConfigMigrations::identity), // v58→59: + agentIncludeContext (additive)
                     Map.entry(59, (Migration)
-                            ConfigMigrations::identity))), // v59→60: + agentClient/<id>AgentCommand (additive)
+                            ConfigMigrations::identity), // v59→60: + agentClient/<id>AgentCommand (additive)
+                    Map.entry(60, (Migration) ConfigMigrations::identity))), // v60→61: + aiEnabled (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

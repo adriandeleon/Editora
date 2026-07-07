@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A dedicated "AI" group in Settings, with a master Enable/Disable AI switch (off by default).**
+  The AI Agent and AI Actions pages — previously scattered under separate groups — now live together
+  under a new **AI** sidebar group, alongside a new landing page holding a single master checkbox
+  (`Settings.aiEnabled`, schema 60→61 additive). Turning it off disables *every* AI feature regardless
+  of the AI Agent / AI Actions pages' own settings below it: the AI Agent chat window, commit-message
+  generation, explain/rewrite selection, and inline ghost-text completion — `AgentCoordinator.isEnabled()`
+  and `AiCoordinator.isEnabled()` both now gate on it. It does **not** affect the MCP server (a separate
+  feature). Also a palette command, `view.toggleAiEnabled` ("Toggle AI"). Defaults to off, so a fresh
+  install has no AI usage until explicitly turned on.
 - **Clickable links in the Markdown preview.** A rendered link now shows a hand cursor and opens in the
   system default browser on click (the same `Consumer<String>` already used by Ctrl/Cmd-click-in-source
   and the Welcome page's links), rather than being inert. `MarkdownRenderer.renderDocument` gained an

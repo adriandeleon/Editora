@@ -69,6 +69,7 @@ public class SettingsWindow {
     private enum Group {
         GENERAL(tr("settings.group.general")),
         EDITOR(tr("settings.group.editor")),
+        AI(tr("settings.group.ai")),
         LANGUAGES_TOOLS(tr("settings.group.languagesTools")),
         VERSION_CONTROL(tr("settings.group.versionControl")),
         SYSTEM(tr("settings.group.system"));
@@ -95,6 +96,10 @@ public class SettingsWindow {
         TODO(tr("settings.cat.todo"), Group.EDITOR),
         SPELL_CHECK(tr("settings.cat.spellCheck"), Group.EDITOR),
         SEARCH(tr("settings.cat.search"), Group.EDITOR),
+        // AI (a master enable switch, then the two AI features it gates)
+        AI_GENERAL(tr("settings.cat.aiGeneral"), Group.AI, true),
+        AGENT(tr("settings.cat.agent"), Group.AI, true),
+        AI(tr("settings.cat.ai"), Group.AI, true),
         // Languages & Tools
         LSP(tr("settings.cat.lsp"), Group.LANGUAGES_TOOLS, true),
         DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS, true),
@@ -102,7 +107,6 @@ public class SettingsWindow {
         MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS),
         WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, true),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
-        AGENT(tr("settings.cat.agent"), Group.LANGUAGES_TOOLS, true),
         // Version control
         GIT(tr("settings.cat.git"), Group.VERSION_CONTROL, true),
         // System
@@ -111,7 +115,6 @@ public class SettingsWindow {
         REMOTE(tr("settings.cat.remote"), Group.SYSTEM, true),
         PLUGINS(tr("settings.cat.plugins"), Group.SYSTEM),
         MCP(tr("settings.cat.mcp"), Group.SYSTEM, true),
-        AI(tr("settings.cat.ai"), Group.LANGUAGES_TOOLS, true),
         ADVANCED(tr("settings.cat.advanced"), Group.SYSTEM);
 
         final String display;
@@ -273,6 +276,7 @@ public class SettingsWindow {
     private CheckBox httpCheck;
     private CheckBox htmlPreviewCheck;
     private CheckBox mcpCheck;
+    private CheckBox aiMasterCheck;
     private CheckBox agentCheck;
     private AgentCoordinator agentCoordinator; // injected; backs the AI Agent page's detection status rows
     private ComboBox<String> agentClientCombo;
@@ -1004,6 +1008,13 @@ public class SettingsWindow {
             apply();
         });
 
+        aiMasterCheck = new CheckBox(tr("settings.ai.masterEnable"));
+        aiMasterCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setAiEnabled(now);
+            apply();
+            updateAiSubEnablement(now); // the AI Agent / AI Actions checkboxes are only meaningful while on
+        });
+
         agentCheck = new CheckBox(tr("settings.agent.enable"));
         agentCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setAgentSupport(now);
@@ -1290,6 +1301,7 @@ public class SettingsWindow {
         pages.put(Category.REMOTE, remotePage());
         pages.put(Category.PLUGINS, pluginsPage());
         pages.put(Category.MCP, mcpPage());
+        pages.put(Category.AI_GENERAL, aiGeneralPage());
         pages.put(Category.AGENT, agentPage());
         pages.put(Category.AI, aiPage());
         pages.put(Category.ADVANCED, advancedPage());
@@ -3620,6 +3632,30 @@ public class SettingsWindow {
         return p;
     }
 
+    /**
+     * The AI group's landing page: the master AI kill switch. Off by default; when off, the AI Agent and
+     * AI Actions pages' own enable checkboxes are disabled (their settings still exist but have no effect
+     * — see {@link AgentCoordinator#isEnabled()} / {@link AiCoordinator#isEnabled()}), mirroring the
+     * autocomplete master/sub-toggle pattern. Deliberately doesn't touch the separate MCP Server page —
+     * that lets an *external* agent drive Editora, not Editora calling out to AI.
+     */
+    private VBox aiGeneralPage() {
+        VBox p = page(tr("settings.cat.aiGeneral"));
+        row(p, Category.AI_GENERAL, null, aiMasterCheck, "ai enable disable master switch agent actions all");
+        Label hint = note(tr("settings.ai.masterHint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.AI_GENERAL, null, hint, "ai enable disable master switch agent actions all off default");
+        return p;
+    }
+
+    /** Disables the AI Agent / AI Actions enable checkboxes while the master AI switch is off — they're
+     *  only meaningful when it's on (mirrors {@code autocompleteCheck}'s sub-toggle disabling). */
+    private void updateAiSubEnablement(boolean masterOn) {
+        agentCheck.setDisable(!masterOn);
+        aiCheck.setDisable(!masterOn);
+    }
+
     private VBox agentPage() {
         VBox p = page(tr("settings.cat.agent"));
         row(p, Category.AGENT, null, agentCheck, "ai agent acp claude code chat enable assistant");
@@ -5199,6 +5235,8 @@ public class SettingsWindow {
             httpCheck.setSelected(settings.isHttpClientSupport());
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             mcpCheck.setSelected(settings.isMcpSupport());
+            aiMasterCheck.setSelected(settings.isAiEnabled());
+            updateAiSubEnablement(settings.isAiEnabled());
             agentCheck.setSelected(settings.isAgentSupport());
             agentClientCombo.setValue(com.editora.agent.AcpAgentRegistry.from(settings.getAgentClient())
                     .id());
