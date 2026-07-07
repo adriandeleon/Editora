@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Clickable links in the Markdown preview.** A rendered link now shows a hand cursor and opens in the
+  system default browser on click (the same `Consumer<String>` already used by Ctrl/Cmd-click-in-source
+  and the Welcome page's links), rather than being inert. `MarkdownRenderer.renderDocument` gained an
+  overload taking an optional click handler; the print/PDF writers and the hover/completion-doc popups
+  keep using the existing no-handler path, so only the interactive live preview is affected.
+
 ### Fixed
 
 - **CSV grid preview could stay open on a non-CSV file after a restart.** If the CSV/TSV grid tool

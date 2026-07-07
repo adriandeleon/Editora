@@ -119,12 +119,24 @@ public final class MarkdownRenderer {
 
     /** Builds a JavaFX node tree from a parsed AST. MUST run on the FX thread (creates Text/ImageView). */
     public static Node renderDocument(org.commonmark.node.Node ast, Path baseDir) {
+        return renderDocument(ast, baseDir, null);
+    }
+
+    /**
+     * Overload that also wires links to a click handler — invoked with the link's raw destination
+     * (as written in the Markdown; never resolved/normalized) when a rendered link is clicked. Used by the
+     * live, interactive preview so a link opens in the system browser; pass {@code null} for
+     * non-interactive renders (print/PDF don't build this JavaFX tree at all, and the hover/completion-doc
+     * popups pass null since they're ephemeral display surfaces, not meant to be clicked through).
+     */
+    public static Node renderDocument(
+            org.commonmark.node.Node ast, Path baseDir, java.util.function.Consumer<String> onLinkClick) {
         VBox content = new VBox();
         content.getStyleClass().add("markdown-preview");
         // Cap the readable column width so long lines don't stretch across a wide window (GitHub-style).
         content.setMaxWidth(MAX_CONTENT_WIDTH);
         if (ast != null) {
-            appendBlocks(ast, content, baseDir);
+            appendBlocks(ast, content, new RenderContext(baseDir, onLinkClick));
         }
         // Center the capped-width column within the (fit-to-width) preview pane. A StackPane clamps the
         // content to the available width when the viewport is narrower than the cap, so it never overflows.
@@ -134,20 +146,25 @@ public final class MarkdownRenderer {
         return wrap;
     }
 
+    /** Threaded through every block/inline renderer alongside {@code baseDir} (for image resolution) so a
+     *  link's click handler reaches the {@code Link} node without a parameter per call — the pure-{@code
+     *  baseDir} idiom this file already used, extended to carry one more per-render input. */
+    private record RenderContext(Path baseDir, java.util.function.Consumer<String> onLinkClick) {}
+
     // --- block level ---------------------------------------------------------------------------
 
-    private static void appendBlocks(org.commonmark.node.Node parent, Pane container, Path baseDir) {
+    private static void appendBlocks(org.commonmark.node.Node parent, Pane container, RenderContext ctx) {
         for (org.commonmark.node.Node n = parent.getFirstChild(); n != null; n = n.getNext()) {
-            Node fx = renderBlock(n, baseDir);
+            Node fx = renderBlock(n, ctx);
             if (fx != null) {
                 container.getChildren().add(fx);
             }
         }
     }
 
-    private static Node renderBlock(org.commonmark.node.Node node, Path baseDir) {
+    private static Node renderBlock(org.commonmark.node.Node node, RenderContext ctx) {
         if (node instanceof Heading h) {
-            TextFlow tf = inlineFlow(h, baseDir);
+            TextFlow tf = inlineFlow(h, ctx);
             tf.getStyleClass().add("md-h" + Math.min(6, Math.max(1, h.getLevel())));
             return tf;
         }
@@ -163,24 +180,24 @@ public final class MarkdownRenderer {
             }
             // A paragraph that is just an image renders as a block image (not squeezed into a TextFlow).
             if (p.getFirstChild() instanceof org.commonmark.node.Image img && img.getNext() == null) {
-                return imageNode(img, baseDir);
+                return imageNode(img, ctx.baseDir());
             }
-            TextFlow tf = inlineFlow(p, baseDir);
+            TextFlow tf = inlineFlow(p, ctx);
             tf.getStyleClass().add("md-paragraph");
             return tf;
         }
         if (node instanceof BlockQuote) {
             VBox box = new VBox();
             box.getStyleClass().add("md-quote");
-            appendBlocks(node, box, baseDir);
+            appendBlocks(node, box, ctx);
             return box;
         }
         if (node instanceof BulletList bl) {
-            return renderList(bl, baseDir, false, 1);
+            return renderList(bl, ctx, false, 1);
         }
         if (node instanceof OrderedList ol) {
             Integer start = ol.getMarkerStartNumber();
-            return renderList(ol, baseDir, true, start == null ? 1 : start);
+            return renderList(ol, ctx, true, start == null ? 1 : start);
         }
         if (node instanceof FencedCodeBlock f) {
             if (isMermaidInfo(f.getInfo()) && MermaidImages.isEnabled()) {
@@ -204,17 +221,17 @@ public final class MarkdownRenderer {
             return codeBlock(hb.getLiteral()); // other raw HTML shown as text (no interpretation)
         }
         if (node instanceof TableBlock tb) {
-            return renderTable(tb, baseDir);
+            return renderTable(tb, ctx);
         }
         if (node instanceof YamlFrontMatterBlock fm) {
             return frontMatterBlock(fm);
         }
         if (node instanceof FootnoteDefinition def) {
-            return footnoteDefinition(def, baseDir);
+            return footnoteDefinition(def, ctx);
         }
         // Unknown block container: render its children.
         VBox box = new VBox();
-        appendBlocks(node, box, baseDir);
+        appendBlocks(node, box, ctx);
         return box.getChildren().isEmpty() ? null : box;
     }
 
@@ -223,7 +240,7 @@ public final class MarkdownRenderer {
         return literal != null && literal.strip().startsWith("<!--");
     }
 
-    private static Node renderList(org.commonmark.node.Node list, Path baseDir, boolean ordered, int start) {
+    private static Node renderList(org.commonmark.node.Node list, RenderContext ctx, boolean ordered, int start) {
         VBox box = new VBox();
         box.getStyleClass().add("md-list");
         int n = start;
@@ -249,7 +266,7 @@ public final class MarkdownRenderer {
             VBox content = new VBox();
             content.getStyleClass().add("md-list-content");
             HBox.setHgrow(content, Priority.ALWAYS);
-            appendBlocks(item, content, baseDir);
+            appendBlocks(item, content, ctx);
             row.getChildren().addAll(marker, content);
             box.getChildren().add(row);
             n++;
@@ -263,7 +280,7 @@ public final class MarkdownRenderer {
 
     private static final int MAX_COL_WEIGHT = 40;
 
-    private static Node renderTable(TableBlock tb, Path baseDir) {
+    private static Node renderTable(TableBlock tb, RenderContext ctx) {
         GridPane grid = new GridPane();
         grid.getStyleClass().add("md-table");
         // Fill the preview column so the percent-based ColumnConstraints below have a definite width to
@@ -283,7 +300,7 @@ public final class MarkdownRenderer {
                     if (!(c instanceof TableCell cell)) {
                         continue;
                     }
-                    TextFlow tf = inlineFlow(cell, baseDir);
+                    TextFlow tf = inlineFlow(cell, ctx);
                     tf.getStyleClass().add(header ? "md-table-header" : "md-table-cell");
                     tf.setMaxWidth(Double.MAX_VALUE);
                     if (cell.getAlignment() == TableCell.Alignment.CENTER) {
@@ -481,7 +498,7 @@ public final class MarkdownRenderer {
     }
 
     /** A footnote definition: its label marker followed by the definition's block content. */
-    private static Node footnoteDefinition(FootnoteDefinition def, Path baseDir) {
+    private static Node footnoteDefinition(FootnoteDefinition def, RenderContext ctx) {
         HBox row = new HBox();
         row.getStyleClass().add("md-footnote-def");
         Label marker = new Label("[" + def.getLabel() + "]");
@@ -489,7 +506,7 @@ public final class MarkdownRenderer {
         VBox content = new VBox();
         content.getStyleClass().add("md-footnote-def-content");
         HBox.setHgrow(content, Priority.ALWAYS);
-        appendBlocks(def, content, baseDir);
+        appendBlocks(def, content, ctx);
         row.getChildren().addAll(marker, content);
         return row;
     }
@@ -512,20 +529,20 @@ public final class MarkdownRenderer {
 
     // --- inline level --------------------------------------------------------------------------
 
-    private static TextFlow inlineFlow(org.commonmark.node.Node block, Path baseDir) {
+    private static TextFlow inlineFlow(org.commonmark.node.Node block, RenderContext ctx) {
         TextFlow flow = new TextFlow();
-        appendInline(block, flow, List.of(), baseDir);
+        appendInline(block, flow, List.of(), ctx);
         return flow;
     }
 
     private static void appendInline(
-            org.commonmark.node.Node parent, TextFlow flow, List<String> styles, Path baseDir) {
+            org.commonmark.node.Node parent, TextFlow flow, List<String> styles, RenderContext ctx) {
         for (org.commonmark.node.Node n = parent.getFirstChild(); n != null; n = n.getNext()) {
-            emitInline(n, flow, styles, baseDir);
+            emitInline(n, flow, styles, ctx);
         }
     }
 
-    private static void emitInline(org.commonmark.node.Node n, TextFlow flow, List<String> styles, Path baseDir) {
+    private static void emitInline(org.commonmark.node.Node n, TextFlow flow, List<String> styles, RenderContext ctx) {
         if (n instanceof org.commonmark.node.Text t) {
             if (MathImages.isEnabled()) {
                 appendTextWithMath(t.getLiteral(), flow, styles);
@@ -535,23 +552,24 @@ public final class MarkdownRenderer {
         } else if (n instanceof Code c) {
             flow.getChildren().add(inlineCode(c.getLiteral()));
         } else if (n instanceof Emphasis) {
-            appendInline(n, flow, with(styles, "md-italic"), baseDir);
+            appendInline(n, flow, with(styles, "md-italic"), ctx);
         } else if (n instanceof StrongEmphasis) {
-            appendInline(n, flow, with(styles, "md-bold"), baseDir);
+            appendInline(n, flow, with(styles, "md-bold"), ctx);
         } else if (n instanceof Strikethrough) {
-            appendInline(n, flow, with(styles, "md-strike"), baseDir);
+            appendInline(n, flow, with(styles, "md-strike"), ctx);
         } else if (n instanceof Ins) {
-            appendInline(n, flow, with(styles, "md-ins"), baseDir);
+            appendInline(n, flow, with(styles, "md-ins"), ctx);
         } else if (n instanceof FootnoteReference ref) {
             flow.getChildren().add(footnoteRef(ref.getLabel()));
         } else if (n instanceof InlineFootnote) {
-            appendInline(n, flow, with(styles, "md-footnote-ref"), baseDir);
+            appendInline(n, flow, with(styles, "md-footnote-ref"), ctx);
         } else if (n instanceof Link link) {
             int from = flow.getChildren().size();
-            appendInline(n, flow, with(styles, "md-link"), baseDir);
+            appendInline(n, flow, with(styles, "md-link"), ctx);
             installLinkTooltip(flow, from, link.getDestination());
+            installLinkClick(flow, from, link.getDestination(), ctx.onLinkClick());
         } else if (n instanceof org.commonmark.node.Image img) {
-            flow.getChildren().add(imageNode(img, baseDir));
+            flow.getChildren().add(imageNode(img, ctx.baseDir()));
         } else if (n instanceof SoftLineBreak) {
             flow.getChildren().add(new Text(" "));
         } else if (n instanceof HardLineBreak) {
@@ -563,7 +581,7 @@ public final class MarkdownRenderer {
         } else if (n instanceof TaskListItemMarker) {
             // rendered as a CheckBox by renderList — skip here
         } else {
-            appendInline(n, flow, styles, baseDir); // unknown inline: descend
+            appendInline(n, flow, styles, ctx); // unknown inline: descend
         }
     }
 
@@ -633,6 +651,21 @@ public final class MarkdownRenderer {
         Tooltip tip = new Tooltip(dest);
         for (int i = from; i < flow.getChildren().size(); i++) {
             Tooltip.install(flow.getChildren().get(i), tip);
+        }
+    }
+
+    /** Wires a rendered link's run of nodes to {@code onLinkClick} (hand cursor + click → the link's raw
+     *  destination, unresolved — matching the existing Ctrl/Cmd-click-in-source behavior). No-op when
+     *  there's no handler (print/PDF/popups) or the link has no destination. */
+    private static void installLinkClick(
+            TextFlow flow, int from, String dest, java.util.function.Consumer<String> onLinkClick) {
+        if (onLinkClick == null || dest == null || dest.isBlank()) {
+            return;
+        }
+        for (int i = from; i < flow.getChildren().size(); i++) {
+            Node child = flow.getChildren().get(i);
+            child.setCursor(javafx.scene.Cursor.HAND);
+            child.setOnMouseClicked(e -> onLinkClick.accept(dest));
         }
     }
 

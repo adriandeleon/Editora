@@ -3463,7 +3463,7 @@ public class EditorBuffer implements TabContent {
                     return; // a newer render superseded this one
                 }
                 double v = previewPane().getVvalue();
-                previewPane().setContent(MarkdownRenderer.renderDocument(ast, baseDir));
+                previewPane().setContent(MarkdownRenderer.renderDocument(ast, baseDir, openUrlHandler));
                 applyPreviewScale(); // keep the current zoom on the freshly rendered content
                 Platform.runLater(() -> previewPane().setVvalue(v)); // best-effort scroll preserve
             });

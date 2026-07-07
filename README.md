@@ -182,7 +182,8 @@ Editora is built with the help of AI coding tools.
   strikethrough, autolinks, plus **YAML front matter**, **footnotes**, **heading anchors**, and
   **`++inserted++`** text) with **GitHub-style** output — task-list checkboxes, inline-code pills,
   underlined h1/h2, and **images** (local and remote). Live-updating and theme-matched; the mode is
-  remembered per file. In Split mode the editor and preview scroll together (the pane under the mouse
+  remembered per file. **Links are clickable** — a hand cursor + click opens the destination in the
+  system default browser. In Split mode the editor and preview scroll together (the pane under the mouse
   drives the other). Zoom the preview text with its `−`/`+` control or, in Preview mode,
   **Ctrl + mouse wheel**. The **Structure** tool window shows the document's heading outline.
 - **Markdown authoring** — **paste or drag-drop images** into a saved Markdown file (saved into a sibling

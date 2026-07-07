@@ -3,6 +3,11 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Clickable links in the Markdown preview — a rendered link shows a hand cursor and opens in the
+      system default browser on click (previously inert). `MarkdownRenderer.renderDocument` gained an
+      overload taking an optional click handler, threaded through the block/inline render chain
+      alongside `baseDir`; only the live interactive preview wires one — print/PDF and the
+      hover/completion-doc popups keep the no-handler path.
 - [x] Auto Close Tags (VS Code parity) — typing the `>` completing an HTML/XML open tag inserts
       `</name>` after the caret. Pure/unit-tested `editops/TagAutoClose` (one forward pass over a
       bounded pre-caret window; quote state tracked only inside tags so apostrophes in text and
