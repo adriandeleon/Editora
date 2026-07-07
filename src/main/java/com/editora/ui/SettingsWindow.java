@@ -274,7 +274,10 @@ public class SettingsWindow {
     private CheckBox htmlPreviewCheck;
     private CheckBox mcpCheck;
     private CheckBox agentCheck;
-    private TextField agentCommandField;
+    private AgentCoordinator agentCoordinator; // injected; backs the AI Agent page's detection status rows
+    private ComboBox<String> agentClientCombo;
+    private final java.util.Map<String, TextField> agentCommandFields = new java.util.LinkedHashMap<>();
+    private final java.util.Map<String, Label> agentStatusLabels = new java.util.LinkedHashMap<>();
     private CheckBox agentIncludeContextCheck;
     private CheckBox aiCheck;
     private TextField aiModelField;
@@ -490,6 +493,7 @@ public class SettingsWindow {
         refreshLspStatus();
         refreshDebugStatus();
         refreshMermaidStatus();
+        refreshAgentClientStatus();
     }
 
     /** The install-language key for an installable LSP server row, or {@code null} (no installer). */
@@ -1005,12 +1009,39 @@ public class SettingsWindow {
             config.getSettings().setAgentSupport(now);
             apply();
         });
-        agentCommandField = new TextField();
-        agentCommandField.setPromptText("claude-code-acp");
-        agentCommandField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAgentCommand(now);
-            apply();
+        agentClientCombo = new ComboBox<>();
+        com.editora.agent.AcpAgentRegistry.all()
+                .forEach(d -> agentClientCombo.getItems().add(d.id()));
+        agentClientCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String id) {
+                return id == null ? "" : tr("settings.agent.client." + id);
+            }
+
+            @Override
+            public String fromString(String str) {
+                return str;
+            }
         });
+        agentClientCombo.valueProperty().addListener((obs, was, now) -> {
+            if (!loading && now != null && agentCoordinator != null) {
+                agentCoordinator.switchAgentClient(com.editora.agent.AcpAgentRegistry.from(now));
+                apply(); // run the standard settings-applied hook for consistency with the other rows
+            }
+        });
+        for (AgentClientUi a : agentClientUis()) {
+            TextField field = new TextField();
+            field.setPromptText(a.defaultCommand());
+            field.textProperty().addListener((obs, was, now) -> {
+                a.setCommand().accept(now);
+                apply();
+                if (agentCoordinator != null) {
+                    agentCoordinator.invalidateDetection(); // command changed -> re-probe
+                }
+                refreshAgentClientStatus();
+            });
+            agentCommandFields.put(a.id(), field);
+        }
         agentIncludeContextCheck = new CheckBox(tr("settings.agent.includeContext"));
         agentIncludeContextCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setAgentIncludeContext(now);
@@ -3596,8 +3627,22 @@ public class SettingsWindow {
                 p,
                 Category.AGENT,
                 null,
-                exePathRow(tr("settings.agent.command"), agentCommandField),
-                "ai agent acp command executable claude-code-acp path");
+                labeledRow(tr("settings.agent.client"), agentClientCombo),
+                "ai agent acp active client switch gemini copilot codex qwen opencode claude");
+        for (AgentClientUi a : agentClientUis()) {
+            Label status = new Label(tr("settings.agent.checking"));
+            status.getStyleClass().add("settings-git-status");
+            status.setWrapText(true);
+            status.setMaxWidth(440);
+            agentStatusLabels.put(a.id(), status);
+            row(p, Category.AGENT, null, status, a.keywords());
+            row(
+                    p,
+                    Category.AGENT,
+                    null,
+                    exePathRow(tr(a.commandLabelKey()), agentCommandFields.get(a.id())),
+                    a.keywords());
+        }
         row(
                 p,
                 Category.AGENT,
@@ -3609,6 +3654,96 @@ public class SettingsWindow {
         hint.setMaxWidth(440);
         row(p, Category.AGENT, null, hint, "ai agent acp claude code install npm chat tool window");
         return p;
+    }
+
+    /** Injected by MainController: backs the AI Agent page's per-client PATH-detection rows + the active-
+     *  client combo (which routes through the coordinator's single switch path). */
+    void setAgentCoordinator(AgentCoordinator coordinator) {
+        this.agentCoordinator = coordinator;
+    }
+
+    /** A per-agent-client Settings row (data-driven; mirrors LspServerUi but with no enable flag — exactly
+     *  one ACP agent is active at a time, chosen by the combo, not per-client toggles). */
+    private record AgentClientUi(
+            String id,
+            String displayName,
+            String defaultCommand,
+            String commandLabelKey,
+            String keywords,
+            java.util.function.Consumer<String> setCommand,
+            java.util.function.Supplier<String> getCommand) {}
+
+    private java.util.List<AgentClientUi> agentClientUis() {
+        Settings s = config.getSettings();
+        return java.util.List.of(
+                new AgentClientUi(
+                        "claude",
+                        "Claude Code",
+                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("claude"),
+                        "settings.agent.command.claude",
+                        "agent claude code acp command executable path",
+                        s::setAgentCommand,
+                        s::getAgentCommand),
+                new AgentClientUi(
+                        "gemini",
+                        "Gemini CLI",
+                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("gemini"),
+                        "settings.agent.command.gemini",
+                        "agent gemini cli google acp command executable path",
+                        s::setGeminiAgentCommand,
+                        s::getGeminiAgentCommand),
+                new AgentClientUi(
+                        "copilot",
+                        "GitHub Copilot CLI",
+                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("copilot"),
+                        "settings.agent.command.copilot",
+                        "agent copilot github cli acp command executable path",
+                        s::setCopilotAgentCommand,
+                        s::getCopilotAgentCommand),
+                new AgentClientUi(
+                        "codex",
+                        "Codex CLI",
+                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("codex"),
+                        "settings.agent.command.codex",
+                        "agent codex openai cli acp command executable path",
+                        s::setCodexAgentCommand,
+                        s::getCodexAgentCommand),
+                new AgentClientUi(
+                        "qwen",
+                        "Qwen Code",
+                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("qwen"),
+                        "settings.agent.command.qwen",
+                        "agent qwen code alibaba cli acp command executable path",
+                        s::setQwenAgentCommand,
+                        s::getQwenAgentCommand),
+                new AgentClientUi(
+                        "opencode",
+                        "OpenCode",
+                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("opencode"),
+                        "settings.agent.command.opencode",
+                        "agent opencode sst cli acp command executable path",
+                        s::setOpencodeAgentCommand,
+                        s::getOpencodeAgentCommand));
+    }
+
+    /** Re-probes each ACP agent client's PATH availability (mirrors {@link #refreshLspStatus()}). */
+    private void refreshAgentClientStatus() {
+        if (agentCoordinator == null || agentStatusLabels.isEmpty()) {
+            return;
+        }
+        for (AgentClientUi a : agentClientUis()) {
+            Label status = agentStatusLabels.get(a.id());
+            if (status == null) {
+                continue;
+            }
+            status.getStyleClass().setAll("settings-git-status");
+            status.setText(tr("settings.agent.checking"));
+            agentCoordinator.detect(a.id(), found -> {
+                status.getStyleClass()
+                        .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+                status.setText(found ? tr("settings.agent.found") : tr("settings.agent.notFound"));
+            });
+        }
     }
 
     /** Injected by MainController: runs a live AI connection check (green/red status on the AI page). */
@@ -5065,7 +5200,15 @@ public class SettingsWindow {
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             mcpCheck.setSelected(settings.isMcpSupport());
             agentCheck.setSelected(settings.isAgentSupport());
-            agentCommandField.setText(settings.getAgentCommand());
+            agentClientCombo.setValue(com.editora.agent.AcpAgentRegistry.from(settings.getAgentClient())
+                    .id());
+            for (AgentClientUi a : agentClientUis()) {
+                TextField field = agentCommandFields.get(a.id());
+                if (field != null) {
+                    field.setText(a.getCommand().get());
+                }
+            }
+            refreshAgentClientStatus();
             agentIncludeContextCheck.setSelected(settings.isAgentIncludeContext());
             aiCheck.setSelected(settings.isAiSupport());
             aiModelField.setText(settings.getAiModel());
@@ -5472,7 +5615,9 @@ public class SettingsWindow {
         loading = true;
         try {
             agentCheck.setSelected(config.getSettings().isAgentSupport());
-            agentCommandField.setText(config.getSettings().getAgentCommand());
+            agentClientCombo.setValue(
+                    com.editora.agent.AcpAgentRegistry.from(config.getSettings().getAgentClient())
+                            .id());
         } finally {
             loading = prev;
         }

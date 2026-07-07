@@ -5,24 +5,28 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 
+import com.editora.agent.AcpAgentRegistry;
 import com.editora.agent.AcpClient;
 import com.editora.agent.AcpJson;
 import com.editora.config.AgentSessionHistory;
 import com.editora.config.PathKeys;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.RelativeTime;
-import com.editora.run.ProgramArgs;
+import com.editora.process.ProcessRunner;
 import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
@@ -67,9 +71,9 @@ final class AgentCoordinator implements AcpClient.Host {
         /** Opens (and focuses) {@code file} as a normal tab — already-open switches to it. FX-thread only. */
         void openPath(Path file);
 
-        /** Records a prompt in {@code sessionId} in the persisted resume history (title set once from
-         *  {@code candidateLabel}; position/timestamp bumped on every call). FX-thread only. */
-        void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt);
+        /** Records a prompt in {@code sessionId} in the persisted resume history (title + agentId set once
+         *  from {@code candidateLabel}/{@code agentId}; position/timestamp bumped on every call). FX-thread only. */
+        void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt, String agentId);
 
         /** The persisted resume history, most-recently-used first (backs the resume picker). */
         ObservableList<AgentSessionHistory.Entry> sessionHistory();
@@ -91,6 +95,13 @@ final class AgentCoordinator implements AcpClient.Host {
     private volatile List<AcpJson.ModeInfo> modes = List.of();
     private volatile String currentModelId;
     private volatile String currentModeId;
+    /** The runtime-current agent client (distinct from the persisted default in Settings.agentClient):
+     *  changed only by an explicit pick (switchAgentClient) or a cross-agent resume — NOT reset by a mere
+     *  session teardown (disposeClient). Lazily initialized from Settings on first use (activeAgent()). */
+    private volatile AcpAgentRegistry.AgentDef activeAgent;
+    /** agentId -> last PATH-availability probe (Settings status rows). Mirrors LspManager.availableCache;
+     *  invalidated when a client's command override changes (see detect / invalidateDetection). */
+    private final Map<String, Boolean> agentAvailableCache = new ConcurrentHashMap<>();
 
     AgentCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -110,6 +121,7 @@ final class AgentCoordinator implements AcpClient.Host {
                     this::newSession,
                     this::pickModel,
                     this::pickMode,
+                    this::pickAgentClient,
                     this::resumeSessionPicker,
                     this::openPathCandidate);
             panel.setOnSend(this::sendPrompt);
@@ -278,7 +290,8 @@ final class AgentCoordinator implements AcpClient.Host {
                     // set once by the store; later prompts only bump ordering/timestamp. rememberSession
                     // mutates an ObservableList, so it must run on the FX thread regardless of which
                     // thread this stage completes on.
-                    Platform.runLater(() -> ops.rememberSession(sid, cwd, sessionLabel(text), now));
+                    Platform.runLater(() -> ops.rememberSession(
+                            sid, cwd, sessionLabel(text), now, activeAgent().id()));
                     return client.prompt(sid, composed);
                 })
                 .whenComplete((stopReason, error) -> Platform.runLater(() -> {
@@ -426,6 +439,14 @@ final class AgentCoordinator implements AcpClient.Host {
             host.setStatus(tr("status.agent.resumed", displayLabel(entry)));
             return;
         }
+        // Resume must relaunch the SAME agent that created the session. If that differs from the current
+        // runtime client, switch the runtime selection (and header) — but do NOT persist it: resuming an old
+        // conversation is a one-off, the user's chosen default (Settings.agentClient) is unchanged.
+        AcpAgentRegistry.AgentDef entryAgent = AcpAgentRegistry.from(entry.agentId());
+        if (entryAgent != activeAgent()) {
+            activeAgent = entryAgent;
+            panel().setAgentLabel(entryAgent.displayName());
+        }
         disposeClient();
         panel().clearTranscript();
         panel().setBusy(true);
@@ -446,7 +467,8 @@ final class AgentCoordinator implements AcpClient.Host {
                                 entry.sessionId(),
                                 entry.cwd(),
                                 entry.label(),
-                                Instant.now().getEpochSecond());
+                                Instant.now().getEpochSecond(),
+                                entryAgent.id());
                         host.setStatus(tr("status.agent.resumed", displayLabel(entry)));
                     }
                 }));
@@ -489,18 +511,111 @@ final class AgentCoordinator implements AcpClient.Host {
                 : full;
     }
 
-    /** Pushes the current model/mode display state to the panel header (after a fresh session starts). */
+    /** Pushes the current agent/model/mode display state to the panel header (after a fresh session starts). */
     private void refreshPanelHeader() {
+        panel().setAgentLabel(activeAgent().displayName());
         panel().setModelLabel(modelDisplayName(models, currentModelId));
         panel().setModeLabel(modeDisplayName(modes, currentModeId));
     }
 
-    /** The configured agent command (quote-aware tokens; blank ⇒ {@link #DEFAULT_COMMAND}). */
+    /** The runtime-current agent client, lazily initialized from the persisted default on first use. */
+    private AcpAgentRegistry.AgentDef activeAgent() {
+        AcpAgentRegistry.AgentDef a = activeAgent;
+        if (a == null) {
+            a = AcpAgentRegistry.from(host.settings().getAgentClient());
+            activeAgent = a;
+        }
+        return a;
+    }
+
+    /** The active agent client's command tokens: its per-client Settings override if set, else its
+     *  registry default (quote-aware; a fully-blank resolution falls back to DEFAULT_COMMAND — never
+     *  actually reached in practice, since activeAgent() always resolves to a real, defaulted AgentDef). */
     private List<String> commandTokens() {
-        String configured = host.settings().getAgentCommand();
-        String cmd = configured == null || configured.isBlank() ? DEFAULT_COMMAND : configured.trim();
-        List<String> tokens = ProgramArgs.tokenize(cmd);
+        AcpAgentRegistry.AgentDef agent = activeAgent();
+        List<String> tokens = AcpAgentRegistry.commandFor(agent.id(), agentCommandOverrides());
         return tokens.isEmpty() ? List.of(DEFAULT_COMMAND) : tokens;
+    }
+
+    /** agentId -> the user's per-client command override (blank where unset). Read live from Settings. */
+    private Map<String, String> agentCommandOverrides() {
+        var s = host.settings();
+        return Map.of(
+                "claude", s.getAgentCommand(),
+                "gemini", s.getGeminiAgentCommand(),
+                "copilot", s.getCopilotAgentCommand(),
+                "codex", s.getCodexAgentCommand(),
+                "qwen", s.getQwenAgentCommand(),
+                "opencode", s.getOpencodeAgentCommand());
+    }
+
+    /** Probes whether {@code agentId}'s resolved command is on PATH; cached, off-thread, result on the FX
+     *  thread. Mirrors LspManager.detect — backs the Settings page's per-client status rows. */
+    void detect(String agentId, Consumer<Boolean> onResult) {
+        Boolean hit = agentAvailableCache.get(agentId);
+        if (hit != null) {
+            Platform.runLater(() -> onResult.accept(hit));
+            return;
+        }
+        List<String> command = AcpAgentRegistry.commandFor(agentId, agentCommandOverrides());
+        lifecycleExec.submit(() -> {
+            boolean ok = agentAvailable(command);
+            agentAvailableCache.put(agentId, ok);
+            Platform.runLater(() -> onResult.accept(ok));
+        });
+    }
+
+    /** Clears the cached availability probes so the next detect re-probes (a command override changed). */
+    void invalidateDetection() {
+        agentAvailableCache.clear();
+    }
+
+    /** True if the command's executable resolves (absolute path exists, or bare name found on PATH).
+     *  Mirrors LspManager.available. Package-private + static so it's directly unit-tested. */
+    static boolean agentAvailable(List<String> command) {
+        if (command == null || command.isEmpty()) {
+            return false;
+        }
+        String exe = command.get(0);
+        if (exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0) {
+            return Files.isExecutable(Path.of(exe));
+        }
+        return !ProcessRunner.resolveExecutable(command).get(0).equals(exe);
+    }
+
+    /** {@code agent.selectClient}: opens a picker over the known ACP agents (shared by the header label
+     *  click and the palette command). Detail line = the resolved command for each agent. */
+    void pickAgentClient() {
+        ifAgent(() -> {
+            QuickOpen<AcpAgentRegistry.AgentDef> picker = new QuickOpen<>(
+                    tr("command.agent.selectClient"),
+                    tr("palette.agent.selectClientPrompt"),
+                    AcpAgentRegistry::all,
+                    AcpAgentRegistry.AgentDef::displayName,
+                    def -> String.join(" ", AcpAgentRegistry.commandFor(def.id(), agentCommandOverrides())),
+                    this::switchAgentClient);
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
+    /** Switches the active ACP agent: persists it as the new default, tears down the current session (a
+     *  running agent process can't be handed off), clears the transcript, updates the header, and reports.
+     *  The SINGLE switch code path — the Settings combo and the header picker both call here (so runtime
+     *  activeAgent and Settings.agentClient can never drift apart). Idempotent for the current agent.
+     *  Deliberately not gated by ifAgent/isEnabled(): the Settings page lets you pre-configure the active
+     *  client even while the feature is off, same as other Settings rows. */
+    void switchAgentClient(AcpAgentRegistry.AgentDef def) {
+        if (def == null || def == activeAgent()) {
+            return;
+        }
+        host.settings().setAgentClient(def.id());
+        host.requestSave(); // coalesced off-thread save — the frequent-path convention (mirrors other coordinators)
+        activeAgent = def;
+        disposeClient();
+        panel().clearTranscript();
+        panel().setAgentLabel(def.displayName());
+        host.setStatus(tr("status.agent.switched", def.displayName()));
     }
 
     /** The session's working directory: project root, else the active file's folder, else the home dir. */
@@ -717,6 +832,8 @@ final class AgentCoordinator implements AcpClient.Host {
         modes = List.of();
         currentModelId = null;
         currentModeId = null;
+        // activeAgent intentionally NOT reset here — it's a longer-lived runtime selection that outlives a
+        // session teardown; only switchAgentClient / a cross-agent resume changes it.
         if (c != null) {
             c.dispose();
         }
@@ -724,6 +841,7 @@ final class AgentCoordinator implements AcpClient.Host {
             panel.setBusy(false);
             panel.setModelLabel(null);
             panel.setModeLabel(null);
+            panel.setAgentLabel(activeAgent().displayName()); // keep showing which agent is selected
             panel.clearPlan();
         }
     }

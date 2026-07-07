@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Pure tests for {@link AgentCoordinator#modelDisplayName}/{@link AgentCoordinator#modeDisplayName} —
@@ -90,14 +91,24 @@ class AgentDisplayNameTest {
     @Test
     void sessionDetailCombinesTimeAndPath() {
         long now = 1_000_000L;
-        AgentSessionHistory.Entry e = new AgentSessionHistory.Entry("s1", "/etc/x", "Title", now - 3 * 86400);
+        AgentSessionHistory.Entry e = new AgentSessionHistory.Entry("s1", "/etc/x", "Title", now - 3 * 86400, "claude");
         assertEquals("3 days ago · /etc/x", AgentCoordinator.sessionDetail(e, now));
     }
 
     @Test
     void displayLabelFallsBackForBlank() {
-        assertEquals("Title", AgentCoordinator.displayLabel(new AgentSessionHistory.Entry("s1", "/p", "Title", 1L)));
         assertEquals(
-                "Untitled session", AgentCoordinator.displayLabel(new AgentSessionHistory.Entry("s1", "/p", "", 1L)));
+                "Title",
+                AgentCoordinator.displayLabel(new AgentSessionHistory.Entry("s1", "/p", "Title", 1L, "claude")));
+        assertEquals(
+                "Untitled session",
+                AgentCoordinator.displayLabel(new AgentSessionHistory.Entry("s1", "/p", "", 1L, "claude")));
+    }
+
+    @Test
+    void agentAvailableFalseForEmptyOrMissingAbsolutePath() {
+        assertFalse(AgentCoordinator.agentAvailable(null));
+        assertFalse(AgentCoordinator.agentAvailable(List.of()));
+        assertFalse(AgentCoordinator.agentAvailable(List.of("/definitely/not/a/real/path/xyz")));
     }
 }

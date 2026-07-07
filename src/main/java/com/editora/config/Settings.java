@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 59;
+    public static final int SCHEMA_VERSION = 60;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -200,8 +200,18 @@ public class Settings {
     /** Embedded AI agent (an ACP agent — e.g. Claude Code — in the AI Agent chat tool window): off by
      *  default. The agent is an external, user-installed CLI, never bundled. */
     private boolean agentSupport = false;
-    /** The ACP agent command (tokenized, quote-aware); blank = {@code claude-code-acp} on PATH. */
+    /** The ACP agent command (tokenized, quote-aware); blank = {@code claude-code-acp} on PATH — specifically
+     *  CLAUDE's command override (kept under its original name to avoid migrating existing user data). */
     private String agentCommand = "";
+    // Per-client command overrides for the other five ACP agents (blank = that agent's registry default).
+    // (Claude's override stays the pre-existing agentCommand field above, to avoid migrating existing data.)
+    private String geminiAgentCommand = "";
+    private String copilotAgentCommand = "";
+    private String codexAgentCommand = "";
+    private String qwenAgentCommand = "";
+    private String opencodeAgentCommand = "";
+    /** The persisted active ACP agent client id (blank = "claude" via AcpAgentRegistry.from). Mirrors aiProvider. */
+    private String agentClient = "";
     /** Prefix each agent prompt with a one-line "Context: &lt;path&gt;, cursor at line N[, selected:
      *  &quot;…&quot;]" header (not shown as if the user typed it) so the agent knows the active buffer
      *  without asking: on by default. */
@@ -507,6 +517,54 @@ public class Settings {
 
     public void setAgentCommand(String agentCommand) {
         this.agentCommand = agentCommand;
+    }
+
+    public String getGeminiAgentCommand() {
+        return geminiAgentCommand == null ? "" : geminiAgentCommand;
+    }
+
+    public void setGeminiAgentCommand(String v) {
+        this.geminiAgentCommand = v;
+    }
+
+    public String getCopilotAgentCommand() {
+        return copilotAgentCommand == null ? "" : copilotAgentCommand;
+    }
+
+    public void setCopilotAgentCommand(String v) {
+        this.copilotAgentCommand = v;
+    }
+
+    public String getCodexAgentCommand() {
+        return codexAgentCommand == null ? "" : codexAgentCommand;
+    }
+
+    public void setCodexAgentCommand(String v) {
+        this.codexAgentCommand = v;
+    }
+
+    public String getQwenAgentCommand() {
+        return qwenAgentCommand == null ? "" : qwenAgentCommand;
+    }
+
+    public void setQwenAgentCommand(String v) {
+        this.qwenAgentCommand = v;
+    }
+
+    public String getOpencodeAgentCommand() {
+        return opencodeAgentCommand == null ? "" : opencodeAgentCommand;
+    }
+
+    public void setOpencodeAgentCommand(String v) {
+        this.opencodeAgentCommand = v;
+    }
+
+    public String getAgentClient() {
+        return agentClient == null ? "" : agentClient;
+    }
+
+    public void setAgentClient(String agentClient) {
+        this.agentClient = agentClient;
     }
 
     public boolean isAgentIncludeContext() {

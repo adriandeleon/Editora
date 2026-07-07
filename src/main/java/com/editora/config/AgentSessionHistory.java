@@ -20,22 +20,23 @@ import com.fasterxml.jackson.databind.SerializationFeature;
  * user can resume a conversation after starting a new one. Most-recently-used first, deduplicated by
  * {@code sessionId}, capped at {@link #MAX_ENTRIES}. Mirrors {@link SearchHistory}; the backing
  * {@link ObservableList} lets the resume picker update automatically. Stored as a versioned object
- * {@code { "schemaVersion": 1, "sessions": [ … ] }}.
+ * {@code { "schemaVersion": 2, "sessions": [ … ] }}.
  *
- * <p>An entry's {@code label} (derived from the session's first user prompt) is set once and never
- * overwritten on later prompts, but its {@code updatedAt} and list position bump on every prompt in that
- * session (move-to-top-on-use, mirroring {@link RecentFiles}).
+ * <p>An entry's {@code label} and {@code agentId} (derived from the session's first user prompt / the
+ * active client at creation) are set once and never overwritten on later prompts, but its {@code updatedAt}
+ * and list position bump on every prompt in that session (move-to-top-on-use, mirroring {@link RecentFiles}).
  */
 public class AgentSessionHistory {
 
     /** A remembered chat session: its ACP id, the cwd it was created in (needed to resume), a one-line
-     *  title from its first prompt, and the epoch-seconds of its most recent prompt (ordering + display). */
-    public record Entry(String sessionId, String cwd, String label, long updatedAt) {}
+     *  title from its first prompt, the epoch-seconds of its most recent prompt (ordering + display), and
+     *  the agent client id that created it (which binary resume must relaunch — set once, like {@code label}). */
+    public record Entry(String sessionId, String cwd, String label, long updatedAt, String agentId) {}
 
     /** Whole conversations, not lightweight strings — a shorter cap than RecentFiles/SearchHistory. */
     public static final int MAX_ENTRIES = 15;
 
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     static final String FILE_NAME = "agent-sessions.json";
 
@@ -68,20 +69,23 @@ public class AgentSessionHistory {
      * <p><b>FX-thread only</b> — mutates the backing {@link ObservableList}, same rule as
      * {@link RecentFiles#add}/{@link SearchHistory#add}.
      */
-    public void remember(String sessionId, String cwd, String candidateLabel, long updatedAt) {
+    public void remember(String sessionId, String cwd, String candidateLabel, long updatedAt, String agentId) {
         if (sessionId == null || sessionId.isBlank()) {
             return;
         }
         String existingLabel = null;
+        String existingAgentId = null;
         for (Entry e : sessions) {
             if (sessionId.equals(e.sessionId())) {
                 existingLabel = e.label();
+                existingAgentId = e.agentId();
                 break;
             }
         }
         sessions.removeIf(e -> sessionId.equals(e.sessionId()));
         String label = existingLabel != null ? existingLabel : candidateLabel;
-        sessions.add(0, new Entry(sessionId, cwd, label, updatedAt));
+        String resolvedAgentId = existingAgentId != null ? existingAgentId : agentId;
+        sessions.add(0, new Entry(sessionId, cwd, label, updatedAt, resolvedAgentId));
         while (sessions.size() > MAX_ENTRIES) {
             sessions.remove(sessions.size() - 1);
         }

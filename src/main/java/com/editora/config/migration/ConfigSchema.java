@@ -101,7 +101,9 @@ public enum ConfigSchema {
                     Map.entry(55, (Migration) ConfigMigrations::identity), // v55→56: + todoGroupBy (additive)
                     Map.entry(56, (Migration) ConfigMigrations::identity), // v56→57: + aiProvider/aiEndpoint (additive)
                     Map.entry(57, (Migration) ConfigMigrations::identity), // v57→58: + TODO part colors (additive)
-                    Map.entry(58, (Migration) ConfigMigrations::identity))), // v58→59: + agentIncludeContext (additive)
+                    Map.entry(58, (Migration) ConfigMigrations::identity), // v58→59: + agentIncludeContext (additive)
+                    Map.entry(59, (Migration)
+                            ConfigMigrations::identity))), // v59→60: + agentClient/<id>AgentCommand (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
@@ -115,7 +117,8 @@ public enum ConfigSchema {
     // v1 → v2 added the per-revision label (additive; absent rows default to "").
     HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     SEARCH_HISTORY(SearchHistory.SCHEMA_VERSION, 1, Map.of()),
-    AGENT_SESSIONS(AgentSessionHistory.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2 backfilled agentId ("claude") on every session predating multi-agent support.
+    AGENT_SESSIONS(AgentSessionHistory.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::addDefaultAgentIdToSessions)),
     MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;

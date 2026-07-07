@@ -120,4 +120,27 @@ class ConfigMigrationsTest {
         ObjectNode settings = mapper.createObjectNode().put("x", 1); // no todoPatterns ⇒ defaults() supplies them
         assertFalse(ConfigMigrations.growTodoDefaultKeywords(settings).has("todoPatterns"));
     }
+
+    @Test
+    void addDefaultAgentIdBackfillsMissingEntries() throws Exception {
+        JsonNode input = mapper.readTree(
+                "{\"schemaVersion\":1,\"sessions\":[{\"sessionId\":\"s1\",\"cwd\":\"/p\",\"label\":\"A\",\"updatedAt\":1}]}");
+        JsonNode out = ConfigMigrations.addDefaultAgentIdToSessions(input);
+        assertEquals("claude", out.get("sessions").get(0).get("agentId").asText());
+    }
+
+    @Test
+    void addDefaultAgentIdLeavesExistingAgentIdUntouched() throws Exception {
+        JsonNode input = mapper.readTree(
+                "{\"sessions\":[" + "{\"sessionId\":\"s1\",\"agentId\":\"gemini\"}," + "{\"sessionId\":\"s2\"}]}");
+        JsonNode out = ConfigMigrations.addDefaultAgentIdToSessions(input);
+        assertEquals("gemini", out.get("sessions").get(0).get("agentId").asText());
+        assertEquals("claude", out.get("sessions").get(1).get("agentId").asText());
+    }
+
+    @Test
+    void addDefaultAgentIdNoOpsWhenSessionsAbsent() throws Exception {
+        JsonNode input = mapper.readTree("{\"x\":1}");
+        assertFalse(ConfigMigrations.addDefaultAgentIdToSessions(input).has("sessions"));
+    }
 }
