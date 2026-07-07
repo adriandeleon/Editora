@@ -36,6 +36,8 @@
                         <Button fx:id="findButton" onAction="#onFind"/>
                         <Button fx:id="findInFilesButton" onAction="#onFindInFiles"/>
                         <Separator orientation="VERTICAL"/>
+                        <Button fx:id="mavenButton" onAction="#onMavenActions"/>
+                        <Separator orientation="VERTICAL"/>
                         <Button fx:id="splitVerticalButton" onAction="#onSplitVertical"/>
                         <Button fx:id="splitHorizontalButton" onAction="#onSplitHorizontal"/>
                         <Separator orientation="VERTICAL"/>

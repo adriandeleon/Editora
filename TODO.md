@@ -3,6 +3,20 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Maven support — a toolbar icon (shown only when a pom.xml is detected for the active file/project)
+      opens an IntelliJ-style actions popup: the standard lifecycle phases, the pom's declared profiles
+      (checkable, composing with a run via `-P<id>`, marking any `activeByDefault` one), and each declared
+      plugin's explicitly-bound `<executions>` goals as `<prefix>:<goal>` rows via Maven's own plugin-prefix
+      convention — plus a "Run custom goal(s)…" freeform prompt. New pure `com.editora.maven` package
+      (`PomModel`/`PomParser`/`MavenPluginPrefix`/`MavenLifecycle`/`MavenExecutable`/`MavenArgs`) parses
+      pom.xml directly with the JDK's own XXE-hardened DOM parser (no new dependency, no
+      `mvn help:effective-pom` shell-out); profile-scoped plugins nest under their own profile once
+      checked. `MavenService` mirrors `RunService`'s streaming shape; runs prefer the project's `./mvnw`
+      wrapper, falling back to `mvn` on PATH (or a Settings override), streaming to a default-hidden Maven
+      console tool window. `Settings.mavenSupport` (default on, schema 61→62) + Simple-Mode/remote gating;
+      also adds `OverlayHost.showBelow(...)` (mirroring `positionAbove`) for anchoring a popup below a
+      top-of-window toolbar button. *Deferred: full effective-pom resolution (default-lifecycle bindings,
+      parent inheritance, `<pluginManagement>`), a persistent run-configuration list.*
 - [x] Clickable links in the Markdown preview — a rendered link shows a hand cursor and opens in the
       system default browser on click (previously inert). `MarkdownRenderer.renderDocument` gained an
       overload taking an optional click handler, threaded through the block/inline render chain
