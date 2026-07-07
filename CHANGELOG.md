@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **CSV grid preview could stay open on a non-CSV file after a restart.** If the CSV/TSV grid tool
+  window was left open in the previous session, it was force-reopened at startup (session restore) before
+  the first real buffer loaded — at that point every buffer-gated tool window is provisionally marked
+  "unavailable", so the reopened window's tracked availability and its actual open state diverged. The
+  very next gating pass (on the restored tab) saw the tracked flag as already matching and skipped
+  closing it, leaving the grid visibly open over a file that wasn't CSV until some other state change
+  happened to flip it. `ToolWindowManager.setAvailable` now always reconciles the actual open/closed +
+  stripe-button state instead of short-circuiting when its tracked flag already matches, so it self-heals
+  regardless of how it got out of sync (mirrors the same gating used by the Commit/Markdown-Lint/TODO
+  windows).
+
 ## [0.9.1] - 2026-07-06
 
 First tagged release. (`v0.9.0` was cut and pushed first, but a JReleaser misconfiguration published it
