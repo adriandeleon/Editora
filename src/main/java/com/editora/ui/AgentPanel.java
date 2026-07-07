@@ -57,6 +57,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private static final Duration RENDER_DEBOUNCE = Duration.millis(150);
 
     private final Label status = new Label();
+    private final Label agentLabel = new Label();
     private final Label modelLabel = new Label();
     private final Label modeLabel = new Label();
     private final VBox planBox = new VBox(2);
@@ -88,6 +89,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             Runnable onNewSession,
             Runnable onPickModel,
             Runnable onPickMode,
+            Runnable onPickAgentClient,
             Runnable onResumeSession,
             Consumer<String> onOpenPath) {
         this.onOpenPath = onOpenPath;
@@ -97,6 +99,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         setPadding(new Insets(6));
 
         status.getStyleClass().add("agent-status");
+        agentLabel.getStyleClass().add("agent-header-label");
+        agentLabel.setOnMouseClicked(e -> onPickAgentClient.run());
         modelLabel.getStyleClass().add("agent-header-label");
         modelLabel.setOnMouseClicked(e -> onPickModel.run());
         modeLabel.getStyleClass().add("agent-header-label");
@@ -108,7 +112,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         historyButton.setOnAction(e -> onResumeSession.run());
         newSessionButton.setText(tr("agent.newSession"));
         newSessionButton.setOnAction(e -> onNewSession.run());
-        HBox header = new HBox(8, status, modelLabel, modeLabel, spacer(), historyButton, newSessionButton, stopButton);
+        HBox header = new HBox(
+                8, status, agentLabel, modelLabel, modeLabel, spacer(), historyButton, newSessionButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
 
         planBox.setManaged(false);
@@ -299,6 +304,11 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         if (!busy) {
             finalizeCurrentMessage();
         }
+    }
+
+    /** Sets the agent-picker label's text (e.g. "Agent: Claude Code"); {@code null}/blank shows a placeholder. */
+    public void setAgentLabel(String name) {
+        agentLabel.setText(tr("agent.clientLabel", name == null || name.isEmpty() ? "—" : name));
     }
 
     /** Sets the model-picker label's text (e.g. "Model: Claude Opus"); {@code null}/blank shows a placeholder. */

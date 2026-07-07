@@ -187,4 +187,30 @@ public final class ConfigMigrations {
         }
         return o;
     }
+
+    /**
+     * v1 -> v2 for {@code agent-sessions.json}: backfill {@code agentId} on every remembered session that
+     * predates multi-agent support. Before this feature Claude Code was the only ACP agent, so any existing
+     * entry was created by it — set {@code "agentId":"claude"} on entries missing/blank it. An entry that
+     * already carries a non-blank {@code agentId} is left untouched (defensive, for partially-migrated data).
+     */
+    static JsonNode addDefaultAgentIdToSessions(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        JsonNode node = o.get("sessions");
+        if (node == null || !node.isArray()) {
+            return input;
+        }
+        for (JsonNode e : (ArrayNode) node) {
+            if (!(e instanceof ObjectNode entry)) {
+                continue;
+            }
+            JsonNode id = entry.get("agentId");
+            if (id == null || !id.isTextual() || id.asText().isBlank()) {
+                entry.put("agentId", "claude");
+            }
+        }
+        return input;
+    }
 }

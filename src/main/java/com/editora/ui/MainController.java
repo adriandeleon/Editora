@@ -587,6 +587,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         this.settingsWindow.setMacrosChangedHandler(
                 this::refreshSavedMacroCommandsAllWindows); // Macros page edits → re-register commands everywhere
+        this.settingsWindow.setAgentCoordinator(agentCoordinator); // AI Agent page: per-client status + combo
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
@@ -2961,9 +2962,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt) {
+        public void rememberSession(
+                String sessionId, String cwd, String candidateLabel, long updatedAt, String agentId) {
             if (agentSessionHistory != null) {
-                agentSessionHistory.remember(sessionId, cwd, candidateLabel, updatedAt);
+                agentSessionHistory.remember(sessionId, cwd, candidateLabel, updatedAt, agentId);
             }
         }
 
@@ -10205,6 +10207,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("agent.stop", agentCoordinator::stopTurn));
         registry.register(Command.of("agent.selectModel", agentCoordinator::pickModel));
         registry.register(Command.of("agent.selectMode", agentCoordinator::pickMode));
+        registry.register(Command.of("agent.selectClient", agentCoordinator::pickAgentClient));
         registry.register(Command.of("agent.resumeSession", agentCoordinator::resumeSessionPicker));
         registry.register(Command.of(
                 "view.toggleAgent",
