@@ -279,13 +279,15 @@ public class ToolWindowManager {
      * Context-driven availability (NOT persisted, unlike {@link #setVisible}): hides the tool window's
      * stripe button + closes it when {@code available} is false, restoring it (subject to the user's
      * {@link #isVisible} preference) when true. Used to hide the Commit window outside a Git repo without
-     * disturbing the user's show/hide setting.
+     * disturbing the user's show/hide setting. Always reconciles the actual open/closed + button state to
+     * match {@code available} — it does NOT short-circuit when the tracked flag already matches, because
+     * {@link #open}/{@link #restore} can force a window open while it's still marked unavailable (a
+     * previously-open tool window is restored at startup before the first real buffer loads, when every
+     * buffer-gated window is provisionally unavailable): without reconciling every call, that divergence
+     * between "tracked unavailable" and "actually open" would make the very next {@code setAvailable(tw,
+     * false)} look like a no-op and skip the {@link #close} it should perform.
      */
     public void setAvailable(ToolWindow tw, boolean available) {
-        boolean wasAvailable = !unavailable.contains(tw);
-        if (available == wasAvailable) {
-            return;
-        }
         if (available) {
             unavailable.remove(tw);
         } else {
