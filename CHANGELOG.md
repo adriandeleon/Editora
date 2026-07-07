@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the Welcome page's links), rather than being inert. `MarkdownRenderer.renderDocument` gained an
   overload taking an optional click handler; the print/PDF writers and the hover/completion-doc popups
   keep using the existing no-handler path, so only the interactive live preview is affected.
+- **Loading indicator while an AI explanation streams into the Markdown preview.** `ai.explainSelection`
+  opens a new `explanation.md` buffer in Preview mode and streams the response in, but the preview's
+  re-render is debounced ~250ms after the text stops changing — a fast, continuous stream can go the
+  whole generation without a quiet gap, leaving the preview blank with no feedback until it finally
+  finishes. `EditorBuffer` gained a centered spinner + message overlay (`setPreviewLoading`), shown from
+  just before the request starts until it ends (success or error).
 
 ### Fixed
 

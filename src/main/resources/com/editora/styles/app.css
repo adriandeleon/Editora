@@ -315,6 +315,12 @@
     -fx-background-color: -color-bg-default;
     -fx-background: -color-bg-default;
 }
+/* Centered spinner + message shown over the preview while content is expected but hasn't rendered yet
+   (e.g. an AI explanation streaming in) — see EditorBuffer.setPreviewLoading. */
+.markdown-preview-loading-label {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 13px;
+}
 /* The full-width backdrop behind the centered, width-capped column. The base font-size lives here (not
    on .markdown-preview) so the −/+ zoom — which overrides this node's font-size inline — is inherited by
    the inner column; an explicit rule on .markdown-preview would block that inheritance. Headings/code
