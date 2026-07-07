@@ -259,6 +259,10 @@ final class AiCoordinator {
             target.setDisplayName("explanation.md");
             ops.openTab(target);
             target.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.PREVIEW);
+            // A fast continuous stream may never hit the preview's 250ms debounce quiet period, so the
+            // preview can stay blank for the whole generation with no feedback — show a spinner over it
+            // until generation ends (success or failure), whichever comes first.
+            target.setPreviewLoading(true, tr("markdown.preview.generating"));
             start(tr("status.ai.explaining"));
             service.generate(
                     provider(),
@@ -276,6 +280,7 @@ final class AiCoordinator {
                         @Override
                         public void onDone(String stopReason) {
                             busy = false;
+                            target.setPreviewLoading(false, null);
                             if (checkStop(stopReason)) {
                                 host.setStatus(tr("status.ai.done"));
                             }
@@ -283,6 +288,7 @@ final class AiCoordinator {
 
                         @Override
                         public void onError(String message) {
+                            target.setPreviewLoading(false, null);
                             fail(message);
                         }
                     });

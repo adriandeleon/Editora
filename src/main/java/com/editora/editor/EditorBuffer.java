@@ -21,6 +21,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.SplitPane;
@@ -33,6 +34,7 @@ import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
 import javafx.scene.text.Font;
@@ -151,6 +153,12 @@ public class EditorBuffer implements TabContent {
     private ScrollPane previewPane;
     /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
     private StackPane previewHost;
+    /** Centered spinner + message shown over the preview while content is expected but not yet rendered
+     *  (e.g. an AI explanation streaming in) — otherwise the pane just looks blank. Toggled by
+     *  {@link #setPreviewLoading}; always present in {@link #previewHost()}, hidden by default. */
+    private Node previewLoadingOverlay;
+
+    private Label previewLoadingLabel;
     /** The preview's −/+ zoom + light/dark control (overlaid top-left of the preview when previewing). */
     private HBox zoomControl;
     /** The preview light/dark toggle button (a sun/moon glyph); reflects the current effective theme. */
@@ -3511,11 +3519,50 @@ public class EditorBuffer implements TabContent {
         if (previewHost == null) {
             previewHost = new StackPane();
         }
-        // preview content + the −/+ zoom control (top-left, clear of the mode toggle at top-right).
-        previewHost.getChildren().setAll(previewPane(), zoomControl());
+        // preview content + the −/+ zoom control (top-left, clear of the mode toggle at top-right) + the
+        // (normally hidden) centered loading overlay.
+        previewHost.getChildren().setAll(previewPane(), zoomControl(), previewLoadingOverlay());
         StackPane.setAlignment(zoomControl(), Pos.TOP_LEFT);
         StackPane.setMargin(zoomControl(), new Insets(6, 0, 0, 6));
+        StackPane.setAlignment(previewLoadingOverlay(), Pos.CENTER);
         return previewHost;
+    }
+
+    /**
+     * Centered spinner + message overlaid on the preview while it's expected to render soon but hasn't
+     * yet — e.g. an AI-generated explanation streams into the buffer, but the debounced preview re-render
+     * only fires ~250ms after the text stops changing, so a fast continuous stream can leave the preview
+     * blank for its whole duration with no feedback otherwise. Toggled by {@link #setPreviewLoading}.
+     */
+    private Node previewLoadingOverlay() {
+        if (previewLoadingOverlay == null) {
+            ProgressIndicator spinner = new ProgressIndicator();
+            spinner.setMaxSize(32, 32);
+            previewLoadingLabel = new Label();
+            previewLoadingLabel.getStyleClass().add("markdown-preview-loading-label");
+            VBox box = new VBox(10, spinner, previewLoadingLabel);
+            box.setAlignment(Pos.CENTER);
+            box.getStyleClass().add("markdown-preview-loading");
+            box.setVisible(false);
+            box.setManaged(false);
+            box.setMouseTransparent(true); // never intercepts clicks meant for the preview underneath
+            previewLoadingOverlay = box;
+        }
+        return previewLoadingOverlay;
+    }
+
+    /**
+     * Shows or hides the preview's centered loading spinner (see {@link #previewLoadingOverlay()}).
+     * {@code message} replaces the label text when non-null; pass {@code false} once real content is
+     * ready (or generation fails) to hide it again.
+     */
+    public void setPreviewLoading(boolean loading, String message) {
+        Node overlay = previewLoadingOverlay();
+        if (message != null) {
+            previewLoadingLabel.setText(message);
+        }
+        overlay.setVisible(loading);
+        overlay.setManaged(loading);
     }
 
     private HBox zoomControl() {

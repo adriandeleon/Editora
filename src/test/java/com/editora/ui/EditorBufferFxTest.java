@@ -222,6 +222,24 @@ class EditorBufferFxTest {
     }
 
     @Test
+    void previewLoadingOverlayTogglesOverThePreview() throws Exception {
+        EditorBuffer b = markdownBuffer("# Title\n");
+        FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
+
+        FxTestSupport.runOnFx(() -> b.setPreviewLoading(true, "Generating…"));
+        Node overlay = FxTestSupport.field(b, "previewLoadingOverlay");
+        javafx.scene.control.Label label = FxTestSupport.field(b, "previewLoadingLabel");
+        assertTrue(overlay.isVisible(), "loading overlay shown while generating");
+        assertTrue(overlay.isManaged());
+        assertEquals("Generating…", label.getText());
+
+        FxTestSupport.runOnFx(() -> b.setPreviewLoading(false, null));
+        assertFalse(overlay.isVisible(), "loading overlay hidden once generation ends");
+        assertFalse(overlay.isManaged());
+        assertEquals("Generating…", label.getText(), "a null message leaves the prior text in place");
+    }
+
+    @Test
     void revertingToSavedContentClearsDirty() throws Exception {
         EditorBuffer b = FxTestSupport.callOnFx(() -> {
             EditorBuffer buf = new EditorBuffer();
