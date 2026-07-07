@@ -3,9 +3,11 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.List;
 
+import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.Label;
+import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.editor.MarkdownRenderer;
@@ -14,7 +16,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -75,5 +79,30 @@ class MarkdownRendererFxTest {
                 .anyMatch(f -> f.getStyleClass().contains("md-code-block"));
         assertTrue(plainLabel, "no language ⇒ plain Label code block");
         assertFalse(highlightedFlow, "no language ⇒ not a highlighted TextFlow");
+    }
+
+    @Test
+    void linkGetsClickHandlerAndHandCursorWhenWired() throws Exception {
+        List<String> clicked = new ArrayList<>();
+        Node root = FxTestSupport.callOnFx(() -> MarkdownRenderer.renderDocument(
+                MarkdownRenderer.parseToDocument("[example](https://example.com)"), null, clicked::add));
+        Text link = collect(root, Text.class).stream()
+                .filter(t -> t.getStyleClass().contains("md-link"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(Cursor.HAND, link.getCursor(), "a clickable link shows the hand cursor");
+        link.getOnMouseClicked().handle(null); // the handler ignores its event arg
+        assertEquals(List.of("https://example.com"), clicked, "click fires with the link's raw destination");
+    }
+
+    @Test
+    void linkHasNoClickHandlerWithoutOneWired() throws Exception {
+        // Non-interactive renders (print/PDF/popups) pass no handler — links must stay inert.
+        Node root = render("[example](https://example.com)");
+        Text link = collect(root, Text.class).stream()
+                .filter(t -> t.getStyleClass().contains("md-link"))
+                .findFirst()
+                .orElseThrow();
+        assertNull(link.getOnMouseClicked(), "no handler wired ⇒ link isn't clickable");
     }
 }
