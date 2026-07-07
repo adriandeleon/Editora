@@ -1781,6 +1781,14 @@
     -fx-background-insets: 0;
 }
 
+/* AI Agent: an inline-code span in a reply that looks like a file path is clickable (opens it). */
+.agent-code-path {
+    -fx-cursor: hand;
+}
+.agent-code-path:hover {
+    -fx-underline: true;
+}
+
 /* Green play glyph for the gutter Run marker (compact source main line) + the right-click Run item. */
 .run-marker { -fx-fill: #3fb950; }
 .fold-gutter .run-slot:hover .run-marker { -fx-fill: #56d364; }

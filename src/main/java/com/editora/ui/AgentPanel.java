@@ -7,10 +7,12 @@ import javafx.animation.PauseTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -40,6 +42,11 @@ import static com.editora.i18n.Messages.tr;
  * render synchronously — whatever agent message was streaming, so the next chunk starts a fresh message
  * rather than continuing the previous one. Capped at {@link #MAX_ENTRIES} transcript nodes (oldest
  * dropped first) so a long session can't grow memory without bound.
+ *
+ * <p>Every rendered reply is also walked ({@link #wireInlineCodePaths}) to make an inline-code span that
+ * looks like a file path ({@link #looksLikePath}) clickable — opens it via the injected {@code onOpenPath}
+ * callback, so a path the agent mentions (e.g. "The script is at `/home/me/script.py`") is one click away
+ * instead of copy-pasted into a file-open dialog.
  */
 public final class AgentPanel extends VBox implements ToolWindowContent {
 
@@ -62,6 +69,9 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private final Button historyButton = new Button();
     /** Receives the prompt text when the user sends (coordinator → agent). */
     private Consumer<String> onSend;
+    /** Receives a clicked inline-code span's raw text that looks like a file path (coordinator resolves +
+     *  opens it, or reports it doesn't exist). */
+    private final Consumer<String> onOpenPath;
     /** The plain-text line font, applied to each new {@code agent-line} Label ({@link #setPanelFont}). */
     private String lineFontFamily;
 
@@ -78,7 +88,9 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             Runnable onNewSession,
             Runnable onPickModel,
             Runnable onPickMode,
-            Runnable onResumeSession) {
+            Runnable onResumeSession,
+            Consumer<String> onOpenPath) {
+        this.onOpenPath = onOpenPath;
         getStyleClass().add("agent-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(6);
@@ -231,7 +243,40 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             fallback.setWrapText(true);
             rendered = fallback;
         }
+        wireInlineCodePaths(rendered);
         currentAgentWrapper.getChildren().setAll(rendered);
+    }
+
+    /**
+     * Walks a just-rendered Markdown node tree, making every inline-code span ({@code .md-inline-code}
+     * Label) whose text {@link #looksLikePath} clickable: opens it via the injected {@code onOpenPath}
+     * callback. The real "does this exist" check happens there (in the coordinator, at click time), not
+     * here, so rendering a reply never touches disk — only the cheap syntactic pre-filter runs per span.
+     */
+    private void wireInlineCodePaths(Node node) {
+        if (node instanceof Label label && label.getStyleClass().contains("md-inline-code")) {
+            String text = label.getText();
+            if (looksLikePath(text)) {
+                label.getStyleClass().add("agent-code-path");
+                label.setOnMouseClicked(e -> onOpenPath.accept(text));
+                Tooltip.install(label, new Tooltip(tr("agent.openFileTooltip")));
+            }
+        } else if (node instanceof Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                wireInlineCodePaths(child);
+            }
+        }
+    }
+
+    /** Pure: whether inline-code text looks like a file path worth offering as clickable — contains a
+     *  path separator or a home-tilde, no whitespace, and isn't a URL. Package-private + static: directly
+     *  unit-tested (the {@link #glyphFor} idiom). */
+    static boolean looksLikePath(String text) {
+        if (text == null) {
+            return false;
+        }
+        String s = text.strip();
+        return !s.isEmpty() && !s.contains(" ") && !s.contains("://") && (s.contains("/") || s.startsWith("~"));
     }
 
     /** Clears the transcript (a new session). */

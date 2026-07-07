@@ -19,6 +19,7 @@ import javafx.scene.control.ButtonType;
 import com.editora.agent.AcpClient;
 import com.editora.agent.AcpJson;
 import com.editora.config.AgentSessionHistory;
+import com.editora.config.PathKeys;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.RelativeTime;
 import com.editora.run.ProgramArgs;
@@ -63,6 +64,9 @@ final class AgentCoordinator implements AcpClient.Host {
          *  visible, without stealing focus from the chat. FX-thread only. */
         EditorBuffer openBackgroundBuffer(Path target);
 
+        /** Opens (and focuses) {@code file} as a normal tab — already-open switches to it. FX-thread only. */
+        void openPath(Path file);
+
         /** Records a prompt in {@code sessionId} in the persisted resume history (title set once from
          *  {@code candidateLabel}; position/timestamp bumped on every call). FX-thread only. */
         void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt);
@@ -102,7 +106,12 @@ final class AgentCoordinator implements AcpClient.Host {
     AgentPanel panel() {
         if (panel == null) {
             panel = new AgentPanel(
-                    this::stopTurn, this::newSession, this::pickModel, this::pickMode, this::resumeSessionPicker);
+                    this::stopTurn,
+                    this::newSession,
+                    this::pickModel,
+                    this::pickMode,
+                    this::resumeSessionPicker,
+                    this::openPathCandidate);
             panel.setOnSend(this::sendPrompt);
             applyPanelFont();
         }
@@ -508,6 +517,20 @@ final class AgentCoordinator implements AcpClient.Host {
             return b.getPath().toAbsolutePath().getParent();
         }
         return Path.of(System.getProperty("user.home"));
+    }
+
+    /** {@link AgentPanel}'s inline-code-path click handler: resolves a clicked span's raw text to a file
+     *  (relative paths against {@link #sessionCwd()}, {@code ~} expands to the user's home — reusing
+     *  {@link PathKeys#resolveUserInput}, the same resolver the Save-As prompt uses) and opens it if it
+     *  exists; reports a clear status instead of silently doing nothing when it doesn't resolve to a real
+     *  file (the syntactic pre-filter in {@code AgentPanel.looksLikePath} can't know that without disk I/O). */
+    private void openPathCandidate(String text) {
+        Path resolved = PathKeys.resolveUserInput(text, sessionCwd(), System.getProperty("user.home"));
+        if (resolved != null && Files.exists(resolved)) {
+            ops.openPath(resolved);
+        } else {
+            host.setStatus(tr("status.agent.pathNotFound", text));
+        }
     }
 
     // --- AcpClient.Host (reader/request threads — marshal to FX here) --------------------------------
