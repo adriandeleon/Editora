@@ -213,6 +213,13 @@ Editora is built with the help of AI coding tools.
   `npm i -g @mermaid-js/mermaid-cli` sometimes skips Chrome's download). The in-app
   **Settings → Mermaid → Install…** button (and the `install.mermaidSupport` command) now does this for
   you — it installs mmdc *and* that Chrome.
+- **Maven support** — a toolbar icon (shown only when a pom.xml is detected) opens an IntelliJ-style
+  actions popup: the standard lifecycle phases, the pom's declared profiles (checkable, composing with a
+  run via `-P`), and each plugin's explicitly-bound goals (`spotless:check`, `jacoco:report`, …) — plus a
+  "Run custom goal(s)…" freeform box. Discovery is pom.xml-only (no `mvn help:effective-pom`, no new
+  dependency) so it's instant and offline; runs prefer the project's own `./mvnw` wrapper, falling back to
+  `mvn` on PATH, streaming to a Maven console. **On by default** (inert until a pom.xml is found) — toggle
+  under *Settings → Languages & Tools → Maven*.
 - **Export to PDF** — export the active file as a real, *searchable* PDF: source code with syntax
   highlighting and optional line numbers (always a light theme), the **Markdown** preview as native
   vector text (headings, lists, tables, images, embedded diagrams), or a standalone Mermaid `.mmd`

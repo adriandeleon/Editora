@@ -77,26 +77,33 @@ public final class OverlayHost {
      */
     /** Shows {@code content} centered near the top (no anchor). */
     public void show(Node content, Runnable onShown, Runnable onHidden) {
-        show(content, null, false, onShown, onHidden);
+        show(content, null, false, false, onShown, onHidden);
     }
 
     /** Shows {@code content} with no anchor, either centered near the top (default) or in the middle of
      *  the overlay ({@code centered}). */
     public void show(Node content, boolean centered, Runnable onShown, Runnable onHidden) {
-        show(content, null, centered, onShown, onHidden);
+        show(content, null, centered, false, onShown, onHidden);
     }
 
-    /** Anchored variant (positioned above {@code anchor}); never centered. */
+    /** Anchored variant, positioned <em>above</em> {@code anchor} (e.g. a status-bar segment, so the
+     *  dropdown "drops" from it); never centered. */
     public void show(Node content, Node anchor, Runnable onShown, Runnable onHidden) {
-        show(content, anchor, false, onShown, onHidden);
+        show(content, anchor, false, false, onShown, onHidden);
+    }
+
+    /** Anchored variant, positioned <em>below</em> {@code anchor} instead — for a top-of-window anchor
+     *  (e.g. a toolbar button), where growing "above" would push the card off the top of the window. */
+    public void showBelow(Node content, Node anchor, Runnable onShown, Runnable onHidden) {
+        show(content, anchor, false, true, onShown, onHidden);
     }
 
     /**
      * Shows {@code content} as an overlay. When {@code anchor} is non-null the card is positioned just
-     * <em>above</em> that node (e.g. a status-bar segment, so the dropdown "drops" from it); otherwise it
-     * is centered near the top like the command palette, or in the vertical middle when {@code centered}.
+     * above (default) or, when {@code below} is set, just below that node; otherwise it is centered near
+     * the top like the command palette, or in the vertical middle when {@code centered}.
      */
-    private void show(Node content, Node anchor, boolean centered, Runnable onShown, Runnable onHidden) {
+    private void show(Node content, Node anchor, boolean centered, boolean below, Runnable onShown, Runnable onHidden) {
         // Replacing one overlay with another (e.g. palette → file finder): clear the previous component's
         // flag, but keep the original focus owner so dismissal returns to the editor, not the prior card.
         if (showing.get()) {
@@ -122,15 +129,17 @@ public final class OverlayHost {
         showing.set(true);
         if (anchor != null) {
             // Force a CSS + layout pass so overlayRoot has its real height now (the card may be added this
-            // pulse), then anchor the card. We pin the card's *bottom* via bottom-alignment + a bottom
-            // margin rather than computing its top from a measured height: the message-log ListView sizes
-            // its cells across several pulses, so a height-based position would land short on the first
-            // show and clip the footer. With the bottom pinned, the layout engine grows the card upward
-            // from a fixed bottom edge at its natural height — correct on the first show, no measuring.
+            // pulse), then anchor the card. Above-anchoring pins the card's *bottom* via bottom-alignment +
+            // a bottom margin rather than computing its top from a measured height: the message-log
+            // ListView sizes its cells across several pulses, so a height-based position would land short
+            // on the first show and clip the footer. With the bottom pinned, the layout engine grows the
+            // card upward from a fixed bottom edge at its natural height — correct on the first show, no
+            // measuring. Below-anchoring is the mirror image, pinned from the top instead.
             overlayRoot.applyCss();
             overlayRoot.layout();
-            positionAbove(content, anchor);
-            Platform.runLater(() -> positionAbove(content, anchor)); // re-pin after anchor bounds settle
+            Runnable position = below ? () -> positionBelow(content, anchor) : () -> positionAbove(content, anchor);
+            position.run();
+            Platform.runLater(position); // re-pin after anchor bounds settle
         }
         if (onShown != null) {
             Platform.runLater(onShown); // after layout, so getCharacterBoundsOnScreen / focus work
@@ -151,6 +160,21 @@ public final class OverlayHost {
         double bottomMargin = Math.max(4, overlayRoot.getHeight() - a.getMinY() + gap);
         StackPane.setAlignment(content, Pos.BOTTOM_LEFT);
         StackPane.setMargin(content, new Insets(0, 0, bottomMargin, left));
+    }
+
+    /** Pins {@code content}'s top-left just below {@code anchor} (scene coordinates) using StackPane
+     *  top-alignment + margins — the mirror image of {@link #positionAbove}, for a top-of-window anchor
+     *  like a toolbar button, so the card "drops" from it like a menu instead of growing upward off-screen. */
+    private void positionBelow(Node content, Node anchor) {
+        if (anchor.getScene() == null) {
+            return;
+        }
+        javafx.geometry.Bounds a = anchor.localToScene(anchor.getBoundsInLocal());
+        double gap = 4;
+        double left = Math.max(4, a.getMinX());
+        double topMargin = Math.max(4, a.getMaxY() + gap);
+        StackPane.setAlignment(content, Pos.TOP_LEFT);
+        StackPane.setMargin(content, new Insets(topMargin, 0, 0, left));
     }
 
     public void hide() {

@@ -14,6 +14,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.run.StackTraceLinks;
+import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -106,6 +107,27 @@ public final class RunPanel extends VBox implements ToolWindowContent {
      *  Debug console (see {@link DebugPanel}). */
     static void installLinkClicks(
             TextArea console, java.util.function.Supplier<Consumer<StackTraceLinks.Link>> handler) {
+        console.setOnMouseClicked(e -> {
+            Consumer<StackTraceLinks.Link> h = handler.get();
+            if (h == null || e.getClickCount() != 2) {
+                return;
+            }
+            String text = console.getText();
+            int caret = Math.min(console.getCaretPosition(), text.length());
+            int start = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
+            int end = text.indexOf('\n', caret);
+            StackTraceLinks.Link link = StackTraceLinks.parse(text.substring(start, end < 0 ? text.length() : end));
+            if (link != null) {
+                h.accept(link);
+            }
+        });
+    }
+
+    /** {@link CodeArea} overload of {@link #installLinkClicks(TextArea, java.util.function.Supplier)} — used
+     *  by {@link MavenPanel}, whose console is a RichTextFX {@code CodeArea} (not a plain {@code TextArea})
+     *  so it can color lines via {@code com.editora.maven.MavenOutputStyle}. */
+    static void installLinkClicks(
+            CodeArea console, java.util.function.Supplier<Consumer<StackTraceLinks.Link>> handler) {
         console.setOnMouseClicked(e -> {
             Consumer<StackTraceLinks.Link> h = handler.get();
             if (h == null || e.getClickCount() != 2) {

@@ -248,10 +248,12 @@ Apache MINA SSHD (org.apache.sshd: sshd-osgi, sshd-sftp)
 
 Simple Icons (browser + file-type glyphs)
     The Chrome, Firefox, and Microsoft Edge glyphs in the HTML Live Preview
-    browser picker (com.editora.ui.Icons), and the per-language file-type glyphs
-    in com.editora.ui.FileIcons (Java, Python, JavaScript, TypeScript, Go, PHP,
-    Ruby, C, C++, C#, Kotlin, HTML5, CSS, Markdown, YAML, Bash, Docker, Terraform,
-    Mermaid, …), are the single-path SVG logos from the Simple Icons collection,
+    browser picker (com.editora.ui.Icons), the Apache Maven feather glyph in the
+    Maven toolbar button (com.editora.ui.Icons.maven), and the per-language
+    file-type glyphs in com.editora.ui.FileIcons (Java, Python, JavaScript,
+    TypeScript, Go, PHP, Ruby, C, C++, C#, Kotlin, HTML5, CSS, Markdown, YAML,
+    Bash, Docker, Terraform, Mermaid, …), are the single-path SVG logos from the
+    Simple Icons collection,
     released under CC0 1.0 Universal (public domain). The brand logos are
     trademarks of their respective owners and are used here only to identify the
     file type / browser. They are recolored monochrome to match the editor theme.

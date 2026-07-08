@@ -105,6 +105,7 @@ public class SettingsWindow {
         DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS, true),
         MARKDOWN(tr("settings.cat.markdown"), Group.LANGUAGES_TOOLS),
         MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS),
+        MAVEN(tr("settings.cat.maven"), Group.LANGUAGES_TOOLS),
         WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, true),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
         // Version control
@@ -152,6 +153,7 @@ public class SettingsWindow {
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
     private final com.editora.mermaid.MermaidService mermaidService;
+    private final MavenCoordinator maven;
     private final com.editora.lsp.LspManager lspManager;
     private final com.editora.dap.DapManager dapManager;
     private final Stage stage = new Stage();
@@ -307,6 +309,9 @@ public class SettingsWindow {
     private TextField maidPathField;
     private TextField templateAuthorField;
     private Label mermaidStatusLabel;
+    private CheckBox mavenCheck;
+    private TextField mavenCommandField;
+    private Label mavenStatusLabel;
     private CheckBox ripgrepCheck;
     private CheckBox searchGitignoreCheck;
     private TextField ripgrepCommandField;
@@ -411,6 +416,7 @@ public class SettingsWindow {
             ToolWindowManager toolWindows,
             com.editora.git.GitService gitService,
             com.editora.mermaid.MermaidService mermaidService,
+            MavenCoordinator maven,
             com.editora.lsp.LspManager lspManager,
             com.editora.dap.DapManager dapManager,
             Consumer<Settings> onApply,
@@ -422,6 +428,7 @@ public class SettingsWindow {
         this.toolWindows = toolWindows;
         this.gitService = gitService;
         this.mermaidService = mermaidService;
+        this.maven = maven;
         this.lspManager = lspManager;
         this.dapManager = dapManager;
         this.onApply = onApply;
@@ -497,6 +504,7 @@ public class SettingsWindow {
         refreshLspStatus();
         refreshDebugStatus();
         refreshMermaidStatus();
+        refreshMavenStatus();
         refreshAgentClientStatus();
     }
 
@@ -960,6 +968,19 @@ public class SettingsWindow {
             refreshMermaidStatus();
         });
 
+        mavenCheck = new CheckBox(tr("settings.enableMaven"));
+        mavenCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setMavenSupport(now);
+            apply();
+            refreshMavenStatus();
+        });
+        mavenCommandField = new TextField();
+        mavenCommandField.setPromptText("mvn");
+        mavenCommandField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setMavenCommand(now);
+            apply();
+        });
+
         ripgrepCheck = new CheckBox(tr("settings.search.useRipgrep"));
         ripgrepCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setRipgrepSearch(now);
@@ -1291,6 +1312,7 @@ public class SettingsWindow {
         pages.put(Category.DEBUG, debugPage());
         pages.put(Category.MARKDOWN, markdownPage());
         pages.put(Category.MERMAID, mermaidPage());
+        pages.put(Category.MAVEN, mavenPage());
         pages.put(Category.WEB, webPage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
         // Version control
@@ -2534,6 +2556,27 @@ public class SettingsWindow {
         hint.setWrapText(true);
         hint.setMaxWidth(440);
         row(p, Category.MERMAID, null, hint, "mermaid install npm mmdc maid cli");
+        return p;
+    }
+
+    private VBox mavenPage() {
+        VBox p = page(tr("settings.cat.maven"));
+        mavenStatusLabel = new Label(tr("settings.maven.notFound"));
+        mavenStatusLabel.getStyleClass().add("settings-git-status");
+        mavenStatusLabel.setWrapText(true);
+        mavenStatusLabel.setMaxWidth(440);
+        row(p, Category.MAVEN, null, mavenStatusLabel, "maven pom found detected not found");
+        row(p, Category.MAVEN, null, mavenCheck, "maven pom.xml build lifecycle enable toolbar");
+        row(
+                p,
+                Category.MAVEN,
+                null,
+                exePathRow(tr("settings.maven.commandOverride"), mavenCommandField),
+                "maven mvn command override path executable wrapper mvnw");
+        Label hint = note(tr("settings.maven.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.MAVEN, null, hint, "maven mvnw wrapper pom.xml lifecycle goals profiles");
         return p;
     }
 
@@ -4504,6 +4547,23 @@ public class SettingsWindow {
         });
     }
 
+    /** Reads the Maven coordinator's currently-cached detection (no subprocess probe needed — "found"
+     *  just means a pom.xml parsed for the active context) and colors the status row green/red. */
+    private void refreshMavenStatus() {
+        if (mavenStatusLabel == null || maven == null) {
+            return;
+        }
+        boolean found = maven.hasPom();
+        mavenStatusLabel
+                .getStyleClass()
+                .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+        String artifactId = maven.detectedArtifactId();
+        mavenStatusLabel.setText(
+                found
+                        ? tr("settings.maven.found", artifactId == null ? "?" : artifactId)
+                        : tr("settings.maven.notFound"));
+    }
+
     /** Injected by MainController: probes {@code rg} off-thread, delivering found/not-found on the FX thread. */
     public void setRipgrepProbe(java.util.function.Consumer<java.util.function.Consumer<Boolean>> probe) {
         this.ripgrepProbe = probe;
@@ -5228,6 +5288,9 @@ public class SettingsWindow {
             mmdcPathField.setText(settings.getMmdcPath());
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
+            mavenCheck.setSelected(settings.isMavenSupport());
+            mavenCommandField.setText(settings.getMavenCommand());
+            refreshMavenStatus();
             ripgrepCheck.setSelected(settings.isRipgrepSearch());
             searchGitignoreCheck.setSelected(settings.isSearchRespectGitignore());
             ripgrepCommandField.setText(settings.getRipgrepCommand());

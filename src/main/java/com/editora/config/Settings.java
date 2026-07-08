@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 61;
+    public static final int SCHEMA_VERSION = 62;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -170,6 +170,13 @@ public class Settings {
     private String mmdcPath = "";
     /** Path to the maid (probelabs/maid linter) executable; blank = resolve "maid" on PATH. */
     private String maidPath = "";
+    /** Maven support (a toolbar icon + actions popup parsed from the active project's pom.xml, streaming
+     *  goal/phase runs to a console): on by default — self-gates on detection, so it stays inert (the
+     *  toolbar button hidden) until a pom.xml is actually found for the current project/file. */
+    private boolean mavenSupport = true;
+    /** Override command for launching Maven; blank = auto (prefer the project's ./mvnw wrapper, else
+     *  resolve "mvn" on PATH). */
+    private String mavenCommand = "";
     /** Use ripgrep to accelerate Find in Files when it's detected on PATH (default on; falls back otherwise). */
     private boolean ripgrepSearch = true;
     /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
@@ -1110,6 +1117,22 @@ public class Settings {
 
     public void setMaidPath(String maidPath) {
         this.maidPath = maidPath == null ? "" : maidPath;
+    }
+
+    public boolean isMavenSupport() {
+        return mavenSupport;
+    }
+
+    public void setMavenSupport(boolean mavenSupport) {
+        this.mavenSupport = mavenSupport;
+    }
+
+    public String getMavenCommand() {
+        return mavenCommand == null ? "" : mavenCommand;
+    }
+
+    public void setMavenCommand(String mavenCommand) {
+        this.mavenCommand = mavenCommand == null ? "" : mavenCommand;
     }
 
     public boolean isRipgrepSearch() {

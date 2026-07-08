@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Maven support — a toolbar icon + actions popup that reads the active project's pom.xml, IntelliJ-style.**
+  A new Maven toolbar button (hidden until a pom.xml is actually detected for the active file/project;
+  refreshed on tab switch, window focus-regain, and save) opens a searchable popup listing the standard
+  lifecycle phases (clean, validate, compile, test, package, verify, install, site, deploy), the pom's
+  declared `<profiles>` (checkable — composing with a run via `-P<id>`, without closing the popup — and
+  marking any `activeByDefault` one), and each declared `<build>/<plugins>` entry's explicitly-bound
+  `<executions>` goals as `<prefix>:<goal>` rows (e.g. `spotless:check`, `jacoco:report`) using Maven's
+  own plugin-prefix naming convention; profile-scoped plugins (`<profiles>/<profile>/<build>/<plugins>`)
+  are nested under their own profile once checked. Discovery is pom.xml-only — parsed directly with the
+  JDK's own hardened DOM parser (`java.xml`, XXE disallowed outright; no third-party XML dependency, no
+  shelling out to `mvn help:effective-pom`) — so it's instant and offline; a plugin with no `<executions>`
+  is omitted from the goal list (the "Run custom goal(s)…" freeform prompt covers those). Runs prefer the
+  project's own `./mvnw`/`mvnw.cmd` wrapper when present, falling back to `mvn` resolved on PATH (or a
+  Settings override), streaming output to a dedicated Maven console tool window (default-hidden, auto-opens
+  on a run). New pure package `com.editora.maven` (`PomModel`/`PomParser`/`MavenPluginPrefix`/
+  `MavenLifecycle`/`MavenExecutable`/`MavenArgs`) + `MavenService` (mirrors `RunService`'s streaming shape)
+  + `ui/MavenPanel`/`ui/MavenActionsPopup`/`ui/MavenCoordinator`. Gated by `Settings.mavenSupport` (default
+  on — inert until a pom.xml is found) + `Settings.mavenCommand` override (schema 61→62), with a Settings →
+  Languages & Tools → Maven page; off in Simple UI mode and for remote (SFTP) files. Palette commands
+  `view.toggleMavenSupport`, `maven.showActions`, `maven.runCustom`, `maven.stop`, `maven.rerunLast`,
+  `maven.refresh`, `tool.maven`. Also generalizes `OverlayHost` with a `showBelow(...)` variant (mirroring
+  the existing `positionAbove`) so a popup can drop below a top-of-window anchor like a toolbar button,
+  rather than only above a status-bar-style anchor.
 - **A dedicated "AI" group in Settings, with a master Enable/Disable AI switch (off by default).**
   The AI Agent and AI Actions pages — previously scattered under separate groups — now live together
   under a new **AI** sidebar group, alongside a new landing page holding a single master checkbox
