@@ -8,6 +8,7 @@ module com.editora {
     requires atlantafx.base;
     requires com.fasterxml.jackson.databind;
     requires com.fasterxml.jackson.dataformat.toml;
+    requires com.fasterxml.jackson.dataformat.yaml;
     requires org.eclipse.tm4e.core;
     // Apache Lucene's pure-Java Hunspell spell checker (analysis.common) + its store/FST (core).
     requires org.apache.lucene.analysis.common;

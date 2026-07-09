@@ -9024,6 +9024,17 @@ public class MainController implements com.editora.mcp.McpBridge {
                         : "status.markwhen.viewTimeline"));
     }
 
+    /** Flips a structured (JSON/YAML/TOML) preview between the tree and the OpenAPI-docs view. */
+    private void toggleStructuredView() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isStructured()) {
+            setStatus(tr("status.structured.notStructured"));
+            return;
+        }
+        b.toggleStructuredView();
+        setStatus(tr(b.isStructuredOpenApi() ? "status.structured.viewToggled" : "status.structured.notOpenApi"));
+    }
+
     /** Persists the Markwhen buffer's preview renderer choice (TIMELINE default → removed). */
     private void persistMarkwhenView(EditorBuffer buffer) {
         Path file = buffer.getPath();
@@ -9237,6 +9248,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
         buffer.setAiActionsEnabled(aiCoordinator.isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
+        buffer.setStructuredPreviewEnabled(s.isStructuredPreview()); // JSON/YAML/TOML tree + OpenAPI docs preview
+        if (buffer.isStructured()) {
+            ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured gate flips
+        }
         buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
         applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
@@ -10328,6 +10343,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("preview.print", this::printPreview));
         registry.register(Command.of("markwhen.exportJson", this::exportMarkwhenJson));
         registry.register(Command.of("markwhen.toggleView", this::toggleMarkwhenView));
+        registry.register(Command.of("structured.toggleView", this::toggleStructuredView));
+        registry.register(Command.of(
+                "view.toggleStructuredPreview",
+                () -> toggleSetting(
+                        "view.toggleStructuredPreview",
+                        () -> config.getSettings().isStructuredPreview(),
+                        v -> config.getSettings().setStructuredPreview(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of("mermaid.export", mermaid::export));
         registry.register(Command.of("diagram.export", diagram::export));
         registry.register(Command.of(

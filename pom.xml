@@ -213,6 +213,14 @@
             <artifactId>jackson-dataformat-toml</artifactId>
             <version>${jackson.version}</version>
         </dependency>
+        <!-- YAML parsing for the structured-data (JSON/YAML/TOML) tree + OpenAPI preview. Both it and its
+             transitive org.yaml:snakeyaml (2.4) are real JPMS modules like the TOML dataformat, so they
+             link directly under jlink — no moditect patching needed. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
 
         <!-- Spell checking: Apache Lucene's pure-Java Hunspell engine (analysis-common, pulls
              lucene-core). Lucene 10 ships proper JPMS modules, so no moditect patching is needed. -->

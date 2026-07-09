@@ -1,0 +1,56 @@
+# OpenAPI 3 spec — the preview auto-renders this as browsable API docs
+# (toggle to the raw data tree with the "Structured: Toggle Tree / API Docs View" command).
+openapi: 3.0.0
+info:
+  title: Pet Store
+  version: 1.0.0
+  description: A tiny sample OpenAPI document.
+servers:
+  - url: https://api.example.com/v1
+    description: Production
+paths:
+  /pets:
+    get:
+      summary: List all pets
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: A paged array of pets
+    post:
+      summary: Create a pet
+      responses:
+        "201":
+          description: Created
+  /pets/{petId}:
+    get:
+      summary: Get a pet by id
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A pet
+        "404":
+          description: Not found
+components:
+  schemas:
+    Pet:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        tag:
+          type: string

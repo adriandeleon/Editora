@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 63;
+    public static final int SCHEMA_VERSION = 64;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -205,6 +205,8 @@ public class Settings {
     private boolean csvPreview = true;
     /** Rainbow per-column coloring in the editor for {@code .csv}/{@code .tsv} files: on by default. */
     private boolean csvRainbow = true;
+    /** Structured-data preview (JSON/YAML/TOML tree + OpenAPI/Swagger docs) in the 3-mode view: on by default. */
+    private boolean structuredPreview = true;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
     /** Auto-close HTML/XML tags (typing an open tag's {@code >} inserts the closer): on by default. */
@@ -470,6 +472,14 @@ public class Settings {
 
     public void setCsvPreview(boolean csvPreview) {
         this.csvPreview = csvPreview;
+    }
+
+    public boolean isStructuredPreview() {
+        return structuredPreview;
+    }
+
+    public void setStructuredPreview(boolean structuredPreview) {
+        this.structuredPreview = structuredPreview;
     }
 
     public boolean isCsvRainbow() {

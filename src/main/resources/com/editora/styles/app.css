@@ -495,6 +495,66 @@
     -fx-border-radius: 6;
 }
 
+/* Structured-data (JSON/YAML/TOML) tree preview — theme-aware via AtlantaFX semantic colors. */
+.structured-tree { -fx-font-family: monospace; -fx-background-color: -color-bg-default; }
+.structured-tree .structured-row { -fx-font-family: monospace; }
+.structured-key { -fx-fill: -color-fg-default; }
+.structured-punct { -fx-fill: -color-fg-muted; }
+.structured-count { -fx-fill: -color-fg-muted; }
+.structured-string { -fx-fill: -color-success-fg; }
+.structured-number { -fx-fill: -color-accent-fg; }
+.structured-boolean { -fx-fill: -color-warning-fg; }
+.structured-null { -fx-fill: -color-fg-muted; }
+.structured-error {
+    -fx-text-fill: -color-danger-fg;
+    -fx-font-family: monospace;
+    -fx-padding: 10;
+    -fx-wrap-text: true;
+}
+
+/* OpenAPI/Swagger docs preview. */
+.openapi-scroll { -fx-background-color: -color-bg-default; }
+.openapi-doc { -fx-padding: 16; -fx-spacing: 6; -fx-background-color: -color-bg-default; }
+.openapi-title { -fx-font-size: 1.5em; -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
+.openapi-desc { -fx-text-fill: -color-fg-muted; -fx-padding: 2 0 6 0; }
+.openapi-section {
+    -fx-font-size: 1.1em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 12 0 4 0;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.openapi-server { -fx-font-family: monospace; -fx-text-fill: -color-accent-fg; }
+.openapi-op {
+    -fx-spacing: 3;
+    -fx-padding: 8;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 6;
+}
+.openapi-path { -fx-font-family: monospace; -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
+.openapi-summary { -fx-text-fill: -color-fg-muted; }
+.openapi-subhead { -fx-font-weight: bold; -fx-text-fill: -color-fg-muted; -fx-padding: 4 0 0 0; }
+.openapi-detail { -fx-font-family: monospace; -fx-text-fill: -color-fg-default; -fx-padding: 0 0 0 12; }
+.openapi-schema-name { -fx-font-family: monospace; -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
+.openapi-schema { -fx-spacing: 2; -fx-padding: 6 0 6 0; }
+.openapi-deprecated { -fx-text-fill: -color-danger-fg; -fx-font-size: 0.85em; }
+.openapi-method {
+    -fx-font-weight: bold;
+    -fx-font-size: 0.8em;
+    -fx-text-fill: white;
+    -fx-padding: 2 8 2 8;
+    -fx-background-radius: 4;
+    -fx-min-width: 56;
+    -fx-alignment: center;
+}
+.openapi-method-get { -fx-background-color: -color-success-emphasis; }
+.openapi-method-post { -fx-background-color: -color-accent-emphasis; }
+.openapi-method-put { -fx-background-color: -color-warning-emphasis; }
+.openapi-method-patch { -fx-background-color: -color-warning-emphasis; }
+.openapi-method-delete { -fx-background-color: -color-danger-emphasis; }
+.openapi-method-head, .openapi-method-options, .openapi-method-trace { -fx-background-color: -color-neutral-emphasis; }
+
 /* Independent preview color theme (toggled by the floating sun/moon control, persisted, separate from
    the app/editor theme). When "md-light"/"md-dark" is set on the preview pane, it redefines the
    looked-up colors for the whole preview subtree — so all the .markdown-preview/.md-* rules above

@@ -214,6 +214,7 @@ public class SettingsWindow {
     private CheckBox editorConfigCheck;
     private CheckBox logViewerCheck;
     private CheckBox csvGridCheck;
+    private CheckBox structuredPreviewCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox autoRenameTagCheck;
     private CheckBox autoCloseTagsCheck;
@@ -918,6 +919,7 @@ public class SettingsWindow {
         editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
         logViewerCheck = viewCheck(tr("settings.logViewer"), Settings::setLogViewer);
         csvGridCheck = viewCheck(tr("settings.csvPreview"), Settings::setCsvPreview);
+        structuredPreviewCheck = viewCheck(tr("settings.structuredPreview"), Settings::setStructuredPreview);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
@@ -1973,6 +1975,13 @@ public class SettingsWindow {
         Label csv = section(p, tr("settings.section.csv"));
         row(p, Category.EDITOR, csv, csvGridCheck, "csv tsv grid table preview spreadsheet columns");
         row(p, Category.EDITOR, csv, csvRainbowCheck, "csv tsv rainbow column colors coloring highlight");
+        Label structured = section(p, tr("settings.section.structured"));
+        row(
+                p,
+                Category.EDITOR,
+                structured,
+                structuredPreviewCheck,
+                "json yaml toml openapi swagger tree structured data preview");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -5341,6 +5350,7 @@ public class SettingsWindow {
             editorConfigCheck.setSelected(settings.isEditorConfigSupport());
             logViewerCheck.setSelected(settings.isLogViewer());
             csvGridCheck.setSelected(settings.isCsvPreview());
+            structuredPreviewCheck.setSelected(settings.isStructuredPreview());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
@@ -5912,6 +5922,7 @@ public class SettingsWindow {
             editorConfigCheck.setSelected(s.isEditorConfigSupport());
             logViewerCheck.setSelected(s.isLogViewer());
             csvGridCheck.setSelected(s.isCsvPreview());
+            structuredPreviewCheck.setSelected(s.isStructuredPreview());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());

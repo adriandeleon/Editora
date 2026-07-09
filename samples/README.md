@@ -65,6 +65,14 @@ Editor/Split/Preview toggle that renders the timeline). There is deliberately no
 - `samples/diagrams/graph.dot` — a Graphviz digraph; the 3-mode preview renders it (needs the `dot` CLI).
 - `samples/diagrams/sequence.puml` — a PlantUML sequence diagram; preview renders it (needs `plantuml`).
 
+## structured/ — JSON/YAML/TOML tree + OpenAPI docs preview
+
+- `samples/structured/config.json` — the 3-mode preview renders a collapsible, type-colored tree.
+- `samples/structured/config.yaml` — same data as YAML; the preview tree is identical.
+- `samples/structured/config.toml` — same data as TOML.
+- `samples/structured/petstore.yaml` — an OpenAPI 3 spec; the preview auto-renders browsable API docs
+  (toggle to the raw tree with `structured.toggleView`).
+
 ## todo/ — TODO/FIXME highlighting
 
 - `samples/todo/markers.java` — `TODO` (amber) and `FIXME` (red) highlight + appear in the TODO tool
