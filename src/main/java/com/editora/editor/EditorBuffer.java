@@ -63,6 +63,7 @@ import com.editora.snippet.SnippetParser;
 import com.editora.snippet.SnippetSession;
 import com.editora.snippet.VariableResolver;
 import com.editora.structured.StructuredParser;
+import com.editora.structured.XmlParser;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
@@ -2093,6 +2094,7 @@ public class EditorBuffer implements TabContent {
                 || (isRenderedDiagram() && DiagramImages.isEnabled())
                 || hasCsvPreview()
                 || hasStructuredPreview()
+                || hasXmlPreview()
                 || hasSvgPreview();
     }
 
@@ -2138,6 +2140,21 @@ public class EditorBuffer implements TabContent {
     /** Whether the structured tree/OpenAPI preview should be offered (feature on, and not a huge file). */
     public boolean hasStructuredPreview() {
         return structuredPreviewEnabled && isStructured() && !hugeFile;
+    }
+
+    /** An XML buffer (excluding {@code .svg}, which renders as an image). Reuses the structured-preview gate. */
+    public boolean isXml() {
+        return "xml".equals(language) && !isSvg();
+    }
+
+    /** Whether the XML DOM-tree preview should be offered (structured-preview feature on, XML, not huge). */
+    public boolean hasXmlPreview() {
+        return structuredPreviewEnabled && isXml() && !hugeFile;
+    }
+
+    /** Whether this buffer uses the self-scrolling tree host (JSON/YAML/TOML or XML) — shared render surface. */
+    private boolean hasTreePreview() {
+        return hasStructuredPreview() || hasXmlPreview();
     }
 
     /** Pushes the structured-preview feature gate (from Settings); re-attaches the toggle if it flipped. */
@@ -3340,7 +3357,7 @@ public class EditorBuffer implements TabContent {
         setMinimapVisible(minimapVisible); // re-apply: the minimap is hidden while the preview is shown
         // The paging-focus + scroll-sync tail is Markdown-preview-specific (the CSV grid and the structured
         // tree/docs scroll themselves and have no ScrollPane host), so skip it for those.
-        if (!hasCsvPreview() && !hasStructuredPreview()) {
+        if (!hasCsvPreview() && !hasTreePreview()) {
             if (target == MarkdownViewMode.PREVIEW) {
                 // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
                 Platform.runLater(previewPane()::requestFocus);
@@ -3706,6 +3723,22 @@ public class EditorBuffer implements TabContent {
             });
             return;
         }
+        if (hasXmlPreview()) {
+            // Whole file is one XML doc: parse off-thread (JDK DOM), build the DOM tree on the FX thread into
+            // the same self-scrolling host as the JSON/YAML/TOML tree. The previewGen guard drops a stale render.
+            String src = area.getText();
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                XmlParser.Parsed parsed = XmlParser.parse(src);
+                Platform.runLater(() -> {
+                    if (gen != previewGen) {
+                        return;
+                    }
+                    renderXml(parsed);
+                });
+            });
+            return;
+        }
         if (isDiagram()) {
             // Whole file is one diagram: build the (async-filling) node on the FX thread directly. The
             // preview zoom scales the fit width (not font size, which doesn't affect an ImageView); the
@@ -3812,7 +3845,7 @@ public class EditorBuffer implements TabContent {
         if (markdownViewMode == MarkdownViewMode.PREVIEW) {
             StackPane host = hasCsvPreview()
                     ? csvPreviewHost()
-                    : hasStructuredPreview() ? structuredPreviewHost() : previewHost(); // preview (+ zoom for md)
+                    : hasTreePreview() ? structuredPreviewHost() : previewHost(); // preview (+ zoom for md)
             if (viewModeControl != null) {
                 StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
                 StackPane.setMargin(viewModeControl, new Insets(6, 10, 0, 0));
@@ -3820,9 +3853,8 @@ public class EditorBuffer implements TabContent {
             }
             content = host;
         } else if (markdownViewMode == MarkdownViewMode.SPLIT) {
-            Node previewSide = hasCsvPreview()
-                    ? csvPreviewNode
-                    : hasStructuredPreview() ? structuredContentHolder() : previewHost();
+            Node previewSide =
+                    hasCsvPreview() ? csvPreviewNode : hasTreePreview() ? structuredContentHolder() : previewHost();
             SplitPane pane = new SplitPane(root, previewSide);
             pane.setOrientation(Orientation.HORIZONTAL);
             pane.setDividerPositions(0.5);
@@ -3877,6 +3909,20 @@ public class EditorBuffer implements TabContent {
         } else {
             boolean showDocs = parsed.isOpenApi() && (structuredShowApiDocs == null || structuredShowApiDocs);
             node = showDocs ? OpenApiDoc.build(parsed.openApi()) : StructuredTree.build(parsed.root());
+        }
+        structuredContentHolder().getChildren().setAll(node);
+    }
+
+    /** Sets the freshly parsed XML DOM tree (or an error label) into the shared self-scrolling holder. */
+    private void renderXml(XmlParser.Parsed parsed) {
+        Node node;
+        if (!parsed.ok()) {
+            Label err = new Label(parsed.error());
+            err.getStyleClass().add("structured-error");
+            err.setWrapText(true);
+            node = err;
+        } else {
+            node = XmlTree.build(parsed.root());
         }
         structuredContentHolder().getChildren().setAll(node);
     }

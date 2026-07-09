@@ -525,6 +525,16 @@
     -fx-wrap-text: true;
 }
 
+/* XML DOM-tree preview — theme-aware via AtlantaFX semantic colors. */
+.xml-tree { -fx-font-family: monospace; -fx-background-color: -color-bg-default; }
+.xml-tree .xml-row { -fx-font-family: monospace; }
+.xml-tag { -fx-fill: -color-accent-fg; }
+.xml-attr-name { -fx-fill: -color-warning-fg; }
+.xml-attr-value { -fx-fill: -color-success-fg; }
+.xml-text { -fx-fill: -color-fg-default; }
+.xml-punct { -fx-fill: -color-fg-muted; }
+.xml-comment { -fx-fill: -color-fg-muted; -fx-font-style: italic; }
+
 /* OpenAPI/Swagger docs preview. */
 .openapi-scroll { -fx-background-color: -color-bg-default; }
 .openapi-doc { -fx-padding: 16; -fx-spacing: 6; -fx-background-color: -color-bg-default; }

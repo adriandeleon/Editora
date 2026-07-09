@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Same shape as config.json/yaml/toml; the 3-mode preview renders a collapsible DOM tree. -->
+<config name="editora" version="0.9.2">
+  <features preview="true" maxNodes="50000">
+    <format>json</format>
+    <format>xml</format>
+    <format>yaml</format>
+  </features>
+  <authors>
+    <author role="lead">Ada</author>
+    <author role="contributor">Grace</author>
+  </authors>
+</config>

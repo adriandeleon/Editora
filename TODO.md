@@ -3,6 +3,14 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] XML tree preview — `.xml` joins the structured-data preview with a collapsible DOM tree (tags +
+      attributes + text, text-only elements inlined). A *faithful* DOM model, not an XML→JSON shoehorn.
+      Parsed off-thread with the JDK DOM parser (no new dependency), XXE-hardened like `PomParser`. New pure
+      `structured/XmlNode`/`XmlParser` (unit-tested, incl. XXE-blocked) + `editor/XmlTree`; reuses the
+      structured host + the same `Settings.structuredPreview` toggle. `.svg` still renders as an image
+      (excluded); `.xhtml` still uses the browser preview. *Deferred: dialect renderers (RSS/Atom feed view,
+      like OpenAPI for JSON), attribute/text search. Third of the reuse-existing-deps cluster (SVG, PDF, XML
+      done; next: Excel/ODS via POI, font specimen, archive contents).*
 - [x] PDF viewer — `.pdf` files open in a read-only page viewer (PDFBox-rasterized, already a dependency)
       instead of the hex viewer: ◀/▶ page nav + zoom (fit/actual/Ctrl+wheel). Pages rasterized one at a time
       off the FX thread on a single daemon thread (PDDocument isn't thread-safe), so only the current page's

@@ -9289,8 +9289,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setStructuredPreviewEnabled(s.isStructuredPreview()); // JSON/YAML/TOML tree + OpenAPI docs preview
         buffer.setSvgPreviewEnabled(s.isSvgPreview()); // rendered image preview for .svg files
-        if (buffer.isStructured() || buffer.isSvg()) {
-            ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/SVG gate flips
+        if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
+            ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
         buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
