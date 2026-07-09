@@ -106,7 +106,9 @@ public enum ConfigSchema {
                             ConfigMigrations::identity), // v59→60: + agentClient/<id>AgentCommand (additive)
                     Map.entry(60, (Migration) ConfigMigrations::identity), // v60→61: + aiEnabled (additive)
                     Map.entry(61, (Migration)
-                            ConfigMigrations::identity))), // v61→62: + mavenSupport/mavenCommand (additive)
+                            ConfigMigrations::identity), // v61→62: + mavenSupport/mavenCommand (additive)
+                    Map.entry(62, (Migration)
+                            ConfigMigrations::identity))), // v62→63: + diagramSupport/dotPath/plantumlPath (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

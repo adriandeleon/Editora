@@ -1,0 +1,47 @@
+{
+  "name": "PlantUML",
+  "scopeName": "source.plantuml",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#preprocessor" },
+    { "include": "#directive" },
+    { "include": "#keyword" },
+    { "include": "#string" },
+    { "include": "#arrow" },
+    { "include": "#number" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        { "name": "comment.block.plantuml", "begin": "/'", "end": "'/" },
+        { "name": "comment.line.apostrophe.plantuml", "match": "'.*$" }
+      ]
+    },
+    "preprocessor": {
+      "name": "keyword.control.directive.plantuml",
+      "match": "^\\s*@(start|end)[a-z]+\\b"
+    },
+    "directive": {
+      "name": "keyword.control.preprocessor.plantuml",
+      "match": "!\\w+"
+    },
+    "keyword": {
+      "name": "keyword.control.plantuml",
+      "match": "(?i)\\b(actor|participant|boundary|control|entity|database|collections|queue|usecase|class|abstract|interface|enum|annotation|package|namespace|component|node|folder|frame|cloud|artifact|state|object|rectangle|storage|card|agent|activate|deactivate|destroy|create|note|ref|alt|else|opt|loop|par|break|critical|group|end|title|header|footer|legend|start|stop|if|then|elseif|endif|repeat|while|endwhile|fork|again|split|detach|skinparam|as|is|of|on|over|left|right|top|bottom|up|down)\\b"
+    },
+    "string": {
+      "name": "string.quoted.double.plantuml",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [{ "name": "constant.character.escape.plantuml", "match": "\\\\." }]
+    },
+    "arrow": {
+      "name": "keyword.operator.arrow.plantuml",
+      "match": "<\\|--|--\\|>|<--|-->|\\.\\.>|<\\.\\.|<-|->|--|\\.\\.|\\*--|--\\*|o--|--o"
+    },
+    "number": {
+      "name": "constant.numeric.plantuml",
+      "match": "\\b[0-9]+\\b"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+// Graphviz DOT — preview renders this to an image (needs the `dot` CLI: brew install graphviz).
+digraph Editora {
+    rankdir=LR;
+    node [shape=box, style=rounded];
+
+    Editor    -> Preview  [label="render"];
+    Preview   -> DiagramRenderer [label="dot / plantuml"];
+    DiagramRenderer -> Image [label="PNG"];
+
+    // A styled cluster.
+    subgraph cluster_cache {
+        label = "cache";
+        color = gray;
+        Image -> Cache;
+        Cache -> Preview [label="re-fit", style=dashed];
+    }
+}

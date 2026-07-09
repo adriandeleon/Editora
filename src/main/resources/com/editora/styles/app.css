@@ -482,6 +482,19 @@
     -fx-border-radius: 6;
 }
 
+/* Diagram-as-code (Graphviz DOT / PlantUML) preview — mirrors the Mermaid rules. */
+.md-diagram { -fx-alignment: center; -fx-padding: 6 0 6 0; }
+.md-diagram .diagram-placeholder { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
+.md-diagram .diagram-error {
+    -fx-text-fill: -color-danger-fg;
+    -fx-font-family: monospace;
+    -fx-padding: 8;
+    -fx-background-color: -color-danger-subtle;
+    -fx-background-radius: 6;
+    -fx-border-color: -color-danger-muted;
+    -fx-border-radius: 6;
+}
+
 /* Independent preview color theme (toggled by the floating sun/moon control, persisted, separate from
    the app/editor theme). When "md-light"/"md-dark" is set on the preview pane, it redefines the
    looked-up colors for the whole preview subtree — so all the .markdown-preview/.md-* rules above

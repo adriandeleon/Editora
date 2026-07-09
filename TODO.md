@@ -3,6 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Diagram-as-code preview (Graphviz DOT + PlantUML) — `.dot`/`.gv` and `.puml`/`.plantuml` files get
+      the same 3-mode preview as Markdown/Mermaid, rendered off-thread via the external `dot`/`plantuml`
+      CLIs (both PNG-native, no headless browser) and cached by source hash; zoom resizes the image and a
+      diagram exports to SVG/PNG/PDF. New generic, Mermaid-independent seam: pure `com.editora.diagram`
+      (`DiagramKind`/`DiagramRenderer`/`DiagramService`) + `editor/DiagramImages` (async cache mirroring
+      `MermaidImages`) + `ui/DiagramCoordinator`. Authored `dot`/`plantuml` TextMate grammars +
+      `LanguageRegistry`/`GrammarRegistry`/`Commenter`/`FoldRegions` entries. On by default, self-gating on
+      detection; `Settings.diagramSupport`/`dotPath`/`plantumlPath` (schema 62→63). *Deferred: PlantUML
+      `@start/@end` folding, a themed (dark) render, live linting, and the browser-raster tools (D2,
+      WaveDrom) — next up in the diagram-as-code section.*
 - [x] CSV/TSV grid preview moved into the editor as an IntelliJ-style Editor/Split/Preview view (mirroring
       the Markdown preview), replacing the bottom `csvGrid` tool window. The floating top-right toggle drives
       Editor (source), Split (source + live grid), and Preview (grid only); the mode is remembered per file.

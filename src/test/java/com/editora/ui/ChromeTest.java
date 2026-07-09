@@ -59,12 +59,12 @@ class ChromeTest {
     // --- palette command gating ---
 
     private static PaletteGates allOn() {
-        return new PaletteGates(true, true, true, true, true, true, true, true, true, true, true, true, true);
+        return new PaletteGates(true, true, true, true, true, true, true, true, true, true, true, true, true, true);
     }
 
     private static PaletteGates allOff() {
         return new PaletteGates(
-                false, false, false, false, false, false, false, false, false, false, false, false, false);
+                false, false, false, false, false, false, false, false, false, false, false, false, false, false);
     }
 
     @Test
@@ -131,7 +131,7 @@ class ChromeTest {
     void onlyTheDisabledFeatureIsFiltered() {
         // git off, everything else on → only git.* / commit / gitLog hidden
         PaletteGates gitOff =
-                new PaletteGates(true, false, true, true, true, true, true, true, true, true, true, true, true);
+                new PaletteGates(true, false, true, true, true, true, true, true, true, true, true, true, true, true);
         assertFalse(Chrome.paletteVisible("git.commit", gitOff));
         assertFalse(Chrome.paletteVisible("tool.gitLog", gitOff));
         assertTrue(Chrome.paletteVisible("lsp.hover", gitOff));
@@ -143,7 +143,7 @@ class ChromeTest {
     void mavenCommandsHiddenWhenMavenOff() {
         // maven off, everything else on → only maven.* / tool.maven hidden
         PaletteGates mavenOff =
-                new PaletteGates(true, true, true, true, false, true, true, true, true, true, true, true, true);
+                new PaletteGates(true, true, true, true, true, false, true, true, true, true, true, true, true, true);
         assertFalse(Chrome.paletteVisible("maven.showActions", mavenOff));
         assertFalse(Chrome.paletteVisible("maven.runCustom", mavenOff));
         assertFalse(Chrome.paletteVisible("tool.maven", mavenOff));
@@ -155,10 +155,22 @@ class ChromeTest {
     void logCommandsHiddenWhenLogViewerOff() {
         // log off, everything else on → only log.* hidden; the master toggle (view.*) stays visible.
         PaletteGates logOff =
-                new PaletteGates(true, true, true, true, true, true, true, true, true, true, true, true, false);
+                new PaletteGates(true, true, true, true, true, true, true, true, true, true, true, true, true, false);
         assertFalse(Chrome.paletteVisible("log.toggleFollow", logOff));
         assertFalse(Chrome.paletteVisible("log.setLevelFilter", logOff));
         assertTrue(Chrome.paletteVisible("view.toggleLogViewer", logOff)); // enable toggle is never gated
         assertTrue(Chrome.paletteVisible("log.toggleFollow", allOn()));
+    }
+
+    @Test
+    void diagramCommandsHiddenWhenDiagramOff() {
+        // diagram off (position 5), everything else on → only diagram.* hidden; view.* master toggle stays.
+        PaletteGates diagramOff =
+                new PaletteGates(true, true, true, true, false, true, true, true, true, true, true, true, true, true);
+        assertFalse(Chrome.paletteVisible("diagram.export", diagramOff));
+        assertFalse(Chrome.paletteVisible("diagram.setDotCommand", diagramOff));
+        assertTrue(Chrome.paletteVisible("view.toggleDiagramSupport", diagramOff)); // enable toggle never gated
+        assertTrue(Chrome.paletteVisible("mermaid.export", diagramOff)); // Mermaid unaffected
+        assertTrue(Chrome.paletteVisible("diagram.export", allOn()));
     }
 }

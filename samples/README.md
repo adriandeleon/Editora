@@ -60,6 +60,11 @@ Editor/Split/Preview toggle that renders the timeline). There is deliberately no
 - `samples/mermaid/flowchart.mmd` — a valid diagram; preview renders it (needs `mmdc`).
 - `samples/mermaid/invalid.mmd` — intentionally broken; `maid` should draw lint squiggles.
 
+## diagrams/ — Graphviz DOT + PlantUML preview
+
+- `samples/diagrams/graph.dot` — a Graphviz digraph; the 3-mode preview renders it (needs the `dot` CLI).
+- `samples/diagrams/sequence.puml` — a PlantUML sequence diagram; preview renders it (needs `plantuml`).
+
 ## todo/ — TODO/FIXME highlighting
 
 - `samples/todo/markers.java` — `TODO` (amber) and `FIXME` (red) highlight + appear in the TODO tool

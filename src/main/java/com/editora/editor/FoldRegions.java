@@ -71,7 +71,8 @@ public final class FoldRegions {
                     "javascript",
                     "typescript",
                     "javascriptreact",
-                    "typescriptreact" -> braces(text);
+                    "typescriptreact",
+                    "dot" -> braces(text);
             // plaintext and line/indentation-based languages have no delimiter folding.
             default -> List.of();
         };
