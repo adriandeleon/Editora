@@ -261,7 +261,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private ToolWindow searchToolWindow;
     private ToolWindow todoToolWindow;
-    private ToolWindow csvGridToolWindow;
     private MarkdownLintPanel markdownLintPanel;
     private ToolWindow markdownLintToolWindow;
     private final com.editora.editor.MarkdownLintService markdownLintService =
@@ -1905,13 +1904,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::todo,
                 todoCoordinator.panel(),
                 "tool.todo");
-        csvGridToolWindow = new ToolWindow(
-                "csvGrid",
-                tr("toolwindow.csvGrid"),
-                ToolWindow.Side.BOTTOM,
-                Icons::table,
-                csvCoordinator.panel(),
-                "tool.csvGrid");
         markdownLintPanel = new MarkdownLintPanel(new MarkdownLintPanel.Actions() {
             @Override
             public void open(java.nio.file.Path file, int line, int col) {
@@ -2107,7 +2099,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         // undoHistory.jump popup, the tool.undoHistory command, or Settings → Tool Windows
         toolWindows.register(searchToolWindow);
         toolWindows.register(todoToolWindow);
-        toolWindows.register(csvGridToolWindow);
         toolWindows.register(markdownLintToolWindow);
         toolWindows.register(problemsToolWindow);
         toolWindows.register(referencesToolWindow, false); // default-hidden; shown on demand by Find References
@@ -2702,16 +2693,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** CSV/TSV grid preview feature; owns the grid panel + parse/refresh (the tool window stays here). */
     private final CsvCoordinator csvCoordinator = new CsvCoordinator(coordinatorHost, new CsvCoordinator.Ops() {
-        @Override
-        public boolean isToolWindowOpen() {
-            return csvGridToolWindow != null && toolWindows.isOpen(csvGridToolWindow);
-        }
-
-        @Override
-        public void toggleToolWindow() {
-            toolWindows.toggle(csvGridToolWindow);
-        }
-
         @Override
         public void jumpTo(int line, int col) {
             EditorBuffer b = activeBuffer();
@@ -6831,9 +6812,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (markdownLintToolWindow != null) {
             toolWindows.setAvailable(markdownLintToolWindow, buffer && b.isMarkdown() && markdownLintEnabled());
         }
-        if (csvGridToolWindow != null) {
-            toolWindows.setAvailable(csvGridToolWindow, buffer && b.isCsv() && csvCoordinator.isEnabled());
-        }
         if (externalToolToolWindow != null) {
             toolWindows.setAvailable(externalToolToolWindow, buffer && externalToolsEnabled());
         }
@@ -8017,6 +7995,9 @@ public class MainController implements com.editora.mcp.McpBridge {
      * sun/moon control is Markdown-only (it themes the Markdown CSS; diagrams follow the app theme).
      */
     private void ensurePreviewControls(EditorBuffer buffer) {
+        // A CSV buffer becomes previewable (hasPreview()) only once its grid node is injected, so do that
+        // first — then the same Editor/Split/Preview toggle attaches below, exactly like Markdown/Mermaid.
+        csvCoordinator.ensureCsvPreview(buffer);
         boolean want = buffer.hasPreview();
         boolean has = buffer.hasViewModeControl();
         if (want && !has) {
@@ -8038,8 +8019,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         mermaid.refreshLint(buffer);
     }
 
-    /** Restores a Markdown file's saved view mode after it is opened (and its toggle is wired). */
+    /** Restores a Markdown/CSV file's saved view mode after it is opened (and its toggle is wired). */
     private void restoreMarkdownMode(EditorBuffer buffer) {
+        csvCoordinator.ensureCsvPreview(buffer); // inject the grid first so a CSV buffer reports hasPreview()
         Path file = buffer.getPath();
         if (file == null || !buffer.hasPreview()) {
             return;
@@ -9374,7 +9356,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyAgentSupport();
         aiCoordinator.applySupport(); // re-probe connectivity + re-gate the floating selection Explain/Rewrite bar
         todoCoordinator.applyHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
-        csvCoordinator.refreshFor(activeBuffer()); // re-gate + refresh the CSV grid after a settings change
+        csvCoordinator.applySupport(); // re-gate the in-editor CSV grid preview on every open buffer
         applyMarkdownLint(); // push Markdown-lint enabled state to every buffer
         applyAutoSave();
         applyAutocomplete();
@@ -10356,8 +10338,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isCsvPreview(),
                         config.getSettings()::setCsvPreview,
                         () -> {
+                            csvCoordinator.applySupport(); // (de)attach the in-editor grid on every CSV buffer
                             updateBufferToolWindows();
-                            csvCoordinator.refreshFor(activeBuffer());
                         })));
         registry.register(Command.of(
                 "view.toggleCsvRainbow",
@@ -10641,7 +10623,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("search.inFiles", searchCoordinator::openToggle));
         registry.register(Command.of("search.inFilesPopup", searchCoordinator::showFindInFilesPopup));
         todoCoordinator.registerCommands(registry); // tool.todo + todo.refresh + todo.addPattern
-        csvCoordinator.registerCommands(registry); // tool.csvGrid (toggle the CSV grid preview window)
+        csvCoordinator.registerCommands(registry); // csv.exportPdf/print/exportExcel/exportOds
         maven.registerCommands(registry); // tool.maven + maven.showActions/runCustom/stop/rerunLast/refresh
         registry.register(Command.of(
                 "view.toggleMavenSupport",

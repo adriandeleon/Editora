@@ -3,6 +3,14 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] CSV/TSV grid preview moved into the editor as an IntelliJ-style Editor/Split/Preview view (mirroring
+      the Markdown preview), replacing the bottom `csvGrid` tool window. The floating top-right toggle drives
+      Editor (source), Split (source + live grid), and Preview (grid only); the mode is remembered per file.
+      The grid keeps everything — header-row toggle, type profiler, sort/filter, ragged-row diagnostics,
+      in-cell editing, click-to-jump, and PDF/Excel/ODS/print exports. Reuses `EditorBuffer`'s existing
+      `MarkdownViewMode` machinery (a CSV buffer now reports `hasPreview()` once its grid is injected via
+      `setCsvPreviewNode`); one `CsvGridPanel` per buffer; the `tool.csvGrid` command was retired.
+      *Deferred: editor↔grid scroll-sync in Split (the grid scrolls independently; click-to-jump bridges it).*
 - [x] Maven support — a toolbar icon (shown only when a pom.xml is detected for the active file/project)
       opens an IntelliJ-style actions popup: the standard lifecycle phases, the pom's declared profiles
       (checkable, composing with a run via `-P<id>`, marking any `activeByDefault` one), and each declared

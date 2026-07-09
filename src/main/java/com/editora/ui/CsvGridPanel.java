@@ -109,7 +109,9 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         filterField.textProperty().addListener((o, was, is) -> applyView());
 
         summary.getStyleClass().add("csv-grid-summary");
-        HBox top = new HBox(8, headerToggle, filterField, spacer(), summary);
+        // Summary sits left-of-spacer so the bar's top-right corner stays clear for the floating
+        // Editor/Split/Preview toggle overlaid there in PREVIEW mode (mirroring the Markdown preview).
+        HBox top = new HBox(8, headerToggle, filterField, summary, spacer());
         top.getStyleClass().add("csv-grid-bar");
         top.setAlignment(Pos.CENTER_LEFT);
 
@@ -191,6 +193,11 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     /** Whether the first row is treated as a header (the coordinator adds 1 to the data-row→line mapping). */
     boolean isHeaderRow() {
         return headerToggle.isSelected();
+    }
+
+    /** The number of data rows currently held (unfiltered) — for the FX test harness. */
+    int rowCount() {
+        return allRows.size();
     }
 
     /** Sets the callback run when the tool window is shown (to populate the grid from the current buffer). */
