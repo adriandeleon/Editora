@@ -280,8 +280,9 @@ public final class PreviewImageLoader {
         }
     }
 
-    /** Copies an ARGB {@link BufferedImage} into a JavaFX {@link WritableImage} (no javafx.swing needed). */
-    static Image toFxImage(BufferedImage buf) {
+    /** Copies an ARGB {@link BufferedImage} into a JavaFX {@link WritableImage} (no javafx.swing needed).
+     *  Public so the PDF viewer can convert PDFBox-rasterized pages the same way. Call on the FX thread. */
+    public static Image toFxImage(BufferedImage buf) {
         int w = buf.getWidth();
         int h = buf.getHeight();
         WritableImage out = new WritableImage(w, h);

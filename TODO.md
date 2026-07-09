@@ -3,6 +3,14 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] PDF viewer — `.pdf` files open in a read-only page viewer (PDFBox-rasterized, already a dependency)
+      instead of the hex viewer: ◀/▶ page nav + zoom (fit/actual/Ctrl+wheel). Pages rasterized one at a time
+      off the FX thread on a single daemon thread (PDDocument isn't thread-safe), so only the current page's
+      texture is held. New `ui/PdfViewerPane implements TabContent` (mirrors `ImageViewerPane`); routed in
+      `openPath` before the hex fallback + round-tripped through session restore/`tabPath`. Local + remote
+      (SFTP); 128 MB cap. No new dependency. *Deferred: continuous page scroll, page-jump field, text
+      selection/search, password-protected PDFs. Second of the reuse-existing-deps preview cluster (SVG done;
+      next: Excel/ODS via POI, XML tree, font specimen, archive contents).*
 - [x] SVG image preview — `.svg` files stay editable XML (highlighting + LSP) but gain a rendered-image
       preview in the 3-mode view; edit source → re-render live. Rasterized off-thread via the already-bundled
       JSVG (`PreviewImageLoader.rasterizeSvg`, no new dependency), cached by source hash, zoom re-fits. New
