@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-07-08
+
 ### Added
 
 - **Maven support — a toolbar icon + actions popup that reads the active project's pom.xml, IntelliJ-style.**
@@ -59,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   target easier to see and click.
 
 ### Fixed
+
+- **Windows installs failed to launch: "Failed to find JVM in ...\runtime directory".** The AOT-cache
+  build step (`scripts/aot_build.java`) strips the bundled runtime's `bin/` after training to reclaim
+  footprint — safe on macOS/Linux, where the JVM shared library lives in `runtime/lib/server/` and `bin/`
+  holds only launcher executables. But the Windows JDK layout puts the JVM itself *inside* `bin/`
+  (`runtime\bin\server\jvm.dll` plus the bootstrap `jli.dll`/`java.dll`/`jvm.cfg`), which `Editora.exe`
+  loads from there — so deleting `bin/` removed the JVM, and every Windows install since the AOT cache
+  landed failed to start. The `bin/` strip is now guarded to non-Windows only; the Windows `bin/` is kept
+  intact (its launcher exes are a negligible footprint).
 
 - **AI Agent header buttons (History / New Session / Stop) took up too much width.** They're now
   icon-only (matching the Debug panel's icon-only toolbar buttons), with the translated label moved to
