@@ -50,6 +50,7 @@ public final class FoldRegions {
         }
         return switch (language == null ? "" : language) {
             case "markdown" -> markdown(text);
+            case "markwhen" -> markwhen(text);
             case "xml", "html" -> xml(text);
             // Brace-delimited languages fold on matched {} / [].
             case "java",
@@ -213,6 +214,34 @@ public final class FoldRegions {
                         end = j - 1;
                         break;
                     }
+                }
+            }
+            while (end > i && lines[end].isBlank()) {
+                end--;
+            }
+            if (end > i) {
+                out.add(new Region(i, end));
+            }
+        }
+        return out;
+    }
+
+    // --- Markwhen (#-header sections, like Markdown headings but with no fenced code) ---
+
+    private static List<Region> markwhen(String text) {
+        String[] lines = text.split("\n", -1);
+        List<Region> out = new ArrayList<>();
+        for (int i = 0; i < lines.length; i++) {
+            int level = headingLevel(lines[i]);
+            if (level == 0) {
+                continue;
+            }
+            int end = lines.length - 1;
+            for (int j = i + 1; j < lines.length; j++) {
+                int l = headingLevel(lines[j]);
+                if (l > 0 && l <= level) {
+                    end = j - 1;
+                    break;
                 }
             }
             while (end > i && lines[end].isBlank()) {

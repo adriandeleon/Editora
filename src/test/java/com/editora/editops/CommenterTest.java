@@ -26,6 +26,13 @@ class CommenterTest {
         assertEquals(new CommentStyle(null, "<!--", "-->"), Commenter.styleFor("xml"));
         assertEquals(new CommentStyle(null, "/*", "*/"), Commenter.styleFor("css"));
         assertEquals(new CommentStyle("--", "/*", "*/"), Commenter.styleFor("sql"));
+        assertEquals(new CommentStyle("//", null, null), Commenter.styleFor("markwhen"));
+    }
+
+    @Test
+    void markwhenLineComment() {
+        assertEquals("// 2023: Event", apply("2023: Event", 0, 0, "markwhen"));
+        assertEquals("2023: Event", apply("// 2023: Event", 0, 0, "markwhen")); // round-trip
     }
 
     @Test

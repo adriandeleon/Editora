@@ -1,0 +1,23 @@
+---
+title: Project Alpha timeline
+// tag colors (header)
+#Design: #8250df
+#Build: green
+#Launch: red
+---
+
+// A Markwhen timeline: dates, ranges, #tags, and #-header sections.
+# Planning
+2023-01: Kickoff meeting #Design
+2023-02 / 2023-04: Requirements & design #Design
+
+# Development
+style: section
+2023-05 / 2023-09: Core build #Build
+Aug 15 2023: Beta cut #Build
+## Testing
+2023-08 / 2023-09: QA + hardening #Build
+
+# Release
+2023-10-01: Launch day #Launch
+2024: Year in review

@@ -40,6 +40,22 @@ class FoldRegionsTest {
     }
 
     @Test
+    void markwhenFoldsHeaderSectionsByLevel() {
+        //  0: # Outer     1: 2023: a    2: ## Inner   3: 2024: b   4: # Sibling  5: 2025: c
+        String mw = "# Outer\n2023: a\n## Inner\n2024: b\n# Sibling\n2025: c\n";
+        List<Region> r = FoldRegions.detect(mw, "markwhen");
+        assertTrue(hasRegion(r, 0, 3), "Outer spans to just before the next same-level header");
+        assertTrue(hasRegion(r, 2, 3), "Inner spans its nested block");
+        assertTrue(hasRegion(r, 4, 5), "Sibling spans to EOF");
+    }
+
+    @Test
+    void markwhenTagDeclIsNotAFoldableHeader() {
+        // "#Travel:" (no space after #) is a tag color, not a section — must not fold.
+        assertTrue(FoldRegions.detect("#Travel: blue\n2023: a\n", "markwhen").isEmpty());
+    }
+
+    @Test
     void bracesInStringsAndCommentsAreIgnored() {
         String java = "String s = \"{\";\n// }\nint x = 1;\n";
         assertTrue(FoldRegions.detect(java, "java").isEmpty());

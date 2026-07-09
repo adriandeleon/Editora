@@ -8882,6 +8882,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.pdf.noPreview"));
             return;
         }
+        if (b.isMarkwhen()) {
+            setStatus(tr("status.export.markwhenUnsupported"));
+            return; // the timeline node isn't a Markdown document — export is a deferred follow-up
+        }
         String base = bufferBaseName(b);
         java.io.File f = choosePdfDestination(base);
         if (f == null) {
@@ -9085,6 +9089,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (b == null || !b.hasPreview()) {
             setStatus(tr("status.print.noPreview"));
             return;
+        }
+        if (b.isMarkwhen()) {
+            setStatus(tr("status.export.markwhenUnsupported"));
+            return; // the timeline node isn't a Markdown document — printing is a deferred follow-up
         }
         javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
         if (job == null) {

@@ -34,6 +34,8 @@ public final class LanguageRegistry {
             Map.entry("mkd", "markdown"),
             Map.entry("mmd", "mermaid"),
             Map.entry("mermaid", "mermaid"),
+            Map.entry("mw", "markwhen"),
+            Map.entry("markwhen", "markwhen"),
             // Brace-delimited languages (fold by matched {} / []).
             Map.entry("java", "java"),
             // JS/TS — the language name doubles as the LSP languageId (javascript/typescript/…react).

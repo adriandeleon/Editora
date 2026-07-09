@@ -335,6 +335,19 @@
     -fx-padding: 16 24 16 24;
     -fx-spacing: 14;
 }
+
+/* Markwhen timeline preview — theme-aware via AtlantaFX looked-up colors (no per-theme override). */
+.markwhen-title { -fx-font-size: 1.5em; -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
+.markwhen-timeline { -fx-background-color: -color-bg-default; }
+.markwhen-grid { -fx-background-color: -color-border-muted; -fx-opacity: 0.5; }
+.markwhen-axis-label { -fx-font-size: 10px; -fx-text-fill: -color-fg-muted; }
+.markwhen-label { -fx-font-size: 12px; -fx-text-fill: -color-fg-default; }
+.markwhen-group { -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
+.markwhen-section { -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
+.markwhen-section-band { -fx-background-color: -color-bg-subtle; }
+.markwhen-bar { -fx-background-color: -color-accent-emphasis; -fx-background-radius: 3; }
+.markwhen-point { -fx-fill: -color-accent-emphasis; }
+.markwhen-placeholder { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 .markdown-preview .md-text { -fx-fill: -color-fg-default; }
 /* Prose font for the preview, on every platform: the bundled Inter (registered at startup by
    Fonts.load()). Pinned explicitly rather than inherited for two reasons: (1) raw javafx.scene.text.Text

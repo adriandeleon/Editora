@@ -30,7 +30,9 @@ as plain text (expected).
 Plain-text developer formats: `samples/syntax/sample.patch` (unified diff — added/removed lines
 tint green/red), `samples/syntax/Makefile` (recipe lines are real tabs), `samples/syntax/justfile`,
 `samples/syntax/sample.proto`, `samples/syntax/sample.graphql`, `samples/syntax/sample.properties`
-(both `=`/`:` separators, escapes, backslash continuations). There is deliberately no
+(both `=`/`:` separators, escapes, backslash continuations), `samples/syntax/sample.mw` (a
+**Markwhen** timeline — dates/ranges/`#tags`/`#`-header sections + `//` comments; also has an
+Editor/Split/Preview toggle that renders the timeline). There is deliberately no
 `.gitattributes` sample — a real one would change Git's behavior for this folder (see
 *Conventions*); open any repo's `.gitattributes` to see that grammar.
 

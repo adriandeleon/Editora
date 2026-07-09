@@ -75,6 +75,7 @@ public final class Commenter {
             case "powershell" -> new CommentStyle("#", "<#", "#>");
             case "ini" -> new CommentStyle(";", null, null);
             case "batchfile" -> new CommentStyle("REM", null, null);
+            case "markwhen" -> new CommentStyle("//", null, null);
             case "xml", "html", "markdown" -> new CommentStyle(null, "<!--", "-->");
             default -> new CommentStyle(null, null, null); // plaintext: no comment syntax
         };
