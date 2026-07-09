@@ -73,11 +73,21 @@ public class aot_build {
                     + ") — skipping training; app will start uncached");
         }
 
-        // --- 2) strip the runtime bin/ (reclaim the footprint; the jpackage launcher uses libjli,
-        //        never bin/java, so the whole dir can go) ---
-        if (imageJava != null) {
+        // --- 2) strip the runtime bin/ (reclaim the footprint we deferred from jLinkOptions so bin/java
+        //        survived for training) — NON-WINDOWS ONLY ---
+        // On macOS/Linux the JVM shared library lives in runtime/lib/server/ (libjvm.dylib/.so), so
+        // runtime/bin/ holds only launcher executables (java, keytool, ...) and the whole dir can go — the
+        // jpackage native launcher bootstraps via libjli, never bin/java. On WINDOWS the JDK layout is
+        // different: the JVM and its bootstrap DLLs live *inside* bin/ (bin\server\jvm.dll, plus
+        // jli.dll/java.dll/jvm.cfg/verify.dll/...), and Editora.exe loads jvm.dll from there. Deleting bin/
+        // there removes the JVM, so the launcher dies with "Failed to find JVM in ...\runtime directory".
+        // So the strip is guarded to non-Windows; the Windows bin/ (launcher exes are a negligible
+        // footprint) is kept intact.
+        if (!win && imageJava != null) {
             deleteRecursive(imageJava.getParent());
             System.out.println("[aot] stripped runtime bin/: " + imageJava.getParent());
+        } else if (win) {
+            System.out.println("[aot] keeping runtime bin/ on Windows (holds jvm.dll + bootstrap DLLs the launcher needs)");
         }
 
         // --- 3) deliver: copy (APP_IMAGE) or wrap into one or more installers ---
