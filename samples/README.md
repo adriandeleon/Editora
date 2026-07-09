@@ -78,6 +78,27 @@ Editor/Split/Preview toggle that renders the timeline). There is deliberately no
 - `samples/search/regex-cases.txt` — regex patterns plus a multibyte `é` to verify ripgrep
   byte→char column mapping.
 
+## csv/ — CSV/TSV grid, rainbow columns, delimiter detection
+
+Open any file and confirm: per-column **rainbow** editor coloring, the status-bar **"Field N of M"**
+segment (click it to copy as a Markdown table), and the **CSV grid** tool window (bottom stripe) with
+its row-count × column-count profiler and click-a-cell → jump. The delimiter is auto-detected from the
+first line, so the extension need not match the separator.
+
+- `samples/csv/people.csv` — plain comma CSV; mixed numeric (`id`/`salary`) and text columns exercise
+  the grid's type profiler (right-aligned numbers) and content-fit column widths.
+- `samples/csv/data.tsv` — **tab**-separated (real tabs); detected as TSV.
+- `samples/csv/european.csv` — **semicolon**-delimited (the European convention).
+- `samples/csv/pipe-delimited.csv` — **pipe**-delimited content in a `.csv` file (delimiter
+  auto-detection picks `|`).
+- `samples/csv/quoted.csv` — RFC-4180 edge cases: quoted fields with embedded commas, a `""` escaped
+  quote, a **leading-zero** ZIP (`07030` — stays text on export, not `7030`), and a field with an
+  **embedded line break** (a multi-line field, so the grid opens read-only — a data row no longer maps
+  1:1 to a physical line).
+- `samples/csv/ragged.csv` — deliberately **inconsistent** row widths (2–5 fields against a 4-column
+  header); the grid tints the ragged rows and the summary appends "· N inconsistent". Try **Align**
+  (`csv.align`) then **Shrink** (`csv.shrink`) — it refuses on a multi-line-field file but works here.
+
 ## editorconfig/ — EditorConfig overrides (hermetic)
 
 A self-contained tree with its own `root = true` so it does not inherit the repo's `.editorconfig`.

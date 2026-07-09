@@ -1,0 +1,6 @@
+sku,name,price,qty
+A100,Widget,9.99,50
+A101,Gadget,14.50
+A102,Gizmo,7.25,120,extra-column
+A103,Doohickey,3.00,0
+A104

@@ -1,0 +1,6 @@
+order_id,customer,notes,zip,amount
+1001,"Smith, John","Called it a ""must-have"" item",07030,1960
+1002,"Doe, Jane","Ship to office, not home",90210,349
+1003,"O'Brien, Pat","Contains a
+line break inside the quotes",02139,12500
+1004,"Nakamura, Kenji","Simple note",00501,75

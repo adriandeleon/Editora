@@ -1,0 +1,7 @@
+id,name,department,salary,active
+1,Ada Lovelace,Engineering,145000,true
+2,Alan Turing,Research,152000,true
+3,Grace Hopper,Engineering,138000,true
+4,Katherine Johnson,Mathematics,141000,false
+5,Dennis Ritchie,Systems,149000,true
+6,Barbara Liskov,Research,156000,true
