@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CSV/TSV grid preview is now an in-editor Editor/Split/Preview view, mirroring the Markdown preview.**
+  The spreadsheet grid for `.csv`/`.tsv` files moved out of the bottom tool window into the same
+  IntelliJ-style floating Editor / Split / Preview toggle that Markdown uses (top-right of the editor):
+  Split shows the source and the live grid side by side, Preview shows the grid alone. The view mode is
+  remembered per file. The grid keeps everything it had — the spreadsheet rendering, the "First row is a
+  header" toggle, the row/column type profiler, sort/filter, ragged-row diagnostics, in-cell editing
+  (writes back to the source line), click-a-cell → jump to the field, and the PDF / Excel (`.xlsx`) / ODF
+  (`.ods`) / print exports. The old `csvGrid` bottom tool-window stripe and its `tool.csvGrid` command
+  were retired; the Settings → Editor → CSV toggle and the `view.toggleCsvGrid` palette command now gate
+  the in-editor preview.
+
 ## [0.9.2] - 2026-07-08
 
 ### Added

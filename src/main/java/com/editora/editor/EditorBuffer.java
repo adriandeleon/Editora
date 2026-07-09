@@ -189,6 +189,13 @@ public class EditorBuffer implements TabContent {
     private Node htmlPreviewControl;
     /** The floating log-viewer control overlaid top-right (Follow / level / regex; injected for log buffers). */
     private Node logControl;
+    /** The CSV/TSV grid preview node (a ui-layer TableView panel), injected for CSV buffers when the feature
+     *  is on; non-null doubles as the CSV-preview enablement gate (mirrors {@link #htmlPreviewControl}). */
+    private Node csvPreviewNode;
+    /** Repopulates the injected CSV grid from the buffer text; run on the debounced preview pulse. */
+    private Runnable csvPreviewRefresh = () -> {};
+    /** Wraps the CSV grid so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
+    private StackPane csvPreviewHost;
     /** Forces log-viewer mode on a buffer whose extension isn't {@code .log} ("View as Log"). */
     private boolean logViewForced;
     /** While a log filter is active, the complete unfiltered text (the area shows only matching lines). */
@@ -2051,9 +2058,16 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Whether this buffer supports the 3-mode preview: Markdown always, Mermaid only while the feature
-     *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off). */
+     *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off), and CSV
+     *  only once the grid preview node has been injected (the feature-on gate — see {@link #hasCsvPreview}). */
     public boolean hasPreview() {
-        return isMarkdown() || isMarkwhen() || (isDiagram() && MermaidImages.isEnabled());
+        return isMarkdown() || isMarkwhen() || (isDiagram() && MermaidImages.isEnabled()) || hasCsvPreview();
+    }
+
+    /** A CSV buffer whose grid preview node has been injected (i.e. the CSV preview feature is on). The
+     *  injected node doubles as the enablement gate, mirroring {@link #htmlPreviewControl}. */
+    public boolean hasCsvPreview() {
+        return isCsv() && csvPreviewNode != null;
     }
 
     // --- Live Mermaid linting (maid) ----------------------------------------------------------------
@@ -2929,6 +2943,27 @@ public class EditorBuffer implements TabContent {
         return htmlPreviewControl != null;
     }
 
+    /** Injects the CSV grid preview node (a ui-layer {@code CsvGridPanel}); {@code null} removes it. Non-null
+     *  makes the buffer previewable ({@link #hasPreview()}), so the Editor/Split/Preview toggle attaches. */
+    public void setCsvPreviewNode(Node node) {
+        if (this.csvPreviewNode == node) {
+            return;
+        }
+        this.csvPreviewNode = node;
+        if (node == null) {
+            csvPreviewHost = null;
+            if (markdownViewMode != MarkdownViewMode.EDITOR) {
+                markdownViewMode = MarkdownViewMode.EDITOR; // the grid is gone — fall back to source
+            }
+        }
+        rebuildViewHost();
+    }
+
+    /** Injects the callback that repopulates the CSV grid from the buffer text (run on the debounced pulse). */
+    public void setCsvPreviewRefresh(Runnable refresh) {
+        this.csvPreviewRefresh = refresh == null ? () -> {} : refresh;
+    }
+
     // --- Log viewer ----------------------------------------------------------------------------------
 
     /** Whether this is a log buffer: a {@code .log} file (language {@code "log"}) or forced "View as Log". */
@@ -3208,12 +3243,16 @@ public class EditorBuffer implements TabContent {
         }
         rebuildViewHost();
         setMinimapVisible(minimapVisible); // re-apply: the minimap is hidden while the preview is shown
-        if (target == MarkdownViewMode.PREVIEW) {
-            // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
-            Platform.runLater(previewPane()::requestFocus);
-        } else if (target == MarkdownViewMode.SPLIT) {
-            // Align the freshly-shown preview to the editor's current scroll position (metrics settle first).
-            Platform.runLater(this::syncPreviewToEditorScroll);
+        // The paging-focus + scroll-sync tail is Markdown-preview-specific (the CSV grid scrolls itself and
+        // has no ScrollPane host), so skip it for a CSV buffer.
+        if (!hasCsvPreview()) {
+            if (target == MarkdownViewMode.PREVIEW) {
+                // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
+                Platform.runLater(previewPane()::requestFocus);
+            } else if (target == MarkdownViewMode.SPLIT) {
+                // Align the freshly-shown preview to the editor's current scroll position (metrics settle first).
+                Platform.runLater(this::syncPreviewToEditorScroll);
+            }
         }
         if (changed) {
             onViewModeChanged.run();
@@ -3550,6 +3589,10 @@ public class EditorBuffer implements TabContent {
         if (markdownViewMode == MarkdownViewMode.EDITOR) {
             return;
         }
+        if (hasCsvPreview()) {
+            csvPreviewRefresh.run(); // the coordinator re-parses the buffer text into its per-buffer grid
+            return;
+        }
         if (isDiagram()) {
             // Whole file is one diagram: build the (async-filling) node on the FX thread directly. The
             // preview zoom scales the fit width (not font size, which doesn't affect an ImageView); the
@@ -3623,7 +3666,7 @@ public class EditorBuffer implements TabContent {
         detachViewModeControl();
         Node content;
         if (markdownViewMode == MarkdownViewMode.PREVIEW) {
-            StackPane host = previewHost(); // preview + zoom control
+            StackPane host = hasCsvPreview() ? csvPreviewHost() : previewHost(); // preview (+ zoom control for md)
             if (viewModeControl != null) {
                 StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
                 StackPane.setMargin(viewModeControl, new Insets(6, 10, 0, 0));
@@ -3631,7 +3674,7 @@ public class EditorBuffer implements TabContent {
             }
             content = host;
         } else if (markdownViewMode == MarkdownViewMode.SPLIT) {
-            SplitPane pane = new SplitPane(root, previewHost());
+            SplitPane pane = new SplitPane(root, hasCsvPreview() ? csvPreviewNode : previewHost());
             pane.setOrientation(Orientation.HORIZONTAL);
             pane.setDividerPositions(0.5);
             attachControlToCodePane();
@@ -3661,6 +3704,16 @@ public class EditorBuffer implements TabContent {
         StackPane.setMargin(zoomControl(), new Insets(6, 0, 0, 6));
         StackPane.setAlignment(previewLoadingOverlay(), Pos.CENTER);
         return previewHost;
+    }
+
+    /** Wraps the injected CSV grid in a StackPane so the floating Editor/Split/Preview toggle can overlay it
+     *  in PREVIEW mode (the grid has no scroll-pane host like Markdown; it manages its own scrolling). */
+    private StackPane csvPreviewHost() {
+        if (csvPreviewHost == null) {
+            csvPreviewHost = new StackPane();
+        }
+        csvPreviewHost.getChildren().setAll(csvPreviewNode); // the toggle is added by rebuildViewHost()
+        return csvPreviewHost;
     }
 
     /**
@@ -3815,6 +3868,9 @@ public class EditorBuffer implements TabContent {
         root.getChildren().remove(control);
         if (previewHost != null) {
             previewHost.getChildren().remove(control);
+        }
+        if (csvPreviewHost != null) {
+            csvPreviewHost.getChildren().remove(control);
         }
     }
 
