@@ -656,7 +656,7 @@ final class AgentCoordinator implements AcpClient.Host {
         Platform.runLater(() -> {
             switch (update.kind()) {
                 case AGENT_MESSAGE -> panel().appendChunk(update.text());
-                case TOOL_CALL -> panel().appendLine("⚙ " + update.text());
+                case TOOL_CALL -> panel().appendToolLine(update.text());
                 case TOOL_CALL_UPDATE -> {
                     if ("failed".equals(update.text())) {
                         panel().appendLine("⚙ ✗ " + tr("agent.toolFailed"));

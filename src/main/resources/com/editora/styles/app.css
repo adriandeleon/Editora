@@ -1790,6 +1790,11 @@
     -fx-background-insets: 0;
 }
 
+/* AI Agent tool-call lines: the ⚙ glyph is muted; the command's plain (untokenized) runs use the theme
+   foreground. Highlighted runs reuse the editor's `.text.<class>` token colors from syntax.css. */
+.agent-panel .agent-tool-glyph { -fx-fill: -color-fg-muted; }
+.agent-panel .agent-cmd-plain { -fx-fill: -color-fg-default; }
+
 /* AI Agent: an inline-code span in a reply that looks like a file path is clickable (opens it). */
 .agent-code-path {
     -fx-cursor: hand;

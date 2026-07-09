@@ -18,6 +18,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
 import javafx.util.Duration;
 
 import com.editora.agent.AcpJson;
@@ -70,6 +72,10 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private final Button historyButton = new Button();
     /** Receives the prompt text when the user sends (coordinator → agent). */
     private Consumer<String> onSend;
+    /** Cancels the in-flight turn (the header ■ + the Send→Stop toggle + Esc all run this). */
+    private final Runnable onStop;
+    /** True while a prompt turn is in flight (drives the Send↔Stop toggle + the Esc-stops shortcut). */
+    private boolean busy;
     /** Receives a clicked inline-code span's raw text that looks like a file path (coordinator resolves +
      *  opens it, or reports it doesn't exist). */
     private final Consumer<String> onOpenPath;
@@ -93,6 +99,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             Runnable onResumeSession,
             Consumer<String> onOpenPath) {
         this.onOpenPath = onOpenPath;
+        this.onStop = onStop;
         getStyleClass().add("agent-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(6);
@@ -128,16 +135,28 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         input.setWrapText(true);
         input.setPrefRowCount(3);
         input.getStyleClass().add("agent-input");
-        // Chat convention: Enter sends, Shift+Enter inserts a newline.
+        // Chat convention: Enter sends, Shift+Enter inserts a newline; Esc stops an in-flight turn.
         input.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ENTER && !e.isShiftDown()) {
                 e.consume();
                 send();
+            } else if (e.getCode() == KeyCode.ESCAPE && busy) {
+                e.consume();
+                onStop.run();
             }
         });
         sendButton.setText(tr("agent.send"));
         sendButton.setDefaultButton(false);
-        sendButton.setOnAction(e -> send());
+        // The Send button doubles as Stop while a turn runs (ChatGPT/Claude convention — far more visible
+        // than the header ■), so it's never disabled; it just switches action + label + danger styling.
+        sendButton.getStyleClass().add("agent-send-button");
+        sendButton.setOnAction(e -> {
+            if (busy) {
+                onStop.run();
+            } else {
+                send();
+            }
+        });
         HBox inputRow = new HBox(6, input, sendButton);
         inputRow.setAlignment(Pos.BOTTOM_RIGHT);
         HBox.setHgrow(input, Priority.ALWAYS);
@@ -154,7 +173,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
 
     private void send() {
         String text = input.getText() == null ? "" : input.getText().strip();
-        if (text.isEmpty() || onSend == null || !stopButton.isDisable()) {
+        if (text.isEmpty() || onSend == null || busy) {
             return; // empty, unwired, or a turn is already running
         }
         input.clear();
@@ -195,9 +214,41 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         trimIfNeeded();
     }
 
+    /** Appends a tool-call / command line ({@code command}, glyph-prefixed) with light shell syntax
+     *  highlighting — the command word, flags, quoted strings, operators, variables, and trailing comments
+     *  get the editor's token colors (via {@link AgentCommandHighlighter}); plain args/paths stay default.
+     *  Finalizes any streaming agent message first, like {@link #appendLine}. */
+    public void appendToolLine(String command) {
+        finalizeCurrentMessage();
+        TextFlow flow = new TextFlow();
+        flow.getStyleClass().add("agent-line");
+        Text glyph = new Text("⚙ ");
+        glyph.getStyleClass().add("agent-tool-glyph");
+        applyRunFont(glyph);
+        flow.getChildren().add(glyph);
+        for (AgentCommandHighlighter.Span span : AgentCommandHighlighter.spans(command == null ? "" : command)) {
+            Text run = new Text(span.text());
+            if (span.styleClass() != null) {
+                run.getStyleClass().addAll("text", span.styleClass()); // reuse .text.<class> token colors
+            } else {
+                run.getStyleClass().add("agent-cmd-plain"); // default foreground (theme-aware)
+            }
+            applyRunFont(run);
+            flow.getChildren().add(run);
+        }
+        transcriptBox.getChildren().add(flow);
+        trimIfNeeded();
+    }
+
     private void applyLineFont(Label label) {
         if (lineFontFamily != null) {
             label.setFont(javafx.scene.text.Font.font(lineFontFamily, lineFontSize));
+        }
+    }
+
+    private void applyRunFont(Text run) {
+        if (lineFontFamily != null) {
+            run.setFont(javafx.scene.text.Font.font(lineFontFamily, lineFontSize));
         }
     }
 
@@ -295,8 +346,14 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
      *  the just-completed turn's streaming message so its last chunk renders immediately rather than
      *  waiting out the debounce after the status has already flipped back to "Idle". */
     public void setBusy(boolean busy) {
-        stopButton.setDisable(!busy);
-        sendButton.setDisable(busy);
+        this.busy = busy;
+        stopButton.setDisable(!busy); // the header ■ still enables only while running
+        // The Send button becomes a red "Stop" while running (and back to "Send" when idle); never disabled.
+        sendButton.setText(tr(busy ? "agent.stop" : "agent.send"));
+        sendButton.getStyleClass().remove("danger");
+        if (busy) {
+            sendButton.getStyleClass().add("danger");
+        }
         status.setText(tr(busy ? "agent.running" : "agent.idle"));
         if (!busy) {
             finalizeCurrentMessage();
