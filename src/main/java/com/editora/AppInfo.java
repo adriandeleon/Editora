@@ -11,7 +11,9 @@ import java.util.Properties;
 public final class AppInfo {
 
     public static final String NAME = "Editora";
-    public static final String VERSION = "0.9.2";
+    /** The release version — the single source is {@code pom.xml}'s {@code <version>}, Maven-filtered into
+     *  {@code build-info.properties} and read here, so a bump touches only the pom. */
+    public static final String VERSION = loadVersion();
     /** Project home page (the website's custom domain). */
     public static final String HOMEPAGE = "https://editora-project.dev";
     /** Copyright notice (matches the bundled {@code LICENSE} file). */
@@ -20,6 +22,26 @@ public final class AppInfo {
     public static final String LICENSE = "MIT License";
 
     private AppInfo() {}
+
+    /** The Maven-filtered project version (single source: {@code pom.xml}'s {@code <version>}); falls back
+     *  to {@code "0.0.0"} for an unfiltered run that bypassed Maven resource filtering (e.g. straight from
+     *  an IDE) — every real build (incl. {@code mvn javafx:run} and the dist image) filters it. */
+    private static String loadVersion() {
+        try (InputStream in = AppInfo.class.getResourceAsStream("/com/editora/build-info.properties")) {
+            if (in != null) {
+                Properties props = new Properties();
+                props.load(in);
+                String v = props.getProperty("build.version", "");
+                // Unfiltered (e.g. run straight from an IDE) leaves the literal Maven placeholder.
+                if (!v.isEmpty() && !v.startsWith("${")) {
+                    return v;
+                }
+            }
+        } catch (IOException ignored) {
+            // fall through to the dev fallback
+        }
+        return "0.0.0";
+    }
 
     /** The Maven-filtered build timestamp; falls back gracefully for unfiltered/dev runs. */
     public static String buildTime() {
