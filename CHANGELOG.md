@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Structured-data preview for JSON / YAML / TOML, with OpenAPI/Swagger docs.** `.json`, `.yaml`/`.yml`,
+  and `.toml` files now get the same 3-mode preview (Editor / Editor + Preview / Preview) as Markdown: a
+  collapsible, type-colored **data tree** rendered off-thread. A JSON/YAML document detected as an
+  **OpenAPI 3 / Swagger 2** spec instead renders as **browsable API docs** (title, servers, endpoints with
+  colored method badges + params + responses, schemas), with a tree ⇄ API-docs toggle
+  (`structured.toggleView`). New pure package `com.editora.structured`
+  (`StructuredNode`/`StructuredParser`/`OpenApiModel`/`OpenApiParser` — all Jackson stays here, unit-tested)
+  + `editor/StructuredTree` + `editor/OpenApiDoc` (self-scrolling nodes hosted the CSV-grid way, so the
+  `TreeView` keeps virtualization). Render-branch model (no coordinator, like Markwhen); a 50k-node cap
+  guards pathological files. **On by default**, `Settings.structuredPreview` (schema 63→64) — Settings →
+  Editor → Structured data + palette `view.toggleStructuredPreview`. Adds a dependency:
+  **jackson-dataformat-yaml** (+ snakeyaml 2.4; both real JPMS modules, no moditect). *Deferred: GeoJSON
+  map, jump-from-tree-to-source-line, per-file view persistence, expand/collapse-all, editing.*
 - **Diagram-as-code preview for Graphviz DOT and PlantUML.** Standalone `.dot`/`.gv` and
   `.puml`/`.plantuml`/`.pu`/`.iuml` files now get the same IntelliJ-style 3-mode preview (Editor /
   Editor + Preview / Preview) as Markdown and Mermaid: the whole buffer renders to an image via an

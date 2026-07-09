@@ -1,0 +1,16 @@
+# YAML — the 3-mode preview renders this as a collapsible tree.
+name: editora
+version: 0.9.2
+features:
+  preview: true
+  maxNodes: 50000
+  formats:
+    - json
+    - yaml
+    - toml
+authors:
+  - name: Ada
+    role: lead
+  - name: Grace
+    role: contributor
+notes: null

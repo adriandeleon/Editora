@@ -62,6 +62,7 @@ import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetParser;
 import com.editora.snippet.SnippetSession;
 import com.editora.snippet.VariableResolver;
+import com.editora.structured.StructuredParser;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
@@ -197,6 +198,16 @@ public class EditorBuffer implements TabContent {
     private Runnable csvPreviewRefresh = () -> {};
     /** Wraps the CSV grid so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
     private StackPane csvPreviewHost;
+    /** Structured-data (JSON/YAML/TOML) preview: on when the feature is enabled (pushed from settings). */
+    private boolean structuredPreviewEnabled;
+    /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
+    private StackPane structuredContentHolder;
+    /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
+    private StackPane structuredPreviewHost;
+    /** Tri-state view for a structured doc: {@code null}=auto (API docs for a spec, else tree), else forced. */
+    private Boolean structuredShowApiDocs;
+    /** Whether the last structured render detected an OpenAPI/Swagger spec (drives the view-toggle status). */
+    private boolean lastStructuredOpenApi;
     /** Forces log-viewer mode on a buffer whose extension isn't {@code .log} ("View as Log"). */
     private boolean logViewForced;
     /** While a log filter is active, the complete unfiltered text (the area shows only matching lines). */
@@ -2078,13 +2089,54 @@ public class EditorBuffer implements TabContent {
                 || isMarkwhen()
                 || (isDiagram() && MermaidImages.isEnabled())
                 || (isRenderedDiagram() && DiagramImages.isEnabled())
-                || hasCsvPreview();
+                || hasCsvPreview()
+                || hasStructuredPreview();
     }
 
     /** A CSV buffer whose grid preview node has been injected (i.e. the CSV preview feature is on). The
      *  injected node doubles as the enablement gate, mirroring {@link #htmlPreviewControl}. */
     public boolean hasCsvPreview() {
         return isCsv() && csvPreviewNode != null;
+    }
+
+    /** A structured-data buffer (JSON/YAML/TOML) whose format the {@link StructuredParser} recognizes. */
+    public boolean isStructured() {
+        return structuredFormat() != null;
+    }
+
+    /** The structured format for this buffer's language, or {@code null} if it isn't one. */
+    public StructuredParser.Format structuredFormat() {
+        return StructuredParser.Format.forLanguage(language);
+    }
+
+    /** Whether the structured tree/OpenAPI preview should be offered (feature on, and not a huge file). */
+    public boolean hasStructuredPreview() {
+        return structuredPreviewEnabled && isStructured() && !hugeFile;
+    }
+
+    /** Pushes the structured-preview feature gate (from Settings); re-attaches the toggle if it flipped. */
+    public void setStructuredPreviewEnabled(boolean enabled) {
+        if (this.structuredPreviewEnabled == enabled) {
+            return;
+        }
+        this.structuredPreviewEnabled = enabled;
+        if (!enabled && isStructured() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR); // drop back to source when the feature is turned off
+        }
+    }
+
+    /** Whether the last render of this structured buffer detected an OpenAPI/Swagger spec. */
+    public boolean isStructuredOpenApi() {
+        return lastStructuredOpenApi;
+    }
+
+    /** Flips a structured doc between the tree and the OpenAPI-docs view, then re-renders the preview. */
+    public void toggleStructuredView() {
+        boolean currentDocs = structuredShowApiDocs == null || structuredShowApiDocs;
+        structuredShowApiDocs = !currentDocs;
+        if (markdownViewMode != MarkdownViewMode.EDITOR) {
+            scheduleRenderPreview();
+        }
     }
 
     // --- Live Mermaid linting (maid) ----------------------------------------------------------------
@@ -3260,9 +3312,9 @@ public class EditorBuffer implements TabContent {
         }
         rebuildViewHost();
         setMinimapVisible(minimapVisible); // re-apply: the minimap is hidden while the preview is shown
-        // The paging-focus + scroll-sync tail is Markdown-preview-specific (the CSV grid scrolls itself and
-        // has no ScrollPane host), so skip it for a CSV buffer.
-        if (!hasCsvPreview()) {
+        // The paging-focus + scroll-sync tail is Markdown-preview-specific (the CSV grid and the structured
+        // tree/docs scroll themselves and have no ScrollPane host), so skip it for those.
+        if (!hasCsvPreview() && !hasStructuredPreview()) {
             if (target == MarkdownViewMode.PREVIEW) {
                 // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
                 Platform.runLater(previewPane()::requestFocus);
@@ -3610,6 +3662,24 @@ public class EditorBuffer implements TabContent {
             csvPreviewRefresh.run(); // the coordinator re-parses the buffer text into its per-buffer grid
             return;
         }
+        if (hasStructuredPreview()) {
+            // Whole file is one JSON/YAML/TOML doc: parse off-thread (pure, cheap), build the tree / OpenAPI
+            // docs on the FX thread into the self-scrolling structured host. The previewGen guard drops a
+            // superseded render (mirrors the Markwhen branch).
+            StructuredParser.Format sfmt = structuredFormat();
+            String src = area.getText();
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                StructuredParser.Parsed parsed = StructuredParser.parse(src, sfmt);
+                Platform.runLater(() -> {
+                    if (gen != previewGen) {
+                        return;
+                    }
+                    renderStructured(parsed);
+                });
+            });
+            return;
+        }
         if (isDiagram()) {
             // Whole file is one diagram: build the (async-filling) node on the FX thread directly. The
             // preview zoom scales the fit width (not font size, which doesn't affect an ImageView); the
@@ -3699,7 +3769,9 @@ public class EditorBuffer implements TabContent {
         detachViewModeControl();
         Node content;
         if (markdownViewMode == MarkdownViewMode.PREVIEW) {
-            StackPane host = hasCsvPreview() ? csvPreviewHost() : previewHost(); // preview (+ zoom control for md)
+            StackPane host = hasCsvPreview()
+                    ? csvPreviewHost()
+                    : hasStructuredPreview() ? structuredPreviewHost() : previewHost(); // preview (+ zoom for md)
             if (viewModeControl != null) {
                 StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
                 StackPane.setMargin(viewModeControl, new Insets(6, 10, 0, 0));
@@ -3707,7 +3779,10 @@ public class EditorBuffer implements TabContent {
             }
             content = host;
         } else if (markdownViewMode == MarkdownViewMode.SPLIT) {
-            SplitPane pane = new SplitPane(root, hasCsvPreview() ? csvPreviewNode : previewHost());
+            Node previewSide = hasCsvPreview()
+                    ? csvPreviewNode
+                    : hasStructuredPreview() ? structuredContentHolder() : previewHost();
+            SplitPane pane = new SplitPane(root, previewSide);
             pane.setOrientation(Orientation.HORIZONTAL);
             pane.setDividerPositions(0.5);
             attachControlToCodePane();
@@ -3747,6 +3822,41 @@ public class EditorBuffer implements TabContent {
         }
         csvPreviewHost.getChildren().setAll(csvPreviewNode); // the toggle is added by rebuildViewHost()
         return csvPreviewHost;
+    }
+
+    /** Sets the freshly parsed structured node (tree / OpenAPI docs / error) into the self-scrolling holder. */
+    private void renderStructured(StructuredParser.Parsed parsed) {
+        lastStructuredOpenApi = parsed.isOpenApi();
+        Node node;
+        if (!parsed.ok()) {
+            Label err = new Label(parsed.error());
+            err.getStyleClass().add("structured-error");
+            err.setWrapText(true);
+            node = err;
+        } else {
+            boolean showDocs = parsed.isOpenApi() && (structuredShowApiDocs == null || structuredShowApiDocs);
+            node = showDocs ? OpenApiDoc.build(parsed.openApi()) : StructuredTree.build(parsed.root());
+        }
+        structuredContentHolder().getChildren().setAll(node);
+    }
+
+    /** The self-scrolling structured preview node holder — used directly as the Split preview side. */
+    private StackPane structuredContentHolder() {
+        if (structuredContentHolder == null) {
+            structuredContentHolder = new StackPane();
+        }
+        return structuredContentHolder;
+    }
+
+    /** Wraps the structured holder so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
+    private StackPane structuredPreviewHost() {
+        if (structuredPreviewHost == null) {
+            structuredPreviewHost = new StackPane();
+        }
+        structuredPreviewHost
+                .getChildren()
+                .setAll(structuredContentHolder()); // the toggle is added by rebuildViewHost()
+        return structuredPreviewHost;
     }
 
     /**

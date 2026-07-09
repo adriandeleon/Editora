@@ -3,6 +3,17 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Structured-data preview (JSON/YAML/TOML tree + OpenAPI/Swagger docs) — `.json`/`.yaml`/`.toml` files
+      get the 3-mode preview (like Markdown): a collapsible, type-colored data tree rendered off-thread; a
+      JSON/YAML doc detected as an OpenAPI 3 / Swagger 2 spec renders as browsable API docs instead
+      (endpoints + method badges + params/responses + schemas), with a tree ⇄ docs toggle
+      (`structured.toggleView`). New pure `com.editora.structured`
+      (`StructuredNode`/`StructuredParser`/`OpenApiModel`/`OpenApiParser`, all Jackson-contained,
+      unit-tested) + `editor/StructuredTree`/`OpenApiDoc` (self-scrolling, hosted the CSV-grid way so the
+      `TreeView` keeps virtualization). Render-branch model (no coordinator, like Markwhen); 50k-node cap.
+      On by default; `Settings.structuredPreview` (schema 63→64). Adds jackson-dataformat-yaml + snakeyaml
+      2.4 (both real JPMS modules, no moditect). *Deferred: GeoJSON map (offline vector plot),
+      jump-from-tree-to-source, per-file view persistence, expand/collapse-all, editing.*
 - [x] Diagram-as-code preview (Graphviz DOT + PlantUML) — `.dot`/`.gv` and `.puml`/`.plantuml` files get
       the same 3-mode preview as Markdown/Mermaid, rendered off-thread via the external `dot`/`plantuml`
       CLIs (both PNG-native, no headless browser) and cached by source hash; zoom resizes the image and a
