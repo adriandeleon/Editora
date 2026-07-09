@@ -31,6 +31,7 @@ import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.Separator;
@@ -4713,6 +4714,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAdminEditAvailable(elevationAvailable() && local); // "Edit as Administrator" on a locked file
         buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
+        buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
+        // Makefile-run rides the same Run-feature gate as Java/Python/shell (setRunEnabled above).
         // Debugging: the breakpoint gutter gate + change/hover hooks (debuggable languages only).
         debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
@@ -6131,21 +6134,59 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem rename = new MenuItem(tr("menu.rename"));
         rename.setGraphic(Icons.edit());
         rename.setOnAction(e -> renameFile(buffer, tab));
-        MenuItem diffHead = new MenuItem(tr("menu.diffHead"));
+        // Git submenu — mirrors the Project tree's cell "Git" submenu, acting on this tab's file.
+        Menu gitMenu = new Menu(tr("project.menu.git"));
+        gitMenu.setGraphic(Icons.git());
+        MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
+        stage.setGraphic(Icons.stageAll());
+        stage.setOnAction(e -> git.ifEnabled(() -> git.gitStagePath(buffer.getPath())));
+        MenuItem unstage = new MenuItem(tr("project.menu.git.unstage"));
+        unstage.setGraphic(Icons.remove());
+        unstage.setOnAction(e -> git.ifEnabled(() -> git.gitUnstagePath(buffer.getPath())));
+        MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
+        revert.setGraphic(Icons.undo());
+        revert.setOnAction(e -> git.ifEnabled(() -> git.gitRevertPath(buffer.getPath())));
+        MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
+        ignore.setGraphic(Icons.git());
+        ignore.setOnAction(e -> git.ifEnabled(() -> git.addToGitignore(buffer.getPath())));
+        MenuItem diffHead = new MenuItem(tr("project.menu.git.compareHead"));
         diffHead.setGraphic(Icons.diff());
-        diffHead.setOnAction(e -> git.ifEnabled(diffCoordinator::diffActiveVsHead));
-        MenuItem diffCommit = new MenuItem(tr("menu.diffCommit"));
+        diffHead.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsHead(buffer.getPath())));
+        MenuItem diffBranch = new MenuItem(tr("project.menu.git.compareBranch"));
+        diffBranch.setGraphic(Icons.diff());
+        diffBranch.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsBranch(buffer.getPath())));
+        MenuItem diffCommit = new MenuItem(tr("project.menu.git.compareRevision"));
         diffCommit.setGraphic(Icons.diff());
-        diffCommit.setOnAction(e -> git.ifEnabled(diffCoordinator::diffActiveVsCommit));
+        diffCommit.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsCommit(buffer.getPath())));
+        MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
+        annotate.setGraphic(Icons.blame());
+        annotate.setOnAction(e -> git.ifEnabled(() -> {
+            openPath(buffer.getPath());
+            git.annotateActive();
+        }));
+        MenuItem history = new MenuItem(tr("project.menu.git.fileHistory"));
+        history.setGraphic(Icons.gitLog());
+        history.setOnAction(e -> git.ifEnabled(() -> gitFileHistoryForPath(buffer.getPath())));
+        gitMenu.getItems()
+                .addAll(
+                        stage,
+                        unstage,
+                        revert,
+                        ignore,
+                        new SeparatorMenuItem(),
+                        diffHead,
+                        diffBranch,
+                        diffCommit,
+                        annotate,
+                        history);
+        // "Compare With…" (any two files) and "Open in Diff Viewer" (a .patch/.diff file) are not Git
+        // actions, so they stay outside the Git submenu.
         MenuItem compareWith = new MenuItem(tr("menu.compareWith"));
         compareWith.setGraphic(Icons.diff());
         compareWith.setOnAction(e -> diffCoordinator.compareActiveWithFile());
         MenuItem openPatch = new MenuItem(tr("menu.openInDiffViewer"));
         openPatch.setGraphic(Icons.diff());
         openPatch.setOnAction(e -> diffCoordinator.openPatchFile(buffer));
-        MenuItem history = new MenuItem(tr("command.git.fileHistory"));
-        history.setGraphic(Icons.gitLog());
-        history.setOnAction(e -> git.ifEnabled(this::showFileHistory));
         MenuItem reveal = new MenuItem(tr("menu.revealInFileManager"));
         reveal.setGraphic(Icons.revealInFiles());
         reveal.setOnAction(e -> revealInFileManager(buffer.getPath(), false, isLocalBuffer(buffer)));
@@ -6165,11 +6206,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 closeLeft,
                 closeRight,
                 new SeparatorMenuItem(),
-                diffHead,
-                diffCommit,
+                gitMenu,
                 compareWith,
                 openPatch,
-                history,
                 new SeparatorMenuItem(),
                 reveal,
                 terminal,
@@ -6190,12 +6229,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             // Only shown for a .patch/.diff file — parses the buffer's own (possibly unsaved) text.
             openPatch.setVisible(hasPath
                     && PatchFiles.isPatchFile(buffer.getPath().getFileName().toString()));
-            // Git-only items (Compare with HEAD, Show File History) are hidden entirely when there's no VCS
-            // available for this file (Git off, or not inside a repo) — not just disabled.
-            boolean gitFile = hasPath && git.isAvailable();
-            diffHead.setVisible(gitFile);
-            diffCommit.setVisible(gitFile);
-            history.setVisible(gitFile);
+            // The Git submenu is only shown for a saved file (an untitled buffer can't be in a repo) and is
+            // greyed out when there's no VCS (Git off / not inside a repo) — mirroring the Project tree.
+            gitMenu.setVisible(hasPath);
+            gitMenu.setDisable(!git.isAvailable());
+            com.editora.git.GitFileStatus st = git.statusFor(buffer.getPath());
+            revert.setDisable(st == null); // nothing to revert on a clean/untracked-clean file
+            ignore.setDisable(st != com.editora.git.GitFileStatus.UNTRACKED); // ignore = for new (untracked) files
             // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
             save.setDisable(hasPath && !buffer.isDirty());
             pin.setText(pinned.contains(tab) ? "Unpin Tab" : "Pin Tab");

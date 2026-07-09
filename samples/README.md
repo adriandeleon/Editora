@@ -84,6 +84,15 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
 - `samples/editorconfig/two-space.py` — should use 2-space indent.
 - `samples/editorconfig/tabs.go` — should use tabs.
 
+## run/ — Run a file (gutter ▶)
+
+- `samples/run/Makefile` — a green ▶ appears in the gutter on every rule target (`all`/`greet`/
+  `build`/`test`/`clean`); click it to run `make <target>` in the Run tool window. The variable
+  assignment, `.PHONY` line, and `%.o` pattern rule deliberately get **no** glyph. "Run File"
+  (right-click / `C-c r`) runs the default goal (bare `make` → `all`). Every recipe is a harmless
+  `@echo`, so running any target is instant and side-effect-free. (Needs the LSP feature on — the Run
+  affordance rides that gate — and `make` on `PATH`.)
+
 ## http/ — HTTP client
 
 - `samples/http/requests.http` — run the per-request ▶; uses `{{title}}`/`{{token}}` variables.

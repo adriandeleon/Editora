@@ -86,10 +86,46 @@ final class RunCoordinator {
         launchRun(lastRunFile, lastRunCommand);
     }
 
+    /**
+     * Runs a single Makefile target ({@code make -f <file> [target]}) in the Makefile's directory, saving
+     * the buffer first so the on-disk targets/recipes are current. A blank/null {@code target} runs the
+     * default goal (bare {@code make}). Backs the per-target gutter ▶ and the generic "Run File" command.
+     */
+    void runMakeTarget(EditorBuffer buffer, String target) {
+        if (buffer == null) {
+            return;
+        }
+        if ((buffer.isDirty() || buffer.getPath() == null) && !ops.saveBuffer(buffer)) {
+            return; // user cancelled Save-As, or the save failed — don't run against stale/missing content
+        }
+        Path path = buffer.getPath();
+        if (path == null) {
+            return;
+        }
+        if (service.isRunning()) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        List<String> command = new ArrayList<>();
+        command.add("make");
+        // -f the buffer's own file name (basename; RunService runs in its dir): make otherwise reads the
+        // dir's default Makefile, so a `build.mk` / `Makefile.inc` buffer would run the wrong file.
+        command.add("-f");
+        command.add(path.getFileName().toString());
+        if (target != null && !target.isBlank()) {
+            command.add(target);
+        }
+        launchRun(path, command);
+    }
+
     private void runActiveFile(boolean promptArgs) {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null || !buffer.isRunnable()) {
             host.setStatus(tr("status.run.notCompact"));
+            return;
+        }
+        if (buffer.isMakefile()) {
+            runMakeTarget(buffer, null); // "Run File" on a Makefile ⇒ the default goal
             return;
         }
         if ((buffer.isDirty() || buffer.getPath() == null) && !ops.saveBuffer(buffer)) {

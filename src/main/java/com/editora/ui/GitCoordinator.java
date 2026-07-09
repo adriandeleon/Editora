@@ -722,6 +722,12 @@ final class GitCoordinator {
         discardChanges(rel, untracked);
     }
 
+    /** The Git working-tree status of {@code file} (null = clean / not tracked-as-changed), for menu
+     *  enable/disable — mirrors the map the Project tree colors from. */
+    com.editora.git.GitFileStatus statusFor(Path file) {
+        return file == null ? null : lastStatusByPath.get(file.toAbsolutePath().normalize());
+    }
+
     /**
      * Adds {@code file} (a directory gets a trailing {@code /}) to the repo-root {@code .gitignore}, creating
      * it if absent — the Project-tree "Add to .gitignore" action. A no-op when the entry is already present.

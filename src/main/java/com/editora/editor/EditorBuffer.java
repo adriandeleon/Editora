@@ -366,6 +366,11 @@ public class EditorBuffer implements TabContent {
     private java.util.List<Integer> httpRequestLines = java.util.List.of();
     /** Fired with the clicked request's start line when a {@code .http} Run glyph is clicked. */
     private java.util.function.IntConsumer httpRunHandler = i -> {};
+    /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
+     *  make <target>}); empty for non-Makefile buffers. */
+    private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
+    /** Fired with the clicked target's name when a Makefile Run glyph is clicked (runs {@code make <name>}). */
+    private java.util.function.Consumer<String> makeRunHandler = t -> {};
     /** Whether this file is runnable (a Java 25 compact source file, a Python script, or — when the Bash
      *  LSP is enabled — a shell script) — drives the gutter Run glyph + the Run tool window. */
     private boolean runnable;
@@ -2367,6 +2372,17 @@ public class EditorBuffer implements TabContent {
         this.httpRunHandler = handler == null ? i -> {} : handler;
     }
 
+    /** True for a GNU Makefile buffer — each rule target line then shows a Run glyph ({@code make <target>}),
+     *  and the generic "Run File" command runs the default goal ({@code make}). */
+    public boolean isMakefile() {
+        return "makefile".equals(language);
+    }
+
+    /** Injects the handler run with a target's name when its Makefile gutter ▶ is clicked. */
+    public void setMakeRunHandler(java.util.function.Consumer<String> handler) {
+        this.makeRunHandler = handler == null ? t -> {} : handler;
+    }
+
     /** Whether {@code line} draws a Run glyph: every request line for an enabled {@code .http} buffer,
      *  else the single script entry line. */
     private boolean isRunGlyphLine(int line) {
@@ -2376,14 +2392,22 @@ public class EditorBuffer implements TabContent {
         if (httpFeatureEnabled && isHttpFile()) {
             return httpRequestLines.contains(line);
         }
+        if (isMakefile()) {
+            return makeTargets.containsKey(line);
+        }
         return line == runLine;
     }
 
-    /** Dispatches a Run-glyph click: a {@code .http} request runner (with the clicked line), else the
-     *  script run handler. */
+    /** Dispatches a Run-glyph click: a {@code .http} request runner (with the clicked line), a Makefile
+     *  target runner (with the clicked target's name), else the script run handler. */
     private void onRunGlyph(int line) {
         if (httpFeatureEnabled && isHttpFile()) {
             httpRunHandler.accept(line);
+        } else if (isMakefile()) {
+            String target = makeTargets.get(line);
+            if (target != null) {
+                makeRunHandler.accept(target);
+            }
         } else if (runHandler != null) {
             runHandler.run();
         }
@@ -2403,12 +2427,22 @@ public class EditorBuffer implements TabContent {
         boolean nowRunnable;
         int nowLine;
         java.util.List<Integer> nowHttpLines = java.util.List.of();
+        java.util.Map<Integer, String> nowMakeTargets = java.util.Map.of();
         if (httpEligible) {
             nowHttpLines = com.editora.http.HttpFile.parse(text).stream()
                     .map(com.editora.http.HttpFile.Request::startLine)
                     .toList();
             nowRunnable = !nowHttpLines.isEmpty();
             nowLine = -1; // .http uses the line set, not a single entry line
+        } else if (eligible && isMakefile()) {
+            // Each rule target gets its own gutter ▶ (running `make <target>`) — the .http multi-glyph model.
+            java.util.Map<Integer, String> targets = new java.util.LinkedHashMap<>();
+            for (com.editora.run.MakefileTargets.Target t : com.editora.run.MakefileTargets.parse(text)) {
+                targets.put(t.line(), t.name());
+            }
+            nowMakeTargets = targets;
+            nowRunnable = !targets.isEmpty();
+            nowLine = -1; // Makefile uses the target line map, not a single entry line
         } else if (eligible && "python".equals(language)) {
             nowRunnable = true;
             nowLine = pythonRunLine(text); // the __main__ guard, else the first line
@@ -2428,15 +2462,17 @@ public class EditorBuffer implements TabContent {
         }
         boolean changed = nowRunnable != runnable;
         boolean httpLinesChanged = !nowHttpLines.equals(httpRequestLines);
+        boolean makeTargetsChanged = !nowMakeTargets.equals(makeTargets);
         int oldLine = runLine;
         runnable = nowRunnable;
         runLine = nowLine;
         httpRequestLines = nowHttpLines;
+        makeTargets = nowMakeTargets;
         if (changed) {
             onRunnableChanged.run();
             refreshGutter(); // the Run slot appeared/disappeared on every row — rebuild the factory
-        } else if (httpLinesChanged) {
-            refreshGutter(); // requests added/removed in a .http file — relight the glyphs
+        } else if (httpLinesChanged || makeTargetsChanged) {
+            refreshGutter(); // requests/targets added/removed — relight the glyphs on the new lines
         } else if (nowLine != oldLine) {
             // The entry line moved (edits above it) — repaint just the old and new gutter rows.
             if (oldLine >= 0) {
