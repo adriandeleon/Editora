@@ -36,6 +36,13 @@ public final class LanguageRegistry {
             Map.entry("mermaid", "mermaid"),
             Map.entry("mw", "markwhen"),
             Map.entry("markwhen", "markwhen"),
+            // Diagram-as-code (rendered in the 3-mode preview via an external CLI: dot / plantuml).
+            Map.entry("dot", "dot"),
+            Map.entry("gv", "dot"),
+            Map.entry("puml", "plantuml"),
+            Map.entry("plantuml", "plantuml"),
+            Map.entry("pu", "plantuml"),
+            Map.entry("iuml", "plantuml"),
             // Brace-delimited languages (fold by matched {} / []).
             Map.entry("java", "java"),
             // JS/TS — the language name doubles as the LSP languageId (javascript/typescript/…react).

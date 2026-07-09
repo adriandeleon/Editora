@@ -1,0 +1,16 @@
+' PlantUML — preview renders this to an image (needs the `plantuml` CLI: brew install plantuml).
+@startuml
+title Diagram preview flow
+
+actor User
+participant Editor
+participant DiagramRenderer as R
+participant "dot / plantuml" as CLI
+
+User -> Editor : open .puml / .dot
+Editor -> R : render(source)
+R -> CLI : run
+CLI --> R : PNG bytes
+R --> Editor : image (cached by source hash)
+note right of Editor : zoom re-fits the cached image
+@enduml

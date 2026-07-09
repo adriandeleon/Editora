@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 62;
+    public static final int SCHEMA_VERSION = 63;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -170,6 +170,14 @@ public class Settings {
     private String mmdcPath = "";
     /** Path to the maid (probelabs/maid linter) executable; blank = resolve "maid" on PATH. */
     private String maidPath = "";
+    /** Diagram-as-code preview (Graphviz DOT + PlantUML): on by default — renders .dot/.gv and
+     *  .puml/.plantuml files in the 3-mode preview via external CLIs. Self-gates on detection, so it stays
+     *  inert until the tool (dot/plantuml) is found. Mirrors {@link #mermaidSupport}. */
+    private boolean diagramSupport = true;
+    /** Path to the Graphviz dot executable; blank = resolve "dot" on PATH. */
+    private String dotPath = "";
+    /** Path to the plantuml executable/command; blank = resolve "plantuml" on PATH. */
+    private String plantumlPath = "";
     /** Maven support (a toolbar icon + actions popup parsed from the active project's pom.xml, streaming
      *  goal/phase runs to a console): on by default — self-gates on detection, so it stays inert (the
      *  toolbar button hidden) until a pom.xml is actually found for the current project/file. */
@@ -1117,6 +1125,30 @@ public class Settings {
 
     public void setMaidPath(String maidPath) {
         this.maidPath = maidPath == null ? "" : maidPath;
+    }
+
+    public boolean isDiagramSupport() {
+        return diagramSupport;
+    }
+
+    public void setDiagramSupport(boolean diagramSupport) {
+        this.diagramSupport = diagramSupport;
+    }
+
+    public String getDotPath() {
+        return dotPath == null ? "" : dotPath;
+    }
+
+    public void setDotPath(String dotPath) {
+        this.dotPath = dotPath == null ? "" : dotPath;
+    }
+
+    public String getPlantumlPath() {
+        return plantumlPath == null ? "" : plantumlPath;
+    }
+
+    public void setPlantumlPath(String plantumlPath) {
+        this.plantumlPath = plantumlPath == null ? "" : plantumlPath;
     }
 
     public boolean isMavenSupport() {

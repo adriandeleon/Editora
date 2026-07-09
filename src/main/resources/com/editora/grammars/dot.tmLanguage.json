@@ -1,0 +1,43 @@
+{
+  "name": "Graphviz DOT",
+  "scopeName": "source.dot",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#keyword" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#operator" },
+    { "include": "#attribute" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        { "name": "comment.line.double-slash.dot", "match": "//.*$" },
+        { "name": "comment.line.number-sign.dot", "match": "#.*$" },
+        { "name": "comment.block.dot", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "keyword": {
+      "name": "keyword.control.dot",
+      "match": "(?i)\\b(strict|digraph|graph|subgraph|node|edge)\\b"
+    },
+    "string": {
+      "name": "string.quoted.double.dot",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [{ "name": "constant.character.escape.dot", "match": "\\\\." }]
+    },
+    "number": {
+      "name": "constant.numeric.dot",
+      "match": "\\b-?[0-9]+(\\.[0-9]+)?\\b"
+    },
+    "operator": {
+      "name": "keyword.operator.edge.dot",
+      "match": "->|--"
+    },
+    "attribute": {
+      "name": "variable.parameter.dot",
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?==)"
+    }
+  }
+}

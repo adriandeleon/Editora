@@ -42,7 +42,9 @@ public final class Commenter {
                     "typescript",
                     "javascriptreact",
                     "typescriptreact",
-                    "proto" -> new CommentStyle("//", "/*", "*/");
+                    "proto",
+                    "dot" -> new CommentStyle("//", "/*", "*/");
+            case "plantuml" -> new CommentStyle("'", "/'", "'/");
             case "css" -> new CommentStyle(null, "/*", "*/");
             case "sql" -> new CommentStyle("--", "/*", "*/");
             case "lua" -> new CommentStyle("--", "--[[", "]]");

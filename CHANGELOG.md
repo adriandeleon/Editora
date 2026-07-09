@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Diagram-as-code preview for Graphviz DOT and PlantUML.** Standalone `.dot`/`.gv` and
+  `.puml`/`.plantuml`/`.pu`/`.iuml` files now get the same IntelliJ-style 3-mode preview (Editor /
+  Editor + Preview / Preview) as Markdown and Mermaid: the whole buffer renders to an image via an
+  external CLI (`dot` / `plantuml`), off the FX thread, cached by a hash of the source so an unchanged
+  re-render is a cheap re-fit; the preview zoom resizes the image and a diagram exports to **SVG / PNG /
+  PDF** (`diagram.export`). Both tools rasterize to PNG natively (no headless browser, unlike Mermaid's
+  mmdc). New generic, Mermaid-independent seam: pure package `com.editora.diagram`
+  (`DiagramKind`/`DiagramRenderer`/`DiagramService`, the CLI facade + per-kind argv builders, unit-tested)
+  + `editor/DiagramImages` (the async render cache, mirroring `MermaidImages`) + `ui/DiagramCoordinator`
+  (the `CoordinatorHost` feature-coordinator pattern). Authored compact `grammars/dot.tmLanguage.json` +
+  `grammars/plantuml.tmLanguage.json` for highlighting, plus `LanguageRegistry`/`GrammarRegistry`/
+  `Commenter`/`FoldRegions` entries. **On by default** — self-gating on detection, so it stays inert
+  until `dot`/`plantuml` are found (install via your package manager, e.g.
+  `brew install graphviz plantuml`); toggle + tool paths under *Settings → Languages & Tools → Diagrams*.
+  `Settings.diagramSupport`/`dotPath`/`plantumlPath` (schema 62→63, additive). Commands
+  `diagram.export`, `view.toggleDiagramSupport`, `diagram.setDotCommand`, `diagram.setPlantumlCommand`.
+  Mermaid's shipped path is untouched (the two share only the `editor/DiagramImages` render-cache
+  convention). *Deferred: PlantUML `@start/@end` block folding, a themed (dark) render, live linting,
+  and the browser-raster diagram tools (D2, WaveDrom).*
+
 ### Changed
 
 - **CSV/TSV grid preview is now an in-editor Editor/Split/Preview view, mirroring the Markdown preview.**

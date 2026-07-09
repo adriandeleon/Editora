@@ -105,6 +105,7 @@ public class SettingsWindow {
         DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS, true),
         MARKDOWN(tr("settings.cat.markdown"), Group.LANGUAGES_TOOLS),
         MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS),
+        DIAGRAMS(tr("settings.cat.diagrams"), Group.LANGUAGES_TOOLS),
         MAVEN(tr("settings.cat.maven"), Group.LANGUAGES_TOOLS),
         WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, true),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
@@ -153,6 +154,7 @@ public class SettingsWindow {
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
     private final com.editora.mermaid.MermaidService mermaidService;
+    private final com.editora.diagram.DiagramService diagramService;
     private final MavenCoordinator maven;
     private final com.editora.lsp.LspManager lspManager;
     private final com.editora.dap.DapManager dapManager;
@@ -309,6 +311,10 @@ public class SettingsWindow {
     private TextField maidPathField;
     private TextField templateAuthorField;
     private Label mermaidStatusLabel;
+    private CheckBox diagramCheck;
+    private TextField dotPathField;
+    private TextField plantumlPathField;
+    private Label diagramStatusLabel;
     private CheckBox mavenCheck;
     private TextField mavenCommandField;
     private Label mavenStatusLabel;
@@ -416,6 +422,7 @@ public class SettingsWindow {
             ToolWindowManager toolWindows,
             com.editora.git.GitService gitService,
             com.editora.mermaid.MermaidService mermaidService,
+            com.editora.diagram.DiagramService diagramService,
             MavenCoordinator maven,
             com.editora.lsp.LspManager lspManager,
             com.editora.dap.DapManager dapManager,
@@ -428,6 +435,7 @@ public class SettingsWindow {
         this.toolWindows = toolWindows;
         this.gitService = gitService;
         this.mermaidService = mermaidService;
+        this.diagramService = diagramService;
         this.maven = maven;
         this.lspManager = lspManager;
         this.dapManager = dapManager;
@@ -968,6 +976,27 @@ public class SettingsWindow {
             refreshMermaidStatus();
         });
 
+        diagramCheck = new CheckBox(tr("settings.enableDiagram"));
+        diagramCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDiagramSupport(now);
+            apply();
+            refreshDiagramStatus();
+        });
+        dotPathField = new TextField();
+        dotPathField.setPromptText("dot");
+        dotPathField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDotPath(now);
+            apply();
+            refreshDiagramStatus();
+        });
+        plantumlPathField = new TextField();
+        plantumlPathField.setPromptText("plantuml");
+        plantumlPathField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setPlantumlPath(now);
+            apply();
+            refreshDiagramStatus();
+        });
+
         mavenCheck = new CheckBox(tr("settings.enableMaven"));
         mavenCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setMavenSupport(now);
@@ -1312,6 +1341,7 @@ public class SettingsWindow {
         pages.put(Category.DEBUG, debugPage());
         pages.put(Category.MARKDOWN, markdownPage());
         pages.put(Category.MERMAID, mermaidPage());
+        pages.put(Category.DIAGRAMS, diagramsPage());
         pages.put(Category.MAVEN, mavenPage());
         pages.put(Category.WEB, webPage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
@@ -2557,6 +2587,53 @@ public class SettingsWindow {
         hint.setMaxWidth(440);
         row(p, Category.MERMAID, null, hint, "mermaid install npm mmdc maid cli");
         return p;
+    }
+
+    /** LANGUAGES & TOOLS ▸ Diagrams: Graphviz DOT + PlantUML preview (external CLIs). */
+    private VBox diagramsPage() {
+        VBox p = page(tr("settings.cat.diagrams"));
+        diagramStatusLabel = new Label(tr("settings.diagram.checking"));
+        diagramStatusLabel.getStyleClass().add("settings-git-status");
+        diagramStatusLabel.setWrapText(true);
+        diagramStatusLabel.setMaxWidth(440);
+        row(p, Category.DIAGRAMS, null, diagramStatusLabel, "diagram dot graphviz plantuml found installed not found");
+        row(p, Category.DIAGRAMS, null, diagramCheck, "diagram dot graphviz plantuml enable render preview puml gv");
+        row(
+                p,
+                Category.DIAGRAMS,
+                null,
+                exePathRow(tr("settings.diagram.dotPath"), dotPathField),
+                "diagram dot graphviz path executable render");
+        row(
+                p,
+                Category.DIAGRAMS,
+                null,
+                exePathRow(tr("settings.diagram.plantumlPath"), plantumlPathField),
+                "diagram plantuml puml path executable render");
+        Label hint = note(tr("settings.diagram.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.DIAGRAMS, null, hint, "diagram install dot graphviz plantuml cli");
+        return p;
+    }
+
+    private void refreshDiagramStatus() {
+        if (diagramStatusLabel == null || diagramService == null) {
+            return;
+        }
+        diagramStatusLabel.getStyleClass().setAll("settings-git-status");
+        diagramStatusLabel.setText(tr("settings.diagram.checking"));
+        diagramService.detect(a -> {
+            boolean dot = a.has(com.editora.diagram.DiagramKind.DOT);
+            boolean puml = a.has(com.editora.diagram.DiagramKind.PLANTUML);
+            String dotState = dot ? tr("settings.diagram.found") : tr("settings.diagram.notFound");
+            String pumlState = puml ? tr("settings.diagram.found") : tr("settings.diagram.notFound");
+            // Green only when both tools are found, red when either is missing (like the Mermaid/LSP rows).
+            diagramStatusLabel
+                    .getStyleClass()
+                    .setAll("settings-git-status", dot && puml ? "settings-git-found" : "settings-git-missing");
+            diagramStatusLabel.setText(tr("settings.diagram.status", dotState, pumlState));
+        });
     }
 
     private VBox mavenPage() {
@@ -5288,6 +5365,10 @@ public class SettingsWindow {
             mmdcPathField.setText(settings.getMmdcPath());
             maidPathField.setText(settings.getMaidPath());
             refreshMermaidStatus();
+            diagramCheck.setSelected(settings.isDiagramSupport());
+            dotPathField.setText(settings.getDotPath());
+            plantumlPathField.setText(settings.getPlantumlPath());
+            refreshDiagramStatus();
             mavenCheck.setSelected(settings.isMavenSupport());
             mavenCommandField.setText(settings.getMavenCommand());
             refreshMavenStatus();

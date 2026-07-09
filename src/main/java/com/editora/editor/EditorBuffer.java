@@ -42,6 +42,7 @@ import javafx.scene.text.Font;
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionEngine;
 import com.editora.completion.CompletionProvider;
+import com.editora.diagram.DiagramKind;
 import com.editora.editops.AutoClose;
 import com.editora.editops.BraceMatcher;
 import com.editora.editops.Commenter;
@@ -2012,6 +2013,18 @@ public class EditorBuffer implements TabContent {
         return "mermaid".equals(language);
     }
 
+    /** The rendered diagram-as-code kind (Graphviz DOT / PlantUML) for this buffer, or {@code null}. The
+     *  whole buffer renders to one image via an external CLI (see {@link DiagramImages}); Mermaid stays on
+     *  its own {@link #isDiagram()} path. */
+    public DiagramKind diagramKind() {
+        return DiagramKind.fromLanguage(language);
+    }
+
+    /** Whether this buffer is a DOT/PlantUML diagram (renders via {@link DiagramImages}). */
+    public boolean isRenderedDiagram() {
+        return diagramKind() != null;
+    }
+
     /** A Markwhen timeline file (.mw/.markwhen) — the whole buffer renders as one timeline preview. */
     public boolean isMarkwhen() {
         return "markwhen".equals(language);
@@ -2061,7 +2074,11 @@ public class EditorBuffer implements TabContent {
      *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off), and CSV
      *  only once the grid preview node has been injected (the feature-on gate — see {@link #hasCsvPreview}). */
     public boolean hasPreview() {
-        return isMarkdown() || isMarkwhen() || (isDiagram() && MermaidImages.isEnabled()) || hasCsvPreview();
+        return isMarkdown()
+                || isMarkwhen()
+                || (isDiagram() && MermaidImages.isEnabled())
+                || (isRenderedDiagram() && DiagramImages.isEnabled())
+                || hasCsvPreview();
     }
 
     /** A CSV buffer whose grid preview node has been injected (i.e. the CSV preview feature is on). The
@@ -3609,6 +3626,22 @@ public class EditorBuffer implements TabContent {
             Platform.runLater(() -> previewPane().setVvalue(v));
             return;
         }
+        DiagramKind dk = diagramKind();
+        if (dk != null) {
+            // Whole file is one DOT/PlantUML diagram — same async-image model as Mermaid (see above), via
+            // the generic DiagramImages façade. Zoom scales the fit width; the content-hash cache makes a
+            // zoom re-render a cheap re-fit. Don't call applyPreviewScale() here (it re-enters this branch).
+            double v = previewPane().getVvalue();
+            double scale = previewFontScale;
+            javafx.scene.layout.VBox box =
+                    new javafx.scene.layout.VBox(DiagramImages.node(dk, area.getText(), lw -> lw * scale));
+            box.getStyleClass().add("markdown-preview");
+            StackPane wrap = new StackPane(box);
+            wrap.getStyleClass().add("markdown-preview-wrap");
+            previewPane().setContent(wrap);
+            Platform.runLater(() -> previewPane().setVvalue(v));
+            return;
+        }
         if (isMarkwhen()) {
             // Whole file is one timeline. Parse off-thread (pure, cheap), build the node on the FX thread.
             // Horizontal zoom scales the axis width; preserve both scroll positions (the axis scrolls
@@ -3843,7 +3876,7 @@ public class EditorBuffer implements TabContent {
         if (previewPane == null || previewPane.getContent() == null) {
             return;
         }
-        if (isDiagram()) {
+        if (isDiagram() || isRenderedDiagram()) {
             scheduleRenderPreview(); // re-fit the diagram image to the new zoom (cache hit — cheap)
             return;
         }

@@ -521,6 +521,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 toolWindows,
                 git.service(),
                 mermaid.service(),
+                diagram.service(),
                 maven,
                 lspManager,
                 dapManager,
@@ -621,6 +622,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         historyCoordinator.applySupport(); // Local File History tool window availability + list (on by default)
         notesCoordinator.applySupport(); // hide Personal Notes UI when disabled (default)
         mermaid.applySupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
+        diagram.applySupport(); // wire dot/plantuml paths; DOT/PlantUML preview off when disabled
         searchCoordinator
                 .applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
         applyMathSupport(); // LaTeX math rendering (off by default)
@@ -731,6 +733,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 git.isEnabled(),
                 s.isNotesSupport(),
                 s.isMermaidSupport(),
+                diagram.isEnabled(),
                 maven.isEnabled(),
                 lspEnabled(),
                 httpClient.isEnabled(),
@@ -1067,6 +1070,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         todoCoordinator.shutdown();
         markdownLintService.shutdown();
         mermaid.shutdown();
+        diagram.shutdown();
         maven.shutdown();
         htmlPreview.shutdown(); // stop the HTML-preview HTTP server + worker
         logViewer.shutdown(); // stop any log tail-follow poll thread
@@ -2062,6 +2066,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 lspCoordinator.applySupport();
                 debugCoordinator.applySupport();
                 mermaid.applySupport();
+                diagram.applySupport();
                 requestSave(); // persist a resolved command (e.g. the installed jdtls launcher path)
                 if (settingsWindow != null) {
                     settingsWindow.refreshDetectionStatus(); // flip the Settings Install buttons to "Installed"
@@ -2557,6 +2562,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The Mermaid feature (diagram render/export, live lint, autocomplete gating); see {@link MermaidCoordinator}. */
     private final MermaidCoordinator mermaid = new MermaidCoordinator(coordinatorHost);
+
+    /** The diagram-as-code feature (Graphviz DOT + PlantUML preview/export); see {@link DiagramCoordinator}. */
+    private final DiagramCoordinator diagram = new DiagramCoordinator(coordinatorHost);
 
     // --- HTML Live Preview (serve via a loopback HttpServer + open in a detected browser) ---------
 
@@ -9347,6 +9355,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         git.applyBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
         notesCoordinator.applySupport();
         mermaid.applySupport();
+        diagram.applySupport();
         searchCoordinator.applyRipgrepSupport();
         applyMathSupport();
         httpClient.applySupport();
@@ -10320,6 +10329,28 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markwhen.exportJson", this::exportMarkwhenJson));
         registry.register(Command.of("markwhen.toggleView", this::toggleMarkwhenView));
         registry.register(Command.of("mermaid.export", mermaid::export));
+        registry.register(Command.of("diagram.export", diagram::export));
+        registry.register(Command.of(
+                "view.toggleDiagramSupport",
+                () -> toggleSetting(
+                        "view.toggleDiagramSupport",
+                        () -> config.getSettings().isDiagramSupport(),
+                        v -> config.getSettings().setDiagramSupport(v),
+                        diagram::applySupport)));
+        registry.register(Command.of(
+                "diagram.setDotCommand",
+                () -> promptStringSetting(
+                        "diagram.setDotCommand",
+                        () -> config.getSettings().getDotPath(),
+                        v -> config.getSettings().setDotPath(v),
+                        diagram::applySupport)));
+        registry.register(Command.of(
+                "diagram.setPlantumlCommand",
+                () -> promptStringSetting(
+                        "diagram.setPlantumlCommand",
+                        () -> config.getSettings().getPlantumlPath(),
+                        v -> config.getSettings().setPlantumlPath(v),
+                        diagram::applySupport)));
         registry.register(Command.of("htmlPreview.open", htmlPreview::open));
         registry.register(Command.of("htmlPreview.openIn", htmlPreview::openIn));
         registry.register(Command.of("view.toggleHtmlPreview", htmlPreview::toggle));

@@ -213,6 +213,13 @@ Editora is built with the help of AI coding tools.
   `npm i -g @mermaid-js/mermaid-cli` sometimes skips Chrome's download). The in-app
   **Settings → Mermaid → Install…** button (and the `install.mermaidSupport` command) now does this for
   you — it installs mmdc *and* that Chrome.
+- **Diagram-as-code preview (Graphviz DOT + PlantUML)** — standalone `.dot`/`.gv` and
+  `.puml`/`.plantuml` files get the same 3-mode preview as Markdown/Mermaid, rendered off-thread via the
+  external **`dot`** / **`plantuml`** CLIs (both rasterize to PNG natively — no headless browser) and
+  cached by source hash. Zoom resizes the image; export a diagram to **SVG / PNG / PDF**
+  (`diagram.export`). **On by default** — self-gating on detection, so it's inert until the tool is found
+  (install via your package manager, e.g. `brew install graphviz plantuml`). Toggle + tool paths under
+  *Settings → Languages & Tools → Diagrams*.
 - **Maven support** — a toolbar icon (shown only when a pom.xml is detected) opens an IntelliJ-style
   actions popup: the standard lifecycle phases, the pom's declared profiles (checkable, composing with a
   run via `-P`), and each plugin's explicitly-bound goals (`spotless:check`, `jacoco:report`, …) — plus a
