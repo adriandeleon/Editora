@@ -1,0 +1,5 @@
+timestamp|level|service|message
+1720000001|INFO|auth|login ok
+1720000002|WARN|cache|near capacity
+1720000003|ERROR|db|connection refused
+1720000004|INFO|auth|logout
