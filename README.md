@@ -220,11 +220,12 @@ Editora is built with the help of AI coding tools.
   (`diagram.export`). **On by default** — self-gating on detection, so it's inert until the tool is found
   (install via your package manager, e.g. `brew install graphviz plantuml`). Toggle + tool paths under
   *Settings → Languages & Tools → Diagrams*.
-- **Structured-data preview (JSON / YAML / TOML + OpenAPI docs)** — `.json`/`.yaml`/`.toml` files get the
-  same 3-mode preview as Markdown: a collapsible, type-colored **data tree** (rendered off-thread). A
-  JSON/YAML file recognized as an **OpenAPI 3 / Swagger 2** spec instead renders as **browsable API docs**
-  (endpoints with colored method badges, params, responses, schemas), with a tree ⇄ docs toggle
-  (`structured.toggleView`). **On by default** — *Settings → Editor → Structured data*.
+- **Structured-data preview (JSON / YAML / TOML / XML + OpenAPI docs)** — `.json`/`.yaml`/`.toml` files get
+  the same 3-mode preview as Markdown: a collapsible, type-colored **data tree** (rendered off-thread);
+  `.xml` files render a faithful **DOM tree** (tags + attributes + text). A JSON/YAML file recognized as an
+  **OpenAPI 3 / Swagger 2** spec instead renders as **browsable API docs** (endpoints with colored method
+  badges, params, responses, schemas), with a tree ⇄ docs toggle (`structured.toggleView`). **On by
+  default** — *Settings → Editor → Structured data*.
 - **SVG image preview** — `.svg` files stay editable XML but gain a rendered-image preview in the same
   3-mode view; edit the source and the image re-renders live (rasterized via the bundled JSVG — no external
   tool). **On by default** — *Settings → Editor → SVG*.

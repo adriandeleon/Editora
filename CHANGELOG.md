@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **XML tree preview.** `.xml` files (xsd/xsl/fxml/pom/wsdl/rss/…) join the structured-data preview with a
+  collapsible **DOM tree** in the 3-mode view — each element shows its tag + inline attributes, children in
+  document order, and text-only elements inlined as `tag = "value"`. A *faithful* DOM model
+  (elements/attributes/text/comments), **not** a lossy XML→JSON shoehorn. Parsed off-thread with the JDK's
+  own DOM parser (**no new dependency**), hardened against XXE exactly like the Maven pom parser (DOCTYPE
+  disallowed, external entities/DTD off). New pure `structured/XmlNode` + `structured/XmlParser`
+  (unit-tested, incl. an XXE-blocked case) + `editor/XmlTree`; reuses the existing structured-preview
+  hosting **and the same `Settings.structuredPreview` toggle** (relabelled JSON/YAML/TOML → JSON/YAML/TOML/
+  XML). `.svg` still renders as an image (excluded from the tree); `.xhtml` still uses the browser preview.
+  *Deferred: specialized dialect renderers (RSS/Atom feed view, like OpenAPI for JSON), attribute/text
+  search.*
 - **PDF viewer.** `.pdf` files now open in a read-only **page viewer** (rasterized via Apache **PDFBox** —
   already a dependency, for PDF export) instead of the hex viewer. A top bar navigates pages
   (`◀ Page N of M ▶`) and zooms (out / in / fit-to-window / actual-size; `Ctrl`+wheel too). Pages are
