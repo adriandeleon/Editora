@@ -4731,6 +4731,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setPreviewPrintHandler(this::printPreview);
         buffer.setPreviewExportDocxHandler(this::exportPreviewDocx); // preview → MS Word
         buffer.setPreviewExportOdtHandler(this::exportPreviewOdt); // preview → OpenDocument
+        buffer.setPreviewExportJsonHandler(this::exportMarkwhenJson); // Markwhen preview → JSON
+        buffer.setOnMarkwhenViewChanged(() -> persistMarkwhenView(buffer)); // persist timeline/calendar choice
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         buffer.setCompletionProvider(completion::complete);
@@ -8042,6 +8044,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (file == null || !buffer.hasPreview()) {
             return;
         }
+        if (buffer.isMarkwhen()) {
+            // Restore the timeline/calendar renderer BEFORE the view mode below (so the first render uses it).
+            String view = config.getWorkspaceState().getMarkwhenViews().get(file.toString());
+            if (view != null) {
+                try {
+                    buffer.setMarkwhenView(EditorBuffer.MarkwhenView.valueOf(view));
+                } catch (IllegalArgumentException ignored) {
+                    // unknown persisted value — keep the timeline default
+                }
+            }
+        }
         String saved = config.getWorkspaceState().getMarkdownViewModes().get(file.toString());
         if (saved == null) {
             return;
@@ -8976,6 +8989,64 @@ public class MainController implements com.editora.mcp.McpBridge {
         chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + ".pdf");
         chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("PDF", "*.pdf"));
         return chooser.showSaveDialog(stage);
+    }
+
+    /** Exports the active Markwhen buffer's parsed timeline to a JSON file (preview menu + palette). */
+    private void exportMarkwhenJson() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isMarkwhen()) {
+            setStatus(tr("status.markwhen.notMarkwhen"));
+            return;
+        }
+        String base = bufferBaseName(b);
+        int dot = base == null ? -1 : base.lastIndexOf('.');
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "timeline" : base)) + ".json");
+        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("JSON", "*.json"));
+        if (b.getPath() != null && b.getPath().getParent() != null && isLocalBuffer(b)) {
+            chooser.setInitialDirectory(b.getPath().getParent().toFile());
+        }
+        java.io.File f = chooser.showSaveDialog(stage);
+        if (f == null) {
+            return;
+        }
+        try {
+            String json =
+                    com.editora.markwhen.MarkwhenJson.toJson(com.editora.markwhen.MarkwhenParser.parse(b.getContent()));
+            java.nio.file.Files.writeString(f.toPath(), json);
+            setStatus(tr("status.markwhen.jsonExported", f.getName()));
+        } catch (java.io.IOException e) {
+            setStatus(tr("status.markwhen.exportFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
+        }
+    }
+
+    /** Toggles the active Markwhen buffer's preview between the timeline and calendar renderers. */
+    private void toggleMarkwhenView() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isMarkwhen()) {
+            setStatus(tr("status.markwhen.notMarkwhen"));
+            return;
+        }
+        b.toggleMarkwhenView();
+        setStatus(tr(
+                b.getMarkwhenView() == EditorBuffer.MarkwhenView.CALENDAR
+                        ? "status.markwhen.viewCalendar"
+                        : "status.markwhen.viewTimeline"));
+    }
+
+    /** Persists the Markwhen buffer's preview renderer choice (TIMELINE default → removed). */
+    private void persistMarkwhenView(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null) {
+            return;
+        }
+        java.util.Map<String, String> map = config.getWorkspaceState().getMarkwhenViews();
+        if (buffer.getMarkwhenView() == EditorBuffer.MarkwhenView.TIMELINE) {
+            map.remove(file.toString());
+        } else {
+            map.put(file.toString(), buffer.getMarkwhenView().name());
+        }
+        requestSave();
     }
 
     /** Reports a PDF export result: status + (on failure) an error dialog. */
@@ -10264,6 +10335,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("preview.exportOdt", this::exportPreviewOdt));
         registry.register(Command.of("editor.print", this::printCode));
         registry.register(Command.of("preview.print", this::printPreview));
+        registry.register(Command.of("markwhen.exportJson", this::exportMarkwhenJson));
+        registry.register(Command.of("markwhen.toggleView", this::toggleMarkwhenView));
         registry.register(Command.of("mermaid.export", mermaid::export));
         registry.register(Command.of("htmlPreview.open", htmlPreview::open));
         registry.register(Command.of("htmlPreview.openIn", htmlPreview::openIn));
