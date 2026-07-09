@@ -1,0 +1,30 @@
+{
+  "name": "Markwhen",
+  "scopeName": "source.markwhen",
+  "fileTypes": ["mw", "markwhen"],
+  "patterns": [
+    { "match": "^\\s*//.*$", "name": "comment.line.double-slash.markwhen" },
+    { "match": "^\\s*#{1,6}\\s+.*$", "name": "markup.heading.markwhen" },
+    {
+      "match": "^\\s*(title|description|dateFormat|timezone|view|edit|import|style)\\b\\s*(:)",
+      "captures": {
+        "1": { "name": "keyword.other.header.markwhen" },
+        "2": { "name": "punctuation.separator.key-value.markwhen" }
+      }
+    },
+    {
+      "match": "^\\s*(#[\\w-]+)\\s*(:)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "entity.name.tag.markwhen" },
+        "2": { "name": "punctuation.separator.key-value.markwhen" },
+        "3": { "name": "constant.language.color.markwhen" }
+      }
+    },
+    {
+      "match": "\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?(?:\\s+\\d{1,2}(?:st|nd|rd|th)?,?)?\\s+\\d{4}\\b",
+      "name": "constant.numeric.date.markwhen"
+    },
+    { "match": "\\b\\d{4}(?:[-/]\\d{1,2}){0,2}\\b", "name": "constant.numeric.date.markwhen" },
+    { "match": "#[\\w-]+", "name": "entity.name.tag.markwhen" }
+  ]
+}

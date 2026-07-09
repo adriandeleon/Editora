@@ -58,6 +58,14 @@ class GrammarRegistryTest {
     }
 
     @Test
+    void markwhenGrammarLoads() {
+        // Loads markwhen.tmLanguage.json end-to-end (JSON parse + Oniguruma compile) for both extensions.
+        assertNotNull(GrammarRegistry.shared().forLanguageName("markwhen"));
+        assertNotNull(GrammarRegistry.shared().forFileName("timeline.mw"));
+        assertNotNull(GrammarRegistry.shared().forFileName("history.markwhen"));
+    }
+
+    @Test
     void linuxConfigGrammarsLoad() {
         // Each loads end-to-end (JSON parse + Oniguruma compile) and resolves by name/extension.
         assertNotNull(GrammarRegistry.shared().forLanguageName("desktop"));

@@ -1992,6 +1992,11 @@ public class EditorBuffer implements TabContent {
         return "mermaid".equals(language);
     }
 
+    /** A Markwhen timeline file (.mw/.markwhen) — the whole buffer renders as one timeline preview. */
+    public boolean isMarkwhen() {
+        return "markwhen".equals(language);
+    }
+
     /** An HTML file (.html/.htm/.xhtml) — eligible for the HTML Live Preview "open in browser" control. */
     public boolean isHtml() {
         return "html".equals(language);
@@ -2005,7 +2010,7 @@ public class EditorBuffer implements TabContent {
     /** Whether this buffer supports the 3-mode preview: Markdown always, Mermaid only while the feature
      *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off). */
     public boolean hasPreview() {
-        return isMarkdown() || (isDiagram() && MermaidImages.isEnabled());
+        return isMarkdown() || isMarkwhen() || (isDiagram() && MermaidImages.isEnabled());
     }
 
     // --- Live Mermaid linting (maid) ----------------------------------------------------------------
@@ -3497,6 +3502,34 @@ public class EditorBuffer implements TabContent {
             Platform.runLater(() -> previewPane().setVvalue(v));
             return;
         }
+        if (isMarkwhen()) {
+            // Whole file is one timeline. Parse off-thread (pure, cheap), build the node on the FX thread.
+            // Horizontal zoom scales the axis width; preserve both scroll positions (the axis scrolls
+            // horizontally). The previewGen guard drops a superseded render.
+            String src = area.getText();
+            double vw = previewPane().getViewportBounds().getWidth();
+            double scale = previewFontScale;
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                com.editora.markwhen.Timeline model = com.editora.markwhen.MarkwhenParser.parse(src);
+                Platform.runLater(() -> {
+                    if (gen != previewGen) {
+                        return;
+                    }
+                    double v = previewPane().getVvalue();
+                    double h = previewPane().getHvalue();
+                    javafx.scene.layout.VBox box =
+                            new javafx.scene.layout.VBox(MarkwhenTimeline.build(model, scale, vw));
+                    box.getStyleClass().add("markdown-preview");
+                    StackPane wrap = new StackPane(box);
+                    wrap.getStyleClass().add("markdown-preview-wrap");
+                    previewPane().setContent(wrap);
+                    previewPane().setVvalue(v);
+                    previewPane().setHvalue(h);
+                });
+            });
+            return;
+        }
         String md = area.getText();
         Path baseDir = path == null ? null : path.getParent();
         long gen = ++previewGen;
@@ -3693,6 +3726,10 @@ public class EditorBuffer implements TabContent {
         }
         if (isDiagram()) {
             scheduleRenderPreview(); // re-fit the diagram image to the new zoom (cache hit — cheap)
+            return;
+        }
+        if (isMarkwhen()) {
+            scheduleRenderPreview(); // re-render the timeline at the new axis scale (parse is cheap + off-thread)
             return;
         }
         previewPane.getContent().setStyle("-fx-font-size: " + (BASE_PREVIEW_FONT * previewFontScale) + "px;");
