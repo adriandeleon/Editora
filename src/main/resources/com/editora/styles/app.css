@@ -348,6 +348,26 @@
 .markwhen-bar { -fx-background-color: -color-accent-emphasis; -fx-background-radius: 3; }
 .markwhen-point { -fx-fill: -color-accent-emphasis; }
 .markwhen-placeholder { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
+
+/* Markwhen calendar (month-grid) view. */
+.markwhen-calendar { -fx-background-color: -color-bg-default; }
+.markwhen-cal-month { -fx-spacing: 4; }
+.markwhen-cal-header { -fx-font-weight: bold; -fx-font-size: 1.2em; -fx-text-fill: -color-fg-default; }
+.markwhen-cal-grid { -fx-hgap: 3; -fx-vgap: 3; }
+.markwhen-cal-weekday {
+    -fx-font-weight: bold; -fx-text-fill: -color-fg-muted; -fx-alignment: center; -fx-padding: 2 0 2 0;
+}
+.markwhen-cal-day {
+    -fx-background-color: -color-bg-subtle; -fx-background-radius: 4;
+    -fx-border-color: -color-border-muted; -fx-border-radius: 4; -fx-padding: 3 4 4 4;
+}
+.markwhen-cal-daynum { -fx-font-size: 0.85em; -fx-text-fill: -color-fg-muted; }
+.markwhen-cal-chip {
+    -fx-background-color: -color-accent-emphasis; -fx-text-fill: white; -fx-background-radius: 3;
+    -fx-padding: 1 5 1 5; -fx-font-size: 0.82em;
+}
+.markwhen-cal-more { -fx-font-size: 0.75em; -fx-text-fill: -color-fg-muted; }
+
 .markdown-preview .md-text { -fx-fill: -color-fg-default; }
 /* Prose font for the preview, on every platform: the bundled Inter (registered at startup by
    Fonts.load()). Pinned explicitly rather than inherited for two reasons: (1) raw javafx.scene.text.Text

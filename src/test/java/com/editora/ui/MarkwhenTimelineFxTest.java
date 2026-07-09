@@ -3,6 +3,7 @@ package com.editora.ui;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 
+import com.editora.editor.MarkwhenCalendar;
 import com.editora.editor.MarkwhenTimeline;
 import com.editora.markwhen.MarkwhenParser;
 import com.editora.markwhen.Timeline;
@@ -35,6 +36,14 @@ class MarkwhenTimelineFxTest {
         });
         assertNotNull(node);
         assertFalse(((Parent) node).getChildrenUnmodifiable().isEmpty(), "timeline node should have children");
+    }
+
+    @Test
+    void buildsANonEmptyCalendarNode() throws Exception {
+        String mw = "title: Demo\n#Travel: blue\n\n2023-01-15: Kickoff #Travel\n2023-02 / 2023-03: Sprint\n";
+        Node node = FxTestSupport.callOnFx(() -> MarkwhenCalendar.build(MarkwhenParser.parse(mw), 1.0, 800));
+        assertNotNull(node);
+        assertFalse(((Parent) node).getChildrenUnmodifiable().isEmpty(), "calendar node should have month cards");
     }
 
     @Test

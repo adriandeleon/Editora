@@ -43,12 +43,6 @@ public final class MarkwhenTimeline {
     private static final double INDENT = 14;
     private static final int MAX_EVENTS = 500;
 
-    /** Fallback bar colors for tags without an explicit {@code #Tag: color} declaration (GitHub-ish hues). */
-    private static final Color[] PALETTE = {
-        Color.web("#0969da"), Color.web("#1a7f37"), Color.web("#9a6700"), Color.web("#cf222e"),
-        Color.web("#8250df"), Color.web("#bf3989"), Color.web("#0550ae"), Color.web("#6e7781")
-    };
-
     /** One rendered line: an event (a bar/point) or a {@code #}-header group (a label + optional band). */
     private record Row(MwNode node, int depth) {}
 
@@ -138,7 +132,7 @@ public final class MarkwhenTimeline {
         double x1 = xFor(startDay, min, max, axisW);
         double x2 = xFor(endDay, min, max, axisW);
         double w = x2 - x1;
-        Color color = colorFor(e, model);
+        Color color = MarkwhenPaint.colorFor(e, model);
         String text = e.label().isBlank() ? "(untitled)" : e.label();
 
         Node mark;
@@ -158,7 +152,7 @@ public final class MarkwhenTimeline {
             Region bar = new Region();
             sizeAt(bar, x1, y + (ROW_H - BAR_H) / 2, w, BAR_H);
             if (color != null) {
-                bar.setStyle("-fx-background-color: " + toRgba(color) + "; -fx-background-radius: 3;");
+                bar.setStyle("-fx-background-color: " + MarkwhenPaint.toRgba(color) + "; -fx-background-radius: 3;");
             } else {
                 bar.getStyleClass().add("markwhen-bar");
             }
@@ -247,40 +241,6 @@ public final class MarkwhenTimeline {
     private static String dateSpan(MwNode.Event e) {
         String start = e.start().start().toString();
         return e.end() == null ? start : start + " – " + e.end().start();
-    }
-
-    private static Color colorFor(MwNode.Event e, Timeline model) {
-        if (e.tags().isEmpty()) {
-            return null; // default → the .markwhen-bar/.markwhen-point style class (theme accent)
-        }
-        String tag = e.tags().get(0);
-        for (Timeline.TagColor tc : model.tagColors()) {
-            if (tc.name().equalsIgnoreCase(tag)) {
-                Color c = webColor(tc.color());
-                if (c != null) {
-                    return c;
-                }
-            }
-        }
-        return PALETTE[Math.floorMod(tag.toLowerCase(Locale.ROOT).hashCode(), PALETTE.length)];
-    }
-
-    private static Color webColor(String s) {
-        try {
-            return Color.web(s.strip());
-        } catch (IllegalArgumentException | NullPointerException ex) {
-            return null;
-        }
-    }
-
-    private static String toRgba(Color c) {
-        return String.format(
-                Locale.ROOT,
-                "rgba(%d,%d,%d,%.3f)",
-                (int) Math.round(c.getRed() * 255),
-                (int) Math.round(c.getGreen() * 255),
-                (int) Math.round(c.getBlue() * 255),
-                c.getOpacity());
     }
 
     private static void sizeAt(Region r, double x, double y, double w, double h) {

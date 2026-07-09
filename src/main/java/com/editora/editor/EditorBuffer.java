@@ -147,6 +147,16 @@ public class EditorBuffer implements TabContent {
     }
 
     private MarkdownViewMode markdownViewMode = MarkdownViewMode.EDITOR;
+
+    /** Which renderer a Markwhen preview uses (toggled per file, persisted like the view mode). */
+    public enum MarkwhenView {
+        TIMELINE,
+        CALENDAR
+    }
+
+    private MarkwhenView markwhenView = MarkwhenView.TIMELINE;
+    /** Fired (FX thread) when the Markwhen view flips, so the controller persists it. */
+    private Runnable onMarkwhenViewChanged = () -> {};
     /** Re-entrancy guard for the SPLIT-mode editor↔preview scroll sync. */
     private boolean syncingScroll;
     /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
@@ -270,6 +280,9 @@ public class EditorBuffer implements TabContent {
     private Runnable previewPrintHandler = () -> {};
     private Runnable previewExportDocxHandler = () -> {};
     private Runnable previewExportOdtHandler = () -> {};
+    /** Markwhen preview "Export to JSON" action (controller command); null = no-op. */
+    private Runnable previewExportJsonHandler = () -> {};
+
     private javafx.scene.control.ContextMenu previewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private SnippetSession snippetSession;
@@ -1997,6 +2010,36 @@ public class EditorBuffer implements TabContent {
         return "markwhen".equals(language);
     }
 
+    /** The current Markwhen preview renderer (timeline vs. calendar). */
+    public MarkwhenView getMarkwhenView() {
+        return markwhenView;
+    }
+
+    /** Sets the Markwhen preview renderer (restore path — no callback/re-render side effects here beyond
+     *  a re-render when a preview is showing). */
+    public void setMarkwhenView(MarkwhenView view) {
+        if (view != null && view != markwhenView) {
+            markwhenView = view;
+            if (markdownViewMode != MarkdownViewMode.EDITOR) {
+                scheduleRenderPreview();
+            }
+        }
+    }
+
+    /** Flips timeline ⇄ calendar, re-renders the preview, and notifies the controller to persist. */
+    public void toggleMarkwhenView() {
+        markwhenView = markwhenView == MarkwhenView.TIMELINE ? MarkwhenView.CALENDAR : MarkwhenView.TIMELINE;
+        if (markdownViewMode != MarkdownViewMode.EDITOR) {
+            scheduleRenderPreview();
+        }
+        onMarkwhenViewChanged.run();
+    }
+
+    /** Injects the persist callback fired when the Markwhen view flips. */
+    public void setOnMarkwhenViewChanged(Runnable callback) {
+        this.onMarkwhenViewChanged = callback == null ? () -> {} : callback;
+    }
+
     /** An HTML file (.html/.htm/.xhtml) — eligible for the HTML Live Preview "open in browser" control. */
     public boolean isHtml() {
         return "html".equals(language);
@@ -3245,6 +3288,11 @@ public class EditorBuffer implements TabContent {
         this.previewExportOdtHandler = handler == null ? () -> {} : handler;
     }
 
+    /** Injects the Markwhen preview "Export to JSON" action (controller command). */
+    public void setPreviewExportJsonHandler(Runnable handler) {
+        this.previewExportJsonHandler = handler == null ? () -> {} : handler;
+    }
+
     /** Copies the preview text to the clipboard — rendered plain text for Markdown, the source for a diagram. */
     public void copyPreviewToClipboard() {
         String text = isMarkdown() ? MarkdownRenderer.plainText(getContent()) : getContent();
@@ -3261,24 +3309,40 @@ public class EditorBuffer implements TabContent {
             MenuItem copy = new MenuItem(tr("editmenu.copy"));
             copy.setGraphic(MenuIcons.copy());
             copy.setOnAction(ev -> copyPreviewToClipboard());
-            MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
-            pdf.setGraphic(MenuIcons.download());
-            pdf.setOnAction(ev -> previewExportPdfHandler.run());
-            MenuItem print = new MenuItem(tr("command.preview.print"));
-            print.setGraphic(MenuIcons.print());
-            print.setOnAction(ev -> previewPrintHandler.run());
-            previewContextMenu = new javafx.scene.control.ContextMenu(selectAll, copy, new SeparatorMenuItem(), pdf);
-            // Word / OpenDocument export — Markdown only (not standalone diagrams).
-            if (isMarkdown()) {
-                MenuItem docx = new MenuItem(tr("command.preview.exportDocx"));
-                docx.setGraphic(MenuIcons.download());
-                docx.setOnAction(ev -> previewExportDocxHandler.run());
-                MenuItem odt = new MenuItem(tr("command.preview.exportOdt"));
-                odt.setGraphic(MenuIcons.download());
-                odt.setOnAction(ev -> previewExportOdtHandler.run());
-                previewContextMenu.getItems().addAll(docx, odt);
+            previewContextMenu = new javafx.scene.control.ContextMenu(selectAll, copy, new SeparatorMenuItem());
+            if (isMarkwhen()) {
+                // Markwhen: JSON export + a timeline⇄calendar view switch (PDF/Word/Print don't apply).
+                MenuItem json = new MenuItem(tr("command.markwhen.exportJson"));
+                json.setGraphic(MenuIcons.download());
+                json.setOnAction(ev -> previewExportJsonHandler.run());
+                MenuItem viewToggle = new MenuItem();
+                viewToggle.setGraphic(MenuIcons.table());
+                viewToggle.setOnAction(ev -> toggleMarkwhenView());
+                previewContextMenu.getItems().addAll(json, viewToggle);
+                previewContextMenu.setOnShowing(ev -> viewToggle.setText(
+                        markwhenView == MarkwhenView.TIMELINE
+                                ? tr("markwhen.switchToCalendar")
+                                : tr("markwhen.switchToTimeline")));
+            } else {
+                MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
+                pdf.setGraphic(MenuIcons.download());
+                pdf.setOnAction(ev -> previewExportPdfHandler.run());
+                previewContextMenu.getItems().add(pdf);
+                // Word / OpenDocument export — Markdown only (not standalone diagrams).
+                if (isMarkdown()) {
+                    MenuItem docx = new MenuItem(tr("command.preview.exportDocx"));
+                    docx.setGraphic(MenuIcons.download());
+                    docx.setOnAction(ev -> previewExportDocxHandler.run());
+                    MenuItem odt = new MenuItem(tr("command.preview.exportOdt"));
+                    odt.setGraphic(MenuIcons.download());
+                    odt.setOnAction(ev -> previewExportOdtHandler.run());
+                    previewContextMenu.getItems().addAll(docx, odt);
+                }
+                MenuItem print = new MenuItem(tr("command.preview.print"));
+                print.setGraphic(MenuIcons.print());
+                print.setOnAction(ev -> previewPrintHandler.run());
+                previewContextMenu.getItems().addAll(new SeparatorMenuItem(), print);
             }
-            previewContextMenu.getItems().addAll(new SeparatorMenuItem(), print);
             previewContextMenu.getStyleClass().add("editor-context-menu");
         }
         previewContextMenu.show(previewPane, screenX, screenY);
@@ -3518,8 +3582,10 @@ public class EditorBuffer implements TabContent {
                     }
                     double v = previewPane().getVvalue();
                     double h = previewPane().getHvalue();
-                    javafx.scene.layout.VBox box =
-                            new javafx.scene.layout.VBox(MarkwhenTimeline.build(model, scale, vw));
+                    Node timeline = markwhenView == MarkwhenView.CALENDAR
+                            ? MarkwhenCalendar.build(model, scale, vw)
+                            : MarkwhenTimeline.build(model, scale, vw);
+                    javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(timeline);
                     box.getStyleClass().add("markdown-preview");
                     StackPane wrap = new StackPane(box);
                     wrap.getStyleClass().add("markdown-preview-wrap");
