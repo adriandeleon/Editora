@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Edit the source and the 3-mode preview re-renders the image live. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">
+  <rect x="0" y="0" width="240" height="160" fill="#f8f9fa"/>
+  <circle cx="60" cy="80" r="40" fill="#4c6ef5"/>
+  <rect x="120" y="40" width="80" height="80" rx="10" fill="#12b886"/>
+  <polygon points="120,20 140,60 100,60" fill="#f59f00"/>
+  <text x="120" y="150" font-family="sans-serif" font-size="14" text-anchor="middle" fill="#212529">Editora SVG</text>
+</svg>

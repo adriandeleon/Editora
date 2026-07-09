@@ -225,6 +225,9 @@ Editora is built with the help of AI coding tools.
   JSON/YAML file recognized as an **OpenAPI 3 / Swagger 2** spec instead renders as **browsable API docs**
   (endpoints with colored method badges, params, responses, schemas), with a tree ⇄ docs toggle
   (`structured.toggleView`). **On by default** — *Settings → Editor → Structured data*.
+- **SVG image preview** — `.svg` files stay editable XML but gain a rendered-image preview in the same
+  3-mode view; edit the source and the image re-renders live (rasterized via the bundled JSVG — no external
+  tool). **On by default** — *Settings → Editor → SVG*.
 - **Maven support** — a toolbar icon (shown only when a pom.xml is detected) opens an IntelliJ-style
   actions popup: the standard lifecycle phases, the pom's declared profiles (checkable, composing with a
   run via `-P`), and each plugin's explicitly-bound goals (`spotless:check`, `jacoco:report`, …) — plus a

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **SVG image preview.** `.svg` files stay editable XML (with XML highlighting + LSP) but now gain a
+  rendered-image preview in the same 3-mode view (Editor / Editor + Preview / Preview) as Markdown — edit
+  the source, see the image re-render live. Rasterized off-thread via **JSVG** (already bundled for
+  Markdown badge images, so **no new dependency**) and cached by source hash; the preview zoom resizes the
+  image. New `editor/SvgImages` (async render cache, mirroring `MermaidImages`/`DiagramImages` but
+  in-process — no external tool); `EditorBuffer.isSvg()`/`hasSvgPreview()` + a `scheduleRenderPreview()`
+  branch. **On by default**, `Settings.svgPreview` (schema 64→65) — Settings → Editor → SVG + palette
+  `view.toggleSvgPreview`. *Deferred: export-as-PNG from the preview, a checkerboard backdrop for
+  transparent SVGs.*
 - **Structured-data preview for JSON / YAML / TOML, with OpenAPI/Swagger docs.** `.json`, `.yaml`/`.yml`,
   and `.toml` files now get the same 3-mode preview (Editor / Editor + Preview / Preview) as Markdown: a
   collapsible, type-colored **data tree** rendered off-thread. A JSON/YAML document detected as an

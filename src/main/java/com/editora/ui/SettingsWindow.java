@@ -215,6 +215,7 @@ public class SettingsWindow {
     private CheckBox logViewerCheck;
     private CheckBox csvGridCheck;
     private CheckBox structuredPreviewCheck;
+    private CheckBox svgPreviewCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox autoRenameTagCheck;
     private CheckBox autoCloseTagsCheck;
@@ -920,6 +921,7 @@ public class SettingsWindow {
         logViewerCheck = viewCheck(tr("settings.logViewer"), Settings::setLogViewer);
         csvGridCheck = viewCheck(tr("settings.csvPreview"), Settings::setCsvPreview);
         structuredPreviewCheck = viewCheck(tr("settings.structuredPreview"), Settings::setStructuredPreview);
+        svgPreviewCheck = viewCheck(tr("settings.svgPreview"), Settings::setSvgPreview);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
@@ -1982,6 +1984,8 @@ public class SettingsWindow {
                 structured,
                 structuredPreviewCheck,
                 "json yaml toml openapi swagger tree structured data preview");
+        Label svg = section(p, tr("settings.section.svg"));
+        row(p, Category.EDITOR, svg, svgPreviewCheck, "svg image vector graphic preview render");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -5351,6 +5355,7 @@ public class SettingsWindow {
             logViewerCheck.setSelected(settings.isLogViewer());
             csvGridCheck.setSelected(settings.isCsvPreview());
             structuredPreviewCheck.setSelected(settings.isStructuredPreview());
+            svgPreviewCheck.setSelected(settings.isSvgPreview());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
@@ -5923,6 +5928,7 @@ public class SettingsWindow {
             logViewerCheck.setSelected(s.isLogViewer());
             csvGridCheck.setSelected(s.isCsvPreview());
             structuredPreviewCheck.setSelected(s.isStructuredPreview());
+            svgPreviewCheck.setSelected(s.isSvgPreview());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());

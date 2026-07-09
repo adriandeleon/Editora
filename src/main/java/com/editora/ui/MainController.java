@@ -9249,8 +9249,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAiActionsEnabled(aiCoordinator.isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setStructuredPreviewEnabled(s.isStructuredPreview()); // JSON/YAML/TOML tree + OpenAPI docs preview
-        if (buffer.isStructured()) {
-            ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured gate flips
+        buffer.setSvgPreviewEnabled(s.isSvgPreview()); // rendered image preview for .svg files
+        if (buffer.isStructured() || buffer.isSvg()) {
+            ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/SVG gate flips
         }
         buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
@@ -10350,6 +10351,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleStructuredPreview",
                         () -> config.getSettings().isStructuredPreview(),
                         v -> config.getSettings().setStructuredPreview(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleSvgPreview",
+                () -> toggleSetting(
+                        "view.toggleSvgPreview",
+                        () -> config.getSettings().isSvgPreview(),
+                        v -> config.getSettings().setSvgPreview(v),
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of("mermaid.export", mermaid::export));
         registry.register(Command.of("diagram.export", diagram::export));

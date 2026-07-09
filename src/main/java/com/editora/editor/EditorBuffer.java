@@ -200,6 +200,8 @@ public class EditorBuffer implements TabContent {
     private StackPane csvPreviewHost;
     /** Structured-data (JSON/YAML/TOML) preview: on when the feature is enabled (pushed from settings). */
     private boolean structuredPreviewEnabled;
+    /** SVG image preview for .svg files: on when the feature is enabled (pushed from settings). */
+    private boolean svgPreviewEnabled;
     /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
     private StackPane structuredContentHolder;
     /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
@@ -2090,13 +2092,37 @@ public class EditorBuffer implements TabContent {
                 || (isDiagram() && MermaidImages.isEnabled())
                 || (isRenderedDiagram() && DiagramImages.isEnabled())
                 || hasCsvPreview()
-                || hasStructuredPreview();
+                || hasStructuredPreview()
+                || hasSvgPreview();
     }
 
     /** A CSV buffer whose grid preview node has been injected (i.e. the CSV preview feature is on). The
      *  injected node doubles as the enablement gate, mirroring {@link #htmlPreviewControl}. */
     public boolean hasCsvPreview() {
         return isCsv() && csvPreviewNode != null;
+    }
+
+    /** A standalone SVG file (by {@code .svg} extension — the buffer stays XML text, so it also gets XML
+     *  highlighting/LSP, but gains a rendered preview). */
+    public boolean isSvg() {
+        String name = path != null ? path.getFileName().toString() : (displayName == null ? "" : displayName);
+        return name.toLowerCase(java.util.Locale.ROOT).endsWith(".svg");
+    }
+
+    /** Whether the SVG image preview should be offered (feature on + a .svg buffer + not a huge file). */
+    public boolean hasSvgPreview() {
+        return svgPreviewEnabled && isSvg() && !hugeFile;
+    }
+
+    /** Pushes the SVG-preview feature gate (from Settings); drops back to source when turned off. */
+    public void setSvgPreviewEnabled(boolean enabled) {
+        if (this.svgPreviewEnabled == enabled) {
+            return;
+        }
+        this.svgPreviewEnabled = enabled;
+        if (!enabled && isSvg() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR);
+        }
     }
 
     /** A structured-data buffer (JSON/YAML/TOML) whose format the {@link StructuredParser} recognizes. */
@@ -3696,6 +3722,21 @@ public class EditorBuffer implements TabContent {
             Platform.runLater(() -> previewPane().setVvalue(v));
             return;
         }
+        if (hasSvgPreview()) {
+            // Whole file is one SVG: rasterize off-thread via JSVG (in-process, no CLI), same async-image
+            // model as Mermaid/diagrams. Zoom scales the fit width; the content-hash cache makes a zoom
+            // re-render a cheap re-fit.
+            double v = previewPane().getVvalue();
+            double scale = previewFontScale;
+            javafx.scene.layout.VBox box =
+                    new javafx.scene.layout.VBox(SvgImages.node(area.getText(), lw -> lw * scale));
+            box.getStyleClass().add("markdown-preview");
+            StackPane wrap = new StackPane(box);
+            wrap.getStyleClass().add("markdown-preview-wrap");
+            previewPane().setContent(wrap);
+            Platform.runLater(() -> previewPane().setVvalue(v));
+            return;
+        }
         DiagramKind dk = diagramKind();
         if (dk != null) {
             // Whole file is one DOT/PlantUML diagram — same async-image model as Mermaid (see above), via
@@ -3986,8 +4027,8 @@ public class EditorBuffer implements TabContent {
         if (previewPane == null || previewPane.getContent() == null) {
             return;
         }
-        if (isDiagram() || isRenderedDiagram()) {
-            scheduleRenderPreview(); // re-fit the diagram image to the new zoom (cache hit — cheap)
+        if (isDiagram() || isRenderedDiagram() || hasSvgPreview()) {
+            scheduleRenderPreview(); // re-fit the diagram/SVG image to the new zoom (cache hit — cheap)
             return;
         }
         if (isMarkwhen()) {

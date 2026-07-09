@@ -3,6 +3,13 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] SVG image preview — `.svg` files stay editable XML (highlighting + LSP) but gain a rendered-image
+      preview in the 3-mode view; edit source → re-render live. Rasterized off-thread via the already-bundled
+      JSVG (`PreviewImageLoader.rasterizeSvg`, no new dependency), cached by source hash, zoom re-fits. New
+      `editor/SvgImages` (mirrors `MermaidImages`/`DiagramImages` but in-process) + `EditorBuffer.isSvg()`/
+      `hasSvgPreview()` + a `scheduleRenderPreview()` branch. On by default; `Settings.svgPreview` (schema
+      64→65). *Deferred: export-as-PNG from the preview, checkerboard backdrop for transparent SVGs. First
+      of the "reuse-existing-deps" preview cluster — see PDF/Excel/XML-tree/font/archive next.*
 - [x] Structured-data preview (JSON/YAML/TOML tree + OpenAPI/Swagger docs) — `.json`/`.yaml`/`.toml` files
       get the 3-mode preview (like Markdown): a collapsible, type-colored data tree rendered off-thread; a
       JSON/YAML doc detected as an OpenAPI 3 / Swagger 2 spec renders as browsable API docs instead

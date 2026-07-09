@@ -206,6 +206,19 @@ public final class PreviewImageLoader {
         return URLDecoder.decode(data, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * Rasterizes SVG source bytes to a JavaFX {@link Loaded} (image + logical width) via JSVG, for the
+     * standalone {@code .svg} file preview ({@code editor/SvgImages}). Returns {@code null} on a
+     * parse/render failure so the caller can show an error. Call off the FX thread (touches Java2D).
+     */
+    public static Loaded rasterizeSvg(byte[] bytes) {
+        try {
+            return rasterizeSvg(bytes, null);
+        } catch (RuntimeException | LinkageError e) {
+            return null;
+        }
+    }
+
     private static Loaded rasterizeSvg(byte[] bytes, String url) {
         SVGDocument doc =
                 new SVGLoader().load(new ByteArrayInputStream(bytes), uriOrNull(url), LoaderContext.createDefault());
