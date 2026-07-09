@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PDF viewer.** `.pdf` files now open in a read-only **page viewer** (rasterized via Apache **PDFBox** —
+  already a dependency, for PDF export) instead of the hex viewer. A top bar navigates pages
+  (`◀ Page N of M ▶`) and zooms (out / in / fit-to-window / actual-size; `Ctrl`+wheel too). Pages are
+  rasterized **one at a time, off the FX thread** on a single daemon thread (PDFBox's `PDDocument` isn't
+  thread-safe, so all document access is serialized there), so only the current page's image is held —
+  bounding the Prism texture pool. New `ui/PdfViewerPane implements TabContent` (mirrors `ImageViewerPane`);
+  routed in `openPath` before the hex fallback and round-tripped through session restore + `tabPath` like
+  the image/hex viewers. Works for local **and** remote (SFTP) PDFs; refused above 128 MB. **No new
+  dependency.** *Deferred: continuous page scroll, a page-jump field, text selection/search, password-
+  protected PDFs.*
 - **SVG image preview.** `.svg` files stay editable XML (with XML highlighting + LSP) but now gain a
   rendered-image preview in the same 3-mode view (Editor / Editor + Preview / Preview) as Markdown — edit
   the source, see the image re-render live. Rasterized off-thread via **JSVG** (already bundled for

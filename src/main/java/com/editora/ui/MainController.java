@@ -3491,6 +3491,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (imagePaneOf(tab) != null) {
             return "image";
         }
+        if (pdfPaneOf(tab) != null) {
+            return "pdf";
+        }
         if (hexPaneOf(tab) != null) {
             return "hex";
         }
@@ -4395,6 +4398,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 buffers.add(null);
                 continue;
             }
+            // A PDF restores into the read-only PDF viewer (null placeholder keeps the fill indices aligned).
+            if (PdfViewerPane.isPdf(p.getFileName().toString())) {
+                Tab tab = openPdfTab(p, active);
+                if (f.isPinned()) {
+                    pinned.add(tab);
+                }
+                buffers.add(null);
+                continue;
+            }
             // A binary file restores into the read-only hex viewer (null placeholder keeps the fill indices
             // aligned, like the image-viewer case; fillSessionFiles skips nulls).
             if (looksBinaryFile(p)) {
@@ -5080,6 +5092,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.opened", file));
             return;
         }
+        // A PDF opens in the read-only PDF viewer (rasterized pages) instead of the hex viewer.
+        if (PdfViewerPane.isPdf(file.getFileName().toString())) {
+            openPdfTab(file, true);
+            if (recentFiles != null) {
+                recentFiles.add(file);
+            }
+            setStatus(tr("status.opened", file));
+            return;
+        }
         // A binary file opens in the read-only hex viewer instead of dumping its bytes as garbage text.
         if (looksBinaryFile(file)) {
             openHexTab(file, true);
@@ -5160,6 +5181,20 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The {@link HexViewerPane} in {@code tab}, or {@code null} for a buffer / non-hex tab. */
     private static HexViewerPane hexPaneOf(Tab tab) {
         return tab != null && tab.getUserData() instanceof HexViewerPane pane ? pane : null;
+    }
+
+    /** Opens {@code file} in a read-only {@link PdfViewerPane} tab (a PDF renders its pages, not its bytes). */
+    private Tab openPdfTab(Path file, boolean select) {
+        PdfViewerPane pane = new PdfViewerPane(file);
+        Tab tab = addContentTab(pane, select);
+        tab.setOnClosed(e -> pane.dispose()); // close the document + release the page image when the tab closes
+        Platform.runLater(pane::relayout); // fit-to-window once the tab is laid out
+        return tab;
+    }
+
+    /** The {@link PdfViewerPane} in {@code tab}, or {@code null} for a buffer / non-PDF tab. */
+    private static PdfViewerPane pdfPaneOf(Tab tab) {
+        return tab != null && tab.getUserData() instanceof PdfViewerPane pane ? pane : null;
     }
 
     /**
@@ -6331,6 +6366,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         ImageViewerPane image = imagePaneOf(tab);
         if (image != null) {
             return image.getPath();
+        }
+        PdfViewerPane pdf = pdfPaneOf(tab);
+        if (pdf != null) {
+            return pdf.getPath();
         }
         HexViewerPane hex = hexPaneOf(tab);
         return hex == null ? null : hex.getPath();
