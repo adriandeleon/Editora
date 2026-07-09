@@ -25,7 +25,8 @@ as plain text (expected).
 `samples/syntax/sample.json`, `samples/syntax/sample.yaml`, `samples/syntax/sample.xml`,
 `samples/syntax/sample.toml`, `samples/syntax/sample.sql`, `samples/syntax/sample.sh`,
 `samples/syntax/sample.ps1`, `samples/syntax/sample.bat`, `samples/syntax/sample.groovy`,
-`samples/syntax/sample.ini`
+`samples/syntax/sample.ini`, `samples/syntax/sample.js` (JavaScript, via the TypeScript grammar),
+`samples/syntax/sample.tf` (Terraform/HCL), `samples/syntax/Dockerfile` (matched by filename)
 
 Plain-text developer formats: `samples/syntax/sample.patch` (unified diff — added/removed lines
 tint green/red), `samples/syntax/Makefile` (recipe lines are real tabs), `samples/syntax/justfile`,
@@ -136,6 +137,15 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   (right-click / `C-c r`) runs the default goal (bare `make` → `all`). Every recipe is a harmless
   `@echo`, so running any target is instant and side-effect-free. (Needs the LSP feature on — the Run
   affordance rides that gate — and `make` on `PATH`.)
+- `samples/run/hello.java` — a Java 25 **compact source file** (JEP 512): a top-level `void main`, no
+  class. A ▶ appears on the `void main(` line; running needs JDK 25 on `PATH`.
+- `samples/run/hello.py` — a Python script; the ▶ sits on the `if __name__ == "__main__":` guard
+  (needs `python3` on `PATH`).
+
+## images/ — image viewer
+
+- `samples/images/sample.png` — opens in the read-only image viewer (zoom out/in/fit/actual, Ctrl+wheel)
+  instead of the hex viewer.
 
 ## http/ — HTTP client
 
