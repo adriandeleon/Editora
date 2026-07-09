@@ -495,6 +495,19 @@
     -fx-border-radius: 6;
 }
 
+/* SVG image preview — mirrors the diagram/mermaid image rules. */
+.md-svg { -fx-alignment: center; -fx-padding: 6 0 6 0; }
+.md-svg .svg-placeholder { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
+.md-svg .svg-error {
+    -fx-text-fill: -color-danger-fg;
+    -fx-font-family: monospace;
+    -fx-padding: 8;
+    -fx-background-color: -color-danger-subtle;
+    -fx-background-radius: 6;
+    -fx-border-color: -color-danger-muted;
+    -fx-border-radius: 6;
+}
+
 /* Structured-data (JSON/YAML/TOML) tree preview — theme-aware via AtlantaFX semantic colors. */
 .structured-tree { -fx-font-family: monospace; -fx-background-color: -color-bg-default; }
 .structured-tree .structured-row { -fx-font-family: monospace; }

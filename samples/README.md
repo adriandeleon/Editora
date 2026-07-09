@@ -73,6 +73,10 @@ Editor/Split/Preview toggle that renders the timeline). There is deliberately no
 - `samples/structured/petstore.yaml` — an OpenAPI 3 spec; the preview auto-renders browsable API docs
   (toggle to the raw tree with `structured.toggleView`).
 
+## svg/ — SVG image preview
+
+- `samples/svg/shapes.svg` — edit the XML source and the 3-mode preview re-renders the image live (JSVG).
+
 ## todo/ — TODO/FIXME highlighting
 
 - `samples/todo/markers.java` — `TODO` (amber) and `FIXME` (red) highlight + appear in the TODO tool
