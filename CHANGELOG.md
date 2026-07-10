@@ -97,6 +97,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Structured / XML tree preview no longer recolors its text when you select a row.** The JSON/YAML/TOML
+  and XML preview rows are `TextFlow`s of colored `Text` runs, whose fill AtlantaFX flips to the selection
+  foreground on a selected cell — so clicking a line made the syntax-colored tokens visibly flash to the
+  selection color and back (a "redraw"). Added selected-state CSS rules pinning each token's `-fx-fill` to
+  its normal color (the same fix `.completion-list` already uses for its `TextFlow` labels), so selection
+  only changes the row background now. CSS-only.
 - **Spell-check and Personal-Notes overlays no longer pin an idle full-viewport GPU texture.** Both
   `SpellCheckOverlay` and `NoteHighlightOverlay` kept their `Canvas` sized to the whole viewport whenever
   the feature was on (the default), even on a buffer with zero visible misspellings/notes — retaining a
