@@ -219,6 +219,7 @@ public class SettingsWindow {
     private CheckBox structuredPreviewCheck;
     private CheckBox svgPreviewCheck;
     private CheckBox crontabPreviewCheck;
+    private CheckBox fstabPreviewCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox autoRenameTagCheck;
     private CheckBox autoCloseTagsCheck;
@@ -931,6 +932,7 @@ public class SettingsWindow {
         structuredPreviewCheck = viewCheck(tr("settings.structuredPreview"), Settings::setStructuredPreview);
         svgPreviewCheck = viewCheck(tr("settings.svgPreview"), Settings::setSvgPreview);
         crontabPreviewCheck = viewCheck(tr("settings.crontabPreview"), Settings::setCrontabPreview);
+        fstabPreviewCheck = viewCheck(tr("settings.fstabPreview"), Settings::setFstabPreview);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
@@ -2012,6 +2014,8 @@ public class SettingsWindow {
         row(p, Category.EDITOR, svg, svgPreviewCheck, "svg image vector graphic preview render");
         Label crontab = section(p, tr("settings.section.crontab"));
         row(p, Category.EDITOR, crontab, crontabPreviewCheck, "crontab cron schedule preview next run times");
+        Label fstab = section(p, tr("settings.section.fstab"));
+        row(p, Category.EDITOR, fstab, fstabPreviewCheck, "fstab mount filesystem preview options decode");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -5419,6 +5423,7 @@ public class SettingsWindow {
             structuredPreviewCheck.setSelected(settings.isStructuredPreview());
             svgPreviewCheck.setSelected(settings.isSvgPreview());
             crontabPreviewCheck.setSelected(settings.isCrontabPreview());
+            fstabPreviewCheck.setSelected(settings.isFstabPreview());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
@@ -5996,6 +6001,7 @@ public class SettingsWindow {
             structuredPreviewCheck.setSelected(s.isStructuredPreview());
             svgPreviewCheck.setSelected(s.isSvgPreview());
             crontabPreviewCheck.setSelected(s.isCrontabPreview());
+            fstabPreviewCheck.setSelected(s.isFstabPreview());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());

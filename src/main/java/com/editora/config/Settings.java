@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 67;
+    public static final int SCHEMA_VERSION = 68;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -217,6 +217,8 @@ public class Settings {
     private boolean svgPreview = true;
     /** Crontab schedule preview (English decode + next run times) in the 3-mode view: on by default. */
     private boolean crontabPreview = true;
+    /** fstab mount preview (per-line plain-English decode of /etc/fstab) in the 3-mode view: on by default. */
+    private boolean fstabPreview = true;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
     /** Auto-close HTML/XML tags (typing an open tag's {@code >} inserts the closer): on by default. */
@@ -506,6 +508,14 @@ public class Settings {
 
     public void setCrontabPreview(boolean crontabPreview) {
         this.crontabPreview = crontabPreview;
+    }
+
+    public boolean isFstabPreview() {
+        return fstabPreview;
+    }
+
+    public void setFstabPreview(boolean fstabPreview) {
+        this.fstabPreview = fstabPreview;
     }
 
     public boolean isCsvRainbow() {

@@ -3,6 +3,13 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] fstab mount preview — an `/etc/fstab` file (already syntax-highlighted) gets the 3-mode preview: each
+      line decoded into English (device spec — UUID/LABEL/path/CIFS/NFS —, mount point, filesystem, the
+      comma-separated options, and the fsck/dump columns); a malformed line (too few columns, non-numeric
+      dump/pass) turns red. Pure `fstab/` core (`Fstab` parser + `FstabDescribe` option dictionary),
+      unit-tested; `editor/FstabPreview` renders into the shared self-scrolling tree host; snapshot
+      Export-to-PDF/Print for free. On by default; `Settings.fstabPreview` (schema 67→68). No new
+      dependency. *Deferred: btrfs subvolume tree, per-option man-page links, a mount-vs-running-mounts diff.*
 - [x] Crontab schedule preview — a `crontab`/`*.cron`/`cron.d/*` file (already syntax-highlighted) gets the
       3-mode preview: each schedule decoded into English (`30 2 * * 1-5` → "At 02:30, Monday through
       Friday"), the next fire times, `@reboot`/`@daily`/… macros, and a red field-error for a malformed

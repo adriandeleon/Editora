@@ -1,0 +1,11 @@
+# /etc/fstab — open the 3-mode preview (top-right toggle) to decode these mounts
+# <device>              <mount point>  <type>  <options>                  <dump> <pass>
+UUID=1a2b-3c4d          /              ext4    defaults,noatime           0      1
+/dev/sda2               /home          ext4    rw,nodev,nosuid,relatime   0      2
+LABEL=data              /srv/data      xfs     defaults                   0      2
+/dev/sdb1               none           swap    sw                         0      0
+tmpfs                   /tmp           tmpfs   defaults,size=2G,mode=1777  0      0
+//nas/media             /mnt/tv        cifs    ro,_netdev,nofail,uid=1000 0      0
+
+# a deliberately broken line below — the preview flags it (only 2 columns)
+/dev/sdc1               /backup
