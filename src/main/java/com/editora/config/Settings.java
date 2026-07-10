@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 68;
+    public static final int SCHEMA_VERSION = 69;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -191,6 +191,12 @@ public class Settings {
     /** Override command for launching Maven; blank = auto (prefer the project's ./mvnw wrapper, else
      *  resolve "mvn" on PATH). */
     private String mavenCommand = "";
+    /** npm support (a toolbar icon + actions popup of package.json scripts, streaming runs to a console): on
+     *  by default — self-gates on detection, so the toolbar button stays hidden until a package.json is
+     *  actually found for the current project/file. */
+    private boolean npmSupport = true;
+    /** Override command for launching npm; blank = auto (the detected package manager — npm/yarn/pnpm/bun). */
+    private String npmCommand = "";
     /** Use ripgrep to accelerate Find in Files when it's detected on PATH (default on; falls back otherwise). */
     private boolean ripgrepSearch = true;
     /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
@@ -1227,6 +1233,22 @@ public class Settings {
 
     public void setMavenCommand(String mavenCommand) {
         this.mavenCommand = mavenCommand == null ? "" : mavenCommand;
+    }
+
+    public boolean isNpmSupport() {
+        return npmSupport;
+    }
+
+    public void setNpmSupport(boolean npmSupport) {
+        this.npmSupport = npmSupport;
+    }
+
+    public String getNpmCommand() {
+        return npmCommand == null ? "" : npmCommand;
+    }
+
+    public void setNpmCommand(String npmCommand) {
+        this.npmCommand = npmCommand == null ? "" : npmCommand;
     }
 
     public boolean isRipgrepSearch() {

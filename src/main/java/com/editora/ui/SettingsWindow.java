@@ -43,6 +43,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.StringConverter;
 
+import com.editora.build.BuildTool;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.GrammarRegistry;
@@ -107,7 +108,7 @@ public class SettingsWindow {
         MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS),
         DIAGRAMS(tr("settings.cat.diagrams"), Group.LANGUAGES_TOOLS),
         TYPST(tr("settings.cat.typst"), Group.LANGUAGES_TOOLS),
-        MAVEN(tr("settings.cat.maven"), Group.LANGUAGES_TOOLS),
+        BUILD_TOOLS(tr("settings.cat.buildTools"), Group.LANGUAGES_TOOLS),
         WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, true),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
         // Version control
@@ -157,7 +158,7 @@ public class SettingsWindow {
     private final com.editora.mermaid.MermaidService mermaidService;
     private final com.editora.diagram.DiagramService diagramService;
     private final com.editora.typst.TypstService typstService;
-    private final MavenCoordinator maven;
+    private final java.util.List<BuildCoordinator> buildCoordinators;
     private final com.editora.lsp.LspManager lspManager;
     private final com.editora.dap.DapManager dapManager;
     private final Stage stage = new Stage();
@@ -324,9 +325,9 @@ public class SettingsWindow {
     private TextField typstPathField;
     private Label typstStatusLabel;
     private Label diagramStatusLabel;
-    private CheckBox mavenCheck;
-    private TextField mavenCommandField;
-    private Label mavenStatusLabel;
+    private final java.util.Map<BuildTool, CheckBox> buildToolChecks = new java.util.EnumMap<>(BuildTool.class);
+    private final java.util.Map<BuildTool, TextField> buildToolCommandFields = new java.util.EnumMap<>(BuildTool.class);
+    private final java.util.Map<BuildTool, Label> buildToolStatusLabels = new java.util.EnumMap<>(BuildTool.class);
     private CheckBox ripgrepCheck;
     private CheckBox searchGitignoreCheck;
     private TextField ripgrepCommandField;
@@ -433,7 +434,7 @@ public class SettingsWindow {
             com.editora.mermaid.MermaidService mermaidService,
             com.editora.diagram.DiagramService diagramService,
             com.editora.typst.TypstService typstService,
-            MavenCoordinator maven,
+            java.util.List<BuildCoordinator> buildCoordinators,
             com.editora.lsp.LspManager lspManager,
             com.editora.dap.DapManager dapManager,
             Consumer<Settings> onApply,
@@ -447,7 +448,7 @@ public class SettingsWindow {
         this.mermaidService = mermaidService;
         this.diagramService = diagramService;
         this.typstService = typstService;
-        this.maven = maven;
+        this.buildCoordinators = buildCoordinators;
         this.lspManager = lspManager;
         this.dapManager = dapManager;
         this.onApply = onApply;
@@ -523,7 +524,7 @@ public class SettingsWindow {
         refreshLspStatus();
         refreshDebugStatus();
         refreshMermaidStatus();
-        refreshMavenStatus();
+        refreshBuildToolStatus();
         refreshAgentClientStatus();
     }
 
@@ -1026,18 +1027,27 @@ public class SettingsWindow {
             refreshTypstStatus();
         });
 
-        mavenCheck = new CheckBox(tr("settings.enableMaven"));
-        mavenCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setMavenSupport(now);
-            apply();
-            refreshMavenStatus();
-        });
-        mavenCommandField = new TextField();
-        mavenCommandField.setPromptText("mvn");
-        mavenCommandField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setMavenCommand(now);
-            apply();
-        });
+        for (BuildTool bt : BuildTool.enabled()) {
+            CheckBox check = new CheckBox(tr("settings.enableBuildTool", bt.displayName()));
+            check.selectedProperty().addListener((obs, was, now) -> {
+                bt.setEnabledIn(config.getSettings(), now);
+                apply();
+                refreshBuildToolStatus();
+            });
+            buildToolChecks.put(bt, check);
+            TextField commandField = new TextField();
+            commandField.setPromptText(bt.commandExample());
+            commandField.textProperty().addListener((obs, was, now) -> {
+                bt.setCommandIn(config.getSettings(), now);
+                apply();
+            });
+            buildToolCommandFields.put(bt, commandField);
+            Label status = new Label(tr("settings.buildTools.notFound", bt.displayName()));
+            status.getStyleClass().add("settings-git-status");
+            status.setWrapText(true);
+            status.setMaxWidth(440);
+            buildToolStatusLabels.put(bt, status);
+        }
 
         ripgrepCheck = new CheckBox(tr("settings.search.useRipgrep"));
         ripgrepCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -1372,7 +1382,7 @@ public class SettingsWindow {
         pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.DIAGRAMS, diagramsPage());
         pages.put(Category.TYPST, typstPage());
-        pages.put(Category.MAVEN, mavenPage());
+        pages.put(Category.BUILD_TOOLS, buildToolsPage());
         pages.put(Category.WEB, webPage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
         // Version control
@@ -2694,10 +2704,10 @@ public class SettingsWindow {
                 null,
                 exePathRow(tr("settings.typst.path"), typstPathField),
                 "typst path executable render document");
-        Label hint = note(tr("settings.typst.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.TYPST, null, hint, "typst install cli document");
+        Label typstHint = note(tr("settings.typst.hint"));
+        typstHint.setWrapText(true);
+        typstHint.setMaxWidth(440);
+        row(p, Category.TYPST, null, typstHint, "typst install cli document");
         return p;
     }
 
@@ -2715,24 +2725,24 @@ public class SettingsWindow {
         });
     }
 
-    private VBox mavenPage() {
-        VBox p = page(tr("settings.cat.maven"));
-        mavenStatusLabel = new Label(tr("settings.maven.notFound"));
-        mavenStatusLabel.getStyleClass().add("settings-git-status");
-        mavenStatusLabel.setWrapText(true);
-        mavenStatusLabel.setMaxWidth(440);
-        row(p, Category.MAVEN, null, mavenStatusLabel, "maven pom found detected not found");
-        row(p, Category.MAVEN, null, mavenCheck, "maven pom.xml build lifecycle enable toolbar");
-        row(
-                p,
-                Category.MAVEN,
-                null,
-                exePathRow(tr("settings.maven.commandOverride"), mavenCommandField),
-                "maven mvn command override path executable wrapper mvnw");
-        Label hint = note(tr("settings.maven.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.MAVEN, null, hint, "maven mvnw wrapper pom.xml lifecycle goals profiles");
+    private VBox buildToolsPage() {
+        VBox p = page(tr("settings.cat.buildTools"));
+        for (BuildTool bt : BuildTool.enabled()) {
+            Label sec = section(p, bt.displayName());
+            String kw = bt.id() + " build tool project detected enable command override toolbar";
+            row(p, Category.BUILD_TOOLS, sec, buildToolStatusLabels.get(bt), kw);
+            row(p, Category.BUILD_TOOLS, sec, buildToolChecks.get(bt), kw);
+            row(
+                    p,
+                    Category.BUILD_TOOLS,
+                    sec,
+                    exePathRow(tr("settings.buildTools.commandOverride"), buildToolCommandFields.get(bt)),
+                    kw + " path executable wrapper");
+            Label hint = note(tr("settings." + bt.id() + ".hint"));
+            hint.setWrapText(true);
+            hint.setMaxWidth(440);
+            row(p, Category.BUILD_TOOLS, sec, hint, kw);
+        }
         return p;
     }
 
@@ -4703,21 +4713,26 @@ public class SettingsWindow {
         });
     }
 
-    /** Reads the Maven coordinator's currently-cached detection (no subprocess probe needed — "found"
-     *  just means a pom.xml parsed for the active context) and colors the status row green/red. */
-    private void refreshMavenStatus() {
-        if (mavenStatusLabel == null || maven == null) {
-            return;
+    /** Reads each build coordinator's currently-cached detection (no subprocess probe needed — "found" just
+     *  means the marker file parsed for the active context) and colors that tool's status row green/red. */
+    private void refreshBuildToolStatus() {
+        for (BuildCoordinator c : buildCoordinators) {
+            Label label = buildToolStatusLabels.get(c.tool());
+            if (label == null) {
+                continue;
+            }
+            boolean found = c.isDetected();
+            label.getStyleClass().setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+            String detected = c.detectedLabel();
+            label.setText(
+                    found
+                            ? (detected == null || detected.isBlank()
+                                    ? tr(
+                                            "settings.buildTools.detected",
+                                            c.tool().displayName())
+                                    : tr("settings.buildTools.found", detected))
+                            : tr("settings.buildTools.notFound", c.tool().displayName()));
         }
-        boolean found = maven.hasPom();
-        mavenStatusLabel
-                .getStyleClass()
-                .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
-        String artifactId = maven.detectedArtifactId();
-        mavenStatusLabel.setText(
-                found
-                        ? tr("settings.maven.found", artifactId == null ? "?" : artifactId)
-                        : tr("settings.maven.notFound"));
     }
 
     /** Injected by MainController: probes {@code rg} off-thread, delivering found/not-found on the FX thread. */
@@ -5455,9 +5470,11 @@ public class SettingsWindow {
             typstCheck.setSelected(settings.isTypstSupport());
             typstPathField.setText(settings.getTypstPath());
             refreshTypstStatus();
-            mavenCheck.setSelected(settings.isMavenSupport());
-            mavenCommandField.setText(settings.getMavenCommand());
-            refreshMavenStatus();
+            for (BuildTool bt : BuildTool.enabled()) {
+                buildToolChecks.get(bt).setSelected(bt.enabledIn(settings));
+                buildToolCommandFields.get(bt).setText(bt.commandIn(settings));
+            }
+            refreshBuildToolStatus();
             ripgrepCheck.setSelected(settings.isRipgrepSearch());
             searchGitignoreCheck.setSelected(settings.isSearchRespectGitignore());
             ripgrepCommandField.setText(settings.getRipgrepCommand());

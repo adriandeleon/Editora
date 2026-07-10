@@ -114,7 +114,9 @@ public enum ConfigSchema {
                     Map.entry(65, (Migration) ConfigMigrations::identity), // v65→66: + crontabPreview (additive)
                     Map.entry(
                             66, (Migration) ConfigMigrations::identity), // v66→67: + typstSupport/typstPath (additive)
-                    Map.entry(67, (Migration) ConfigMigrations::identity))), // v67→68: + fstabPreview (additive)
+                    Map.entry(67, (Migration) ConfigMigrations::identity), // v67→68: + fstabPreview (additive)
+                    Map.entry(
+                            68, (Migration) ConfigMigrations::identity))), // v68→69: + npmSupport/npmCommand (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
