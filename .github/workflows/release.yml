@@ -62,6 +62,17 @@ jobs:
         shell: bash
         run: scripts/build-appimage.sh target/aot-image/Editora branding/editora.png target/dist
 
+      # Portable extract-and-install tarball from the same AOT-trained app-image (see
+      # scripts/build-tarball.sh): a jlink runtime + native bin/Editora launcher + a bundled install.sh
+      # that installs to /opt/editora (root) or ~/.local/editora (user) with an `editora` command + menu
+      # entry. The extract-and-install counterpart to the .AppImage — no jpackage installer, no FUSE.
+      # Best-effort: continue-on-error so it can't sink the .deb/.rpm/.AppImage/.jar release.
+      - name: Build install tarball (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        shell: bash
+        run: scripts/build-tarball.sh target/aot-image/Editora target/dist
+
       # Runnable fat jar for this runner's platform (JavaFX natives are host-specific, so each
       # runner produces its own jar — a single all-platforms jar isn't possible, see pom.xml).
       - name: Build fat jar (-Pfatjar)
@@ -90,7 +101,12 @@ jobs:
           mkdir -p staging
           for f in target/dist/*; do
             [ -f "$f" ] || continue
-            cp "$f" "staging/Editora-${VERSION}-${{ matrix.target }}.${f##*.}"
+            # Preserve compound extensions (.tar.gz) so the artifact isn't named "...-linux-x64.gz".
+            case "$f" in
+              *.tar.gz) ext="tar.gz" ;;
+              *)        ext="${f##*.}" ;;
+            esac
+            cp "$f" "staging/Editora-${VERSION}-${{ matrix.target }}.${ext}"
           done
           jar="$(ls target/Editora-*.jar | head -1)"
           cp "$jar" "staging/$(basename "$jar" .jar)-${{ matrix.target }}.jar"

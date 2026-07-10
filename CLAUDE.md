@@ -70,8 +70,17 @@ old `macos-13` Intel runner was retired Dec 2025;
 each on its own GitHub-hosted runner) builds the native
 installer via the existing `-Pdist` profile — there is **no cross-building** (jpackage + JavaFX are
 host-specific), so each runner builds for itself. Each runner also builds a per-platform runnable
-fat jar via `-Pfatjar` (`Editora-<version>-<target>.jar`). Installers are renamed to
-`Editora-<version>-<target>.<ext>` per target — one consistent `Editora-<version>-<target>` prefix
+fat jar via `-Pfatjar` (`Editora-<version>-<target>.jar`). **Linux also ships two portable formats built
+from the same AOT-trained app-image the `.deb`/`.rpm` are wrapped from (`target/aot-image/Editora`, so no
+second `-Pdist` build):** a single-file **`.AppImage`** (`scripts/build-appimage.sh`) and an extract-and-install
+**`.tar.gz`** (`scripts/build-tarball.sh`) whose bundled `packaging/linux/tarball-install.sh` installs the
+image to `/opt/editora` (root) or `~/.local/editora` (user) with an `editora` command + a `.desktop`
+(`StartupWMClass=com.editora.App`), supporting `--system`/`--user`/`--prefix`/`--uninstall`. Both reuse the
+jpackage `APP_IMAGE` output (= jlink + the native launcher + `lib/app/editora.aot`, `$APPDIR`-relative so it's
+relocatable); both release steps are `continue-on-error` so a hiccup can't sink the installers. The
+`.tar.gz`/`.AppImage`/`.rpm` are attached to the GitHub release via `jreleaser.yml`'s file globs. Installers are renamed to
+`Editora-<version>-<target>.<ext>` per target (the Stage step preserves the compound `.tar.gz`
+extension) — one consistent `Editora-<version>-<target>` prefix
 across all artifacts (jpackage's DMG/MSI names omit the version + arch; the
 version comes from a `Resolve version` step — the tag minus `v`, else the pom version) and uploaded as
 artifacts alongside the fat jar. **macOS pre-1.0 app-version:** jpackage's `--app-version` (which becomes

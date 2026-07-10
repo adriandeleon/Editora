@@ -40,11 +40,15 @@ release:
       contributors:
         enabled: false
 
-# Attach the installers and runnable fat jars gathered from the build matrix (downloaded under
-# ./artifacts). Both are renamed per target in CI, so names are unique across OS/arch.
+# Attach every artifact gathered from the build matrix (downloaded under ./artifacts): native installers
+# (.dmg/.msi/.deb/.rpm), the portable Linux builds (.AppImage single-file + .tar.gz extract-and-install),
+# and the per-platform runnable fat jars. All are renamed per target in CI, so names are unique across OS/arch.
 files:
   globs:
     - pattern: 'artifacts/**/*.dmg'
     - pattern: 'artifacts/**/*.msi'
     - pattern: 'artifacts/**/*.deb'
+    - pattern: 'artifacts/**/*.rpm'
+    - pattern: 'artifacts/**/*.AppImage'
+    - pattern: 'artifacts/**/*.tar.gz'
     - pattern: 'artifacts/**/Editora-*.jar'
