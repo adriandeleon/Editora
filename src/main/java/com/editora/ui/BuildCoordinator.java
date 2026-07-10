@@ -1,0 +1,362 @@
+package com.editora.ui;
+
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.function.Supplier;
+
+import javafx.application.Platform;
+import javafx.scene.Node;
+
+import com.editora.build.BuildActionsProvider;
+import com.editora.build.BuildService;
+import com.editora.build.BuildTool;
+import com.editora.command.Command;
+import com.editora.command.CommandRegistry;
+import com.editora.editor.EditorBuffer;
+import com.editora.lsp.RootResolver;
+import com.editora.run.ProgramArgs;
+import com.editora.run.StackTraceLinks;
+import com.editora.vfs.Vfs;
+
+import static com.editora.i18n.Messages.tr;
+
+/**
+ * One build tool's feature, running on the generic {@code com.editora.build} framework: it detects the active
+ * project's marker file for a {@link BuildTool}, parses it into a {@link BuildActionsProvider}, drives a
+ * {@link BuildActionsPopup} off the toolbar button, and streams tasks to a {@link BuildToolPanel} console via
+ * {@link BuildService}. Everything tool-specific comes from the {@link BuildTool} (markers, executable
+ * strategy, provider parse, output style, Settings accessors); the strings are generic {@code status.build.*}
+ * / {@code buildpopup.*} keys parameterized by the tool's display name, so {@code MainController} wires one
+ * instance per tool with no per-tool code. Generalized from the former {@code MavenCoordinator}.
+ */
+final class BuildCoordinator {
+
+    /** Window hooks beyond {@link CoordinatorHost} that this feature needs. */
+    interface Ops {
+        /** The active window's project root, or {@code null} when no project is open. */
+        Path projectRoot();
+
+        /** Opens (and focuses) this tool's console tool window. */
+        void openConsole();
+
+        /** A clicked file path in the console output (jump to it). */
+        void onOutputLink(StackTraceLinks.Link link);
+
+        /** Shows/hides (and un-manages) this tool's toolbar button. */
+        void setToolbarButtonVisible(boolean visible);
+    }
+
+    private final BuildTool tool;
+    private final CoordinatorHost host;
+    private final Ops ops;
+    private final BuildService service = new BuildService();
+    private final BuildToolPanel panel;
+    private final BuildActionsPopup popup;
+
+    private Node toolbarButton;
+
+    /** The nearest detected marker-file directory for the current context, or {@code null}. */
+    private Path markerRoot;
+    /** The provider built from the parsed marker file, or {@code null} (absent/malformed). */
+    private BuildActionsProvider provider;
+    /** A short label for the detected project (Maven artifactId / npm name), or {@code null}. */
+    private String detectedLabel;
+
+    private int detectGeneration;
+
+    /** The most recent launch, for {@code <tool>.rerunLast}. */
+    private Path lastRoot;
+
+    private List<String> lastTaskArgs;
+    private List<String> lastToggleArgs = List.of();
+
+    BuildCoordinator(BuildTool tool, CoordinatorHost host, Ops ops) {
+        this.tool = tool;
+        this.host = host;
+        this.ops = ops;
+        this.panel = new BuildToolPanel(this::stop, tool.outputStyle());
+        this.popup = new BuildActionsPopup(new BuildActionsPopup.Labels(
+                tool.displayName(), tr("buildpopup.searchPrompt"), tr("buildpopup.hint"), tr("buildpopup.runCustom")));
+        panel.setOnLink(ops::onOutputLink);
+        popup.setOnRunCustom(this::runCustom);
+        popup.setOnRun(this::runTask);
+    }
+
+    BuildTool tool() {
+        return tool;
+    }
+
+    BuildToolPanel panel() {
+        return panel;
+    }
+
+    /** This tool's stripe/tool-window icon (also the toolbar button glyph). */
+    Supplier<Node> iconSupplier() {
+        return iconFor(tool);
+    }
+
+    /** The palette command id that opens the actions popup (also the toolbar button's action). */
+    String showActionsCommandId() {
+        return tool.id() + ".showActions";
+    }
+
+    /** The i18n key for the toolbar button tooltip / popup anchor. */
+    String tooltipKey() {
+        return "tooltip." + tool.id();
+    }
+
+    void setOverlayHost(OverlayHost overlayHost) {
+        popup.setOverlayHost(overlayHost);
+    }
+
+    /** The toolbar button node — recorded so the {@code <tool>.showActions} command (as well as the button's
+     *  own click) can anchor the popup below it. */
+    void setToolbarButton(Node button) {
+        this.toolbarButton = button;
+    }
+
+    /** Whether this tool's integration is enabled in Settings (default on — inert until its marker file is
+     *  actually detected). Off in Simple UI mode. */
+    boolean isEnabled() {
+        return tool.enabledIn(host.settings()) && !host.simpleModeActive();
+    }
+
+    /** Whether a task can actually run right now: enabled, a marker file was found, and it parsed. */
+    private boolean isAvailable() {
+        return isEnabled() && markerRoot != null && provider != null;
+    }
+
+    /** Whether a marker file is currently detected for the active context (the Settings found/not-found row). */
+    boolean isDetected() {
+        return markerRoot != null;
+    }
+
+    /** A short label for the detected project (artifactId/package name), or {@code null} when absent/malformed. */
+    String detectedLabel() {
+        return detectedLabel;
+    }
+
+    /** The path whose project drives this tool's UI: the active local file, else the active project root. */
+    Path contextPath() {
+        EditorBuffer b = host.activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file != null && host.isLocalBuffer(b)) {
+            return file;
+        }
+        return ops.projectRoot();
+    }
+
+    /** Re-detects the nearest marker file for the current context and re-parses it, off the FX thread
+     *  (generation-guarded). Runs at startup, on tab switch, on window focus-regain, on save, and on every
+     *  settings apply — cheap to over-call. */
+    void refresh() {
+        if (!isEnabled()) {
+            applyDetected(null, null, null);
+            return;
+        }
+        Path context = contextPath();
+        if (context == null || !Vfs.isLocal(context)) {
+            applyDetected(null, null, null);
+            return;
+        }
+        int gen = ++detectGeneration;
+        Thread t = new Thread(
+                () -> {
+                    Path root = RootResolver.findMarkerRoot(context, tool.markers());
+                    BuildActionsProvider parsed = null;
+                    String label = null;
+                    if (root != null) {
+                        try {
+                            BuildTool.Detected detected = tool.parse(root);
+                            parsed = detected.provider();
+                            label = detected.label();
+                        } catch (Exception e) {
+                            parsed = null; // marker found but malformed — applyDetected reports it distinctly
+                        }
+                    }
+                    Path finalRoot = root;
+                    BuildActionsProvider finalProvider = parsed;
+                    String finalLabel = label;
+                    Platform.runLater(() -> {
+                        if (gen == detectGeneration) {
+                            applyDetected(finalRoot, finalProvider, finalLabel);
+                        }
+                    });
+                },
+                tool.id() + "-detect");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Re-derives the toolbar button's visibility from the last detection without a fresh re-detect. */
+    void reapplyVisibility() {
+        ops.setToolbarButtonVisible(isEnabled() && markerRoot != null);
+    }
+
+    private void applyDetected(Path root, BuildActionsProvider parsed, String label) {
+        this.markerRoot = root;
+        this.provider = parsed;
+        this.detectedLabel = label;
+        ops.setToolbarButtonVisible(isEnabled() && root != null);
+    }
+
+    /** Opens the actions popup (the toolbar button's click, and the {@code <tool>.showActions} command). */
+    void showActionsPopup(Node anchor) {
+        if (!isEnabled()) {
+            host.setStatus(tr("status.build.disabled", tool.displayName()));
+            return;
+        }
+        if (markerRoot == null) {
+            host.setStatus(tr("status.build.notDetected", tool.displayName()));
+            return;
+        }
+        if (provider == null) {
+            host.setStatus(tr("status.build.malformed", tool.displayName()));
+            return;
+        }
+        popup.show(host.window(), anchor, provider);
+    }
+
+    /** Runs a selected task with its args + the active toggles' args (the popup's callback). */
+    void runTask(List<String> taskArgs, List<String> toggleArgs) {
+        if (!isAvailable()) {
+            host.setStatus(tr(isEnabled() ? "status.build.notDetected" : "status.build.disabled", tool.displayName()));
+            return;
+        }
+        if (service.isRunning()) {
+            host.setStatus(tr("status.build.busy", tool.displayName()));
+            return;
+        }
+        List<String> argv = new ArrayList<>(executable(markerRoot));
+        argv.addAll(taskArgs);
+        argv.addAll(toggleArgs);
+        launch(markerRoot, argv, taskArgs, toggleArgs);
+    }
+
+    /** Prompts for a freeform task string and runs it verbatim (no toggle args — type the modifier flag
+     *  directly if one is needed). */
+    void runCustom() {
+        if (!isAvailable()) {
+            host.setStatus(tr(isEnabled() ? "status.build.notDetected" : "status.build.disabled", tool.displayName()));
+            return;
+        }
+        if (service.isRunning()) {
+            host.setStatus(tr("status.build.busy", tool.displayName()));
+            return;
+        }
+        host.promptText(
+                tr("dialog.buildCustom.title", tool.displayName()), tr("dialog.buildCustom.label"), "", text -> {
+                    if (text == null || text.isBlank()) {
+                        return;
+                    }
+                    List<String> tokens = ProgramArgs.tokenize(text.strip());
+                    if (tokens.isEmpty()) {
+                        return;
+                    }
+                    List<String> argv = new ArrayList<>(executable(markerRoot));
+                    argv.addAll(tokens);
+                    launch(markerRoot, argv, tokens, List.of());
+                });
+    }
+
+    /** Re-runs the most recent invocation (same root + task + toggle args). */
+    void rerunLast() {
+        if (lastRoot == null || lastTaskArgs == null) {
+            host.setStatus(tr("status.build.noRerun", tool.displayName()));
+            return;
+        }
+        if (service.isRunning()) {
+            host.setStatus(tr("status.build.busy", tool.displayName()));
+            return;
+        }
+        List<String> argv = new ArrayList<>(executable(lastRoot));
+        argv.addAll(lastTaskArgs);
+        argv.addAll(lastToggleArgs);
+        launch(lastRoot, argv, lastTaskArgs, lastToggleArgs);
+    }
+
+    /** The launch argv prefix: the project wrapper when present, else the Settings override, else the tool's
+     *  default command. */
+    private List<String> executable(Path root) {
+        return tool.executable(root, isWindows(), tool.commandIn(host.settings()));
+    }
+
+    private void launch(Path root, List<String> argv, List<String> taskArgs, List<String> toggleArgs) {
+        lastRoot = root;
+        lastTaskArgs = taskArgs;
+        lastToggleArgs = toggleArgs;
+        ops.openConsole();
+        String label = String.join(" ", taskArgs);
+        panel.started(label);
+        host.setStatus(tr("status.build.started", tool.displayName(), label));
+        service.run(root, argv, new BuildService.Listener() {
+            @Override
+            public void onStart(String commandLine) {
+                panel.started(commandLine);
+            }
+
+            @Override
+            public void onOutput(String line, boolean stderr) {
+                panel.appendOutput(line, stderr);
+            }
+
+            @Override
+            public void onExit(int code) {
+                panel.finished(code);
+                host.setStatus(
+                        code == 0
+                                ? tr("status.build.ok", tool.displayName())
+                                : tr("status.build.exit", tool.displayName(), code));
+            }
+
+            @Override
+            public void onError(String message) {
+                panel.failed(message);
+                host.setStatus(tr("status.build.failed", tool.displayName(), message));
+            }
+        });
+    }
+
+    /** Stops the running process (Console Stop button / {@code <tool>.stop}). */
+    void stop() {
+        if (service.isRunning()) {
+            service.stop();
+            host.setStatus(tr("status.build.stopped", tool.displayName()));
+        }
+    }
+
+    /** Force re-parses the marker file right now (e.g. after an external edit) — {@code <tool>.refresh}. */
+    void refreshMarker() {
+        refresh();
+        host.setStatus(tr("status.build.refreshed", tool.displayName()));
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    void registerCommands(CommandRegistry registry) {
+        String id = tool.id();
+        registry.register(Command.of("tool." + id, ops::openConsole));
+        registry.register(Command.of(id + ".showActions", () -> showActionsPopup(toolbarButton)));
+        registry.register(Command.of(id + ".runCustom", this::runCustom));
+        registry.register(Command.of(id + ".stop", this::stop));
+        registry.register(Command.of(id + ".rerunLast", this::rerunLast));
+        registry.register(Command.of(id + ".refresh", this::refreshMarker));
+    }
+
+    void shutdown() {
+        service.stop();
+    }
+
+    /** The per-tool toolbar/tool-window icon. A single UI switch (icons can't live in the pure {@code build}
+     *  package, which {@code ui} depends on — not the reverse). */
+    static Supplier<Node> iconFor(BuildTool tool) {
+        return switch (tool) {
+            case MAVEN -> Icons::maven;
+            case NPM -> Icons::npm;
+        };
+    }
+}

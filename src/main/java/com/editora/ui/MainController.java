@@ -57,6 +57,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
+import com.editora.build.BuildTool;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
@@ -144,7 +145,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Button findInFilesButton;
 
     @FXML
-    private Button mavenButton;
+    private Separator buildToolsSeparator;
 
     @FXML
     private Button splitVerticalButton;
@@ -306,8 +307,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ToolWindow runToolWindow;
     /** External Tools: the feature coordinator owns the service/panel/commands (see {@link ExternalToolCoordinator}). */
     private ToolWindow externalToolToolWindow;
-    /** Maven: the feature coordinator owns the service/panel/popup/commands (see {@link MavenCoordinator}). */
-    private ToolWindow mavenToolWindow;
+    /** Build tools (Maven/npm/…): one console tool window per detected tool (see {@link BuildCoordinator}). */
+    private final Map<BuildTool, ToolWindow> buildToolWindows = new java.util.EnumMap<>(BuildTool.class);
+    /** One toolbar button per build tool, inserted after {@link #buildToolsSeparator}. */
+    private final Map<BuildTool, Button> buildButtons = new java.util.EnumMap<>(BuildTool.class);
 
     private ToolWindow agentToolWindow;
 
@@ -400,7 +403,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (Boolean.TRUE.equals(now)) {
                 checkExternalChanges();
                 git.refresh(); // another tool may have changed the repo while we were away
-                maven.refresh(); // pom.xml may have changed (or the active file's project) while we were away
+                refreshBuildTools(); // a marker file (or the active file's project) may have changed while away
                 refreshPasteState(); // clipboard may have changed in another app while we were away
                 if (projectPanel != null) {
                     projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
@@ -523,7 +526,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 mermaid.service(),
                 diagram.service(),
                 typst.service(),
-                maven,
+                buildCoordinators,
                 lspManager,
                 dapManager,
                 this::onSettingsApplied,
@@ -619,7 +622,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyChromeVisibility();
         applyProjectSupport(); // hide project UI when disabled (default)
         git.applySupport(); // hide Git UI when disabled (default)
-        maven.refresh(); // initial pom.xml detection; the toolbar button stays hidden until one is found
+        refreshBuildTools(); // initial marker detection; each toolbar button stays hidden until one is found
         historyCoordinator.applySupport(); // Local File History tool window availability + list (on by default)
         notesCoordinator.applySupport(); // hide Personal Notes UI when disabled (default)
         mermaid.applySupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
@@ -737,7 +740,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 s.isMermaidSupport(),
                 diagram.isEnabled(),
                 typst.isEnabled(),
-                maven.isEnabled(),
+                disabledBuildToolIds(),
                 lspEnabled(),
                 httpClient.isEnabled(),
                 htmlPreview.isEnabled(),
@@ -766,10 +769,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         recentButton.setVisible(!simple);
         recentButton.setManaged(!simple);
-        // The Maven button's visibility otherwise follows pom.xml detection (MavenCoordinator), not this
-        // unconditional show/hide — re-derive it from the cached detection now that isEnabled() (which
+        // Each build-tool button's visibility otherwise follows marker-file detection (BuildCoordinator), not
+        // this unconditional show/hide — re-derive it from the cached detection now that isEnabled() (which
         // folds in !simpleModeActive()) may have changed, rather than forcing it shown.
-        maven.reapplyVisibility();
+        buildCoordinators.forEach(BuildCoordinator::reapplyVisibility);
         collapseToolbarSeparators();
         statusBar.setSimpleMode(simple);
     }
@@ -859,7 +862,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         switcher.setOverlayHost(overlayHost);
         branchPopup.setOverlayHost(overlayHost);
         statusBar.setOverlayHost(overlayHost);
-        maven.setOverlayHost(overlayHost);
+        buildCoordinators.forEach(c -> c.setOverlayHost(overlayHost));
     }
 
     /**
@@ -1075,7 +1078,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         mermaid.shutdown();
         diagram.shutdown();
         typst.shutdown();
-        maven.shutdown();
+        buildCoordinators.forEach(BuildCoordinator::shutdown);
         htmlPreview.shutdown(); // stop the HTML-preview HTTP server + worker
         logViewer.shutdown(); // stop any log tail-follow poll thread
         stopMcpIfOwner(); // stop the MCP server if this window owns it
@@ -1625,7 +1628,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
             checkExternalChanges(); // prompt if the file we just switched to changed on disk
             git.refresh(); // update branch/status + this file's gutter change bars
-            maven.refresh(); // re-detect pom.xml for the newly active file/project
+            refreshBuildTools(); // re-detect marker files for the newly active file/project
             lspCoordinator
                     .updateStatusBar(); // show/hide the "LSP: <server>" segment + Problems window for the new file
             debugCoordinator.updateDebugAvailability(); // Debug window only for a debuggable file / live session
@@ -2041,8 +2044,18 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::tools,
                 externalToolCoordinator.panel(),
                 "tool.externalTools");
-        mavenToolWindow = new ToolWindow(
-                "maven", tr("toolwindow.maven"), ToolWindow.Side.BOTTOM, Icons::maven, maven.panel(), "tool.maven");
+        for (BuildCoordinator c : buildCoordinators) {
+            BuildTool tool = c.tool();
+            buildToolWindows.put(
+                    tool,
+                    new ToolWindow(
+                            tool.id(),
+                            tr("toolwindow." + tool.id()),
+                            ToolWindow.Side.BOTTOM,
+                            c.iconSupplier(),
+                            c.panel(),
+                            "tool." + tool.id()));
+        }
         installCoordinator = new InstallCoordinator(coordinatorHost, new InstallCoordinator.Ops() {
             @Override
             public java.nio.file.Path configDir() {
@@ -2120,7 +2133,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.setAvailable(httpToolWindow, false); // shown only for a .http file with the feature on
         toolWindows.register(externalToolToolWindow, false); // stripe off by default; reachable via the
         // tool.externalTools command / externalTool.run picker / Settings → Tool Windows
-        toolWindows.register(mavenToolWindow, false); // stripe off by default; auto-opens when a goal runs
+        for (ToolWindow tw : buildToolWindows.values()) {
+            toolWindows.register(tw, false); // stripe off by default; auto-opens when a task runs
+        }
         toolWindows.register(remoteToolWindow, false); // off by default (niche); always available — no buffer needed
         toolWindows.register(
                 agentToolWindow, false); // stripe off by default; shown via tool.agent / Settings → AI Agent
@@ -2603,34 +2618,72 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
             });
 
-    /** Maven: toolbar icon + actions popup parsed from the active project's pom.xml, streaming goal/phase
-     *  runs to a console (see {@link MavenCoordinator}). */
-    private final MavenCoordinator maven = new MavenCoordinator(coordinatorHost, new MavenCoordinator.Ops() {
-        @Override
-        public java.nio.file.Path projectRoot() {
-            return windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
-        }
+    /** Build tools (Maven/npm/…): one coordinator per tool — a toolbar icon + actions popup parsed from the
+     *  active project's marker file, streaming tasks to a per-tool console (see {@link BuildCoordinator}). */
+    private final List<BuildCoordinator> buildCoordinators = createBuildCoordinators();
 
-        @Override
-        public void openConsole() {
-            toolWindows.open(mavenToolWindow, true);
-        }
+    private List<BuildCoordinator> createBuildCoordinators() {
+        List<BuildCoordinator> list = new ArrayList<>();
+        for (BuildTool tool : BuildTool.enabled()) {
+            list.add(new BuildCoordinator(tool, coordinatorHost, new BuildCoordinator.Ops() {
+                @Override
+                public java.nio.file.Path projectRoot() {
+                    return windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
+                }
 
-        @Override
-        public void onOutputLink(com.editora.run.StackTraceLinks.Link link) {
-            openRunLink(link);
-        }
+                @Override
+                public void openConsole() {
+                    ToolWindow tw = buildToolWindows.get(tool);
+                    if (tw != null) {
+                        toolWindows.open(tw, true);
+                    }
+                }
 
-        @Override
-        public void setToolbarButtonVisible(boolean visible) {
-            if (mavenButton == null) {
-                return;
+                @Override
+                public void onOutputLink(com.editora.run.StackTraceLinks.Link link) {
+                    openRunLink(link);
+                }
+
+                @Override
+                public void setToolbarButtonVisible(boolean visible) {
+                    Button b = buildButtons.get(tool);
+                    if (b == null) {
+                        return;
+                    }
+                    b.setVisible(visible);
+                    b.setManaged(visible);
+                    collapseToolbarSeparators();
+                }
+            }));
+        }
+        return list;
+    }
+
+    /** The coordinator for a specific build tool (for the palette gate / Settings status reads). */
+    private BuildCoordinator buildCoordinator(BuildTool tool) {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.tool() == tool) {
+                return c;
             }
-            mavenButton.setVisible(visible);
-            mavenButton.setManaged(visible);
-            collapseToolbarSeparators();
         }
-    });
+        return null;
+    }
+
+    /** Re-detects the marker file for every build tool (Maven/npm/…) for the active context. */
+    private void refreshBuildTools() {
+        buildCoordinators.forEach(BuildCoordinator::refresh);
+    }
+
+    /** The ids of build tools whose commands should be hidden from the palette (disabled / Simple mode). */
+    private java.util.Set<String> disabledBuildToolIds() {
+        java.util.Set<String> disabled = new java.util.HashSet<>();
+        for (BuildCoordinator c : buildCoordinators) {
+            if (!c.isEnabled()) {
+                disabled.add(c.tool().id());
+            }
+        }
+        return disabled;
+    }
 
     /** TODO / highlight-pattern feature; owns the service/panel/scan/commands (the tool window stays here). */
     private final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
@@ -4150,10 +4203,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupButton(pasteButton, Icons.paste(), tr("tooltip.paste"), "edit.paste");
         setupButton(findButton, Icons.find(), tr("tooltip.find"), "find.show");
         setupButton(findInFilesButton, Icons.findInFiles(), tr("tooltip.findInFiles"), "search.inFiles");
-        setupButton(mavenButton, Icons.maven(), tr("tooltip.maven"), "maven.showActions");
-        maven.setToolbarButton(mavenButton);
-        mavenButton.setVisible(false); // shown once a pom.xml is actually detected (see MavenCoordinator)
-        mavenButton.setManaged(false);
+        setupBuildToolButtons();
         setupButton(splitVerticalButton, Icons.splitVertical(), tr("tooltip.splitVertical"), "view.splitVertical");
         setupButton(
                 splitHorizontalButton, Icons.splitHorizontal(), tr("tooltip.splitHorizontal"), "view.splitHorizontal");
@@ -4301,6 +4351,23 @@ public class MainController implements com.editora.mcp.McpBridge {
     private record ToolbarTip(Button button, String base, String commandId) {}
 
     private final java.util.List<ToolbarTip> toolbarTips = new java.util.ArrayList<>();
+
+    /** Creates one toolbar button per build tool and inserts them after the build-tools separator. Each button
+     *  stays hidden until its marker file is detected for the active project (see {@link BuildCoordinator}). */
+    private void setupBuildToolButtons() {
+        int idx = toolBar.getItems().indexOf(buildToolsSeparator);
+        int insertAt = idx < 0 ? toolBar.getItems().size() : idx + 1;
+        for (BuildCoordinator c : buildCoordinators) {
+            Button button = new Button();
+            setupButton(button, c.iconSupplier().get(), tr(c.tooltipKey()), c.showActionsCommandId());
+            button.setOnAction(e -> c.showActionsPopup(button));
+            c.setToolbarButton(button);
+            button.setVisible(false);
+            button.setManaged(false);
+            buildButtons.put(c.tool(), button);
+            toolBar.getItems().add(insertAt++, button);
+        }
+    }
 
     private void setupButton(Button button, Node icon, String tooltip, String commandId) {
         button.setGraphic(icon);
@@ -5771,7 +5838,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
             setStatus(tr("status.saved", file));
             git.refresh(); // a save changes the working tree → update gutter + status
-            maven.refresh(); // a saved pom.xml (or a project-root change) may change the detected model
+            refreshBuildTools(); // a saved marker file (or a project-root change) may change the detected model
             // LSP: a save-as of a new Java file opens it on the server; then notify didSave.
             lspCoordinator.syncBuffer(buffer);
             lspCoordinator.notifyDocumentSaved(buffer);
@@ -6817,11 +6884,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     @FXML
     private void onFindInFiles() {
         searchCoordinator.openToggle();
-    }
-
-    @FXML
-    private void onMavenActions() {
-        maven.showActionsPopup(mavenButton);
     }
 
     /** Shows the Run tool window's stripe button only for a runnable file (the in-editor affordance is
@@ -9537,12 +9599,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         lspCoordinator.applySupport(); // (re)configure LSP: command/enabled change re-detects + re-gates buffers
         debugCoordinator.applySupport(); // (re)configure DAP after LSP (it layers on jdtls)
         applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
-        // Match the console fonts (External Tools / Run / Debug / Maven) to the editor's code-area font.
+        // Match the console fonts (External Tools / Run / Debug / build tools) to the editor's code-area font.
         int consoleFont = Math.max(1, (int) Math.round(settings.getFontSize() * settings.getFontZoom()));
         externalToolCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
         runCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
         debugCoordinator.panel().setConsoleFont(settings.getFontFamily(), consoleFont);
-        maven.panel().setOutputFont(settings.getFontFamily(), consoleFont);
+        buildCoordinators.forEach(c -> c.panel().setOutputFont(settings.getFontFamily(), consoleFont));
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
@@ -10874,19 +10936,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("search.inFilesPopup", searchCoordinator::showFindInFilesPopup));
         todoCoordinator.registerCommands(registry); // tool.todo + todo.refresh + todo.addPattern
         csvCoordinator.registerCommands(registry); // csv.exportPdf/print/exportExcel/exportOds
-        maven.registerCommands(registry); // tool.maven + maven.showActions/runCustom/stop/rerunLast/refresh
-        registry.register(Command.of(
-                "view.toggleMavenSupport",
-                () -> toggleSetting(
-                        "view.toggleMavenSupport",
-                        () -> config.getSettings().isMavenSupport(),
-                        v -> config.getSettings().setMavenSupport(v),
-                        () -> {
-                            maven.refresh();
-                            if (settingsWindow != null) {
-                                settingsWindow.refreshDetectionStatus();
-                            }
-                        })));
+        for (BuildCoordinator c : buildCoordinators) {
+            c.registerCommands(registry); // tool.<id> + <id>.showActions/runCustom/stop/rerunLast/refresh
+            BuildTool tool = c.tool();
+            registry.register(Command.of(
+                    tool.toggleCommandId(), // e.g. view.toggleMavenSupport / view.toggleNpmSupport
+                    () -> toggleSetting(
+                            tool.toggleCommandId(),
+                            () -> tool.enabledIn(config.getSettings()),
+                            v -> tool.setEnabledIn(config.getSettings(), v),
+                            () -> {
+                                refreshBuildTools();
+                                if (settingsWindow != null) {
+                                    settingsWindow.refreshDetectionStatus();
+                                }
+                            })));
+        }
         registry.register(Command.of(
                 "view.toggleTodoHighlight",
                 () -> toggleSetting(

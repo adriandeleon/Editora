@@ -108,6 +108,20 @@ A backlog of planned features and improvements. Unordered within each section.
       also adds `OverlayHost.showBelow(...)` (mirroring `positionAbove`) for anchoring a popup below a
       top-of-window toolbar button. *Deferred: full effective-pom resolution (default-lifecycle bindings,
       parent inheritance, `<pluginManagement>`), a persistent run-configuration list.*
+- [x] Build-tool framework + npm — generalized the Maven integration into one tool-agnostic
+      `com.editora.build` framework (`BuildTool` enum, `BuildActionsProvider`/`BuildAction` model,
+      `BuildService`, `BuildExecutable`, `OutputStyle`) driving a reusable `ui/BuildCoordinator` (one instance
+      per tool: its own toolbar button, actions popup, streaming console, and `<tool>.*` commands). Maven was
+      refactored onto it with no behavior change (the pure `maven/PomParser`/`PomModel`/… stay), and **npm**
+      was added: a toolbar icon (shown only when a `package.json` is detected) whose popup lists every
+      `scripts` entry (run portably as `<pm> run <name>`) plus common tasks (`install`; `ci` for npm), using
+      the package manager detected from the `packageManager` field or the lockfile (npm/yarn/pnpm/bun). Pure
+      `NpmProject`/`NpmPackageManager`/`NpmActionsProvider` parse `package.json` with the existing Jackson
+      (no new dependency, no `module-info` change). `Settings.npmSupport`/`npmCommand` (default on, schema
+      65→66); the Settings → Languages & Tools → **Build Tools** page is data-driven (one section per tool);
+      palette gating is generic (per-tool ids). Adding the next tool (Cargo/Go/Gradle) is a new `BuildTool`
+      constant + provider + icon + Settings fields + i18n — no `MainController`/coordinator change.
+      *Deferred: Cargo, Go, Gradle (each its own follow-up); clickable console links stay Maven/JVM-only.*
 - [x] Clickable links in the Markdown preview — a rendered link shows a hand cursor and opens in the
       system default browser on click (previously inert). `MarkdownRenderer.renderDocument` gained an
       overload taking an optional click handler, threaded through the block/inline render chain

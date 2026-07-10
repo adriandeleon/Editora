@@ -50,6 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the Vixie day-of-month/day-of-week OR-rule + `Crontab` file parser); no new dependency. On by
   default (`Settings.crontabPreview`); Settings → Editor → Crontab, palette `view.toggleCrontabPreview`.
 
+- **npm build-tool support, plus a generalized build-tool framework.** The Maven integration is now one
+  tool-agnostic `com.editora.build` framework, so every build tool gets the same first-class treatment: its
+  own toolbar icon (shown only when its marker file is detected), an IntelliJ-style actions popup, and a
+  streaming per-tool console. **npm** is the first new tool — a `package.json` toolbar icon whose popup lists
+  every `scripts` entry (run portably as `<pm> run <name>`) plus common tasks (`install`, and `ci` for npm),
+  using the package manager detected from the `packageManager` field or the lockfile (npm/yarn/pnpm/bun).
+  Discovery parses `package.json` directly (no new dependency). Maven is unchanged in behavior. Toggle each
+  tool under *Settings → Languages & Tools → Build Tools* (both on by default, inert until their marker file
+  is found). *Cargo, Go, and Gradle will follow.*
 - **Every preview can now export to PDF from its right-click menu.** Previously only Markdown, CSV, and the
   Mermaid diagram had a working preview → PDF; the newer previews either had no context menu or silently
   exported garbage (their content was run through the Markdown renderer). Now:

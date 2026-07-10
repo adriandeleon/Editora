@@ -85,7 +85,7 @@ final class Chrome {
             boolean mermaid,
             boolean diagram,
             boolean typst,
-            boolean maven,
+            java.util.Set<String> disabledBuildToolIds,
             boolean lsp,
             boolean http,
             boolean htmlPreview,
@@ -119,8 +119,10 @@ final class Chrome {
         if (!g.typst() && id.startsWith("typst.")) {
             return false;
         }
-        if (!g.maven() && (id.startsWith("maven.") || id.equals("tool.maven"))) {
-            return false;
+        for (String buildToolId : g.disabledBuildToolIds()) {
+            if (id.startsWith(buildToolId + ".") || id.equals("tool." + buildToolId)) {
+                return false;
+            }
         }
         if (!g.lsp() && (id.startsWith("lsp.") || id.equals("tool.problems"))) {
             return false;
