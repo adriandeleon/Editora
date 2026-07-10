@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **fstab mount preview.** An `/etc/fstab` file (already syntax-highlighted) gains the same 3-mode
+  Editor/Split/Preview view. The preview decodes each mount line into plain English — the device spec
+  (`UUID=…` → "the filesystem with UUID …", `LABEL=`, `//nas/share` → SMB/CIFS, `host:/export` → NFS), the
+  mount point + filesystem, the comma-separated **options** (`noatime` → "access times not updated",
+  `nofail` → "boot continues even if the device is missing", `uid=1000`, …), and the fsck/dump columns
+  ("fsck-checked first (root) · not backed up"). A malformed line (too few columns, non-numeric dump/pass)
+  turns red. Pure, unit-tested `fstab/` core (`Fstab` parser + `FstabDescribe`); no new dependency. On by
+  default (`Settings.fstabPreview`); Settings → Editor → fstab, palette `view.toggleFstabPreview`.
 - **Typst document preview.** Standalone `.typ` files get the same 3-mode preview (Editor / Split /
   Preview) as Markdown, rendered off-thread via the external **`typst`** CLI as a **multi-page** stack —
   one image per page. Editing updates in place with no flicker (the last good render stays visible while

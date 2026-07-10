@@ -84,8 +84,8 @@ public final class ConfigFileType {
         if (lower.equals("caddyfile") || lower.endsWith(".caddyfile")) {
             return "caddyfile";
         }
-        // /etc/fstab — the basename is unambiguous enough on its own.
-        if (lower.equals("fstab")) {
+        // /etc/fstab — the literal basename, or a saved copy with a *.fstab suffix.
+        if (lower.equals("fstab") || lower.endsWith(".fstab")) {
             return "fstab";
         }
         // /etc/hosts — only under an "etc" dir; a bare "hosts" collides with Ansible inventory files.

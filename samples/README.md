@@ -115,6 +115,12 @@ the download error. Package versions are pinned to ones that compile with typst 
   line. The 3-mode preview decodes each schedule into English + shows the next run times; the bad line
   turns red.
 
+## fstab/ — fstab mount preview
+
+- `samples/fstab/sample.fstab` — device specs (UUID/LABEL/path/CIFS), swap, tmpfs, and a deliberately
+  broken 2-column line. The 3-mode preview decodes each mount into plain English (device, mount point,
+  filesystem, options, fsck/dump); the broken line turns red.
+
 ## pdf/ — PDF viewer
 
 - `samples/pdf/sample.pdf` — a 2-page PDF; opens in the read-only page viewer (◀/▶ navigation + zoom, PDFBox).

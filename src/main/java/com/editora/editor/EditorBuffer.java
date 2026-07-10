@@ -211,6 +211,8 @@ public class EditorBuffer implements TabContent {
     private java.util.function.UnaryOperator<java.nio.file.Path> typstRootResolver;
     /** Crontab schedule preview for crontab files: on when the feature is enabled (pushed from settings). */
     private boolean crontabPreviewEnabled;
+    /** fstab mount preview for /etc/fstab files: on when the feature is enabled (pushed from settings). */
+    private boolean fstabPreviewEnabled;
     /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
     private StackPane structuredContentHolder;
     /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
@@ -2150,6 +2152,7 @@ public class EditorBuffer implements TabContent {
                 || hasXmlPreview()
                 || hasSvgPreview()
                 || hasCrontabPreview()
+                || hasFstabPreview()
                 || hasTypstPreview();
     }
 
@@ -2255,9 +2258,30 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Whether this buffer uses the self-scrolling tree host (JSON/YAML/TOML, XML, or crontab) — shared surface. */
+    /** An {@code /etc/fstab} buffer (language {@code fstab} — see ConfigFileType). */
+    public boolean isFstab() {
+        return "fstab".equals(language);
+    }
+
+    /** Whether the fstab mount preview should be offered (feature on + an fstab buffer + not huge). */
+    public boolean hasFstabPreview() {
+        return fstabPreviewEnabled && isFstab() && !hugeFile;
+    }
+
+    /** Pushes the fstab-preview feature gate (from Settings); drops back to source when turned off. */
+    public void setFstabPreviewEnabled(boolean enabled) {
+        if (this.fstabPreviewEnabled == enabled) {
+            return;
+        }
+        this.fstabPreviewEnabled = enabled;
+        if (!enabled && isFstab() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR);
+        }
+    }
+
+    /** Whether this buffer uses the self-scrolling tree host (structured, XML, crontab, or fstab) — shared surface. */
     private boolean hasTreePreview() {
-        return hasStructuredPreview() || hasXmlPreview() || hasCrontabPreview();
+        return hasStructuredPreview() || hasXmlPreview() || hasCrontabPreview() || hasFstabPreview();
     }
 
     /** Pushes the structured-preview feature gate (from Settings); re-attaches the toggle if it flipped. */
@@ -3877,6 +3901,25 @@ public class EditorBuffer implements TabContent {
             });
             return;
         }
+        if (hasFstabPreview()) {
+            // Whole file is an /etc/fstab: parse off-thread (pure, cheap), decode each mount line into English,
+            // build the preview node on the FX thread into the shared self-scrolling host. previewGen-guarded.
+            String src = area.getText();
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                try {
+                    java.util.List<com.editora.fstab.FstabEntry> parsed = com.editora.fstab.Fstab.parse(src);
+                    Platform.runLater(() -> {
+                        if (gen == previewGen) {
+                            structuredContentHolder().getChildren().setAll(FstabPreview.build(parsed));
+                        }
+                    });
+                } catch (Throwable t) {
+                    surfaceTreePreviewError(gen, t);
+                }
+            });
+            return;
+        }
         if (isDiagram()) {
             // Whole file is one diagram: build the (async-filling) node on the FX thread directly. The
             // preview zoom scales the fit width (not font size, which doesn't affect an ImageView); the
@@ -4165,6 +4208,13 @@ public class EditorBuffer implements TabContent {
             com.editora.cron.Crontab parsed = com.editora.cron.Crontab.parse(area.getText());
             javafx.scene.layout.VBox box =
                     CrontabPreview.content(parsed, java.time.LocalDateTime.now(), EXPORT_TIMELINE_WIDTH);
+            box.getStyleClass().add("markdown-preview");
+            byte[] png = snapshotNodePng(box, lightUaStylesheet);
+            return png == null ? null : java.util.List.of(png);
+        }
+        if (isFstab()) {
+            javafx.scene.layout.VBox box =
+                    FstabPreview.content(com.editora.fstab.Fstab.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
             box.getStyleClass().add("markdown-preview");
             byte[] png = snapshotNodePng(box, lightUaStylesheet);
             return png == null ? null : java.util.List.of(png);

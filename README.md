@@ -243,6 +243,10 @@ Editora is built with the help of AI coding tools.
   decoding each schedule into plain English (`30 2 * * 1-5` → "At 02:30, Monday through Friday"), listing
   the next fire times, handling `@reboot`/`@daily`/… macros, and flagging a malformed line with its field
   error. **On by default** — *Settings → Editor → Crontab*.
+- **fstab mount preview** — an `/etc/fstab` file gets the same 3-mode preview, decoding each mount line
+  into plain English: the device spec (UUID/LABEL/path/CIFS/NFS), mount point, filesystem, the options
+  (`noatime` → "access times not updated", `nofail`, `uid=`, …), and the fsck/dump columns; malformed
+  lines turn red. **On by default** — *Settings → Editor → fstab*.
 - **PDF viewer** — `.pdf` files open in a read-only page viewer (rasterized via the bundled PDFBox) with
   ◀/▶ page navigation and zoom, instead of the hex viewer. Works for local and remote (SFTP) PDFs.
 - **Maven support** — a toolbar icon (shown only when a pom.xml is detected) opens an IntelliJ-style

@@ -59,6 +59,7 @@ class ConfigFileTypeTest {
     void fstabAndHostsCollisionGuard() {
         assertEquals("fstab", ConfigFileType.resolve("fstab"));
         assertEquals("fstab", ConfigFileType.resolve("/etc/fstab"));
+        assertEquals("fstab", ConfigFileType.resolve("sample.fstab"));
         assertEquals("hosts", ConfigFileType.resolve("/etc/hosts"));
         // A bare "hosts" (e.g. an Ansible inventory) must NOT be treated as /etc/hosts.
         assertNull(ConfigFileType.resolve("hosts"));
