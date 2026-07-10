@@ -535,6 +535,18 @@
 .xml-punct { -fx-fill: -color-fg-muted; }
 .xml-comment { -fx-fill: -color-fg-muted; -fx-font-style: italic; }
 
+/* Crontab schedule preview — theme-aware via AtlantaFX semantic colors. */
+.crontab-preview-scroll { -fx-background-color: -color-bg-default; }
+.crontab-preview { -fx-background-color: -color-bg-default; -fx-padding: 10; -fx-spacing: 2; }
+.crontab-header { -fx-text-fill: -color-fg-muted; -fx-padding: 0 0 8 0; }
+.crontab-assign { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; }
+.crontab-job { -fx-padding: 8 0 8 0; -fx-spacing: 2; -fx-border-color: transparent transparent -color-border-muted transparent; -fx-border-width: 0 0 0.5 0; }
+.crontab-job-error { -fx-padding: 8; -fx-spacing: 2; -fx-background-color: -color-danger-subtle; -fx-background-radius: 6; }
+.crontab-command { -fx-text-fill: -color-accent-fg; -fx-font-family: monospace; }
+.crontab-schedule { -fx-text-fill: -color-fg-default; }
+.crontab-nextruns { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
+.crontab-error { -fx-text-fill: -color-danger-fg; }
+
 /* Keep the tree token colors stable when a row is selected. The rows are TextFlows of Text runs, whose
    -fx-fill AtlantaFX flips to the selection foreground (-color-cell-fg-selected) on a selected cell — so
    without these the colored tokens visibly recolor on select/deselect (a "redraw" flash). Restating each

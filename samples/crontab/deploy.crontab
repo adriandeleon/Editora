@@ -1,0 +1,11 @@
+# deploy crontab — open the 3-mode preview (top-right toggle) to decode these schedules
+MAILTO=ops@acme.com
+
+*/15 * * * *    /opt/poll.sh
+30 2 * * 1-5    /opt/backup.sh
+0 0 1 * *       /opt/report.sh --monthly
+0 9 * * MON     /opt/weekly-digest.sh
+@reboot         /opt/warmcache.sh
+
+# bad line below — the preview flags it (minute 99 is out of range)
+99 * * * *      /opt/oops.sh

@@ -3,6 +3,14 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Crontab schedule preview — a `crontab`/`*.cron`/`cron.d/*` file (already syntax-highlighted) gets the
+      3-mode preview: each schedule decoded into English (`30 2 * * 1-5` → "At 02:30, Monday through
+      Friday"), the next fire times, `@reboot`/`@daily`/… macros, and a red field-error for a malformed
+      line. Pure `cron/` core (`CronExpression` with the Vixie DOM/DOW OR-rule + `Crontab` parser),
+      unit-tested; `editor/CrontabPreview` renders into the shared self-scrolling tree host; snapshot
+      Export-to-PDF/Print for free. On by default; `Settings.crontabPreview` (schema 65→66). No new
+      dependency. *Deferred: seconds/year 6-field cron, `L`/`W`/`#` (Quartz) modifiers, a 24h×7d heat-grid
+      view, timezone-aware next-run display.*
 - [x] XML tree preview — `.xml` joins the structured-data preview with a collapsible DOM tree (tags +
       attributes + text, text-only elements inlined). A *faithful* DOM model, not an XML→JSON shoehorn.
       Parsed off-thread with the JDK DOM parser (no new dependency), XXE-hardened like `PomParser`. New pure
