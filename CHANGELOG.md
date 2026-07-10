@@ -97,6 +97,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Spell-check and Personal-Notes overlays no longer pin an idle full-viewport GPU texture.** Both
+  `SpellCheckOverlay` and `NoteHighlightOverlay` kept their `Canvas` sized to the whole viewport whenever
+  the feature was on (the default), even on a buffer with zero visible misspellings/notes — retaining a
+  viewport-sized RTTexture that other overlays (Todo/Search/LSP/…) already release. They now shrink the
+  canvas to 1×1 when there's nothing visible to paint and grow it back on demand (with no per-scroll size
+  flapping), matching the established overlay convention — trimming idle Prism-texture footprint on every
+  spell-checked/annotated buffer. Purely a resource fix; no visible behavior change.
 - **Structured / XML tree preview no longer blanks silently on a render error.** The off-thread
   `PREVIEW_POOL.submit(...)` tasks that parse a JSON/YAML/TOML/XML buffer now catch `Throwable` (not just
   the parser's `Exception`), so an `Error` such as a `NoClassDefFoundError`/`LinkageError` while loading a
