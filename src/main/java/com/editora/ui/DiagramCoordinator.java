@@ -35,6 +35,17 @@ final class DiagramCoordinator {
         return service;
     }
 
+    /** Renders a DOT/PlantUML buffer to {@code dest} (format by extension) — the non-interactive path used by
+     *  the preview right-click "Export to PDF" (which already chose the file), mirroring
+     *  {@code MermaidCoordinator.exportDiagram}. */
+    void exportToPath(
+            com.editora.diagram.DiagramKind kind,
+            String source,
+            java.nio.file.Path dest,
+            java.util.function.Consumer<com.editora.process.ProcessRunner.Result> onResult) {
+        service.export(kind, source, dest, host.appThemeDark(), onResult);
+    }
+
     /** Whether the diagram feature is enabled in Settings (default on). */
     boolean isEnabled() {
         return host.settings().isDiagramSupport();

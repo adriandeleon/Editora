@@ -93,6 +93,41 @@ public final class PdfExportService {
         });
     }
 
+    /**
+     * Exports one or more PNG images (produced by snapshotting an image/tree preview on the FX thread) into a
+     * single PDF — each image scaled to the page width and sliced across pages when tall (see
+     * {@link ImagePdfWriter}). Used by the SVG / Markwhen / JSON-YAML-TOML / XML preview PDF export. Runs off
+     * the FX thread.
+     */
+    public void exportImages(java.util.List<byte[]> pngImages, String pageSize, Path out, Consumer<Result> onResult) {
+        exec.submit(() -> {
+            Result result;
+            try {
+                java.util.List<java.awt.image.BufferedImage> imgs = new java.util.ArrayList<>();
+                for (byte[] png : pngImages) {
+                    if (png == null) {
+                        continue;
+                    }
+                    java.awt.image.BufferedImage img =
+                            javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+                    if (img != null) {
+                        imgs.add(img);
+                    }
+                }
+                if (imgs.isEmpty()) {
+                    throw new IllegalStateException("nothing to export (the preview produced no image)");
+                }
+                ImagePdfWriter.write(imgs, pageSize, out);
+                result = new Result(true, "");
+            } catch (Throwable e) {
+                LOG.log(java.util.logging.Level.SEVERE, "Image PDF export failed", e);
+                result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
+            }
+            Result r = result;
+            Platform.runLater(() -> onResult.accept(r));
+        });
+    }
+
     /** Stops the background export thread (called when the owning window closes). */
     public void shutdown() {
         exec.shutdownNow();

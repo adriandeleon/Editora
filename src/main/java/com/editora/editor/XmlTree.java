@@ -32,6 +32,27 @@ public final class XmlTree {
         return tree;
     }
 
+    /**
+     * A flat, fully-expanded, depth-indented list of every node's rendered row — the whole DOM tree as
+     * standalone {@code TextFlow}s (not a virtualized {@code TreeView}), for snapshot-to-PDF export.
+     */
+    public static java.util.List<Node> printableRows(XmlNode root) {
+        java.util.List<Node> rows = new java.util.ArrayList<>();
+        appendRows(root, 0, rows);
+        return rows;
+    }
+
+    private static void appendRows(XmlNode n, int depth, java.util.List<Node> rows) {
+        TextFlow row = render(n);
+        if (depth > 0) {
+            row.getChildren().add(0, styled("  ".repeat(depth), "xml-punct")); // monospace indent
+        }
+        rows.add(row);
+        for (XmlNode c : n.children()) {
+            appendRows(c, depth + 1, rows);
+        }
+    }
+
     private static TreeItem<XmlNode> toItem(XmlNode n) {
         TreeItem<XmlNode> item = new TreeItem<>(n);
         for (XmlNode c : n.children()) {
