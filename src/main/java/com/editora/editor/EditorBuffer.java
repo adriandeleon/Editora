@@ -209,6 +209,8 @@ public class EditorBuffer implements TabContent {
     /** Resolves the typst {@code --root} for a saved .typ file (project root for a multi-file doc); injected
      *  from MainController since the editor package can't reach project state. Null ⇒ use the file's folder. */
     private java.util.function.UnaryOperator<java.nio.file.Path> typstRootResolver;
+    /** Crontab schedule preview for crontab files: on when the feature is enabled (pushed from settings). */
+    private boolean crontabPreviewEnabled;
     /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
     private StackPane structuredContentHolder;
     /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
@@ -2147,6 +2149,7 @@ public class EditorBuffer implements TabContent {
                 || hasStructuredPreview()
                 || hasXmlPreview()
                 || hasSvgPreview()
+                || hasCrontabPreview()
                 || hasTypstPreview();
     }
 
@@ -2231,9 +2234,30 @@ public class EditorBuffer implements TabContent {
         return structuredPreviewEnabled && isXml() && !hugeFile;
     }
 
-    /** Whether this buffer uses the self-scrolling tree host (JSON/YAML/TOML or XML) — shared render surface. */
+    /** A crontab buffer (language {@code crontab}: a crontab / *.cron / cron.d file — see ConfigFileType). */
+    public boolean isCrontab() {
+        return "crontab".equals(language);
+    }
+
+    /** Whether the crontab schedule preview should be offered (feature on + a crontab buffer + not huge). */
+    public boolean hasCrontabPreview() {
+        return crontabPreviewEnabled && isCrontab() && !hugeFile;
+    }
+
+    /** Pushes the crontab-preview feature gate (from Settings); drops back to source when turned off. */
+    public void setCrontabPreviewEnabled(boolean enabled) {
+        if (this.crontabPreviewEnabled == enabled) {
+            return;
+        }
+        this.crontabPreviewEnabled = enabled;
+        if (!enabled && isCrontab() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR);
+        }
+    }
+
+    /** Whether this buffer uses the self-scrolling tree host (JSON/YAML/TOML, XML, or crontab) — shared surface. */
     private boolean hasTreePreview() {
-        return hasStructuredPreview() || hasXmlPreview();
+        return hasStructuredPreview() || hasXmlPreview() || hasCrontabPreview();
     }
 
     /** Pushes the structured-preview feature gate (from Settings); re-attaches the toggle if it flipped. */
@@ -3832,6 +3856,27 @@ public class EditorBuffer implements TabContent {
             });
             return;
         }
+        if (hasCrontabPreview()) {
+            // Whole file is a crontab: parse off-thread (pure, cheap), decode each schedule + compute the next
+            // fire times, build the preview node on the FX thread into the shared self-scrolling host. The
+            // "now" is captured here on the FX thread so the render is deterministic (mirrors the tree branch).
+            String src = area.getText();
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                try {
+                    com.editora.cron.Crontab parsed = com.editora.cron.Crontab.parse(src);
+                    Platform.runLater(() -> {
+                        if (gen == previewGen) {
+                            structuredContentHolder().getChildren().setAll(CrontabPreview.build(parsed, now));
+                        }
+                    });
+                } catch (Throwable t) {
+                    surfaceTreePreviewError(gen, t);
+                }
+            });
+            return;
+        }
         if (isDiagram()) {
             // Whole file is one diagram: build the (async-filling) node on the FX thread directly. The
             // preview zoom scales the fit width (not font size, which doesn't affect an ImageView); the
@@ -4115,6 +4160,14 @@ public class EditorBuffer implements TabContent {
         if (isXml()) {
             XmlParser.Parsed p = XmlParser.parse(area.getText());
             return p.ok() ? snapshotRows(XmlTree.printableRows(p.root()), "xml-tree", lightUaStylesheet) : null;
+        }
+        if (isCrontab()) {
+            com.editora.cron.Crontab parsed = com.editora.cron.Crontab.parse(area.getText());
+            javafx.scene.layout.VBox box =
+                    CrontabPreview.content(parsed, java.time.LocalDateTime.now(), EXPORT_TIMELINE_WIDTH);
+            box.getStyleClass().add("markdown-preview");
+            byte[] png = snapshotNodePng(box, lightUaStylesheet);
+            return png == null ? null : java.util.List.of(png);
         }
         if (isMarkwhen()) {
             com.editora.markwhen.Timeline model = com.editora.markwhen.MarkwhenParser.parse(area.getText());

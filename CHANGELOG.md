@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     is written in the file's own directory. The preview also caps at 40 stacked pages (a "… more pages"
     note; export/print use every page), and remote/SFTP `.typ` files fall back to an isolated root so a
     self-contained one still renders.
+- **Crontab schedule preview.** A `crontab` / `*.cron` / `cron.d/*` file (already syntax-highlighted) gains
+  the same 3-mode Editor/Split/Preview view as Markdown. The preview decodes each job's terse `* * * * *`
+  schedule into plain English (`30 2 * * 1-5` → "At 02:30, Monday through Friday"), lists the next few
+  fire times computed from now, handles the `@reboot`/`@daily`/… macros, and red-flags a malformed line
+  with the exact field error (e.g. minute 99 out of range). Because every field is parsed to describe it,
+  the whole file's validity is visible at a glance. Pure, unit-tested `cron/` core (`CronExpression`
+  with the Vixie day-of-month/day-of-week OR-rule + `Crontab` file parser); no new dependency. On by
+  default (`Settings.crontabPreview`); Settings → Editor → Crontab, palette `view.toggleCrontabPreview`.
 
 - **Every preview can now export to PDF from its right-click menu.** Previously only Markdown, CSV, and the
   Mermaid diagram had a working preview → PDF; the newer previews either had no context menu or silently

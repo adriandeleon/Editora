@@ -109,6 +109,12 @@ the download error. Package versions are pinned to ones that compile with typst 
 
 - `samples/svg/shapes.svg` — edit the XML source and the 3-mode preview re-renders the image live (JSVG).
 
+## crontab/ — crontab schedule preview
+
+- `samples/crontab/deploy.crontab` — jobs, `@reboot`, an env assignment, and a deliberately out-of-range
+  line. The 3-mode preview decodes each schedule into English + shows the next run times; the bad line
+  turns red.
+
 ## pdf/ — PDF viewer
 
 - `samples/pdf/sample.pdf` — a 2-page PDF; opens in the read-only page viewer (◀/▶ navigation + zoom, PDFBox).

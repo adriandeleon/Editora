@@ -239,6 +239,10 @@ Editora is built with the help of AI coding tools.
 - **SVG image preview** — `.svg` files stay editable XML but gain a rendered-image preview in the same
   3-mode view; edit the source and the image re-renders live (rasterized via the bundled JSVG — no external
   tool). **On by default** — *Settings → Editor → SVG*.
+- **Crontab schedule preview** — a `crontab` / `*.cron` / `cron.d/*` file gets the same 3-mode preview,
+  decoding each schedule into plain English (`30 2 * * 1-5` → "At 02:30, Monday through Friday"), listing
+  the next fire times, handling `@reboot`/`@daily`/… macros, and flagging a malformed line with its field
+  error. **On by default** — *Settings → Editor → Crontab*.
 - **PDF viewer** — `.pdf` files open in a read-only page viewer (rasterized via the bundled PDFBox) with
   ◀/▶ page navigation and zoom, instead of the hex viewer. Works for local and remote (SFTP) PDFs.
 - **Maven support** — a toolbar icon (shown only when a pom.xml is detected) opens an IntelliJ-style

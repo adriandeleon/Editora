@@ -9395,6 +9395,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setStructuredPreviewEnabled(s.isStructuredPreview()); // JSON/YAML/TOML tree + OpenAPI docs preview
         buffer.setSvgPreviewEnabled(s.isSvgPreview()); // rendered image preview for .svg files
         buffer.setTypstPreviewEnabled(s.isTypstSupport()); // multi-page rendered preview for .typ documents
+        buffer.setCrontabPreviewEnabled(s.isCrontabPreview()); // schedule decode + next runs for crontab files
         if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
             ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
@@ -10504,6 +10505,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleSvgPreview",
                         () -> config.getSettings().isSvgPreview(),
                         v -> config.getSettings().setSvgPreview(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleCrontabPreview",
+                () -> toggleSetting(
+                        "view.toggleCrontabPreview",
+                        () -> config.getSettings().isCrontabPreview(),
+                        v -> config.getSettings().setCrontabPreview(v),
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of("mermaid.export", mermaid::export));
         registry.register(Command.of("diagram.export", diagram::export));
