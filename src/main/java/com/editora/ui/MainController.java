@@ -8955,8 +8955,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 return;
             }
             pdfService.exportImages(java.util.List.of(png), pageSize, f.toPath(), report);
-        } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview
-            java.util.List<byte[]> chunks = b.snapshotPreviewChunks();
+        } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
+            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
             if (chunks == null || chunks.isEmpty()) {
                 report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
                 return;
@@ -9213,25 +9213,63 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.print.noPreview"));
             return;
         }
-        if (b.isMarkwhen()) {
-            setStatus(tr("status.export.markwhenUnsupported"));
-            return; // the timeline node isn't a Markdown document — printing is a deferred follow-up
-        }
         javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
         if (job == null) {
             setStatus(tr("status.print.noPrinter"));
             return;
         }
         setStatus(tr("status.print.preparing"));
-        if (b.isDiagram()) {
-            java.util.List<String> mmdc = mermaid.mmdcCommandOrNull();
-            printService.prepareMermaid(
-                    b.getContent(), mmdc, appThemeDark(), prepared -> openPrintPreview(job, prepared));
-        } else {
+        java.util.function.Consumer<com.editora.print.PrintService.Prepared> open =
+                prepared -> openPrintPreview(job, prepared);
+        if (b.isMarkdown()) {
             java.nio.file.Path baseDir =
                     b.getPath() == null ? null : b.getPath().getParent();
-            printService.prepareMarkdown(b.getContent(), baseDir, prepared -> openPrintPreview(job, prepared));
+            printService.prepareMarkdown(b.getContent(), baseDir, open);
+        } else if (b.isDiagram()) { // Mermaid — CLI render
+            printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), appThemeDark(), open);
+        } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to a temp PNG, then paginate
+            printDiagramViaImage(b, job);
+        } else if (b.isSvg()) { // rasterize the SVG source, paginate as image pages
+            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
+                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            if (png == null) {
+                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
+                return;
+            }
+            printService.prepareImages(java.util.List.of(png), open);
+        } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
+            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
+            if (chunks == null || chunks.isEmpty()) {
+                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
+                return;
+            }
+            printService.prepareImages(chunks, open);
         }
+    }
+
+    /** Prints a DOT/PlantUML diagram by rendering it to a temporary PNG via its CLI, then paginating the image
+     *  (there's no native-vector print path for the diagram tools, unlike Markdown). */
+    private void printDiagramViaImage(EditorBuffer b, javafx.print.PrinterJob job) {
+        java.nio.file.Path tmp;
+        try {
+            tmp = java.nio.file.Files.createTempFile("editora-diagram", ".png");
+        } catch (java.io.IOException e) {
+            openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
+            return;
+        }
+        diagram.exportToPath(b.diagramKind(), b.getContent(), tmp, r -> {
+            if (!r.ok()) {
+                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, r.message()));
+                return;
+            }
+            try {
+                byte[] png = java.nio.file.Files.readAllBytes(tmp);
+                java.nio.file.Files.deleteIfExists(tmp);
+                printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
+            } catch (java.io.IOException e) {
+                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
+            }
+        });
     }
 
     /** Opens the Print Preview window for a prepared document, or reports a preparation failure. */

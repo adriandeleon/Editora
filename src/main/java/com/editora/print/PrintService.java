@@ -122,6 +122,33 @@ public final class PrintService {
         });
     }
 
+    /**
+     * Prepares a print job from pre-rendered PNG images (a snapshot of an SVG / Markwhen / JSON-YAML-TOML /
+     * XML / DOT-PlantUML preview — see {@code EditorBuffer.snapshotPreviewChunks}). Each image is scaled to
+     * the printable width and, when tall, sliced across pages — the print analogue of
+     * {@code pdf/ImagePdfWriter}. The PNGs are decoded off the FX thread; the {@code Paginator} then builds
+     * the {@code ImageView} pages on the FX thread for the chosen {@link PageLayout}.
+     */
+    public void prepareImages(List<byte[]> pngImages, Consumer<Prepared> onReady) {
+        exec.submit(() -> {
+            try {
+                List<Image> images = new java.util.ArrayList<>();
+                for (byte[] png : pngImages) {
+                    if (png != null) {
+                        images.add(new Image(new ByteArrayInputStream(png)));
+                    }
+                }
+                if (images.isEmpty()) {
+                    deliver(onReady, new Prepared(null, "nothing to print"));
+                    return;
+                }
+                deliver(onReady, new Prepared(layout -> imagePages(images, layout), null));
+            } catch (Throwable e) {
+                deliver(onReady, new Prepared(null, message(e)));
+            }
+        });
+    }
+
     /** Prints each page node, ends the job, and returns the result. Must run on the FX thread. */
     public static Result printPages(List<Node> pages, PageLayout layout, PrinterJob job) {
         boolean ok = true;
@@ -146,6 +173,39 @@ public final class PrintService {
         StackPane root = new StackPane(iv);
         root.setPrefSize(pw, ph);
         return root;
+    }
+
+    /** Lays each image across pages: scaled to the printable width, sliced by page height via an ImageView
+     *  viewport (shares the pure fit/slice geometry with {@code pdf/ImagePdfWriter}). */
+    private static List<Node> imagePages(List<Image> images, PageLayout layout) {
+        double availW = layout.getPrintableWidth();
+        double availH = layout.getPrintableHeight();
+        List<Node> pages = new java.util.ArrayList<>();
+        for (Image img : images) {
+            int iw = (int) Math.ceil(img.getWidth());
+            int ih = (int) Math.ceil(img.getHeight());
+            if (iw < 1 || ih < 1) {
+                continue;
+            }
+            double scale = com.editora.pdf.ImagePdfWriter.fitScale(iw, availW);
+            int srcPageRows = com.editora.pdf.ImagePdfWriter.rowsPerPage(availH, scale);
+            double drawW = iw * scale;
+            for (int y = 0; y < ih; y += srcPageRows) {
+                int h = Math.min(srcPageRows, ih - y);
+                ImageView iv = new ImageView(img);
+                iv.setViewport(new javafx.geometry.Rectangle2D(0, y, iw, h));
+                iv.setPreserveRatio(true);
+                iv.setFitWidth(drawW);
+                StackPane root = new StackPane(iv);
+                StackPane.setAlignment(iv, javafx.geometry.Pos.TOP_LEFT);
+                root.setPrefSize(availW, availH);
+                pages.add(root);
+            }
+        }
+        if (pages.isEmpty()) {
+            pages.add(new StackPane());
+        }
+        return pages;
     }
 
     private static void deliver(Consumer<Prepared> onReady, Prepared prepared) {
