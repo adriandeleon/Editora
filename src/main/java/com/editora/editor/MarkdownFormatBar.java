@@ -33,22 +33,37 @@ final class MarkdownFormatBar {
         node.setAlignment(Pos.CENTER_LEFT);
 
         // Icon glyphs (the same MenuIcons used by the editor right-click menu) instead of letter labels —
-        // an italic "I" barely slants, and icons keep the bar consistent with the menu.
-        node.getChildren()
-                .addAll(
-                        button(MenuIcons.bold(), "tooltip.markdown.bold", () -> buffer.formatInline("**")),
-                        button(MenuIcons.italic(), "tooltip.markdown.italic", () -> buffer.formatInline("*")),
-                        button(
-                                MenuIcons.strikethrough(),
-                                "tooltip.markdown.strikethrough",
-                                () -> buffer.formatInline("~~")),
-                        button(MenuIcons.code(), "tooltip.markdown.code", () -> buffer.formatInline("`")),
-                        button(MenuIcons.link(), "tooltip.markdown.link", buffer::formatLinkFromClipboard),
-                        button(MenuIcons.bulletList(), "tooltip.markdown.bulletList", buffer::formatBulletList),
-                        button(MenuIcons.taskList(), "tooltip.markdown.taskList", buffer::formatTaskList),
-                        button(MenuIcons.table(), "tooltip.markdown.insertTable", buffer::insertTableInteractive),
-                        new Separator(javafx.geometry.Orientation.VERTICAL),
-                        headingBox(buffer));
+        // an italic "I" barely slants, and icons keep the bar consistent with the menu. Typst uses a
+        // different markup set (single-* bold, _emph_, no native strikethrough/task/pipe-table), so its bar
+        // carries bold/emphasis/raw/link/bullet + the heading dropdown; the heading/link cores dispatch on
+        // the buffer type in EditorBuffer.
+        if (buffer.isTypst()) {
+            node.getChildren()
+                    .addAll(
+                            button(MenuIcons.bold(), "tooltip.markdown.bold", () -> buffer.formatInline("*")),
+                            button(MenuIcons.italic(), "tooltip.markdown.italic", () -> buffer.formatInline("_")),
+                            button(MenuIcons.code(), "tooltip.markdown.code", () -> buffer.formatInline("`")),
+                            button(MenuIcons.link(), "tooltip.markdown.link", buffer::formatLinkFromClipboard),
+                            button(MenuIcons.bulletList(), "tooltip.markdown.bulletList", buffer::formatBulletList),
+                            new Separator(javafx.geometry.Orientation.VERTICAL),
+                            headingBox(buffer));
+        } else {
+            node.getChildren()
+                    .addAll(
+                            button(MenuIcons.bold(), "tooltip.markdown.bold", () -> buffer.formatInline("**")),
+                            button(MenuIcons.italic(), "tooltip.markdown.italic", () -> buffer.formatInline("*")),
+                            button(
+                                    MenuIcons.strikethrough(),
+                                    "tooltip.markdown.strikethrough",
+                                    () -> buffer.formatInline("~~")),
+                            button(MenuIcons.code(), "tooltip.markdown.code", () -> buffer.formatInline("`")),
+                            button(MenuIcons.link(), "tooltip.markdown.link", buffer::formatLinkFromClipboard),
+                            button(MenuIcons.bulletList(), "tooltip.markdown.bulletList", buffer::formatBulletList),
+                            button(MenuIcons.taskList(), "tooltip.markdown.taskList", buffer::formatTaskList),
+                            button(MenuIcons.table(), "tooltip.markdown.insertTable", buffer::insertTableInteractive),
+                            new Separator(javafx.geometry.Orientation.VERTICAL),
+                            headingBox(buffer));
+        }
     }
 
     Node node() {

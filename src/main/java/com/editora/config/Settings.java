@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 66;
+    public static final int SCHEMA_VERSION = 67;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -178,6 +178,12 @@ public class Settings {
     private String dotPath = "";
     /** Path to the plantuml executable/command; blank = resolve "plantuml" on PATH. */
     private String plantumlPath = "";
+    /** Typst document support: a 3-mode (multi-page) rendered preview of .typ files via the typst CLI.
+     *  On by default; self-gates on detection (inert until typst is found). Its own seam (not a diagram) since
+     *  a Typst document paginates — see {@code editor/TypstImages}. */
+    private boolean typstSupport = true;
+    /** Path to the typst executable/command; blank = resolve "typst" on PATH. */
+    private String typstPath = "";
     /** Maven support (a toolbar icon + actions popup parsed from the active project's pom.xml, streaming
      *  goal/phase runs to a console): on by default — self-gates on detection, so it stays inert (the
      *  toolbar button hidden) until a pom.xml is actually found for the current project/file. */
@@ -1179,6 +1185,22 @@ public class Settings {
 
     public void setPlantumlPath(String plantumlPath) {
         this.plantumlPath = plantumlPath == null ? "" : plantumlPath;
+    }
+
+    public boolean isTypstSupport() {
+        return typstSupport;
+    }
+
+    public void setTypstSupport(boolean typstSupport) {
+        this.typstSupport = typstSupport;
+    }
+
+    public String getTypstPath() {
+        return typstPath == null ? "" : typstPath;
+    }
+
+    public void setTypstPath(String typstPath) {
+        this.typstPath = typstPath == null ? "" : typstPath;
     }
 
     public boolean isMavenSupport() {

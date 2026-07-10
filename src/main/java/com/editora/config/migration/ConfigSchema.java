@@ -111,7 +111,9 @@ public enum ConfigSchema {
                             ConfigMigrations::identity), // v62→63: + diagramSupport/dotPath/plantumlPath (additive)
                     Map.entry(63, (Migration) ConfigMigrations::identity), // v63→64: + structuredPreview (additive)
                     Map.entry(64, (Migration) ConfigMigrations::identity), // v64→65: + svgPreview (additive)
-                    Map.entry(65, (Migration) ConfigMigrations::identity))), // v65→66: + crontabPreview (additive)
+                    Map.entry(65, (Migration) ConfigMigrations::identity), // v65→66: + crontabPreview (additive)
+                    Map.entry(66, (Migration)
+                            ConfigMigrations::identity))), // v66→67: + typstSupport/typstPath (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

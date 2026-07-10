@@ -1,0 +1,75 @@
+{
+  "name": "Typst",
+  "scopeName": "source.typst",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#heading" },
+    { "include": "#code-keyword" },
+    { "include": "#function" },
+    { "include": "#math" },
+    { "include": "#string" },
+    { "include": "#label" },
+    { "include": "#reference" },
+    { "include": "#strong" },
+    { "include": "#emph" },
+    { "include": "#raw" },
+    { "include": "#number" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        { "name": "comment.line.double-slash.typst", "match": "//.*$" },
+        { "name": "comment.block.typst", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "heading": {
+      "name": "markup.heading.typst",
+      "match": "^\\s*=+\\s+.*$"
+    },
+    "code-keyword": {
+      "name": "keyword.control.typst",
+      "match": "#\\s*(let|set|show|import|include|if|else|for|while|return|break|continue|in|as|not|and|or|none|auto|true|false)\\b"
+    },
+    "function": {
+      "name": "entity.name.function.typst",
+      "match": "#[A-Za-z_][A-Za-z0-9_.-]*"
+    },
+    "math": {
+      "name": "string.other.math.typst",
+      "begin": "\\$",
+      "end": "\\$",
+      "patterns": [{ "name": "constant.character.escape.typst", "match": "\\\\." }]
+    },
+    "string": {
+      "name": "string.quoted.double.typst",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [{ "name": "constant.character.escape.typst", "match": "\\\\." }]
+    },
+    "label": {
+      "name": "entity.name.label.typst",
+      "match": "<[A-Za-z_][A-Za-z0-9_.:-]*>"
+    },
+    "reference": {
+      "name": "markup.other.reference.typst",
+      "match": "@[A-Za-z_][A-Za-z0-9_.:-]*"
+    },
+    "strong": {
+      "name": "markup.bold.typst",
+      "match": "\\*[^*\\n]+\\*"
+    },
+    "emph": {
+      "name": "markup.italic.typst",
+      "match": "_[^_\\n]+_"
+    },
+    "raw": {
+      "name": "markup.raw.inline.typst",
+      "begin": "`",
+      "end": "`"
+    },
+    "number": {
+      "name": "constant.numeric.typst",
+      "match": "\\b-?[0-9]+(\\.[0-9]+)?(pt|mm|cm|in|em|fr|deg|%)?\\b"
+    }
+  }
+}

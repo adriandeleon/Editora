@@ -171,6 +171,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.markwhen", "markwhen");
         scopeToResource.put("source.dot", "dot");
         scopeToResource.put("source.plantuml", "plantuml");
+        scopeToResource.put("source.typst", "typst");
         scopeToResource.put("source.ts", "typescript");
         scopeToResource.put("source.tsx", "typescriptreact");
         scopeToResource.put("source.php", "php");
@@ -232,6 +233,7 @@ public final class GrammarRegistry {
         mapExtensions("source.markwhen", "mw", "markwhen");
         mapExtensions("source.dot", "dot", "gv");
         mapExtensions("source.plantuml", "puml", "plantuml", "pu", "iuml");
+        mapExtensions("source.typst", "typ");
         // The TypeScript grammar tokenizes plain JS well, so .js/.mjs/.cjs reuse source.ts and
         // .jsx reuses the TSX (React) grammar — no separate JS grammars to bundle.
         mapExtensions("source.ts", "ts", "mts", "cts", "js", "mjs", "cjs");

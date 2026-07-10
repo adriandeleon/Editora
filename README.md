@@ -220,6 +220,16 @@ Editora is built with the help of AI coding tools.
   (`diagram.export`). **On by default** — self-gating on detection, so it's inert until the tool is found
   (install via your package manager, e.g. `brew install graphviz plantuml`). Toggle + tool paths under
   *Settings → Languages & Tools → Diagrams*.
+- **Typst document preview** — standalone `.typ` files get the same 3-mode preview as Markdown, rendered
+  off-thread via the external **`typst`** CLI as a **multi-page** stack (one image per page). The last good
+  render stays on screen while you edit (no flicker), and a compile error keeps it visible under a small
+  banner. Zoom resizes the pages; export to **PDF** (native single file) / **PNG** / **SVG**
+  (`typst.export`), and print paginates the pages. **On by default** — self-gating on detection, so it's
+  inert until `typst` is found (install via your package manager, e.g. `brew install typst` or
+  `cargo install typst-cli`). Toggle + tool path under *Settings → Languages & Tools → Typst*. Editing has
+  Markdown-style ergonomics — Enter continues a `-`/`+`/`N.` list, and selecting text pops a format bar
+  (bold `*` / emphasis `_` / raw `` ` `` / link / bullet / heading) with matching right-click + palette
+  actions.
 - **Structured-data preview (JSON / YAML / TOML / XML + OpenAPI docs)** — `.json`/`.yaml`/`.toml` files get
   the same 3-mode preview as Markdown: a collapsible, type-colored **data tree** (rendered off-thread);
   `.xml` files render a faithful **DOM tree** (tags + attributes + text). A JSON/YAML file recognized as an

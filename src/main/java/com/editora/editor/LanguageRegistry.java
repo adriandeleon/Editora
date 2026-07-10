@@ -43,6 +43,8 @@ public final class LanguageRegistry {
             Map.entry("plantuml", "plantuml"),
             Map.entry("pu", "plantuml"),
             Map.entry("iuml", "plantuml"),
+            // Typst document (rendered to a multi-page image preview via the typst CLI).
+            Map.entry("typ", "typst"),
             // Brace-delimited languages (fold by matched {} / []).
             Map.entry("java", "java"),
             // JS/TS — the language name doubles as the LSP languageId (javascript/typescript/…react).

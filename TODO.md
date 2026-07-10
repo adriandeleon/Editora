@@ -55,6 +55,30 @@ A backlog of planned features and improvements. Unordered within each section.
       detection; `Settings.diagramSupport`/`dotPath`/`plantumlPath` (schema 62→63). *Deferred: PlantUML
       `@start/@end` folding, a themed (dark) render, live linting, and the browser-raster tools (D2,
       WaveDrom) — next up in the diagram-as-code section.*
+- [x] Typst document preview — standalone `.typ` files get the same 3-mode preview as Markdown, rendered
+      off-thread via the external `typst` CLI as a **multi-page** stack (one image per page). Its own seam
+      (not a `DiagramKind`, since a document paginates): `com.editora.typst`
+      (`TypstRenderer`/`TypstService`) + `editor/TypstImages` (async page-list cache with retain-last-image
+      so live editing doesn't flicker) + `ui/TypstCoordinator`. Compiled with `--root` = the file's folder
+      so relative `#image`/`#import` resolve. Native PDF export + PNG/SVG + paginated print. Authored
+      `source.typst` grammar + `LanguageRegistry`/`GrammarRegistry`/`Commenter`/`FoldRegions`/`FileIcons`
+      entries. On by default, self-gating on detection; `Settings.typstSupport`/`typstPath` (schema 66→67).
+      **Editing parity with Markdown:** Enter list continuation (`-`/`+`/`N.`) + empty-marker exit/backspace,
+      the floating selection format bar (bold `*`/emph `_`/raw `` ` ``/link/bullet/heading), right-click
+      Format items, and `typst.*` palette commands — via the pure `com.editora.typst.TypstMarkup` (headings
+      `=`, `#link("url")[…]`, list markers excluding `*`), reusing the shared inline-wrap/bullet cores.
+      Preview is gated `!hugeFile` and caps the stacked pages at 40 (a "… N more pages" note; export/print
+      use all). **Multi-file projects resolve:** the throwaway input is written in the file's own folder (so
+      relative `#image`/`#import` resolve as on disk) and `--root` is the nearest `typst.toml` ancestor, else
+      the active Editora project root when the file is inside it, else the file's folder (`RootResolver`, the
+      LSP idiom; injected via `EditorBuffer.setTypstRootResolver` + `TypstCoordinator`) — so a doc deep in a
+      project can `#import "/template.typ"` above its folder. Local files only — a remote/SFTP doc falls back
+      to an isolated temp root, so a self-contained one still renders. **Inherent typst constraints
+      (documented, not bugs):** `@preview` packages need a network fetch (offline → the doc errors in the
+      preview); refs that escape the resolved root are blocked by typst's sandbox; an untitled buffer can't
+      resolve any relative ref; uninstalled fonts fall back. *Deferred: a ppi/quality setting, live linting
+      (typst compile diagnostics), autocomplete, `#table`/`#outline` insertion + image paste, an in-app
+      installer entry, and the generic "CLI → paginated image" seam (gnuplot, asciidoc-via-PDF).*
 - [x] CSV/TSV grid preview moved into the editor as an IntelliJ-style Editor/Split/Preview view (mirroring
       the Markdown preview), replacing the bottom `csvGrid` tool window. The floating top-right toggle drives
       Editor (source), Split (source + live grid), and Preview (grid only); the mode is remembered per file.
