@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Portable Linux install tarball** (`Editora-<version>-linux-<arch>.tar.gz`, x64 + arm64). A new release
+  artifact for systems without `.deb`/`.rpm`: it bundles the same self-contained, AOT-trained app image the
+  installers are built from (a jlink'd Java runtime + the native `bin/Editora` launcher — no system Java
+  needed) plus a POSIX `install.sh` that installs to **`/opt/editora`** when run as root or
+  **`~/.local/editora`** as a regular user, wiring up an `editora` command on `PATH` and an
+  application-menu entry (`StartupWMClass=com.editora.App` so the running window inherits the icon).
+  Supports `--system`/`--user`/`--prefix DIR`/`--uninstall`; the image also runs in place
+  (`./Editora/bin/Editora`) without installing. Built by the new `scripts/build-tarball.sh` from the
+  existing `target/aot-image/Editora` — the extract-and-install counterpart to the `.AppImage`, reusing the
+  jpackage `APP_IMAGE` output (jlink under the hood), so **no `pom.xml` change and no second build**.
 - **XML tree preview.** `.xml` files (xsd/xsl/fxml/pom/wsdl/rss/…) join the structured-data preview with a
   collapsible **DOM tree** in the 3-mode view — each element shows its tag + inline attributes, children in
   document order, and text-only elements inlined as `tag = "value"`. A *faithful* DOM model

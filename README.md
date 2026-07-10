@@ -464,6 +464,22 @@ with arguments — e.g. `editora some/file.java:42` or `editora --new-file=notes
 command are removed when you uninstall the package. (The `.rpm` installs under `/opt/editora/` too; run
 `/opt/editora/bin/Editora` or add your own symlink.)
 
+Linux releases also ship a **portable install tarball** (`Editora-<version>-linux-<arch>.tar.gz`, x64 +
+arm64) for systems without `.deb`/`.rpm` (or where you'd rather not use a package manager). It bundles the
+same self-contained app image (its own jlink'd Java runtime — no system Java needed) plus an `install.sh`:
+
+```bash
+tar xzf Editora-<version>-linux-x64.tar.gz && cd editora-x86_64
+./install.sh          # per-user  -> ~/.local/editora  (+ ~/.local/bin/editora)
+sudo ./install.sh     # system    -> /opt/editora       (+ /usr/local/bin/editora)
+./install.sh --uninstall   # remove it again
+```
+
+Either way it adds an `editora` command and an application-menu entry (with the Editora icon). You can also
+run it in place without installing: `./Editora/bin/Editora`. Build one locally from an app-image with
+`./mvnw clean -Pdist -DskipTests -Djpackage.type=APP_IMAGE package` then
+`scripts/build-tarball.sh target/dist/Editora target/dist`.
+
 The `fatjar` profile produces a self-contained, runnable `target/Editora-<version>.jar` (no separate
 JavaFX install needed — `java -jar` is enough, on a JDK 25 runtime). It bundles JavaFX's classes and
 native libraries **for the build host's platform only**: a single jar can't be portable because
