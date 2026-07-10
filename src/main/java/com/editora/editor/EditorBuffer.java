@@ -3473,7 +3473,10 @@ public class EditorBuffer implements TabContent {
                 MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
                 pdf.setGraphic(MenuIcons.download());
                 pdf.setOnAction(ev -> previewExportPdfHandler.run());
-                previewContextMenu.getItems().addAll(json, viewToggle, new SeparatorMenuItem(), pdf);
+                MenuItem print = new MenuItem(tr("command.preview.print"));
+                print.setGraphic(MenuIcons.print());
+                print.setOnAction(ev -> previewPrintHandler.run());
+                previewContextMenu.getItems().addAll(json, viewToggle, new SeparatorMenuItem(), pdf, print);
                 previewContextMenu.setOnShowing(ev -> viewToggle.setText(
                         markwhenView == MarkwhenView.TIMELINE
                                 ? tr("markwhen.switchToCalendar")
@@ -3977,7 +3980,10 @@ public class EditorBuffer implements TabContent {
             MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
             pdf.setGraphic(MenuIcons.download());
             pdf.setOnAction(ev -> previewExportPdfHandler.run());
-            treePreviewContextMenu = new javafx.scene.control.ContextMenu(pdf);
+            MenuItem print = new MenuItem(tr("command.preview.print"));
+            print.setGraphic(MenuIcons.print());
+            print.setOnAction(ev -> previewPrintHandler.run());
+            treePreviewContextMenu = new javafx.scene.control.ContextMenu(pdf, print);
             treePreviewContextMenu.getStyleClass().add("editor-context-menu");
         }
         treePreviewContextMenu.show(structuredContentHolder(), screenX, screenY);
@@ -3997,14 +4003,16 @@ public class EditorBuffer implements TabContent {
      * for a buffer whose preview isn't snapshot-based (Markdown/CSV/Mermaid/diagram export semantically /
      * via their CLI instead). FX thread only.
      */
-    public java.util.List<byte[]> snapshotPreviewChunks() {
+    public java.util.List<byte[]> snapshotPreviewChunks(String lightUaStylesheet) {
         if (isStructured()) {
             StructuredParser.Parsed p = StructuredParser.parse(area.getText(), structuredFormat());
-            return p.ok() ? snapshotRows(StructuredTree.printableRows(p.root()), "structured-tree") : null;
+            return p.ok()
+                    ? snapshotRows(StructuredTree.printableRows(p.root()), "structured-tree", lightUaStylesheet)
+                    : null;
         }
         if (isXml()) {
             XmlParser.Parsed p = XmlParser.parse(area.getText());
-            return p.ok() ? snapshotRows(XmlTree.printableRows(p.root()), "xml-tree") : null;
+            return p.ok() ? snapshotRows(XmlTree.printableRows(p.root()), "xml-tree", lightUaStylesheet) : null;
         }
         if (isMarkwhen()) {
             com.editora.markwhen.Timeline model = com.editora.markwhen.MarkwhenParser.parse(area.getText());
@@ -4013,14 +4021,14 @@ public class EditorBuffer implements TabContent {
                     : MarkwhenTimeline.build(model, 1.0, EXPORT_TIMELINE_WIDTH);
             javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(timeline);
             box.getStyleClass().add("markdown-preview");
-            byte[] png = snapshotNodePng(box);
+            byte[] png = snapshotNodePng(box, lightUaStylesheet);
             return png == null ? null : java.util.List.of(png);
         }
         return null;
     }
 
     /** Snapshots a flat, indented row list in bounded chunks (one image each) styled as {@code treeClass}. */
-    private java.util.List<byte[]> snapshotRows(java.util.List<Node> rows, String treeClass) {
+    private java.util.List<byte[]> snapshotRows(java.util.List<Node> rows, String treeClass, String lightUa) {
         int total = Math.min(rows.size(), MAX_PRINT_ROWS);
         java.util.List<byte[]> out = new java.util.ArrayList<>();
         for (int i = 0; i < total; i += ROWS_PER_CHUNK) {
@@ -4029,7 +4037,7 @@ public class EditorBuffer implements TabContent {
             chunk.setFillWidth(false);
             chunk.setPadding(new javafx.geometry.Insets(6));
             chunk.getChildren().addAll(rows.subList(i, Math.min(i + ROWS_PER_CHUNK, total)));
-            byte[] png = snapshotNodePng(chunk);
+            byte[] png = snapshotNodePng(chunk, lightUa);
             if (png != null) {
                 out.add(png);
             }
@@ -4038,20 +4046,27 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Lays a node out off-screen (a throwaway {@link javafx.scene.Scene} carrying this buffer's stylesheets so
-     * the theme/token CSS resolves) at its preferred size and snapshots it to PNG bytes. Returns {@code null}
+     * Lays a node out off-screen (a throwaway {@link javafx.scene.Scene} carrying this buffer's app/syntax
+     * stylesheets so the token CSS resolves) at its preferred size and snapshots it to PNG bytes. The scene's
+     * user-agent stylesheet is forced to {@code lightUaStylesheet} (Primer Light) when given, so the
+     * {@code -color-*}-based tree/timeline colors resolve to an ink-friendly light palette regardless of the
+     * app theme (a snapshot PDF/print is always light, like the native-vector exporters). Returns {@code null}
      * on a zero-size result / render failure.
      */
-    private byte[] snapshotNodePng(Node node) {
+    private byte[] snapshotNodePng(Node node, String lightUaStylesheet) {
         try {
             javafx.scene.Group holder = new javafx.scene.Group(node);
             javafx.scene.Scene sc = new javafx.scene.Scene(holder);
             javafx.scene.Scene live = getNode().getScene();
             if (live != null) {
                 sc.getStylesheets().setAll(live.getStylesheets());
-                if (live.getUserAgentStylesheet() != null) {
-                    sc.setUserAgentStylesheet(live.getUserAgentStylesheet());
-                }
+            }
+            // Force a light user-agent theme for the export (else the scene inherits the app's global UA,
+            // dark or light). A null falls back to the inherited/global UA (e.g. in a headless test).
+            if (lightUaStylesheet != null) {
+                sc.setUserAgentStylesheet(lightUaStylesheet);
+            } else if (live != null && live.getUserAgentStylesheet() != null) {
+                sc.setUserAgentStylesheet(live.getUserAgentStylesheet());
             }
             holder.applyCss();
             holder.layout();

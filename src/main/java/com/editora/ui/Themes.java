@@ -117,6 +117,12 @@ public final class Themes {
         };
     }
 
+    /** The Primer Light user-agent stylesheet URL — used to force a light render for preview → PDF/print
+     *  snapshots (so a dark-theme user still gets a light, ink-friendly export). */
+    public static String lightUserAgentStylesheet() {
+        return new PrimerLight().getUserAgentStylesheet();
+    }
+
     /** Normalized display name (returns {@link #DEFAULT} for unrecognized input, incl. a since-removed user theme). */
     public static String normalize(String name) {
         return name != null

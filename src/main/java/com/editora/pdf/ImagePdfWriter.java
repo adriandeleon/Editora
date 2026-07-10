@@ -33,14 +33,14 @@ public final class ImagePdfWriter {
      * the image to the width (never upscaling beyond 1 pt/px), how many source pixel rows fit on one page at
      * that scale, and the drawn width. Unit-tested.
      */
-    static double fitScale(int imgWidth, float availW) {
+    public static double fitScale(int imgWidth, double availW) {
         if (imgWidth <= 0) {
             return 1.0;
         }
         return Math.min(availW / (double) imgWidth, 1.0);
     }
 
-    static int rowsPerPage(float availH, double scale) {
+    public static int rowsPerPage(double availH, double scale) {
         return Math.max(1, (int) Math.floor(availH / scale));
     }
 

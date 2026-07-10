@@ -18,10 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     **whole** tree (rendered in bounded row-chunks so a large document can't build a giant image) and lays
     it across pages;
   - **Markwhen** timelines gained Export to PDF (a snapshot of the timeline/calendar), no longer disabled.
-  New `pdf/ImagePdfWriter` (scale-to-width + slice-tall-across-pages) + `PdfExportService.exportImages`, with
-  `EditorBuffer.snapshotPreviewChunks()` doing the off-screen render/snapshot. No new dependency (PDFBox was
-  already bundled). *Note: a tree/timeline/SVG PDF is a raster snapshot in the current theme; Markdown/CSV
-  stay native-vector.*
+
+  Every preview also gained a matching **Print** (right-click) — the snapshot previews (SVG, Markwhen, the
+  trees) and DOT/PlantUML paginate their rendered image across pages, mirroring the PDF path (previously
+  only Markdown/CSV/Mermaid could print; the rest silently printed the source through the Markdown
+  renderer). And a snapshot export/print is now **forced to a light theme** (Primer Light) regardless of
+  the app theme, so a dark-theme user still gets an ink-friendly page. New `pdf/ImagePdfWriter`
+  (scale-to-width + slice-tall-across-pages, shared with `print/PrintService.prepareImages`) +
+  `PdfExportService.exportImages`, with `EditorBuffer.snapshotPreviewChunks(lightUa)` doing the off-screen
+  render/snapshot. No new dependency (PDFBox was already bundled). *Note: a tree/timeline/SVG/diagram PDF or
+  print is a light raster snapshot; Markdown/CSV stay native-vector.*
 
 - **Portable Linux install tarball** (`Editora-<version>-linux-<arch>.tar.gz`, x64 + arm64). A new release
   artifact for systems without `.deb`/`.rpm`: it bundles the same self-contained, AOT-trained app image the

@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * End-to-end (headless-FX) coverage of the "snapshot the preview → PDF" export for the image/tree previews
- * (JSON/YAML/TOML tree, XML tree, Markwhen timeline): each buffer's {@link EditorBuffer#snapshotPreviewChunks()}
+ * (JSON/YAML/TOML tree, XML tree, Markwhen timeline): each buffer's {@link EditorBuffer#snapshotPreviewChunks(String)}
  * produces real PNG images, which {@link ImagePdfWriter} turns into a valid multi-page PDF.
  */
 @Tag("fx")
@@ -40,7 +40,7 @@ class PreviewSnapshotPdfFxTest {
             b.setContent(text);
             b.setStructuredPreviewEnabled(true); // no-op for markwhen; enables the tree previews
             b.getNode();
-            return b.snapshotPreviewChunks();
+            return b.snapshotPreviewChunks(null); // null UA → inherit the harness theme (color isn't asserted)
         });
     }
 
@@ -69,6 +69,24 @@ class PreviewSnapshotPdfFxTest {
         try (PDDocument doc = Loader.loadPDF(out.toFile())) {
             assertTrue(doc.getNumberOfPages() >= 1, lang + " PDF should have pages");
         }
+    }
+
+    @Test
+    void forcedLightThemeSnapshotStillRenders() throws Exception {
+        // A valid Primer Light user-agent stylesheet URL + a snapshot that still produces pixels (the
+        // forced-light export path; colour correctness is visual and not asserted here).
+        String lightUa = Themes.lightUserAgentStylesheet();
+        assertNotNull(lightUa);
+        List<byte[]> chunks = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("json");
+            b.setContent("{\"a\":1,\"b\":\"two\"}");
+            b.setStructuredPreviewEnabled(true);
+            b.getNode();
+            return b.snapshotPreviewChunks(lightUa);
+        });
+        assertNotNull(chunks);
+        assertTrue(!chunks.isEmpty() && chunks.get(0).length > 0);
     }
 
     @Test
