@@ -22,4 +22,9 @@ public interface BuildActionsProvider {
     default List<String> toggleArgs(Set<String> activeToggleIds) {
         return List.of();
     }
+
+    /** Merges tasks discovered on demand (Gradle's "Load all tasks…", which enumerates {@code gradle tasks}
+     *  on a short-lived process) into a provider whose task list can't be fully parsed up front. No-op for the
+     *  statically-parsed tools. */
+    default void addLoadedTasks(List<String> tasks) {}
 }

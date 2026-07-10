@@ -73,7 +73,7 @@ class ChromeTest {
                 false,
                 false,
                 false,
-                Set.of("maven", "npm"),
+                Set.of("maven", "npm", "cargo", "go", "gradle"),
                 false,
                 false,
                 false,
@@ -123,6 +123,9 @@ class ChromeTest {
         assertFalse(Chrome.paletteVisible("externalTool.run.jq", off));
         assertFalse(Chrome.paletteVisible("plugins.browse", off));
         assertFalse(Chrome.paletteVisible("maven.showActions", off));
+        assertFalse(Chrome.paletteVisible("cargo.showActions", off));
+        assertFalse(Chrome.paletteVisible("go.runCustom", off));
+        assertFalse(Chrome.paletteVisible("tool.gradle", off));
         // exact tool-window ids
         assertFalse(Chrome.paletteVisible("tool.commit", off));
         assertFalse(Chrome.paletteVisible("tool.gitLog", off));
