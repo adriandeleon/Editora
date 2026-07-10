@@ -3713,13 +3713,18 @@ public class EditorBuffer implements TabContent {
             String src = area.getText();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
-                StructuredParser.Parsed parsed = StructuredParser.parse(src, sfmt);
-                Platform.runLater(() -> {
-                    if (gen != previewGen) {
-                        return;
-                    }
-                    renderStructured(parsed);
-                });
+                try {
+                    StructuredParser.Parsed parsed = StructuredParser.parse(src, sfmt);
+                    Platform.runLater(() -> {
+                        if (gen == previewGen) {
+                            renderStructured(parsed);
+                        }
+                    });
+                } catch (Throwable t) {
+                    // submit() would swallow a Throwable (e.g. a NoClassDefFoundError while loading a Jackson
+                    // format factory on this pool thread) into its Future — a silent blank preview. Surface it.
+                    surfaceTreePreviewError(gen, t);
+                }
             });
             return;
         }
@@ -3729,13 +3734,16 @@ public class EditorBuffer implements TabContent {
             String src = area.getText();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
-                XmlParser.Parsed parsed = XmlParser.parse(src);
-                Platform.runLater(() -> {
-                    if (gen != previewGen) {
-                        return;
-                    }
-                    renderXml(parsed);
-                });
+                try {
+                    XmlParser.Parsed parsed = XmlParser.parse(src);
+                    Platform.runLater(() -> {
+                        if (gen == previewGen) {
+                            renderXml(parsed);
+                        }
+                    });
+                } catch (Throwable t) {
+                    surfaceTreePreviewError(gen, t);
+                }
             });
             return;
         }
@@ -3925,6 +3933,27 @@ public class EditorBuffer implements TabContent {
             node = XmlTree.build(parsed.root());
         }
         structuredContentHolder().getChildren().setAll(node);
+    }
+
+    /**
+     * Surfaces a Throwable from a {@code PREVIEW_POOL.submit(...)} tree-preview task (structured/XML) that the
+     * task's {@code Future} would otherwise swallow into a silent blank — the {@code exec.submit}
+     * Error-swallowing trap the project conventions warn about — as a logged warning + a visible error label
+     * in the shared holder, so a failed render is diagnosable rather than a blank pane.
+     */
+    private void surfaceTreePreviewError(long gen, Throwable t) {
+        java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
+                .log(java.util.logging.Level.WARNING, "tree preview render failed", t);
+        String msg = t.getMessage() != null ? t.getMessage() : t.toString();
+        Platform.runLater(() -> {
+            if (gen != previewGen) {
+                return;
+            }
+            Label err = new Label(msg);
+            err.getStyleClass().add("structured-error");
+            err.setWrapText(true);
+            structuredContentHolder().getChildren().setAll(err);
+        });
     }
 
     /** The self-scrolling structured preview node holder — used directly as the Split preview side. */

@@ -85,6 +85,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   were retired; the Settings → Editor → CSV toggle and the `view.toggleCsvGrid` palette command now gate
   the in-editor preview.
 
+### Fixed
+
+- **Structured / XML tree preview no longer blanks silently on a render error.** The off-thread
+  `PREVIEW_POOL.submit(...)` tasks that parse a JSON/YAML/TOML/XML buffer now catch `Throwable` (not just
+  the parser's `Exception`), so an `Error` such as a `NoClassDefFoundError`/`LinkageError` while loading a
+  Jackson format factory on the pool thread is surfaced as a visible error label in the preview + a
+  `WARNING` in the Debug Log, instead of being swallowed into the task's `Future` and leaving a blank pane.
+  Aligns these two branches with the project's "catch `Throwable` in `exec.submit` tasks" convention.
+
 ## [0.9.2] - 2026-07-08
 
 ### Added
