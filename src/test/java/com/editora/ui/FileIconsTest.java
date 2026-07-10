@@ -28,6 +28,7 @@ class FileIconsTest {
         assertEquals("json", FileIcons.iconKeyFor("package.json"));
         assertEquals("shell", FileIcons.iconKeyFor("build.sh"));
         assertEquals("mermaid", FileIcons.iconKeyFor("diagram.mmd"));
+        assertEquals("markdown", FileIcons.iconKeyFor("report.typ")); // typst -> document glyph
         assertEquals("terraform", FileIcons.iconKeyFor("main.tf"));
     }
 

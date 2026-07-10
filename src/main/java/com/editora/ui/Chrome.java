@@ -84,6 +84,7 @@ final class Chrome {
             boolean notes,
             boolean mermaid,
             boolean diagram,
+            boolean typst,
             boolean maven,
             boolean lsp,
             boolean http,
@@ -113,6 +114,9 @@ final class Chrome {
             return false;
         }
         if (!g.diagram() && id.startsWith("diagram.")) {
+            return false;
+        }
+        if (!g.typst() && id.startsWith("typst.")) {
             return false;
         }
         if (!g.maven() && (id.startsWith("maven.") || id.equals("tool.maven"))) {

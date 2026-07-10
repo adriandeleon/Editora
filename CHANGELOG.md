@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Typst document preview.** Standalone `.typ` files get the same 3-mode preview (Editor / Split /
+  Preview) as Markdown, rendered off-thread via the external **`typst`** CLI as a **multi-page** stack —
+  one image per page. Editing updates in place with no flicker (the last good render stays visible while
+  the new one runs; a compile error keeps it visible under a small banner). The document is compiled with
+  `--root` set to the file's folder, so relative `#image`/`#import` references resolve. Export to **PDF**
+  (native single file) / **PNG** / **SVG** (`typst.export`), and print paginates the pages. Syntax
+  highlighting via a bundled `source.typst` grammar; `//` + `/* */` comments and brace folding. **On by
+  default** — self-gating on detection, inert until `typst` is found (install via your package manager,
+  e.g. `brew install typst` or `cargo install typst-cli`). Toggle (`view.toggleTypstSupport`) + command
+  path under *Settings → Languages & Tools → Typst*.
+  - **Editing ergonomics on par with Markdown:** pressing **Enter** in a Typst list continues the marker
+    (`-`/`+`/`N.`) on the next line and ends the list on an empty item (Backspace clears an empty marker);
+    selecting text pops the same floating **format bar** (Bold `*`, Emphasis `_`, Raw `` ` ``, Link, Bullet
+    + a heading dropdown), with matching right-click **Format** items and palette commands (`typst.bold`,
+    `typst.emph`, `typst.raw`, `typst.link`, `typst.bulletList`, `typst.headingPromote`/`headingDemote`).
+    Headings use `=`/`==`, links insert `#link("url")[…]` — the pure `com.editora.typst.TypstMarkup` core
+    (unit-tested) supplies the Typst-specific pieces; the generic inline-wrap and bullet toggle are shared
+    with Markdown.
+  - **Multi-file projects resolve.** The preview compiles with `--root` set to the nearest `typst.toml`
+    ancestor (or the active project root when the file is inside it), so a document deep in a project can
+    `#import`/`#image` files above its own folder; relative refs still resolve because the throwaway input
+    is written in the file's own directory. The preview also caps at 40 stacked pages (a "… more pages"
+    note; export/print use every page), and remote/SFTP `.typ` files fall back to an isolated root so a
+    self-contained one still renders.
+
 - **Every preview can now export to PDF from its right-click menu.** Previously only Markdown, CSV, and the
   Mermaid diagram had a working preview → PDF; the newer previews either had no context menu or silently
   exported garbage (their content was run through the Markdown renderer). Now:

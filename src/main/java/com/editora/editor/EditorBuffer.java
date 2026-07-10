@@ -64,6 +64,7 @@ import com.editora.snippet.SnippetSession;
 import com.editora.snippet.VariableResolver;
 import com.editora.structured.StructuredParser;
 import com.editora.structured.XmlParser;
+import com.editora.typst.TypstMarkup;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
@@ -203,6 +204,11 @@ public class EditorBuffer implements TabContent {
     private boolean structuredPreviewEnabled;
     /** SVG image preview for .svg files: on when the feature is enabled (pushed from settings). */
     private boolean svgPreviewEnabled;
+    /** Typst document preview for .typ files: on when the feature is enabled (pushed from settings). */
+    private boolean typstPreviewEnabled;
+    /** Resolves the typst {@code --root} for a saved .typ file (project root for a multi-file doc); injected
+     *  from MainController since the editor package can't reach project state. Null ⇒ use the file's folder. */
+    private java.util.function.UnaryOperator<java.nio.file.Path> typstRootResolver;
     /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
     private StackPane structuredContentHolder;
     /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
@@ -908,7 +914,7 @@ public class EditorBuffer implements TabContent {
         formatBarUpdatePending = false;
         CodeArea a = focusedArea != null ? focusedArea : area;
         boolean show = formatBarEnabled
-                && isMarkdown()
+                && (isMarkdown() || isTypst())
                 && isEditable()
                 && !hugeFile
                 && markdownViewMode != MarkdownViewMode.PREVIEW
@@ -1053,6 +1059,14 @@ public class EditorBuffer implements TabContent {
         return isMarkdown() && isEditable();
     }
 
+    /** True when this buffer supports the shared markup-formatting actions — Markdown <em>or</em> Typst,
+     *  editable. The inline wrap ({@code *}/{@code _}/{@code `}), bullet toggle, heading, and link work for
+     *  both (the heading/link cores dispatch on {@link #isTypst()}); Markdown-only actions (strikethrough,
+     *  task list, tables, TOC) keep the narrower {@link #canFormatMarkdown()} gate. */
+    public boolean canFormatMarkup() {
+        return (isMarkdown() || isTypst()) && isEditable();
+    }
+
     private void applyMarkdownEdit(MarkdownEdit edit) {
         if (edit == null) {
             return;
@@ -1098,7 +1112,7 @@ public class EditorBuffer implements TabContent {
 
     /** Toggles an inline marker ({@code **}/{@code *}/{@code ~~}/{@code `}) around the selection. */
     public void formatInline(String marker) {
-        if (!canFormatMarkdown()) {
+        if (!canFormatMarkup()) {
             return;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -1106,14 +1120,18 @@ public class EditorBuffer implements TabContent {
         applyMarkdownEdit(MarkdownInline.toggle(a.getText(), sel.getStart(), sel.getEnd(), marker));
     }
 
-    /** Wraps the selection as a link with {@code url} (blank ⇒ caret left in the empty {@code ()}). */
+    /** Wraps the selection as a link with {@code url} — Markdown {@code [sel](url)} or Typst
+     *  {@code #link("url")[sel]}; a blank {@code url} leaves the caret in the empty destination slot. */
     public void formatLink(String url) {
-        if (!canFormatMarkdown()) {
+        if (!canFormatMarkup()) {
             return;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
         var sel = a.getSelection();
-        applyMarkdownEdit(MarkdownInline.link(a.getText(), sel.getStart(), sel.getEnd(), url));
+        applyMarkdownEdit(
+                isTypst()
+                        ? TypstMarkup.link(a.getText(), sel.getStart(), sel.getEnd(), url)
+                        : MarkdownInline.link(a.getText(), sel.getStart(), sel.getEnd(), url));
     }
 
     /** Link button / make-link command: use a clipboard URL when present, else an empty link. */
@@ -1149,29 +1167,37 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    /** Promote ({@code delta<0}) / demote ({@code delta>0}) the heading level of the selected line(s). */
+    /** Promote ({@code delta<0}) / demote ({@code delta>0}) the heading level of the selected line(s)
+     *  ({@code #} for Markdown, {@code =} for Typst). */
     public void formatHeading(int delta) {
-        if (!canFormatMarkdown()) {
+        if (!canFormatMarkup()) {
             return;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
         var sel = a.getSelection();
-        applyMarkdownEdit(MarkdownHeading.apply(a.getText(), sel.getStart(), sel.getEnd(), delta));
+        applyMarkdownEdit(
+                isTypst()
+                        ? TypstMarkup.heading(a.getText(), sel.getStart(), sel.getEnd(), delta)
+                        : MarkdownHeading.apply(a.getText(), sel.getStart(), sel.getEnd(), delta));
     }
 
-    /** Sets the selected line(s) to an absolute heading level (0 = Normal). */
+    /** Sets the selected line(s) to an absolute heading level (0 = Normal; {@code #} for Markdown,
+     *  {@code =} for Typst). */
     public void setHeadingLevel(int level) {
-        if (!canFormatMarkdown()) {
+        if (!canFormatMarkup()) {
             return;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
         var sel = a.getSelection();
-        applyMarkdownEdit(MarkdownHeading.setLevel(a.getText(), sel.getStart(), sel.getEnd(), level));
+        applyMarkdownEdit(
+                isTypst()
+                        ? TypstMarkup.setHeadingLevel(a.getText(), sel.getStart(), sel.getEnd(), level)
+                        : MarkdownHeading.setLevel(a.getText(), sel.getStart(), sel.getEnd(), level));
     }
 
-    /** Toggles a {@code "- "} bullet on the selected line(s). */
+    /** Toggles a {@code "- "} bullet on the selected line(s) (valid in both Markdown and Typst). */
     public void formatBulletList() {
-        if (!canFormatMarkdown()) {
+        if (!canFormatMarkup()) {
             return;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -1553,6 +1579,9 @@ public class EditorBuffer implements TabContent {
             if (canFormatMarkdown()) {
                 items.addAll(markdownMenuItems());
                 items.add(new SeparatorMenuItem());
+            } else if (isTypst() && isEditable()) {
+                items.addAll(typstMenuItems());
+                items.add(new SeparatorMenuItem());
             }
             if (supportsComments()) {
                 MenuItem comment = new MenuItem(tr("editmenu.toggleComment"));
@@ -1658,6 +1687,27 @@ public class EditorBuffer implements TabContent {
         toc.setGraphic(MenuIcons.bulletList());
         toc.setOnAction(e -> insertOrUpdateToc());
         return List.of(bold, italic, strike, code, link, tableMenu(), toc);
+    }
+
+    /** Typst inline-format actions for the right-click menu (Typst buffers only). Typst has no native
+     *  strikethrough/task/pipe-table, so the set is bold/emphasis/raw/link/bullet. */
+    private List<MenuItem> typstMenuItems() {
+        MenuItem bold = new MenuItem(tr("command.typst.bold"));
+        bold.setGraphic(MenuIcons.bold());
+        bold.setOnAction(e -> formatInline("*"));
+        MenuItem emph = new MenuItem(tr("command.typst.emph"));
+        emph.setGraphic(MenuIcons.italic());
+        emph.setOnAction(e -> formatInline("_"));
+        MenuItem raw = new MenuItem(tr("command.typst.raw"));
+        raw.setGraphic(MenuIcons.code());
+        raw.setOnAction(e -> formatInline("`"));
+        MenuItem link = new MenuItem(tr("command.typst.link"));
+        link.setGraphic(MenuIcons.link());
+        link.setOnAction(e -> formatLinkFromClipboard());
+        MenuItem bullet = new MenuItem(tr("command.typst.bulletList"));
+        bullet.setGraphic(MenuIcons.bulletList());
+        bullet.setOnAction(e -> formatBulletList());
+        return List.of(bold, emph, raw, link, bullet);
     }
 
     /** The "Table" submenu: insert + add/delete row & column + column alignment. */
@@ -2096,7 +2146,8 @@ public class EditorBuffer implements TabContent {
                 || hasCsvPreview()
                 || hasStructuredPreview()
                 || hasXmlPreview()
-                || hasSvgPreview();
+                || hasSvgPreview()
+                || hasTypstPreview();
     }
 
     /** A CSV buffer whose grid preview node has been injected (i.e. the CSV preview feature is on). The
@@ -2126,6 +2177,33 @@ public class EditorBuffer implements TabContent {
         if (!enabled && isSvg() && markdownViewMode != MarkdownViewMode.EDITOR) {
             setMarkdownViewMode(MarkdownViewMode.EDITOR);
         }
+    }
+
+    /** A Typst document buffer (.typ). The whole buffer renders to a multi-page image preview via the typst
+     *  CLI (see {@link TypstImages}). */
+    public boolean isTypst() {
+        return "typst".equals(language);
+    }
+
+    /** Whether the Typst document preview should be offered (feature on + a .typ buffer + not a huge file). */
+    public boolean hasTypstPreview() {
+        return typstPreviewEnabled && isTypst() && !hugeFile;
+    }
+
+    /** Pushes the Typst-preview feature gate (from Settings); drops back to source when turned off. */
+    public void setTypstPreviewEnabled(boolean enabled) {
+        if (this.typstPreviewEnabled == enabled) {
+            return;
+        }
+        this.typstPreviewEnabled = enabled;
+        if (!enabled && isTypst() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR);
+        }
+    }
+
+    /** Injects the typst {@code --root} resolver (file path → root dir); see {@link #typstRootResolver}. */
+    public void setTypstRootResolver(java.util.function.UnaryOperator<java.nio.file.Path> resolver) {
+        this.typstRootResolver = resolver;
     }
 
     /** A structured-data buffer (JSON/YAML/TOML) whose format the {@link StructuredParser} recognizes. */
@@ -3801,6 +3879,30 @@ public class EditorBuffer implements TabContent {
             Platform.runLater(() -> previewPane().setVvalue(v));
             return;
         }
+        if (hasTypstPreview()) {
+            // Whole file is one Typst document rendered to stacked page images via the typst CLI — the same
+            // async-image model as Mermaid/diagrams, but multi-page. Zoom scales the fit width; the
+            // content-hash cache + retain-last-image (in TypstImages) make live editing update in place
+            // without flicker.
+            double v = previewPane().getVvalue();
+            double scale = previewFontScale;
+            // The throwaway input is written in the file's own folder so relative #image/#import resolve as
+            // on disk; --root is that folder or a higher project root (via the injected resolver) so a
+            // multi-file project's up-references resolve too. Local saved files only — a remote (SFTP) path
+            // can't be a working dir for the local typst process, so both fall back to an isolated temp root.
+            boolean local = path != null && path.getFileSystem() == java.nio.file.FileSystems.getDefault();
+            java.nio.file.Path fileDir = local ? path.getParent() : null;
+            java.nio.file.Path root = local && typstRootResolver != null ? typstRootResolver.apply(path) : fileDir;
+            String retainKey = path != null ? path.toString() : ("untitled@" + System.identityHashCode(this));
+            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
+                    TypstImages.node(area.getText(), lw -> lw * scale, retainKey, fileDir, root));
+            box.getStyleClass().add("markdown-preview");
+            StackPane wrap = new StackPane(box);
+            wrap.getStyleClass().add("markdown-preview-wrap");
+            previewPane().setContent(wrap);
+            Platform.runLater(() -> previewPane().setVvalue(v));
+            return;
+        }
         if (isMarkwhen()) {
             // Whole file is one timeline. Parse off-thread (pure, cheap), build the node on the FX thread.
             // Horizontal zoom scales the axis width; preserve both scroll positions (the axis scrolls
@@ -4222,8 +4324,8 @@ public class EditorBuffer implements TabContent {
         if (previewPane == null || previewPane.getContent() == null) {
             return;
         }
-        if (isDiagram() || isRenderedDiagram() || hasSvgPreview()) {
-            scheduleRenderPreview(); // re-fit the diagram/SVG image to the new zoom (cache hit — cheap)
+        if (isDiagram() || isRenderedDiagram() || hasSvgPreview() || hasTypstPreview()) {
+            scheduleRenderPreview(); // re-fit the diagram/SVG/Typst image to the new zoom (cache hit — cheap)
             return;
         }
         if (isMarkwhen()) {
@@ -5896,7 +5998,9 @@ public class EditorBuffer implements TabContent {
             String line = a.getParagraph(par).getText();
             // Markdown: Backspace at the end of an empty list/quote item ("- ", "1. ", "> ", "- [ ] ")
             // clears the whole marker → a blank line (the SDD "smart backspace" helper).
-            int marker = isMarkdown() ? MarkdownLines.emptyMarkerDeleteLength(line, col) : 0;
+            int marker = isTypst()
+                    ? TypstMarkup.emptyMarkerDeleteLength(line, col)
+                    : (isMarkdown() ? MarkdownLines.emptyMarkerDeleteLength(line, col) : 0);
             if (marker > 0) {
                 a.deleteText(caret - marker, caret);
                 e.consume();
@@ -5935,10 +6039,8 @@ public class EditorBuffer implements TabContent {
             a.replaceSelection("");
         }
         int caret = a.getCaretPosition();
-        // Markdown list/blockquote continuation: continue the marker on the next line, or end the
-        // list when Enter is pressed on an empty item.
+        // Markdown-only: Enter on a table's last row appends a new row.
         if (isMarkdown()) {
-            // In a table: Enter on the last row appends a new row (else fall through to a normal newline).
             int[] tb = MarkdownTable.blockBounds(a.getText(), caret);
             if (tb != null) {
                 MarkdownTable.Nav nav = MarkdownTable.enter(a.getText().substring(tb[0], tb[1]), caret - tb[0]);
@@ -5950,17 +6052,22 @@ public class EditorBuffer implements TabContent {
                     return;
                 }
             }
+        }
+        // List continuation (Markdown + Typst): continue the marker on the next line, or end the list when
+        // Enter is pressed on an empty item. Typst uses its own markers (-, +, N. — never *, which is bold).
+        if (isMarkdown() || isTypst()) {
             int par = a.getCurrentParagraph();
             int lineStart = a.getAbsolutePosition(par, 0);
             String line = a.getParagraph(par).getText();
-            int markerLen = MarkdownLines.markerLength(line);
+            int markerLen = isTypst() ? TypstMarkup.markerLength(line) : MarkdownLines.markerLength(line);
             if (markerLen > 0 && caret - lineStart >= markerLen) {
-                if (MarkdownLines.isEmptyItem(line)) {
+                boolean empty = isTypst() ? TypstMarkup.isEmptyItem(line) : MarkdownLines.isEmptyItem(line);
+                if (empty) {
                     a.replaceText(lineStart, lineStart + line.length(), ""); // exit list (clear marker)
                     a.requestFollowCaret();
                     return;
                 }
-                String cont = MarkdownLines.continuation(line);
+                String cont = isTypst() ? TypstMarkup.continuation(line) : MarkdownLines.continuation(line);
                 if (cont != null) {
                     a.replaceText(caret, caret, "\n" + cont);
                     a.moveTo(caret + 1 + cont.length());

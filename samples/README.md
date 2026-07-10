@@ -66,6 +66,35 @@ Editor/Split/Preview toggle that renders the timeline). There is deliberately no
 - `samples/diagrams/graph.dot` — a Graphviz digraph; the 3-mode preview renders it (needs the `dot` CLI).
 - `samples/diagrams/sequence.puml` — a PlantUML sequence diagram; preview renders it (needs `plantuml`).
 
+## typst/ — Typst document preview (multi-page)
+
+All need the `typst` CLI; the 3-mode preview renders one image per page, stacked. Export to PDF is native
+single-file; print paginates the pages. Every sample is **package-free** (no `@preview` imports), so it
+compiles offline. They cover Typst's common document types:
+
+- `samples/typst/report.typ` — a general two-page document (prose, headings, a list, inline + block math,
+  a small table) — good for the list-continuation and format-bar editing too.
+- `samples/typst/math.typ` — **mathematics**: inline + display equations, matrices, systems, calculus, symbols.
+- `samples/typst/tables.typ` — **tables**: a styled header/footer table + a zebra-striped one (`#table`).
+- `samples/typst/code.typ` — **code**: syntax-highlighted fenced blocks (Rust/Python/Typst) + inline raw.
+- `samples/typst/bibliography.typ` — **bibliographies**: `@cite` references + an auto-generated list from
+  `samples/typst/refs.bib` (resolves because the preview compiles with `--root` = the file's folder).
+- `samples/typst/slides.typ` — **slides**: a native 16:9 multi-page deck (colored pages, big text) — one
+  `#pagebreak()` per slide, so the preview shows several stacked page images.
+- `samples/typst/shapes.typ` — **visualizations**: native drawing primitives (rect/circle/polygon/curve) +
+  a hand-drawn bar chart (rich charts/diagrams use packages like cetz, kept out to stay package-free).
+
+### packages/ — samples that use `@preview` packages (need a one-time network fetch)
+
+These exercise Typst's package system: on first render `typst` downloads the package from the registry and
+caches it under `~/Library/Caches/typst/` (offline afterward). Offline + not-yet-cached → the preview shows
+the download error. Package versions are pinned to ones that compile with typst 0.15.
+
+- `samples/typst/packages/fletcher-diagram.typ` — an arrow/node diagram (`@preview/fletcher`).
+- `samples/typst/packages/cetz-drawing.typ` — a hand-drawn tree diagram on a canvas (`@preview/cetz`).
+- `samples/typst/packages/lilaq-chart.typ` — a plotted sine/cosine chart (`@preview/lilaq`).
+- `samples/typst/packages/polylux-slides.typ` — a 3-slide deck (`@preview/polylux`); the preview stacks 3 pages.
+
 ## structured/ — JSON/YAML/TOML/XML tree + OpenAPI docs preview
 
 - `samples/structured/config.json` — the 3-mode preview renders a collapsible, type-colored tree.

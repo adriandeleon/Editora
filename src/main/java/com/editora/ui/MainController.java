@@ -522,6 +522,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 git.service(),
                 mermaid.service(),
                 diagram.service(),
+                typst.service(),
                 maven,
                 lspManager,
                 dapManager,
@@ -623,6 +624,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         notesCoordinator.applySupport(); // hide Personal Notes UI when disabled (default)
         mermaid.applySupport(); // wire mmdc/maid paths; mermaid rendering off when disabled (default)
         diagram.applySupport(); // wire dot/plantuml paths; DOT/PlantUML preview off when disabled
+        typst.applySupport(); // wire typst path; Typst document preview off when disabled
         searchCoordinator
                 .applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
         applyMathSupport(); // LaTeX math rendering (off by default)
@@ -734,6 +736,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 s.isNotesSupport(),
                 s.isMermaidSupport(),
                 diagram.isEnabled(),
+                typst.isEnabled(),
                 maven.isEnabled(),
                 lspEnabled(),
                 httpClient.isEnabled(),
@@ -1071,6 +1074,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         markdownLintService.shutdown();
         mermaid.shutdown();
         diagram.shutdown();
+        typst.shutdown();
         maven.shutdown();
         htmlPreview.shutdown(); // stop the HTML-preview HTTP server + worker
         logViewer.shutdown(); // stop any log tail-follow poll thread
@@ -2067,6 +2071,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 debugCoordinator.applySupport();
                 mermaid.applySupport();
                 diagram.applySupport();
+                typst.applySupport();
                 requestSave(); // persist a resolved command (e.g. the installed jdtls launcher path)
                 if (settingsWindow != null) {
                     settingsWindow.refreshDetectionStatus(); // flip the Settings Install buttons to "Installed"
@@ -2565,6 +2570,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The diagram-as-code feature (Graphviz DOT + PlantUML preview/export); see {@link DiagramCoordinator}. */
     private final DiagramCoordinator diagram = new DiagramCoordinator(coordinatorHost);
+
+    /** The Typst document feature (multi-page rendered preview + export); see {@link TypstCoordinator}. */
+    private final TypstCoordinator typst = new TypstCoordinator(coordinatorHost, this::resolveTypstRoot);
 
     // --- HTML Live Preview (serve via a loopback HttpServer + open in a detected browser) ---------
 
@@ -4733,6 +4741,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setPreviewExportDocxHandler(this::exportPreviewDocx); // preview → MS Word
         buffer.setPreviewExportOdtHandler(this::exportPreviewOdt); // preview → OpenDocument
         buffer.setPreviewExportJsonHandler(this::exportMarkwhenJson); // Markwhen preview → JSON
+        buffer.setTypstRootResolver(this::resolveTypstRoot); // typst --root: nearest typst.toml / project root
         buffer.setOnMarkwhenViewChanged(() -> persistMarkwhenView(buffer)); // persist timeline/calendar choice
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
@@ -8206,6 +8215,37 @@ public class MainController implements com.editora.mcp.McpBridge {
         withMarkdown(b -> b.formatInline(marker));
     }
 
+    /**
+     * The directory passed to {@code typst compile --root} for a local {@code .typ} file: the nearest
+     * {@code typst.toml} ancestor (typst's own project marker), else the active Editora project root when the
+     * file lives inside it, else the file's own folder. Lets a multi-file Typst project resolve
+     * {@code #import}/{@code #image} references above the file's folder; a single-file doc is unaffected.
+     * Injected into {@link EditorBuffer#setTypstRootResolver} (preview) and {@link TypstCoordinator}
+     * (export/print).
+     */
+    private java.nio.file.Path resolveTypstRoot(java.nio.file.Path file) {
+        if (file == null) {
+            return null;
+        }
+        java.nio.file.Path marker = com.editora.lsp.RootResolver.findMarkerRoot(file, java.util.List.of("typst.toml"));
+        if (marker != null) {
+            return marker;
+        }
+        Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
+        java.nio.file.Path projectRoot = active == null ? null : Path.of(active.root());
+        return com.editora.lsp.RootResolver.resolve(projectRoot, file, java.util.List.of());
+    }
+
+    /** Runs a Typst markup-format action on the active buffer, or reports it isn't a Typst buffer. */
+    private void withTypst(java.util.function.Consumer<EditorBuffer> action) {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isTypst() || !b.canFormatMarkup()) {
+            setStatus(tr("status.typst.notTypst"));
+            return;
+        }
+        action.accept(b);
+    }
+
     /** {@code markdown.openLink}: open the link under the caret externally. */
     private void markdownOpenLink() {
         EditorBuffer b = activeBuffer();
@@ -8955,6 +8995,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 return;
             }
             pdfService.exportImages(java.util.List.of(png), pageSize, f.toPath(), report);
+        } else if (b.isTypst()) { // Typst — native CLI render straight to a (multi-page) PDF
+            typst.exportToPath(
+                    b.getContent(),
+                    b.getPath(),
+                    f.toPath(),
+                    r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
         } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
             java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
             if (chunks == null || chunks.isEmpty()) {
@@ -9237,6 +9283,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 return;
             }
             printService.prepareImages(java.util.List.of(png), open);
+        } else if (b.isTypst()) { // Typst — CLI render to page PNGs, paginate as image pages
+            typst.renderPages(b.getContent(), b.getPath(), pages -> {
+                if (pages == null || pages.isEmpty()) {
+                    openPrintPreview(
+                            job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
+                    return;
+                }
+                printService.prepareImages(pages, open);
+            });
         } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
             java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
             if (chunks == null || chunks.isEmpty()) {
@@ -9339,6 +9394,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setStructuredPreviewEnabled(s.isStructuredPreview()); // JSON/YAML/TOML tree + OpenAPI docs preview
         buffer.setSvgPreviewEnabled(s.isSvgPreview()); // rendered image preview for .svg files
+        buffer.setTypstPreviewEnabled(s.isTypstSupport()); // multi-page rendered preview for .typ documents
         if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
             ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
@@ -9461,6 +9517,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         notesCoordinator.applySupport();
         mermaid.applySupport();
         diagram.applySupport();
+        typst.applySupport();
         searchCoordinator.applyRipgrepSupport();
         applyMathSupport();
         httpClient.applySupport();
@@ -10471,6 +10528,24 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().getPlantumlPath(),
                         v -> config.getSettings().setPlantumlPath(v),
                         diagram::applySupport)));
+        registry.register(Command.of("typst.export", typst::export));
+        registry.register(Command.of(
+                "view.toggleTypstSupport",
+                () -> toggleSetting(
+                        "view.toggleTypstSupport",
+                        () -> config.getSettings().isTypstSupport(),
+                        v -> config.getSettings().setTypstSupport(v),
+                        () -> {
+                            typst.applySupport();
+                            applyViewSettingsToAllBuffers(config.getSettings());
+                        })));
+        registry.register(Command.of(
+                "typst.setCommand",
+                () -> promptStringSetting(
+                        "typst.setCommand",
+                        () -> config.getSettings().getTypstPath(),
+                        v -> config.getSettings().setTypstPath(v),
+                        typst::applySupport)));
         registry.register(Command.of("htmlPreview.open", htmlPreview::open));
         registry.register(Command.of("htmlPreview.openIn", htmlPreview::openIn));
         registry.register(Command.of("view.toggleHtmlPreview", htmlPreview::toggle));
@@ -10721,6 +10796,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markdown.headingPromote", () -> withMarkdown(b -> b.formatHeading(-1))));
         registry.register(Command.of("markdown.headingDemote", () -> withMarkdown(b -> b.formatHeading(1))));
         registry.register(Command.of("markdown.openLink", this::markdownOpenLink));
+        // Typst markup formatting (mirrors the markdown.* set; Typst uses *bold*, _emph_, `raw`, = headings).
+        registry.register(Command.of("typst.bold", () -> withTypst(b -> b.formatInline("*"))));
+        registry.register(Command.of("typst.emph", () -> withTypst(b -> b.formatInline("_"))));
+        registry.register(Command.of("typst.raw", () -> withTypst(b -> b.formatInline("`"))));
+        registry.register(Command.of("typst.link", () -> withTypst(EditorBuffer::formatLinkFromClipboard)));
+        registry.register(Command.of("typst.bulletList", () -> withTypst(EditorBuffer::formatBulletList)));
+        registry.register(Command.of("typst.headingPromote", () -> withTypst(b -> b.formatHeading(-1))));
+        registry.register(Command.of("typst.headingDemote", () -> withTypst(b -> b.formatHeading(1))));
         registry.register(Command.of("markdown.reflowTable", this::markdownReflowTable));
         registry.register(Command.of("markdown.toc", this::markdownToc));
         registry.register(Command.of("markdown.tableFromCsv", this::markdownTableFromCsv));

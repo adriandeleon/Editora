@@ -106,6 +106,7 @@ public class SettingsWindow {
         MARKDOWN(tr("settings.cat.markdown"), Group.LANGUAGES_TOOLS),
         MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS),
         DIAGRAMS(tr("settings.cat.diagrams"), Group.LANGUAGES_TOOLS),
+        TYPST(tr("settings.cat.typst"), Group.LANGUAGES_TOOLS),
         MAVEN(tr("settings.cat.maven"), Group.LANGUAGES_TOOLS),
         WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, true),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
@@ -155,6 +156,7 @@ public class SettingsWindow {
     private final com.editora.git.GitService gitService;
     private final com.editora.mermaid.MermaidService mermaidService;
     private final com.editora.diagram.DiagramService diagramService;
+    private final com.editora.typst.TypstService typstService;
     private final MavenCoordinator maven;
     private final com.editora.lsp.LspManager lspManager;
     private final com.editora.dap.DapManager dapManager;
@@ -316,6 +318,9 @@ public class SettingsWindow {
     private CheckBox diagramCheck;
     private TextField dotPathField;
     private TextField plantumlPathField;
+    private CheckBox typstCheck;
+    private TextField typstPathField;
+    private Label typstStatusLabel;
     private Label diagramStatusLabel;
     private CheckBox mavenCheck;
     private TextField mavenCommandField;
@@ -425,6 +430,7 @@ public class SettingsWindow {
             com.editora.git.GitService gitService,
             com.editora.mermaid.MermaidService mermaidService,
             com.editora.diagram.DiagramService diagramService,
+            com.editora.typst.TypstService typstService,
             MavenCoordinator maven,
             com.editora.lsp.LspManager lspManager,
             com.editora.dap.DapManager dapManager,
@@ -438,6 +444,7 @@ public class SettingsWindow {
         this.gitService = gitService;
         this.mermaidService = mermaidService;
         this.diagramService = diagramService;
+        this.typstService = typstService;
         this.maven = maven;
         this.lspManager = lspManager;
         this.dapManager = dapManager;
@@ -1001,6 +1008,20 @@ public class SettingsWindow {
             refreshDiagramStatus();
         });
 
+        typstCheck = new CheckBox(tr("settings.enableTypst"));
+        typstCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setTypstSupport(now);
+            apply();
+            refreshTypstStatus();
+        });
+        typstPathField = new TextField();
+        typstPathField.setPromptText("typst");
+        typstPathField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setTypstPath(now);
+            apply();
+            refreshTypstStatus();
+        });
+
         mavenCheck = new CheckBox(tr("settings.enableMaven"));
         mavenCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setMavenSupport(now);
@@ -1346,6 +1367,7 @@ public class SettingsWindow {
         pages.put(Category.MARKDOWN, markdownPage());
         pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.DIAGRAMS, diagramsPage());
+        pages.put(Category.TYPST, typstPage());
         pages.put(Category.MAVEN, mavenPage());
         pages.put(Category.WEB, webPage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
@@ -2646,6 +2668,42 @@ public class SettingsWindow {
                     .getStyleClass()
                     .setAll("settings-git-status", dot && puml ? "settings-git-found" : "settings-git-missing");
             diagramStatusLabel.setText(tr("settings.diagram.status", dotState, pumlState));
+        });
+    }
+
+    /** LANGUAGES & TOOLS ▸ Typst: multi-page rendered document preview (the external typst CLI). */
+    private VBox typstPage() {
+        VBox p = page(tr("settings.cat.typst"));
+        typstStatusLabel = new Label(tr("settings.typst.checking"));
+        typstStatusLabel.getStyleClass().add("settings-git-status");
+        typstStatusLabel.setWrapText(true);
+        typstStatusLabel.setMaxWidth(440);
+        row(p, Category.TYPST, null, typstStatusLabel, "typst document found installed not found");
+        row(p, Category.TYPST, null, typstCheck, "typst document enable render preview typ pdf");
+        row(
+                p,
+                Category.TYPST,
+                null,
+                exePathRow(tr("settings.typst.path"), typstPathField),
+                "typst path executable render document");
+        Label hint = note(tr("settings.typst.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.TYPST, null, hint, "typst install cli document");
+        return p;
+    }
+
+    private void refreshTypstStatus() {
+        if (typstStatusLabel == null || typstService == null) {
+            return;
+        }
+        typstStatusLabel.getStyleClass().setAll("settings-git-status");
+        typstStatusLabel.setText(tr("settings.typst.checking"));
+        typstService.detect(present -> {
+            typstStatusLabel
+                    .getStyleClass()
+                    .setAll("settings-git-status", present ? "settings-git-found" : "settings-git-missing");
+            typstStatusLabel.setText(present ? tr("settings.typst.found") : tr("settings.typst.notFound"));
         });
     }
 
@@ -5384,6 +5442,9 @@ public class SettingsWindow {
             dotPathField.setText(settings.getDotPath());
             plantumlPathField.setText(settings.getPlantumlPath());
             refreshDiagramStatus();
+            typstCheck.setSelected(settings.isTypstSupport());
+            typstPathField.setText(settings.getTypstPath());
+            refreshTypstStatus();
             mavenCheck.setSelected(settings.isMavenSupport());
             mavenCommandField.setText(settings.getMavenCommand());
             refreshMavenStatus();

@@ -415,6 +415,7 @@ public final class FileIcons {
             case "terraform" -> "terraform";
             case "mermaid" -> "mermaid";
             case "markwhen" -> "table"; // a timeline reads as scheduled/tabular data
+            case "typst" -> "markdown"; // a typesetting document reads as a page/document
             case "sql" -> "storage";
             case "ini", "properties", "toml", "systemd", "desktop", "gitattributes" -> "settings";
             case "rust", "lua", "groovy", "http", "proto", "graphql", "diff" -> "code";
