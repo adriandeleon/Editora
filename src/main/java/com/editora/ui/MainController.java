@@ -8924,32 +8924,44 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.pdf.noPreview"));
             return;
         }
-        if (b.isMarkwhen()) {
-            setStatus(tr("status.export.markwhenUnsupported"));
-            return; // the timeline node isn't a Markdown document — export is a deferred follow-up
-        }
-        String base = bufferBaseName(b);
-        java.io.File f = choosePdfDestination(base);
+        java.io.File f = choosePdfDestination(bufferBaseName(b));
         if (f == null) {
             return;
         }
         setStatus(tr("status.pdf.exporting"));
-        if (b.isDiagram()) {
+        String pageSize = config.getSettings().getPdfPageSize();
+        java.util.function.Consumer<com.editora.pdf.PdfExportService.Result> report = r -> reportPdf(r, f);
+        if (b.isMarkdown()) {
+            java.nio.file.Path baseDir =
+                    b.getPath() == null ? null : b.getPath().getParent();
+            pdfService.exportMarkdown(
+                    b.getContent(), baseDir, pageSize, mermaid.mmdcCommandOrNull(), f.toPath(), report);
+        } else if (b.isDiagram()) { // Mermaid (.mmd) — CLI render to PDF
             mermaid.exportDiagram(
                     b.getContent(),
                     f.toPath(),
-                    r -> reportPdf(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message()), f));
-        } else {
-            java.nio.file.Path baseDir =
-                    b.getPath() == null ? null : b.getPath().getParent();
-            java.util.List<String> mmdc = mermaid.mmdcCommandOrNull();
-            pdfService.exportMarkdown(
+                    r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
+        } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to PDF
+            diagram.exportToPath(
+                    b.diagramKind(),
                     b.getContent(),
-                    baseDir,
-                    config.getSettings().getPdfPageSize(),
-                    mmdc,
                     f.toPath(),
-                    r -> reportPdf(r, f));
+                    r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
+        } else if (b.isSvg()) { // rasterize the SVG source and embed it as a PDF page
+            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
+                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            if (png == null) {
+                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
+                return;
+            }
+            pdfService.exportImages(java.util.List.of(png), pageSize, f.toPath(), report);
+        } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview
+            java.util.List<byte[]> chunks = b.snapshotPreviewChunks();
+            if (chunks == null || chunks.isEmpty()) {
+                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
+                return;
+            }
+            pdfService.exportImages(chunks, pageSize, f.toPath(), report);
         }
     }
 

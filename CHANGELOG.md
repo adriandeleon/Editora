@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every preview can now export to PDF from its right-click menu.** Previously only Markdown, CSV, and the
+  Mermaid diagram had a working preview → PDF; the newer previews either had no context menu or silently
+  exported garbage (their content was run through the Markdown renderer). Now:
+  - **SVG** rasterizes to a PDF page; **DOT/PlantUML** render via their CLI to PDF (both were misrouted to
+    Markdown before);
+  - **JSON/YAML/TOML** and **XML** tree previews gained a right-click **Export to PDF** that snapshots the
+    **whole** tree (rendered in bounded row-chunks so a large document can't build a giant image) and lays
+    it across pages;
+  - **Markwhen** timelines gained Export to PDF (a snapshot of the timeline/calendar), no longer disabled.
+  New `pdf/ImagePdfWriter` (scale-to-width + slice-tall-across-pages) + `PdfExportService.exportImages`, with
+  `EditorBuffer.snapshotPreviewChunks()` doing the off-screen render/snapshot. No new dependency (PDFBox was
+  already bundled). *Note: a tree/timeline/SVG PDF is a raster snapshot in the current theme; Markdown/CSV
+  stay native-vector.*
+
 - **Portable Linux install tarball** (`Editora-<version>-linux-<arch>.tar.gz`, x64 + arm64). A new release
   artifact for systems without `.deb`/`.rpm`: it bundles the same self-contained, AOT-trained app image the
   installers are built from (a jlink'd Java runtime + the native `bin/Editora` launcher — no system Java

@@ -33,6 +33,27 @@ public final class StructuredTree {
         return tree;
     }
 
+    /**
+     * A flat, fully-expanded, depth-indented list of every node's rendered row — the whole tree as
+     * standalone {@code TextFlow}s (not a virtualized {@code TreeView}), for snapshot-to-PDF export.
+     */
+    public static java.util.List<Node> printableRows(StructuredNode root) {
+        java.util.List<Node> rows = new java.util.ArrayList<>();
+        appendRows(root, 0, rows);
+        return rows;
+    }
+
+    private static void appendRows(StructuredNode n, int depth, java.util.List<Node> rows) {
+        TextFlow row = render(n);
+        if (depth > 0) {
+            row.getChildren().add(0, styled("  ".repeat(depth), "structured-punct")); // monospace indent
+        }
+        rows.add(row);
+        for (StructuredNode c : n.children()) {
+            appendRows(c, depth + 1, rows);
+        }
+    }
+
     private static TreeItem<StructuredNode> toItem(StructuredNode n) {
         TreeItem<StructuredNode> item = new TreeItem<>(n);
         for (StructuredNode c : n.children()) {

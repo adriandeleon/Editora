@@ -306,6 +306,7 @@ public class EditorBuffer implements TabContent {
     private Runnable previewExportJsonHandler = () -> {};
 
     private javafx.scene.control.ContextMenu previewContextMenu;
+    private javafx.scene.control.ContextMenu treePreviewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private SnippetSession snippetSession;
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
@@ -3469,7 +3470,10 @@ public class EditorBuffer implements TabContent {
                 MenuItem viewToggle = new MenuItem();
                 viewToggle.setGraphic(MenuIcons.table());
                 viewToggle.setOnAction(ev -> toggleMarkwhenView());
-                previewContextMenu.getItems().addAll(json, viewToggle);
+                MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
+                pdf.setGraphic(MenuIcons.download());
+                pdf.setOnAction(ev -> previewExportPdfHandler.run());
+                previewContextMenu.getItems().addAll(json, viewToggle, new SeparatorMenuItem(), pdf);
                 previewContextMenu.setOnShowing(ev -> viewToggle.setText(
                         markwhenView == MarkwhenView.TIMELINE
                                 ? tr("markwhen.switchToCalendar")
@@ -3960,8 +3964,109 @@ public class EditorBuffer implements TabContent {
     private StackPane structuredContentHolder() {
         if (structuredContentHolder == null) {
             structuredContentHolder = new StackPane();
+            // The JSON/YAML/TOML + XML trees host their own TreeView (not previewPane), so they need their
+            // own right-click menu — an Export to PDF (a full snapshot of the tree), like every other preview.
+            structuredContentHolder.setOnContextMenuRequested(
+                    e -> showTreePreviewContextMenu(e.getScreenX(), e.getScreenY()));
         }
         return structuredContentHolder;
+    }
+
+    private void showTreePreviewContextMenu(double screenX, double screenY) {
+        if (treePreviewContextMenu == null) {
+            MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
+            pdf.setGraphic(MenuIcons.download());
+            pdf.setOnAction(ev -> previewExportPdfHandler.run());
+            treePreviewContextMenu = new javafx.scene.control.ContextMenu(pdf);
+            treePreviewContextMenu.getStyleClass().add("editor-context-menu");
+        }
+        treePreviewContextMenu.show(structuredContentHolder(), screenX, screenY);
+    }
+
+    // ---- Preview → PDF snapshot (SVG / Markwhen / JSON-YAML-TOML / XML) -------------------------------
+    /** Max rows captured for a tree PDF (the parser already caps nodes at 50k; this bounds the image size). */
+    private static final int MAX_PRINT_ROWS = 4000;
+    /** Rows per snapshot chunk — each chunk is one bounded image, so a big tree can't build a giant texture. */
+    private static final int ROWS_PER_CHUNK = 250;
+    /** Fixed width the Markwhen timeline is re-laid-out to for its export snapshot. */
+    private static final double EXPORT_TIMELINE_WIDTH = 1100;
+
+    /**
+     * Renders the current image/tree preview to a list of PNG images for PDF export (a full snapshot of the
+     * whole tree/timeline, captured in bounded chunks — not just the visible viewport). Returns {@code null}
+     * for a buffer whose preview isn't snapshot-based (Markdown/CSV/Mermaid/diagram export semantically /
+     * via their CLI instead). FX thread only.
+     */
+    public java.util.List<byte[]> snapshotPreviewChunks() {
+        if (isStructured()) {
+            StructuredParser.Parsed p = StructuredParser.parse(area.getText(), structuredFormat());
+            return p.ok() ? snapshotRows(StructuredTree.printableRows(p.root()), "structured-tree") : null;
+        }
+        if (isXml()) {
+            XmlParser.Parsed p = XmlParser.parse(area.getText());
+            return p.ok() ? snapshotRows(XmlTree.printableRows(p.root()), "xml-tree") : null;
+        }
+        if (isMarkwhen()) {
+            com.editora.markwhen.Timeline model = com.editora.markwhen.MarkwhenParser.parse(area.getText());
+            Node timeline = markwhenView == MarkwhenView.CALENDAR
+                    ? MarkwhenCalendar.build(model, 1.0, EXPORT_TIMELINE_WIDTH)
+                    : MarkwhenTimeline.build(model, 1.0, EXPORT_TIMELINE_WIDTH);
+            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(timeline);
+            box.getStyleClass().add("markdown-preview");
+            byte[] png = snapshotNodePng(box);
+            return png == null ? null : java.util.List.of(png);
+        }
+        return null;
+    }
+
+    /** Snapshots a flat, indented row list in bounded chunks (one image each) styled as {@code treeClass}. */
+    private java.util.List<byte[]> snapshotRows(java.util.List<Node> rows, String treeClass) {
+        int total = Math.min(rows.size(), MAX_PRINT_ROWS);
+        java.util.List<byte[]> out = new java.util.ArrayList<>();
+        for (int i = 0; i < total; i += ROWS_PER_CHUNK) {
+            javafx.scene.layout.VBox chunk = new javafx.scene.layout.VBox();
+            chunk.getStyleClass().add(treeClass);
+            chunk.setFillWidth(false);
+            chunk.setPadding(new javafx.geometry.Insets(6));
+            chunk.getChildren().addAll(rows.subList(i, Math.min(i + ROWS_PER_CHUNK, total)));
+            byte[] png = snapshotNodePng(chunk);
+            if (png != null) {
+                out.add(png);
+            }
+        }
+        return out.isEmpty() ? null : out;
+    }
+
+    /**
+     * Lays a node out off-screen (a throwaway {@link javafx.scene.Scene} carrying this buffer's stylesheets so
+     * the theme/token CSS resolves) at its preferred size and snapshots it to PNG bytes. Returns {@code null}
+     * on a zero-size result / render failure.
+     */
+    private byte[] snapshotNodePng(Node node) {
+        try {
+            javafx.scene.Group holder = new javafx.scene.Group(node);
+            javafx.scene.Scene sc = new javafx.scene.Scene(holder);
+            javafx.scene.Scene live = getNode().getScene();
+            if (live != null) {
+                sc.getStylesheets().setAll(live.getStylesheets());
+                if (live.getUserAgentStylesheet() != null) {
+                    sc.setUserAgentStylesheet(live.getUserAgentStylesheet());
+                }
+            }
+            holder.applyCss();
+            holder.layout();
+            javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
+            sp.setFill(javafx.scene.paint.Color.WHITE); // backstop behind any transparent margins
+            javafx.scene.image.WritableImage img = node.snapshot(sp, null);
+            if (img == null || img.getWidth() < 1 || img.getHeight() < 1) {
+                return null;
+            }
+            return PreviewImageLoader.imageToPng(img);
+        } catch (RuntimeException e) {
+            java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
+                    .log(java.util.logging.Level.WARNING, "preview snapshot failed", e);
+            return null;
+        }
     }
 
     /** Wraps the structured holder so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
