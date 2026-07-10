@@ -50,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the Vixie day-of-month/day-of-week OR-rule + `Crontab` file parser); no new dependency. On by
   default (`Settings.crontabPreview`); Settings → Editor → Crontab, palette `view.toggleCrontabPreview`.
 
+- **Cargo, Go, and Gradle build-tool support** — completing the build-tool set (Maven + npm shipped
+  earlier). Each detected tool gets its own toolbar icon, actions popup, and streaming console:
+  - **Cargo** (`Cargo.toml`) — the standard subcommands plus `[[bin]]`/`[[example]]` targets and a
+    `--release` toggle.
+  - **Go** (`go.mod`/`go.work`) — the standard `go` subcommands over the whole module.
+  - **Gradle** (`build.gradle[.kts]`) — the common tasks plus an on-demand **Load all tasks…** that
+    enumerates `gradle tasks`; prefers the project's `./gradlew` wrapper. Each parses its marker file with
+    existing dependencies (no new libraries); toggle under *Settings → Languages & Tools → Build Tools*.
 - **npm build-tool support, plus a generalized build-tool framework.** The Maven integration is now one
   tool-agnostic `com.editora.build` framework, so every build tool gets the same first-class treatment: its
   own toolbar icon (shown only when its marker file is detected), an IntelliJ-style actions popup, and a

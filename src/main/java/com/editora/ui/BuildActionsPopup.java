@@ -50,7 +50,7 @@ public final class BuildActionsPopup {
 
     private record Header(String title) implements Row {}
 
-    private record ActionRow(String label, Runnable run) implements Row {}
+    private record ActionRow(String label, Runnable run, boolean closeOnRun) implements Row {}
 
     private record TaskRow(BuildAction.Task task) implements Row {}
 
@@ -73,6 +73,8 @@ public final class BuildActionsPopup {
 
     private Runnable onRunCustom = () -> {};
     private RunHandler onRun = (taskArgs, toggleArgs) -> {};
+    private String secondaryLabel;
+    private Runnable secondaryAction;
 
     public BuildActionsPopup(Labels labels) {
         this.labels = labels;
@@ -113,6 +115,21 @@ public final class BuildActionsPopup {
         this.onRun = onRun;
     }
 
+    /** Adds a second popup-owned action row below "Run custom…" that does <em>not</em> close the popup (e.g.
+     *  Gradle's "Load all tasks…", which loads asynchronously and repopulates the list in place). */
+    public void setSecondaryAction(String label, Runnable action) {
+        this.secondaryLabel = label;
+        this.secondaryAction = action;
+    }
+
+    /** Merges on-demand-loaded tasks into the current provider and re-renders the open popup in place. */
+    public void addLoadedTasks(List<String> tasks) {
+        if (provider != null) {
+            provider.addLoadedTasks(tasks);
+            rebuildRows();
+        }
+    }
+
     public boolean isShown() {
         return showing;
     }
@@ -147,7 +164,10 @@ public final class BuildActionsPopup {
 
     private void rebuildRows() {
         List<Row> rows = new ArrayList<>();
-        rows.add(new ActionRow(labels.runCustom(), onRunCustom));
+        rows.add(new ActionRow(labels.runCustom(), onRunCustom, true));
+        if (secondaryAction != null && secondaryLabel != null) {
+            rows.add(new ActionRow(secondaryLabel, secondaryAction, false));
+        }
         for (BuildAction.Section section : provider.sections(activeToggles)) {
             if (section.rows().isEmpty()) {
                 continue;
@@ -295,7 +315,9 @@ public final class BuildActionsPopup {
 
     private void activate(Row row) {
         if (row instanceof ActionRow a) {
-            hide();
+            if (a.closeOnRun()) {
+                hide();
+            }
             a.run().run();
         } else if (row instanceof TaskRow t) {
             hide();

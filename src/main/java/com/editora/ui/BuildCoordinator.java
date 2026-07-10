@@ -82,6 +82,8 @@ final class BuildCoordinator {
         panel.setOnLink(ops::onOutputLink);
         popup.setOnRunCustom(this::runCustom);
         popup.setOnRun(this::runTask);
+        // A DSL-based tool (Gradle) whose tasks can't be statically parsed gets a "Load all tasks…" action.
+        tool.taskLoadLabel().ifPresent(key -> popup.setSecondaryAction(tr(key), this::loadAllTasks));
     }
 
     BuildTool tool() {
@@ -333,6 +335,34 @@ final class BuildCoordinator {
         host.setStatus(tr("status.build.refreshed", tool.displayName()));
     }
 
+    /** Enumerates the tool's full task list on a short-lived process (Gradle's "Load all tasks…"), off the FX
+     *  thread, then repopulates the still-open popup in place. Inert for tools without {@code taskLoadLabel}. */
+    private void loadAllTasks() {
+        if (markerRoot == null) {
+            return;
+        }
+        Path root = markerRoot;
+        String override = tool.commandIn(host.settings());
+        host.setStatus(tr("status.build.loadingTasks", tool.displayName()));
+        Thread t = new Thread(
+                () -> {
+                    List<String> tasks;
+                    try {
+                        tasks = tool.loadTasks(root, isWindows(), override);
+                    } catch (Exception e) {
+                        tasks = List.of();
+                    }
+                    List<String> finalTasks = tasks;
+                    Platform.runLater(() -> {
+                        popup.addLoadedTasks(finalTasks);
+                        host.setStatus(tr("status.build.loadedTasks", tool.displayName(), finalTasks.size()));
+                    });
+                },
+                tool.id() + "-tasks");
+        t.setDaemon(true);
+        t.start();
+    }
+
     private static boolean isWindows() {
         return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
     }
@@ -357,6 +387,9 @@ final class BuildCoordinator {
         return switch (tool) {
             case MAVEN -> Icons::maven;
             case NPM -> Icons::npm;
+            case CARGO -> Icons::cargo;
+            case GO -> Icons::go;
+            case GRADLE -> Icons::gradle;
         };
     }
 }

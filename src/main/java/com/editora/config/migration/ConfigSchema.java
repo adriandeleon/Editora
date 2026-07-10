@@ -115,8 +115,12 @@ public enum ConfigSchema {
                     Map.entry(
                             66, (Migration) ConfigMigrations::identity), // v66→67: + typstSupport/typstPath (additive)
                     Map.entry(67, (Migration) ConfigMigrations::identity), // v67→68: + fstabPreview (additive)
-                    Map.entry(
-                            68, (Migration) ConfigMigrations::identity))), // v68→69: + npmSupport/npmCommand (additive)
+                    Map.entry(68, (Migration) ConfigMigrations::identity), // v68→69: + npmSupport/npmCommand (additive)
+                    Map.entry(69, (Migration)
+                            ConfigMigrations::identity), // v69→70: + cargoSupport/cargoCommand (additive)
+                    Map.entry(70, (Migration) ConfigMigrations::identity), // v70→71: + goSupport/goCommand (additive)
+                    Map.entry(71, (Migration)
+                            ConfigMigrations::identity))), // v71→72: + gradleSupport/gradleCommand (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

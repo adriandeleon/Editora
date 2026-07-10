@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 69;
+    public static final int SCHEMA_VERSION = 72;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -197,6 +197,22 @@ public class Settings {
     private boolean npmSupport = true;
     /** Override command for launching npm; blank = auto (the detected package manager — npm/yarn/pnpm/bun). */
     private String npmCommand = "";
+    /** Cargo support (a toolbar icon + actions popup of Cargo.toml subcommands/targets, streaming to a
+     *  console): on by default — self-gates on detection (the button stays hidden until a Cargo.toml is found). */
+    private boolean cargoSupport = true;
+    /** Override command for launching Cargo; blank = resolve "cargo" on PATH. */
+    private String cargoCommand = "";
+    /** Go support (a toolbar icon + actions popup of standard go subcommands, streaming to a console): on by
+     *  default — self-gates on detection (the button stays hidden until a go.mod/go.work is found). */
+    private boolean goSupport = true;
+    /** Override command for launching Go; blank = resolve "go" on PATH. */
+    private String goCommand = "";
+    /** Gradle support (a toolbar icon + actions popup of common tasks + an on-demand full task list, streaming
+     *  to a console): on by default — self-gates on detection (hidden until a build.gradle[.kts] is found). */
+    private boolean gradleSupport = true;
+    /** Override command for launching Gradle; blank = auto (prefer the project's ./gradlew wrapper, else
+     *  resolve "gradle" on PATH). */
+    private String gradleCommand = "";
     /** Use ripgrep to accelerate Find in Files when it's detected on PATH (default on; falls back otherwise). */
     private boolean ripgrepSearch = true;
     /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
@@ -1249,6 +1265,54 @@ public class Settings {
 
     public void setNpmCommand(String npmCommand) {
         this.npmCommand = npmCommand == null ? "" : npmCommand;
+    }
+
+    public boolean isCargoSupport() {
+        return cargoSupport;
+    }
+
+    public void setCargoSupport(boolean cargoSupport) {
+        this.cargoSupport = cargoSupport;
+    }
+
+    public String getCargoCommand() {
+        return cargoCommand == null ? "" : cargoCommand;
+    }
+
+    public void setCargoCommand(String cargoCommand) {
+        this.cargoCommand = cargoCommand == null ? "" : cargoCommand;
+    }
+
+    public boolean isGoSupport() {
+        return goSupport;
+    }
+
+    public void setGoSupport(boolean goSupport) {
+        this.goSupport = goSupport;
+    }
+
+    public String getGoCommand() {
+        return goCommand == null ? "" : goCommand;
+    }
+
+    public void setGoCommand(String goCommand) {
+        this.goCommand = goCommand == null ? "" : goCommand;
+    }
+
+    public boolean isGradleSupport() {
+        return gradleSupport;
+    }
+
+    public void setGradleSupport(boolean gradleSupport) {
+        this.gradleSupport = gradleSupport;
+    }
+
+    public String getGradleCommand() {
+        return gradleCommand == null ? "" : gradleCommand;
+    }
+
+    public void setGradleCommand(String gradleCommand) {
+        this.gradleCommand = gradleCommand == null ? "" : gradleCommand;
     }
 
     public boolean isRipgrepSearch() {

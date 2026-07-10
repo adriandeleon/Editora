@@ -122,6 +122,24 @@ A backlog of planned features and improvements. Unordered within each section.
       palette gating is generic (per-tool ids). Adding the next tool (Cargo/Go/Gradle) is a new `BuildTool`
       constant + provider + icon + Settings fields + i18n — no `MainController`/coordinator change.
       *Deferred: Cargo, Go, Gradle (each its own follow-up); clickable console links stay Maven/JVM-only.*
+- [x] Cargo, Go, and Gradle build tools — three new `BuildTool` constants on the framework, no
+      `MainController`/coordinator change. **Cargo** (`Cargo.toml` via `TomlMapper`): the standard subcommands
+      (build/run/test/check/clean/doc/bench/update/clippy/fmt) + additive `run --bin X`/`run --example Y` from
+      `[[bin]]`/`[[example]]` (a virtual `[workspace]` → static only) + a `--release` `Toggle`; runs `cargo`.
+      **Go** (`go.mod`/`go.work`): static subcommands over the whole module (`build ./...`, `test ./...`, `vet`,
+      `fmt`, `mod tidy`/`download`, `generate`, `clean`, `install`); the `go.mod` module line is the label;
+      runs `go`. **Gradle** (`build.gradle[.kts]`/`settings.gradle[.kts]`): the DSL can't be statically parsed,
+      so static common tasks (build/clean/test/assemble/check/jar/run/bootRun) + the framework's "Run custom…"
+      + an on-demand **Load all tasks…** popup action that runs `gradle tasks --all` on a short-lived process
+      (pure `GradleTasks.parse`) and repopulates the popup in place (a new `BuildActionsProvider.addLoadedTasks`
+      hook + a non-closing secondary popup action + `BuildTool.taskLoadLabel()`/`loadTasks()`); prefers the
+      project's `./gradlew` wrapper, else `gradle`. Pure `CargoProject`/`CargoActionsProvider`/`GoProject`/
+      `GoActionsProvider`/`GradleTasks`/`GradleActionsProvider` (all unit-tested). `Settings.{cargo,go,gradle}
+      Support/Command` (default on, schema 66→67→68→69, additive-identity); Icons vendored from Simple Icons
+      (Rust/Go/Gradle, CC0). **No new dependency / `module-info` change** (Cargo rides the existing TOML mapper;
+      Go/Gradle are static + a regex). *Deferred: a `--release`-only subset for Cargo (the global toggle can
+      combine with `fmt`/`update`); a per-root cache for Gradle's loaded tasks; PlantUML-style block folding;
+      clickable console links stay Maven/JVM-only.*
 - [x] Clickable links in the Markdown preview — a rendered link shows a hand cursor and opens in the
       system default browser on click (previously inert). `MarkdownRenderer.renderDocument` gained an
       overload taking an optional click handler, threaded through the block/inline render chain
