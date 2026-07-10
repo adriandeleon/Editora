@@ -24,45 +24,40 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
-import com.editora.maven.MavenLifecycle;
-import com.editora.maven.MavenPluginPrefix;
-import com.editora.maven.PomModel;
-
-import static com.editora.i18n.Messages.tr;
+import com.editora.build.BuildAction;
+import com.editora.build.BuildActionsProvider;
 
 /**
- * The Maven toolbar button's dropdown: a search field over Lifecycle phases, declared Profiles (checkable
- * — composed with a phase/goal rather than acting standalone, so checking one does not close the popup),
- * top-level Plugin goals, and — for each checked profile that declares its own {@code <build>/<plugins>} —
- * a nested section of that profile's goals. Modeled on {@link BranchPopup} (search + sectioned
- * {@link ListView}, arrow-key nav, Enter/click to act, Esc to close), anchored <em>below</em> the toolbar
- * button via {@link OverlayHost#showBelow}.
- *
- * <p>Only a plugin execution's explicitly declared goals are shown — a plugin with no {@code <executions>}
- * (config-only, or relying on Maven's own default-lifecycle binding) contributes no row here; the
- * "Run custom goal(s)…" action covers those.
+ * A build tool's toolbar-button dropdown: a search field over a sectioned {@link ListView} of runnable
+ * {@link BuildAction.Task}s and checkable {@link BuildAction.Toggle}s produced by a {@link BuildActionsProvider}
+ * (plus a popup-owned "Run custom…" row). Flipping a toggle re-queries the provider (so Maven can reveal a
+ * checked profile's nested goals) and doesn't close the popup; a task runs {@code executable + task.args +
+ * provider.toggleArgs(active)} and closes. Modeled on {@link BranchPopup} (search + sectioned list, arrow-key
+ * nav, Enter/click, Esc/C-g to close), anchored below the toolbar button via {@link OverlayHost#showBelow}.
  */
-public final class MavenActionsPopup {
+public final class BuildActionsPopup {
 
-    /** Runs the given goal(s)/phase(s) with the currently-checked profiles. */
+    /** Runs the selected task's args plus the extra argv from the active toggles. */
     @FunctionalInterface
     public interface RunHandler {
-        void run(List<String> goalsOrPhases, List<String> profiles);
+        void run(List<String> taskArgs, List<String> toggleArgs);
     }
 
-    private sealed interface Row permits Header, ActionRow, PhaseRow, ProfileRow, GoalRow {}
+    /** The tool-specific fixed strings (localized by the coordinator). */
+    public record Labels(String title, String searchPrompt, String hint, String runCustom) {}
+
+    private sealed interface Row permits Header, ActionRow, TaskRow, ToggleRow {}
 
     private record Header(String title) implements Row {}
 
     private record ActionRow(String label, Runnable run) implements Row {}
 
-    private record PhaseRow(String phase) implements Row {}
+    private record TaskRow(BuildAction.Task task) implements Row {}
 
-    private record ProfileRow(String id, boolean activeByDefault) implements Row {}
+    private record ToggleRow(BuildAction.Toggle toggle) implements Row {}
 
-    private record GoalRow(String label, String tooltip) implements Row {}
-
-    private final Label titleLabel = new Label(tr("mavenpopup.title"));
+    private final Labels labels;
+    private final Label titleLabel;
     private final TextField search = new TextField();
     private final ListView<Row> list = new ListView<>();
     private final ObservableList<Row> items = FXCollections.observableArrayList();
@@ -73,14 +68,16 @@ public final class MavenActionsPopup {
     private boolean showing;
     private long lastHiddenAt;
 
-    private PomModel model;
-    private final Set<String> selectedProfiles = new LinkedHashSet<>();
+    private BuildActionsProvider provider;
+    private final Set<String> activeToggles = new LinkedHashSet<>();
 
     private Runnable onRunCustom = () -> {};
-    private RunHandler onRun = (goals, profiles) -> {};
+    private RunHandler onRun = (taskArgs, toggleArgs) -> {};
 
-    public MavenActionsPopup() {
-        search.setPromptText(tr("mavenpopup.searchPrompt"));
+    public BuildActionsPopup(Labels labels) {
+        this.labels = labels;
+        this.titleLabel = new Label(labels.title());
+        search.setPromptText(labels.searchPrompt());
         list.setItems(items);
         list.setPrefHeight(400);
         list.setFocusTraversable(false);
@@ -95,7 +92,7 @@ public final class MavenActionsPopup {
         search.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
 
         titleLabel.getStyleClass().add("palette-title");
-        Label hint = new Label(tr("mavenpopup.hint"));
+        Label hint = new Label(labels.hint());
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, titleLabel, search, list, hint);
         content.getStyleClass().add("command-palette");
@@ -131,10 +128,10 @@ public final class MavenActionsPopup {
         }
     }
 
-    /** Populates and shows the popup anchored below {@code anchor} (a top-of-window toolbar button). */
-    public void show(Window owner, Node anchor, PomModel model) {
-        this.model = model;
-        selectedProfiles.clear();
+    /** Populates and shows the popup anchored below {@code anchor}, driven by {@code provider}. */
+    public void show(Window owner, Node anchor, BuildActionsProvider provider) {
+        this.provider = provider;
+        activeToggles.clear();
         rebuildRows();
         if (overlayHost == null) {
             return;
@@ -150,60 +147,31 @@ public final class MavenActionsPopup {
 
     private void rebuildRows() {
         List<Row> rows = new ArrayList<>();
-        rows.add(new ActionRow(tr("mavenpopup.runCustom"), onRunCustom));
-        rows.add(new Header(tr("mavenpopup.lifecycle")));
-        for (String phase : MavenLifecycle.PHASES) {
-            rows.add(new PhaseRow(phase));
-        }
-        if (!model.profiles().isEmpty()) {
-            rows.add(new Header(tr("mavenpopup.profiles")));
-            for (PomModel.Profile p : model.profiles()) {
-                rows.add(new ProfileRow(p.id(), p.activeByDefault()));
-            }
-        }
-        List<GoalRow> topGoals = goalRowsFor(model.plugins());
-        if (!topGoals.isEmpty()) {
-            rows.add(new Header(tr("mavenpopup.plugins")));
-            rows.addAll(topGoals);
-        }
-        for (PomModel.Profile p : model.profiles()) {
-            if (!selectedProfiles.contains(p.id())) {
+        rows.add(new ActionRow(labels.runCustom(), onRunCustom));
+        for (BuildAction.Section section : provider.sections(activeToggles)) {
+            if (section.rows().isEmpty()) {
                 continue;
             }
-            List<GoalRow> profileGoals = goalRowsFor(p.plugins());
-            if (profileGoals.isEmpty()) {
-                continue;
+            rows.add(new Header(section.title()));
+            for (BuildAction.Row r : section.rows()) {
+                if (r instanceof BuildAction.Task t) {
+                    rows.add(new TaskRow(t));
+                } else if (r instanceof BuildAction.Toggle tg) {
+                    rows.add(new ToggleRow(tg));
+                }
             }
-            rows.add(new Header(tr("mavenpopup.profilePlugins", p.id())));
-            rows.addAll(profileGoals);
         }
         all = rows;
         filter(search.getText());
     }
 
-    private List<GoalRow> goalRowsFor(List<PomModel.Plugin> plugins) {
-        List<GoalRow> out = new ArrayList<>();
-        for (PomModel.Plugin plugin : plugins) {
-            String prefix = MavenPluginPrefix.derive(plugin.groupId(), plugin.artifactId());
-            for (PomModel.Execution exec : plugin.executions()) {
-                for (String goal : exec.goals()) {
-                    String label = prefix + ":" + goal;
-                    String tooltip =
-                            tr("mavenpopup.goalTooltip", exec.phase().isEmpty() ? "-" : exec.phase(), exec.id());
-                    out.add(new GoalRow(label, tooltip));
-                }
-            }
+    private void toggle(String id) {
+        if (!activeToggles.add(id)) {
+            activeToggles.remove(id);
         }
-        return out;
-    }
-
-    private void toggleProfile(String id) {
-        if (!selectedProfiles.add(id)) {
-            selectedProfiles.remove(id);
-        }
-        String selectedLabel = selectedLabel();
+        String selected = selectedLabel();
         rebuildRows();
-        reselect(selectedLabel);
+        reselect(selected);
     }
 
     private String selectedLabel() {
@@ -212,34 +180,27 @@ public final class MavenActionsPopup {
     }
 
     private void reselect(String label) {
-        if (label == null) {
-            selectFirstSelectable();
-            return;
-        }
-        for (int i = 0; i < items.size(); i++) {
-            if (labelOf(items.get(i)).equals(label)) {
-                list.getSelectionModel().select(i);
-                list.scrollTo(i);
-                return;
+        if (label != null) {
+            for (int i = 0; i < items.size(); i++) {
+                if (labelOf(items.get(i)).equals(label)) {
+                    list.getSelectionModel().select(i);
+                    list.scrollTo(i);
+                    return;
+                }
             }
         }
         selectFirstSelectable();
     }
 
-    // --- filtering + navigation ---
-
     private static String labelOf(Row r) {
         if (r instanceof ActionRow a) {
             return a.label();
         }
-        if (r instanceof PhaseRow p) {
-            return p.phase();
+        if (r instanceof TaskRow t) {
+            return t.task().label();
         }
-        if (r instanceof ProfileRow p) {
-            return p.id();
-        }
-        if (r instanceof GoalRow g) {
-            return g.label();
+        if (r instanceof ToggleRow tg) {
+            return tg.toggle().id();
         }
         return "";
     }
@@ -336,14 +297,11 @@ public final class MavenActionsPopup {
         if (row instanceof ActionRow a) {
             hide();
             a.run().run();
-        } else if (row instanceof PhaseRow p) {
+        } else if (row instanceof TaskRow t) {
             hide();
-            onRun.run(List.of(p.phase()), List.copyOf(selectedProfiles));
-        } else if (row instanceof GoalRow g) {
-            hide();
-            onRun.run(List.of(g.label()), List.copyOf(selectedProfiles));
-        } else if (row instanceof ProfileRow p) {
-            toggleProfile(p.id()); // composes with a run rather than acting standalone — doesn't close
+            onRun.run(t.task().args(), provider.toggleArgs(activeToggles));
+        } else if (row instanceof ToggleRow tg) {
+            toggle(tg.toggle().id()); // composes with a run rather than acting standalone — doesn't close
         }
     }
 
@@ -368,27 +326,25 @@ public final class MavenActionsPopup {
                 setDisable(false);
                 setText(null);
                 setGraphic(new Label(a.label()));
-            } else if (item instanceof PhaseRow p) {
+            } else if (item instanceof TaskRow t) {
                 setDisable(false);
                 setText(null);
-                setGraphic(new Label(p.phase()));
-            } else if (item instanceof ProfileRow p) {
+                if (!t.task().tooltip().isEmpty()) {
+                    setTooltip(new Tooltip(t.task().tooltip()));
+                }
+                setGraphic(taskRow(t.task()));
+            } else if (item instanceof ToggleRow tg) {
                 setDisable(false);
                 setText(null);
-                CheckBox box = new CheckBox(p.id() + (p.activeByDefault() ? tr("mavenpopup.activeByDefault") : ""));
-                box.setSelected(selectedProfiles.contains(p.id()));
+                CheckBox box = new CheckBox(tg.toggle().label() + tg.toggle().note());
+                box.setSelected(activeToggles.contains(tg.toggle().id()));
                 box.setMouseTransparent(true); // the row (not the box) handles the click
                 setGraphic(box);
-            } else if (item instanceof GoalRow g) {
-                setDisable(false);
-                setText(null);
-                setTooltip(new Tooltip(g.tooltip()));
-                setGraphic(goalRow(g));
             }
         }
 
-        private HBox goalRow(GoalRow g) {
-            Label label = new Label(g.label());
+        private HBox taskRow(BuildAction.Task t) {
+            Label label = new Label(t.label());
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
             HBox box = new HBox(10, label, spacer);

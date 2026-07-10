@@ -1,4 +1,4 @@
-package com.editora.maven;
+package com.editora.build;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -13,14 +13,14 @@ import javafx.application.Platform;
 import com.editora.process.ProcessRunner;
 
 /**
- * Runs a Maven goal/phase invocation in a project's root directory and streams stdout/stderr live to a
- * {@link Listener} on the JavaFX thread. Mirrors {@code com.editora.run.RunService}'s shape (daemon pump
- * threads, a monotonic generation guard against a stopped/superseded run's late output) but is keyed on an
- * explicit working directory rather than a file's parent — Maven always runs at the project root, not
- * next to a particular file. No stdin support: a Maven build isn't interactive the way a
- * {@code IO.readln()}-driven compact-source program is.
+ * Runs a build-tool invocation (Maven/Gradle/npm/Cargo/Go) in a project directory and streams stdout/stderr
+ * live to a {@link Listener} on the JavaFX thread. Mirrors {@code com.editora.run.RunService}'s shape (daemon
+ * pump threads, a monotonic generation guard against a stopped/superseded run's late output) but is keyed on
+ * an explicit working directory rather than a file's parent — a build always runs at the project root. No
+ * stdin support: a build isn't interactive. One instance per tool, so a polyglot project can run e.g. npm and
+ * go at once (each instance still refuses a second concurrent run of its own tool).
  */
-public final class MavenService {
+public final class BuildService {
 
     /** Receives lifecycle + streamed output, always on the FX thread. */
     public interface Listener {
@@ -33,7 +33,7 @@ public final class MavenService {
         /** The process exited with {@code code} (or {@code -1} if killed). */
         void onExit(int code);
 
-        /** The process could not be launched (e.g. neither the wrapper nor {@code mvn} was found). */
+        /** The process could not be launched (e.g. neither the wrapper nor the command was found). */
         void onError(String message);
     }
 
@@ -46,9 +46,8 @@ public final class MavenService {
         return p != null && p.isAlive();
     }
 
-    /** Launches {@code argv} in {@code workingDir} and streams output to {@code listener}. Refuses to
-     *  start if a previous run is still alive (stop it first). All listener callbacks run on the FX
-     *  thread. */
+    /** Launches {@code argv} in {@code workingDir} and streams output to {@code listener}. Refuses to start
+     *  if a previous run is still alive (stop it first). All listener callbacks run on the FX thread. */
     public void run(Path workingDir, List<String> argv, Listener listener) {
         if (workingDir == null || argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
@@ -84,7 +83,7 @@ public final class MavenService {
                         listener.onExit(finalCode);
                     });
                 },
-                "maven-wait");
+                "build-wait");
         waiter.setDaemon(true);
         waiter.start();
     }
@@ -114,7 +113,7 @@ public final class MavenService {
                         // Stream closed as the process ended — nothing to report.
                     }
                 },
-                stderr ? "maven-stderr" : "maven-stdout");
+                stderr ? "build-stderr" : "build-stdout");
         t.setDaemon(true);
         t.start();
     }

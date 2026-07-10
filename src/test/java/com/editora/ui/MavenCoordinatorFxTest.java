@@ -202,7 +202,7 @@ class MavenCoordinatorFxTest {
             c.showActionsPopup(null);
             assertEquals(tr("statusbar.tip.mavenDisabled"), host.lastStatus);
 
-            c.runGoals(List.of("clean"), List.of());
+            c.runTask(List.of("clean"), List.of());
             assertEquals(tr("statusbar.tip.mavenDisabled"), host.lastStatus);
 
             c.runCustom();
@@ -247,7 +247,7 @@ class MavenCoordinatorFxTest {
         // No mvnw wrapper on disk, so the bogus override command is what actually gets launched — and
         // ProcessBuilder.start() throws synchronously (no such executable), so this never spawns a real
         // process or blocks on a build.
-        FxTestSupport.runOnFx(() -> c.runGoals(List.of("compile"), List.of()));
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
 
         assertEquals(1, ops.openConsoleCount, "a run attempt opens the console even though it fails");
         String failedPrefix = tr("status.maven.failed", "");

@@ -51,8 +51,8 @@
 .text.log-trace     { -fx-fill: -color-fg-subtle; }
 .text.log-timestamp { -fx-fill: -color-accent-fg; }
 
-/* Maven console build-result lines (com.editora.maven.MavenOutputStyle) — not grammar-driven, applied
-   directly to the com.editora.ui.MavenPanel console via setStyleSpans. Same semantic colors as
+/* Maven console build-result lines (com.editora.build.OutputStyle) — not grammar-driven, applied
+   directly to the com.editora.ui.BuildToolPanel console via setStyleSpans. Same semantic colors as
    log-error/log-info above, bolded to stand out as the build's final verdict. */
 .text.maven-build-success { -fx-fill: -color-success-fg; -fx-font-weight: bold; }
 .text.maven-build-failure { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
