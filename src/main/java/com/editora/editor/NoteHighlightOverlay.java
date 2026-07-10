@@ -34,6 +34,10 @@ final class NoteHighlightOverlay extends Region {
     private Supplier<List<int[]>> spans = List::of;
     private boolean active;
     private boolean redrawPending;
+    // Whether the last redraw had visible note spans to paint. When false the canvas is shrunk to 1x1 to
+    // release its viewport-sized RTTexture — a buffer with no visible notes shouldn't pin a full-viewport
+    // texture (the convention the other overlays follow). layoutChildren re-grows only while this is set.
+    private boolean hasContent;
 
     NoteHighlightOverlay(CodeArea area) {
         this.area = area;
@@ -60,7 +64,7 @@ final class NoteHighlightOverlay extends Region {
         if (active) {
             scheduleRedraw();
         } else {
-            clear();
+            releaseCanvas(); // off → drop the texture, not just clear it
         }
     }
 
@@ -70,13 +74,17 @@ final class NoteHighlightOverlay extends Region {
 
     @Override
     protected void layoutChildren() {
-        double w = CanvasGuards.clampDim(getWidth());
-        double h = CanvasGuards.clampDim(getHeight());
-        if (canvas.getWidth() != w || canvas.getHeight() != h) {
-            canvas.setWidth(w);
-            canvas.setHeight(h);
-        }
         canvas.relocate(0, 0);
+        // Track the viewport size only while there's something to paint; an idle overlay stays 1x1 (see
+        // hasContent). redraw() grows the canvas on demand when a note span becomes visible.
+        if (hasContent) {
+            double w = CanvasGuards.clampDim(getWidth());
+            double h = CanvasGuards.clampDim(getHeight());
+            if (canvas.getWidth() != w || canvas.getHeight() != h) {
+                canvas.setWidth(w);
+                canvas.setHeight(h);
+            }
+        }
         scheduleRedraw();
     }
 
@@ -91,19 +99,33 @@ final class NoteHighlightOverlay extends Region {
         });
     }
 
-    private void clear() {
+    /** Grows the canvas to the viewport (only when there's content to paint) and clears it. */
+    private void ensureCanvasSized() {
+        double w = CanvasGuards.clampDim(getWidth());
+        double h = CanvasGuards.clampDim(getHeight());
+        if (canvas.getWidth() != w || canvas.getHeight() != h) {
+            canvas.setWidth(w); // resizing a Canvas also clears it
+            canvas.setHeight(h);
+        }
+        canvas.relocate(0, 0);
+        hasContent = true;
         canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
     }
 
+    /** Shrinks the canvas to 1x1, releasing its RTTexture (no visible note spans / overlay off). */
+    private void releaseCanvas() {
+        hasContent = false;
+        if (canvas.getWidth() != 1 || canvas.getHeight() != 1) {
+            canvas.setWidth(1);
+            canvas.setHeight(1);
+        }
+    }
+
     private void redraw() {
-        GraphicsContext g = canvas.getGraphicsContext2D();
-        double w = canvas.getWidth();
-        double h = canvas.getHeight();
-        g.clearRect(0, 0, w, h);
         if (!active || !CanvasGuards.paintable(getWidth(), getHeight())) {
+            releaseCanvas();
             return;
         }
-        g.setLineWidth(1);
         try {
             int firstVisible = area.firstVisibleParToAllParIndex();
             int lastVisible = area.lastVisibleParToAllParIndex();
@@ -114,10 +136,23 @@ final class NoteHighlightOverlay extends Region {
             int lastVis = Math.min(total - 1, lastVisible);
             int lastOffset = area.getAbsolutePosition(
                     lastVis, area.getParagraph(lastVis).getText().length());
+            List<int[]> visible = new java.util.ArrayList<>();
             for (int[] span : spans.get()) {
                 if (span[1] < firstOffset || span[0] > lastOffset) {
                     continue;
                 }
+                visible.add(span);
+            }
+            if (visible.isEmpty()) {
+                releaseCanvas(); // no visible note spans → drop the viewport texture
+                return;
+            }
+            ensureCanvasSized();
+            GraphicsContext g = canvas.getGraphicsContext2D();
+            double w = canvas.getWidth();
+            double h = canvas.getHeight();
+            g.setLineWidth(1);
+            for (int[] span : visible) {
                 paintSpan(g, span[0], span[1], firstVisible, lastVisible, w, h);
             }
         } catch (RuntimeException ignored) {

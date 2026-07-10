@@ -36,6 +36,11 @@ final class SpellCheckOverlay extends Region {
     private boolean markdown;
     private boolean active;
     private boolean redrawPending;
+    // Whether the last redraw actually had visible misspellings to paint. When false the canvas is shrunk
+    // to 1x1 to release its (viewport-sized) RTTexture — a spell-checked buffer with no visible squiggles
+    // shouldn't pin a full-viewport texture (the convention every other overlay follows). layoutChildren
+    // only re-grows the canvas while this is set, so a clean viewport never flaps between sizes on scroll.
+    private boolean hasContent;
 
     /** Lines (0-based) inside a Markdown fenced ``` code block — never spell-checked. Their content is
      *  the embedded language (or unstyled), so the per-char "code" style class can't catch them; this
@@ -136,7 +141,7 @@ final class SpellCheckOverlay extends Region {
             recomputeCodeLines(); // pick up the current text (it may have changed while inactive)
             scheduleRedraw();
         } else {
-            clear();
+            releaseCanvas(); // off → drop the texture, not just clear it
         }
     }
 
@@ -152,13 +157,17 @@ final class SpellCheckOverlay extends Region {
 
     @Override
     protected void layoutChildren() {
-        double w = CanvasGuards.clampDim(getWidth());
-        double h = CanvasGuards.clampDim(getHeight());
-        if (canvas.getWidth() != w || canvas.getHeight() != h) {
-            canvas.setWidth(w);
-            canvas.setHeight(h);
-        }
         canvas.relocate(0, 0);
+        // Only track the viewport size while there's something to paint; an idle overlay stays 1x1 (see
+        // hasContent). redraw() grows the canvas on demand when it finds visible misspellings.
+        if (hasContent) {
+            double w = CanvasGuards.clampDim(getWidth());
+            double h = CanvasGuards.clampDim(getHeight());
+            if (canvas.getWidth() != w || canvas.getHeight() != h) {
+                canvas.setWidth(w);
+                canvas.setHeight(h);
+            }
+        }
         scheduleRedraw();
     }
 
@@ -173,39 +182,79 @@ final class SpellCheckOverlay extends Region {
         });
     }
 
-    private void clear() {
+    /** Grows the canvas to the viewport (only when there's content to paint) and clears it. */
+    private void ensureCanvasSized() {
+        double w = CanvasGuards.clampDim(getWidth());
+        double h = CanvasGuards.clampDim(getHeight());
+        if (canvas.getWidth() != w || canvas.getHeight() != h) {
+            canvas.setWidth(w); // resizing a Canvas also clears it
+            canvas.setHeight(h);
+        }
+        canvas.relocate(0, 0);
+        hasContent = true;
         canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
     }
 
+    /** Shrinks the canvas to 1x1, releasing its RTTexture (nothing visible to draw / overlay off). */
+    private void releaseCanvas() {
+        hasContent = false;
+        if (canvas.getWidth() != 1 || canvas.getHeight() != 1) {
+            canvas.setWidth(1);
+            canvas.setHeight(1);
+        }
+    }
+
     private void redraw() {
-        GraphicsContext g = canvas.getGraphicsContext2D();
-        double w = canvas.getWidth();
-        double h = canvas.getHeight();
-        g.clearRect(0, 0, w, h);
         if (!active || checker == null || !checker.ready() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+            releaseCanvas();
             return;
         }
         try {
             int total = area.getParagraphs().size();
             if (total == 0) {
+                releaseCanvas();
                 return;
             }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            g.setStroke(SQUIGGLE);
-            g.setLineWidth(1.0);
+            // Phase 1 — collect the visible misspelled spans (the cheap, cached scan; for a clean viewport
+            // this makes zero getCharacterBoundsOnScreen calls, exactly as before).
+            List<int[]> hits = new java.util.ArrayList<>();
             for (int p = first; p <= last; p++) {
                 if (area.isFolded(p) || (markdown && codeLines.get(p))) {
                     continue; // skip folded lines and Markdown fenced code blocks
                 }
-                drawParagraph(g, p, w, h);
+                collectParagraph(p, hits);
+            }
+            if (hits.isEmpty()) {
+                releaseCanvas(); // no visible squiggles → drop the viewport texture
+                return;
+            }
+            // Phase 2 — size the canvas to the viewport and paint the collected spans.
+            ensureCanvasSized();
+            GraphicsContext g = canvas.getGraphicsContext2D();
+            double w = canvas.getWidth();
+            double h = canvas.getHeight();
+            g.setStroke(SQUIGGLE);
+            g.setLineWidth(1.0);
+            for (int[] hit : hits) {
+                Bounds b =
+                        toLocal(area.getCharacterBoundsOnScreen(hit[0], hit[1]).orElse(null));
+                if (b == null) {
+                    continue;
+                }
+                if (b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
+                    continue; // off-screen (horizontal scroll)
+                }
+                squiggle(g, b.getMinX(), b.getMaxX(), b.getMaxY() - 1);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event will redraw.
         }
     }
 
-    private void drawParagraph(GraphicsContext g, int paragraph, double w, double h) {
+    /** Adds each misspelled, eligible word in {@code paragraph} to {@code hits} as {@code {absStart, absEnd}}. */
+    private void collectParagraph(int paragraph, List<int[]> hits) {
         String line = area.getParagraph(paragraph).getText();
         if (line.isEmpty()) {
             return;
@@ -232,15 +281,7 @@ final class SpellCheckOverlay extends Region {
             if (!eligible(abs)) {
                 continue; // eligibility is style-dependent (inline/fenced code) → evaluated fresh
             }
-            Bounds b =
-                    toLocal(area.getCharacterBoundsOnScreen(abs, parBase + end).orElse(null));
-            if (b == null) {
-                continue;
-            }
-            if (b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
-                continue; // off-screen
-            }
-            squiggle(g, b.getMinX(), b.getMaxX(), b.getMaxY() - 1);
+            hits.add(new int[] {abs, parBase + end});
         }
     }
 
