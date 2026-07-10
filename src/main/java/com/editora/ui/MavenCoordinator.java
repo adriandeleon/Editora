@@ -9,13 +9,15 @@ import java.util.Locale;
 import javafx.application.Platform;
 import javafx.scene.Node;
 
+import com.editora.build.BuildActionsProvider;
+import com.editora.build.BuildExecutable;
+import com.editora.build.BuildService;
+import com.editora.build.MavenActionsProvider;
+import com.editora.build.OutputStyle;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.RootResolver;
-import com.editora.maven.MavenArgs;
-import com.editora.maven.MavenExecutable;
-import com.editora.maven.MavenService;
 import com.editora.maven.PomModel;
 import com.editora.maven.PomParser;
 import com.editora.run.ProgramArgs;
@@ -25,14 +27,13 @@ import com.editora.vfs.Vfs;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The Maven feature (toolbar icon → actions popup, parsed from the active project's pom.xml, streaming
- * output to a console), extracted via the {@link CoordinatorHost} pattern. Owns the {@link MavenService} +
- * the {@link MavenPanel} console + the {@link MavenActionsPopup}, and mirrors {@link GitCoordinator}'s
- * per-project detect/cache/refresh model: {@link #contextPath()} picks the active file (else the active
- * project root), {@link #refresh()} walks up for the nearest {@code pom.xml} and parses it off-thread
- * (generation-guarded), and {@link #applyDetected} flips the toolbar button's visibility. {@code
- * MainController} keeps the {@code ToolWindow} (built with {@link #panel()}) and the toolbar button itself,
- * reaching this coordinator's window needs through the shared host plus a small {@link Ops} extension.
+ * The Maven feature, now running on the generic {@code com.editora.build} framework: it detects the active
+ * project's {@code pom.xml}, parses it into a {@link MavenActionsProvider}, drives a {@link BuildActionsPopup}
+ * off the toolbar button, and streams goals to a {@link BuildToolPanel} console via {@link BuildService}. The
+ * Maven-specific bits (marker {@code pom.xml}, the {@code mvnw}/{@code mvn} executable, the {@code -Pa,b}
+ * profile args, the {@code maven.*} commands + {@code mavenpopup.*}/{@code status.maven.*} strings) live here;
+ * the model/provider/service/panel/popup are tool-agnostic. Phase 2 (npm/Cargo/Go/Gradle) generalizes this
+ * coordinator to N tools; today it's the sole tool on the framework.
  */
 final class MavenCoordinator {
 
@@ -53,9 +54,10 @@ final class MavenCoordinator {
 
     private final CoordinatorHost host;
     private final Ops ops;
-    private final MavenService service = new MavenService();
-    private final MavenPanel panel = new MavenPanel(this::stop);
-    private final MavenActionsPopup popup = new MavenActionsPopup();
+    private final BuildService service = new BuildService();
+    private final BuildToolPanel panel = new BuildToolPanel(this::stop, OutputStyle.maven());
+    private final BuildActionsPopup popup = new BuildActionsPopup(new BuildActionsPopup.Labels(
+            tr("mavenpopup.title"), tr("mavenpopup.searchPrompt"), tr("mavenpopup.hint"), tr("mavenpopup.runCustom")));
 
     private Node toolbarButton;
 
@@ -63,24 +65,26 @@ final class MavenCoordinator {
     private Path pomPath;
     /** The last successfully parsed model for {@link #pomPath}, or {@code null} (absent/malformed). */
     private PomModel model;
+    /** The provider built from {@link #model}, or {@code null}. */
+    private BuildActionsProvider provider;
 
     private int detectGeneration;
 
     /** The most recent launch, for {@code maven.rerunLast}. */
     private Path lastRoot;
 
-    private List<String> lastGoals;
-    private List<String> lastProfiles = List.of();
+    private List<String> lastTaskArgs;
+    private List<String> lastToggleArgs = List.of();
 
     MavenCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
         panel.setOnLink(ops::onOutputLink);
         popup.setOnRunCustom(this::runCustom);
-        popup.setOnRun(this::runGoals);
+        popup.setOnRun(this::runTask);
     }
 
-    MavenPanel panel() {
+    BuildToolPanel panel() {
         return panel;
     }
 
@@ -88,21 +92,21 @@ final class MavenCoordinator {
         popup.setOverlayHost(overlayHost);
     }
 
-    /** The toolbar button node — recorded so the palette command {@code maven.showActions} (as well as
-     *  the button's own click) can anchor the popup below it. */
+    /** The toolbar button node — recorded so the palette command {@code maven.showActions} (as well as the
+     *  button's own click) can anchor the popup below it. */
     void setToolbarButton(Node button) {
         this.toolbarButton = button;
     }
 
-    /** Whether the Maven integration is enabled in Settings (default on — inert until a pom.xml is
-     *  actually detected). Off in Simple UI mode. */
+    /** Whether the Maven integration is enabled in Settings (default on — inert until a pom.xml is actually
+     *  detected). Off in Simple UI mode. */
     boolean isEnabled() {
         return host.settings().isMavenSupport() && !host.simpleModeActive();
     }
 
     /** Whether a goal can actually be run right now: enabled, a pom.xml was found, and it parsed. */
     private boolean isAvailable() {
-        return isEnabled() && pomPath != null && model != null;
+        return isEnabled() && pomPath != null && provider != null;
     }
 
     /** Whether a pom.xml is currently detected for the active context (the Settings page's found/not-found
@@ -127,8 +131,8 @@ final class MavenCoordinator {
     }
 
     /** Re-detects the nearest pom.xml for the current context and re-parses it, off the FX thread
-     *  (generation-guarded against a stale/superseded detect). Runs at startup, on tab switch, on window
-     *  focus-regain, on save, and on every settings apply — cheap to over-call. */
+     *  (generation-guarded). Runs at startup, on tab switch, on window focus-regain, on save, and on every
+     *  settings apply — cheap to over-call. */
     void refresh() {
         if (!isEnabled()) {
             applyDetected(null, null);
@@ -165,8 +169,7 @@ final class MavenCoordinator {
         t.start();
     }
 
-    /** Re-derives the toolbar button's visibility from the last detection without a fresh re-detect (e.g.
-     *  after Simple Mode toggles, which only changes {@link #isEnabled()}, not what's on disk). */
+    /** Re-derives the toolbar button's visibility from the last detection without a fresh re-detect. */
     void reapplyVisibility() {
         ops.setToolbarButtonVisible(isEnabled() && pomPath != null);
     }
@@ -174,6 +177,7 @@ final class MavenCoordinator {
     private void applyDetected(Path pom, PomModel parsed) {
         this.pomPath = pom;
         this.model = parsed;
+        this.provider = parsed == null ? null : new MavenActionsProvider(parsed);
         ops.setToolbarButtonVisible(isEnabled() && pom != null);
     }
 
@@ -187,15 +191,15 @@ final class MavenCoordinator {
             host.setStatus(tr("status.maven.noPom"));
             return;
         }
-        if (model == null) {
+        if (provider == null) {
             host.setStatus(tr("status.maven.malformedPom"));
             return;
         }
-        popup.show(host.window(), anchor, model);
+        popup.show(host.window(), anchor, provider);
     }
 
-    /** Runs a lifecycle phase or plugin goal with the given active profiles (the popup's callback). */
-    void runGoals(List<String> goalsOrPhases, List<String> profiles) {
+    /** Runs a selected task with its args + the active toggles' args (the popup's callback). */
+    void runTask(List<String> taskArgs, List<String> toggleArgs) {
         if (!isAvailable()) {
             host.setStatus(tr(isEnabled() ? "status.maven.noPom" : "statusbar.tip.mavenDisabled"));
             return;
@@ -205,12 +209,13 @@ final class MavenCoordinator {
             return;
         }
         Path root = pomPath.getParent();
-        List<String> argv = new ArrayList<>(mavenArgv(root));
-        argv.addAll(MavenArgs.build(goalsOrPhases, profiles));
-        launch(root, argv, goalsOrPhases, profiles);
+        List<String> argv = new ArrayList<>(executable(root));
+        argv.addAll(taskArgs);
+        argv.addAll(toggleArgs);
+        launch(root, argv, taskArgs, toggleArgs);
     }
 
-    /** Prompts for a freeform goal string and runs it verbatim (no profile flag — type {@code -P<id>}
+    /** Prompts for a freeform goal string and runs it verbatim (no toggle args — type {@code -P<id>}
      *  directly if one is needed). */
     void runCustom() {
         if (!isAvailable()) {
@@ -230,15 +235,15 @@ final class MavenCoordinator {
                 return;
             }
             Path root = pomPath.getParent();
-            List<String> argv = new ArrayList<>(mavenArgv(root));
+            List<String> argv = new ArrayList<>(executable(root));
             argv.addAll(tokens);
             launch(root, argv, tokens, List.of());
         });
     }
 
-    /** Re-runs the most recent invocation (same root + goals + profiles). */
+    /** Re-runs the most recent invocation (same root + task + toggle args). */
     void rerunLast() {
-        if (lastRoot == null || lastGoals == null) {
+        if (lastRoot == null || lastTaskArgs == null) {
             host.setStatus(tr("status.maven.noRerun"));
             return;
         }
@@ -246,28 +251,34 @@ final class MavenCoordinator {
             host.setStatus(tr("status.maven.busy"));
             return;
         }
-        List<String> argv = new ArrayList<>(mavenArgv(lastRoot));
-        argv.addAll(MavenArgs.build(lastGoals, lastProfiles));
-        launch(lastRoot, argv, lastGoals, lastProfiles);
+        List<String> argv = new ArrayList<>(executable(lastRoot));
+        argv.addAll(lastTaskArgs);
+        argv.addAll(lastToggleArgs);
+        launch(lastRoot, argv, lastTaskArgs, lastToggleArgs);
     }
 
-    private List<String> mavenArgv(Path root) {
-        return MavenExecutable.chooseArgv(
-                Files.isRegularFile(root.resolve("mvnw")),
-                Files.isRegularFile(root.resolve("mvnw.cmd")),
-                isWindows(),
-                host.settings().getMavenCommand());
+    /** The launch argv prefix: the {@code mvnw} wrapper when present, else the override, else {@code mvn}. */
+    private List<String> executable(Path root) {
+        List<String> wrapper = List.of();
+        if (isWindows()) {
+            if (Files.isRegularFile(root.resolve("mvnw.cmd"))) {
+                wrapper = List.of("mvnw.cmd");
+            }
+        } else if (Files.isRegularFile(root.resolve("mvnw"))) {
+            wrapper = List.of("./mvnw");
+        }
+        return BuildExecutable.resolve(wrapper, host.settings().getMavenCommand(), "mvn");
     }
 
-    private void launch(Path root, List<String> argv, List<String> goalsOrPhases, List<String> profiles) {
+    private void launch(Path root, List<String> argv, List<String> taskArgs, List<String> toggleArgs) {
         lastRoot = root;
-        lastGoals = goalsOrPhases;
-        lastProfiles = profiles;
+        lastTaskArgs = taskArgs;
+        lastToggleArgs = toggleArgs;
         ops.openConsole();
-        String label = String.join(" ", goalsOrPhases);
+        String label = String.join(" ", taskArgs);
         panel.started(label);
         host.setStatus(tr("status.maven.started", label));
-        service.run(root, argv, new MavenService.Listener() {
+        service.run(root, argv, new BuildService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 panel.started(commandLine);

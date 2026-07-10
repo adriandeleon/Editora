@@ -124,8 +124,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     }
 
     /** {@link CodeArea} overload of {@link #installLinkClicks(TextArea, java.util.function.Supplier)} — used
-     *  by {@link MavenPanel}, whose console is a RichTextFX {@code CodeArea} (not a plain {@code TextArea})
-     *  so it can color lines via {@code com.editora.maven.MavenOutputStyle}. */
+     *  by {@link BuildToolPanel}, whose console is a RichTextFX {@code CodeArea} so it can color lines via
+     *  {@code com.editora.build.OutputStyle}. */
     static void installLinkClicks(
             CodeArea console, java.util.function.Supplier<Consumer<StackTraceLinks.Link>> handler) {
         console.setOnMouseClicked(e -> {

@@ -13,7 +13,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
-import com.editora.maven.MavenOutputStyle;
+import com.editora.build.OutputStyle;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.Caret;
@@ -24,16 +24,13 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The "Maven" tool window: a console that streams a running Maven invocation's stdout/stderr (see
- * {@code com.editora.maven.MavenService}), with a header showing the run state plus Stop and Clear
- * actions. Modeled on {@link RunPanel} minus the stdin field (a Maven build isn't interactive) — but
- * unlike {@code RunPanel}'s plain {@code TextArea}, this uses a read-only RichTextFX {@link CodeArea} so
- * each appended line can be colored by {@link MavenOutputStyle} (mirrors what IntelliJ/VS Code show by
- * rendering Maven's own ANSI-colored output: warnings/errors/the build result get a color, plain {@code
- * [INFO]} noise doesn't). Reuses the {@code .run-panel}/{@code .run-status} CSS classes and the shared
- * {@code run.*} i18n status strings.
+ * A build tool's console tool window: streams a running invocation's stdout/stderr (see
+ * {@code com.editora.build.BuildService}) with a header showing the run state plus Stop and Clear. Modeled on
+ * {@link RunPanel} minus the stdin field (a build isn't interactive), using a read-only RichTextFX
+ * {@link CodeArea} so each line can be colored by the tool's {@link OutputStyle}. Reuses the
+ * {@code .run-panel}/{@code .run-status} CSS + the shared {@code run.*} status strings. One instance per tool.
  */
-public final class MavenPanel extends VBox implements ToolWindowContent {
+public final class BuildToolPanel extends VBox implements ToolWindowContent {
 
     /** Trim the console once it exceeds this many characters (keeps the most recent output). */
     private static final int MAX_CHARS = 200_000;
@@ -42,9 +39,11 @@ public final class MavenPanel extends VBox implements ToolWindowContent {
     private final CodeArea output = new CodeArea();
     private final Button stopButton = new Button();
     private final Button clearButton = new Button();
+    private final OutputStyle style;
     private Consumer<StackTraceLinks.Link> onLink;
 
-    public MavenPanel(Runnable onStop) {
+    public BuildToolPanel(Runnable onStop, OutputStyle style) {
+        this.style = style == null ? OutputStyle.passthrough() : style;
         getStyleClass().add("run-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(6);
@@ -110,11 +109,11 @@ public final class MavenPanel extends VBox implements ToolWindowContent {
         stopButton.setDisable(false);
     }
 
-    /** Appends one line of output, colored per {@link MavenOutputStyle}, auto-scrolling to the bottom. */
+    /** Appends one line of output, colored per the tool's {@link OutputStyle}, auto-scrolling to the bottom. */
     public void appendOutput(String line, boolean stderr) {
         int start = output.getLength();
         output.appendText(line + "\n");
-        String styleClass = MavenOutputStyle.styleClassFor(line);
+        String styleClass = style.styleClassFor(line);
         if (styleClass != null) {
             StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
                     .add(List.of(styleClass), line.length())
@@ -123,8 +122,6 @@ public final class MavenPanel extends VBox implements ToolWindowContent {
         }
         int len = output.getLength();
         if (len > MAX_CHARS) {
-            // Drop only the leading overflow via deleteText (not a replaceText of the whole buffer) so
-            // the retained tail's per-line coloring survives the trim — the DebugPanel console idiom.
             output.deleteText(0, len - MAX_CHARS);
         }
         output.moveTo(output.getLength());
