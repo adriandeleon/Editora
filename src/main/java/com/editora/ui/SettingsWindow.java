@@ -2726,6 +2726,7 @@ public class SettingsWindow {
                 null,
                 exePathRow(tr("settings.typst.path"), typstPathField),
                 "typst path executable render document");
+        row(p, Category.TYPST, null, installButton("typst"), "typst install download cli render");
         Label typstHint = note(tr("settings.typst.hint"));
         typstHint.setWrapText(true);
         typstHint.setMaxWidth(440);
@@ -2744,6 +2745,7 @@ public class SettingsWindow {
                     .getStyleClass()
                     .setAll("settings-git-status", present ? "settings-git-found" : "settings-git-missing");
             typstStatusLabel.setText(present ? tr("settings.typst.found") : tr("settings.typst.notFound"));
+            updateInstallButton("typst", present); // "Installed" + disabled when the typst CLI is found
         });
     }
 

@@ -191,6 +191,20 @@ public final class InstallService {
             } finally {
                 deleteQuietly(tmp);
             }
+        } else if (url.endsWith(".tar.xz") || url.endsWith(".txz")) {
+            // xz-compressed tarball (e.g. the typst CLI). System tar with -xf auto-detects xz (bsdtar/liblzma
+            // on macOS, GNU tar + xz on Linux); the TAR prereq covers it.
+            Path tmp = Files.createTempFile("editora-dl", ".tar.xz");
+            try {
+                Files.write(tmp, data);
+                ProcessRunner.Result r =
+                        ProcessRunner.run(null, CMD_TIMEOUT, InstallCatalog.tarExtractArgvAuto(tmp, dest));
+                if (!r.ok()) {
+                    throw new InstallException(s.id() + ": tar failed — " + r.message());
+                }
+            } finally {
+                deleteQuietly(tmp);
+            }
         } else {
             Unzip.extract(
                     new ByteArrayInputStream(data),

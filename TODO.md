@@ -95,12 +95,13 @@ A backlog of planned features and improvements. Unordered within each section.
       preview); refs that escape the resolved root are blocked by typst's sandbox; an untitled buffer can't
       resolve any relative ref; uninstalled fonts fall back. **Editor conveniences shipped:** bundled
       snippets, `#table` insert (grid picker), `#outline()`/TOC insert, image paste/drop/drag → `assets/` +
-      `#image("…")`, and preview → PNG/SVG export (native `typst -f`). *Deferred: a ppi/quality setting; an
-      in-app **typst-CLI installer** (needs `.tar.xz` extraction + a distinct archive id from tinymist's +
-      an apply-to-`Settings.typstPath` path — the LSP-server installer already exists); **click-in-preview →
-      jump-to-source** (infeasible on the raster preview — needs tinymist's websocket preview protocol + a
-      `javafx.web` host Editora doesn't ship); and the generic "CLI → paginated image" seam (gnuplot,
-      asciidoc-via-PDF).*
+      `#image("…")`, and preview → PNG/SVG export (native `typst -f`). **In-app typst-CLI installer shipped:**
+      Settings → Typst **Install…** (+ `install.typstCli`) downloads the typst binary from GitHub releases
+      (added `.tar.xz` extraction via `tar -xf`; archive id `typst-cli` distinct from the tinymist server's
+      `typst`), applies it to `Settings.typstPath`, and re-detects — end-to-end verified against typst 0.15.
+      *Deferred: a ppi/quality setting; **click-in-preview → jump-to-source** (infeasible on the raster
+      preview — needs tinymist's websocket preview protocol + a `javafx.web` host Editora doesn't ship); and
+      the generic "CLI → paginated image" seam (gnuplot, asciidoc-via-PDF).*
 - [x] Typst language server (tinymist) — the 22nd LSP server: completion, hover, go-to-definition,
       find-references, document-symbol outline, push diagnostics (Problems window + squiggles), and Format
       Document for `.typ` files, complementing the rendered preview. One `ServerDef` in `LspServerRegistry`

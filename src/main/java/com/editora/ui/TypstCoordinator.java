@@ -54,6 +54,11 @@ final class TypstCoordinator {
         return service;
     }
 
+    /** Whether the typst CLI was detected on the last probe (cached) — for the install "already?" pre-check. */
+    boolean isTypstCliAvailable() {
+        return service.cachedAvailable();
+    }
+
     /** Whether the Typst feature is enabled in Settings (default on). */
     boolean isEnabled() {
         return host.settings().isTypstSupport();

@@ -44,6 +44,9 @@ final class InstallCoordinator {
         /** Whether the Mermaid {@code mmdc} CLI is currently detected. */
         boolean mmdcAvailable();
 
+        /** Whether the {@code typst} render CLI is currently detected (cached). */
+        boolean typstCliAvailable();
+
         /** Invalidates the cached tool detection and re-applies LSP/Debug/Mermaid support (+ persists). */
         void reapplyToolSupport();
     }
@@ -169,6 +172,64 @@ final class InstallCoordinator {
                             host.setStatus(tr("status.install.done", serverName(serverId)));
                         } else {
                             host.setStatus(tr("status.install.failed", serverName(serverId)));
+                            alert(Alert.AlertType.ERROR, result.message());
+                        }
+                        onResult.accept(result.ok());
+                    });
+        });
+    }
+
+    /**
+     * Installs the {@code typst} render CLI — a per-OS binary archive from typst's GitHub releases — and
+     * points {@code Settings.typstPath} at the extracted binary, then re-detects. This is the Typst
+     * <em>preview</em> tool (distinct from the tinymist LSP server, which has its own installer).
+     */
+    void installTypstCli() {
+        installTypstCli(ok -> {});
+    }
+
+    void installTypstCli(java.util.function.Consumer<Boolean> onResult) {
+        final String key = "typst-cli";
+        List<Step> steps = InstallCatalog.typstCliSteps();
+        if (steps.isEmpty()) {
+            onResult.accept(false);
+            return;
+        }
+        if (installingServers.contains(key)) {
+            host.setStatus(tr("status.install.inProgress"));
+            onResult.accept(false);
+            return;
+        }
+        if (ops.typstCliAvailable()) {
+            host.setStatus(tr("status.install.already", tr("install.lang.typst")));
+            onResult.accept(true);
+            return;
+        }
+        service.detectPrereqs(present -> {
+            Set<Prereq> needed = steps.stream()
+                    .flatMap(s -> s.prereqs().stream())
+                    .collect(Collectors.toCollection(() -> EnumSet.noneOf(Prereq.class)));
+            needed.removeAll(present);
+            if (!needed.isEmpty()) {
+                String names = needed.stream().map(this::prereqName).collect(Collectors.joining(", "));
+                host.setStatus(tr("status.install.needPrereq", names));
+                alert(Alert.AlertType.WARNING, tr("status.install.needPrereq", names));
+                onResult.accept(false);
+                return;
+            }
+            installingServers.add(key);
+            host.setStatus(tr("status.install.installing", tr("install.lang.typst")));
+            service.install(
+                    steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
+                        installingServers.remove(key);
+                        if (result.ok()) {
+                            if (result.installedCommand() != null) {
+                                host.settings().setTypstPath(result.installedCommand());
+                            }
+                            ops.reapplyToolSupport(); // re-applies Typst support (+ persists) → preview lights up
+                            host.setStatus(tr("status.install.done", tr("install.lang.typst")));
+                        } else {
+                            host.setStatus(tr("status.install.failed", tr("install.lang.typst")));
                             alert(Alert.AlertType.ERROR, result.message());
                         }
                         onResult.accept(result.ok());

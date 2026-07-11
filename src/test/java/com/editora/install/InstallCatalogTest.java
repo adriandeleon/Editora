@@ -197,6 +197,29 @@ class InstallCatalogTest {
     }
 
     @Test
+    void typstCliIsABinaryArchiveForEveryPlatform() {
+        var steps = InstallCatalog.typstCliSteps();
+        assertEquals(1, steps.size());
+        assertEquals(Kind.ARCHIVE, steps.get(0).kind());
+        assertEquals("typst-cli", steps.get(0).id());
+        assertEquals("plugins/typst", steps.get(0).destSubpath());
+        ArchiveSpec spec = InstallCatalog.archiveSpec("typst-cli").orElseThrow();
+        assertEquals("typst", spec.binaryName());
+        assertEquals("", spec.commandSuffix()); // the bare typst binary (renderer adds "compile …")
+        for (Platform p : Platform.values()) {
+            assertNotNull(spec.assetByPlatform().get(p), "typst-cli missing asset for " + p);
+        }
+        assertEquals("typst-aarch64-apple-darwin", spec.assetByPlatform().get(Platform.MAC_ARM));
+    }
+
+    @Test
+    void tarExtractArgvAutoDetectsCompression() {
+        assertEquals(
+                java.util.List.of("tar", "-xf", "/tmp/x.tar.xz", "-C", "/tmp/out"),
+                InstallCatalog.tarExtractArgvAuto(Path.of("/tmp/x.tar.xz"), Path.of("/tmp/out")));
+    }
+
+    @Test
     void installableServerIdsAreAllServiceable() {
         for (String id : InstallCatalog.installableServerIds()) {
             assertTrue(InstallCatalog.serverInstall(id).isPresent(), id + " should have install steps");

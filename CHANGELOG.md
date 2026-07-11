@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **In-app typst-CLI installer.** *Settings → Languages & Tools → Typst* gains an **Install…** button (and
+  the `install.typstCli` command) that downloads the `typst` renderer binary for your OS/arch from typst's
+  GitHub releases, extracts it (adds `.tar.xz` support — typst ships xz tarballs), and points
+  `Settings.typstPath` at it, so the document preview lights up without a restart. Distinct from the
+  tinymist LSP-server installer. The button shows **Installed** when `typst` is already detected.
+
 - **Typst editing conveniences.** For `.typ` files: **snippets** (a bundled `typst.json` — figure, table,
   grid, equation, import, outline, bibliography, …); **Insert Table** (a grid size-picker that drops a
   `#table(…)` skeleton with the caret in the first cell — on the format bar, right-click menu, and
