@@ -92,8 +92,23 @@ final class TypstCoordinator {
         });
     }
 
-    /** {@code typst.export}: save the active Typst document as PDF/PNG/SVG (no-op when off). */
+    /** {@code typst.export}: save the active Typst document, PDF pre-selected (no-op when off). */
     void export() {
+        export("pdf");
+    }
+
+    /** {@code typst.exportPng}: export the active Typst document, PNG pre-selected. */
+    void exportPng() {
+        export("png");
+    }
+
+    /** {@code typst.exportSvg}: export the active Typst document, SVG pre-selected. */
+    void exportSvg() {
+        export("svg");
+    }
+
+    /** Save the active Typst document, with {@code preferredExt} (pdf/png/svg) pre-selected in the chooser. */
+    private void export(String preferredExt) {
         ifEnabled(() -> {
             EditorBuffer b = host.activeBuffer();
             if (b == null || !b.isTypst()) {
@@ -106,12 +121,17 @@ final class TypstCoordinator {
             chooser.setTitle(tr("dialog.typstExport.title"));
             String base = host.bufferBaseName(b);
             int dot = base.lastIndexOf('.');
-            chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : base) + ".pdf");
-            chooser.getExtensionFilters()
-                    .addAll(
-                            new FileChooser.ExtensionFilter("PDF", "*.pdf"),
-                            new FileChooser.ExtensionFilter("PNG", "*.png"),
-                            new FileChooser.ExtensionFilter("SVG", "*.svg"));
+            chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : base) + "." + preferredExt);
+            FileChooser.ExtensionFilter pdf = new FileChooser.ExtensionFilter("PDF", "*.pdf");
+            FileChooser.ExtensionFilter png = new FileChooser.ExtensionFilter("PNG", "*.png");
+            FileChooser.ExtensionFilter svg = new FileChooser.ExtensionFilter("SVG", "*.svg");
+            chooser.getExtensionFilters().addAll(pdf, png, svg);
+            chooser.setSelectedExtensionFilter(
+                    switch (preferredExt) {
+                        case "png" -> png;
+                        case "svg" -> svg;
+                        default -> pdf;
+                    });
             File f = chooser.showSaveDialog(host.window());
             if (f == null) {
                 return;

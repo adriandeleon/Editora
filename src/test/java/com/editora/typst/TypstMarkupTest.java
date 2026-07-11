@@ -56,6 +56,31 @@ class TypstMarkupTest {
     }
 
     @Test
+    void image_wrapsPathInImageCall() {
+        assertEquals("#image(\"assets/logo.png\")", TypstMarkup.image("assets/logo.png"));
+        assertEquals("#image(\"\")", TypstMarkup.image(null));
+    }
+
+    @Test
+    void table_buildsSkeletonWithCaretInFirstCell() {
+        TypstMarkup.Table t = TypstMarkup.table(2, 3);
+        assertTrue(t.text().startsWith("#table(\n  columns: 3,\n"));
+        assertTrue(t.text().endsWith(")"));
+        // 2 rows × 3 cells = six "[]" placeholders.
+        assertEquals(6, t.text().split("\\[\\]", -1).length - 1);
+        // caretOffset points just inside the first "[]".
+        assertEquals('[', t.text().charAt(t.caretOffset() - 1));
+        assertEquals(']', t.text().charAt(t.caretOffset()));
+    }
+
+    @Test
+    void table_clampsToAtLeastOneRowAndColumn() {
+        TypstMarkup.Table t = TypstMarkup.table(0, 0);
+        assertTrue(t.text().contains("columns: 1"));
+        assertEquals(1, t.text().split("\\[\\]", -1).length - 1);
+    }
+
+    @Test
     void emptyItem_andDeleteLength() {
         assertTrue(TypstMarkup.isEmptyItem("- "));
         assertTrue(TypstMarkup.isEmptyItem("1. "));

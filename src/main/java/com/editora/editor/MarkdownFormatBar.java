@@ -45,6 +45,10 @@ final class MarkdownFormatBar {
                             button(MenuIcons.code(), "tooltip.markdown.code", () -> buffer.formatInline("`")),
                             button(MenuIcons.link(), "tooltip.markdown.link", buffer::formatLinkFromClipboard),
                             button(MenuIcons.bulletList(), "tooltip.markdown.bulletList", buffer::formatBulletList),
+                            button(
+                                    MenuIcons.table(),
+                                    "tooltip.markdown.insertTable",
+                                    buffer::insertTypstTableInteractive),
                             new Separator(javafx.geometry.Orientation.VERTICAL),
                             headingBox(buffer));
         } else {
