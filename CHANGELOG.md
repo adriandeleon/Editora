@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-07-10
+
 ### Added
 
 - **In-app typst-CLI installer.** *Settings → Languages & Tools → Typst* gains an **Install…** button (and
