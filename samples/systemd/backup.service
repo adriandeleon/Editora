@@ -1,0 +1,17 @@
+# A systemd service — the preview glosses each directive in plain English
+[Unit]
+Description=Nightly backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=backup
+WorkingDirectory=/var/lib/backup
+ExecStartPre=/usr/bin/mkdir -p /var/backups
+ExecStart=/opt/backup.sh --full
+Environment=BACKUP_DEST=/mnt/nas
+RestartSec=30s
+
+[Install]
+WantedBy=multi-user.target

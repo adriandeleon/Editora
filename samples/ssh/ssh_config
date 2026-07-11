@@ -1,0 +1,22 @@
+# An SSH client config — open the 3-mode preview to see each host as a plain-English summary
+# Global defaults (apply to every host below)
+ForwardAgent no
+ServerAliveInterval 60
+AddKeysToAgent yes
+
+Host web prod
+    HostName example.com
+    Port 2222
+    User deploy
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    ProxyJump bastion
+
+Host bastion
+    HostName bastion.example.com
+    User jump
+    ForwardAgent yes
+
+Host *.internal
+    User admin
+    StrictHostKeyChecking no

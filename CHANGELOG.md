@@ -17,6 +17,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on `PATH` (`tinymist lsp`), with a per-server enable + command field and a one-click **Install…** button
   (downloads the tinymist binary from GitHub releases) under *Settings → LSP*. `Settings.typstLspEnabled`/
   `typstLspCommand` (schema 72→73).
+- **Three more config-file previews — systemd units, SSH config, and Dockerfiles** — each gets the same
+  3-mode Editor/Split/Preview view that decodes the file into plain English:
+  - **systemd** (`.service`/`.timer`/`.socket`/…): each directive glossed ("`ExecStart` → runs: …",
+    "`Restart=on-failure`", "`WantedBy=multi-user.target` → enabled for: …"), and a `.timer`'s
+    `OnCalendar=` is decoded into English + the next trigger times (e.g. `Mon..Fri *-*-* 02:30:00` → "At
+    02:30, Monday through Friday" + upcoming runs), including the `daily`/`weekly`/`hourly`/… shorthands and
+    `On*Sec=` monotonic timers via time-span decoding ("15min" → "15 minutes after boot").
+  - **SSH config** (`~/.ssh/config`, `ssh_config`): one connection summary per `Host` block — "Connects to
+    example.com on port 2222 as deploy, key ~/.ssh/id_ed25519, via jump host bastion" — plus per-option
+    glosses (agent forwarding, keepalive, proxy jump, …).
+  - **Dockerfile**: a per-build-stage digest — base image, exposed ports, workdir, user, env count,
+    entrypoint/command, health check, and a build-step count — so you can see what an image does at a glance.
+
+  All three are pure, unit-tested (`systemd`/`sshconfig`/`dockerfile` packages); on by default
+  (`Settings.systemdPreview`/`sshConfigPreview`/`dockerfilePreview`); Settings → Editor + palette
+  `view.toggleSystemdPreview`/`toggleSshConfigPreview`/`toggleDockerfilePreview`. No new dependency.
 
 - **fstab mount preview.** An `/etc/fstab` file (already syntax-highlighted) gains the same 3-mode
   Editor/Split/Preview view. The preview decodes each mount line into plain English — the device spec

@@ -221,6 +221,9 @@ public class SettingsWindow {
     private CheckBox svgPreviewCheck;
     private CheckBox crontabPreviewCheck;
     private CheckBox fstabPreviewCheck;
+    private CheckBox systemdPreviewCheck;
+    private CheckBox sshConfigPreviewCheck;
+    private CheckBox dockerfilePreviewCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox autoRenameTagCheck;
     private CheckBox autoCloseTagsCheck;
@@ -934,6 +937,9 @@ public class SettingsWindow {
         svgPreviewCheck = viewCheck(tr("settings.svgPreview"), Settings::setSvgPreview);
         crontabPreviewCheck = viewCheck(tr("settings.crontabPreview"), Settings::setCrontabPreview);
         fstabPreviewCheck = viewCheck(tr("settings.fstabPreview"), Settings::setFstabPreview);
+        systemdPreviewCheck = viewCheck(tr("settings.systemdPreview"), Settings::setSystemdPreview);
+        sshConfigPreviewCheck = viewCheck(tr("settings.sshConfigPreview"), Settings::setSshConfigPreview);
+        dockerfilePreviewCheck = viewCheck(tr("settings.dockerfilePreview"), Settings::setDockerfilePreview);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
@@ -2026,6 +2032,22 @@ public class SettingsWindow {
         row(p, Category.EDITOR, crontab, crontabPreviewCheck, "crontab cron schedule preview next run times");
         Label fstab = section(p, tr("settings.section.fstab"));
         row(p, Category.EDITOR, fstab, fstabPreviewCheck, "fstab mount filesystem preview options decode");
+        Label systemd = section(p, tr("settings.section.systemd"));
+        row(
+                p,
+                Category.EDITOR,
+                systemd,
+                systemdPreviewCheck,
+                "systemd unit service timer preview oncalendar schedule decode");
+        Label sshConfig = section(p, tr("settings.section.sshConfig"));
+        row(p, Category.EDITOR, sshConfig, sshConfigPreviewCheck, "ssh config host connection preview decode");
+        Label dockerfile = section(p, tr("settings.section.dockerfile"));
+        row(
+                p,
+                Category.EDITOR,
+                dockerfile,
+                dockerfilePreviewCheck,
+                "dockerfile docker image build stage preview digest");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -5451,6 +5473,9 @@ public class SettingsWindow {
             svgPreviewCheck.setSelected(settings.isSvgPreview());
             crontabPreviewCheck.setSelected(settings.isCrontabPreview());
             fstabPreviewCheck.setSelected(settings.isFstabPreview());
+            systemdPreviewCheck.setSelected(settings.isSystemdPreview());
+            sshConfigPreviewCheck.setSelected(settings.isSshConfigPreview());
+            dockerfilePreviewCheck.setSelected(settings.isDockerfilePreview());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
@@ -6031,6 +6056,9 @@ public class SettingsWindow {
             svgPreviewCheck.setSelected(s.isSvgPreview());
             crontabPreviewCheck.setSelected(s.isCrontabPreview());
             fstabPreviewCheck.setSelected(s.isFstabPreview());
+            systemdPreviewCheck.setSelected(s.isSystemdPreview());
+            sshConfigPreviewCheck.setSelected(s.isSshConfigPreview());
+            dockerfilePreviewCheck.setSelected(s.isDockerfilePreview());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());

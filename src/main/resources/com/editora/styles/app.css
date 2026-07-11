@@ -574,6 +574,34 @@
 .fstab-check { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
 .fstab-error { -fx-text-fill: -color-danger-fg; }
 
+/* systemd unit preview — theme-aware via AtlantaFX semantic colors. */
+.systemd-preview-scroll { -fx-background-color: -color-bg-default; }
+.systemd-preview { -fx-background-color: -color-bg-default; -fx-padding: 10; -fx-spacing: 2; }
+.systemd-header { -fx-text-fill: -color-fg-default; -fx-font-size: 1.15em; -fx-padding: 0 0 6 0; }
+.systemd-section { -fx-text-fill: -color-accent-fg; -fx-font-family: monospace; -fx-padding: 8 0 2 0; }
+.systemd-item { -fx-padding: 3 0 3 12; -fx-spacing: 1; }
+.systemd-gloss { -fx-text-fill: -color-fg-default; }
+.systemd-raw { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; -fx-font-size: 0.9em; }
+.systemd-nextruns { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
+
+/* SSH client-config preview — theme-aware via AtlantaFX semantic colors. */
+.sshconfig-preview-scroll { -fx-background-color: -color-bg-default; }
+.sshconfig-preview { -fx-background-color: -color-bg-default; -fx-padding: 10; -fx-spacing: 2; }
+.sshconfig-header { -fx-text-fill: -color-fg-muted; -fx-padding: 0 0 8 0; }
+.sshconfig-block { -fx-padding: 8 0 8 0; -fx-spacing: 2; -fx-border-color: transparent transparent -color-border-muted transparent; -fx-border-width: 0 0 0.5 0; }
+.sshconfig-target { -fx-text-fill: -color-accent-fg; -fx-font-family: monospace; }
+.sshconfig-summary { -fx-text-fill: -color-fg-default; }
+.sshconfig-option { -fx-text-fill: -color-fg-muted; -fx-padding: 0 0 0 12; }
+
+/* Dockerfile stage preview — theme-aware via AtlantaFX semantic colors. */
+.dockerfile-preview-scroll { -fx-background-color: -color-bg-default; }
+.dockerfile-preview { -fx-background-color: -color-bg-default; -fx-padding: 10; -fx-spacing: 2; }
+.dockerfile-header { -fx-text-fill: -color-fg-muted; -fx-padding: 0 0 8 0; }
+.dockerfile-arg { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; }
+.dockerfile-stage { -fx-padding: 8 0 8 0; -fx-spacing: 2; -fx-border-color: transparent transparent -color-border-muted transparent; -fx-border-width: 0 0 0.5 0; }
+.dockerfile-title { -fx-text-fill: -color-accent-fg; -fx-font-family: monospace; }
+.dockerfile-fact { -fx-text-fill: -color-fg-default; -fx-padding: 0 0 0 12; }
+
 /* Keep the tree token colors stable when a row is selected. The rows are TextFlows of Text runs, whose
    -fx-fill AtlantaFX flips to the selection foreground (-color-cell-fg-selected) on a selected cell — so
    without these the colored tokens visibly recolor on select/deselect (a "redraw" flash). Restating each

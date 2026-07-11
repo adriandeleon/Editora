@@ -213,6 +213,12 @@ public class EditorBuffer implements TabContent {
     private boolean crontabPreviewEnabled;
     /** fstab mount preview for /etc/fstab files: on when the feature is enabled (pushed from settings). */
     private boolean fstabPreviewEnabled;
+    /** systemd unit preview: on when the feature is enabled (pushed from settings). */
+    private boolean systemdPreviewEnabled;
+    /** SSH client-config preview: on when the feature is enabled (pushed from settings). */
+    private boolean sshConfigPreviewEnabled;
+    /** Dockerfile stage preview: on when the feature is enabled (pushed from settings). */
+    private boolean dockerfilePreviewEnabled;
     /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
     private StackPane structuredContentHolder;
     /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
@@ -2153,6 +2159,9 @@ public class EditorBuffer implements TabContent {
                 || hasSvgPreview()
                 || hasCrontabPreview()
                 || hasFstabPreview()
+                || hasSystemdPreview()
+                || hasSshConfigPreview()
+                || hasDockerfilePreview()
                 || hasTypstPreview();
     }
 
@@ -2279,9 +2288,78 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** A systemd unit buffer (language {@code systemd}: .service/.timer/.socket/… — see LanguageRegistry). */
+    public boolean isSystemd() {
+        return "systemd".equals(language);
+    }
+
+    /** Whether the systemd unit preview should be offered (feature on + a systemd buffer + not huge). */
+    public boolean hasSystemdPreview() {
+        return systemdPreviewEnabled && isSystemd() && !hugeFile;
+    }
+
+    /** Pushes the systemd-preview feature gate (from Settings); drops back to source when turned off. */
+    public void setSystemdPreviewEnabled(boolean enabled) {
+        if (this.systemdPreviewEnabled == enabled) {
+            return;
+        }
+        this.systemdPreviewEnabled = enabled;
+        if (!enabled && isSystemd() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR);
+        }
+    }
+
+    /** An SSH client-config buffer (language {@code ssh-config} — see ConfigFileType). */
+    public boolean isSshConfig() {
+        return "ssh-config".equals(language);
+    }
+
+    /** Whether the SSH-config preview should be offered (feature on + an ssh-config buffer + not huge). */
+    public boolean hasSshConfigPreview() {
+        return sshConfigPreviewEnabled && isSshConfig() && !hugeFile;
+    }
+
+    /** Pushes the ssh-config-preview feature gate (from Settings); drops back to source when turned off. */
+    public void setSshConfigPreviewEnabled(boolean enabled) {
+        if (this.sshConfigPreviewEnabled == enabled) {
+            return;
+        }
+        this.sshConfigPreviewEnabled = enabled;
+        if (!enabled && isSshConfig() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR);
+        }
+    }
+
+    /** A Dockerfile buffer (language {@code dockerfile} — see ConfigFileType). */
+    public boolean isDockerfile() {
+        return "dockerfile".equals(language);
+    }
+
+    /** Whether the Dockerfile stage preview should be offered (feature on + a Dockerfile buffer + not huge). */
+    public boolean hasDockerfilePreview() {
+        return dockerfilePreviewEnabled && isDockerfile() && !hugeFile;
+    }
+
+    /** Pushes the Dockerfile-preview feature gate (from Settings); drops back to source when turned off. */
+    public void setDockerfilePreviewEnabled(boolean enabled) {
+        if (this.dockerfilePreviewEnabled == enabled) {
+            return;
+        }
+        this.dockerfilePreviewEnabled = enabled;
+        if (!enabled && isDockerfile() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR);
+        }
+    }
+
     /** Whether this buffer uses the self-scrolling tree host (structured, XML, crontab, or fstab) — shared surface. */
     private boolean hasTreePreview() {
-        return hasStructuredPreview() || hasXmlPreview() || hasCrontabPreview() || hasFstabPreview();
+        return hasStructuredPreview()
+                || hasXmlPreview()
+                || hasCrontabPreview()
+                || hasFstabPreview()
+                || hasSystemdPreview()
+                || hasSshConfigPreview()
+                || hasDockerfilePreview();
     }
 
     /** Pushes the structured-preview feature gate (from Settings); re-attaches the toggle if it flipped. */
@@ -3921,6 +3999,63 @@ public class EditorBuffer implements TabContent {
             });
             return;
         }
+        if (hasSystemdPreview()) {
+            // Whole file is a systemd unit: parse off-thread, decode directives (+ OnCalendar next runs) into
+            // English, build the preview node on the FX thread into the shared self-scrolling host.
+            String src = area.getText();
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                try {
+                    com.editora.systemd.SystemdUnit parsed = com.editora.systemd.SystemdUnit.parse(src);
+                    Platform.runLater(() -> {
+                        if (gen == previewGen) {
+                            structuredContentHolder().getChildren().setAll(SystemdPreview.build(parsed, now));
+                        }
+                    });
+                } catch (Throwable t) {
+                    surfaceTreePreviewError(gen, t);
+                }
+            });
+            return;
+        }
+        if (hasSshConfigPreview()) {
+            // Whole file is an SSH client config: parse off-thread into Host/Match blocks, decode into English.
+            String src = area.getText();
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                try {
+                    java.util.List<com.editora.sshconfig.SshConfig.Block> parsed =
+                            com.editora.sshconfig.SshConfig.parse(src);
+                    Platform.runLater(() -> {
+                        if (gen == previewGen) {
+                            structuredContentHolder().getChildren().setAll(SshConfigPreview.build(parsed));
+                        }
+                    });
+                } catch (Throwable t) {
+                    surfaceTreePreviewError(gen, t);
+                }
+            });
+            return;
+        }
+        if (hasDockerfilePreview()) {
+            // Whole file is a Dockerfile: parse off-thread into build stages, distill each into a digest.
+            String src = area.getText();
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                try {
+                    com.editora.dockerfile.Dockerfile parsed = com.editora.dockerfile.Dockerfile.parse(src);
+                    Platform.runLater(() -> {
+                        if (gen == previewGen) {
+                            structuredContentHolder().getChildren().setAll(DockerfilePreview.build(parsed));
+                        }
+                    });
+                } catch (Throwable t) {
+                    surfaceTreePreviewError(gen, t);
+                }
+            });
+            return;
+        }
         if (isDiagram()) {
             // Whole file is one diagram: build the (async-filling) node on the FX thread directly. The
             // preview zoom scales the fit width (not font size, which doesn't affect an ImageView); the
@@ -4216,6 +4351,29 @@ public class EditorBuffer implements TabContent {
         if (isFstab()) {
             javafx.scene.layout.VBox box =
                     FstabPreview.content(com.editora.fstab.Fstab.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
+            box.getStyleClass().add("markdown-preview");
+            byte[] png = snapshotNodePng(box, lightUaStylesheet);
+            return png == null ? null : java.util.List.of(png);
+        }
+        if (isSystemd()) {
+            javafx.scene.layout.VBox box = SystemdPreview.content(
+                    com.editora.systemd.SystemdUnit.parse(area.getText()),
+                    java.time.LocalDateTime.now(),
+                    EXPORT_TIMELINE_WIDTH);
+            box.getStyleClass().add("markdown-preview");
+            byte[] png = snapshotNodePng(box, lightUaStylesheet);
+            return png == null ? null : java.util.List.of(png);
+        }
+        if (isSshConfig()) {
+            javafx.scene.layout.VBox box = SshConfigPreview.content(
+                    com.editora.sshconfig.SshConfig.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
+            box.getStyleClass().add("markdown-preview");
+            byte[] png = snapshotNodePng(box, lightUaStylesheet);
+            return png == null ? null : java.util.List.of(png);
+        }
+        if (isDockerfile()) {
+            javafx.scene.layout.VBox box = DockerfilePreview.content(
+                    com.editora.dockerfile.Dockerfile.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
             box.getStyleClass().add("markdown-preview");
             byte[] png = snapshotNodePng(box, lightUaStylesheet);
             return png == null ? null : java.util.List.of(png);

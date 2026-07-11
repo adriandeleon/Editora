@@ -3,6 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] systemd / SSH-config / Dockerfile previews — three more config-file 3-mode previews that decode into
+      English. **systemd** (`.service`/`.timer`/…): per-directive glosses + a `.timer`'s `OnCalendar=`
+      decoded to English + next run times (shorthands + `On*Sec=` monotonic timers via time-span decode);
+      pure `systemd/` core (`SystemdUnit`/`SystemdCalendar`/`TimeSpan`/`SystemdDescribe`). **SSH config**: a
+      per-`Host` connection summary + option glosses; pure `sshconfig/` core. **Dockerfile**: a per-stage
+      digest (base image, ports, workdir, user, entrypoint/cmd, healthcheck, step count); pure `dockerfile/`
+      core. All render into the shared self-scrolling tree host; snapshot Export-to-PDF/Print for free. On
+      by default; `Settings.systemdPreview`/`sshConfigPreview`/`dockerfilePreview` (schema 73→74). No new
+      dependency. *Deferred: systemd second-granularity next-runs + `.network`/`.link` specifics, ssh
+      `Match` criteria eval + Include resolution, Dockerfile ARG-substitution in image names.*
 - [x] fstab mount preview — an `/etc/fstab` file (already syntax-highlighted) gets the 3-mode preview: each
       line decoded into English (device spec — UUID/LABEL/path/CIFS/NFS —, mount point, filesystem, the
       comma-separated options, and the fsck/dump columns); a malformed line (too few columns, non-numeric
