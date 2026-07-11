@@ -4664,7 +4664,18 @@ public class SettingsWindow {
                         v -> config.getSettings().setCsharpLspEnabled(v),
                         () -> config.getSettings().isCsharpLspEnabled(),
                         v -> config.getSettings().setCsharpLspCommand(v),
-                        () -> config.getSettings().getCsharpLspCommand()));
+                        () -> config.getSettings().getCsharpLspCommand()),
+                new LspServerUi(
+                        "typst",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_TYPST_COMMAND,
+                        "settings.lsp.enableTypst",
+                        "settings.lsp.typstCommand",
+                        "settings.lsp.typstStatus",
+                        "lsp typst tinymist language server found installed not found command path executable",
+                        v -> config.getSettings().setTypstLspEnabled(v),
+                        () -> config.getSettings().isTypstLspEnabled(),
+                        v -> config.getSettings().setTypstLspCommand(v),
+                        () -> config.getSettings().getTypstLspCommand()));
     }
 
     /** A "[label] [path field] [Browse…]" row for picking a CLI executable. */
@@ -4831,7 +4842,8 @@ public class SettingsWindow {
                         java.util.Map.entry("sql", cs.getSqlLspCommand()),
                         java.util.Map.entry("terraform", cs.getTerraformLspCommand()),
                         java.util.Map.entry("toml", cs.getTomlLspCommand()),
-                        java.util.Map.entry("csharp", cs.getCsharpLspCommand())));
+                        java.util.Map.entry("csharp", cs.getCsharpLspCommand()),
+                        java.util.Map.entry("typst", cs.getTypstLspCommand())));
         for (LspServerUi srv : lspServerUis()) {
             Label status = lspStatusLabels.get(srv.id());
             if (status == null) {

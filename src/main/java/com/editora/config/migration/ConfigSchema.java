@@ -120,7 +120,9 @@ public enum ConfigSchema {
                             ConfigMigrations::identity), // v69→70: + cargoSupport/cargoCommand (additive)
                     Map.entry(70, (Migration) ConfigMigrations::identity), // v70→71: + goSupport/goCommand (additive)
                     Map.entry(71, (Migration)
-                            ConfigMigrations::identity))), // v71→72: + gradleSupport/gradleCommand (additive)
+                            ConfigMigrations::identity), // v71→72: + gradleSupport/gradleCommand (additive)
+                    Map.entry(72, (Migration)
+                            ConfigMigrations::identity))), // v72→73: + typstLspCommand/typstLspEnabled (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

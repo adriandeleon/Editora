@@ -2593,7 +2593,8 @@ public class EditorBuffer implements TabContent {
             "sql",
             "terraform",
             "toml",
-            "csharp");
+            "csharp",
+            "typst");
 
     /** Whether this buffer's language has a language server. */
     public boolean isLspLanguage() {

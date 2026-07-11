@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Typst language server (tinymist).** `.typ` files now get full LSP code intelligence via
+  [tinymist](https://github.com/Myriad-Dreamin/tinymist) — completion, hover docs, go-to-definition,
+  find-references, a precise document-symbol outline, diagnostics (squiggles + the Problems window), and
+  **Format Document** — the 22nd server in Editora's LSP layer (one `ServerDef`, root markers `typst.toml`).
+  It complements the existing Typst rendered preview. Off until the global LSP feature is on; auto-detected
+  on `PATH` (`tinymist lsp`), with a per-server enable + command field and a one-click **Install…** button
+  (downloads the tinymist binary from GitHub releases) under *Settings → LSP*. `Settings.typstLspEnabled`/
+  `typstLspCommand` (schema 72→73).
+
 - **fstab mount preview.** An `/etc/fstab` file (already syntax-highlighted) gains the same 3-mode
   Editor/Split/Preview view. The preview decodes each mount line into plain English — the device spec
   (`UUID=…` → "the filesystem with UUID …", `LABEL=`, `//nas/share` → SMB/CIFS, `host:/export` → NFS), the
