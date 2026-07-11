@@ -121,6 +121,24 @@ the download error. Package versions are pinned to ones that compile with typst 
   broken 2-column line. The 3-mode preview decodes each mount into plain English (device, mount point,
   filesystem, options, fsck/dump); the broken line turns red.
 
+## systemd/ — systemd unit preview
+
+- `samples/systemd/backup.timer` — the 3-mode preview decodes `OnCalendar=Mon..Fri *-*-* 02:30:00` into
+  English ("At 02:30, Monday through Friday") + the next run times, and glosses `Persistent`/`Unit`/etc.
+- `samples/systemd/backup.service` — each directive glossed in plain English (ExecStart, Type, User,
+  After/Wants, RestartSec, WantedBy).
+
+## ssh/ — SSH client-config preview
+
+- `samples/ssh/ssh_config` — global defaults + per-`Host` blocks; the preview shows a one-line connection
+  summary per host ("Connects to example.com on port 2222 as deploy, key …, via jump host bastion") plus
+  option glosses.
+
+## dockerfile/ — Dockerfile stage preview
+
+- `samples/dockerfile/Dockerfile` — a multi-stage build; the preview shows a per-stage digest (base image,
+  exposed ports, workdir, user, entrypoint/command, health check, build-step count).
+
 ## pdf/ — PDF viewer
 
 - `samples/pdf/sample.pdf` — a 2-page PDF; opens in the read-only page viewer (◀/▶ navigation + zoom, PDFBox).

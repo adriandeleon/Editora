@@ -9459,6 +9459,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setTypstPreviewEnabled(s.isTypstSupport()); // multi-page rendered preview for .typ documents
         buffer.setCrontabPreviewEnabled(s.isCrontabPreview()); // schedule decode + next runs for crontab files
         buffer.setFstabPreviewEnabled(s.isFstabPreview()); // per-line mount decode for /etc/fstab files
+        buffer.setSystemdPreviewEnabled(s.isSystemdPreview()); // directive glosses + OnCalendar decode
+        buffer.setSshConfigPreviewEnabled(s.isSshConfigPreview()); // per-Host connection summary
+        buffer.setDockerfilePreviewEnabled(s.isDockerfilePreview()); // per-stage build digest
         if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
             ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
@@ -10582,6 +10585,27 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleFstabPreview",
                         () -> config.getSettings().isFstabPreview(),
                         v -> config.getSettings().setFstabPreview(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleSystemdPreview",
+                () -> toggleSetting(
+                        "view.toggleSystemdPreview",
+                        () -> config.getSettings().isSystemdPreview(),
+                        v -> config.getSettings().setSystemdPreview(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleSshConfigPreview",
+                () -> toggleSetting(
+                        "view.toggleSshConfigPreview",
+                        () -> config.getSettings().isSshConfigPreview(),
+                        v -> config.getSettings().setSshConfigPreview(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleDockerfilePreview",
+                () -> toggleSetting(
+                        "view.toggleDockerfilePreview",
+                        () -> config.getSettings().isDockerfilePreview(),
+                        v -> config.getSettings().setDockerfilePreview(v),
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of("mermaid.export", mermaid::export));
         registry.register(Command.of("diagram.export", diagram::export));

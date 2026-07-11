@@ -1,0 +1,12 @@
+# A systemd timer — open the 3-mode preview (top-right toggle) to decode the schedule
+[Unit]
+Description=Nightly backup timer
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=5min
+Unit=backup.service
+
+[Install]
+WantedBy=timers.target

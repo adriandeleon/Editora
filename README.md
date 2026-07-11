@@ -247,6 +247,14 @@ Editora is built with the help of AI coding tools.
   into plain English: the device spec (UUID/LABEL/path/CIFS/NFS), mount point, filesystem, the options
   (`noatime` → "access times not updated", `nofail`, `uid=`, …), and the fsck/dump columns; malformed
   lines turn red. **On by default** — *Settings → Editor → fstab*.
+- **systemd unit preview** — a `.service`/`.timer`/`.socket`/… file gets the same 3-mode preview, glossing
+  each directive in plain English; a `.timer`'s `OnCalendar=` is decoded into English + the next trigger
+  times. **On by default** — *Settings → Editor → systemd*.
+- **SSH config preview** — an `~/.ssh/config` / `ssh_config` file gets a one-line connection summary per
+  `Host` block ("Connects to example.com on port 2222 as deploy, via jump host bastion") + option glosses.
+  **On by default** — *Settings → Editor → SSH config*.
+- **Dockerfile preview** — a Dockerfile gets a per-build-stage digest (base image, exposed ports, workdir,
+  user, entrypoint/command, health check, build-step count). **On by default** — *Settings → Editor → Dockerfile*.
 - **PDF viewer** — `.pdf` files open in a read-only page viewer (rasterized via the bundled PDFBox) with
   ◀/▶ page navigation and zoom, instead of the hex viewer. Works for local and remote (SFTP) PDFs.
 - **Build-tool support (Maven, npm, Cargo, Go, Gradle)** — each detected build tool gets its own toolbar icon
