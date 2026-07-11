@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 74;
+    public static final int SCHEMA_VERSION = 75;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -247,6 +247,8 @@ public class Settings {
     private boolean sshConfigPreview = true;
     /** Dockerfile stage preview (per-stage digest) in the 3-mode view: on by default. */
     private boolean dockerfilePreview = true;
+    /** GitHub Actions workflow preview (triggers + jobs digest, content-detected YAML): on by default. */
+    private boolean githubActionsPreview = true;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
     /** Auto-close HTML/XML tags (typing an open tag's {@code >} inserts the closer): on by default. */
@@ -570,6 +572,14 @@ public class Settings {
 
     public void setDockerfilePreview(boolean dockerfilePreview) {
         this.dockerfilePreview = dockerfilePreview;
+    }
+
+    public boolean isGithubActionsPreview() {
+        return githubActionsPreview;
+    }
+
+    public void setGithubActionsPreview(boolean githubActionsPreview) {
+        this.githubActionsPreview = githubActionsPreview;
     }
 
     public boolean isCsvRainbow() {

@@ -139,6 +139,13 @@ the download error. Package versions are pinned to ones that compile with typst 
 - `samples/dockerfile/Dockerfile` — a multi-stage build; the preview shows a per-stage digest (base image,
   exposed ports, workdir, user, entrypoint/command, health check, build-step count).
 
+## github-actions/ — GitHub Actions workflow preview
+
+- `samples/github-actions/ci.yml` — a workflow (detected by content: top-level `on:` + `jobs:`, so it
+  renders the workflow digest instead of the generic YAML tree). The preview lists the triggers in plain
+  English ("push to main, develop", "pull request to main", the `schedule:` cron decoded), then each job
+  with its runner, `needs`/`if`, and ordered steps.
+
 ## pdf/ — PDF viewer
 
 - `samples/pdf/sample.pdf` — a 2-page PDF; opens in the read-only page viewer (◀/▶ navigation + zoom, PDFBox).

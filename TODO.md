@@ -3,6 +3,14 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] GitHub Actions workflow preview — a workflow YAML (detected by content: top-level `on:` + `jobs:`)
+      renders a plain-English digest instead of the generic YAML tree: triggers (with a `schedule:` cron
+      decoded via the cron engine), then each job's runner/needs/if + ordered steps. Pure `ghactions/`
+      core (`GithubActions` sniff + `Workflow` parser, reusing the existing YAML + cron support);
+      `editor/GithubActionsPreview` renders into the shared self-scrolling tree host (its branch precedes
+      the structured YAML branch so it wins; off → YAML tree). On by default; `Settings.githubActionsPreview`
+      (schema 74→75). No new dependency. *Deferred: a workflow⇄YAML-tree toggle, composite `action.yml`,
+      docker-compose / k8s YAML dialects next.*
 - [x] systemd / SSH-config / Dockerfile previews — three more config-file 3-mode previews that decode into
       English. **systemd** (`.service`/`.timer`/…): per-directive glosses + a `.timer`'s `OnCalendar=`
       decoded to English + next run times (shorthands + `On*Sec=` monotonic timers via time-span decode);

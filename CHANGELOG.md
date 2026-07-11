@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitHub Actions workflow preview.** A workflow YAML (detected by content — a top-level `on:` + `jobs:` —
+  so it works regardless of path and keeps YAML highlighting) gets the same 3-mode view, rendering a
+  plain-English digest instead of the generic YAML tree: the triggers ("push to main, develop", "pull
+  request to main", `workflow_dispatch` → "manual dispatch", and a `schedule:` cron **decoded via the cron
+  engine** → "on a schedule (…Monday through Friday)"), then each job with its runner, `needs`/`if`, and the
+  ordered step list (an `actions/checkout@v4` step shown as "checkout", a `run:` as its command). Pure,
+  unit-tested `ghactions/` core (`GithubActions` sniff + `Workflow` parser, reusing the existing YAML +
+  cron support). On by default (`Settings.githubActionsPreview`); Settings → Editor → GitHub Actions, palette
+  `view.toggleGithubActionsPreview` (turning it off falls back to the YAML tree). No new dependency.
 - **In-app typst-CLI installer.** *Settings → Languages & Tools → Typst* gains an **Install…** button (and
   the `install.typstCli` command) that downloads the `typst` renderer binary for your OS/arch from typst's
   GitHub releases, extracts it (adds `.tar.xz` support — typst ships xz tarballs), and points
