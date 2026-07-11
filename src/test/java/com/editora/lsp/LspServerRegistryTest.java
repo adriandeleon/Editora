@@ -168,6 +168,17 @@ class LspServerRegistryTest {
     }
 
     @Test
+    void typstServerDefaultsAndMarkers() {
+        assertTrue(LspServerRegistry.isSupported("typst"));
+        assertEquals("typst", LspServerRegistry.serverIdFor("typst"));
+        assertEquals(
+                List.of("tinymist", "lsp"),
+                LspServerRegistry.specFor("typst", Map.of()).command());
+        assertTrue(LspServerRegistry.specFor("typst", Map.of()).rootMarkers().contains("typst.toml"));
+        assertTrue(LspServerRegistry.specFor("typst", Map.of()).rootMarkers().contains(".git"));
+    }
+
+    @Test
     void configuredCommandIsTokenizedPerServer() {
         var java = LspServerRegistry.specFor("java", Map.of("java", "java -jar /opt/jdtls/launcher.jar -data ws"));
         assertEquals(List.of("java", "-jar", "/opt/jdtls/launcher.jar", "-data", "ws"), java.command());

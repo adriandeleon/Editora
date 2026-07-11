@@ -188,7 +188,8 @@ public final class InstallCatalog {
                 "kotlin",
                 "lua",
                 "xml",
-                "terraform");
+                "terraform",
+                "typst");
     }
 
     /** The install steps for an LSP-only server id (empty if it has no installer). Pure. */
@@ -224,13 +225,14 @@ public final class InstallCatalog {
                 java.util.Optional.of(List.of(toolStep(
                         "phpactor", Prereq.COMPOSER, List.of("composer", "global", "require", "phpactor/phpactor"))));
             // --- per-OS/arch binary archives (download + extract into the config dir) ---
-            case "clangd", "kotlin", "lua", "xml", "terraform" -> java.util.Optional.of(List.of(archiveStep(serverId)));
+            case "clangd", "kotlin", "lua", "xml", "terraform", "typst" ->
+                java.util.Optional.of(List.of(archiveStep(serverId)));
             default -> java.util.Optional.empty();
         };
     }
 
     /**
-     * The per-OS binary-archive recipe for a server id (clangd/kotlin/lua/xml/terraform), or empty.
+     * The per-OS binary-archive recipe for a server id (clangd/kotlin/lua/xml/terraform/typst), or empty.
      * {@code apiUrl} returns JSON whose asset/download URLs we match by the per-{@link Platform} substring;
      * the extracted tree is searched for {@code binaryName} (a prefix when {@code binaryPrefix}) and the
      * server's command is set to that path + {@code commandSuffix}. Pure.
@@ -300,6 +302,19 @@ public final class InstallCatalog {
                         "terraform-ls",
                         false,
                         " serve"));
+            case "typst" ->
+                java.util.Optional.of(new ArchiveSpec(
+                        "https://api.github.com/repos/Myriad-Dreamin/tinymist/releases/latest",
+                        // The bare "tinymist-<triple>" binary — distinct from tinymist-docs-tool/-viewer/typlite.
+                        java.util.Map.of(
+                                Platform.MAC_ARM, "tinymist-aarch64-apple-darwin",
+                                Platform.MAC_X64, "tinymist-x86_64-apple-darwin",
+                                Platform.LINUX_X64, "tinymist-x86_64-unknown-linux-gnu",
+                                Platform.LINUX_ARM, "tinymist-aarch64-unknown-linux-gnu",
+                                Platform.WIN_X64, "tinymist-x86_64-pc-windows-msvc"),
+                        "tinymist",
+                        false,
+                        " lsp"));
             default -> java.util.Optional.empty();
         };
     }

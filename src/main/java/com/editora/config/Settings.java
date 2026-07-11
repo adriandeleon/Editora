@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 72;
+    public static final int SCHEMA_VERSION = 73;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -338,6 +338,7 @@ public class Settings {
     private String terraformLspCommand = "";
     private String tomlLspCommand = "";
     private String csharpLspCommand = "";
+    private String typstLspCommand = "";
     private boolean javaLspEnabled = true;
     private boolean typescriptLspEnabled = true;
     private boolean pythonLspEnabled = true;
@@ -359,6 +360,7 @@ public class Settings {
     private boolean terraformLspEnabled = true;
     private boolean tomlLspEnabled = true;
     private boolean csharpLspEnabled = true;
+    private boolean typstLspEnabled = true;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -1737,6 +1739,22 @@ public class Settings {
 
     public void setCsharpLspEnabled(boolean csharpLspEnabled) {
         this.csharpLspEnabled = csharpLspEnabled;
+    }
+
+    public String getTypstLspCommand() {
+        return typstLspCommand == null ? "" : typstLspCommand;
+    }
+
+    public void setTypstLspCommand(String typstLspCommand) {
+        this.typstLspCommand = typstLspCommand == null ? "" : typstLspCommand;
+    }
+
+    public boolean isTypstLspEnabled() {
+        return typstLspEnabled;
+    }
+
+    public void setTypstLspEnabled(boolean typstLspEnabled) {
+        this.typstLspEnabled = typstLspEnabled;
     }
 
     public boolean isPdfLineNumbers() {

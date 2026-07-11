@@ -13,14 +13,15 @@ import java.util.Set;
  * {@code javascript}/{@code javascriptreact}/{@code typescript}/{@code typescriptreact}), so the
  * {@link LspManager} keys a single session per {@code (serverId, root)} and all four share one process.
  *
- * <p>Ships twenty-one servers — <b>Java</b> (Eclipse JDT LS), <b>TypeScript</b> (typescript-language-server,
+ * <p>Ships twenty-two servers — <b>Java</b> (Eclipse JDT LS), <b>TypeScript</b> (typescript-language-server,
  * which also covers JavaScript/JSX/TSX), <b>Python</b> (Pyright), <b>XML</b> (lemminx), <b>JSON</b>
  * (vscode-json-language-server), <b>Bash</b> (bash-language-server, for shell scripts), <b>YAML</b>
  * (yaml-language-server), <b>Go</b> (gopls), <b>Rust</b> (rust-analyzer), <b>PHP</b> (phpactor),
  * <b>Ruby</b> (ruby-lsp), <b>C/C++</b> (clangd — one server, both language ids), <b>HTML</b> and
  * <b>CSS</b> (vscode-html/css-language-server), <b>Kotlin</b> (kotlin-language-server), <b>Lua</b>
  * (lua-language-server), <b>Dockerfile</b> (docker-langserver), <b>SQL</b> (sqls),
- * <b>Terraform</b> (terraform-ls), <b>TOML</b> (taplo), and <b>C#</b> (csharp-ls). Commands are
+ * <b>Terraform</b> (terraform-ls), <b>TOML</b> (taplo), <b>C#</b> (csharp-ls), and <b>Typst</b>
+ * (tinymist). Commands are
  * user-configurable (Settings) and never bundled. All methods are static + pure (no process launch, no I/O) so they are
  * unit-testable. Adding a server later = one more {@link ServerDef} entry.
  */
@@ -127,6 +128,9 @@ public final class LspServerRegistry {
     /** Markers for a C# project root (a global.json, else the repo; csharp-ls finds the .sln/.csproj). */
     public static final List<String> CSHARP_ROOT_MARKERS = List.of("global.json", ".git");
 
+    /** Markers for a Typst project root (a typst.toml package manifest, else the repo). */
+    public static final List<String> TYPST_ROOT_MARKERS = List.of("typst.toml", ".git");
+
     /** Default server commands when the user leaves the Settings field blank. */
     public static final String DEFAULT_JAVA_COMMAND = "jdtls";
 
@@ -150,6 +154,7 @@ public final class LspServerRegistry {
     public static final String DEFAULT_TERRAFORM_COMMAND = "terraform-ls serve";
     public static final String DEFAULT_TOML_COMMAND = "taplo lsp stdio";
     public static final String DEFAULT_CSHARP_COMMAND = "csharp-ls";
+    public static final String DEFAULT_TYPST_COMMAND = "tinymist lsp";
 
     /** A known language server: its id, default command, root markers, and the language ids it serves. */
     private enum ServerDef {
@@ -178,7 +183,8 @@ public final class LspServerRegistry {
         SQL("sql", DEFAULT_SQL_COMMAND, SHELL_ROOT_MARKERS, Set.of("sql")),
         TERRAFORM("terraform", DEFAULT_TERRAFORM_COMMAND, TERRAFORM_ROOT_MARKERS, Set.of("terraform")),
         TOML("toml", DEFAULT_TOML_COMMAND, SHELL_ROOT_MARKERS, Set.of("toml")),
-        CSHARP("csharp", DEFAULT_CSHARP_COMMAND, CSHARP_ROOT_MARKERS, Set.of("csharp"));
+        CSHARP("csharp", DEFAULT_CSHARP_COMMAND, CSHARP_ROOT_MARKERS, Set.of("csharp")),
+        TYPST("typst", DEFAULT_TYPST_COMMAND, TYPST_ROOT_MARKERS, Set.of("typst"));
 
         final String id;
         final String defaultCommand;

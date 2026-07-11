@@ -127,7 +127,8 @@ final class LspCoordinator {
         "sql",
         "terraform",
         "toml",
-        "csharp"
+        "csharp",
+        "typst"
     };
 
     /** Lines of over-scan above/below the viewport when requesting semantic tokens (small scrolls stay covered). */
@@ -276,7 +277,8 @@ final class LspCoordinator {
                         Map.entry("sql", s.getSqlLspCommand()),
                         Map.entry("terraform", s.getTerraformLspCommand()),
                         Map.entry("toml", s.getTomlLspCommand()),
-                        Map.entry("csharp", s.getCsharpLspCommand())));
+                        Map.entry("csharp", s.getCsharpLspCommand()),
+                        Map.entry("typst", s.getTypstLspCommand())));
         updateProblemsAvailability();
         // The Run affordance (compact source files) is gated by the LSP feature: toggle every buffer's
         // Run detection, then refresh the active buffer's Run tool-window availability.
@@ -338,6 +340,7 @@ final class LspCoordinator {
             case "terraform" -> s.isTerraformLspEnabled();
             case "toml" -> s.isTomlLspEnabled();
             case "csharp" -> s.isCsharpLspEnabled();
+            case "typst" -> s.isTypstLspEnabled();
             default -> s.isJavaLspEnabled();
         };
     }
@@ -366,6 +369,7 @@ final class LspCoordinator {
             case "terraform" -> s.getTerraformLspCommand();
             case "toml" -> s.getTomlLspCommand();
             case "csharp" -> s.getCsharpLspCommand();
+            case "typst" -> s.getTypstLspCommand();
             default -> s.getJavaLspCommand();
         };
     }
@@ -394,6 +398,7 @@ final class LspCoordinator {
             case "terraform" -> s.setTerraformLspEnabled(on);
             case "toml" -> s.setTomlLspEnabled(on);
             case "csharp" -> s.setCsharpLspEnabled(on);
+            case "typst" -> s.setTypstLspEnabled(on);
             default -> s.setJavaLspEnabled(on);
         }
     }
@@ -422,6 +427,7 @@ final class LspCoordinator {
             case "terraform" -> s.setTerraformLspCommand(command);
             case "toml" -> s.setTomlLspCommand(command);
             case "csharp" -> s.setCsharpLspCommand(command);
+            case "typst" -> s.setTypstLspCommand(command);
             default -> s.setJavaLspCommand(command);
         }
     }

@@ -83,9 +83,18 @@ A backlog of planned features and improvements. Unordered within each section.
       to an isolated temp root, so a self-contained one still renders. **Inherent typst constraints
       (documented, not bugs):** `@preview` packages need a network fetch (offline → the doc errors in the
       preview); refs that escape the resolved root are blocked by typst's sandbox; an untitled buffer can't
-      resolve any relative ref; uninstalled fonts fall back. *Deferred: a ppi/quality setting, live linting
-      (typst compile diagnostics), autocomplete, `#table`/`#outline` insertion + image paste, an in-app
-      installer entry, and the generic "CLI → paginated image" seam (gnuplot, asciidoc-via-PDF).*
+      resolve any relative ref; uninstalled fonts fall back. *Deferred: a ppi/quality setting,
+      `#table`/`#outline` insertion + image paste, and the generic "CLI → paginated image" seam (gnuplot,
+      asciidoc-via-PDF).*
+- [x] Typst language server (tinymist) — the 22nd LSP server: completion, hover, go-to-definition,
+      find-references, document-symbol outline, push diagnostics (Problems window + squiggles), and Format
+      Document for `.typ` files, complementing the rendered preview. One `ServerDef` in `LspServerRegistry`
+      (`tinymist lsp`, root markers `typst.toml`/`.git`) + the served `typst` language id + a Settings
+      enable/command pair (data-driven LSP page) + an install-catalog binary archive entry (tinymist GitHub
+      releases) so Settings → LSP + the editor banner offer a one-click install. Live-verified: `tinymist lsp`
+      answers `initialize` advertising completion/hover/definition/references/symbols/formatting/semantic
+      tokens (tinymist 0.15.2). `Settings.typstLspEnabled`/`typstLspCommand` (schema 72→73). Supersedes the
+      Typst preview's deferred "live linting / autocomplete". *Deferred: bundled `snippets/typst.json`.*
 - [x] CSV/TSV grid preview moved into the editor as an IntelliJ-style Editor/Split/Preview view (mirroring
       the Markdown preview), replacing the bottom `csvGrid` tool window. The floating top-right toggle drives
       Editor (source), Split (source + live grid), and Preview (grid only); the mode is remembered per file.
