@@ -224,6 +224,7 @@ public class SettingsWindow {
     private CheckBox systemdPreviewCheck;
     private CheckBox sshConfigPreviewCheck;
     private CheckBox dockerfilePreviewCheck;
+    private CheckBox githubActionsPreviewCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox autoRenameTagCheck;
     private CheckBox autoCloseTagsCheck;
@@ -940,6 +941,7 @@ public class SettingsWindow {
         systemdPreviewCheck = viewCheck(tr("settings.systemdPreview"), Settings::setSystemdPreview);
         sshConfigPreviewCheck = viewCheck(tr("settings.sshConfigPreview"), Settings::setSshConfigPreview);
         dockerfilePreviewCheck = viewCheck(tr("settings.dockerfilePreview"), Settings::setDockerfilePreview);
+        githubActionsPreviewCheck = viewCheck(tr("settings.githubActionsPreview"), Settings::setGithubActionsPreview);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
@@ -2048,6 +2050,13 @@ public class SettingsWindow {
                 dockerfile,
                 dockerfilePreviewCheck,
                 "dockerfile docker image build stage preview digest");
+        Label githubActions = section(p, tr("settings.section.githubActions"));
+        row(
+                p,
+                Category.EDITOR,
+                githubActions,
+                githubActionsPreviewCheck,
+                "github actions workflow ci yaml preview jobs triggers");
         Label saving = section(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -5478,6 +5487,7 @@ public class SettingsWindow {
             systemdPreviewCheck.setSelected(settings.isSystemdPreview());
             sshConfigPreviewCheck.setSelected(settings.isSshConfigPreview());
             dockerfilePreviewCheck.setSelected(settings.isDockerfilePreview());
+            githubActionsPreviewCheck.setSelected(settings.isGithubActionsPreview());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
@@ -6061,6 +6071,7 @@ public class SettingsWindow {
             systemdPreviewCheck.setSelected(s.isSystemdPreview());
             sshConfigPreviewCheck.setSelected(s.isSshConfigPreview());
             dockerfilePreviewCheck.setSelected(s.isDockerfilePreview());
+            githubActionsPreviewCheck.setSelected(s.isGithubActionsPreview());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());

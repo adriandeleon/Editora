@@ -9500,6 +9500,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setSystemdPreviewEnabled(s.isSystemdPreview()); // directive glosses + OnCalendar decode
         buffer.setSshConfigPreviewEnabled(s.isSshConfigPreview()); // per-Host connection summary
         buffer.setDockerfilePreviewEnabled(s.isDockerfilePreview()); // per-stage build digest
+        buffer.setGithubActionsPreviewEnabled(s.isGithubActionsPreview()); // workflow triggers + jobs digest
         if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
             ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
@@ -10645,6 +10646,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleDockerfilePreview",
                         () -> config.getSettings().isDockerfilePreview(),
                         v -> config.getSettings().setDockerfilePreview(v),
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleGithubActionsPreview",
+                () -> toggleSetting(
+                        "view.toggleGithubActionsPreview",
+                        () -> config.getSettings().isGithubActionsPreview(),
+                        v -> config.getSettings().setGithubActionsPreview(v),
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of("mermaid.export", mermaid::export));
         registry.register(Command.of("diagram.export", diagram::export));

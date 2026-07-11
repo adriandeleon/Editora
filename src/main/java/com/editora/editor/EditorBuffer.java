@@ -219,6 +219,8 @@ public class EditorBuffer implements TabContent {
     private boolean sshConfigPreviewEnabled;
     /** Dockerfile stage preview: on when the feature is enabled (pushed from settings). */
     private boolean dockerfilePreviewEnabled;
+    /** GitHub Actions workflow preview (content-detected YAML): on when the feature is enabled. */
+    private boolean githubActionsPreviewEnabled;
     /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
     private StackPane structuredContentHolder;
     /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
@@ -2223,6 +2225,7 @@ public class EditorBuffer implements TabContent {
                 || hasSystemdPreview()
                 || hasSshConfigPreview()
                 || hasDockerfilePreview()
+                || hasGithubActionsPreview()
                 || hasTypstPreview();
     }
 
@@ -2412,6 +2415,35 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** A GitHub Actions workflow buffer — a YAML file whose content matches the workflow signature (on+jobs).
+     *  Detected by content (not path/extension) so it works anywhere; reads only a bounded head of the file. */
+    public boolean isGithubActions() {
+        if (!"yaml".equals(language)) {
+            return false;
+        }
+        int len = area.getLength();
+        String head = area.getText(0, Math.min(len, 65536));
+        return com.editora.ghactions.GithubActions.looksLikeWorkflow(head);
+    }
+
+    /** Whether the GitHub Actions workflow preview should be offered (feature on + a workflow + not huge). */
+    public boolean hasGithubActionsPreview() {
+        return githubActionsPreviewEnabled && !hugeFile && isGithubActions();
+    }
+
+    /** Pushes the GitHub-Actions-preview feature gate (from Settings); drops back to the YAML tree/source when off. */
+    public void setGithubActionsPreviewEnabled(boolean enabled) {
+        if (this.githubActionsPreviewEnabled == enabled) {
+            return;
+        }
+        this.githubActionsPreviewEnabled = enabled;
+        // A workflow is YAML, so turning this off leaves the structured YAML tree (if enabled); only force the
+        // editor when there's no other preview to fall back to.
+        if (!enabled && isGithubActions() && !hasPreview() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR);
+        }
+    }
+
     /** Whether this buffer uses the self-scrolling tree host (structured, XML, crontab, or fstab) — shared surface. */
     private boolean hasTreePreview() {
         return hasStructuredPreview()
@@ -2420,7 +2452,8 @@ public class EditorBuffer implements TabContent {
                 || hasFstabPreview()
                 || hasSystemdPreview()
                 || hasSshConfigPreview()
-                || hasDockerfilePreview();
+                || hasDockerfilePreview()
+                || hasGithubActionsPreview();
     }
 
     /** Pushes the structured-preview feature gate (from Settings); re-attaches the toggle if it flipped. */
@@ -3997,6 +4030,25 @@ public class EditorBuffer implements TabContent {
             csvPreviewRefresh.run(); // the coordinator re-parses the buffer text into its per-buffer grid
             return;
         }
+        if (hasGithubActionsPreview()) {
+            // A workflow is also YAML, so this must precede the structured (YAML tree) branch to win. Parse
+            // off-thread, build the specialized workflow digest on the FX thread into the shared host.
+            String src = area.getText();
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                try {
+                    com.editora.ghactions.Workflow parsed = com.editora.ghactions.Workflow.parse(src);
+                    Platform.runLater(() -> {
+                        if (gen == previewGen) {
+                            structuredContentHolder().getChildren().setAll(GithubActionsPreview.build(parsed));
+                        }
+                    });
+                } catch (Throwable t) {
+                    surfaceTreePreviewError(gen, t);
+                }
+            });
+            return;
+        }
         if (hasStructuredPreview()) {
             // Whole file is one JSON/YAML/TOML doc: parse off-thread (pure, cheap), build the tree / OpenAPI
             // docs on the FX thread into the self-scrolling structured host. The previewGen guard drops a
@@ -4410,6 +4462,13 @@ public class EditorBuffer implements TabContent {
      * via their CLI instead). FX thread only.
      */
     public java.util.List<byte[]> snapshotPreviewChunks(String lightUaStylesheet) {
+        if (hasGithubActionsPreview()) {
+            javafx.scene.layout.VBox box = GithubActionsPreview.content(
+                    com.editora.ghactions.Workflow.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
+            box.getStyleClass().add("markdown-preview");
+            byte[] png = snapshotNodePng(box, lightUaStylesheet);
+            return png == null ? null : java.util.List.of(png);
+        }
         if (isStructured()) {
             StructuredParser.Parsed p = StructuredParser.parse(area.getText(), structuredFormat());
             return p.ok()

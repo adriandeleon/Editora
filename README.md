@@ -255,6 +255,9 @@ Editora is built with the help of AI coding tools.
   **On by default** — *Settings → Editor → SSH config*.
 - **Dockerfile preview** — a Dockerfile gets a per-build-stage digest (base image, exposed ports, workdir,
   user, entrypoint/command, health check, build-step count). **On by default** — *Settings → Editor → Dockerfile*.
+- **GitHub Actions preview** — a workflow YAML (detected by content) renders a plain-English digest — the
+  triggers (with a `schedule:` cron decoded), then each job's runner, `needs`/`if`, and steps. **On by
+  default** — *Settings → Editor → GitHub Actions*.
 - **PDF viewer** — `.pdf` files open in a read-only page viewer (rasterized via the bundled PDFBox) with
   ◀/▶ page navigation and zoom, instead of the hex viewer. Works for local and remote (SFTP) PDFs.
 - **Build-tool support (Maven, npm, Cargo, Go, Gradle)** — each detected build tool gets its own toolbar icon

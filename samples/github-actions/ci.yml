@@ -1,0 +1,38 @@
+# A GitHub Actions workflow — open the 3-mode preview (top-right toggle) for a plain-English digest.
+# Detected by content (top-level on: + jobs:), so it renders the workflow view instead of the YAML tree.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npm test
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        run: ./deploy.sh --prod
