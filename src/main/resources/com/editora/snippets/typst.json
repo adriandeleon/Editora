@@ -1,0 +1,97 @@
+{
+  "Heading": {
+    "prefix": "=",
+    "body": "= ${1:Heading}\n\n$0",
+    "description": "Top-level heading"
+  },
+  "Import": {
+    "prefix": "import",
+    "body": "#import \"${1:@preview/package:0.0.0}\": ${2:*}\n$0",
+    "description": "Import a module or package"
+  },
+  "Let binding": {
+    "prefix": "let",
+    "body": "#let ${1:name} = ${2:value}\n$0",
+    "description": "Let binding"
+  },
+  "Function": {
+    "prefix": "letfn",
+    "body": "#let ${1:name}(${2:args}) = {\n\t$0\n}",
+    "description": "Function definition"
+  },
+  "Set rule": {
+    "prefix": "set",
+    "body": "#set ${1:text}(${2:size: 11pt})\n$0",
+    "description": "Set rule"
+  },
+  "Show rule": {
+    "prefix": "show",
+    "body": "#show ${1:heading}: ${2:it => it}\n$0",
+    "description": "Show rule"
+  },
+  "Figure": {
+    "prefix": "figure",
+    "body": "#figure(\n\t${1:image(\"$2\")},\n\tcaption: [${3:Caption}],\n)$0",
+    "description": "Figure with caption"
+  },
+  "Image": {
+    "prefix": "image",
+    "body": "#image(\"${1:path}\", width: ${2:80%})$0",
+    "description": "Image"
+  },
+  "Table": {
+    "prefix": "table",
+    "body": "#table(\n\tcolumns: ${1:2},\n\t${2:[A], [B]},\n\t$0\n)",
+    "description": "Table"
+  },
+  "Grid": {
+    "prefix": "grid",
+    "body": "#grid(\n\tcolumns: ${1:2},\n\tgutter: ${2:1em},\n\t$0\n)",
+    "description": "Grid layout"
+  },
+  "Bullet list": {
+    "prefix": "list",
+    "body": "- ${1:item}\n- ${2:item}\n$0",
+    "description": "Bullet list"
+  },
+  "Enum list": {
+    "prefix": "enum",
+    "body": "+ ${1:item}\n+ ${2:item}\n$0",
+    "description": "Numbered list"
+  },
+  "Code block": {
+    "prefix": "```",
+    "body": "```${1:rust}\n$0\n```",
+    "description": "Fenced code block"
+  },
+  "Inline math": {
+    "prefix": "math",
+    "body": "$ $1 $$0",
+    "description": "Inline math"
+  },
+  "Display math": {
+    "prefix": "mathb",
+    "body": "$ ${1:equation} $\n$0",
+    "description": "Display math block"
+  },
+  "Link": {
+    "prefix": "link",
+    "body": "#link(\"${1:url}\")[${2:text}]$0",
+    "description": "Hyperlink"
+  },
+  "Outline (table of contents)": {
+    "prefix": "outline",
+    "body": "#outline(${1:title: [Contents], indent: auto})\n$0",
+    "description": "Table of contents"
+  },
+  "Bibliography": {
+    "prefix": "bibliography",
+    "body": "#bibliography(\"${1:refs.bib}\", style: \"${2:ieee}\")$0",
+    "description": "Bibliography"
+  },
+  "Page setup": {
+    "prefix": "page",
+    "body": "#set page(paper: \"${1:a4}\", margin: ${2:2cm})\n$0",
+    "description": "Page setup"
+  }
+}

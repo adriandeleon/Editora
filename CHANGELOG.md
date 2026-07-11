@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Typst editing conveniences.** For `.typ` files: **snippets** (a bundled `typst.json` — figure, table,
+  grid, equation, import, outline, bibliography, …); **Insert Table** (a grid size-picker that drops a
+  `#table(…)` skeleton with the caret in the first cell — on the format bar, right-click menu, and
+  `typst.insertTable`); **Insert Table of Contents** (`#outline()`, `typst.outline`); **Insert Image**
+  (`typst.insertImage` / right-click — pick or paste/drop/drag an image, copied into the doc's `assets/`
+  and inserted as `#image("assets/…")` — the Markdown image-paste paths now handle Typst too); and
+  **Export the preview to PNG / SVG** from the preview right-click menu (native `typst -f png`/`-f svg`,
+  alongside the existing PDF), plus `typst.exportPng`/`typst.exportSvg` commands. Typst-specific bits live
+  in the pure, unit-tested `com.editora.typst.TypstMarkup`. i18n ×6.
+
 - **Typst language server (tinymist).** `.typ` files now get full LSP code intelligence via
   [tinymist](https://github.com/Myriad-Dreamin/tinymist) — completion, hover docs, go-to-definition,
   find-references, a precise document-symbol outline, diagnostics (squiggles + the Problems window), and

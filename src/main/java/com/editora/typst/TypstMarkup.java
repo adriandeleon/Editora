@@ -99,6 +99,46 @@ public final class TypstMarkup {
         return new MarkdownEdit(selStart, selEnd, replacement, textStart, textStart + sel.length());
     }
 
+    // --- inserts (table / image / outline) ---------------------------------------------------------
+
+    /** The Typst image call {@code #image("relPath")}. Pure. */
+    public static String image(String relPath) {
+        return "#image(\"" + (relPath == null ? "" : relPath) + "\")";
+    }
+
+    /** The table-of-contents call {@code #outline()}. */
+    public static final String OUTLINE = "#outline()";
+
+    /**
+     * A {@code #table(...)} skeleton with {@code cols} columns and {@code rows} rows of empty {@code []}
+     * cells (the first row reads as a header). {@code caretOffset()} points inside the first cell so the
+     * caller can place the caret there. Pure; unit-tested.
+     */
+    public record Table(String text, int caretOffset) {}
+
+    public static Table table(int rows, int cols) {
+        int r = Math.max(1, rows);
+        int c = Math.max(1, cols);
+        StringBuilder sb = new StringBuilder();
+        sb.append("#table(\n  columns: ").append(c).append(",\n");
+        int caret = -1;
+        for (int row = 0; row < r; row++) {
+            sb.append("  ");
+            for (int col = 0; col < c; col++) {
+                if (caret < 0) {
+                    caret = sb.length() + 1; // inside the first "[]"
+                }
+                sb.append("[]");
+                if (col < c - 1) {
+                    sb.append(", ");
+                }
+            }
+            sb.append(",\n");
+        }
+        sb.append(")");
+        return new Table(sb.toString(), caret < 0 ? sb.length() : caret);
+    }
+
     // --- list continuation (Enter) -----------------------------------------------------------------
 
     /** The length of the leading list marker on {@code line} (where content begins), or 0 if none. */

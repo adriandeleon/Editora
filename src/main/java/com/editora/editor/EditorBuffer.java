@@ -306,8 +306,14 @@ public class EditorBuffer implements TabContent {
     private java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Injected by the controller: opens the table-size picker, then inserts a table. */
     private Runnable insertTableHandler;
+
+    private Runnable insertTypstTableHandler;
+    private Runnable typstImagePasteHandler;
     /** Preview right-click menu actions (injected from the controller's export/print commands). */
     private Runnable previewExportPdfHandler = () -> {};
+
+    private Runnable previewExportPngHandler = () -> {};
+    private Runnable previewExportSvgHandler = () -> {};
 
     private Runnable previewPrintHandler = () -> {};
     private Runnable previewExportDocxHandler = () -> {};
@@ -1271,6 +1277,48 @@ public class EditorBuffer implements TabContent {
         this.insertTableHandler = handler;
     }
 
+    /** Opens the size picker for a Typst {@code #table} (Typst buffers only); the controller runs the picker. */
+    public void insertTypstTableInteractive() {
+        if (isTypst() && isEditable() && insertTypstTableHandler != null) {
+            insertTypstTableHandler.run();
+        }
+    }
+
+    /** Injected by the controller: opens the size picker, then calls {@link #insertTypstTable}. */
+    public void setInsertTypstTableHandler(Runnable handler) {
+        this.insertTypstTableHandler = handler;
+    }
+
+    /** Injected by the controller: opens an image file chooser → copies to {@code assets/} → inserts
+     *  {@code #image("…")} (the "Insert Image" menu item for Typst buffers). */
+    public void setTypstImageHandler(Runnable handler) {
+        this.typstImagePasteHandler = handler;
+    }
+
+    /** Inserts a {@code #table(...)} skeleton at the caret (on its own line), caret in the first cell. */
+    public void insertTypstTable(int rows, int cols) {
+        if (!isTypst() || !isEditable()) {
+            return;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        TypstMarkup.Table t = TypstMarkup.table(rows, cols);
+        int caret = a.getCaretPosition();
+        boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
+        String prefix = needLeading ? "\n" : "";
+        a.replaceText(caret, caret, prefix + t.text() + "\n");
+        a.moveTo(caret + prefix.length() + t.caretOffset());
+        a.requestFollowCaret();
+        a.requestFocus();
+    }
+
+    /** Inserts a {@code #outline()} table-of-contents call at the caret (Typst buffers only). */
+    public void insertTypstOutline() {
+        if (!isTypst() || !isEditable()) {
+            return;
+        }
+        insertAtCaret(TypstMarkup.OUTLINE);
+    }
+
     /** Adds a row below the caret's row in the GFM table; false when the caret is not on a table. */
     public boolean tableAddRow() {
         return applyTableNav(MarkdownTable::addRow);
@@ -1711,7 +1759,20 @@ public class EditorBuffer implements TabContent {
         MenuItem bullet = new MenuItem(tr("command.typst.bulletList"));
         bullet.setGraphic(MenuIcons.bulletList());
         bullet.setOnAction(e -> formatBulletList());
-        return List.of(bold, emph, raw, link, bullet);
+        MenuItem table = new MenuItem(tr("command.typst.insertTable"));
+        table.setGraphic(MenuIcons.table());
+        table.setOnAction(e -> insertTypstTableInteractive());
+        MenuItem outline = new MenuItem(tr("command.typst.outline"));
+        outline.setGraphic(MenuIcons.bulletList());
+        outline.setOnAction(e -> insertTypstOutline());
+        MenuItem image = new MenuItem(tr("command.typst.insertImage"));
+        image.setGraphic(MenuIcons.download());
+        image.setOnAction(e -> {
+            if (typstImagePasteHandler != null) {
+                typstImagePasteHandler.run();
+            }
+        });
+        return List.of(bold, emph, raw, link, bullet, table, outline, image);
     }
 
     /** The "Table" submenu: insert + add/delete row & column + column alignment. */
@@ -2508,7 +2569,7 @@ public class EditorBuffer implements TabContent {
      */
     private void installImageDrop(CodeArea a) {
         a.addEventHandler(javafx.scene.input.DragEvent.DRAG_OVER, e -> {
-            if (!isMarkdown() || !isEditable()) {
+            if ((!isMarkdown() && !isTypst()) || !isEditable()) {
                 return;
             }
             javafx.scene.input.Dragboard db = e.getDragboard();
@@ -2520,7 +2581,7 @@ public class EditorBuffer implements TabContent {
             }
         });
         a.addEventHandler(javafx.scene.input.DragEvent.DRAG_DROPPED, e -> {
-            if (!isMarkdown() || !isEditable()) {
+            if ((!isMarkdown() && !isTypst()) || !isEditable()) {
                 return;
             }
             javafx.scene.input.Dragboard db = e.getDragboard();
@@ -3554,6 +3615,15 @@ public class EditorBuffer implements TabContent {
         this.previewExportPdfHandler = handler == null ? () -> {} : handler;
     }
 
+    /** Injects the Typst preview right-click "Export to PNG" / "Export to SVG" actions (controller commands). */
+    public void setPreviewExportPngHandler(Runnable handler) {
+        this.previewExportPngHandler = handler == null ? () -> {} : handler;
+    }
+
+    public void setPreviewExportSvgHandler(Runnable handler) {
+        this.previewExportSvgHandler = handler == null ? () -> {} : handler;
+    }
+
     public void setPreviewPrintHandler(Runnable handler) {
         this.previewPrintHandler = handler == null ? () -> {} : handler;
     }
@@ -3613,6 +3683,16 @@ public class EditorBuffer implements TabContent {
                 pdf.setGraphic(MenuIcons.download());
                 pdf.setOnAction(ev -> previewExportPdfHandler.run());
                 previewContextMenu.getItems().add(pdf);
+                // Typst also exports to PNG / SVG natively (typst -f png/svg).
+                if (isTypst()) {
+                    MenuItem png = new MenuItem(tr("command.typst.exportPng"));
+                    png.setGraphic(MenuIcons.download());
+                    png.setOnAction(ev -> previewExportPngHandler.run());
+                    MenuItem svg = new MenuItem(tr("command.typst.exportSvg"));
+                    svg.setGraphic(MenuIcons.download());
+                    svg.setOnAction(ev -> previewExportSvgHandler.run());
+                    previewContextMenu.getItems().addAll(png, svg);
+                }
                 // Word / OpenDocument export — Markdown only (not standalone diagrams).
                 if (isMarkdown()) {
                     MenuItem docx = new MenuItem(tr("command.preview.exportDocx"));

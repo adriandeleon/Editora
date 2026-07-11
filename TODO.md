@@ -83,8 +83,13 @@ A backlog of planned features and improvements. Unordered within each section.
       to an isolated temp root, so a self-contained one still renders. **Inherent typst constraints
       (documented, not bugs):** `@preview` packages need a network fetch (offline → the doc errors in the
       preview); refs that escape the resolved root are blocked by typst's sandbox; an untitled buffer can't
-      resolve any relative ref; uninstalled fonts fall back. *Deferred: a ppi/quality setting,
-      `#table`/`#outline` insertion + image paste, and the generic "CLI → paginated image" seam (gnuplot,
+      resolve any relative ref; uninstalled fonts fall back. **Editor conveniences shipped:** bundled
+      snippets, `#table` insert (grid picker), `#outline()`/TOC insert, image paste/drop/drag → `assets/` +
+      `#image("…")`, and preview → PNG/SVG export (native `typst -f`). *Deferred: a ppi/quality setting; an
+      in-app **typst-CLI installer** (needs `.tar.xz` extraction + a distinct archive id from tinymist's +
+      an apply-to-`Settings.typstPath` path — the LSP-server installer already exists); **click-in-preview →
+      jump-to-source** (infeasible on the raster preview — needs tinymist's websocket preview protocol + a
+      `javafx.web` host Editora doesn't ship); and the generic "CLI → paginated image" seam (gnuplot,
       asciidoc-via-PDF).*
 - [x] Typst language server (tinymist) — the 22nd LSP server: completion, hover, go-to-definition,
       find-references, document-symbol outline, push diagnostics (Problems window + squiggles), and Format

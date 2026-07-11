@@ -4800,6 +4800,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAiActionHandlers(aiCoordinator::explainSelection, aiCoordinator::rewriteSelection); // AI sel. bar
         buffer.setTableFileExporter(this::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
         buffer.setInsertTableHandler(this::markdownInsertTable); // Markdown format-bar "insert table" button
+        buffer.setInsertTypstTableHandler(() -> showTableSizePicker(buffer::insertTypstTable)); // Typst #table
+        buffer.setTypstImageHandler(() -> insertTypstImageFromChooser(buffer)); // Typst "Insert Image" menu
+        buffer.setPreviewExportPngHandler(typst::exportPng); // Typst preview right-click → PNG
+        buffer.setPreviewExportSvgHandler(typst::exportSvg); // Typst preview right-click → SVG
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
         buffer.setHtmlPreviewDirtyListener(() -> htmlPreview.onBufferEdited(buffer));
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
@@ -6655,8 +6659,33 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** If the clipboard holds an image and the active buffer is a saved local Markdown file, save it under
      *  {@code assets/} and insert {@code ![](…)}. Returns true if it handled (or claimed) the paste. */
+    /** The image-reference snippet for {@code b}: Typst {@code #image("rel")} or Markdown {@code ![alt](rel)}. */
+    private static String markupImageSnippet(EditorBuffer b, String rel, String alt) {
+        return b.isTypst()
+                ? com.editora.typst.TypstMarkup.image(rel)
+                : com.editora.markdown.MarkdownImagePaste.snippet(rel, alt);
+    }
+
+    /** The Typst "Insert Image" menu action: pick an image file, copy it into the doc's {@code assets/}
+     *  dir, and insert {@code #image("assets/…")}. Requires a saved local buffer (so assets/ resolves). */
+    private void insertTypstImageFromChooser(EditorBuffer b) {
+        if (b.getPath() == null || !isLocalBuffer(b)) {
+            setStatus(tr("status.markdown.imageNeedsSave"));
+            return;
+        }
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle(tr("command.typst.insertImage"));
+        chooser.getExtensionFilters()
+                .add(new javafx.stage.FileChooser.ExtensionFilter(
+                        "Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.svg", "*.bmp"));
+        java.io.File f = chooser.showOpenDialog(stage);
+        if (f != null) {
+            insertDroppedImages(b, java.util.List.of(f));
+        }
+    }
+
     private boolean tryMarkdownImagePaste(EditorBuffer b) {
-        if (!b.isMarkdown() || !b.isEditable()) {
+        if ((!b.isMarkdown() && !b.isTypst()) || !b.isEditable()) {
             return false;
         }
         if (!javafx.scene.input.Clipboard.getSystemClipboard().hasImage()) {
@@ -6680,7 +6709,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             java.nio.file.Path target = assets.resolve(name);
             writeFxImageToPng(img, target);
             String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
-            b.insertAtCaret(com.editora.markdown.MarkdownImagePaste.snippet(rel, ""));
+            b.insertAtCaret(markupImageSnippet(b, rel, ""));
             setStatus(tr("status.markdown.imagePasted", rel));
         } catch (Exception ex) {
             setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
@@ -6710,7 +6739,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 if (out.length() > 0) {
                     out.append('\n');
                 }
-                out.append(com.editora.markdown.MarkdownImagePaste.snippet(rel, base));
+                out.append(markupImageSnippet(b, rel, base));
             }
             b.insertAtCaret(out.toString());
             setStatus(tr("status.markdown.imageDropped", files.size()));
@@ -6761,7 +6790,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             if (bytes == null) {
                                 javafx.application.Platform.runLater(() -> {
                                     if (url != null) {
-                                        b.insertAtCaret(com.editora.markdown.MarkdownImagePaste.snippet(url, ""));
+                                        b.insertAtCaret(markupImageSnippet(b, url, ""));
                                         setStatus(tr("status.markdown.imageDropped", 1));
                                     } else {
                                         setStatus(tr("status.markdown.imageFailed", ""));
@@ -6783,7 +6812,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 java.nio.file.Files.write(target, finalBytes);
                                 String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
                                 javafx.application.Platform.runLater(() -> {
-                                    b.insertAtCaret(com.editora.markdown.MarkdownImagePaste.snippet(rel, ""));
+                                    b.insertAtCaret(markupImageSnippet(b, rel, ""));
                                     setStatus(tr("status.markdown.imageDropped", 1));
                                 });
                             } catch (Exception ex) {
@@ -10882,6 +10911,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("typst.bulletList", () -> withTypst(EditorBuffer::formatBulletList)));
         registry.register(Command.of("typst.headingPromote", () -> withTypst(b -> b.formatHeading(-1))));
         registry.register(Command.of("typst.headingDemote", () -> withTypst(b -> b.formatHeading(1))));
+        registry.register(Command.of("typst.insertTable", () -> withTypst(EditorBuffer::insertTypstTableInteractive)));
+        registry.register(Command.of("typst.outline", () -> withTypst(EditorBuffer::insertTypstOutline)));
+        registry.register(Command.of("typst.insertImage", () -> withTypst(this::insertTypstImageFromChooser)));
+        registry.register(Command.of("typst.exportPng", typst::exportPng));
+        registry.register(Command.of("typst.exportSvg", typst::exportSvg));
         registry.register(Command.of("markdown.reflowTable", this::markdownReflowTable));
         registry.register(Command.of("markdown.toc", this::markdownToc));
         registry.register(Command.of("markdown.tableFromCsv", this::markdownTableFromCsv));
