@@ -40,6 +40,13 @@ public final class TypstService {
     }
 
     /** Probes {@code typst}'s presence off-thread (cached), posting the result on the FX thread. */
+    /** The last cached detection result ({@code false} if never probed) — a synchronous read for the
+     *  installer's "already installed?" pre-check. */
+    public boolean cachedAvailable() {
+        Boolean c = cached;
+        return c != null && c;
+    }
+
     public void detect(Consumer<Boolean> onResult) {
         Boolean hit = cached;
         if (hit != null) {

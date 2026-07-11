@@ -552,7 +552,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setDictionaryActions(
                 this::openTechnicalDictionary, this::openPersonalDictionary); // Spell Check file links
         this.settingsWindow.setInstallActions(
-                key -> { // Settings LSP/Mermaid "Install…" buttons
+                key -> { // Settings LSP/Mermaid/Typst "Install…" buttons
+                    if ("typst".equals(key)) { // the typst CLI (renderer), not an LSP server
+                        installCoordinator.installTypstCli();
+                        return;
+                    }
                     com.editora.install.InstallCatalog.Lang lang =
                             switch (key) {
                                 case "python" -> com.editora.install.InstallCatalog.Lang.PYTHON;
@@ -2075,6 +2079,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public boolean mmdcAvailable() {
                 return mermaid.mmdcAvailable();
+            }
+
+            @Override
+            public boolean typstCliAvailable() {
+                return typst.isTypstCliAvailable();
             }
 
             @Override
@@ -10561,6 +10570,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of(
                 "install.mermaidSupport",
                 () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.MERMAID)));
+        registry.register(Command.of("install.typstCli", () -> installCoordinator.installTypstCli()));
         registry.register(Command.of("install.languageServer", this::chooseInstallServer));
         registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));

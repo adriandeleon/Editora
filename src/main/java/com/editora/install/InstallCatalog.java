@@ -129,6 +129,12 @@ public final class InstallCatalog {
         return List.of("tar", "-xzf", archive.toString(), "-C", dest.toString());
     }
 
+    /** Like {@link #tarExtractArgv} but with {@code -xf} (auto-detect compression) — for {@code .tar.xz}
+     *  archives (bsdtar/GNU tar both sniff xz). */
+    public static List<String> tarExtractArgvAuto(Path archive, Path dest) {
+        return List.of("tar", "-xf", archive.toString(), "-C", dest.toString());
+    }
+
     /** The first substring of {@code text} matching {@code regex}, or {@code null}. Pure. */
     public static String firstMatch(String text, String regex) {
         if (text == null) {
@@ -315,6 +321,19 @@ public final class InstallCatalog {
                         "tinymist",
                         false,
                         " lsp"));
+            case "typst-cli" ->
+                java.util.Optional.of(new ArchiveSpec(
+                        "https://api.github.com/repos/typst/typst/releases/latest",
+                        // typst's own release binaries (.tar.xz on unix, .zip on Windows); musl = static/portable.
+                        java.util.Map.of(
+                                Platform.MAC_ARM, "typst-aarch64-apple-darwin",
+                                Platform.MAC_X64, "typst-x86_64-apple-darwin",
+                                Platform.LINUX_X64, "typst-x86_64-unknown-linux-musl",
+                                Platform.LINUX_ARM, "typst-aarch64-unknown-linux-musl",
+                                Platform.WIN_X64, "typst-x86_64-pc-windows-msvc"),
+                        "typst",
+                        false,
+                        ""));
             default -> java.util.Optional.empty();
         };
     }
@@ -372,6 +391,23 @@ public final class InstallCatalog {
                 false,
                 "plugins/lsp/" + id,
                 null);
+    }
+
+    /** The install step for the typst render CLI (the preview tool, distinct from the tinymist LSP server):
+     *  a per-OS binary archive from typst's GitHub releases, extracted to {@code plugins/typst}. Pure. */
+    public static List<Step> typstCliSteps() {
+        return List.of(new Step(
+                "typst-cli",
+                Kind.ARCHIVE,
+                Set.of(Prereq.TAR),
+                List.of(),
+                null,
+                null,
+                null,
+                null,
+                false,
+                "plugins/typst",
+                null));
     }
 
     // --- Step factories ------------------------------------------------------------------------
