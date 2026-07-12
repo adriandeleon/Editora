@@ -166,7 +166,7 @@ final class InstallCoordinator {
                         installingServers.remove(serverId);
                         if (result.ok()) {
                             if (result.installedCommand() != null) {
-                                applyServerCommand(serverId, result.installedCommand());
+                                applyServerCommand(host.settings(), serverId, result.installedCommand());
                             }
                             ops.reapplyToolSupport();
                             host.setStatus(tr("status.install.done", serverName(serverId)));
@@ -242,15 +242,18 @@ final class InstallCoordinator {
         return tr("install.lang." + serverId);
     }
 
-    /** Persists the extracted-binary command into the right per-server Settings field (binary-archive servers). */
-    private void applyServerCommand(String serverId, String command) {
-        com.editora.config.Settings s = host.settings();
+    /** Persists the extracted-binary command into the right per-server Settings field (binary-archive servers).
+     *  Static + package-visible so {@code InstallCoordinatorTest} guards that every archive-installable server
+     *  has a persist case (a missing one leaves the command on PATH-only, so detection never finds the just-
+     *  installed binary and the install banner never clears — the tinymist/typst bug). */
+    static void applyServerCommand(com.editora.config.Settings s, String serverId, String command) {
         switch (serverId) {
             case "clangd" -> s.setClangdLspCommand(command);
             case "kotlin" -> s.setKotlinLspCommand(command);
             case "lua" -> s.setLuaLspCommand(command);
             case "xml" -> s.setXmlLspCommand(command);
             case "terraform" -> s.setTerraformLspCommand(command);
+            case "typst" -> s.setTypstLspCommand(command); // tinymist: a binary archive, path must be persisted
             default -> {
                 /* npm/toolchain servers resolve on PATH; no command to persist */
             }

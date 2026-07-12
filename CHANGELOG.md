@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Installing the Typst language server (tinymist) from the banner/Settings now actually activates it.**
+  The extracted `tinymist` binary's path was never written to `Settings.typstLspCommand`, so detection kept
+  failing on the PATH default and the install banner reappeared right after the install "succeeded". Added
+  the missing persist case (`InstallCoordinator.applyServerCommand`) + a regression test covering every
+  binary-archive server (clangd/kotlin/lua/xml/terraform/typst).
+
 - The editor install banner for a missing **language server** now says "*X* language server isn't
   installed" instead of "*X* language support isn't installed" — clearer that it offers the optional LSP
   (code intelligence), not the language's render/run tool, which may already work (e.g. the Typst preview
