@@ -7028,17 +7028,25 @@ public class MainController implements com.editora.mcp.McpBridge {
             offerInstall(
                     buffer,
                     tr("install.lang." + l.name().toLowerCase(java.util.Locale.ROOT)),
+                    "install.banner.message",
                     cb -> installCoordinator.installSupport(l, cb));
             return;
         }
-        // …then the LSP-only servers (json/bash/yaml/dockerfile/toml/…).
+        // …then the LSP-only servers (json/bash/yaml/dockerfile/toml/typst/…). This offers the *language
+        // server* (code intelligence) — distinct from a language's render/run tool that may already work
+        // (e.g. the typst preview renders via the typst CLI even when tinymist isn't installed), so the
+        // banner says "language server", not "language support".
         String serverId = com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage());
         if (serverId != null
                 && lspEnabled()
                 && lspCoordinator.isServerMissing(serverId)
                 && com.editora.install.InstallCatalog.installableServerIds().contains(serverId)) {
             String id = serverId;
-            offerInstall(buffer, installCoordinator.serverName(id), cb -> installCoordinator.installServer(id, cb));
+            offerInstall(
+                    buffer,
+                    installCoordinator.serverName(id),
+                    "install.banner.serverMessage",
+                    cb -> installCoordinator.installServer(id, cb));
             return;
         }
         buffer.showInstallBar(false);
@@ -7049,9 +7057,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void offerInstall(
             EditorBuffer buffer,
             String displayName,
+            String messageKey,
             java.util.function.Consumer<java.util.function.Consumer<Boolean>> installer) {
         buffer.setInstallPrompt(
-                tr("install.banner.message", displayName),
+                tr(messageKey, displayName),
                 tr("install.banner.install"),
                 () -> {
                     buffer.setInstallBarBusy(true);
