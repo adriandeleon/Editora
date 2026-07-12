@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The editor install banner for a missing **language server** now says "*X* language server isn't
+  installed" instead of "*X* language support isn't installed" — clearer that it offers the optional LSP
+  (code intelligence), not the language's render/run tool, which may already work (e.g. the Typst preview
+  renders via the typst CLI even when the tinymist language server isn't installed).
+
 ## [0.9.3] - 2026-07-10
 
 ### Added
