@@ -227,6 +227,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Build tools (Maven / npm / Cargo / Go / Gradle) now have IntelliJ-style tasks tool windows instead of
+  main-toolbar icons.** Each detected build tool gets its own tool-window stripe (shown when the tool's
+  marker file is found) whose panel is a browsable tree of the tool's goals / scripts / targets with a mini
+  toolbar (Run / Reload / Stop / Run custom…); double-click or Enter runs a task, and the streaming output
+  goes to a separate per-tool console window (auto-opens on a run). The per-tool icons were removed from the
+  main toolbar; the searchable actions popup is still available from the command palette (`<tool>.showActions`
+  / *Maven: Show Actions*, …). Everything else — marker detection, wrapper/executable selection, profiles and
+  `--release`-style toggles, Gradle's on-demand "Load all tasks…" — is unchanged. `tool.<tool>` now opens the
+  tasks window; the output console is `tool.<tool>Output`.
+
 - **CSV/TSV grid preview is now an in-editor Editor/Split/Preview view, mirroring the Markdown preview.**
   The spreadsheet grid for `.csv`/`.tsv` files moved out of the bottom tool window into the same
   IntelliJ-style floating Editor / Split / Preview toggle that Markdown uses (top-right of the editor):

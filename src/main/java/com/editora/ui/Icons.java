@@ -211,6 +211,11 @@ final class Icons {
         return of("M8 5v14l11-7z");
     }
 
+    /** Filled square (Material "stop") — stop a running build/task in the build-tool tree toolbar. */
+    static Node stopSquare() {
+        return of("M6 6h12v12H6z");
+    }
+
     /** TODO: Material "checklist" — a checklist for the TODO/highlight tool window. */
     static Node todo() {
         return of("M22 7l-1.41-1.41L13 13.17l-2.59-2.58L9 12l4 4 9-9zM3 5h11v2H3V5zm0 6h7v2H3v-2zm0 6h7v2H3v-2z");

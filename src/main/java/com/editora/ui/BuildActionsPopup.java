@@ -122,10 +122,10 @@ public final class BuildActionsPopup {
         this.secondaryAction = action;
     }
 
-    /** Merges on-demand-loaded tasks into the current provider and re-renders the open popup in place. */
-    public void addLoadedTasks(List<String> tasks) {
+    /** Re-renders the open popup after the coordinator merged on-demand-loaded tasks into the shared provider
+     *  (Gradle's "Load all tasks…"). No-op when the popup was never shown (its provider is still null). */
+    public void rerender() {
         if (provider != null) {
-            provider.addLoadedTasks(tasks);
             rebuildRows();
         }
     }
@@ -147,19 +147,35 @@ public final class BuildActionsPopup {
 
     /** Populates and shows the popup anchored below {@code anchor}, driven by {@code provider}. */
     public void show(Window owner, Node anchor, BuildActionsProvider provider) {
-        this.provider = provider;
-        activeToggles.clear();
-        rebuildRows();
+        prepare(provider);
         if (overlayHost == null) {
             return;
         }
+        showing = true;
+        overlayHost.showBelow(content, anchor, search::requestFocus, this::onHidden);
+    }
+
+    /** Populates and shows the popup centered (the command-palette entry point — no toolbar anchor). */
+    public void show(Window owner, BuildActionsProvider provider) {
+        prepare(provider);
+        if (overlayHost == null) {
+            return;
+        }
+        showing = true;
+        overlayHost.show(content, true, search::requestFocus, this::onHidden);
+    }
+
+    private void prepare(BuildActionsProvider provider) {
+        this.provider = provider;
+        activeToggles.clear();
+        rebuildRows();
         search.clear();
         filter("");
-        showing = true;
-        overlayHost.showBelow(content, anchor, search::requestFocus, () -> {
-            showing = false;
-            lastHiddenAt = System.currentTimeMillis();
-        });
+    }
+
+    private void onHidden() {
+        showing = false;
+        lastHiddenAt = System.currentTimeMillis();
     }
 
     private void rebuildRows() {

@@ -260,9 +260,11 @@ Editora is built with the help of AI coding tools.
   default** — *Settings → Editor → GitHub Actions*.
 - **PDF viewer** — `.pdf` files open in a read-only page viewer (rasterized via the bundled PDFBox) with
   ◀/▶ page navigation and zoom, instead of the hex viewer. Works for local and remote (SFTP) PDFs.
-- **Build-tool support (Maven, npm, Cargo, Go, Gradle)** — each detected build tool gets its own toolbar icon
-  (shown only when its marker file is present) that opens an IntelliJ-style actions popup, streaming the
-  chosen task to a per-tool console:
+- **Build-tool support (Maven, npm, Cargo, Go, Gradle)** — each detected build tool gets its own IntelliJ-style
+  **tasks tool window** (its stripe appears only when the tool's marker file is present): a browsable tree of
+  the tool's goals/scripts/targets with a mini toolbar (Run / Reload / Stop / Run custom…), double-click or
+  Enter to run, streaming the output to a separate per-tool console window. The same actions are also a
+  searchable command-palette popup (`<tool>.showActions`):
   - **Maven** (`pom.xml`) — the standard lifecycle phases, the pom's declared profiles (checkable, composing
     with a run via `-P`), and each plugin's explicitly-bound goals (`spotless:check`, `jacoco:report`, …),
     plus a "Run custom…" box. Runs prefer the project's own `./mvnw` wrapper, falling back to `mvn` on PATH.
