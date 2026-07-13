@@ -60,6 +60,7 @@ class BuildCoordinatorFxTest {
 
     private static final class FakeOps implements BuildCoordinator.Ops {
         Path projectRoot;
+        int openTasksCount;
         int openConsoleCount;
         int toolbarVisibleCount;
         boolean lastVisible;
@@ -68,6 +69,11 @@ class BuildCoordinatorFxTest {
         @Override
         public Path projectRoot() {
             return projectRoot;
+        }
+
+        @Override
+        public void openTasks() {
+            openTasksCount++;
         }
 
         @Override
@@ -81,9 +87,9 @@ class BuildCoordinatorFxTest {
         }
 
         @Override
-        public void setToolbarButtonVisible(boolean visible) {
+        public void setToolWindowsAvailable(boolean available) {
             toolbarVisibleCount++;
-            lastVisible = visible;
+            lastVisible = available;
         }
     }
 
@@ -214,7 +220,7 @@ class BuildCoordinatorFxTest {
         waitUntil(c::isDetected, "malformed pom.xml is still 'found'");
         assertNull(c.detectedLabel(), "but never parses to a model");
 
-        FxTestSupport.runOnFx(() -> c.showActionsPopup(null));
+        FxTestSupport.runOnFx(() -> c.showActionsPopup());
         assertEquals(tr("status.build.malformed", disp(BuildTool.MAVEN)), host.lastStatus);
     }
 
@@ -231,7 +237,7 @@ class BuildCoordinatorFxTest {
         waitUntil(c::isDetected, "malformed package.json is still 'found'");
         assertNull(c.detectedLabel());
 
-        FxTestSupport.runOnFx(() -> c.showActionsPopup(null));
+        FxTestSupport.runOnFx(() -> c.showActionsPopup());
         assertEquals(tr("status.build.malformed", disp(BuildTool.NPM)), host.lastStatus);
     }
 
@@ -244,7 +250,7 @@ class BuildCoordinatorFxTest {
         String disabled = tr("status.build.disabled", disp(BuildTool.MAVEN));
 
         FxTestSupport.runOnFx(() -> {
-            c.showActionsPopup(null);
+            c.showActionsPopup();
             assertEquals(disabled, host.lastStatus);
 
             c.runTask(List.of("clean"), List.of());
@@ -262,7 +268,7 @@ class BuildCoordinatorFxTest {
         host.settings.setMavenSupport(true);
         BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, new FakeOps());
 
-        FxTestSupport.runOnFx(() -> c.showActionsPopup(null));
+        FxTestSupport.runOnFx(() -> c.showActionsPopup());
         assertEquals(tr("status.build.notDetected", disp(BuildTool.MAVEN)), host.lastStatus);
     }
 

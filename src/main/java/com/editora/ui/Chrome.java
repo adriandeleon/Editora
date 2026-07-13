@@ -120,7 +120,9 @@ final class Chrome {
             return false;
         }
         for (String buildToolId : g.disabledBuildToolIds()) {
-            if (id.startsWith(buildToolId + ".") || id.equals("tool." + buildToolId)) {
+            if (id.startsWith(buildToolId + ".")
+                    || id.equals("tool." + buildToolId)
+                    || id.equals("tool." + buildToolId + "Output")) {
                 return false;
             }
         }

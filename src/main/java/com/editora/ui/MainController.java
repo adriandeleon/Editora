@@ -145,9 +145,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Button findInFilesButton;
 
     @FXML
-    private Separator buildToolsSeparator;
-
-    @FXML
     private Button splitVerticalButton;
 
     @FXML
@@ -307,10 +304,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ToolWindow runToolWindow;
     /** External Tools: the feature coordinator owns the service/panel/commands (see {@link ExternalToolCoordinator}). */
     private ToolWindow externalToolToolWindow;
-    /** Build tools (Maven/npm/…): one console tool window per detected tool (see {@link BuildCoordinator}). */
+    /** Build tools (Maven/npm/…): one IntelliJ-style tasks-tree tool window per detected tool, whose stripe
+     *  appears when the tool's marker file is found (see {@link BuildCoordinator}). */
     private final Map<BuildTool, ToolWindow> buildToolWindows = new java.util.EnumMap<>(BuildTool.class);
-    /** One toolbar button per build tool, inserted after {@link #buildToolsSeparator}. */
-    private final Map<BuildTool, Button> buildButtons = new java.util.EnumMap<>(BuildTool.class);
+    /** The matching output-console tool window per build tool (auto-opens on a run). */
+    private final Map<BuildTool, ToolWindow> buildConsoleWindows = new java.util.EnumMap<>(BuildTool.class);
 
     private ToolWindow agentToolWindow;
 
@@ -2050,6 +2048,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 "tool.externalTools");
         for (BuildCoordinator c : buildCoordinators) {
             BuildTool tool = c.tool();
+            // The primary window: the IntelliJ-style tasks tree (its stripe appears when the marker is found).
             buildToolWindows.put(
                     tool,
                     new ToolWindow(
@@ -2057,8 +2056,18 @@ public class MainController implements com.editora.mcp.McpBridge {
                             tr("toolwindow." + tool.id()),
                             ToolWindow.Side.BOTTOM,
                             c.iconSupplier(),
-                            c.panel(),
+                            c.tasksPanel(),
                             "tool." + tool.id()));
+            // The output console (auto-opens on a run); distinct id/stripe so both can coexist.
+            buildConsoleWindows.put(
+                    tool,
+                    new ToolWindow(
+                            tool.id() + "Output",
+                            tr("toolwindow.buildOutput", tool.displayName()),
+                            ToolWindow.Side.BOTTOM,
+                            Icons::terminal,
+                            c.panel(),
+                            "tool." + tool.id() + "Output"));
         }
         installCoordinator = new InstallCoordinator(coordinatorHost, new InstallCoordinator.Ops() {
             @Override
@@ -2143,7 +2152,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(externalToolToolWindow, false); // stripe off by default; reachable via the
         // tool.externalTools command / externalTool.run picker / Settings → Tool Windows
         for (ToolWindow tw : buildToolWindows.values()) {
-            toolWindows.register(tw, false); // stripe off by default; auto-opens when a task runs
+            toolWindows.register(tw, true); // tasks-tree stripe visible by preference…
+            toolWindows.setAvailable(tw, false); // …but hidden until the tool's marker file is detected
+        }
+        for (ToolWindow tw : buildConsoleWindows.values()) {
+            toolWindows.register(tw, false); // console stripe off by default; auto-opens when a task runs
+            toolWindows.setAvailable(tw, false);
         }
         toolWindows.register(remoteToolWindow, false); // off by default (niche); always available — no buffer needed
         toolWindows.register(
@@ -2641,8 +2655,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public void openConsole() {
+                public void openTasks() {
                     ToolWindow tw = buildToolWindows.get(tool);
+                    if (tw != null) {
+                        toolWindows.open(tw, true);
+                    }
+                }
+
+                @Override
+                public void openConsole() {
+                    ToolWindow tw = buildConsoleWindows.get(tool);
                     if (tw != null) {
                         toolWindows.open(tw, true);
                     }
@@ -2654,14 +2676,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public void setToolbarButtonVisible(boolean visible) {
-                    Button b = buildButtons.get(tool);
-                    if (b == null) {
-                        return;
+                public void setToolWindowsAvailable(boolean available) {
+                    ToolWindow tasks = buildToolWindows.get(tool);
+                    ToolWindow console = buildConsoleWindows.get(tool);
+                    if (tasks != null) {
+                        toolWindows.setAvailable(tasks, available);
                     }
-                    b.setVisible(visible);
-                    b.setManaged(visible);
-                    collapseToolbarSeparators();
+                    if (console != null) {
+                        toolWindows.setAvailable(console, available);
+                    }
                 }
             }));
         }
@@ -4212,7 +4235,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupButton(pasteButton, Icons.paste(), tr("tooltip.paste"), "edit.paste");
         setupButton(findButton, Icons.find(), tr("tooltip.find"), "find.show");
         setupButton(findInFilesButton, Icons.findInFiles(), tr("tooltip.findInFiles"), "search.inFiles");
-        setupBuildToolButtons();
         setupButton(splitVerticalButton, Icons.splitVertical(), tr("tooltip.splitVertical"), "view.splitVertical");
         setupButton(
                 splitHorizontalButton, Icons.splitHorizontal(), tr("tooltip.splitHorizontal"), "view.splitHorizontal");
@@ -4360,23 +4382,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private record ToolbarTip(Button button, String base, String commandId) {}
 
     private final java.util.List<ToolbarTip> toolbarTips = new java.util.ArrayList<>();
-
-    /** Creates one toolbar button per build tool and inserts them after the build-tools separator. Each button
-     *  stays hidden until its marker file is detected for the active project (see {@link BuildCoordinator}). */
-    private void setupBuildToolButtons() {
-        int idx = toolBar.getItems().indexOf(buildToolsSeparator);
-        int insertAt = idx < 0 ? toolBar.getItems().size() : idx + 1;
-        for (BuildCoordinator c : buildCoordinators) {
-            Button button = new Button();
-            setupButton(button, c.iconSupplier().get(), tr(c.tooltipKey()), c.showActionsCommandId());
-            button.setOnAction(e -> c.showActionsPopup(button));
-            c.setToolbarButton(button);
-            button.setVisible(false);
-            button.setManaged(false);
-            buildButtons.put(c.tool(), button);
-            toolBar.getItems().add(insertAt++, button);
-        }
-    }
 
     private void setupButton(Button button, Node icon, String tooltip, String commandId) {
         button.setGraphic(icon);

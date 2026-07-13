@@ -24,9 +24,11 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * One build tool's feature, running on the generic {@code com.editora.build} framework: it detects the active
- * project's marker file for a {@link BuildTool}, parses it into a {@link BuildActionsProvider}, drives a
- * {@link BuildActionsPopup} off the toolbar button, and streams tasks to a {@link BuildToolPanel} console via
- * {@link BuildService}. Everything tool-specific comes from the {@link BuildTool} (markers, executable
+ * project's marker file for a {@link BuildTool}, parses it into a {@link BuildActionsProvider}, renders it as
+ * an IntelliJ-style {@link BuildActionsTree} tool window (plus a searchable {@link BuildActionsPopup} for the
+ * command palette), and streams tasks to a separate {@link BuildToolPanel} console via {@link BuildService}.
+ * The tasks-tree + console tool-window stripes appear when the marker file is detected. Everything
+ * tool-specific comes from the {@link BuildTool} (markers, executable
  * strategy, provider parse, output style, Settings accessors); the strings are generic {@code status.build.*}
  * / {@code buildpopup.*} keys parameterized by the tool's display name, so {@code MainController} wires one
  * instance per tool with no per-tool code. Generalized from the former {@code MavenCoordinator}.
@@ -38,14 +40,17 @@ final class BuildCoordinator {
         /** The active window's project root, or {@code null} when no project is open. */
         Path projectRoot();
 
-        /** Opens (and focuses) this tool's console tool window. */
+        /** Opens (and focuses) this tool's tasks-tree tool window. */
+        void openTasks();
+
+        /** Opens (and focuses) this tool's output-console tool window. */
         void openConsole();
 
         /** A clicked file path in the console output (jump to it). */
         void onOutputLink(StackTraceLinks.Link link);
 
-        /** Shows/hides (and un-manages) this tool's toolbar button. */
-        void setToolbarButtonVisible(boolean visible);
+        /** Shows/hides this tool's tasks + console tool-window stripes to match marker detection. */
+        void setToolWindowsAvailable(boolean available);
     }
 
     private final BuildTool tool;
@@ -53,9 +58,8 @@ final class BuildCoordinator {
     private final Ops ops;
     private final BuildService service = new BuildService();
     private final BuildToolPanel panel;
+    private final BuildActionsTree tree;
     private final BuildActionsPopup popup;
-
-    private Node toolbarButton;
 
     /** The nearest detected marker-file directory for the current context, or {@code null}. */
     private Path markerRoot;
@@ -77,21 +81,35 @@ final class BuildCoordinator {
         this.host = host;
         this.ops = ops;
         this.panel = new BuildToolPanel(this::stop, tool.outputStyle());
+        this.tree = new BuildActionsTree();
         this.popup = new BuildActionsPopup(new BuildActionsPopup.Labels(
                 tool.displayName(), tr("buildpopup.searchPrompt"), tr("buildpopup.hint"), tr("buildpopup.runCustom")));
         panel.setOnLink(ops::onOutputLink);
         popup.setOnRunCustom(this::runCustom);
         popup.setOnRun(this::runTask);
+        tree.setOnRun(this::runTask);
+        tree.setOnRefresh(this::refreshMarker);
+        tree.setOnRunCustom(this::runCustom);
+        tree.setOnStop(this::stop);
         // A DSL-based tool (Gradle) whose tasks can't be statically parsed gets a "Load all tasks…" action.
-        tool.taskLoadLabel().ifPresent(key -> popup.setSecondaryAction(tr(key), this::loadAllTasks));
+        tool.taskLoadLabel().ifPresent(key -> {
+            popup.setSecondaryAction(tr(key), this::loadAllTasks);
+            tree.setSecondaryAction(tr(key), this::loadAllTasks);
+        });
     }
 
     BuildTool tool() {
         return tool;
     }
 
+    /** The output-console tool window content. */
     BuildToolPanel panel() {
         return panel;
+    }
+
+    /** The IntelliJ-style tasks-tree tool window content. */
+    BuildActionsTree tasksPanel() {
+        return tree;
     }
 
     /** This tool's stripe/tool-window icon (also the toolbar button glyph). */
@@ -99,24 +117,8 @@ final class BuildCoordinator {
         return iconFor(tool);
     }
 
-    /** The palette command id that opens the actions popup (also the toolbar button's action). */
-    String showActionsCommandId() {
-        return tool.id() + ".showActions";
-    }
-
-    /** The i18n key for the toolbar button tooltip / popup anchor. */
-    String tooltipKey() {
-        return "tooltip." + tool.id();
-    }
-
     void setOverlayHost(OverlayHost overlayHost) {
         popup.setOverlayHost(overlayHost);
-    }
-
-    /** The toolbar button node — recorded so the {@code <tool>.showActions} command (as well as the button's
-     *  own click) can anchor the popup below it. */
-    void setToolbarButton(Node button) {
-        this.toolbarButton = button;
     }
 
     /** Whether this tool's integration is enabled in Settings (default on — inert until its marker file is
@@ -192,20 +194,21 @@ final class BuildCoordinator {
         t.start();
     }
 
-    /** Re-derives the toolbar button's visibility from the last detection without a fresh re-detect. */
+    /** Re-derives the tool windows' stripe visibility from the last detection without a fresh re-detect. */
     void reapplyVisibility() {
-        ops.setToolbarButtonVisible(isEnabled() && markerRoot != null);
+        ops.setToolWindowsAvailable(isEnabled() && markerRoot != null);
     }
 
     private void applyDetected(Path root, BuildActionsProvider parsed, String label) {
         this.markerRoot = root;
         this.provider = parsed;
         this.detectedLabel = label;
-        ops.setToolbarButtonVisible(isEnabled() && root != null);
+        tree.setProvider(parsed); // rebuild the tasks tree (null = placeholder when absent/malformed)
+        ops.setToolWindowsAvailable(isEnabled() && root != null);
     }
 
-    /** Opens the actions popup (the toolbar button's click, and the {@code <tool>.showActions} command). */
-    void showActionsPopup(Node anchor) {
+    /** Opens the searchable actions popup, centered (the {@code <tool>.showActions} palette command). */
+    void showActionsPopup() {
         if (!isEnabled()) {
             host.setStatus(tr("status.build.disabled", tool.displayName()));
             return;
@@ -218,7 +221,7 @@ final class BuildCoordinator {
             host.setStatus(tr("status.build.malformed", tool.displayName()));
             return;
         }
-        popup.show(host.window(), anchor, provider);
+        popup.show(host.window(), provider);
     }
 
     /** Runs a selected task with its args + the active toggles' args (the popup's callback). */
@@ -292,6 +295,7 @@ final class BuildCoordinator {
         ops.openConsole();
         String label = String.join(" ", taskArgs);
         panel.started(label);
+        tree.setRunning(true);
         host.setStatus(tr("status.build.started", tool.displayName(), label));
         service.run(root, argv, new BuildService.Listener() {
             @Override
@@ -307,6 +311,7 @@ final class BuildCoordinator {
             @Override
             public void onExit(int code) {
                 panel.finished(code);
+                tree.setRunning(false);
                 host.setStatus(
                         code == 0
                                 ? tr("status.build.ok", tool.displayName())
@@ -316,6 +321,7 @@ final class BuildCoordinator {
             @Override
             public void onError(String message) {
                 panel.failed(message);
+                tree.setRunning(false);
                 host.setStatus(tr("status.build.failed", tool.displayName(), message));
             }
         });
@@ -354,7 +360,11 @@ final class BuildCoordinator {
                     }
                     List<String> finalTasks = tasks;
                     Platform.runLater(() -> {
-                        popup.addLoadedTasks(finalTasks);
+                        if (provider != null) {
+                            provider.addLoadedTasks(finalTasks); // mutate the shared provider once…
+                            tree.refreshFromProvider(); // …then re-render both views over it
+                            popup.rerender();
+                        }
                         host.setStatus(tr("status.build.loadedTasks", tool.displayName(), finalTasks.size()));
                     });
                 },
@@ -369,8 +379,11 @@ final class BuildCoordinator {
 
     void registerCommands(CommandRegistry registry) {
         String id = tool.id();
-        registry.register(Command.of("tool." + id, ops::openConsole));
-        registry.register(Command.of(id + ".showActions", () -> showActionsPopup(toolbarButton)));
+        registry.register(Command.of("tool." + id, ops::openTasks));
+        // The output console has an explicit (unlocalized-key) title so it needs no per-tool command i18n.
+        registry.register(Command.of(
+                "tool." + id + "Output", tr("toolwindow.buildOutput", tool.displayName()), ops::openConsole));
+        registry.register(Command.of(id + ".showActions", this::showActionsPopup));
         registry.register(Command.of(id + ".runCustom", this::runCustom));
         registry.register(Command.of(id + ".stop", this::stop));
         registry.register(Command.of(id + ".rerunLast", this::rerunLast));

@@ -35,9 +35,6 @@
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="findButton" onAction="#onFind"/>
                         <Button fx:id="findInFilesButton" onAction="#onFindInFiles"/>
-                        <Separator fx:id="buildToolsSeparator" orientation="VERTICAL"/>
-                        <!-- One build-tool button per detected tool (Maven/npm/…) is inserted here
-                             programmatically by MainController (see setupBuildToolButtons). -->
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="splitVerticalButton" onAction="#onSplitVertical"/>
                         <Button fx:id="splitHorizontalButton" onAction="#onSplitHorizontal"/>

@@ -3,6 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Build tools → IntelliJ-style tasks tool windows — replaced the per-tool main-toolbar icons with a
+      dedicated tool-window stripe per build tool (Maven/npm/Cargo/Go/Gradle), shown when the marker file is
+      detected. New `ui/BuildActionsTree` (a `ToolWindowContent`: a mini icon toolbar — Run/Reload/Stop/Run
+      custom…, plus Gradle's "Load all tasks…" — over a `TreeView` of the provider's sections; task leaves run
+      on double-click/Enter, toggle leaves re-query the provider). The streaming output moved to a separate
+      per-tool console window (`tool.<tool>Output`, auto-opens on a run); `tool.<tool>` now opens the tasks
+      window. The searchable actions popup is kept for the palette (`<tool>.showActions`), now shown centered
+      (no toolbar anchor). Removed `setupBuildToolButtons`/the FXML `buildToolsSeparator`. No framework change
+      (still `BuildTool`/`BuildActionsProvider`/`BuildService`); new `buildtree.*` + `toolwindow.buildOutput`
+      i18n. *Deferred: run/debug configurations, richer per-section grouping (e.g. Maven Dependencies).*
 - [x] GitHub Actions workflow preview — a workflow YAML (detected by content: top-level `on:` + `jobs:`)
       renders a plain-English digest instead of the generic YAML tree: triggers (with a `schedule:` cron
       decoded via the cron engine), then each job's runner/needs/if + ordered steps. Pure `ghactions/`
