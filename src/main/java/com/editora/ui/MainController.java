@@ -8756,11 +8756,40 @@ public class MainController implements com.editora.mcp.McpBridge {
             // silently used its default and the user was never asked for the name.
             vars = com.editora.template.TemplateEngine.discoverVariablesForNewFile(t.fileName(), t.body());
         }
-        if (vars.isEmpty()) {
-            applyTemplate(t, targetDir, java.util.Map.of());
+        // Fast path: a variable-less, single-file template invoked with no folder context (palette / toolbar)
+        // creates an untitled scratch buffer immediately — no wizard. A multi-file template always writes to
+        // disk, so it goes through the wizard (to offer the target folder) even with no variables.
+        if (vars.isEmpty() && targetDir == null && !t.isMultiFile()) {
+            applyTemplate(t, null, java.util.Map.of());
             return;
         }
+
         VBox body = new VBox(8);
+        // Optional target-folder field (prefilled from the folder context — e.g. the right-clicked project
+        // folder). Left blank, a single-file template opens as an untitled buffer (Save prompts for a
+        // location); filled (typed or Browse), the file(s) are written into that folder, creating it if needed.
+        TextField folderField = new TextField(targetDir == null ? "" : targetDir.toString());
+        folderField.setPromptText(tr("template.wizard.folderPrompt"));
+        folderField.setPrefColumnCount(28);
+        com.editora.command.TextInputKeymap.install(folderField, keymap);
+        Button browse = new Button(tr("dialog.clone.browse"));
+        browse.setFocusTraversable(false);
+        browse.setOnAction(e -> {
+            DirectoryChooser chooser = new DirectoryChooser();
+            chooser.setTitle(tr("template.wizard.folderTitle"));
+            java.io.File init = templateFolderChooserDir(folderField.getText());
+            if (init != null) {
+                chooser.setInitialDirectory(init);
+            }
+            java.io.File dir = chooser.showDialog(stage);
+            if (dir != null) {
+                folderField.setText(dir.toString());
+            }
+        });
+        HBox folderRow = new HBox(6, folderField, browse);
+        HBox.setHgrow(folderField, Priority.ALWAYS);
+        body.getChildren().addAll(new Label(tr("template.wizard.folder")), folderRow);
+
         java.util.LinkedHashMap<String, TextField> fields = new java.util.LinkedHashMap<>();
         for (var v : vars) {
             TextField field = new TextField(v.defaultValue());
@@ -8769,20 +8798,42 @@ public class MainController implements com.editora.mcp.McpBridge {
             fields.put(v.name(), field);
             body.getChildren().addAll(new Label(v.name()), field);
         }
+        // Focus the first variable (the thing most likely to be edited), else the folder field.
+        TextField initialFocus =
+                fields.isEmpty() ? folderField : fields.values().iterator().next();
         OverlayInput.show(
                 overlayHost,
                 tr("template.wizard.title"),
                 body,
-                fields.values().iterator().next(),
+                initialFocus,
                 tr("dialog.template.create"),
                 null,
                 () -> {
                     java.util.LinkedHashMap<String, String> answers = new java.util.LinkedHashMap<>();
                     fields.forEach((name, f) -> answers.put(name, f.getText()));
-                    applyTemplate(t, targetDir, answers);
+                    // Blank → null (untitled buffer / defaultNewDir for multi-file); a relative path resolves
+                    // against the folder context, else the default new-file dir; ~ expands to home.
+                    java.nio.file.Path base = targetDir != null ? targetDir : defaultNewDir();
+                    java.nio.file.Path dir = com.editora.config.PathKeys.resolveUserInput(
+                            folderField.getText(), base, System.getProperty("user.home"));
+                    applyTemplate(t, dir, answers);
                 },
                 null,
                 false);
+    }
+
+    /** The folder a template-wizard folder chooser should open at: the typed folder if it exists, walking up
+     *  to the nearest existing ancestor, else the default new-file directory. Null only if nothing exists. */
+    private java.io.File templateFolderChooserDir(String current) {
+        java.nio.file.Path p =
+                com.editora.config.PathKeys.resolveUserInput(current, defaultNewDir(), System.getProperty("user.home"));
+        if (p == null) {
+            p = defaultNewDir();
+        }
+        while (p != null && !java.nio.file.Files.isDirectory(p)) {
+            p = p.getParent();
+        }
+        return p == null ? null : p.toFile();
     }
 
     /** Renders {@code t} with {@code answers} and creates the file(s) (untitled buffer or written to disk). */
