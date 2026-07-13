@@ -20,48 +20,58 @@ final class Chrome {
 
     private Chrome() {}
 
-    // --- Effective chrome visibility. Zen hides all of these; Simple additionally hides the breadcrumb +
-    //     tool stripes (the toolbar/status/tab bar stay under Simple — only Zen hides them). ---
+    // --- Effective chrome visibility. The "focus modes" (Zen and Expert) hide all of these; Simple
+    //     additionally hides the breadcrumb + tool stripes (the toolbar/status/tab bar stay under Simple).
+    //     {@code focusMode} = Zen OR Expert. The exceptions are {@link #statusBar} and {@link #lineNumbers},
+    //     which Zen hides but Expert deliberately KEEPS, so those two stay keyed on the real {@code zen}. ---
 
-    static boolean toolbar(boolean showToolbar, boolean zen) {
-        return showToolbar && !zen;
+    static boolean toolbar(boolean showToolbar, boolean focusMode) {
+        return showToolbar && !focusMode;
     }
 
+    /** The status bar is hidden by Zen but KEPT by Expert, so it stays keyed on the real {@code zen} flag. */
     static boolean statusBar(boolean showStatusBar, boolean zen) {
         return showStatusBar && !zen;
     }
 
-    static boolean tabBar(boolean showTabBar, boolean zen) {
-        return showTabBar && !zen;
+    static boolean tabBar(boolean showTabBar, boolean focusMode) {
+        return showTabBar && !focusMode;
     }
 
-    static boolean breadcrumb(boolean showBreadcrumb, boolean zen, boolean simple) {
-        return showBreadcrumb && !zen && !simple;
+    static boolean breadcrumb(boolean showBreadcrumb, boolean focusMode, boolean simple) {
+        return showBreadcrumb && !focusMode && !simple;
     }
 
-    static boolean toolStripes(boolean showToolStripe, boolean zen, boolean simple) {
-        return showToolStripe && !zen && !simple;
+    static boolean toolStripes(boolean showToolStripe, boolean focusMode, boolean simple) {
+        return showToolStripe && !focusMode && !simple;
     }
 
-    // --- Effective editor view options. Zen hides all; Simple additionally hides line numbers + minimap
-    //     and removes the whole gutter. ---
+    // --- Effective editor view options. Expert keeps the whole editor view (line numbers, ruler,
+    //     current-line highlight, minimap), so only Zen (not focus) hides those — Expert strips just the
+    //     surrounding window chrome. Whitespace guides are the one editor decoration a focus mode still
+    //     hides. Simple additionally hides line numbers + minimap and removes the whole gutter. ---
 
+    /** The column ruler is hidden by Zen but KEPT by Expert, so it keys on the real {@code zen} flag. */
     static boolean columnRuler(boolean show, boolean zen) {
         return show && !zen;
     }
 
+    /** Current-line highlight is hidden by Zen but KEPT by Expert, so it keys on the real {@code zen} flag. */
     static boolean lineHighlight(boolean on, boolean zen) {
         return on && !zen;
     }
 
-    static boolean whitespace(boolean show, boolean zen) {
-        return show && !zen;
+    static boolean whitespace(boolean show, boolean focusMode) {
+        return show && !focusMode;
     }
 
+    /** Line numbers are hidden by Zen but KEPT by Expert, so they stay keyed on the real {@code zen} flag. */
     static boolean lineNumbers(boolean show, boolean zen, boolean simple) {
         return show && !zen && !simple;
     }
 
+    /** The minimap is hidden by Zen but KEPT by Expert, so it keys on the real {@code zen} flag (Simple also
+     *  hides it). */
     static boolean minimap(boolean show, boolean zen, boolean simple) {
         return show && !zen && !simple;
     }

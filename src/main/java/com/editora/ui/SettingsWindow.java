@@ -143,6 +143,7 @@ public class SettingsWindow {
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
     private final Consumer<Boolean> onToggleZen;
+    private final Consumer<Boolean> onToggleExpert;
     private final Consumer<Path> onOpenFile;
     private final Runnable onExportConfig;
     private final Runnable onShowDebugLog;
@@ -363,6 +364,7 @@ public class SettingsWindow {
     private java.util.function.Consumer<String> onInstallServer;
 
     private CheckBox zenCheck;
+    private CheckBox expertCheck;
     private CheckBox projectShowCheck;
     private ComboBox<ToolWindow.Side> projectSideCombo;
     private ToolWindow projectToolWindowRef;
@@ -443,6 +445,7 @@ public class SettingsWindow {
             com.editora.dap.DapManager dapManager,
             Consumer<Settings> onApply,
             Consumer<Boolean> onToggleZen,
+            Consumer<Boolean> onToggleExpert,
             Consumer<Path> onOpenFile,
             Runnable onExportConfig,
             Runnable onShowDebugLog) {
@@ -457,6 +460,7 @@ public class SettingsWindow {
         this.dapManager = dapManager;
         this.onApply = onApply;
         this.onToggleZen = onToggleZen;
+        this.onToggleExpert = onToggleExpert;
         this.onOpenFile = onOpenFile;
         this.onExportConfig = onExportConfig;
         this.onShowDebugLog = onShowDebugLog;
@@ -1293,6 +1297,15 @@ public class SettingsWindow {
                 return;
             }
             onToggleZen.accept(now);
+            syncViewChecks();
+        });
+
+        expertCheck = new CheckBox(tr("settings.expert"));
+        expertCheck.selectedProperty().addListener((obs, was, now) -> {
+            if (loading) {
+                return;
+            }
+            onToggleExpert.accept(now);
             syncViewChecks();
         });
 
@@ -2414,6 +2427,7 @@ public class SettingsWindow {
         simpleNote.setMaxWidth(440);
         row(p, Category.INTERFACE, modes, simpleNote, "simple minimal ui mode");
         row(p, Category.INTERFACE, modes, zenCheck, "zen distraction free focus mode");
+        row(p, Category.INTERFACE, modes, expertCheck, "expert focus mode keeps line numbers status bar");
         return p;
     }
 
@@ -5589,6 +5603,7 @@ public class SettingsWindow {
             updateLspRowsEnabled();
             refreshLspStatus();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
+            expertCheck.setSelected(config.getWorkspaceState().isExpertMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());
             autoSaveCombo.setValue(mode);
             autoSaveDelaySpinner.getValueFactory().setValue(Math.max(1, (int)

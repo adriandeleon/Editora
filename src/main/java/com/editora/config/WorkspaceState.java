@@ -65,6 +65,12 @@ public class WorkspaceState {
     private boolean zenMode;
     private List<String> preZenToolWindows = new ArrayList<>();
 
+    // --- Expert mode (per window): like Zen, but keeps the line-number gutter and the status bar. Same
+    //     per-window effective-overlay model (folded in via MainController.expertActive); mutually exclusive
+    //     with Zen. Entering it closes the open tool windows, snapshotting them into preExpertToolWindows. ---
+    private boolean expertMode;
+    private List<String> preExpertToolWindows = new ArrayList<>();
+
     /** Files open at last exit, in tab order. */
     private List<OpenFile> openFiles = new ArrayList<>();
     /** Absolute path of the tab that was active at last exit ("" if none/untitled). */
@@ -267,6 +273,22 @@ public class WorkspaceState {
 
     public void setPreZenToolWindows(List<String> preZenToolWindows) {
         this.preZenToolWindows = preZenToolWindows == null ? new ArrayList<>() : preZenToolWindows;
+    }
+
+    public boolean isExpertMode() {
+        return expertMode;
+    }
+
+    public void setExpertMode(boolean expertMode) {
+        this.expertMode = expertMode;
+    }
+
+    public List<String> getPreExpertToolWindows() {
+        return preExpertToolWindows;
+    }
+
+    public void setPreExpertToolWindows(List<String> preExpertToolWindows) {
+        this.preExpertToolWindows = preExpertToolWindows == null ? new ArrayList<>() : preExpertToolWindows;
     }
 
     public List<OpenFile> getOpenFiles() {
