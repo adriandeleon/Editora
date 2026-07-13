@@ -721,6 +721,34 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.fileActions = fileActions;
     }
 
+    /** Prompts for a name and creates a new subfolder inside {@code dirItem}'s directory. */
+    private void newFolder(TreeItem<Path> dirItem) {
+        if (prompt == null) {
+            return;
+        }
+        Path dir = dirItem.getValue();
+        prompt.show(tr("project.newFolderTitle"), tr("project.newFolderContent"), "", input -> {
+            String name = input.trim();
+            if (name.isEmpty()) {
+                return;
+            }
+            Path target = dir.resolve(name);
+            if (Files.exists(target)) {
+                showError(tr("project.newFolderExists", name));
+                return;
+            }
+            try {
+                Files.createDirectories(target);
+            } catch (IOException ex) {
+                showError(tr("project.newFolderError", name, ex.getMessage()));
+                return;
+            }
+            markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
+            dirItem.setExpanded(true); // reveal the new folder under its parent
+            refreshAfterChange();
+        });
+    }
+
     private void renameItem(TreeItem<Path> item) {
         if (prompt == null) {
             return;
@@ -943,6 +971,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir) {
             ContextMenu menu = new ContextMenu();
+            if (isDir) {
+                MenuItem newFolder = new MenuItem(tr("project.menu.newFolder"));
+                newFolder.setGraphic(Icons.newFolder());
+                newFolder.setOnAction(e -> newFolder(treeItem));
+                menu.getItems().add(newFolder);
+            }
             if (isDir && onNewFromTemplate != null) {
                 MenuItem newFromTemplate = new MenuItem(tr("project.menu.newFromTemplate"));
                 newFromTemplate.setGraphic(Icons.newFile());

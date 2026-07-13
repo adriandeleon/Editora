@@ -32,6 +32,12 @@ final class Icons {
         return of("M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z");
     }
 
+    /** A folder-with-plus glyph (Material "create_new_folder") for the "New Folder" action. */
+    static Node newFolder() {
+        return of("M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 "
+                + "8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z");
+    }
+
     /** Request/response arrows (Material "swap_horiz") — the HTTP Client tool window. */
     static Node httpClient() {
         return of("M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z");
