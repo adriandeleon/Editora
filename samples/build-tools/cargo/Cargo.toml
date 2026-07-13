@@ -1,0 +1,13 @@
+# Sample Cargo project for exercising Editora's Cargo build-tool support.
+# The actions popup shows the standard subcommands (build/run/test/check/…), the
+# explicit "cargo-demo" binary under Targets, and a "--release" toggle.
+[package]
+name = "cargo-demo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "cargo-demo"
+path = "src/main.rs"
+
+[dependencies]

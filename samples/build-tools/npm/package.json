@@ -1,0 +1,13 @@
+{
+  "name": "npm-demo",
+  "version": "1.0.0",
+  "description": "Sample npm project for exercising Editora's npm build-tool support.",
+  "packageManager": "npm@10.0.0",
+  "scripts": {
+    "start": "node index.js",
+    "build": "echo \"build step\"",
+    "test": "echo \"no tests yet\"",
+    "lint": "echo \"lint step\""
+  },
+  "license": "MIT"
+}

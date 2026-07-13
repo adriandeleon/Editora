@@ -210,6 +210,31 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
 - `samples/run/hello.py` — a Python script; the ▶ sits on the `if __name__ == "__main__":` guard
   (needs `python3` on `PATH`).
 
+## build-tools/ — Maven / Gradle / npm / Cargo toolbar button + actions popup
+
+Four tiny, self-contained projects — one per build tool. Open a file under a project's folder and
+its build-tool toolbar button appears (each button stays hidden until its marker file is detected);
+click it for the sectioned actions popup. The projects are **standalone** — the repo's own build
+never picks them up (the Maven sample isn't a `<module>` of the root pom, the Gradle sample has its
+own `settings.gradle`), and every command is harmless (an `@echo`/`println`, or a lifecycle phase you
+choose to run). Each needs its tool on `PATH` to actually run (`mvn`/`gradle`/`npm`/`cargo`); the
+button + popup show regardless. (Build Tools are disabled in Simple UI mode and for remote files.)
+
+- `samples/build-tools/maven/pom.xml` + `samples/build-tools/maven/src/main/java/com/example/App.java`
+  — the popup lists the Lifecycle phases (a Task each), the `release` **profile** (a checkable
+  toggle → `-Prelease`), and the surefire `integration-tests` execution goal under Plugins.
+- `samples/build-tools/gradle/build.gradle` + `samples/build-tools/gradle/settings.gradle` — the
+  popup shows the static Common section (build/clean/test/assemble/check/jar/run/bootRun) plus
+  **Load all tasks…** (runs `gradle tasks --all` to list the rest, including the custom `hello` task).
+- `samples/build-tools/npm/package.json` + `samples/build-tools/npm/index.js` — the popup lists the
+  `scripts` (`start`/`build`/`test`/`lint`, each `npm run <name>`) + a Common `install`/`ci`; the
+  `packageManager` field would switch the runner (npm/yarn/pnpm/bun).
+- `samples/build-tools/cargo/Cargo.toml` + `samples/build-tools/cargo/src/main.rs` — the popup shows
+  the standard subcommands, the explicit `cargo-demo` binary under Targets (`cargo run --bin
+  cargo-demo`), and a `--release` toggle.
+
+(Go is also supported — `go.mod`/`go.work` markers — but isn't included here.)
+
 ## images/ — image viewer
 
 - `samples/images/sample.png` — opens in the read-only image viewer (zoom out/in/fit/actual, Ctrl+wheel)
