@@ -3,6 +3,15 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Expert mode — a per-window focus mode like Zen but lighter: it strips only the surrounding window
+      chrome (toolbar/tab bar/breadcrumb/tool stripes + whitespace guides) and keeps the whole editor view
+      (line numbers, status bar, minimap, column ruler, current-line highlight). Mirrors Zen end-to-end:
+      `WorkspaceState.expertMode` (+ `preExpertToolWindows`), a floating "E" exit button (`Icons.expert()`,
+      `.expert-exit`), command `view.toggleExpert` (`C-c C-e`), a Settings → Interface → Modes checkbox, and
+      i18n ×6. `Chrome` gained a `focusMode` (= zen || expert) param for the items both hide (toolbar/tab
+      bar/breadcrumb/tool stripes/whitespace), while `statusBar`/`lineNumbers`/`columnRuler`/`lineHighlight`/
+      `minimap` stay keyed on the real `zen` flag so Expert keeps them; the two modes are mutually exclusive.
+      Covered by `ChromeTest` (the truth table) + a new `ExpertModeFxTest`. *Deferred: a `--expert` CLI flag.*
 - [x] Build tools → IntelliJ-style tasks tool windows — replaced the per-tool main-toolbar icons with a
       dedicated tool-window stripe per build tool (Maven/npm/Cargo/Go/Gradle), shown when the marker file is
       detected. New `ui/BuildActionsTree` (a `ToolWindowContent`: a mini icon toolbar — Run/Reload/Stop/Run

@@ -353,6 +353,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private String currentEditorThemeCss;
     /** Floating "exit Zen" button overlaid top-right of the window; shown only while in Zen mode. */
     private Button zenExitButton;
+    /** Floating "exit Expert" button overlaid top-right of the window; shown only while in Expert mode. */
+    private Button expertExitButton;
     /** Floating "show toolbar" button overlaid top-left; shown only when the toolbar is hidden (not in Zen). */
     private Button toolbarRestoreButton;
     /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
@@ -529,6 +531,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 dapManager,
                 this::onSettingsApplied,
                 this::setZenMode,
+                this::setExpertMode,
                 this::openPath,
                 this::exportConfig,
                 this::showDebugLog);
@@ -617,10 +620,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         pluginCoordinator
                 .applyPlugins(); // register plugin commands/tool windows/hooks (before restore, so visibility restores)
         toolWindows.restore();
-        // Honor a persisted Zen state on launch: the view options + chrome already read the flag via
+        // Honor a persisted Zen/Expert state on launch: the view options + chrome already read the flags via
         // the apply paths; this hides the side stripes (restore() opened nothing — windows were
-        // persisted closed when Zen was entered).
-        toolWindows.setZenStripesHidden(config.getWorkspaceState().isZenMode());
+        // persisted closed when a focus mode was entered).
+        toolWindows.setZenStripesHidden(config.getWorkspaceState().isZenMode()
+                || config.getWorkspaceState().isExpertMode());
         applyChromeVisibility();
         applyProjectSupport(); // hide project UI when disabled (default)
         git.applySupport(); // hide Git UI when disabled (default)
@@ -700,25 +704,29 @@ public class MainController implements com.editora.mcp.McpBridge {
         // saved prefs, so the prefs return untouched when the mode is left, and one window's Zen never
         // leaks into another (Zen lives in this window's WorkspaceState, not in Settings).
         boolean zen = zenActive();
+        boolean expert = expertActive();
+        boolean focus = zen || expert; // the two "focus modes" hide the same chrome, except status bar (below)
         boolean simple = simpleModeActive();
-        // Effective visibility (Chrome, pure + unit-tested): a saved pref AND not hidden by Zen/Simple.
-        boolean toolbarOn = Chrome.toolbar(s.isShowToolbar(), zen);
+        // Effective visibility (Chrome, pure + unit-tested): a saved pref AND not hidden by a focus mode/Simple.
+        boolean toolbarOn = Chrome.toolbar(s.isShowToolbar(), focus);
         toolBar.setVisible(toolbarOn);
         toolBar.setManaged(toolbarOn);
+        // The status bar is hidden by Zen but KEPT by Expert, so it keys on the real zen flag, not focus.
         boolean statusOn = Chrome.statusBar(s.isShowStatusBar(), zen);
         statusBar.setVisible(statusOn);
         statusBar.setManaged(statusOn);
         // The tab header is collapsed via a style class (see app.css) rather than visible/managed:
         // the TabPane skin owns the header node, so toggling a CSS class is the supported way.
         tabPane.getStyleClass().remove("no-tab-header");
-        if (!Chrome.tabBar(s.isShowTabBar(), zen)) {
+        if (!Chrome.tabBar(s.isShowTabBar(), focus)) {
             tabPane.getStyleClass().add("no-tab-header");
         }
-        breadcrumb.setEnabled(Chrome.breadcrumb(s.isShowBreadcrumb(), zen, simple));
+        breadcrumb.setEnabled(Chrome.breadcrumb(s.isShowBreadcrumb(), focus, simple));
         // Tool stripes (UI only): hidden stripes still let tool windows open via keybinding/palette.
-        toolWindows.setStripesEnabled(Chrome.toolStripes(s.isShowToolStripe(), zen, simple));
+        toolWindows.setStripesEnabled(Chrome.toolStripes(s.isShowToolStripe(), focus, simple));
         applySimpleMode();
         updateZenButton();
+        updateExpertButton();
         updateToolbarRestoreButton();
     }
 
@@ -730,6 +738,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** True when this window is in distraction-free Zen mode (per-window state, never a shared pref). */
     private boolean zenActive() {
         return config.getWorkspaceState().isZenMode();
+    }
+
+    /** True when this window is in Expert mode — like Zen, but keeps line numbers + the status bar. */
+    private boolean expertActive() {
+        return config.getWorkspaceState().isExpertMode();
     }
 
     /** Snapshot of which optional features are effectively enabled, for {@link Chrome#paletteVisible}. */
@@ -820,6 +833,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         StackPane.setAlignment(zenExitButton, Pos.TOP_RIGHT);
         sceneRoot.getChildren().add(zenExitButton);
 
+        // Floating "exit Expert" button (top-right, an "E"): shown only in Expert mode. Mirrors the Zen "Z";
+        // the two never coexist (the modes are mutually exclusive).
+        expertExitButton = new Button();
+        expertExitButton.setGraphic(Icons.expert());
+        expertExitButton.getStyleClass().addAll("expert-exit", "flat");
+        expertExitButton.setTooltip(new Tooltip(tr("tooltip.expertExit")));
+        expertExitButton.setFocusTraversable(false);
+        expertExitButton.setOnAction(e -> setExpertMode(false));
+        StackPane.setAlignment(expertExitButton, Pos.TOP_RIGHT);
+        sceneRoot.getChildren().add(expertExitButton);
+
         // Floating "show toolbar" button (top-right): restores a hidden toolbar. Never coexists with the
         // Zen "Z" (that's shown only in Zen mode, this only when the toolbar is hidden outside Zen).
         toolbarRestoreButton = new Button();
@@ -838,6 +862,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         wireOverlayHost();
 
         updateZenButton();
+        updateExpertButton();
         updateToolbarRestoreButton();
     }
 
@@ -876,7 +901,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         boolean show = !config.getSettings().isShowToolbar()
-                && !config.getWorkspaceState().isZenMode();
+                && !config.getWorkspaceState().isZenMode()
+                && !config.getWorkspaceState().isExpertMode(); // a focus mode hides the toolbar; its E/Z restores it
         toolbarRestoreButton.setVisible(show);
         toolbarRestoreButton.setManaged(show);
     }
@@ -897,6 +923,24 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean belowMarkdownControls = zen && active != null && active.hasPreview();
         double top = belowMarkdownControls ? 44 : 8; // clear the Markdown preview toggle when present
         StackPane.setMargin(zenExitButton, new javafx.geometry.Insets(top, 12, 0, 0));
+    }
+
+    /**
+     * Shows the floating "exit Expert" ("E") button only while in Expert mode (mirrors {@link #updateZenButton};
+     * the two modes are mutually exclusive, so the E and Z never show together). Dropped below the Markdown
+     * preview controls when the active buffer has a preview, so they don't overlap.
+     */
+    private void updateExpertButton() {
+        if (expertExitButton == null) {
+            return;
+        }
+        boolean expert = config.getWorkspaceState().isExpertMode();
+        expertExitButton.setVisible(expert);
+        expertExitButton.setManaged(expert);
+        EditorBuffer active = activeBuffer();
+        boolean belowMarkdownControls = expert && active != null && active.hasPreview();
+        double top = belowMarkdownControls ? 44 : 8;
+        StackPane.setMargin(expertExitButton, new javafx.geometry.Insets(top, 12, 0, 0));
     }
 
     private void setupRecentFiles() {
@@ -1628,6 +1672,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             refreshEditState(); // save/undo/redo/cut/copy enablement for the new tab
             refreshPasteState(); // clipboard read off the keystroke path
             updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
+            updateExpertButton(); // and the Expert "E"
             checkExternalChanges(); // prompt if the file we just switched to changed on disk
             git.refresh(); // update branch/status + this file's gutter change bars
             refreshBuildTools(); // re-detect marker files for the newly active file/project
@@ -7554,11 +7599,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (ws.isZenMode() == on) {
             return;
         }
+        if (on && ws.isExpertMode()) {
+            setExpertMode(false); // the two focus modes are mutually exclusive
+        }
         if (on) {
             ws.setPreZenToolWindows(toolWindows.closeAllOpen());
         }
         ws.setZenMode(on);
-        toolWindows.setZenStripesHidden(on);
+        toolWindows.setZenStripesHidden(on || ws.isExpertMode());
         if (!on) {
             toolWindows.openByIds(ws.getPreZenToolWindows());
             ws.getPreZenToolWindows().clear();
@@ -7568,6 +7616,39 @@ public class MainController implements com.editora.mcp.McpBridge {
         requestSave();
         // When entering Zen the status bar is hidden, so this is mostly seen on exit.
         setStatus(tr("status.toggle.zen", tr(on ? "common.on" : "common.off")));
+    }
+
+    private void toggleExpert() {
+        setExpertMode(!config.getWorkspaceState().isExpertMode());
+    }
+
+    /**
+     * Enters/leaves Expert mode for <b>this window only</b> — a per-window effective overlay exactly like
+     * {@link #setZenMode Zen}, except it <em>keeps the line-number gutter and the status bar</em> (see
+     * {@link Chrome}). Mutually exclusive with Zen. Open tool windows are closed on enter and reopened on
+     * leave (a per-window UI snapshot, not a pref); the saved {@link Settings} are never mutated. Idempotent.
+     */
+    void setExpertMode(boolean on) {
+        WorkspaceState ws = config.getWorkspaceState();
+        if (ws.isExpertMode() == on) {
+            return;
+        }
+        if (on && ws.isZenMode()) {
+            setZenMode(false); // the two focus modes are mutually exclusive
+        }
+        if (on) {
+            ws.setPreExpertToolWindows(toolWindows.closeAllOpen());
+        }
+        ws.setExpertMode(on);
+        toolWindows.setZenStripesHidden(on || ws.isZenMode());
+        if (!on) {
+            toolWindows.openByIds(ws.getPreExpertToolWindows());
+            ws.getPreExpertToolWindows().clear();
+        }
+        applyChromeVisibility();
+        applyViewSettingsToAllBuffers(config.getSettings());
+        requestSave();
+        setStatus(tr("status.toggle.expert", tr(on ? "common.on" : "common.off")));
     }
 
     private void toggleToolbar() {
@@ -9528,9 +9609,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         Settings s = config.getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
         buffer.setFont(s.getFontFamily(), effectiveFont);
-        // Zen mode (per window) hides the distraction-free view options without clobbering the saved prefs;
-        // Simple UI mode additionally removes the whole gutter + minimap. Both are effective overlays.
+        // Zen/Expert (per window, "focus modes") hide distraction-free chrome without clobbering the saved
+        // prefs; Simple UI mode additionally removes the whole gutter + minimap. All effective overlays.
+        // Expert keeps the full editor view — line numbers, ruler, current-line highlight, minimap — so those
+        // key on the real zen flag; only the whitespace guides follow the combined focus flag like Zen.
         boolean zen = zenActive();
+        boolean focus = zen || expertActive();
         boolean simple = simpleModeActive();
         buffer.setColumnRulerVisible(Chrome.columnRuler(s.isShowColumnRuler(), zen));
         buffer.setNoteIndicatorsVisible(s.isNotesSupport() && s.isShowNoteIndicators());
@@ -9542,7 +9626,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
         }
-        buffer.setWhitespaceVisible(Chrome.whitespace(s.isShowWhitespace(), zen));
+        buffer.setWhitespaceVisible(Chrome.whitespace(s.isShowWhitespace(), focus));
         buffer.setTabSize(s.getTabSize());
         buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
         buffer.setMinimapColors(
@@ -10940,6 +11024,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.toggleTabBar", this::toggleTabBar));
         registry.register(Command.of("view.toggleBreadcrumb", this::toggleBreadcrumb));
         registry.register(Command.of("view.toggleZen", this::toggleZen));
+        registry.register(Command.of("view.toggleExpert", this::toggleExpert));
         registry.register(Command.of("view.toggleReadOnly", this::toggleReadOnly));
         registry.register(Command.of("file.toggleAutoSave", this::toggleAutoSave));
         registry.register(Command.of("recent.jump", () -> recentPalette.show(stage)));

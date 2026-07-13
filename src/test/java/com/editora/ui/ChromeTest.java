@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Pure chrome decisions: effective visibility under Zen/Simple overlays + palette command gating. */
+/** Pure chrome decisions: effective visibility under the Zen/Expert/Simple overlays + palette command gating. */
 class ChromeTest {
 
     // --- effective visibility: a saved pref shows only when neither overlay hides it ---
@@ -27,6 +27,27 @@ class ChromeTest {
         assertFalse(Chrome.whitespace(true, zen));
         assertFalse(Chrome.lineNumbers(true, zen, simple));
         assertFalse(Chrome.minimap(true, zen, simple));
+    }
+
+    @Test
+    void expertStripsOnlyTheSurroundingChromeAndKeepsTheEditorView() {
+        // Expert is a "focus mode" (focusMode = zen || expert = true) but is NOT Zen (zen = false).
+        boolean focus = true;
+        boolean zen = false;
+        boolean simple = false;
+        // Hidden, exactly like Zen — the surrounding window chrome + whitespace guides:
+        assertFalse(Chrome.toolbar(true, focus));
+        assertFalse(Chrome.tabBar(true, focus));
+        assertFalse(Chrome.breadcrumb(true, focus, simple));
+        assertFalse(Chrome.toolStripes(true, focus, simple));
+        assertFalse(Chrome.whitespace(true, focus));
+        // KEPT — Expert leaves the whole editor view + the status bar (all keyed on the real zen flag):
+        assertTrue(Chrome.statusBar(true, zen));
+        assertTrue(Chrome.lineNumbers(true, zen, simple));
+        assertTrue(Chrome.columnRuler(true, zen));
+        assertTrue(Chrome.lineHighlight(true, zen));
+        assertTrue(Chrome.minimap(true, zen, simple));
+        assertTrue(Chrome.gutter(simple));
     }
 
     @Test

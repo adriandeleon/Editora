@@ -382,6 +382,11 @@ final class Icons {
         return of("M4 4 H20 V7 L8 17 H20 V20 H4 V17 L16 7 H4 Z");
     }
 
+    /** A filled stencil "E" glyph (left spine + three prongs), for the Expert-mode exit button. */
+    static Node expert() {
+        return of("M4 4 H20 V7 H7 V10.5 H17 V13.5 H7 V17 H20 V20 H4 Z");
+    }
+
     static Node closeSmall() {
         // Same outline as closeTab() — used by the tool window header.
         return of("M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 "

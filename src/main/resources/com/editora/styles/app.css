@@ -782,6 +782,19 @@
 .zen-exit:hover { -fx-background-color: -color-bg-default; -fx-opacity: 1.0; }
 .zen-exit:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
 
+/* Floating "exit Expert" button, shown only in Expert mode (same look as the Zen "Z"). */
+.expert-exit {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 3 6 3 6;
+    -fx-opacity: 0.92;
+}
+.expert-exit .toolbar-icon { -fx-fill: -color-fg-muted; }
+.expert-exit:hover { -fx-background-color: -color-bg-default; -fx-opacity: 1.0; }
+.expert-exit:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
+
 /* Floating "show toolbar" button (top-right), shown only when the toolbar is hidden (not in Zen). */
 .toolbar-restore {
     -fx-background-color: -color-bg-subtle;

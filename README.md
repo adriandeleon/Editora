@@ -170,6 +170,13 @@ Editora is built with the help of AI coding tools.
   servers (LSP), debugging, the HTTP client, Git, and multiple cursors / column selection — for a quiet
   plain editor. Persists across restarts; your saved preferences (line numbers, minimap, breadcrumb, tool
   stripe, LSP/debug/HTTP/Git and multi-caret enables) are all restored when you turn it off.
+- **Zen & Expert modes** — per-window distraction-free overlays that hide chrome without touching your saved
+  preferences. **Zen** (`C-c z`, floating "Z" to exit) hides everything — toolbar, status bar, tab bar,
+  breadcrumb, tool stripes, line numbers, minimap, ruler. **Expert** (`C-c C-e`, floating "E" to exit) is a
+  lighter version that strips only the surrounding window chrome (toolbar, tab bar, breadcrumb, tool stripes,
+  whitespace guides) and **keeps the whole editor view** — line numbers, status bar, minimap, ruler and
+  current-line highlight — a focused coding surface that still shows where you are. The two are mutually
+  exclusive; both are also in *Settings → Interface → Modes* and the palette (**View: Toggle Zen/Expert Mode**).
 - **Text zoom** — scale the editor text on top of the font size (status-bar `− 100% +`, `C-=`/`C--`/`C-0`,
   Ctrl+mouse-wheel, or the palette); persists across restarts, separate from the font-size setting.
 - **Themes** — 26 switchable AtlantaFX themes: the built-in Primer, Nord, Cupertino and Dracula,
