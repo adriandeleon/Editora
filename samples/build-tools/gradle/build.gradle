@@ -1,0 +1,20 @@
+// Sample Gradle project for exercising Editora's Gradle build-tool support.
+// Gradle's DSL can't be parsed statically, so the actions popup shows the static
+// Common section (build/clean/test/assemble/check/jar/run/bootRun) plus a
+// "Load all tasks…" action that runs `gradle tasks --all` to list the rest.
+plugins {
+    id 'java'
+}
+
+group = 'com.example'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+tasks.register('hello') {
+    doLast {
+        println 'Hello from the Gradle sample project.'
+    }
+}
