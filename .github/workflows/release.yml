@@ -56,8 +56,9 @@ jobs:
       # see scripts/build-appimage.sh). Best-effort: continue-on-error so a flaky appimagetool / FUSE /
       # network hiccup can't sink the .deb/.rpm/.jar release. Runs before staging so the .AppImage is
       # picked up from target/dist.
+      # x64 only — on Linux ARM we ship just the tar.gz + jar (no .deb/.rpm/.AppImage).
       - name: Build AppImage (Linux)
-        if: runner.os == 'Linux'
+        if: matrix.target == 'linux-x64'
         continue-on-error: true
         shell: bash
         run: scripts/build-appimage.sh target/aot-image/Editora branding/editora.png target/dist
@@ -75,7 +76,9 @@ jobs:
 
       # Runnable fat jar for this runner's platform (JavaFX natives are host-specific, so each
       # runner produces its own jar — a single all-platforms jar isn't possible, see pom.xml).
+      # Skipped for macOS (both arches) — those targets ship only the .dmg.
       - name: Build fat jar (-Pfatjar)
+        if: ${{ !startsWith(matrix.target, 'macos-') }}
         shell: bash
         run: ./mvnw -B --no-transfer-progress -Pfatjar -DskipTests package
 
@@ -106,10 +109,20 @@ jobs:
               *.tar.gz) ext="tar.gz" ;;
               *)        ext="${f##*.}" ;;
             esac
+            # Linux ARM ships only the tarball (+ jar) — drop the .deb/.rpm installers that -Pdist
+            # produced (the .AppImage was skipped upstream).
+            if [ "${{ matrix.target }}" = "linux-arm64" ]; then
+              case "$ext" in
+                deb|rpm|AppImage) continue ;;
+              esac
+            fi
             cp "$f" "staging/Editora-${VERSION}-${{ matrix.target }}.${ext}"
           done
-          jar="$(ls target/Editora-*.jar | head -1)"
-          cp "$jar" "staging/$(basename "$jar" .jar)-${{ matrix.target }}.jar"
+          # The fat jar isn't built for macOS (see the -Pfatjar step's condition), so guard the copy.
+          jar="$(ls target/Editora-*.jar 2>/dev/null | head -1)"
+          if [ -n "$jar" ]; then
+            cp "$jar" "staging/$(basename "$jar" .jar)-${{ matrix.target }}.jar"
+          fi
 
       - name: Upload installer
         uses: actions/upload-artifact@v7
