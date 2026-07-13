@@ -210,14 +210,14 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
 - `samples/run/hello.py` — a Python script; the ▶ sits on the `if __name__ == "__main__":` guard
   (needs `python3` on `PATH`).
 
-## build-tools/ — Maven / Gradle / npm / Cargo toolbar button + actions popup
+## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup
 
-Four tiny, self-contained projects — one per build tool. Open a file under a project's folder and
+Five tiny, self-contained projects — one per build tool. Open a file under a project's folder and
 its build-tool toolbar button appears (each button stays hidden until its marker file is detected);
 click it for the sectioned actions popup. The projects are **standalone** — the repo's own build
 never picks them up (the Maven sample isn't a `<module>` of the root pom, the Gradle sample has its
 own `settings.gradle`), and every command is harmless (an `@echo`/`println`, or a lifecycle phase you
-choose to run). Each needs its tool on `PATH` to actually run (`mvn`/`gradle`/`npm`/`cargo`); the
+choose to run). Each needs its tool on `PATH` to actually run (`mvn`/`gradle`/`npm`/`cargo`/`go`); the
 button + popup show regardless. (Build Tools are disabled in Simple UI mode and for remote files.)
 
 - `samples/build-tools/maven/pom.xml` + `samples/build-tools/maven/src/main/java/com/example/App.java`
@@ -232,8 +232,9 @@ button + popup show regardless. (Build Tools are disabled in Simple UI mode and 
 - `samples/build-tools/cargo/Cargo.toml` + `samples/build-tools/cargo/src/main.rs` — the popup shows
   the standard subcommands, the explicit `cargo-demo` binary under Targets (`cargo run --bin
   cargo-demo`), and a `--release` toggle.
-
-(Go is also supported — `go.mod`/`go.work` markers — but isn't included here.)
+- `samples/build-tools/go/go.mod` + `samples/build-tools/go/main.go` — the popup shows the standard
+  `go` subcommands over the whole module (`build ./...`, `run .`, `test ./...`, `vet`, `fmt`, `mod
+  tidy`, …); the `module example.com/go-demo` line is the Settings "Found: …" label.
 
 ## images/ — image viewer
 
