@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Auto-save can no longer undo a manual save.** Hitting Ctrl/Cmd-S just as a queued auto-save fired let the
+  auto-save land afterwards and put the *older* text back on disk — while the editor showed the file as saved.
+  Writes to a file are now serialized, and a stale auto-save is dropped.
+- **Auto-save no longer overwrites a file that changed on disk.** A dirty buffer in a *background* tab was
+  never checked for outside modification (that check only looks at the tab you're on), so a timer could
+  silently overwrite a file that a `git checkout` or a generator had just rewritten. Auto-save now skips such a
+  file and leaves the usual "changed on disk" prompt to handle it.
+- **Saving a file is now crash-safe.** Files were written by truncating them first, so an interruption
+  (a crash, a full disk) could leave the document truncated or half-written. The new content is written to a
+  temporary file and moved into place — and the file keeps its permissions (an executable script stays
+  executable) and stays a symlink if it was one.
+- **A character your file's encoding can't represent is no longer silently turned into `?`.** With an
+  `.editorconfig` setting `charset = latin1`, an em dash, a curly quote, `€`, or an emoji was written to disk
+  as a question mark — and the editor kept showing the real character until you reopened the file. Editora now
+  saves as UTF-8 instead and tells you why.
+- **Trimming trailing whitespace no longer flips a whole file to Windows line endings.** A mostly-LF file
+  containing a single stray CRLF was rewritten *entirely* as CRLF the first time it was saved with
+  `trim_trailing_whitespace` on. The file's dominant line ending is now what's preserved.
+- **Save-As now applies the destination's `.editorconfig`**, instead of writing with the previous location's
+  charset, line endings, and trim rules (and continuing to do so on every later save).
+
 - **A crash or a full disk while saving can no longer wipe out your bookmarks, notes, breakpoints, or the
   project list.** Those files were written by truncating them first and then streaming the new contents in, so
   an interruption left a half-written file — which Editora then treated as *empty* on the next launch and

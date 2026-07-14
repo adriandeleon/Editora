@@ -5871,6 +5871,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Points {@code buffer} at {@code file}, refreshes its previews/tab/breadcrumb, and writes it. */
     private boolean applySaveAsTarget(EditorBuffer buffer, Path file) {
         buffer.setPath(file);
+        // The buffer's EditorConfig properties + charset were resolved against the OLD path. Without
+        // re-resolving, a Save-As into another tree writes with the previous project's charset/EOL/trim rules
+        // (and keeps doing so on every later save), while an untitled buffer saved INTO a project with an
+        // .editorconfig gets none of its rules.
+        applyEditorConfig(buffer);
         ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
         htmlPreview.ensureControl(buffer); // a save-as to .html now gets the "open in browser" globe
         logViewer.ensureControl(buffer); // a save-as to .log now gets the log control + level overlay
@@ -5962,12 +5967,26 @@ public class MainController implements com.editora.mcp.McpBridge {
                 ? buffer.getEditorConfigProps()
                 : com.editora.editorconfig.EditorConfigProperties.EMPTY;
         String text = com.editora.editorconfig.EditorConfigTransform.transform(buffer.getContent(), p);
-        return com.editora.editorconfig.EditorConfigCharset.encode(text, buffer.getEffectiveCharset());
+        String charset = buffer.getEffectiveCharset();
+        // A charset that can't represent what the user typed (an em dash / curly quote / emoji under
+        // `charset = latin1`) would be written as '?' by String.getBytes — and the editor keeps showing the
+        // real character until the file is reopened, so the corruption is invisible until it's permanent.
+        // Fall back to UTF-8 and say so: a changed encoding is recoverable, mangled text is not.
+        if (!com.editora.editorconfig.EditorConfigCharset.canEncode(text, charset)) {
+            setStatus(tr("status.charsetFallback", com.editora.editorconfig.EditorConfigCharset.displayName(charset)));
+            charset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
+        }
+        return com.editora.editorconfig.EditorConfigCharset.encode(text, charset);
     }
 
     private boolean writeBuffer(EditorBuffer buffer, Path file) {
         try {
-            Files.write(file, saveBytes(buffer));
+            byte[] bytes = saveBytes(buffer);
+            // Serialized against auto-save (see autoSaveBuffer): a queued auto-save holding an OLDER snapshot
+            // must not land after this write and rewind the file.
+            synchronized (fileWriteLock) {
+                com.editora.io.AtomicFileWrite.write(file, bytes);
+            }
             historyCoordinator.record(buffer, HistoryRevision.REASON_SAVE); // snapshot the just-saved version
             buffer.markClean();
             buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
@@ -6019,13 +6038,27 @@ public class MainController implements com.editora.mcp.McpBridge {
      * (so we never mark clean over edits made after the snapshot).
      */
     private void autoSaveBuffer(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        // Never auto-save over a file that changed underneath us. checkExternalChanges() only inspects the
+        // ACTIVE tab, so a dirty background buffer whose file was rewritten (a git checkout, a generator)
+        // would otherwise be silently overwritten by a timer, with no prompt and no way back.
+        if (buffer.diskChangedFrom(lastModifiedMillis(file), fileSize(file))) {
+            return; // leave it dirty: the external-change prompt handles it when the user comes back to it
+        }
         String content = buffer.getContent();
         byte[] bytes = saveBytes(buffer); // transform + encode on the FX thread (pure); write off-thread
-        Path file = buffer.getPath();
         historyCoordinator.record(buffer, HistoryRevision.REASON_AUTOSAVE); // snapshot before the off-thread write
         autoSaveExecutor.submit(() -> {
             try {
-                Files.write(file, bytes);
+                // Take the same lock a manual save takes, and re-check the buffer is still dirty inside it:
+                // a Ctrl-S landing between the snapshot above and this write has already written NEWER bytes,
+                // and writing our stale snapshot on top would silently rewind the user's file.
+                synchronized (fileWriteLock) {
+                    if (!buffer.isDirty()) {
+                        return; // already saved (manually) — our snapshot is stale
+                    }
+                    com.editora.io.AtomicFileWrite.write(file, bytes);
+                }
                 Platform.runLater(() -> {
                     if (content.equals(buffer.getContent())) {
                         buffer.markClean();
@@ -6039,6 +6072,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
     }
+
+    /**
+     * Serializes writes to the user's files. A manual save writes synchronously on the FX thread while
+     * auto-save writes an earlier snapshot on its own executor — without this, the queued auto-save could land
+     * after the manual save and put the older content back on disk, while the buffer showed "saved".
+     */
+    private final Object fileWriteLock = new Object();
 
     private void toggleAutoSave() {
         String next =
