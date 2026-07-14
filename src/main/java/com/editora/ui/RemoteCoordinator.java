@@ -313,4 +313,16 @@ final class RemoteCoordinator {
         }
         host.setStatus(tr("status.remote.disconnected"));
     }
+
+    /**
+     * Closes every SFTP session and the SSH client, and releases the app-wide {@code Vfs} resolver this
+     * window installed. Without it a closed window's {@code RemoteFileSystems} stays strongly reachable from
+     * a static field forever — holding its SSH client, its NIO threads, and every open remote session.
+     */
+    public void shutdown() {
+        if (remoteFs != null) {
+            remoteFs.shutdown();
+            remoteFs = null;
+        }
+    }
 }

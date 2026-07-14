@@ -1124,6 +1124,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 buffer.dispose();
+            } else {
+                disposeViewerTab(tab); // an image/hex/PDF tab holds a thread + file handle + GPU texture too
             }
         }
         lspManager.shutdownAll(); // don't orphan this window's external language servers
@@ -1152,7 +1154,32 @@ public class MainController implements com.editora.mcp.McpBridge {
             installCoordinator.shutdown();
         }
         autoSaveExecutor.shutdownNow();
+        diffCoordinator.shutdown(); // the diff-service worker thread
+        externalToolCoordinator.shutdown(); // the external-tool worker thread
+        httpClient.shutdown(); // the http-client worker thread
+        remoteCoordinator.shutdown(); // SFTP sessions + the SSH client (and un-pin the static Vfs hooks)
         projectPanel.dispose(); // stop the project tree's filesystem watcher + its daemon thread
+    }
+
+    /**
+     * Releases a non-buffer viewer tab (image / hex / PDF).
+     *
+     * <p>These panes were only released through {@code Tab.setOnClosed}, and JavaFX fires that from exactly one
+     * place — {@code TabPaneBehavior.closeTab()}, i.e. a click on the tab's ✕. Every one of the app's own close
+     * paths ({@code closeTab}, Close All / Others / Left / Right, and window close) removes the tab
+     * <em>programmatically</em>, which does not fire it. So closing a PDF with Ctrl-W leaked its {@code
+     * pdf-render} thread and left the document's file handle open for the life of the process (on Windows,
+     * holding a lock on the file), and an image tab kept its decoded texture pinned. Closing the same tab by
+     * clicking the ✕ leaked nothing — which is exactly why this survived manual testing.
+     */
+    private void disposeViewerTab(Tab tab) {
+        if (tab.getUserData() instanceof ImageViewerPane image) {
+            image.dispose();
+        } else if (tab.getUserData() instanceof HexViewerPane hex) {
+            hex.dispose();
+        } else if (tab.getUserData() instanceof PdfViewerPane pdf) {
+            pdf.dispose();
+        }
     }
 
     /**
@@ -1753,6 +1780,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                             logViewer.onBufferClosed(closed); // cancel tail-follow + drop per-buffer state
                             csvCoordinator.onBufferClosed(closed); // drop the CSV grid's edit listener
                             closed.dispose();
+                        } else {
+                            // Tab.setOnClosed only fires for a click on the ✕ — never for a programmatic
+                            // remove (Ctrl-W, Close All/Others/Left/Right, window close). See disposeViewerTab.
+                            disposeViewerTab(removed);
                         }
                     }
                 }
@@ -5345,7 +5376,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Tab openImageTab(Path file, boolean select) {
         ImageViewerPane pane = new ImageViewerPane(file);
         Tab tab = addContentTab(pane, select);
-        tab.setOnClosed(e -> pane.dispose()); // release the decoded image's GPU texture when the tab closes
+        // Disposal is driven by the tabs ListChangeListener (see disposeViewerTab) — setOnClosed here would
+        // only fire for a click on the ✕, never for Ctrl-W / Close All / window close.
         Platform.runLater(pane::relayout); // fit-to-window once the tab is laid out
         return tab;
     }
@@ -5359,7 +5391,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Tab openHexTab(Path file, boolean select) {
         HexViewerPane pane = new HexViewerPane(file);
         Tab tab = addContentTab(pane, select);
-        tab.setOnClosed(e -> pane.dispose());
         return tab;
     }
 
@@ -5372,7 +5403,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Tab openPdfTab(Path file, boolean select) {
         PdfViewerPane pane = new PdfViewerPane(file);
         Tab tab = addContentTab(pane, select);
-        tab.setOnClosed(e -> pane.dispose()); // close the document + release the page image when the tab closes
         Platform.runLater(pane::relayout); // fit-to-window once the tab is laid out
         return tab;
     }

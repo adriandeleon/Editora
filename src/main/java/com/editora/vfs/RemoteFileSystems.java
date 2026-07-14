@@ -54,6 +54,7 @@ public final class RemoteFileSystems {
         client.start();
         Vfs.setRemoteResolver(this::resolve); // remote sftp:// strings → live Paths
         Vfs.setRemoteStorable(this::storableFor); // remote Path → sftp:// string (Path.toUri() throws for SFTP)
+        Vfs.setRemoteOwner(this); // so shutdown() can un-pin these statics (see Vfs.clearRemoteHooksIf)
     }
 
     /** The {@code sftp://user@host:port/path} string for a remote Path, by finding its owning connection. */
@@ -150,8 +151,17 @@ public final class RemoteFileSystems {
         close(fs);
     }
 
-    /** Closes every connection + the client (called on app exit). */
+    /**
+     * Closes every connection + the client. Called when the owning window closes (and on app exit).
+     *
+     * <p>Also clears the app-wide {@link Vfs} resolver hooks this instance installed in its constructor — they
+     * are {@code static}, so without this a closed window's instance (its SSH client, NIO threads, and every
+     * open SFTP session) stays strongly reachable for the life of the process and can never be collected.
+     * Only clears them if they still point at <em>this</em> instance, so a newer window's hooks aren't
+     * unhooked from under it.
+     */
     public void shutdown() {
+        Vfs.clearRemoteHooksIf(this);
         byAuthority.values().forEach(RemoteFileSystems::close);
         byAuthority.clear();
         client.stop();
