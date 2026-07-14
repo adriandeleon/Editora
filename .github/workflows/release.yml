@@ -119,7 +119,9 @@ jobs:
             cp "$f" "staging/Editora-${VERSION}-${{ matrix.target }}.${ext}"
           done
           # The fat jar isn't built for macOS (see the -Pfatjar step's condition), so guard the copy.
-          jar="$(ls target/Editora-*.jar 2>/dev/null | head -1)"
+          # The `|| true` is required: GitHub's `shell: bash` runs with `set -eo pipefail`, so a no-match
+          # `ls` (macOS: no jar) would abort the whole step before the `-n` guard below could skip it.
+          jar="$(ls target/Editora-*.jar 2>/dev/null | head -1 || true)"
           if [ -n "$jar" ]; then
             cp "$jar" "staging/$(basename "$jar" .jar)-${{ matrix.target }}.jar"
           fi
