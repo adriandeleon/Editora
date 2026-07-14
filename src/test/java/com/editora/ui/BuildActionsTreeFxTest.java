@@ -17,6 +17,8 @@ import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * FX-harness tests for {@link BuildActionsTree}: the IntelliJ-style tasks tree renders a provider's sections
@@ -126,5 +128,94 @@ class BuildActionsTreeFxTest {
             return treeOf(p).getRoot();
         });
         assertNull(root, "a null provider empties the tree");
+    }
+
+    /** A provider offering no toggles at all. Its {@code toggleArgs} blindly joins whatever ids it is handed
+     *  — exactly like {@code MavenActionsProvider} ({@code -Pa,b}) — so an id left over from a PREVIOUS
+     *  provider would surface in the argv here. */
+    private record StaticProvider(String taskLabel) implements BuildActionsProvider {
+        @Override
+        public List<String> toggleArgs(Set<String> active) {
+            return active.isEmpty() ? List.of() : List.of("-P" + String.join(",", active));
+        }
+
+        @Override
+        public List<BuildAction.Section> sections(Set<String> active) {
+            return List.of(new BuildAction.Section(
+                    "Lifecycle",
+                    List.of(
+                            new BuildAction.Task(taskLabel, List.of(taskLabel)),
+                            new BuildAction.Task("test", List.of("test")))));
+        }
+    }
+
+    @Test
+    void stopIsDisabledUntilSomethingRuns() throws Exception {
+        boolean disabled = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            return FxTestSupport.<javafx.scene.control.Button>field(p, "stopButton")
+                    .isDisabled();
+        });
+        assertTrue(disabled, "a fresh window has nothing to stop");
+    }
+
+    @Test
+    void aToggleThatNoLongerExistsIsDroppedOnReDetect() throws Exception {
+        AtomicReference<List<String>> ranToggle = new AtomicReference<>();
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setOnRun((taskArgs, toggleArgs) -> ranToggle.set(toggleArgs));
+            p.setProvider(new FakeProvider());
+            return p;
+        });
+        // Tick "dist", then re-detect with a provider that no longer offers it (the profile was deleted from
+        // the pom, or the window moved to another project). A stale id would keep appending -Pdist to every
+        // run while its checkbox row no longer exists — invisible and unclearable from the UI.
+        FxTestSupport.call(
+                panel,
+                "toggle",
+                new Class<?>[] {BuildAction.Toggle.class, boolean.class},
+                new BuildAction.Toggle("dist", "dist"),
+                true);
+        FxTestSupport.runOnFx(() -> panel.setProvider(new StaticProvider("package")));
+
+        FxTestSupport.runOnFx(() -> {
+            TreeView<Object> tree = treeOf(panel);
+            tree.getSelectionModel()
+                    .select(tree.getRoot().getChildren().get(0).getChildren().get(0));
+        });
+        FxTestSupport.invoke(panel, "runSelected");
+        assertEquals(List.of(), ranToggle.get(), "the vanished toggle must not still contribute its argv");
+    }
+
+    @Test
+    void anUnchangedReDetectKeepsTheSelection() throws Exception {
+        // BuildCoordinator.refresh() re-parses on every save / tab switch / focus-regain and hands over a
+        // FRESH provider each time. Re-rooting the tree then would silently drop the selection the user just
+        // made, so an identical section list must be a no-op.
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setProvider(new StaticProvider("package"));
+            TreeView<Object> tree = treeOf(p);
+            tree.getSelectionModel()
+                    .select(tree.getRoot().getChildren().get(0).getChildren().get(1)); // the "test" task
+            return p;
+        });
+        Object before =
+                FxTestSupport.callOnFx(() -> treeOf(panel).getSelectionModel().getSelectedItem());
+
+        FxTestSupport.runOnFx(() -> panel.setProvider(new StaticProvider("package"))); // same tasks, new object
+        Object after =
+                FxTestSupport.callOnFx(() -> treeOf(panel).getSelectionModel().getSelectedItem());
+        assertSame(before, after, "an identical re-detect must not re-root the tree");
+
+        // A genuinely different pom DOES re-render.
+        FxTestSupport.runOnFx(() -> panel.setProvider(new StaticProvider("verify")));
+        String label = FxTestSupport.callOnFx(() -> {
+            TreeItem<Object> first =
+                    treeOf(panel).getRoot().getChildren().get(0).getChildren().get(0);
+            return first.getValue().toString();
+        });
+        assertTrue(label.contains("verify"), "a changed provider must re-render");
     }
 }
