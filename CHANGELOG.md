@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--zen` and `--expert` are now genuinely session-only, like `--simple`.** Launching once with either flag
+  wrote the mode into the saved session, so *every* later launch came up in it — with no hint as to why. The
+  flags now apply the mode for the current run only and leave the saved session untouched (including the
+  docked tool windows the mode closes). Turning the mode on from inside the app still sticks, as before.
 - **Dragging a folder together with something inside it no longer pops an error dialog.** Selecting a folder
   *and* a file within it and dropping both on a target moved the folder first (contents and all), then failed
   trying to move the file from a path that no longer existed. Nested entries are now dropped from the move —

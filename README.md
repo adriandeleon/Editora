@@ -610,8 +610,9 @@ editora [options] [FILE[:LINE[:COLUMN]] ...]
   --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named, e.g. notes.md)
   --single-window[=project]  Open just one window (the named project, else the no-project window)
                         instead of restoring all windows; session-only, doesn't change the saved layout
-  --zen                 Start in Zen (distraction-free) mode
-  --expert              Start in Expert mode (like Zen, but keeps the editor view)
+  --zen                 Start in Zen (distraction-free) mode (session only)
+  --expert              Start in Expert mode: like Zen, but keeps the editor
+                        view (line numbers, status bar) (session only)
   --simple              Start in Simple UI mode (minimal chrome; session only)
   --version, -V         Print the version and exit
   --help, -h            Print help and exit

@@ -260,8 +260,9 @@ public class App extends Application {
                   --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named)
                   --single-window[=project]  Open just one window (the named project, else no-project)
                                         instead of restoring all windows; doesn't change the saved layout
-                  --zen                 Start in Zen (distraction-free) mode
-                  --expert              Start in Expert mode (like Zen, but keeps the editor view)
+                  --zen                 Start in Zen (distraction-free) mode (session only)
+                  --expert              Start in Expert mode: like Zen, but keeps the editor
+                                        view (line numbers, status bar) (session only)
                   --simple              Start in Simple UI mode (minimal chrome; session only)
                   --version, -V         Print the version and exit
                   --help, -h            Print this help and exit
@@ -282,7 +283,7 @@ public class App extends Application {
         return args != null && args.contains("--dev");
     }
 
-    /** True if {@code --zen} is present. */
+    /** True if {@code --zen} is present (a session-only Zen override — the saved session is untouched). */
     static boolean zenFlag(java.util.List<String> args) {
         return args != null && args.contains("--zen");
     }

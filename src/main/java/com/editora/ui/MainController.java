@@ -265,6 +265,18 @@ public class MainController implements com.editora.mcp.McpBridge {
             new com.editora.editor.MarkdownLintService();
     /** Session-only Simple-UI override from the {@code --simple} CLI flag; OR'd with the saved setting. */
     private boolean cliSimpleOverride;
+    /** Session-only Zen override from the {@code --zen} CLI flag; OR'd with this window's saved Zen state. */
+    private boolean cliZenOverride;
+    /** Session-only Expert override from the {@code --expert} CLI flag (the {@code --zen} twin). */
+    private boolean cliExpertOverride;
+    /**
+     * The open tool windows a {@code --zen}/{@code --expert} session override closed, as the persisted
+     * {left, right, bottom} ids. Entering a focus mode calls {@link ToolWindowManager#closeAllOpen()}, and
+     * {@code close()} persists "nothing open" — so without restoring these at quit, a session-only focus
+     * mode would silently lose the user's docked tool windows on the next launch. {@code null} = no CLI
+     * focus-mode override is in effect (including after an in-app toggle takes over from the flag).
+     */
+    private String[] cliFocusToolWindows;
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) — owned by RemoteCoordinator ---
     private RemoteCoordinator remoteCoordinator;
     // MCP server: a single app-wide loopback HTTP endpoint exposing live editor state + the command
@@ -735,14 +747,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         return config.getSettings().isSimpleMode() || cliSimpleOverride;
     }
 
-    /** True when this window is in distraction-free Zen mode (per-window state, never a shared pref). */
+    /** True when this window is in distraction-free Zen mode — this window's saved state OR the session-only
+     *  {@code --zen} flag (which, like {@code --simple}, never touches the saved session). */
     private boolean zenActive() {
-        return config.getWorkspaceState().isZenMode();
+        return config.getWorkspaceState().isZenMode() || cliZenOverride;
     }
 
     /** True when this window is in Expert mode — like Zen, but keeps line numbers + the status bar. */
     private boolean expertActive() {
-        return config.getWorkspaceState().isExpertMode();
+        return config.getWorkspaceState().isExpertMode() || cliExpertOverride;
     }
 
     /** Snapshot of which optional features are effectively enabled, for {@link Chrome#paletteVisible}. */
@@ -901,8 +914,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         boolean show = !config.getSettings().isShowToolbar()
-                && !config.getWorkspaceState().isZenMode()
-                && !config.getWorkspaceState().isExpertMode(); // a focus mode hides the toolbar; its E/Z restores it
+                && !zenActive()
+                && !expertActive(); // a focus mode hides the toolbar; its E/Z restores it
         toolbarRestoreButton.setVisible(show);
         toolbarRestoreButton.setManaged(show);
     }
@@ -916,7 +929,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (zenExitButton == null) {
             return;
         }
-        boolean zen = config.getWorkspaceState().isZenMode();
+        boolean zen = zenActive();
         zenExitButton.setVisible(zen);
         zenExitButton.setManaged(zen);
         EditorBuffer active = activeBuffer();
@@ -934,7 +947,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (expertExitButton == null) {
             return;
         }
-        boolean expert = config.getWorkspaceState().isExpertMode();
+        boolean expert = expertActive();
         expertExitButton.setVisible(expert);
         expertExitButton.setManaged(expert);
         EditorBuffer active = activeBuffer();
@@ -4683,11 +4696,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 });
             }
         }
-        if (zen) {
-            setZenMode(true);
-        }
+        // --zen / --expert: session-only overrides (they don't change the saved session), like --simple.
+        // If both were given, Expert wins — the two are mutually exclusive.
         if (expert) {
-            setExpertMode(true); // like --zen; if both were given, Expert wins (the two are mutually exclusive)
+            applyCliFocusMode(true);
+        } else if (zen) {
+            applyCliFocusMode(false);
         }
     }
 
@@ -6632,7 +6646,31 @@ public class MainController implements com.editora.mcp.McpBridge {
         state.setActiveFile(activePath != null ? activePath.toAbsolutePath().toString() : "");
         persistWindowBounds(state);
         toolWindows.persistDividers(); // capture a divider dragged but left open (close() only saves on hide)
+        restoreCliFocusToolWindows(state);
         config.save(); // durable flush on quit — not coalesced
+    }
+
+    /**
+     * Undoes the persisted side-effects of a {@code --zen}/{@code --expert} session override, so the flag
+     * really is session-only: entering the mode closed the docked tool windows and {@code close()} persisted
+     * "nothing open", which would otherwise lose them on the next (flagless) launch. Only fills a side the
+     * user hasn't since reopened by hand, and leaves the pre-focus snapshots out of the saved file.
+     */
+    private void restoreCliFocusToolWindows(WorkspaceState state) {
+        if (cliFocusToolWindows == null) {
+            return;
+        }
+        if (state.getOpenLeftToolWindow().isEmpty()) {
+            state.setOpenLeftToolWindow(cliFocusToolWindows[0]);
+        }
+        if (state.getOpenRightToolWindow().isEmpty()) {
+            state.setOpenRightToolWindow(cliFocusToolWindows[1]);
+        }
+        if (state.getOpenBottomToolWindow().isEmpty()) {
+            state.setOpenBottomToolWindow(cliFocusToolWindows[2]);
+        }
+        state.getPreZenToolWindows().clear(); // a snapshot of a mode that was never saved as "on"
+        state.getPreExpertToolWindows().clear();
     }
 
     /** Records the main window's geometry. When maximized, keep the last normal bounds so
@@ -7610,7 +7648,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void toggleZen() {
-        setZenMode(!config.getWorkspaceState().isZenMode());
+        setZenMode(!zenActive());
     }
 
     /**
@@ -7621,20 +7659,25 @@ public class MainController implements com.editora.mcp.McpBridge {
      * {@link Settings}</em>. Leaving Zen therefore restores the user's saved prefs exactly (nothing was
      * changed), and one window being in Zen never affects another. Open tool windows are closed on enter
      * and reopened on leave (a per-window UI snapshot, not a pref). Idempotent.
+     *
+     * <p>An explicit toggle also <b>takes over from a {@code --zen}/{@code --expert} session flag</b> (as
+     * {@link #toggleSimpleMode} does for {@code --simple}): the CLI override is cleared and the real state is
+     * written, so entering the mode from a {@code --zen} launch makes it stick from then on.
      */
     void setZenMode(boolean on) {
         WorkspaceState ws = config.getWorkspaceState();
-        if (ws.isZenMode() == on) {
+        if (zenActive() == on) {
             return;
         }
-        if (on && ws.isExpertMode()) {
+        if (on && expertActive()) {
             setExpertMode(false); // the two focus modes are mutually exclusive
         }
         if (on) {
             ws.setPreZenToolWindows(toolWindows.closeAllOpen());
         }
+        clearCliFocusOverride(); // an explicit toggle takes over from the --zen/--expert session flag
         ws.setZenMode(on);
-        toolWindows.setZenStripesHidden(on || ws.isExpertMode());
+        toolWindows.setZenStripesHidden(on || expertActive());
         if (!on) {
             toolWindows.openByIds(ws.getPreZenToolWindows());
             ws.getPreZenToolWindows().clear();
@@ -7647,7 +7690,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void toggleExpert() {
-        setExpertMode(!config.getWorkspaceState().isExpertMode());
+        setExpertMode(!expertActive());
     }
 
     /**
@@ -7658,17 +7701,18 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     void setExpertMode(boolean on) {
         WorkspaceState ws = config.getWorkspaceState();
-        if (ws.isExpertMode() == on) {
+        if (expertActive() == on) {
             return;
         }
-        if (on && ws.isZenMode()) {
+        if (on && zenActive()) {
             setZenMode(false); // the two focus modes are mutually exclusive
         }
         if (on) {
             ws.setPreExpertToolWindows(toolWindows.closeAllOpen());
         }
+        clearCliFocusOverride(); // an explicit toggle takes over from the --zen/--expert session flag
         ws.setExpertMode(on);
-        toolWindows.setZenStripesHidden(on || ws.isZenMode());
+        toolWindows.setZenStripesHidden(on || zenActive());
         if (!on) {
             toolWindows.openByIds(ws.getPreExpertToolWindows());
             ws.getPreExpertToolWindows().clear();
@@ -7677,6 +7721,45 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyViewSettingsToAllBuffers(config.getSettings());
         requestSave();
         setStatus(tr("status.toggle.expert", tr(on ? "common.on" : "common.off")));
+    }
+
+    /**
+     * Applies a {@code --zen} / {@code --expert} <b>session-only</b> focus mode: the same effect as the real
+     * mode, but nothing is written to the saved session — quit and relaunch without the flag and the window
+     * comes back normal. This mirrors {@code --simple} ({@link #cliSimpleOverride}).
+     *
+     * <p>Entering a focus mode closes the docked tool windows, and {@link ToolWindowManager#close} <em>persists</em>
+     * "nothing open" — so the ids are stashed in {@link #cliFocusToolWindows} and written back at quit
+     * ({@link #persistSession}); otherwise a session-only mode would still lose them for good.
+     *
+     * <p>No-op when this window's <em>saved</em> session already has a focus mode on (nothing to override).
+     */
+    private void applyCliFocusMode(boolean expert) {
+        if (zenActive() || expertActive()) {
+            return;
+        }
+        WorkspaceState ws = config.getWorkspaceState();
+        cliFocusToolWindows =
+                new String[] {ws.getOpenLeftToolWindow(), ws.getOpenRightToolWindow(), ws.getOpenBottomToolWindow()};
+        if (expert) {
+            cliExpertOverride = true;
+            ws.setPreExpertToolWindows(toolWindows.closeAllOpen()); // the in-app "E" exit reopens from here
+        } else {
+            cliZenOverride = true;
+            ws.setPreZenToolWindows(toolWindows.closeAllOpen()); // ditto for the "Z"
+        }
+        toolWindows.setZenStripesHidden(true);
+        applyChromeVisibility();
+        applyViewSettingsToAllBuffers(config.getSettings());
+        // Deliberately no requestSave(): the flag must leave the saved session untouched.
+    }
+
+    /** Drops a {@code --zen}/{@code --expert} session override — an in-app toggle now owns the state, so the
+     *  quit-time tool-window restore must not fire. */
+    private void clearCliFocusOverride() {
+        cliZenOverride = false;
+        cliExpertOverride = false;
+        cliFocusToolWindows = null;
     }
 
     private void toggleToolbar() {
