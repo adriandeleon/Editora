@@ -347,6 +347,41 @@ public class WindowManager {
     }
 
     /**
+     * The in-app quit path ({@code app.quit} / the toolbar Quit button / {@code C-x C-c}) ends in
+     * {@code Platform.exit()} — which fires <b>no</b> {@code Stage.onCloseRequest}, so the per-window close
+     * handler that prompts for unsaved buffers and persists the window's session never runs. Quitting
+     * therefore used to silently discard the dirty buffers <em>and</em> the whole session (tabs, carets,
+     * bounds) of every window except the one quit from.
+     *
+     * <p>So walk them all here: bring each to the front, let it prompt for its own dirty buffers and persist
+     * its session, then dispose its services (which also kills that window's Run/build subprocesses). Any
+     * window's prompt can cancel the quit.
+     *
+     * <p>Deliberately does <b>not</b> call {@link #onWindowClosed} — that would drain the persisted
+     * open-window set (see {@link #reconcileOpenSet}), and a quit must leave every window to reopen.
+     *
+     * @return false if the user cancelled at some window's save prompt (the quit is off).
+     */
+    boolean confirmCloseAllWindows() {
+        for (Holder h : new ArrayList<>(windows)) {
+            h.stage().toFront(); // make it obvious which window is asking about unsaved changes
+            h.stage().requestFocus();
+            if (!h.controller().confirmCloseAllBuffers()) {
+                return false; // cancelled — the app keeps running and nothing was disposed
+            }
+        }
+        for (Holder h : new ArrayList<>(windows)) {
+            try {
+                h.controller().disposeWindow(); // shut this window's services + kill its subprocesses
+            } catch (RuntimeException | Error t) {
+                java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                        .log(java.util.logging.Level.WARNING, "disposeWindow failed during quit", t);
+            }
+        }
+        return true;
+    }
+
+    /**
      * Persists the set of currently-open windows as the restore set. Debounced (see {@link #openSetReconcile})
      * so a burst of closes settles to a single write, and — crucially — so it cannot run <em>during</em> a
      * quit. The two ends:

@@ -1118,7 +1118,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Releases this window's resources on close: language servers, debug session, and worker threads. */
-    private void disposeWindow() {
+    void disposeWindow() {
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
@@ -5428,6 +5428,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         buffer.setDiskSnapshot(mtime, size); // baseline for external-change detection
         boolean isLog = logViewer.handlesLogFile(file);
+        // A huge file is read only PARTIALLY below. Flag that, so the save path can refuse: writing a
+        // partial buffer back would truncate the user's file on disk (see EditorBuffer.setTruncatedLoad).
+        buffer.setTruncatedLoad(size >= EditorBuffer.HUGE_FILE_BYTES);
         if (size >= EditorBuffer.HUGE_FILE_BYTES) {
             if (isLog) {
                 // A huge log opens at its END (the tail is what matters) instead of the first chunk.
@@ -5722,7 +5725,27 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /**
+     * Blocks every write path for a buffer the loader could only read <em>part</em> of (a file at/over
+     * {@link EditorBuffer#HUGE_FILE_BYTES}: the first 50 MB, or a log's <em>last</em> 50 MB). Such a buffer is
+     * a slice, not the file — writing it back with {@code Files.write} would truncate the real file on disk
+     * and destroy everything outside the slice. The buffer is read-only, but that only stops <em>typing</em>:
+     * {@code file.save} (Ctrl/Cmd-S) needs no edit and no dirty flag to fire, so it has to be refused here.
+     *
+     * @return true when the save was refused (the caller must not write).
+     */
+    private boolean refuseTruncatedSave(EditorBuffer buffer) {
+        if (buffer == null || !buffer.isTruncatedLoad()) {
+            return false;
+        }
+        setStatus(tr("status.truncatedNoSave"));
+        return true;
+    }
+
     private boolean save(EditorBuffer buffer) {
+        if (refuseTruncatedSave(buffer)) {
+            return false;
+        }
         if (buffer.getPath() == null) {
             return saveAs(buffer);
         }
@@ -5820,6 +5843,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private boolean saveAs(EditorBuffer buffer) {
+        if (refuseTruncatedSave(buffer)) {
+            return false;
+        }
         if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
             // A remote buffer always opens with a path, so plain Save writes it back over SFTP; choosing a
             // new remote destination (an async prompt) isn't supported yet.
@@ -5864,7 +5890,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * overwriting a different existing file.
      */
     private void saveAsPrompt(EditorBuffer buffer) {
-        if (buffer == null) {
+        if (buffer == null || refuseTruncatedSave(buffer)) {
             return;
         }
         if (buffer.getPath() != null && com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
@@ -6569,9 +6595,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         return com.editora.config.PathKeys.canonical(p);
     }
 
+    /**
+     * In-app quit. {@code Platform.exit()} fires no {@code Stage.onCloseRequest}, so the per-window close
+     * handler never runs — every window has to be prompted + persisted here, or the other windows lose their
+     * unsaved buffers and their whole session. {@link WindowManager#confirmCloseAllWindows} does that (and
+     * disposes each window's services); the null case is the unit-test/standalone controller.
+     */
     @FXML
     private void onQuit() {
-        if (confirmQuit() && confirmCloseAllBuffers()) {
+        if (!confirmQuit()) {
+            return;
+        }
+        boolean ok = windowManager != null ? windowManager.confirmCloseAllWindows() : confirmCloseAllBuffers();
+        if (ok) {
             Platform.exit();
         }
     }
@@ -6590,8 +6626,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         return result.isPresent() && result.get() == quit;
     }
 
-    /** Walks every tab and prompts to save/discard each dirty buffer. False = user cancelled. */
-    private boolean confirmCloseAllBuffers() {
+    /** Walks every tab and prompts to save/discard each dirty buffer, then persists this window's session.
+     *  False = the user cancelled. Package-visible: the quit path drives it for every window. */
+    boolean confirmCloseAllBuffers() {
         for (Tab tab : new ArrayList<>(tabPane.getTabs())) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer == null || !buffer.isDirty()) {
