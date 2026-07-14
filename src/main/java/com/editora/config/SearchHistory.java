@@ -81,7 +81,7 @@ public class SearchHistory {
             Files.createDirectories(file.getParent());
             Stored stored = new Stored();
             stored.queries = new ArrayList<>(queries);
-            mapper.writeValue(file.toFile(), stored);
+            ConfigWriter.writeAtomic(file, mapper, stored);
         } catch (IOException e) {
             // Best effort.
         }

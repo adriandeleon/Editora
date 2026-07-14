@@ -19,6 +19,12 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public final class ConfigMigrations {
 
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(ConfigMigrations.class.getName());
+
+    /** Cap on how many numbered backups of one file we keep before reusing the last name. */
+    private static final int MAX_BACKUPS = 20;
+
     private ConfigMigrations() {}
 
     /**
@@ -83,10 +89,13 @@ public final class ConfigMigrations {
         try {
             tree = mapper.readTree(Files.readString(file));
         } catch (IOException e) {
+            // Unreadable, or not even valid JSON/TOML. Returning defaults means the next save writes an EMPTY
+            // store straight over it — so preserve what's there first (see keepCorrupt).
+            keepCorrupt(file);
             return defaults;
         }
         if (tree == null || tree.isMissingNode()) {
-            return defaults;
+            return defaults; // an empty file — nothing to preserve
         }
         try {
             ObjectNode migrated = upgrade(schema, tree, mapper);
@@ -95,17 +104,52 @@ public final class ConfigMigrations {
             backupQuietly(file, e.storedVersion());
             return defaults;
         } catch (IOException | RuntimeException e) {
-            // Malformed content or a misconfigured migration: fall back to defaults rather than crash.
+            // Malformed content or a misconfigured migration: fall back to defaults rather than crash — but
+            // keep a copy first, because the very next save overwrites the file.
+            keepCorrupt(file);
             return defaults;
         }
     }
 
-    /** Renames {@code file} to {@code <name>.v<storedVersion>.bak}, preserving any existing backup. */
+    /**
+     * Renames {@code file} out of the way as {@code <name>.v<storedVersion>.bak}. When that name is taken a
+     * counter is appended rather than <em>skipping the move</em> (the old behavior): the file being displaced
+     * is NEWER than this build understands, and we're about to load defaults over it — so skipping meant a
+     * second downgrade overwrote a re-customized config with defaults while the only backup on disk was the
+     * stale one from the first downgrade. The user's settings were lost with no copy at all.
+     */
     public static void backup(Path file, int storedVersion) throws IOException {
-        Path bak = file.resolveSibling(file.getFileName() + ".v" + storedVersion + ".bak");
-        if (!Files.exists(bak)) {
-            Files.move(file, bak);
+        Files.move(file, freeName(file, ".v" + storedVersion + ".bak"));
+    }
+
+    /**
+     * Keeps a copy of a config file we could not parse — overwhelmingly a torn write (a crash, a full disk, or
+     * a kill mid-save). The caller loads defaults, and the next save writes those defaults over the file, so
+     * without this the partially-written bookmarks/notes/projects are gone for good.
+     */
+    private static void keepCorrupt(Path file) {
+        try {
+            if (!Files.exists(file) || Files.size(file) == 0) {
+                return; // nothing worth keeping
+            }
+            Path kept = freeName(file, ".corrupt.bak");
+            Files.copy(file, kept);
+            LOG.log(
+                    java.util.logging.Level.WARNING,
+                    "Could not parse config file {0} — kept a copy at {1} and loaded defaults",
+                    new Object[] {file, kept});
+        } catch (IOException | RuntimeException ignored) {
+            // best effort — we still return defaults
         }
+    }
+
+    /** {@code file + suffix}, with a counter appended when that name is already taken. */
+    private static Path freeName(Path file, String suffix) {
+        Path candidate = file.resolveSibling(file.getFileName() + suffix);
+        for (int i = 2; Files.exists(candidate) && i <= MAX_BACKUPS; i++) {
+            candidate = file.resolveSibling(file.getFileName() + suffix + "." + i);
+        }
+        return candidate;
     }
 
     private static void backupQuietly(Path file, int storedVersion) {

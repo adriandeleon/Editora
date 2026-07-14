@@ -88,7 +88,7 @@ public class ProjectManager {
     public void save() {
         try {
             Files.createDirectories(configDir);
-            json.writeValue(configDir.resolve(INDEX_FILE_NAME).toFile(), index);
+            ConfigWriter.writeAtomic(configDir.resolve(INDEX_FILE_NAME), json, index);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write " + INDEX_FILE_NAME, e);
         }

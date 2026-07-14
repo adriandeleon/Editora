@@ -101,7 +101,7 @@ public class RecentFiles {
             Stored stored = new Stored();
             stored.files =
                     recents.stream().map(com.editora.vfs.Vfs::toStorableString).toList();
-            mapper.writeValue(file.toFile(), stored);
+            ConfigWriter.writeAtomic(file, mapper, stored);
         } catch (IOException e) {
             // Best effort.
         }

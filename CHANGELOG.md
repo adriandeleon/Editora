@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A crash or a full disk while saving can no longer wipe out your bookmarks, notes, breakpoints, or the
+  project list.** Those files were written by truncating them first and then streaming the new contents in, so
+  an interruption left a half-written file — which Editora then treated as *empty* on the next launch and
+  promptly overwrote. Every config store is now written to a temporary file and moved into place, so the real
+  file is only ever replaced by a complete one. A config file that still can't be read is kept as
+  `<name>.corrupt.bak` instead of being silently replaced.
+- **Running an older Editora twice no longer destroys a newer config.** A settings/session file from a newer
+  build is moved aside so the older build can't clobber it — but if a backup with that name already existed,
+  the move was skipped and the newer file was overwritten anyway, leaving only a stale backup. Backups are now
+  numbered.
+- **Deleting a project no longer risks it coming back.** A save queued moments earlier could re-create the
+  deleted project's session file, and because a project's identity is derived from its folder, re-adding that
+  folder later picked the old session right back up.
+
 - **Pressing Ctrl/Cmd-S on a very large file no longer destroys it.** A file of 50 MB or more is deliberately
   loaded only in part (the first 50 MB — or, for a log, the *last* 50 MB) and opened read-only. But read-only
   only blocks *typing*: Save needs neither an edit nor unsaved changes, and it wrote the buffer straight back
