@@ -37,6 +37,16 @@ public final class ConfigWriter {
     private final Object lock = new Object();
     private final Map<Path, byte[]> pending = new LinkedHashMap<>();
 
+    /**
+     * Drops any queued (not yet written) bytes for {@code file}. Used when the file is being <b>deleted</b> —
+     * a coalesced write still sitting in the queue would otherwise land afterwards and re-create it.
+     */
+    public void cancel(Path file) {
+        synchronized (lock) {
+            pending.remove(file);
+        }
+    }
+
     /** Queues {@code bytes} to be written to {@code file} off-thread; a newer write to the same file wins. */
     public void enqueue(Path file, byte[] bytes) {
         synchronized (lock) {
@@ -78,19 +88,40 @@ public final class ConfigWriter {
     /** Writes {@code bytes} to {@code file} via a temp file + atomic move (a crash never leaves a partial file). */
     static void writeAtomic(Path file, byte[] bytes) {
         try {
-            Path parent = file.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.write(tmp, bytes);
-            try {
-                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicUnsupported) {
-                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-            }
+            writeAtomicOrThrow(file, bytes);
         } catch (IOException e) {
             LOG.log(Level.SEVERE, "Failed to write config file " + file, e);
+        }
+    }
+
+    /**
+     * Serializes {@code value} with {@code mapper} and writes it to {@code file} atomically — <b>use this
+     * instead of {@code mapper.writeValue(file.toFile(), value)}</b> for any config store.
+     *
+     * <p>Jackson's {@code writeValue(File, …)} <b>truncates the target first</b> and streams into it. A crash,
+     * a full disk, or an I/O error partway through therefore leaves a <em>torn</em> file — and the read path
+     * ({@code ConfigMigrations.readVersioned}) treats an unparseable file as "absent" and loads an
+     * <em>empty</em> store, which the next save then writes back over the remains. One bad write and every
+     * bookmark, note, breakpoint, or the whole project index is gone, with nothing to recover from.
+     *
+     * <p>Temp-file-plus-atomic-move means the target is only ever replaced by a complete file.
+     */
+    public static void writeAtomic(Path file, com.fasterxml.jackson.databind.ObjectMapper mapper, Object value)
+            throws IOException {
+        writeAtomicOrThrow(file, mapper.writeValueAsBytes(value));
+    }
+
+    private static void writeAtomicOrThrow(Path file, byte[] bytes) throws IOException {
+        Path parent = file.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.write(tmp, bytes);
+        try {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicUnsupported) {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

@@ -1119,6 +1119,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Releases this window's resources on close: language servers, debug session, and worker threads. */
     void disposeWindow() {
+        sessionClosed = true; // no further session writes from this window (see requestSave)
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
@@ -1484,6 +1485,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (windowManager != null && !windowManager.closeWindowForKey(p.id())) {
             return;
         }
+        // A write for this project's session may still be sitting in the config-writer queue; it would land
+        // after the delete below and re-create the file. Drop it first.
+        config.shared().cancelPendingWrite(projects.stateFile(p));
         projects.delete(p.id()); // drops it from the index + open set + deletes its state file
         projects.save();
         config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
@@ -6657,15 +6661,26 @@ public class MainController implements com.editora.mcp.McpBridge {
      * after and clobber that durable one.
      */
     private void requestSave() {
-        if (configSavePending) {
+        if (configSavePending || sessionClosed) {
             return;
         }
         configSavePending = true;
         Platform.runLater(() -> {
             configSavePending = false;
-            config.saveAsync();
+            if (!sessionClosed) {
+                config.saveAsync(); // a window disposed in the meantime must not rewrite its session file
+            }
         });
     }
+
+    /**
+     * True once this window has been closed: its session was persisted and its services disposed, so nothing
+     * may write its session file again. Without this, a {@code requestSave()} coalesced earlier in the same FX
+     * pulse fires <em>after</em> the close/delete handler returns and re-creates the file — which, for a
+     * deleted project, silently <b>resurrects</b> it (ids are derived from the folder path, so re-adding that
+     * folder later picks the old state right back up).
+     */
+    private boolean sessionClosed;
 
     private void persistSession() {
         List<WorkspaceState.OpenFile> files = new ArrayList<>();

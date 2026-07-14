@@ -113,7 +113,7 @@ public class AgentSessionHistory {
             Files.createDirectories(file.getParent());
             Stored stored = new Stored();
             stored.sessions = new ArrayList<>(sessions);
-            mapper.writeValue(file.toFile(), stored);
+            ConfigWriter.writeAtomic(file, mapper, stored);
         } catch (IOException e) {
             // Best effort.
         }

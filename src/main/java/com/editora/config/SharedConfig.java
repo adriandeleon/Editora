@@ -112,6 +112,11 @@ public class SharedConfig {
     }
 
     /** The shared off-thread writer (settings + session state route through it; see {@link ConfigWriter}). */
+    /** Drops any queued write for {@code file} (it's about to be deleted — see {@link ConfigWriter#cancel}). */
+    public void cancelPendingWrite(Path file) {
+        writer.cancel(file);
+    }
+
     ConfigWriter writer() {
         return writer;
     }
@@ -216,7 +221,7 @@ public class SharedConfig {
     public void savePlugins() {
         try {
             Files.createDirectories(configDir);
-            json.writeValue(getPluginsFile().toFile(), pluginStore);
+            ConfigWriter.writeAtomic(getPluginsFile(), json, pluginStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write plugins to " + getPluginsFile(), e);
         }
@@ -239,7 +244,7 @@ public class SharedConfig {
     public void saveMacros() {
         try {
             Files.createDirectories(configDir);
-            json.writeValue(getMacrosFile().toFile(), macroStore);
+            ConfigWriter.writeAtomic(getMacrosFile(), json, macroStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write macros to " + getMacrosFile(), e);
         }
@@ -269,7 +274,7 @@ public class SharedConfig {
 
     public void saveConnections() {
         try {
-            json.writeValue(getConnectionsFile().toFile(), connectionStore);
+            ConfigWriter.writeAtomic(getConnectionsFile(), json, connectionStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write connections to " + getConnectionsFile(), e);
         }
@@ -443,7 +448,7 @@ public class SharedConfig {
     public void saveHistory() {
         try {
             Files.createDirectories(getHistoryFile().getParent());
-            json.writeValue(getHistoryFile().toFile(), historyStore);
+            ConfigWriter.writeAtomic(getHistoryFile(), json, historyStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write history to " + getHistoryFile(), e);
         }
@@ -488,7 +493,7 @@ public class SharedConfig {
                 legacy.forEach(into::putIfAbsent);
             }
             obj.remove("bookmarks"); // drop the legacy node (even when empty) so it stops lingering
-            json.writeValue(file.toFile(), obj);
+            ConfigWriter.writeAtomic(file, json, obj);
         } catch (IOException | IllegalArgumentException e) {
             // a malformed legacy file simply contributes no bookmarks
         }
@@ -498,7 +503,7 @@ public class SharedConfig {
     public void saveBookmarks() {
         try {
             Files.createDirectories(configDir);
-            json.writeValue(getBookmarksFile().toFile(), bookmarkStore);
+            ConfigWriter.writeAtomic(getBookmarksFile(), json, bookmarkStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write bookmarks to " + getBookmarksFile(), e);
         }
@@ -508,7 +513,7 @@ public class SharedConfig {
     public void saveBreakpoints() {
         try {
             Files.createDirectories(configDir);
-            json.writeValue(getBreakpointsFile().toFile(), breakpointStore);
+            ConfigWriter.writeAtomic(getBreakpointsFile(), json, breakpointStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write breakpoints to " + getBreakpointsFile(), e);
         }
@@ -523,7 +528,7 @@ public class SharedConfig {
     public void saveNotes() {
         try {
             Files.createDirectories(configDir);
-            json.writeValue(getNotesFile().toFile(), noteStore);
+            ConfigWriter.writeAtomic(getNotesFile(), json, noteStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write notes to " + getNotesFile(), e);
         }
