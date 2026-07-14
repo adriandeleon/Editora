@@ -29,9 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bar, breadcrumb, tool stripes, and the whitespace guides — but **keeps the full editor view**: line numbers,
   the status bar, the minimap, the column ruler, and the current-line highlight. So you get a focused coding
   surface that still shows where you are. Toggle it from the palette (**View: Toggle Expert Mode**), `C-c C-e`,
-  *Settings → Interface → Modes*, or the floating **"E"** button (top-right) to exit — mirroring Zen's "Z".
-  Expert and Zen are mutually exclusive; like Zen it's per-window state and never mutates your saved
-  preferences, so leaving it restores them exactly.
+  *Settings → Interface → Modes*, the `--expert` launch flag, or the floating **"E"** button (top-right) to
+  exit — mirroring Zen's "Z". Expert and Zen are mutually exclusive; like Zen it's per-window state and never
+  mutates your saved preferences, so leaving it restores them exactly.
 
 - **GitHub Actions workflow preview.** A workflow YAML (detected by content — a top-level `on:` + `jobs:` —
   so it works regardless of path and keeps YAML highlighting) gets the same 3-mode view, rendering a

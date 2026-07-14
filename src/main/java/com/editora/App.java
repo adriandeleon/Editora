@@ -110,6 +110,7 @@ public class App extends Application {
                 projectArg(rawArgs),
                 fileTargets(rawArgs),
                 zenFlag(rawArgs),
+                expertFlag(rawArgs),
                 newFileArg(rawArgs),
                 simpleFlag(rawArgs),
                 singleWindowArg(rawArgs));
@@ -260,6 +261,7 @@ public class App extends Application {
                   --single-window[=project]  Open just one window (the named project, else no-project)
                                         instead of restoring all windows; doesn't change the saved layout
                   --zen                 Start in Zen (distraction-free) mode
+                  --expert              Start in Expert mode (like Zen, but keeps the editor view)
                   --simple              Start in Simple UI mode (minimal chrome; session only)
                   --version, -V         Print the version and exit
                   --help, -h            Print this help and exit
@@ -283,6 +285,11 @@ public class App extends Application {
     /** True if {@code --zen} is present. */
     static boolean zenFlag(java.util.List<String> args) {
         return args != null && args.contains("--zen");
+    }
+
+    /** True if {@code --expert} is present (session-only Expert mode override, like {@code --zen}). */
+    static boolean expertFlag(java.util.List<String> args) {
+        return args != null && args.contains("--expert");
     }
 
     /** True if {@code --simple} is present (session-only Simple UI mode override). */
@@ -382,7 +389,7 @@ public class App extends Application {
                 continue;
             }
             if (a.startsWith("-")) {
-                continue; // any other option (incl. --xxx=yyy, --zen, --version, --help)
+                continue; // any other option (incl. --xxx=yyy, --zen, --expert, --version, --help)
             }
             out.add(parseTarget(a));
         }
