@@ -966,10 +966,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     isDir
                             ? FileIcons.boxed(Icons.project())
                             : FileIcons.forFileName(fileName == null ? label : fileName.toString()));
-            setContextMenu(isRoot ? null : contextMenuFor(getTreeItem(), isDir));
+            setContextMenu(contextMenuFor(getTreeItem(), isDir, isRoot));
         }
 
-        private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir) {
+        private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {
             ContextMenu menu = new ContextMenu();
             if (isDir) {
                 MenuItem newFolder = new MenuItem(tr("project.menu.newFolder"));
@@ -983,10 +983,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 newFromTemplate.setOnAction(e -> onNewFromTemplate.accept(treeItem.getValue()));
                 menu.getItems().add(newFromTemplate);
             }
-            MenuItem rename = new MenuItem(tr("project.menu.rename"));
-            rename.setGraphic(Icons.edit());
-            rename.setOnAction(e -> renameItem(treeItem));
-            menu.getItems().add(rename);
+            // Rename is offered on every file/folder EXCEPT the project root — renaming that would move the
+            // whole project folder on disk and leave the project pointing at a path that no longer exists.
+            if (!isRoot) {
+                MenuItem rename = new MenuItem(tr("project.menu.rename"));
+                rename.setGraphic(Icons.edit());
+                rename.setOnAction(e -> renameItem(treeItem));
+                menu.getItems().add(rename);
+            }
             if (!isDir) {
                 MenuItem delete = new MenuItem(tr("project.menu.delete"));
                 delete.setGraphic(Icons.trash());
