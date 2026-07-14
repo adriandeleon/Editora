@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Closing an image, hex, or PDF tab now actually releases it.** Those tabs were only cleaned up when closed
+  by clicking the ✕ — closing them with Ctrl-W, "Close All"/"Close Others", or by closing the window leaked a
+  live thread and (for a PDF) kept the file open for as long as Editora was running. Open and close a few
+  dozen PDFs and it added up.
+- **Closing a window now shuts down everything it started.** The diff, external-tool and HTTP-client workers
+  were left running, and an SFTP connection stayed open on the remote host with its SSH client pinned in
+  memory for the rest of the session.
+- **Stopping (or quitting during) a run or a build now kills the whole process tree.** `npm run dev`, `mvn`
+  and `./gradlew` all launch a child process; only the wrapper was being killed, so a dev server kept holding
+  its port and a build JVM kept running. Those processes are now tracked, so they're also cleaned up if
+  Editora exits unexpectedly.
+
 - **Auto-save can no longer undo a manual save.** Hitting Ctrl/Cmd-S just as a queued auto-save fired let the
   auto-save land afterwards and put the *older* text back on disk — while the editor showed the file as saved.
   Writes to a file are now serialized, and a stale auto-save is dropped.

@@ -22,6 +22,28 @@ public final class Vfs {
 
     private Vfs() {}
 
+    /** The object whose hooks are currently installed, so only it may clear them (see {@link #clearRemoteHooksIf}). */
+    private static volatile Object remoteOwner;
+
+    /**
+     * Clears the remote hooks if {@code owner} is the one that installed them. The hooks are static, so a
+     * closed window's {@code RemoteFileSystems} would otherwise be pinned here (with its SSH client and open
+     * sessions) for the rest of the process. Guarded by identity so a *newer* window's hooks survive an older
+     * window closing after it.
+     */
+    public static void clearRemoteHooksIf(Object owner) {
+        if (remoteOwner == owner) {
+            remoteResolver = null;
+            remoteStorable = null;
+            remoteOwner = null;
+        }
+    }
+
+    /** Records who installed the hooks (call with the owner right after setting them). */
+    public static void setRemoteOwner(Object owner) {
+        remoteOwner = owner;
+    }
+
     public static void setRemoteResolver(Function<String, Path> resolver) {
         remoteResolver = resolver;
     }

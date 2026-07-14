@@ -332,4 +332,9 @@ final class HttpClientCoordinator {
             host.setStatus(tr("statusbar.tip.httpDisabled"));
         }
     }
+
+    /** Stops the HTTP-client worker thread (window close). */
+    public void shutdown() {
+        service.shutdown();
+    }
 }

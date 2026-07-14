@@ -559,4 +559,9 @@ final class DiffCoordinator {
                 });
         ops.addDiffTab(pane);
     }
+
+    /** Stops the diff worker thread (window close). */
+    public void shutdown() {
+        diffService.shutdown();
+    }
 }

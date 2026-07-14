@@ -260,4 +260,9 @@ final class ExternalToolCoordinator {
         }
         return s;
     }
+
+    /** Stops the external-tool worker thread (window close). */
+    public void shutdown() {
+        service.shutdown();
+    }
 }

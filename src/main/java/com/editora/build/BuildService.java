@@ -60,6 +60,8 @@ public final class BuildService {
         Process process;
         try {
             process = pb.start();
+            com.editora.process.ProcessRegistry.track(process); // so the shutdown hook / reaper can kill it
+
         } catch (IOException e) {
             listener.onError(e.getMessage() == null ? e.toString() : e.getMessage());
             return;
@@ -88,14 +90,20 @@ public final class BuildService {
         waiter.start();
     }
 
-    /** Kills the running process (best effort); its waiter reports the exit. */
+    /**
+     * Kills the running process <b>and its descendants</b> (best effort); its waiter reports the exit.
+     *
+     * <p>{@code destroy()} on the root alone orphans the real work: {@code npm run dev}, {@code mvn}, and
+     * {@code ./gradlew} all fork a child, so SIGTERM-ing the wrapper leaves a dev server holding its port or a
+     * build JVM still running. {@code ProcessRegistry.killTree} kills children first (so a wrapper can't
+     * reparent-orphan its child) and escalates to a force-kill after a grace period, instead of the old
+     * {@code destroy(); if (isAlive()) destroyForcibly();} — where the {@code isAlive()} check right after an
+     * asynchronous SIGTERM is essentially always true, so the child was SIGKILLed with no grace period at all.
+     */
     public void stop() {
         Process p = current;
         if (p != null && p.isAlive()) {
-            p.destroy();
-            if (p.isAlive()) {
-                p.destroyForcibly();
-            }
+            com.editora.process.ProcessRegistry.killTree(p);
         }
     }
 

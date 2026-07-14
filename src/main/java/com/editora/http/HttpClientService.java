@@ -292,4 +292,9 @@ public final class HttpClientService {
         String base = m == null || m.isBlank() ? e.getClass().getSimpleName() : m;
         return url.isBlank() ? base : base + "  (" + url + ")";
     }
+
+    /** Stops the daemon worker (window close). Without this, each closed window leaks its http-client thread. */
+    public void shutdown() {
+        exec.shutdownNow();
+    }
 }
