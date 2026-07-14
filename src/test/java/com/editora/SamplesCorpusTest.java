@@ -1,15 +1,18 @@
 package com.editora;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
+import com.editora.search.GitignoreFilter;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -100,15 +103,41 @@ class SamplesCorpusTest {
      *  git-ignored, generated {@code samples/perf/} tree. */
     private static Set<String> committedSamples() throws IOException {
         Set<String> out = new TreeSet<>();
-        Path perf = SAMPLES.resolve("perf");
-        try (Stream<Path> walk = Files.walk(SAMPLES)) {
-            walk.filter(Files::isRegularFile)
-                    .filter(p -> !p.equals(README))
-                    .filter(p -> !p.startsWith(perf))
-                    .filter(p -> !p.getFileName().toString().equals(".DS_Store"))
-                    .forEach(p -> out.add(
-                            "samples/" + SAMPLES.relativize(p).toString().replace('\\', '/')));
-        }
+        // Honor the repo .gitignore, mirroring the production walker (prune ignored directories, skip ignored
+        // files). Without this, merely RUNNING a build-tool sample — which is what samples/build-tools/ is FOR
+        // — litters cargo/target, maven/target, gradle/build, … and every generated file then looks like an
+        // undocumented committed sample, failing this test. The `!/samples/log/*.log` negation keeps the log
+        // corpus counted.
+        GitignoreFilter ignore = GitignoreFilter.load(Path.of(""));
+        Files.walkFileTree(SAMPLES, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                if (dir.equals(SAMPLES)) {
+                    return FileVisitResult.CONTINUE;
+                }
+                String rel = rel(dir);
+                // samples/perf/ is generated (git-ignored) too, but keep the explicit skip as documentation.
+                return rel.equals("samples/perf") || ignore.ignored(rel, true)
+                        ? FileVisitResult.SKIP_SUBTREE
+                        : FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                String rel = rel(file);
+                if (!file.equals(README)
+                        && !file.getFileName().toString().equals(".DS_Store")
+                        && !ignore.ignored(rel, false)) {
+                    out.add(rel);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+        });
         return out;
+    }
+
+    /** The repo-root-relative, forward-slash path of a sample entry (e.g. {@code samples/syntax/sample.py}). */
+    private static String rel(Path p) {
+        return "samples/" + SAMPLES.relativize(p).toString().replace('\\', '/');
     }
 }
