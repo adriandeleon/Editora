@@ -1144,6 +1144,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // Mark the cell so the stylesheet can theme the folder vs. file icon color.
             getStyleClass().removeAll(CELL_CLASSES);
             getStyleClass().add(isDir ? "folder-cell" : "file-cell");
+            // The file's Git status (null for a clean/dirty file, a folder, or Git off) — drives both the
+            // color class and the single-letter label prefix, matching the Commit tool window.
+            com.editora.git.GitFileStatus fileStatus = null;
             if (dirty) {
                 getStyleClass().add("modified-file"); // unsaved-in-editor takes precedence over the Git color
             } else if (!gitStatus.isEmpty() || !gitChangedDirs.isEmpty()) {
@@ -1153,9 +1156,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         getStyleClass().add("git-status-dir-changed");
                     }
                 } else {
-                    com.editora.git.GitFileStatus st = gitStatus.get(norm);
-                    if (st != null) {
-                        getStyleClass().add(st.cssClass());
+                    fileStatus = gitStatus.get(norm);
+                    if (fileStatus != null) {
+                        getStyleClass().add(fileStatus.cssClass());
                     }
                 }
             }
@@ -1168,7 +1171,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 Path name = item.getFileName();
                 label = name == null ? item.toString() : name.toString();
             }
-            setText(dirty ? "• " + label : label);
+            // Prefix a changed file with its status letter (M/A/D/R/U), like the Commit window; an unsaved
+            // (dirty) file keeps its "• " marker instead. The color comes from the git-status style class.
+            if (dirty) {
+                label = "• " + label;
+            } else if (fileStatus != null) {
+                label = fileStatus.letter() + "  " + label;
+            }
+            setText(label);
             Path fileName = item.getFileName();
             // Box the folder glyph in the same fixed icon column as the (already-boxed) file glyphs, so
             // folder and file rows share one icon width and every label starts at the same x.

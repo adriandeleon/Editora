@@ -23,6 +23,15 @@ class GitFileStatusTest {
     }
 
     @Test
+    void letterMatchesTheCommitWindowConvention() {
+        assertEquals("A", GitFileStatus.ADDED.letter());
+        assertEquals("M", GitFileStatus.MODIFIED.letter());
+        assertEquals("D", GitFileStatus.DELETED.letter());
+        assertEquals("R", GitFileStatus.RENAMED.letter());
+        assertEquals("U", GitFileStatus.UNTRACKED.letter());
+    }
+
+    @Test
     void deletedAndAddedTakePrecedenceOverModified() {
         // A file staged-added but also worktree-deleted → deletion wins (it's gone).
         assertEquals(GitFileStatus.DELETED, GitFileStatus.of(new FileEntry("x", 'A', 'D', null)));
