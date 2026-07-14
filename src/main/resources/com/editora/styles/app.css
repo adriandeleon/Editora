@@ -850,18 +850,19 @@
 .project-tree .modified-file { -fx-text-fill: #bf8700; -fx-font-style: italic; }
 .project-tree .modified-file .toolbar-icon { -fx-fill: #bf8700; }
 /* Git working-tree status colors (IntelliJ-style): added = green, modified = blue, deleted = gray +
-   renamed = violet, untracked = olive; a folder with changed descendants is tinted blue.
+   renamed = violet, untracked = olive; a folder with changed descendants is tinted blue. Shared by the
+   Project tree (file coloring + status letter) AND the Commit tool window (.git-tree), so the two match.
    The label + its file-type icon are colored together. Rides the Git feature (no separate toggle). */
-.project-tree .git-status-modified { -fx-text-fill: -color-accent-fg; }
-.project-tree .git-status-modified .toolbar-icon { -fx-fill: -color-accent-fg; }
-.project-tree .git-status-added { -fx-text-fill: -color-success-fg; }
-.project-tree .git-status-added .toolbar-icon { -fx-fill: -color-success-fg; }
-.project-tree .git-status-untracked { -fx-text-fill: #8a7f16; }
-.project-tree .git-status-untracked .toolbar-icon { -fx-fill: #8a7f16; }
-.project-tree .git-status-renamed { -fx-text-fill: #9a5cd0; }
-.project-tree .git-status-renamed .toolbar-icon { -fx-fill: #9a5cd0; }
-.project-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
-.project-tree .git-status-deleted .toolbar-icon { -fx-fill: -color-fg-muted; }
+.project-tree .git-status-modified, .git-tree .git-status-modified { -fx-text-fill: -color-accent-fg; }
+.project-tree .git-status-modified .toolbar-icon, .git-tree .git-status-modified .toolbar-icon { -fx-fill: -color-accent-fg; }
+.project-tree .git-status-added, .git-tree .git-status-added { -fx-text-fill: -color-success-fg; }
+.project-tree .git-status-added .toolbar-icon, .git-tree .git-status-added .toolbar-icon { -fx-fill: -color-success-fg; }
+.project-tree .git-status-untracked, .git-tree .git-status-untracked { -fx-text-fill: #8a7f16; }
+.project-tree .git-status-untracked .toolbar-icon, .git-tree .git-status-untracked .toolbar-icon { -fx-fill: #8a7f16; }
+.project-tree .git-status-renamed, .git-tree .git-status-renamed { -fx-text-fill: #9a5cd0; }
+.project-tree .git-status-renamed .toolbar-icon, .git-tree .git-status-renamed .toolbar-icon { -fx-fill: #9a5cd0; }
+.project-tree .git-status-deleted, .git-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
+.project-tree .git-status-deleted .toolbar-icon, .git-tree .git-status-deleted .toolbar-icon { -fx-fill: -color-fg-muted; }
 .project-tree .git-status-dir-changed { -fx-text-fill: -color-accent-fg; }
 /* Unsaved/dirty buffer name in the pickers (Open Files palette + Switcher) — mirrors the dirty-tab
    treatment (amber italic) so every surface that lists open files reads consistently. */

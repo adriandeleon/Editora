@@ -30,6 +30,17 @@ public enum GitFileStatus {
         return cssClass;
     }
 
+    /** The single-letter status label (M/A/D/R/U), matching the Commit tool window's convention. */
+    public String letter() {
+        return switch (this) {
+            case ADDED -> "A";
+            case MODIFIED -> "M";
+            case DELETED -> "D";
+            case RENAMED -> "R";
+            case UNTRACKED -> "U";
+        };
+    }
+
     /**
      * Classifies one changed file from its porcelain-v2 index/worktree letters. Precedence when the two
      * sides disagree: deleted → renamed → added → modified (an untracked file is reported first). Pure.

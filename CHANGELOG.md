@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Project tool window now shows a single-letter Git status on each changed file (M / A / D / R / U),
+  matching the Commit tool window.** The colors it already had stay (modified = blue, added = green,
+  deleted = gray, renamed = violet, untracked = olive), and the letter is prefixed like the Commit window's
+  rows. The Commit window's file rows are now **colored** with the same palette too, so the two read
+  identically (an unsaved-in-editor file still shows its amber "•" instead of a Git letter).
+
 ### Added
 
 - **The Project tool window now works like a mini file manager.** Multi-select files/folders with

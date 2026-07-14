@@ -353,11 +353,22 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         return slash >= 0 ? path.substring(slash + 1) : path;
     }
 
+    /** Style classes a Git cell may carry, cleared before each render (the group-row marker + the per-status
+     *  color classes shared with the Project tree). */
+    private static final String[] STATUS_CLASSES = {
+        "git-group-row",
+        "git-status-added",
+        "git-status-modified",
+        "git-status-deleted",
+        "git-status-renamed",
+        "git-status-untracked"
+    };
+
     private final class GitCell extends TreeCell<Row> {
         @Override
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
-            getStyleClass().remove("git-group-row");
+            getStyleClass().removeAll(STATUS_CLASSES); // includes "git-group-row" + the per-status colors
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
@@ -373,6 +384,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 FileEntry e = f.entry();
                 setText(statusLetter(e) + "  " + f.entry().path());
                 setGraphic(Icons.fileSheet());
+                // Color the row by status (same palette as the Project tree) so the two windows match.
+                getStyleClass().add(com.editora.git.GitFileStatus.of(e).cssClass());
                 setTooltip(new Tooltip(e.path()));
                 setContextMenu(buildMenu(f));
             }
