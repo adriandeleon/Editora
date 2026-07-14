@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Cargo, Go, and Gradle build-tool tool-window icons showed blank.** Their SVG logos (vendored from
+  Simple Icons) used SVGO's compact *packed elliptical-arc flags* (e.g. `a1 1 0 000-.5`), which JavaFX's
+  `SVGPath` parser can't read — it fails with "invalid boolean flag" and renders an empty shape. Replaced the
+  three with clean Material Design glyphs (a box for Cargo, a running figure for Go, stacked layers for
+  Gradle) that parse and render correctly. A new `IconsFxTest` guards that every build-tool glyph produces a
+  non-empty shape, so a future un-parseable path is caught. (Maven and npm were unaffected — their paths have
+  no packed arc flags.)
+
 - **Installing the Typst language server (tinymist) from the banner/Settings now actually activates it.**
   The extracted `tinymist` binary's path was never written to `Settings.typstLspCommand`, so detection kept
   failing on the PATH default and the install banner reappeared right after the install "succeeded". Added
