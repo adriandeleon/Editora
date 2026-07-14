@@ -4,7 +4,9 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EditorConfigCharsetTest {
 
@@ -61,5 +63,27 @@ class EditorConfigCharsetTest {
         assertEquals("ISO-8859-1", EditorConfigCharset.displayName("latin1"));
         assertEquals("UTF-16 LE", EditorConfigCharset.displayName("utf-16le"));
         assertEquals("UTF-8", EditorConfigCharset.displayName(null));
+    }
+
+    @Test
+    void latin1CannotEncodeWhatTheUserActuallyTypes() {
+        // String.getBytes(Charset) replaces these with '?' — silently, and the editor keeps showing the real
+        // character until the file is reopened. The save path checks this and falls back to UTF-8 instead.
+        assertFalse(EditorConfigCharset.canEncode("an em dash — here", "latin1"));
+        assertFalse(EditorConfigCharset.canEncode("curly \u201cquotes\u201d", "latin1"));
+        assertFalse(EditorConfigCharset.canEncode("\u20ac 100", "latin1"), "the euro sign is not in ISO-8859-1");
+        assertFalse(EditorConfigCharset.canEncode("emoji \ud83d\ude80", "latin1"));
+        assertFalse(EditorConfigCharset.canEncode("\u65e5\u672c\u8a9e", "latin1"));
+    }
+
+    @Test
+    void latin1EncodesWhatItCan() {
+        assertTrue(EditorConfigCharset.canEncode("plain ascii", "latin1"));
+        assertTrue(EditorConfigCharset.canEncode("caf\u00e9 na\u00efve", "latin1"), "accented Latin-1 is fine");
+    }
+
+    @Test
+    void utf8EncodesEverything() {
+        assertTrue(EditorConfigCharset.canEncode("— \u201c\u201d \u20ac \ud83d\ude80 \u65e5\u672c\u8a9e", "utf-8"));
     }
 }

@@ -90,6 +90,20 @@ public final class EditorConfigCharset {
         return out;
     }
 
+    /**
+     * True when {@code text} can be written in charset {@code name} <b>without loss</b>.
+     *
+     * <p>{@code String.getBytes(Charset)} silently replaces anything the charset can't represent with
+     * {@code '?'}. With an {@code .editorconfig} saying {@code charset = latin1}, every em dash, curly quote,
+     * {@code €}, emoji or CJK character the user typed or pasted was written to disk as a question mark — and
+     * the editor kept showing the real character until the file was reopened, so the corruption was invisible
+     * until it was permanent. Callers check this first and fall back to UTF-8 rather than mangle the text.
+     */
+    public static boolean canEncode(String text, String name) {
+        java.nio.charset.CharsetEncoder encoder = charsetFor(name).newEncoder();
+        return encoder.canEncode(text);
+    }
+
     /** A human-readable label for the status bar (e.g. {@code "UTF-8 BOM"}, {@code "UTF-16 LE"}). */
     public static String displayName(String name) {
         return switch (name == null ? "" : name) {

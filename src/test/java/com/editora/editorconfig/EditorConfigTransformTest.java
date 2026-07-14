@@ -3,6 +3,7 @@ package com.editora.editorconfig;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class EditorConfigTransformTest {
 
@@ -46,5 +47,32 @@ class EditorConfigTransformTest {
         String once = EditorConfigTransform.transform("x  \r\ny   ", p);
         assertEquals("x\ny\n", once);
         assertEquals(once, EditorConfigTransform.transform(once, p)); // idempotent
+    }
+
+    @Test
+    void aMostlyLfFileWithOneStrayCrlfStaysLf() {
+        // Mixed-EOL files are ordinary (a Windows-touched repo, a pasted snippet). Trimming trailing
+        // whitespace with no end_of_line set used to flip the WHOLE file to CRLF because a single CRLF
+        // existed somewhere — every line changed, silently, and it only ever ratcheted toward CRLF.
+        String mixed = "a  \nb\r\nc\nd\n";
+        String out = EditorConfigTransform.transform(mixed, props(true, null, null));
+        assertFalse(out.contains("\r"), "LF is dominant, so the file stays LF: " + out.replace("\r", "<CR>"));
+        assertEquals("a\nb\nc\nd\n", out);
+    }
+
+    @Test
+    void aMostlyCrlfFileStaysCrlf() {
+        String mostlyCrlf = "a  \r\nb\r\nc\r\nd\n";
+        String out = EditorConfigTransform.transform(mostlyCrlf, props(true, null, null));
+        assertEquals("a\r\nb\r\nc\r\nd\r\n", out, "CRLF is dominant here, so CRLF is preserved");
+    }
+
+    @Test
+    void dominantEolCountsRatherThanMerelyDetecting() {
+        assertEquals("\n", EditorConfigTransform.dominantEol("a\nb\nc\r\n"));
+        assertEquals("\r\n", EditorConfigTransform.dominantEol("a\r\nb\r\nc\n"));
+        assertEquals("\r", EditorConfigTransform.dominantEol("a\rb\rc\n"));
+        assertEquals("\n", EditorConfigTransform.dominantEol("no line endings at all"));
+        assertEquals("\n", EditorConfigTransform.dominantEol("a\nb\r\n"), "a tie goes to LF");
     }
 }
