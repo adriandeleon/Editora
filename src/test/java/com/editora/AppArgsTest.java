@@ -51,6 +51,13 @@ class AppArgsTest {
     }
 
     @Test
+    void expertFlag() {
+        assertTrue(App.expertFlag(List.of("--expert")));
+        assertFalse(App.expertFlag(List.of("--zen")));
+        assertFalse(App.expertFlag(List.of("--config-dir", "/x", "f.txt")));
+    }
+
+    @Test
     void simpleFlag() {
         assertTrue(App.simpleFlag(List.of("--simple")));
         assertFalse(App.simpleFlag(List.of("--config-dir", "/x", "f.txt")));

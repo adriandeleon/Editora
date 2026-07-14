@@ -101,6 +101,7 @@ public class WindowManager {
             String projectArg,
             List<MainController.OpenTarget> targets,
             boolean zen,
+            boolean expert,
             String newFile,
             boolean simple,
             String singleWindow) {
@@ -108,7 +109,7 @@ public class WindowManager {
         // --single-window[=name]: open exactly one window (the named project, else the no-project window)
         // instead of restoring the whole saved set. Session-only — we don't touch the persisted open set.
         if (singleWindow != null) {
-            launchSingleWindow(singleWindow, targets, zen, newFile, simple);
+            launchSingleWindow(singleWindow, targets, zen, expert, newFile, simple);
             return;
         }
         Settings settings = shared.getSettings();
@@ -146,6 +147,7 @@ public class WindowManager {
                         stateFile,
                         isPrimary ? targets : List.of(),
                         isPrimary && zen,
+                        isPrimary && expert,
                         isPrimary ? newFile : null,
                         isPrimary && simple);
                 pm.markOpen(key);
@@ -171,10 +173,16 @@ public class WindowManager {
      * Projects disabled) falls back to the no-project window. Session-only — it deliberately does <b>not</b>
      * {@code markOpen}/{@code save}/GC the persisted open-window set (and {@link #reconcileOpenSet()} is
      * suppressed for the session), so quitting a one-window run never shrinks the saved multi-window layout.
-     * The CLI targets / {@code --zen} / {@code --new-file} / {@code --simple} all apply to this one window.
+     * The CLI targets / {@code --zen} / {@code --expert} / {@code --new-file} / {@code --simple} all apply to
+     * this one window.
      */
     private void launchSingleWindow(
-            String name, List<MainController.OpenTarget> targets, boolean zen, String newFile, boolean simple) {
+            String name,
+            List<MainController.OpenTarget> targets,
+            boolean zen,
+            boolean expert,
+            String newFile,
+            boolean simple) {
         singleWindowSession = true;
         boolean projectsOn = shared.getSettings().isProjectSupport();
         String key = "";
@@ -192,7 +200,7 @@ public class WindowManager {
             }
         }
         try {
-            buildWindow(key, project, stateFile, targets, zen, newFile, simple);
+            buildWindow(key, project, stateFile, targets, zen, expert, newFile, simple);
         } catch (RuntimeException | Error t) {
             java.util.logging.Logger.getLogger(WindowManager.class.getName())
                     .log(java.util.logging.Level.WARNING, "Failed to build single window for key '" + key + "'", t);
@@ -225,7 +233,7 @@ public class WindowManager {
             setActiveAndSave("");
             return existing.stage;
         }
-        Stage stage = buildWindow("", null, null, List.of(), false, null, false);
+        Stage stage = buildWindow("", null, null, List.of(), false, false, null, false);
         projects().markOpen("");
         setActiveAndSave("");
         return stage;
@@ -242,7 +250,7 @@ public class WindowManager {
     public Stage newWindow() {
         String uuid = java.util.UUID.randomUUID().toString().substring(0, 8);
         String key = WindowKeys.UNTITLED_PREFIX + uuid;
-        Stage stage = buildWindow(key, null, untitledStateFile(key), List.of(), false, null, false);
+        Stage stage = buildWindow(key, null, untitledStateFile(key), List.of(), false, false, null, false);
         projects().markOpen(key);
         setActiveAndSave(key);
         return stage;
@@ -300,7 +308,8 @@ public class WindowManager {
             setActiveAndSave(project.id());
             return existing.stage;
         }
-        Stage stage = buildWindow(project.id(), project, projects().stateFile(project), List.of(), false, null, false);
+        Stage stage =
+                buildWindow(project.id(), project, projects().stateFile(project), List.of(), false, false, null, false);
         projects().markOpen(project.id());
         setActiveAndSave(project.id());
         return stage;
@@ -448,6 +457,7 @@ public class WindowManager {
             Path stateFile,
             List<MainController.OpenTarget> targets,
             boolean zen,
+            boolean expert,
             String newFile,
             boolean simple) {
         try {
@@ -534,7 +544,7 @@ public class WindowManager {
             focus(stage);
 
             windows.add(new Holder(key, stage, controller));
-            controller.startup(null, targets, zen, newFile, simple);
+            controller.startup(null, targets, zen, expert, newFile, simple);
             return stage;
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException("Failed to build a window for project '" + key + "'", e);
@@ -549,7 +559,7 @@ public class WindowManager {
      * FxWindowFixture} and the Tests note in CLAUDE.md.
      */
     MainController buildWindowForTest() {
-        buildWindow("", null, null, List.of(), false, null, false);
+        buildWindow("", null, null, List.of(), false, false, null, false);
         return windows.get(windows.size() - 1).controller();
     }
 

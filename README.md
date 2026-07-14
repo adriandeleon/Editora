@@ -176,7 +176,8 @@ Editora is built with the help of AI coding tools.
   lighter version that strips only the surrounding window chrome (toolbar, tab bar, breadcrumb, tool stripes,
   whitespace guides) and **keeps the whole editor view** — line numbers, status bar, minimap, ruler and
   current-line highlight — a focused coding surface that still shows where you are. The two are mutually
-  exclusive; both are also in *Settings → Interface → Modes* and the palette (**View: Toggle Zen/Expert Mode**).
+  exclusive; both are also in *Settings → Interface → Modes*, the palette (**View: Toggle Zen/Expert Mode**),
+  and a launch flag (`--zen` / `--expert`).
 - **Text zoom** — scale the editor text on top of the font size (status-bar `− 100% +`, `C-=`/`C--`/`C-0`,
   Ctrl+mouse-wheel, or the palette); persists across restarts, separate from the font-size setting.
 - **Themes** — 26 switchable AtlantaFX themes: the built-in Primer, Nord, Cupertino and Dracula,
@@ -610,6 +611,7 @@ editora [options] [FILE[:LINE[:COLUMN]] ...]
   --single-window[=project]  Open just one window (the named project, else the no-project window)
                         instead of restoring all windows; session-only, doesn't change the saved layout
   --zen                 Start in Zen (distraction-free) mode
+  --expert              Start in Expert mode (like Zen, but keeps the editor view)
   --simple              Start in Simple UI mode (minimal chrome; session only)
   --version, -V         Print the version and exit
   --help, -h            Print help and exit

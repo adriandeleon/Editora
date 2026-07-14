@@ -11,7 +11,8 @@ A backlog of planned features and improvements. Unordered within each section.
       i18n ×6. `Chrome` gained a `focusMode` (= zen || expert) param for the items both hide (toolbar/tab
       bar/breadcrumb/tool stripes/whitespace), while `statusBar`/`lineNumbers`/`columnRuler`/`lineHighlight`/
       `minimap` stay keyed on the real `zen` flag so Expert keeps them; the two modes are mutually exclusive.
-      Covered by `ChromeTest` (the truth table) + a new `ExpertModeFxTest`. *Deferred: a `--expert` CLI flag.*
+      Covered by `ChromeTest` (the truth table) + a new `ExpertModeFxTest`. A `--expert` launch flag (mirroring
+      `--zen`) threads through `WindowManager.launch`/`buildWindow` → `MainController.startup`.
 - [x] Build tools → IntelliJ-style tasks tool windows — replaced the per-tool main-toolbar icons with a
       dedicated tool-window stripe per build tool (Maven/npm/Cargo/Go/Gradle), shown when the marker file is
       detected. New `ui/BuildActionsTree` (a `ToolWindowContent`: a mini icon toolbar — Run/Reload/Stop/Run

@@ -4613,20 +4613,22 @@ public class MainController implements com.editora.mcp.McpBridge {
     /**
      * Startup entry point (replaces the bare {@code openInitialBuffer()} call): optionally activates a
      * project, restores the session, then — once restore completes — opens any command-line files
-     * (jumping to line:column) and enters Zen, all additive on top of the restored session. With no
+     * (jumping to line:column) and enters Zen/Expert, all additive on top of the restored session. With no
      * arguments it's exactly the old {@code openInitialBuffer()}.
      */
-    public void startup(Path projectDir, List<OpenTarget> targets, boolean zen, String newFile, boolean simple) {
+    public void startup(
+            Path projectDir, List<OpenTarget> targets, boolean zen, boolean expert, String newFile, boolean simple) {
         if (projectDir != null && projectsEnabled()) {
             activateStartupProject(projectDir); // swap to the project's session before it's restored
         }
         // Run CLI actions AFTER the (deferred, pulse-paced) session restore, so a restored caret can't
         // override a requested line:column.
-        pendingAfterRestore = () -> applyStartupTargets(targets, zen, newFile, simple);
+        pendingAfterRestore = () -> applyStartupTargets(targets, zen, expert, newFile, simple);
         openInitialBuffer();
     }
 
-    private void applyStartupTargets(List<OpenTarget> targets, boolean zen, String newFile, boolean simple) {
+    private void applyStartupTargets(
+            List<OpenTarget> targets, boolean zen, boolean expert, String newFile, boolean simple) {
         if (simple) {
             // --simple: a session-only override (doesn't change the saved setting). Re-apply chrome +
             // per-buffer view settings now that the session's buffers are restored.
@@ -4660,6 +4662,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (zen) {
             setZenMode(true);
+        }
+        if (expert) {
+            setExpertMode(true); // like --zen; if both were given, Expert wins (the two are mutually exclusive)
         }
     }
 
