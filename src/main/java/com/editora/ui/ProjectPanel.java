@@ -18,6 +18,7 @@ import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
@@ -25,17 +26,22 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.Dragboard;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
+import javafx.scene.input.TransferMode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
 import static com.editora.i18n.Messages.tr;
@@ -45,7 +51,9 @@ import static com.editora.i18n.Messages.tr;
  * Typing in the filter runs a bounded, debounced project-wide name search (dot-dirs skipped, capped)
  * and shows matches as a flat list; clearing it restores the lazy tree. Emacs-style keyboard nav
  * (C-n/C-p, C-f/C-b, Enter) like the Structure panel; Enter/double-click opens a file; a right-click
- * menu renames/deletes files. (Project switch/close/delete live on the toolbar project combo and the
+ * menu renames/deletes files. Acts as a mini file manager: multi-select (Ctrl/Cmd- and Shift-click),
+ * drag a file/folder (or the whole selection) onto a folder to <b>move</b> it there, and delete the whole
+ * selection at once. (Project switch/close/delete live on the toolbar project combo and the
  * {@code project.*} palette commands — each window is one project, named in the window title.)
  */
 public class ProjectPanel extends VBox implements ToolWindowContent {
@@ -65,6 +73,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private java.util.Set<Path> gitChangedDirs = java.util.Set.of();
     /** Injected by MainController: snapshot a regular file into Local History just before it's deleted. */
     private Consumer<Path> onBeforeDelete = p -> {};
+    /** Injected by MainController: show a transient status-bar message (drag-move / multi-delete feedback). */
+    private Consumer<String> onStatus = m -> {};
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
     private Consumer<Path> onNewFromTemplate;
     /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
@@ -155,6 +165,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private boolean showHidden;
     /** Skip {@code .gitignore}d files/folders in the filter search (default on; the shared Search setting). */
     private boolean respectGitignore = true;
+    /** The paths being drag-moved (in-panel drag onto a folder); empty when no drag is in progress. */
+    private List<Path> draggedPaths = List.of();
 
     public ProjectPanel(
             Consumer<Path> onOpenFile,
@@ -173,6 +185,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         tree.setShowRoot(true);
         tree.getStyleClass().add("project-tree");
+        // Multi-select (Ctrl/Cmd- and Shift-click) so several files can be dragged/deleted at once, like a
+        // file manager. Keyboard nav (onKey) uses clearAndSelect, so arrows still move a single selection.
+        tree.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         tree.setCellFactory(t -> new PathCell());
         VBox.setVgrow(tree, Priority.ALWAYS);
         tree.setOnMouseClicked(e -> {
@@ -646,7 +661,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         int idx = tree.getSelectionModel().getSelectedIndex();
         int next = idx < 0 ? (delta > 0 ? 0 : rows - 1) : Math.floorMod(idx + delta, rows);
-        tree.getSelectionModel().select(next);
+        tree.getSelectionModel().clearAndSelect(next); // replace (not extend) the multi-selection on arrow nav
         tree.scrollTo(next);
     }
 
@@ -668,6 +683,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (!item.isLeaf() && item.isExpanded()) {
             item.setExpanded(false);
         } else if (item.getParent() != null && item.getParent() != tree.getRoot()) {
+            tree.getSelectionModel().clearSelection();
             tree.getSelectionModel().select(item.getParent());
             tree.scrollTo(tree.getSelectionModel().getSelectedIndex());
         } else {
@@ -704,6 +720,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects a hook called with a regular file just before it's deleted (to snapshot it into Local History). */
     public void setOnBeforeDelete(Consumer<Path> onBeforeDelete) {
         this.onBeforeDelete = onBeforeDelete == null ? p -> {} : onBeforeDelete;
+    }
+
+    /** Injects the status-message sink used for drag-move / multi-delete feedback. */
+    public void setOnStatus(Consumer<String> onStatus) {
+        this.onStatus = onStatus == null ? m -> {} : onStatus;
     }
 
     /** Injects the "Reveal in File Manager" handler ({@code (path, isDirectory)}) for the cell menu. */
@@ -804,6 +825,125 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         markLocalChange(); // suppress the watcher's redundant ~1s-later refresh for our own delete
         refreshAfterChange();
         onFileDeleted.accept(path);
+    }
+
+    // --- drag-to-move + multi-delete (mini file-manager) ---
+
+    /**
+     * Whether moving {@code source} into directory {@code targetDir} is valid and not a no-op: the target
+     * can't be the source's current parent (already there), and can't be the source itself or a descendant of
+     * it (a folder can't move into its own subtree). Pure — package-visible for tests.
+     */
+    static boolean canMoveInto(Path source, Path targetDir) {
+        if (source == null || targetDir == null) {
+            return false;
+        }
+        Path s = source.toAbsolutePath().normalize();
+        Path t = targetDir.toAbsolutePath().normalize();
+        if (t.equals(s.getParent())) {
+            return false; // no-op: already in this folder
+        }
+        return !t.startsWith(s); // t == s (onto itself) or a descendant of s → invalid
+    }
+
+    /** True if at least one of {@code sources} can meaningfully move into {@code targetDir}. */
+    static boolean canDropInto(List<Path> sources, Path targetDir) {
+        return sources != null && sources.stream().anyMatch(s -> canMoveInto(s, targetDir));
+    }
+
+    /** Moves each of {@code sources} into {@code targetDir} (drag-and-drop). Skips no-ops, name conflicts,
+     *  and invalid moves (into itself); reports how many moved. Notifies {@code onFileRenamed} per moved path
+     *  so open buffers (a file, or files under a moved folder) follow. */
+    private void moveInto(List<Path> sources, Path targetDir) {
+        if (sources == null || sources.isEmpty() || targetDir == null || !Files.isDirectory(targetDir)) {
+            return;
+        }
+        int moved = 0;
+        int skipped = 0;
+        for (Path src : sources) {
+            if (!canMoveInto(src, targetDir)) {
+                skipped++;
+                continue;
+            }
+            Path dest = targetDir.resolve(src.getFileName());
+            if (Files.exists(dest)) {
+                skipped++; // a file/folder of that name is already there — don't clobber
+                continue;
+            }
+            try {
+                Files.move(src, dest);
+            } catch (IOException ex) {
+                showError(tr("project.moveError", src.getFileName(), ex.getMessage()));
+                skipped++;
+                continue;
+            }
+            onFileRenamed.accept(src, dest); // update the open buffer(s) for a moved file / under a moved dir
+            moved++;
+        }
+        if (moved > 0) {
+            markLocalChange();
+            refreshAfterChange();
+        }
+        onStatus.accept(
+                skipped == 0
+                        ? tr("project.moved", moved, targetDir.getFileName())
+                        : tr("project.movedSome", moved, skipped));
+    }
+
+    /** The files to act on for a cell action: the whole multi-selection when {@code clicked} is part of it,
+     *  else just {@code clicked}. Excludes the root. */
+    private List<TreeItem<Path>> actionTargets(TreeItem<Path> clicked) {
+        List<TreeItem<Path>> sel = new ArrayList<>(tree.getSelectionModel().getSelectedItems());
+        sel.removeIf(i -> i == null || i.getValue() == null || i.getValue().equals(root));
+        if (clicked != null && sel.contains(clicked) && sel.size() > 1) {
+            return sel;
+        }
+        return clicked == null ? List.of() : List.of(clicked);
+    }
+
+    /** Deletes the selected files (or just {@code clicked}); confirms once. Folders/root are skipped (delete
+     *  is files-only, like the single-file menu). */
+    private void deleteSelected(TreeItem<Path> clicked) {
+        List<Path> files = new ArrayList<>();
+        for (TreeItem<Path> it : actionTargets(clicked)) {
+            if (Files.isRegularFile(it.getValue())) {
+                files.add(it.getValue());
+            }
+        }
+        if (files.isEmpty()) {
+            return;
+        }
+        if (files.size() == 1 && clicked != null && Files.isRegularFile(clicked.getValue())) {
+            deleteItem(clicked); // single: reuse the existing per-file confirm flow
+            return;
+        }
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("project.deleteMultiBody", files.size()),
+                ButtonType.OK,
+                ButtonType.CANCEL);
+        confirm.initOwner(getScene() == null ? null : getScene().getWindow());
+        confirm.setTitle(tr("project.deleteFileTitle"));
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+            return;
+        }
+        int deleted = 0;
+        for (Path p : files) {
+            onBeforeDelete.accept(p); // snapshot into Local History first
+            try {
+                Files.delete(p);
+            } catch (IOException ex) {
+                showError(tr("project.deleteError", p.getFileName(), ex.getMessage()));
+                continue;
+            }
+            onFileDeleted.accept(p);
+            deleted++;
+        }
+        if (deleted > 0) {
+            markLocalChange();
+            refreshAfterChange();
+        }
     }
 
     /** Records an in-app filesystem change so the watcher skips its redundant refresh for a short window. */
@@ -916,9 +1056,79 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     };
 
     private final class PathCell extends TreeCell<Path> {
+        PathCell() {
+            // Drag a file/folder (or the whole multi-selection) and drop it onto a folder to MOVE it there.
+            setOnDragDetected(e -> {
+                TreeItem<Path> ti = getTreeItem();
+                if (filtering
+                        || ti == null
+                        || ti.getValue() == null
+                        || ti.getValue().equals(root)) {
+                    return; // no drag from the flat filtered view or from the project root
+                }
+                List<Path> paths = new ArrayList<>();
+                for (TreeItem<Path> it : actionTargets(ti)) {
+                    paths.add(it.getValue());
+                }
+                if (paths.isEmpty()) {
+                    return;
+                }
+                draggedPaths = paths;
+                Dragboard db = startDragAndDrop(TransferMode.MOVE);
+                ClipboardContent content = new ClipboardContent();
+                content.putString("project-file"); // in-panel marker; the real payload is draggedPaths
+                db.setContent(content);
+                SnapshotParameters params = new SnapshotParameters();
+                params.setFill(Color.TRANSPARENT);
+                db.setDragView(snapshot(params, null), e.getX(), e.getY());
+                e.consume();
+            });
+            setOnDragOver(e -> {
+                Path target = dropTargetDir();
+                if (target != null && canDropInto(draggedPaths, target)) {
+                    e.acceptTransferModes(TransferMode.MOVE);
+                    if (!getStyleClass().contains("project-drop-target")) {
+                        getStyleClass().add("project-drop-target");
+                    }
+                }
+                e.consume();
+            });
+            setOnDragExited(e -> getStyleClass().remove("project-drop-target"));
+            setOnDragDropped(e -> {
+                getStyleClass().remove("project-drop-target");
+                Path target = dropTargetDir();
+                boolean ok = target != null && !draggedPaths.isEmpty();
+                if (ok) {
+                    moveInto(new ArrayList<>(draggedPaths), target);
+                }
+                e.setDropCompleted(ok);
+                e.consume();
+            });
+            setOnDragDone(e -> {
+                draggedPaths = List.of();
+                getStyleClass().remove("project-drop-target");
+                e.consume();
+            });
+        }
+
+        /** The folder this cell would drop INTO — the cell's own directory (or the root); {@code null} for a
+         *  file cell or the filtered view, so drops only land on folders. */
+        private Path dropTargetDir() {
+            if (filtering) {
+                return null;
+            }
+            Path item = getItem();
+            if (item == null) {
+                return null;
+            }
+            boolean isDir = getTreeItem() instanceof PathItem pi ? !pi.isLeaf() : Files.isDirectory(item);
+            return isDir ? item : null;
+        }
+
         @Override
         protected void updateItem(Path item, boolean empty) {
             super.updateItem(item, empty);
+            getStyleClass().remove("project-drop-target"); // a recycled cell must not keep a stale drop highlight
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
@@ -994,7 +1204,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             if (!isDir) {
                 MenuItem delete = new MenuItem(tr("project.menu.delete"));
                 delete.setGraphic(Icons.trash());
-                delete.setOnAction(e -> deleteItem(treeItem));
+                // Deletes the whole multi-file selection when this row is part of it, else just this file
+                // (the confirm dialog shows the count).
+                delete.setOnAction(e -> deleteSelected(treeItem));
                 menu.getItems().add(delete);
             }
             if (onReveal != null || onOpenTerminal != null) {

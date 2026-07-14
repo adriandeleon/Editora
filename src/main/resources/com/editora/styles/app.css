@@ -838,6 +838,14 @@
 }
 .project-tree .folder-cell .toolbar-icon { -fx-fill: -project-folder-color; }
 .project-tree .file-cell .toolbar-icon { -fx-fill: -project-file-color; }
+/* Drag-and-drop move target: the folder cell being hovered while dragging file(s) onto it. */
+.project-tree .tree-cell.project-drop-target {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+}
 /* Open file with unsaved changes — mirrors the dirty-tab treatment (amber italic + "• " prefix). */
 .project-tree .modified-file { -fx-text-fill: #bf8700; -fx-font-style: italic; }
 .project-tree .modified-file .toolbar-icon { -fx-fill: #bf8700; }
