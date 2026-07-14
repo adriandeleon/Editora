@@ -50,5 +50,14 @@ Thumbs.db
 # Generated large/perf samples (created by scripts/GenSamples.java)
 /samples/perf/
 
+# Build output from RUNNING the build-tool samples (samples/build-tools/* exist to be run, so this WILL
+# appear). `target/` above already covers Maven/Cargo; these are the rest. SamplesCorpusTest honors this
+# file, so generated output is never mistaken for an undocumented committed sample.
+/samples/build-tools/cargo/Cargo.lock
+/samples/build-tools/gradle/.gradle/
+/samples/build-tools/gradle/build/
+/samples/build-tools/go/go-demo
+/samples/build-tools/npm/node_modules/
+
 # Corpus log samples are intentionally tracked (the global *.log above would drop them)
 !/samples/log/*.log
