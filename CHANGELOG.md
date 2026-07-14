@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Project tool window now works like a mini file manager.** Multi-select files/folders with
+  Ctrl/Cmd- and Shift-click, then **drag them onto a folder to move them** (drop onto any folder or the
+  project root; a name conflict in the target is skipped rather than overwritten, and a folder can't be
+  moved into its own subtree). Open editor tabs follow a moved file — or the files under a moved folder — to
+  their new path. **Delete** now acts on the whole multi-file selection at once (one confirm), alongside the
+  existing per-file Rename/Delete.
+
 ## [0.9.4] - 2026-07-13
 
 ### Added

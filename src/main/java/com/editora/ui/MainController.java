@@ -1514,6 +1514,28 @@ public class MainController implements com.editora.mcp.McpBridge {
                 breadcrumb.setActiveFile(target);
                 statusBar.refresh();
             }
+        } else if (Files.isDirectory(target)) {
+            // A moved/renamed *directory*: remap every open buffer whose file lived under `old` to the
+            // corresponding path under `target` (e.g. drag-moving a folder in the Project tree).
+            Path oldNorm = old.toAbsolutePath().normalize();
+            for (Tab t : tabPane.getTabs()) {
+                EditorBuffer b = bufferOf(t);
+                Path p = b == null ? null : b.getPath();
+                if (p == null) {
+                    continue;
+                }
+                Path pn = p.toAbsolutePath().normalize();
+                if (pn.startsWith(oldNorm) && !pn.equals(oldNorm)) {
+                    Path moved = target.resolve(oldNorm.relativize(pn));
+                    b.setPath(moved);
+                    updateTabMeta(t, b);
+                    migrateFileState(p, moved);
+                    if (b == activeBuffer()) {
+                        breadcrumb.setActiveFile(moved);
+                        statusBar.refresh();
+                    }
+                }
+            }
         }
         migrateFileState(old, target);
         requestSave();
@@ -1770,6 +1792,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectPanel.setOnBeforeDelete(
                 file -> historyCoordinator.captureBeforeDelete(file)); // snapshot to Local History before delete
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
+        projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
         projectPanel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         projectPanel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (local files only).
