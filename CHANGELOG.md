@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-07-13
+
+### Added
+
+- **Expert mode — a lighter focus mode than Zen that strips only the window chrome and keeps the whole editor
+  view.** A new per-window distraction-free overlay that hides the surrounding chrome like Zen — toolbar, tab
+  bar, breadcrumb, tool stripes, and the whitespace guides — but **keeps the full editor view**: line numbers,
+  the status bar, the minimap, the column ruler, and the current-line highlight. So you get a focused coding
+  surface that still shows where you are. Toggle it from the palette (**View: Toggle Expert Mode**), `C-c C-e`,
+  *Settings → Interface → Modes*, the `--expert` launch flag, or the floating **"E"** button (top-right) to
+  exit — mirroring Zen's "Z". Expert and Zen are mutually exclusive; like Zen it's per-window state and never
+  mutates your saved preferences, so leaving it restores them exactly.
+
+- **File Templates can write into a chosen folder.** The template creation wizard gained an optional
+  **Folder** field (with a Browse button): leave it blank to create an unsaved buffer (as before), or pick
+  a folder to write the file(s) into. Invoking "New From Template…" from a project folder's right-click
+  menu pre-fills that folder.
+
+- **Project tool window: create folders and act on the root.** Folder right-click menus gained a
+  **New Folder…** item, and the **project root now has its own right-click menu** (New Folder / New From
+  Template / Reveal / Open Terminal / Local History / Git stage·revert) — with Rename omitted on the root
+  so it can't move the whole project folder.
+
+### Changed
+
+- **Build tools (Maven / npm / Cargo / Go / Gradle) now have IntelliJ-style tasks tool windows instead of
+  main-toolbar icons.** Each detected build tool gets its own tool-window stripe (shown when the tool's
+  marker file is found) whose panel is a browsable tree of the tool's goals / scripts / targets with a mini
+  toolbar (Run / Reload / Stop / Run custom…); double-click or Enter runs a task, and the streaming output
+  goes to a separate per-tool console window (auto-opens on a run). The per-tool icons were removed from the
+  main toolbar; the searchable actions popup is still available from the command palette (`<tool>.showActions`
+  / *Maven: Show Actions*, …). Everything else — marker detection, wrapper/executable selection, profiles and
+  `--release`-style toggles, Gradle's on-demand "Load all tasks…" — is unchanged. `tool.<tool>` now opens the
+  tasks window; the output console is `tool.<tool>Output`.
+
+- The editor install banner for a missing **language server** now says "*X* language server isn't
+  installed" instead of "*X* language support isn't installed" — clearer that it offers the optional LSP
+  (code intelligence), not the language's render/run tool, which may already work (e.g. the Typst preview
+  renders via the typst CLI even when the tinymist language server isn't installed).
+
 ### Fixed
 
 - **The Cargo, Go, and Gradle build-tool tool-window icons showed blank.** Their SVG logos (vendored from
@@ -23,23 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the missing persist case (`InstallCoordinator.applyServerCommand`) + a regression test covering every
   binary-archive server (clangd/kotlin/lua/xml/terraform/typst).
 
-- The editor install banner for a missing **language server** now says "*X* language server isn't
-  installed" instead of "*X* language support isn't installed" — clearer that it offers the optional LSP
-  (code intelligence), not the language's render/run tool, which may already work (e.g. the Typst preview
-  renders via the typst CLI even when the tinymist language server isn't installed).
-
 ## [0.9.3] - 2026-07-10
 
 ### Added
-
-- **Expert mode — a lighter focus mode than Zen that strips only the window chrome and keeps the whole editor
-  view.** A new per-window distraction-free overlay that hides the surrounding chrome like Zen — toolbar, tab
-  bar, breadcrumb, tool stripes, and the whitespace guides — but **keeps the full editor view**: line numbers,
-  the status bar, the minimap, the column ruler, and the current-line highlight. So you get a focused coding
-  surface that still shows where you are. Toggle it from the palette (**View: Toggle Expert Mode**), `C-c C-e`,
-  *Settings → Interface → Modes*, the `--expert` launch flag, or the floating **"E"** button (top-right) to
-  exit — mirroring Zen's "Z". Expert and Zen are mutually exclusive; like Zen it's per-window state and never
-  mutates your saved preferences, so leaving it restores them exactly.
 
 - **GitHub Actions workflow preview.** A workflow YAML (detected by content — a top-level `on:` + `jobs:` —
   so it works regardless of path and keeps YAML highlighting) gets the same 3-mode view, rendering a
@@ -243,16 +269,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the browser-raster diagram tools (D2, WaveDrom).*
 
 ### Changed
-
-- **Build tools (Maven / npm / Cargo / Go / Gradle) now have IntelliJ-style tasks tool windows instead of
-  main-toolbar icons.** Each detected build tool gets its own tool-window stripe (shown when the tool's
-  marker file is found) whose panel is a browsable tree of the tool's goals / scripts / targets with a mini
-  toolbar (Run / Reload / Stop / Run custom…); double-click or Enter runs a task, and the streaming output
-  goes to a separate per-tool console window (auto-opens on a run). The per-tool icons were removed from the
-  main toolbar; the searchable actions popup is still available from the command palette (`<tool>.showActions`
-  / *Maven: Show Actions*, …). Everything else — marker detection, wrapper/executable selection, profiles and
-  `--release`-style toggles, Gradle's on-demand "Load all tasks…" — is unchanged. `tool.<tool>` now opens the
-  tasks window; the output console is `tool.<tool>Output`.
 
 - **CSV/TSV grid preview is now an in-editor Editor/Split/Preview view, mirroring the Markdown preview.**
   The spreadsheet grid for `.csv`/`.tsv` files moved out of the bottom tool window into the same
