@@ -7,8 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dragging a folder together with something inside it no longer pops an error dialog.** Selecting a folder
+  *and* a file within it and dropping both on a target moved the folder first (contents and all), then failed
+  trying to move the file from a path that no longer existed. Nested entries are now dropped from the move —
+  the folder carries them along, as it always did.
+- **A build-tool toggle that vanished from the build file no longer silently poisons every run.** Ticking a
+  Maven profile (or Cargo's `--release`) and then deleting it from the `pom.xml` — or pointing the window at
+  a different project — left the id active with no checkbox to untick, so `-P<profile>` kept getting appended
+  to every build, invisibly. Stale toggles are now dropped when the build file is re-parsed.
+- **The build-tool tasks tree no longer loses your selection and scroll position** every time a file is
+  saved, the tab changes, or the window regains focus (each of those re-parses the build file, which was
+  rebuilding the whole tree from scratch).
+- **The build-tool tasks tree's Stop button no longer looks live before anything has run.**
+- **In the Commit tool window, a file's status letter and its color can no longer disagree** — a file staged
+  as modified but deleted in the working tree showed "M" in the deleted (grey) color. Both now come from the
+  same classification.
+- Closing a project window can no longer throw on the filesystem-watcher thread (a race between `dispose()`
+  and the watch loop).
+
 ### Changed
 
+- The Project tree builds a row's right-click menu on demand rather than on every cell render, so scrolling a
+  large tree (or any Git-status refresh) no longer allocates a ~20-node menu per visible row.
 - **The Project tool window now shows a single-letter Git status on each changed file (M / A / D / R / U),
   matching the Commit tool window.** The colors it already had stay (modified = blue, added = green,
   deleted = gray, renamed = violet, untracked = olive), and the letter is prefixed like the Commit window's

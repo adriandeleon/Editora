@@ -506,10 +506,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Daemon loop: drains watch events and schedules a single coalesced refresh on the FX thread. */
     private void watchLoop() {
-        while (!disposed) {
+        // Bind the service once: dispose() nulls the field, so re-reading it each iteration can NPE on this
+        // daemon thread if dispose() lands between the !disposed test and the take(). Closing it below still
+        // unblocks the take() with a ClosedWatchServiceException, which is the intended exit.
+        java.nio.file.WatchService ws = watchService;
+        while (ws != null && !disposed) {
             java.nio.file.WatchKey key;
             try {
-                key = watchService.take();
+                key = ws.take();
             } catch (InterruptedException | java.nio.file.ClosedWatchServiceException e) {
                 return; // disposed
             }
@@ -851,11 +855,36 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         return sources != null && sources.stream().anyMatch(s -> canMoveInto(s, targetDir));
     }
 
+    /**
+     * Drops any source that already lives under another source, so a selection holding both a folder and
+     * something inside it moves once (the folder carries its contents along). Without this the parent moves
+     * first — {@code TreeView} hands the selection back in row order — and the child's own move then fails
+     * with a {@code NoSuchFileException} on a path that no longer exists. Pure — package-visible for tests.
+     */
+    static List<Path> pruneNestedSources(List<Path> sources) {
+        if (sources == null || sources.size() < 2) {
+            return sources == null ? List.of() : List.copyOf(sources);
+        }
+        List<Path> norm = sources.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(p -> p.toAbsolutePath().normalize())
+                .toList();
+        List<Path> out = new ArrayList<>();
+        for (Path p : norm) {
+            boolean nested = norm.stream().anyMatch(other -> !other.equals(p) && p.startsWith(other));
+            if (!nested) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
     /** Moves each of {@code sources} into {@code targetDir} (drag-and-drop). Skips no-ops, name conflicts,
      *  and invalid moves (into itself); reports how many moved. Notifies {@code onFileRenamed} per moved path
      *  so open buffers (a file, or files under a moved folder) follow. */
-    private void moveInto(List<Path> sources, Path targetDir) {
-        if (sources == null || sources.isEmpty() || targetDir == null || !Files.isDirectory(targetDir)) {
+    private void moveInto(List<Path> dropped, Path targetDir) {
+        List<Path> sources = pruneNestedSources(dropped);
+        if (sources.isEmpty() || targetDir == null || !Files.isDirectory(targetDir)) {
             return;
         }
         int moved = 0;
@@ -1057,6 +1086,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     private final class PathCell extends TreeCell<Path> {
         PathCell() {
+            // Build the (20-odd node, SVG-iconed) menu only when it's actually asked for. Doing it in
+            // updateItem would re-allocate the whole thing for every visible row on each cell recycle —
+            // i.e. on every scroll tick and every tree.refresh() from setGitStatus/refreshModified.
+            setOnContextMenuRequested(e -> {
+                TreeItem<Path> ti = getTreeItem();
+                Path item = getItem();
+                if (isEmpty() || ti == null || item == null) {
+                    return;
+                }
+                boolean isDir = ti instanceof PathItem pi ? !pi.isLeaf() : Files.isDirectory(item);
+                contextMenuFor(ti, isDir, item.equals(root)).show(this, e.getScreenX(), e.getScreenY());
+                e.consume();
+            });
             // Drag a file/folder (or the whole multi-selection) and drop it onto a folder to MOVE it there.
             setOnDragDetected(e -> {
                 TreeItem<Path> ti = getTreeItem();
@@ -1179,6 +1221,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 label = fileStatus.letter() + "  " + label;
             }
             setText(label);
+            setContextMenu(null); // built lazily in setOnContextMenuRequested (see the PathCell constructor)
             Path fileName = item.getFileName();
             // Box the folder glyph in the same fixed icon column as the (already-boxed) file glyphs, so
             // folder and file rows share one icon width and every label starts at the same x.
@@ -1186,7 +1229,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     isDir
                             ? FileIcons.boxed(Icons.project())
                             : FileIcons.forFileName(fileName == null ? label : fileName.toString()));
-            setContextMenu(contextMenuFor(getTreeItem(), isDir, isRoot));
         }
 
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {

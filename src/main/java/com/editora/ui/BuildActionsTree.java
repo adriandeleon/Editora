@@ -63,6 +63,10 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     private final Set<String> activeToggles = new LinkedHashSet<>();
 
     private BuildActionsProvider provider;
+
+    /** The sections currently on screen — lets {@link #setProvider} skip a no-op re-root (see its javadoc). */
+    private List<BuildAction.Section> rendered;
+
     private RunHandler onRun = (a, b) -> {};
     private Runnable onRefresh = () -> {};
     private Runnable onRunCustom = () -> {};
@@ -102,6 +106,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         VBox.setVgrow(body, Priority.ALWAYS);
         getChildren().addAll(toolbar, body);
 
+        setRunning(false); // nothing is running yet — Stop must not look live on a fresh window
         setProvider(null);
     }
 
@@ -139,13 +144,35 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
      * Rebuilds the tree from {@code provider}'s current sections (given the active toggles). {@code null}
      * clears it to a placeholder (marker absent or malformed). Called on every detection change and after a
      * toggle flip / on-demand task load.
+     *
+     * <p>Two things this must get right, because {@code BuildCoordinator.refresh()} calls it on every save,
+     * tab switch, window focus-regain and settings apply — with a <em>freshly parsed</em> provider each time:
+     *
+     * <ul>
+     *   <li><b>Stale toggles are dropped.</b> {@code activeToggles} holds raw ids and {@code toggleArgs} joins
+     *       whatever is in it, so a profile that disappeared from the pom (or one carried over when the window
+     *       moves to a different project) would keep appending e.g. {@code -Pprod} to every run — invisibly,
+     *       since its checkbox row no longer exists.</li>
+     *   <li><b>An unchanged tree isn't re-rooted.</b> Swapping the root discards the selection and scroll
+     *       position, so a background re-detect would silently deselect the task the user just clicked.</li>
+     * </ul>
      */
     public void setProvider(BuildActionsProvider provider) {
         this.provider = provider;
         if (provider == null) {
             activeToggles.clear();
+            rendered = null;
+            rebuild();
+            return;
         }
-        rebuild();
+        List<BuildAction.Section> sections = provider.sections(activeToggles);
+        if (activeToggles.retainAll(toggleIds(sections))) {
+            sections = provider.sections(activeToggles); // re-query without the stale ids
+        }
+        if (sections.equals(rendered) && tree.getRoot() != null) {
+            return; // same tasks as what's on screen — keep the selection + scroll position
+        }
+        rebuild(sections);
     }
 
     /** Re-renders the current provider in place (after a toggle flip or Gradle's loaded tasks land). */
@@ -153,17 +180,35 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         rebuild();
     }
 
+    /** The ids of every toggle the given sections expose (the only ones that may stay active). */
+    private static Set<String> toggleIds(List<BuildAction.Section> sections) {
+        Set<String> ids = new LinkedHashSet<>();
+        for (BuildAction.Section section : sections) {
+            for (BuildAction.Row row : section.rows()) {
+                if (row instanceof BuildAction.Toggle t) {
+                    ids.add(t.id());
+                }
+            }
+        }
+        return ids;
+    }
+
     private void rebuild() {
-        boolean has = provider != null;
+        rebuild(provider == null ? null : provider.sections(activeToggles));
+    }
+
+    private void rebuild(List<BuildAction.Section> sections) {
+        boolean has = provider != null && sections != null;
         placeholder.setText(tr("buildtree.empty"));
         placeholder.setVisible(!has);
         tree.setVisible(has);
         if (!has) {
+            rendered = null;
             tree.setRoot(null);
             return;
         }
         TreeItem<Item> root = new TreeItem<>(null);
-        for (BuildAction.Section section : provider.sections(activeToggles)) {
+        for (BuildAction.Section section : sections) {
             TreeItem<Item> sectionItem = new TreeItem<>(new SectionItem(section.title()));
             sectionItem.setExpanded(true);
             for (BuildAction.Row row : section.rows()) {
@@ -174,6 +219,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             }
             root.getChildren().add(sectionItem);
         }
+        rendered = List.copyOf(sections);
         tree.setRoot(root);
     }
 

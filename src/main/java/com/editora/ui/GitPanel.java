@@ -21,6 +21,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.git.GitFileStatus;
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
 
@@ -340,12 +341,11 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         message.positionCaret(message.getLength());
     }
 
+    /** The row's status letter — derived from the same {@link GitFileStatus} that colors the row, so the two
+     *  can't disagree (picking the letter off one porcelain side alone rendered e.g. an index-modified,
+     *  worktree-deleted file as "M" in the deleted/grey color). */
     private static String statusLetter(FileEntry e) {
-        if (e.untracked()) {
-            return "U";
-        }
-        char c = e.staged() ? e.index() : e.worktree();
-        return String.valueOf(c);
+        return GitFileStatus.of(e).letter();
     }
 
     private static String fileName(String path) {
@@ -385,7 +385,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 setText(statusLetter(e) + "  " + f.entry().path());
                 setGraphic(Icons.fileSheet());
                 // Color the row by status (same palette as the Project tree) so the two windows match.
-                getStyleClass().add(com.editora.git.GitFileStatus.of(e).cssClass());
+                getStyleClass().add(GitFileStatus.of(e).cssClass());
                 setTooltip(new Tooltip(e.path()));
                 setContextMenu(buildMenu(f));
             }

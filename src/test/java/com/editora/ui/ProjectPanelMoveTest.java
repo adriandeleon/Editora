@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -50,5 +51,35 @@ class ProjectPanelMoveTest {
         // Both already in the target → nothing to do.
         assertFalse(ProjectPanel.canDropInto(List.of(Path.of("/proj/sub/b.txt"), Path.of("/proj/sub/c.txt")), target));
         assertFalse(ProjectPanel.canDropInto(List.of(), target));
+    }
+
+    @Test
+    void aFolderDraggedTogetherWithSomethingInsideItMovesOnce() {
+        // The folder carries its contents along, so the nested entries must not be moved a second time —
+        // TreeView hands the selection back in row order, so the parent goes first and the child's own
+        // move would then fail on a path that no longer exists (a NoSuchFileException → error dialog).
+        List<Path> pruned = ProjectPanel.pruneNestedSources(
+                List.of(Path.of("/proj/dir"), Path.of("/proj/dir/a.txt"), Path.of("/proj/dir/sub/b.txt")));
+        assertEquals(List.of(Path.of("/proj/dir")), pruned);
+
+        // Order-independent: the child listed first is still dropped.
+        assertEquals(
+                List.of(Path.of("/proj/dir")),
+                ProjectPanel.pruneNestedSources(List.of(Path.of("/proj/dir/a.txt"), Path.of("/proj/dir"))));
+    }
+
+    @Test
+    void unrelatedSourcesAreAllKept() {
+        List<Path> sources = List.of(Path.of("/proj/a.txt"), Path.of("/proj/dir"), Path.of("/proj/other/b.txt"));
+        assertEquals(sources, ProjectPanel.pruneNestedSources(sources));
+        // A sibling whose name merely prefixes another's isn't "nested" (dir2 is not under dir).
+        List<Path> siblings = List.of(Path.of("/proj/dir"), Path.of("/proj/dir2"));
+        assertEquals(siblings, ProjectPanel.pruneNestedSources(siblings));
+    }
+
+    @Test
+    void pruningIsNullSafeAndTrivialForASingleSource() {
+        assertEquals(List.of(), ProjectPanel.pruneNestedSources(null));
+        assertEquals(List.of(Path.of("/proj/a.txt")), ProjectPanel.pruneNestedSources(List.of(Path.of("/proj/a.txt"))));
     }
 }
