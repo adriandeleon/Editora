@@ -292,6 +292,8 @@ public class EditorBuffer implements TabContent {
     private boolean heavyFile;
     /** Huge-file mode: implies large-file mode plus read-only (no undo, not editable). */
     private boolean hugeFile;
+    /** The loader could only read part of this file (huge-file cap / log tail) — saving would truncate it. */
+    private boolean truncatedLoad;
     /** User "View mode": non-editable but keeps all normal editor features (separate from huge-file). */
     private boolean viewMode;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
@@ -5971,6 +5973,21 @@ public class EditorBuffer implements TabContent {
         } else {
             applyUndoMode();
         }
+    }
+
+    /**
+     * Marks that the loader could only read <b>part</b> of the file — the huge-file cap (first
+     * {@link #HUGE_FILE_BYTES}) or a log's tail (the <em>last</em> chunk). The buffer's content is then not
+     * the file, and writing it back would <b>truncate the user's file on disk</b>, so the save path refuses.
+     * Set by the loader on every load (cleared for a normal, complete read).
+     */
+    public void setTruncatedLoad(boolean truncated) {
+        this.truncatedLoad = truncated;
+    }
+
+    /** True when this buffer holds only a slice of its file — see {@link #setTruncatedLoad}. Never save it. */
+    public boolean isTruncatedLoad() {
+        return truncatedLoad;
     }
 
     /**

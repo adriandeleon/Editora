@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pressing Ctrl/Cmd-S on a very large file no longer destroys it.** A file of 50 MB or more is deliberately
+  loaded only in part (the first 50 MB — or, for a log, the *last* 50 MB) and opened read-only. But read-only
+  only blocks *typing*: Save needs neither an edit nor unsaved changes, and it wrote the buffer straight back
+  over the file — truncating it on disk to whichever slice happened to be loaded, irreversibly. Every write
+  path now refuses a partially-loaded file and says why.
+- **Quitting no longer discards the unsaved work and the session of every window except the one you quit
+  from.** Quitting from inside the app never ran the other windows' close handling, so their dirty buffers
+  were dropped with no save prompt and their sessions (open tabs, carets, window bounds) reverted to whatever
+  they were at launch. Quit now prompts and persists each window in turn, and any window's prompt can cancel
+  the quit. Each window's services and subprocesses are shut down properly too.
+
 - **`--zen` and `--expert` are now genuinely session-only, like `--simple`.** Launching once with either flag
   wrote the mode into the saved session, so *every* later launch came up in it — with no hint as to why. The
   flags now apply the mode for the current run only and leave the saved session untouched (including the
