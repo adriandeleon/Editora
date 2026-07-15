@@ -20,6 +20,12 @@ public final class AppInfo {
     public static final String COPYRIGHT = "© 2026 Adrián Arturo De León Saldivar";
     /** Short license name; full terms are in the bundled {@code LICENSE} file. */
     public static final String LICENSE = "MIT License";
+    /** The GitHub repository ({@code owner/name}) that publishes releases — the update-check source. */
+    public static final String GITHUB_REPO = "adriandeleon/Editora";
+    /** GitHub API endpoint for the latest published (non-prerelease, non-draft) release. */
+    public static final String LATEST_RELEASE_API = "https://api.github.com/repos/" + GITHUB_REPO + "/releases/latest";
+    /** Human-facing releases page (fallback link when the API response has no {@code html_url}). */
+    public static final String RELEASES_PAGE = "https://github.com/" + GITHUB_REPO + "/releases/latest";
 
     private AppInfo() {}
 

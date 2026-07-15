@@ -284,6 +284,7 @@ public class SettingsWindow {
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
     private CheckBox blameCheck;
+    private CheckBox updateCheckCheck;
     private CheckBox localHistoryCheck;
     private Spinner<Integer> historyMaxPerFileSpinner;
     private Spinner<Integer> historyMaxAgeSpinner;
@@ -975,6 +976,8 @@ public class SettingsWindow {
             config.getSettings().setGitBlameInline(now);
             apply();
         });
+
+        updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), Settings::setUpdateCheck);
 
         localHistoryCheck = new CheckBox(tr("settings.enableLocalHistory"));
         historyMaxPerFileSpinner = historySpinner(1, 1000, 50, Settings::setHistoryMaxPerFile);
@@ -2484,6 +2487,12 @@ public class SettingsWindow {
         histNote.setWrapText(true);
         histNote.setMaxWidth(440);
         row(p, Category.WORKSPACE, history, histNote, "local history retention");
+        Label updates = section(p, tr("settings.section.updates"));
+        row(p, Category.WORKSPACE, updates, updateCheckCheck, "check for updates new version github release startup");
+        Label updateNote = note(tr("settings.updates.note"));
+        updateNote.setWrapText(true);
+        updateNote.setMaxWidth(440);
+        row(p, Category.WORKSPACE, updates, updateNote, "update check github network privacy");
         return p;
     }
 
@@ -5524,6 +5533,7 @@ public class SettingsWindow {
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
+            updateCheckCheck.setSelected(settings.isUpdateCheck());
             localHistoryCheck.setSelected(settings.isLocalHistory());
             historyMaxPerFileSpinner.getValueFactory().setValue(settings.getHistoryMaxPerFile());
             historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
@@ -6177,7 +6187,12 @@ public class SettingsWindow {
      * The settings-file path is a link that opens that file in the editor via {@code openFile}.
      */
     public static void showAbout(
-            Window owner, Path settingsFile, Consumer<Path> openFile, Consumer<String> openUrl, String commit) {
+            Window owner,
+            Path settingsFile,
+            Consumer<Path> openFile,
+            Consumer<String> openUrl,
+            String commit,
+            com.editora.update.ReleaseInfo update) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
         alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));
@@ -6222,7 +6237,27 @@ public class SettingsWindow {
         HBox settingsRow = new HBox(4, new Label(tr("settings.aboutSettingsLabel")), settingsLink);
         settingsRow.setAlignment(Pos.CENTER_LEFT);
 
-        alert.getDialogPane().setContent(new VBox(10, info, homeRow, settingsRow));
+        VBox content = new VBox(10, info, homeRow, settingsRow);
+        // When a newer release is known, an "Update available: X.Y.Z" row with a link to the release page.
+        if (update != null) {
+            Hyperlink updateLink = new Hyperlink(update.version());
+            updateLink.setPadding(Insets.EMPTY);
+            String updateUrl =
+                    update.url() == null || update.url().isBlank() ? com.editora.AppInfo.RELEASES_PAGE : update.url();
+            updateLink.setOnAction(e -> {
+                alert.close();
+                if (openUrl != null) {
+                    openUrl.accept(updateUrl);
+                }
+            });
+            Label updateLabel = new Label(tr("about.updateAvailable"));
+            updateLabel.getStyleClass().add("about-update");
+            HBox updateRow = new HBox(4, updateLabel, updateLink);
+            updateRow.setAlignment(Pos.CENTER_LEFT);
+            content.getChildren().add(updateRow);
+        }
+
+        alert.getDialogPane().setContent(content);
         alert.showAndWait();
     }
 

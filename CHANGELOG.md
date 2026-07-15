@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Editora now tells you when a new version is available.** On startup (at most once a day) it checks GitHub
+  for a newer release; when one exists, a subtle "Update: X.Y.Z" indicator appears in the status bar — click it
+  to open the release page (which dismisses that version's notice). The About dialog shows an "Update available"
+  link too, and *Check for Updates* in the command palette checks on demand. Automatic checks are on by default
+  and can be turned off in Settings → Workspace → Updates (or *View: Toggle Automatic Update Checks*); the check
+  contacts GitHub's API over HTTPS and sends no data.
+
 - **Copy or Cut with nothing selected now acts on the whole current line** (VS Code's
   `editor.emptySelectionClipboard`). Put the caret anywhere on a line, press Copy and the entire line
   (with its newline) lands on the clipboard; press Cut and the line is removed in one undoable step. It's on

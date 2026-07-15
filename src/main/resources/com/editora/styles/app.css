@@ -1392,6 +1392,18 @@
     -fx-background-color: -color-success-muted;
 }
 
+/* Update-available segment: an accent pill, noticeable but not alarming (a newer release is available). */
+.status-bar .status-update {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+    -fx-background-color: -color-accent-subtle;
+    -fx-background-radius: 4;
+}
+
+.status-bar .status-update:hover {
+    -fx-background-color: -color-accent-muted;
+}
+
 /* "● REC" macro-recording indicator (shown only while recording). */
 .status-bar .status-macro-rec {
     -fx-text-fill: -color-danger-fg;

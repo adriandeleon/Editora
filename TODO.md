@@ -3,6 +3,15 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Update notifications — checks GitHub `/releases/latest` on startup (once/day, throttled via
+      `Settings.lastUpdateCheckEpoch`), gated by `Settings.updateCheck` (default on). Pure `update/UpdateCheck`
+      (parseLatest / normalizeVersion / isNewer via `PluginInstaller.compareVersions` / isDue) + `update/UpdateService`
+      (daemon HTTPS GET reusing `PluginRegistry.readCapped`/`isHttps`, `Platform.runLater` Outcome). Surfaces:
+      a status-bar "Update: X.Y.Z" segment (`update.openDownloadPage` opens the release page + dismisses the
+      version via `Settings.dismissedUpdateVersion`), an About-dialog "Update available" link, and the manual
+      `help.checkForUpdates` command; `view.toggleUpdateCheck` + Settings → Workspace → Updates. Drafts/prereleases
+      ignored. `AppInfo.GITHUB_REPO`/`LATEST_RELEASE_API`/`RELEASES_PAGE`. Schema 76→77 (additive ×3). i18n ×6.
+      Covered by `UpdateCheckTest` (pure) + `UpdateNoticeFxTest` (segment/dismiss/commands, real window).
 - [x] Consolidated the five build-tool output consoles into one shared tabbed **Build Output** window — Maven/
       npm/Cargo/Go/Gradle previously each registered a separate console tool window (5 stripe buttons + 5
       Settings → Tool Windows rows); now one `BuildOutputPanel` (a `TabPane`, id `buildOutput`, `Icons::terminal`)

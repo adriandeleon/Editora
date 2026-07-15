@@ -326,6 +326,14 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private ToolWindow buildOutputToolWindow;
 
+    /** Checks GitHub for a newer release (background, once/day + manual). */
+    private final com.editora.update.UpdateService updateService = new com.editora.update.UpdateService();
+    /** The newest release found to be newer than the running version, shared across windows in-process (so a
+     *  second window and the About dialog see it); null when up to date / not yet checked. */
+    private static volatile com.editora.update.ReleaseInfo latestKnownUpdate;
+    /** Set once the first window kicks off the session's background update check, so others don't duplicate it. */
+    private static volatile boolean updateCheckStartedThisSession;
+
     private ToolWindow agentToolWindow;
 
     private ToolWindow remoteToolWindow;
@@ -676,6 +684,77 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         applyAutoSave();
+        refreshUpdateNotice(); // reflect any update an earlier window already found
+        maybeCheckForUpdates(); // background check (once/session, once/day, only if enabled)
+    }
+
+    // --- update check ------------------------------------------------------------------------------
+
+    /** Kicks off the background update check when enabled and due — at most once per app session (a static
+     *  guard, so multiple windows don't each hit GitHub) and at most once per day (the persisted timestamp). */
+    private void maybeCheckForUpdates() {
+        if (!config.getSettings().isUpdateCheck() || updateCheckStartedThisSession) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (!com.editora.update.UpdateCheck.isDue(
+                config.getSettings().getLastUpdateCheckEpoch(),
+                now,
+                com.editora.update.UpdateCheck.DEFAULT_INTERVAL_MS)) {
+            return;
+        }
+        updateCheckStartedThisSession = true;
+        config.getSettings().setLastUpdateCheckEpoch(now); // throttle even if the check fails (don't retry all day)
+        requestSave();
+        updateService.check(com.editora.AppInfo.VERSION, o -> onUpdateOutcome(o, false));
+    }
+
+    /** Applies a check result: on a newer release, cache it + show the notice; a manual check also echoes an
+     *  up-to-date / failure status. */
+    private void onUpdateOutcome(com.editora.update.UpdateService.Outcome outcome, boolean manual) {
+        if (!outcome.ok()) {
+            if (manual) {
+                setStatus(tr("status.update.failed", outcome.error()));
+            }
+            return;
+        }
+        if (outcome.available()) {
+            latestKnownUpdate = outcome.latest();
+            refreshUpdateNotice();
+            setStatus(tr("status.update.available", outcome.latest().version()));
+        } else {
+            latestKnownUpdate = null; // running the latest
+            refreshUpdateNotice();
+            if (manual) {
+                setStatus(tr("status.update.upToDate", com.editora.AppInfo.VERSION));
+            }
+        }
+    }
+
+    /** Shows this window's status-bar update segment when a newer, non-dismissed release is known; else hides it. */
+    private void refreshUpdateNotice() {
+        com.editora.update.ReleaseInfo info = latestKnownUpdate;
+        boolean show =
+                info != null && !info.version().equals(config.getSettings().getDismissedUpdateVersion());
+        statusBar.setUpdateAvailable(show, show ? info.version() : null);
+    }
+
+    /** Manual "Check for Updates" — always checks (ignores the throttle + the auto-check setting). */
+    private void checkForUpdatesNow() {
+        setStatus(tr("status.update.checking"));
+        updateService.check(com.editora.AppInfo.VERSION, o -> onUpdateOutcome(o, true));
+    }
+
+    /** Opens the release page for the known update (else the releases page) and dismisses that version's notice. */
+    private void openUpdateDownloadPage() {
+        com.editora.update.ReleaseInfo info = latestKnownUpdate;
+        String url = info != null && !info.url().isBlank() ? info.url() : com.editora.AppInfo.RELEASES_PAGE;
+        openExternalUrl(url);
+        if (info != null) {
+            config.getSettings().setDismissedUpdateVersion(info.version());
+            requestSave();
+        }
+        refreshUpdateNotice();
     }
 
     // --- plugins ----------------------------------------------------------------------------------
@@ -1145,6 +1224,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         diagram.shutdown();
         typst.shutdown();
         buildCoordinators.forEach(BuildCoordinator::shutdown);
+        updateService.shutdown(); // stop the update-check worker
         htmlPreview.shutdown(); // stop the HTML-preview HTTP server + worker
         logViewer.shutdown(); // stop any log tail-follow poll thread
         stopMcpIfOwner(); // stop the MCP server if this window owns it
@@ -7425,7 +7505,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 config.getSettingsFile(),
                 this::openPath,
                 this::openExternalUrl,
-                config.isDev() ? com.editora.AppInfo.gitCommit() : ""); // build commit shown only in --dev
+                config.isDev() ? com.editora.AppInfo.gitCommit() : "", // build commit shown only in --dev
+                latestKnownUpdate); // "Update available" row when a newer release is known
     }
 
     private void toggleColumnRuler() {
@@ -11412,6 +11493,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("window.fullScreen", () -> stage.setFullScreen(!stage.isFullScreen())));
         registry.register(Command.of("file.clearRecent", this::onClearRecent));
         registry.register(Command.of("help.about", this::onAbout));
+        registry.register(Command.of("help.checkForUpdates", this::checkForUpdatesNow));
+        registry.register(Command.of("update.openDownloadPage", this::openUpdateDownloadPage));
+        registry.register(Command.of(
+                "view.toggleUpdateCheck",
+                () -> toggleSetting(
+                        "view.toggleUpdateCheck",
+                        () -> config.getSettings().isUpdateCheck(),
+                        config.getSettings()::setUpdateCheck,
+                        null)));
         registry.register(Command.of("view.welcome", this::showWelcome));
         registry.register(Command.of("view.messageLog", statusBar::showMessageLog));
         registry.register(Command.of("view.debugLog", this::showDebugLog));
