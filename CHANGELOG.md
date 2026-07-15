@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-07-15
+
 ### Fixed
 
 - **Joining two lines no longer silently loses a breakpoint or bookmark on the lower line.** Pressing
