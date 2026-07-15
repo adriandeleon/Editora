@@ -443,10 +443,11 @@ final class LspCoordinator {
             return;
         }
         int[] window = buffer.visibleLineWindow();
+        long gen = buffer.semanticGen(); // capture now; the reply is dropped if the doc changes before it lands
         lspManager.requestSemanticTokens(
                 path, window[0] - SEMANTIC_WINDOW_PAD, window[1] + SEMANTIC_WINDOW_PAD, tokens -> {
                     if (buffer == host.activeBuffer()) {
-                        buffer.setSemanticTokens(tokens);
+                        buffer.setSemanticTokens(tokens, gen);
                     }
                 });
     }
@@ -877,9 +878,18 @@ final class LspCoordinator {
         }
         int tabSize = host.settings().getTabSize();
         host.setStatus(tr("status.lsp.formatting"));
+        // The server computes whole-document edits (line/col based) against the text as it is NOW. If the
+        // user edits during the async round-trip, those offsets no longer line up — and applyLspEdits only
+        // clamps + swallows, so a stale format silently corrupts the file (every line mis-formatted/shifted).
+        // Snapshot the text and drop the reply if it changed, mirroring tryLspReindentLine's line guard.
+        String snapshot = buffer.getContent();
         lspManager.formatDocument(path, tabSize, buffer.detectInsertSpaces(tabSize), edits -> {
             if (buffer != host.activeBuffer()) {
                 return; // user switched tabs before the server replied
+            }
+            if (!buffer.getContent().equals(snapshot)) {
+                host.setStatus(tr("status.lsp.formatStale")); // edited mid-format — a re-run formats cleanly
+                return;
             }
             if (edits.isEmpty()) {
                 host.setStatus(tr("status.lsp.formatNoChange"));

@@ -485,6 +485,10 @@ public class EditorBuffer implements TabContent {
     /** True once the document changed after {@link #semanticTokens} were captured — suppresses the overlay
      *  (so we never mis-color shifted text) until a fresh response lands via {@link #setSemanticTokens}. */
     private boolean semanticStale;
+    /** Bumped on every edit and read when a semantic-tokens request is issued, so a response computed against
+     *  an older document is dropped instead of re-anchoring stale tokens onto the current text (see
+     *  {@link #semanticGen()} / {@link #setSemanticTokens(java.util.List, long)}). */
+    private long semanticGen;
     /** Debounces a viewport semantic-tokens re-request after scrolling settles (so a new region gets
      *  tokens without firing a server request per scroll frame). */
     private final javafx.animation.PauseTransition semanticScrollDebounce =
@@ -681,8 +685,10 @@ public class EditorBuffer implements TabContent {
                 dirtyFromLine = Math.min(dirtyFromLine, line);
             }
             // The cached semantic tokens now point at shifted offsets; suppress the overlay until the
-            // next response re-anchors them (one boolean write — off the per-char path's cost budget).
-            if (semanticActive && !semanticStale) {
+            // next response re-anchors them (one boolean write — off the per-char path's cost budget). The
+            // generation bump invalidates any in-flight request so its (now-stale) response is dropped.
+            if (semanticActive) {
+                semanticGen++;
                 semanticStale = true;
             }
         });
@@ -3035,14 +3041,31 @@ public class EditorBuffer implements TabContent {
         return semanticActive;
     }
 
+    /** The generation to capture when issuing a semantic-tokens request; pass it back to
+     *  {@link #setSemanticTokens(java.util.List, long)} so a response for an older document is dropped. */
+    public long semanticGen() {
+        return semanticGen;
+    }
+
     /** Pushes fresh server semantic tokens (absolute positions) and re-applies so they overlay the
      *  TextMate highlight immediately. No-op when semantic highlighting is off for this buffer. */
     public void setSemanticTokens(java.util.List<SemanticToken> tokens) {
-        if (!semanticActive) {
+        setSemanticTokens(tokens, semanticGen);
+    }
+
+    /**
+     * Applies a semantic-tokens response only if the document hasn't changed since the request was issued
+     * ({@code requestGen == } the current {@link #semanticGen()}). A stale response — the server computed it
+     * against an older version, or an older request's reply arrives after a newer one — is <b>dropped</b>,
+     * leaving {@link #semanticStale} set so the overlay stays suppressed rather than re-anchoring the old
+     * tokens onto the shifted text (which mis-colored characters/lines until the next response).
+     */
+    public void setSemanticTokens(java.util.List<SemanticToken> tokens, long requestGen) {
+        if (!semanticActive || requestGen != semanticGen) {
             return;
         }
         semanticTokens = tokens == null ? java.util.List.of() : tokens;
-        semanticStale = false; // these are anchored to the current text → safe to overlay again
+        semanticStale = false; // anchored to the current (unchanged since request) text → safe to overlay
         invalidateHighlighting();
         applyHighlighting();
     }
