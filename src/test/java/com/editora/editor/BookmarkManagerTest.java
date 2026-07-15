@@ -177,4 +177,13 @@ class BookmarkManagerTest {
         var out = BookmarkManager.reanchor(saved(new Bookmark(1, "", "beta")), 3, lines, 2000);
         assertTrue(out.containsKey(1));
     }
+
+    @Test
+    void joiningALineUpwardKeepsTheBookmarkOnTheJoinLine() {
+        // A bookmark on line 5; Backspace at column 0 of line 5 (mid-line delete of the newline: startLine=4,
+        // atLineStart=false, removedNL=1) joins it onto line 4. Its content survives, so it must follow to 4.
+        NavigableMap<Integer, Bookmark> out = BookmarkManager.shift(map(5), 4, false, 1, 0, 100);
+        assertTrue(out.containsKey(4), "the bookmark follows its joined content to line 4 (not dropped)");
+        assertFalse(out.containsKey(5), "line 5 no longer exists");
+    }
 }
