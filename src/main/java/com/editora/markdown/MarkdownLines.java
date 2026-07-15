@@ -175,7 +175,15 @@ public final class MarkdownLines {
         }
         Matcher o = ORDERED.matcher(line);
         if (o.matches()) {
-            long n = Long.parseLong(o.group(2));
+            // The regex accepts an unbounded digit run; a number that overflows a long can't be
+            // auto-incremented, so don't continue the list (Enter falls back to a plain newline) rather
+            // than throwing NumberFormatException out of the Enter key filter.
+            long n;
+            try {
+                n = Long.parseLong(o.group(2));
+            } catch (NumberFormatException overflow) {
+                return null;
+            }
             return o.group(1) + (n + 1) + o.group(3) + o.group(4);
         }
         Matcher q = QUOTE.matcher(line);
