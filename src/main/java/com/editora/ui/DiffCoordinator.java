@@ -479,18 +479,29 @@ final class DiffCoordinator {
 
     /** Diff a commit's version of a file against its parent (commit~1 ↔ commit), read-only. */
     void diffCommitFile(String hash, String repoRel) {
+        diffCommitFile(hash, repoRel, null);
+    }
+
+    /**
+     * Diff a commit's version of a file against its parent. For a rename ({@code origRepoRel} non-null), the
+     * parent side is fetched at the file's <em>original</em> path — otherwise {@code <hash>~1:<newPath>} misses
+     * (the file didn't exist under the new name at the parent) and the whole file shows as added instead of the
+     * rename.
+     */
+    void diffCommitFile(String hash, String repoRel, String origRepoRel) {
         Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
         if (root == null) {
             return;
         }
         String name = repoRel.substring(repoRel.lastIndexOf('/') + 1);
+        String parentRel = origRepoRel != null && !origRepoRel.isBlank() ? origRepoRel : repoRel;
         openDiff(
                 tr("diff.title.commitFile", name, GitFormat.shortHash(hash)),
                 tr("diff.side.parent"),
                 tr("diff.title.vsCommitShort", GitFormat.shortHash(hash)),
                 name,
                 name,
-                cb -> git.service().show(root, hash + "~1:" + repoRel, cb),
+                cb -> git.service().show(root, hash + "~1:" + parentRel, cb),
                 cb -> git.service().show(root, hash + ":" + repoRel, cb),
                 DiffViewerPane.EditableSide.NONE,
                 null);

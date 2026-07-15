@@ -34,4 +34,12 @@ class GitPushArgsTest {
         // upstream present but branch blank still falls back to a plain push
         assertArrayEquals(new String[] {"push"}, GitService.pushArgs("", "origin/main"));
     }
+
+    @Test
+    void detachedHeadDoesNotSetUpstreamToTheLiteralMarker() {
+        // git status --branch reports a detached HEAD as the non-blank "(detached)"; it must not become
+        // `push --set-upstream origin (detached)` (git rejects that refname). A plain push instead.
+        assertArrayEquals(new String[] {"push"}, GitService.pushArgs("(detached)", ""));
+        assertArrayEquals(new String[] {"push"}, GitService.pushArgs("(no branch)", ""));
+    }
 }

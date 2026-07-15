@@ -1,5 +1,7 @@
 package com.editora.git;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,7 +55,7 @@ public final class StatusParser {
                     // 1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
                     String[] f = line.split(" ", 9);
                     if (f.length == 9 && f[1].length() == 2) {
-                        files.add(new FileEntry(f[8], f[1].charAt(0), f[1].charAt(1), null));
+                        files.add(new FileEntry(unquotePath(f[8]), f[1].charAt(0), f[1].charAt(1), null));
                     }
                 }
                 case '2' -> {
@@ -61,15 +63,17 @@ public final class StatusParser {
                     String[] f = line.split(" ", 10);
                     if (f.length == 10 && f[1].length() == 2) {
                         String rest = f[9];
+                        // The path/orig separator is a literal tab; a tab *inside* a name is C-quoted as
+                        // "\t" (two chars), so this split never lands inside a quoted name.
                         int tab = rest.indexOf('\t');
                         String path = tab >= 0 ? rest.substring(0, tab) : rest;
                         String orig = tab >= 0 ? rest.substring(tab + 1) : null;
-                        files.add(new FileEntry(path, f[1].charAt(0), f[1].charAt(1), orig));
+                        files.add(new FileEntry(unquotePath(path), f[1].charAt(0), f[1].charAt(1), unquotePath(orig)));
                     }
                 }
                 case '?' -> {
                     if (line.length() > 2) {
-                        files.add(new FileEntry(line.substring(2), '?', '?', null));
+                        files.add(new FileEntry(unquotePath(line.substring(2)), '?', '?', null));
                     }
                 }
                 default -> {
@@ -78,6 +82,49 @@ public final class StatusParser {
             }
         }
         return new GitStatus(true, branch, upstream, ahead, behind, files);
+    }
+
+    /**
+     * Decodes git's C-style quoted path back to the real name. With {@code core.quotePath=true} (the default),
+     * {@code git status --porcelain} (no {@code -z}) wraps a path containing non-ASCII/control/quote/backslash
+     * bytes in double-quotes and escapes those bytes — {@code café.txt} → {@code "caf\303\251.txt"}. An
+     * unquoted field (no surrounding quotes) is returned unchanged. The octal escapes are the raw UTF-8 bytes,
+     * so they are collected and decoded as UTF-8. Returns {@code null} unchanged (rename orig may be absent).
+     */
+    static String unquotePath(String field) {
+        if (field == null || field.length() < 2 || field.charAt(0) != '"' || field.charAt(field.length() - 1) != '"') {
+            return field; // not quoted
+        }
+        String s = field.substring(1, field.length() - 1);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c != '\\' || i + 1 >= s.length()) {
+                bytes.write(c); // a literal (printable ASCII) byte
+                continue;
+            }
+            char e = s.charAt(++i);
+            if (e >= '0' && e <= '7') { // \NNN octal byte (1-3 digits)
+                int val = e - '0';
+                for (int k = 0; k < 2 && i + 1 < s.length() && s.charAt(i + 1) >= '0' && s.charAt(i + 1) <= '7'; k++) {
+                    val = (val << 3) | (s.charAt(++i) - '0');
+                }
+                bytes.write(val & 0xFF);
+            } else {
+                bytes.write(
+                        switch (e) {
+                            case 'a' -> 7;
+                            case 'b' -> 8;
+                            case 't' -> 9;
+                            case 'n' -> 10;
+                            case 'v' -> 11;
+                            case 'f' -> 12;
+                            case 'r' -> 13;
+                            default -> e; // \" \\ and any other escaped char → the char itself
+                        });
+            }
+        }
+        return bytes.toString(StandardCharsets.UTF_8);
     }
 
     private static int parseInt(String s) {

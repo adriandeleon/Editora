@@ -40,7 +40,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
         void selected(String hash);
 
-        void openFileDiff(String hash, String repoRelativePath);
+        /** Diff a commit's file against its parent; {@code origRepoRelativePath} is the pre-rename path (or null). */
+        void openFileDiff(String hash, String repoRelativePath, String origRepoRelativePath);
 
         void copyHash(String hash);
 
@@ -147,7 +148,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         Commit c = commits.getSelectionModel().getSelectedItem();
         CommitFile f = files.getSelectionModel().getSelectedItem();
         if (c != null && f != null) {
-            actions.openFileDiff(c.hash(), f.path());
+            actions.openFileDiff(c.hash(), f.path(), f.origPath());
         }
     }
 
