@@ -274,8 +274,8 @@ Editora is built with the help of AI coding tools.
 - **Build-tool support (Maven, npm, Cargo, Go, Gradle)** — each detected build tool gets its own IntelliJ-style
   **tasks tool window** (its stripe appears only when the tool's marker file is present): a browsable tree of
   the tool's goals/scripts/targets with a mini toolbar (Run / Reload / Stop / Run custom…), double-click or
-  Enter to run, streaming the output to a separate per-tool console window. The same actions are also a
-  searchable command-palette popup (`<tool>.showActions`):
+  Enter to run, streaming to a shared **Build Output** window with one tab per tool (Maven/npm/Cargo/Go/Gradle).
+  The same actions are also a searchable command-palette popup (`<tool>.showActions`):
   - **Maven** (`pom.xml`) — the standard lifecycle phases, the pom's declared profiles (checkable, composing
     with a run via `-P`), and each plugin's explicitly-bound goals (`spotless:check`, `jacoco:report`, …),
     plus a "Run custom…" box. Runs prefer the project's own `./mvnw` wrapper, falling back to `mvn` on PATH.

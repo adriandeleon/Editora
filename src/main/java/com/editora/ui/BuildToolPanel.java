@@ -24,11 +24,13 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * A build tool's console tool window: streams a running invocation's stdout/stderr (see
- * {@code com.editora.build.BuildService}) with a header showing the run state plus Stop and Clear. Modeled on
- * {@link RunPanel} minus the stdin field (a build isn't interactive), using a read-only RichTextFX
- * {@link CodeArea} so each line can be colored by the tool's {@link OutputStyle}. Reuses the
- * {@code .run-panel}/{@code .run-status} CSS + the shared {@code run.*} status strings. One instance per tool.
+ * One build tool's console — a single tab inside the shared {@link BuildOutputPanel} "Build Output" tool
+ * window. Streams that tool's running invocation's stdout/stderr (see {@code com.editora.build.BuildService})
+ * with a header showing the run state plus Stop and Clear. {@link BuildOutputPanel} creates one of these per
+ * tool that runs, so Maven/npm/Cargo/Go/Gradle each get their own tab. Modeled on {@link RunPanel} minus the
+ * stdin field (a build isn't interactive), using a read-only RichTextFX {@link CodeArea} so each line can be
+ * colored by the tool's {@link OutputStyle}. Reuses the {@code .run-panel}/{@code .run-status} CSS + the
+ * shared {@code run.*} status strings.
  */
 public final class BuildToolPanel extends VBox implements ToolWindowContent {
 
@@ -39,11 +41,14 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private final CodeArea output = new CodeArea();
     private final Button stopButton = new Button();
     private final Button clearButton = new Button();
-    private final OutputStyle style;
     private Consumer<StackTraceLinks.Link> onLink;
 
-    public BuildToolPanel(Runnable onStop, OutputStyle style) {
-        this.style = style == null ? OutputStyle.passthrough() : style;
+    /** This tool's output style (set per run by {@link #started}). */
+    private OutputStyle style = OutputStyle.passthrough();
+    /** Stops this tool's running build (set per run by {@link #started}). */
+    private Runnable onStop;
+
+    public BuildToolPanel() {
         getStyleClass().add("run-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(6);
@@ -103,13 +108,16 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         output.clear();
     }
 
-    public void started(String commandLine) {
+    /** A build starts in this tab: set the header/style/Stop action and clear any prior output. */
+    public void started(String header, OutputStyle style, Runnable onStop) {
+        this.style = style == null ? OutputStyle.passthrough() : style;
+        this.onStop = onStop;
         output.clear();
-        status.setText(tr("run.running", commandLine));
+        status.setText(tr("run.running", header));
         stopButton.setDisable(false);
     }
 
-    /** Appends one line of output, colored per the tool's {@link OutputStyle}, auto-scrolling to the bottom. */
+    /** Appends one line, colored per this tool's {@link OutputStyle}, auto-scrolling to the bottom. */
     public void appendOutput(String line, boolean stderr) {
         int start = output.getLength();
         output.appendText(line + "\n");

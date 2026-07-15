@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by default and can be turned off in Settings → Editor ("Copy/cut the whole line when nothing is selected")
   or via the command palette (*View: Toggle Copy Line When No Selection*).
 
+### Changed
+
+- **The five build tools now share one tabbed "Build Output" window** instead of a separate output window
+  each. Maven, npm, Cargo, Go, and Gradle previously registered five distinct output tool windows (five stripe
+  buttons, five rows in Settings → Tool Windows); they now stream into a single window with **one tab per
+  tool** (created on first run, titled with the tool name, and auto-selected while it runs). Two concurrent
+  builds stream into their own tabs instead of interleaving. The per-tool **tasks** windows are unchanged.
+
 ## [0.9.5] - 2026-07-15
 
 ### Fixed

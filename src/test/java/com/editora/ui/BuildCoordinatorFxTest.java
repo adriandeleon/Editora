@@ -6,7 +6,6 @@ import java.util.List;
 
 import com.editora.build.BuildTool;
 import com.editora.config.Settings;
-import com.editora.run.StackTraceLinks;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -64,7 +63,6 @@ class BuildCoordinatorFxTest {
         int openConsoleCount;
         int toolbarVisibleCount;
         boolean lastVisible;
-        StackTraceLinks.Link lastLink;
 
         @Override
         public Path projectRoot() {
@@ -82,15 +80,15 @@ class BuildCoordinatorFxTest {
         }
 
         @Override
-        public void onOutputLink(StackTraceLinks.Link link) {
-            lastLink = link;
-        }
-
-        @Override
         public void setToolWindowsAvailable(boolean available) {
             toolbarVisibleCount++;
             lastVisible = available;
         }
+    }
+
+    /** A fresh shared console for each coordinator under test (the panel content isn't asserted here). */
+    private static BuildCoordinator coordinator(BuildTool tool, FakeHost host, BuildCoordinator.Ops ops) {
+        return new BuildCoordinator(tool, host, ops, new BuildOutputPanel());
     }
 
     private static final String VALID_POM = """
@@ -135,7 +133,7 @@ class BuildCoordinatorFxTest {
     @Test
     void isEnabledTracksSettingAndSimpleMode() {
         FakeHost host = new FakeHost();
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, new FakeOps());
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, new FakeOps());
         host.settings.setMavenSupport(true);
         assertTrue(c.isEnabled());
         host.simpleMode = true;
@@ -152,7 +150,7 @@ class BuildCoordinatorFxTest {
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
         Files.writeString(dir.resolve("pom.xml"), VALID_POM);
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, ops);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
         assertFalse(c.isDetected(), "disabled → never even looks for a marker file");
@@ -167,7 +165,7 @@ class BuildCoordinatorFxTest {
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
         Files.writeString(dir.resolve("pom.xml"), VALID_POM);
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, ops);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
         waitUntil(c::isDetected, "pom.xml detection");
@@ -183,7 +181,7 @@ class BuildCoordinatorFxTest {
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
         Files.writeString(dir.resolve("package.json"), VALID_PACKAGE_JSON);
-        BuildCoordinator c = new BuildCoordinator(BuildTool.NPM, host, ops);
+        BuildCoordinator c = coordinator(BuildTool.NPM, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
         waitUntil(c::isDetected, "package.json detection");
@@ -198,7 +196,7 @@ class BuildCoordinatorFxTest {
         host.settings.setMavenSupport(true);
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir; // empty — no pom.xml anywhere in this ancestry
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, ops);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
         // Give the (short-lived) detect thread a moment even though nothing should ever flip true.
@@ -214,7 +212,7 @@ class BuildCoordinatorFxTest {
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
         Files.writeString(dir.resolve("pom.xml"), MALFORMED_POM);
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, ops);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
         waitUntil(c::isDetected, "malformed pom.xml is still 'found'");
@@ -231,7 +229,7 @@ class BuildCoordinatorFxTest {
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
         Files.writeString(dir.resolve("package.json"), MALFORMED_PACKAGE_JSON);
-        BuildCoordinator c = new BuildCoordinator(BuildTool.NPM, host, ops);
+        BuildCoordinator c = coordinator(BuildTool.NPM, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
         waitUntil(c::isDetected, "malformed package.json is still 'found'");
@@ -246,7 +244,7 @@ class BuildCoordinatorFxTest {
         FakeHost host = new FakeHost();
         host.settings.setMavenSupport(false);
         FakeOps ops = new FakeOps();
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, ops);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
         String disabled = tr("status.build.disabled", disp(BuildTool.MAVEN));
 
         FxTestSupport.runOnFx(() -> {
@@ -266,7 +264,7 @@ class BuildCoordinatorFxTest {
     void showActionsPopupWithNoMarkerReportsNotDetected() throws Exception {
         FakeHost host = new FakeHost();
         host.settings.setMavenSupport(true);
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, new FakeOps());
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, new FakeOps());
 
         FxTestSupport.runOnFx(() -> c.showActionsPopup());
         assertEquals(tr("status.build.notDetected", disp(BuildTool.MAVEN)), host.lastStatus);
@@ -276,7 +274,7 @@ class BuildCoordinatorFxTest {
     void rerunLastWithNothingPreviousReportsNoRerun() throws Exception {
         FakeHost host = new FakeHost();
         host.settings.setMavenSupport(true);
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, new FakeOps());
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, new FakeOps());
 
         FxTestSupport.runOnFx(c::rerunLast);
         assertEquals(tr("status.build.noRerun", disp(BuildTool.MAVEN)), host.lastStatus);
@@ -290,7 +288,7 @@ class BuildCoordinatorFxTest {
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
         Files.writeString(dir.resolve("pom.xml"), VALID_POM);
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, ops);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
         waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "valid pom.xml parses");
@@ -314,7 +312,7 @@ class BuildCoordinatorFxTest {
         FakeOps ops = new FakeOps();
         ops.projectRoot = dir;
         Files.writeString(dir.resolve("pom.xml"), VALID_POM);
-        BuildCoordinator c = new BuildCoordinator(BuildTool.MAVEN, host, ops);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
         waitUntil(c::isDetected, "pom.xml detected once");
