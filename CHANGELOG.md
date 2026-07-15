@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Format Document no longer corrupts the file if you edit while it's working.** A language server computes
+  formatting against the file as it was when asked; if you typed during the round-trip, those edits landed at
+  the wrong offsets, silently mangling lines. Editora now detects that the file changed and skips the stale
+  result, telling you to run it again.
+- **Semantic highlighting no longer briefly mis-colors code while you type.** A slow server's colors,
+  computed against an older version of the file, could paint onto shifted text (a variable colored as a
+  function, the whole overlay off by a line) until the next response caught up. Stale responses are now
+  dropped.
+
 - **A pathological regex in Find no longer freezes the editor.** Typing a valid-but-catastrophic pattern
   (the classic ReDoS case) with regex search on could send the find bar backtracking for many seconds — on the
   UI thread, so the whole editor locked up with no way out. Regex search is now time-bounded and abandons a
