@@ -56,7 +56,12 @@ public final class TimeSpan {
             if (m.start() != matchedTo && !s.substring(matchedTo, m.start()).isBlank()) {
                 return -1; // junk between tokens
             }
-            long n = Long.parseLong(m.group(1));
+            long n;
+            try {
+                n = Long.parseLong(m.group(1)); // TOKEN accepts any digit count; a huge value overflows a long
+            } catch (NumberFormatException overflow) {
+                return -1;
+            }
             String unit = m.group(2);
             long per = unit.isEmpty()
                     ? 1L
@@ -64,7 +69,11 @@ public final class TimeSpan {
             if (per < 0) {
                 return -1;
             }
-            total += n * per;
+            try {
+                total = Math.addExact(total, Math.multiplyExact(n, per)); // a large-but-parseable span overflows
+            } catch (ArithmeticException overflow) {
+                return -1;
+            }
             matchedTo = m.end();
             any = true;
         }
