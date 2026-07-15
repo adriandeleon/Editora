@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **French and Italian error/status messages no longer show a literal `{0}` instead of the filename or
+  error.** In those languages an apostrophe (`l'`, `d'`, `dell'`) sits right before the value placeholder, and
+  an unescaped apostrophe is a MessageFormat escape that swallowed it — so "save failed: /path" came out as
+  "save failed: {0}", the actual path gone. 60 messages across French and Italian are fixed (save/open
+  failures, theme changes, plugin/agent/build/export errors), and a test now guards every locale so it can't
+  come back.
+
 ### Security
 
 - **Previewing an untrusted Markdown file can no longer probe your internal network or leak credentials.**
