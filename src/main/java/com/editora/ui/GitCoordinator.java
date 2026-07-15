@@ -644,11 +644,8 @@ final class GitCoordinator {
             host.setStatus(tr("status.noGitFile"));
             return;
         }
-        gitOp(
-                "Staged " + file.getFileName(),
-                "add",
-                "--",
-                repoRoot.relativize(file.toAbsolutePath()).toString());
+        // rel() forward-slash-normalizes the pathspec (git treats "\" as an escape on Windows).
+        gitOp("Staged " + file.getFileName(), "add", "--", rel(file));
     }
 
     /** Unstages the active file (palette {@code git.unstageFile}; mirrors {@link #gitStageActiveFile}). */
@@ -659,13 +656,7 @@ final class GitCoordinator {
             host.setStatus(tr("status.noGitFile"));
             return;
         }
-        gitOp(
-                "Unstaged " + file.getFileName(),
-                "reset",
-                "-q",
-                "HEAD",
-                "--",
-                repoRoot.relativize(file.toAbsolutePath()).toString());
+        gitOp("Unstaged " + file.getFileName(), "reset", "-q", "HEAD", "--", rel(file));
     }
 
     /** Discards the active file's changes (palette {@code git.discardFile}; confirms first). */
@@ -676,7 +667,7 @@ final class GitCoordinator {
             host.setStatus(tr("status.noGitFile"));
             return;
         }
-        discardChanges(repoRoot.relativize(file.toAbsolutePath()).toString(), false);
+        discardChanges(rel(file), false);
     }
 
     // --- Project-tree file/folder actions (act on a given path, not the active buffer) ------------

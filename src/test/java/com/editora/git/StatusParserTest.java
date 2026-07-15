@@ -95,4 +95,30 @@ class StatusParserTest {
         GitStatus s = StatusParser.parse(out);
         assertEquals("my file with spaces.txt", s.files().get(0).path());
     }
+
+    @Test
+    void cQuotedNonAsciiPathIsDecoded() {
+        // With core.quotePath=true (git's default), "café.txt" is emitted as "caf\303\251.txt".
+        String out = "# branch.head main\n" + "1 .M N... 100644 100644 100644 ccc ddd \"caf\\303\\251.txt\"\n";
+        GitStatus s = StatusParser.parse(out);
+        assertEquals("café.txt", s.files().get(0).path(), "the quoted octal-escaped UTF-8 path is decoded");
+    }
+
+    @Test
+    void cQuotedRenameDecodesBothPaths() {
+        String out = "# branch.head main\n"
+                + "2 R. N... 100644 100644 100644 aaa bbb R100 \"nu\\303\\251vo.txt\"\t\"vi\\303\\251jo.txt\"\n";
+        GitStatus s = StatusParser.parse(out);
+        FileEntry e = s.files().get(0);
+        assertEquals("nuévo.txt", e.path());
+        assertEquals("viéjo.txt", e.origPath());
+    }
+
+    @Test
+    void cQuotedEscapesForTabAndQuoteAreDecoded() {
+        // A name with a literal tab and a quote: git quotes it as "a\tb\"c.txt".
+        String out = "# branch.head main\n" + "? \"a\\tb\\\"c.txt\"\n";
+        GitStatus s = StatusParser.parse(out);
+        assertEquals("a\tb\"c.txt", s.files().get(0).path());
+    }
 }

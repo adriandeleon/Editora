@@ -358,7 +358,10 @@ public final class GitService {
      */
     public static String[] pushArgs(String branch, String upstream) {
         boolean noUpstream = upstream == null || upstream.isBlank();
-        boolean haveBranch = branch != null && !branch.isBlank();
+        // A detached HEAD is reported as "(detached)" (non-blank), and no real branch name can start with
+        // "(" — so guard against it, else we'd emit `push --set-upstream origin (detached)`, which git
+        // rejects as a bad refname. A plain `push` lets git give its own clearer "detached HEAD" message.
+        boolean haveBranch = branch != null && !branch.isBlank() && !branch.startsWith("(");
         if (noUpstream && haveBranch) {
             return new String[] {"push", "--set-upstream", "origin", branch};
         }

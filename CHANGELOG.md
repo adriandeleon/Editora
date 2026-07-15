@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Files with accented or non-ASCII names now work with Git.** A file like `café.txt` was left with Git's
+  raw quoted-and-escaped name (`"caf\303\251.txt"`) throughout the integration, so it got no color in the
+  Project tree and staging / unstaging / discarding / diffing it failed with "pathspec did not match". Editora
+  now decodes Git's quoting, so non-ASCII filenames behave like any other. (From a per-feature audit of the Git
+  integration.)
+
+- **Diffing a renamed file from the Git Log no longer shows the whole file as newly added.** For a commit that
+  renamed a file, the "before" side was fetched under the new name (which didn't exist yet at the parent), so
+  the diff looked like a 100%-added file; it now uses the original name and shows the real change.
+
+- **Pushing while on a detached HEAD no longer builds an invalid command.** It used to try
+  `push --set-upstream origin (detached)`, which Git rejects with a confusing refname error; it now falls back
+  to a plain `push` (Git then gives its own clear "detached HEAD" message).
+
+- **Staging/unstaging/discarding the current file works for files in subfolders on Windows.** Those three
+  actions built the path with backslashes, which Git treats as escapes; they now use forward slashes like the
+  Project-tree actions already did.
+
 - **Backspace on an empty auto-inserted bracket pair no longer eats the line's indentation.** With the caret
   between a just-typed `()`/`[]`/`{}` sitting in a line's leading whitespace, a single Backspace removed the
   pair *and* the indentation (and the newline above), jumping up to the previous line — because two Backspace
