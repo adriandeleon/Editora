@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Copy or Cut with nothing selected now acts on the whole current line** (VS Code's
+  `editor.emptySelectionClipboard`). Put the caret anywhere on a line, press Copy and the entire line
+  (with its newline) lands on the clipboard; press Cut and the line is removed in one undoable step. It's on
+  by default and can be turned off in Settings → Editor ("Copy/cut the whole line when nothing is selected")
+  or via the command palette (*View: Toggle Copy Line When No Selection*).
+
 ## [0.9.5] - 2026-07-15
 
 ### Fixed

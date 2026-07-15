@@ -280,6 +280,7 @@ public class SettingsWindow {
 
     private boolean loadingTemplate = false;
     private CheckBox multiCaretCheck;
+    private CheckBox copyLineNoSelectionCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
     private CheckBox blameCheck;
@@ -951,6 +952,8 @@ public class SettingsWindow {
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
         todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
+        copyLineNoSelectionCheck =
+                viewCheck(tr("settings.copyLineWhenNoSelection"), Settings::setCopyLineWhenNoSelection);
 
         projectsCheck = new CheckBox(tr("settings.enableProjects"));
         projectsCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -1983,6 +1986,12 @@ public class SettingsWindow {
                 display,
                 multiCaretCheck,
                 "multiple cursors carets column box selection alt drag vs code");
+        row(
+                p,
+                Category.EDITOR,
+                display,
+                copyLineNoSelectionCheck,
+                "copy cut whole current line empty no selection clipboard vs code");
         row(p, Category.EDITOR, display, autoRenameTagCheck, "auto rename tag html xml paired close mirror vs code");
         row(
                 p,
@@ -5509,6 +5518,7 @@ public class SettingsWindow {
             rebuildTodoRows();
             rebuildMarkdownLintRules();
             multiCaretCheck.setSelected(settings.isMultiCaret());
+            copyLineNoSelectionCheck.setSelected(settings.isCopyLineWhenNoSelection());
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
@@ -6095,6 +6105,7 @@ public class SettingsWindow {
             rebuildMarkdownLintRules();
             indentStyleCombo.setValue(s.getIndentStyle());
             multiCaretCheck.setSelected(s.isMultiCaret());
+            copyLineNoSelectionCheck.setSelected(s.isCopyLineWhenNoSelection());
             projectsCheck.setSelected(s.isProjectSupport());
         } finally {
             loading = prev;
