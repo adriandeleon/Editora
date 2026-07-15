@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Backspace on an empty auto-inserted bracket pair no longer eats the line's indentation.** With the caret
+  between a just-typed `()`/`[]`/`{}` sitting in a line's leading whitespace, a single Backspace removed the
+  pair *and* the indentation (and the newline above), jumping up to the previous line — because two Backspace
+  handlers on the editor both ran even though the first had already handled the key (a JavaFX quirk: `consume()`
+  stops the event reaching other nodes, not other handlers on the same node). Now the second handler yields, so
+  Backspace removes only the pair. (First finding from a per-feature audit pass over the editor's core editing
+  mechanics.)
+
+- **Pressing Enter on a Markdown ordered-list item with an absurdly long number no longer throws.** A list
+  marker whose number overflowed a 64-bit integer (20+ digits) raised an uncaught error on Enter; it now falls
+  back to a plain newline.
+
 ### Added
 
 - **Editora now tells you when a new version is available.** On startup (at most once a day) it checks GitHub

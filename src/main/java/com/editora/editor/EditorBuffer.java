@@ -6447,8 +6447,14 @@ public class EditorBuffer implements TabContent {
         // whole indent — and on an otherwise-blank (auto-indented) line it also removes the newline, so
         // a single press jumps back to the end of the previous line ("back to where you hit Enter").
         // Only consumes when it removes more than one char, so a normal single-char Backspace still runs
-        // everywhere else (and the auto-close empty-pair handler, registered earlier, gets first dibs).
+        // everywhere else. The auto-close empty-pair handler is registered earlier and gets first dibs: it
+        // consumes when it deletes a pair, but JavaFX runs *every* filter on a node regardless of consume()
+        // (consume only stops propagation to other nodes), so we must re-check isConsumed() here ourselves —
+        // otherwise Backspace on an empty pair inside leading whitespace deletes the pair AND the indent.
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isConsumed()) { // the empty-pair handler already consumed this Backspace
+                return;
+            }
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
@@ -6488,6 +6494,9 @@ public class EditorBuffer implements TabContent {
             }
         });
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (e.isConsumed()) { // the auto-close KEY_TYPED handler (registered earlier) already acted
+                return;
+            }
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }

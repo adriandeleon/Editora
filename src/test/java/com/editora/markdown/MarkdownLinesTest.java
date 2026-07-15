@@ -24,6 +24,12 @@ class MarkdownLinesTest {
     }
 
     @Test
+    void anOrderedNumberTooLargeToIncrementDoesNotThrow() {
+        // 20 nines overflows a long; must not throw NumberFormatException out of the Enter key filter.
+        assertNull(MarkdownLines.continuation("99999999999999999999. item"), "overflowing number → no continuation");
+    }
+
+    @Test
     void continuesTasksResetToUnchecked() {
         assertEquals("- [ ] ", MarkdownLines.continuation("- [ ] todo"));
         assertEquals("- [ ] ", MarkdownLines.continuation("- [x] done"));
