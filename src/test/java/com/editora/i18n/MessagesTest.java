@@ -100,6 +100,70 @@ class MessagesTest {
         Messages.init("en");
     }
 
+    /**
+     * Every parameterized value — one whose <b>English</b> pattern has a {@code {n}} placeholder, so
+     * {@code tr(key, args)} runs it through {@link java.text.MessageFormat} — must format cleanly in every
+     * locale. The trap is that a single {@code '} is an <em>escape</em> in a MessageFormat pattern: an
+     * unescaped apostrophe (rife in French {@code l'} / {@code d'} and Italian {@code dell'}) silently turns a
+     * following {@code {0}} into the literal text "{0}", so the filename/error never appears — and it's
+     * invisible in English, where the base has no such apostrophes. This formats each locale's value with
+     * sentinel args and fails if any placeholder the English pattern carries didn't get substituted.
+     */
+    @Test
+    void everyParameterizedValueFormatsInEveryLocaleWithoutSwallowingAPlaceholder() {
+        Properties base = loadProps("/com/editora/i18n/messages.properties");
+        Object[] args = new Object[10];
+        for (int i = 0; i < args.length; i++) {
+            args[i] = "‹A" + i + "›"; // a sentinel unlikely to occur in any translation
+        }
+        // A REAL MessageFormat placeholder is `{n}` or `{n,…}` — digits then a comma or close brace. This
+        // must NOT match a snippet help string's `${1:default}` (the `{1:` isn't a placeholder, and that key
+        // is shown via tr(key) with no args, so MessageFormat never touches it).
+        java.util.regex.Pattern placeholder = java.util.regex.Pattern.compile("\\{(\\d+)\\s*[,}]");
+
+        Set<String> problems = new TreeSet<>();
+        for (String key : base.stringPropertyNames()) {
+            java.util.regex.Matcher m = placeholder.matcher(base.getProperty(key));
+            Set<Integer> indices = new TreeSet<>();
+            while (m.find()) {
+                indices.add(Integer.parseInt(m.group(1)));
+            }
+            if (indices.isEmpty()) {
+                continue; // not a MessageFormat value — tr(key) returns it verbatim, apostrophes fine
+            }
+            List<String> catalogs = new java.util.ArrayList<>();
+            catalogs.add("");
+            LOCALES.forEach(l -> catalogs.add("_" + l));
+            for (String suffix : catalogs) {
+                Properties cat = loadProps("/com/editora/i18n/messages" + suffix + ".properties");
+                String value = cat.getProperty(key);
+                if (value == null) {
+                    continue; // key-parity is covered by another test
+                }
+                String out;
+                try {
+                    out = new java.text.MessageFormat(value).format(args);
+                } catch (IllegalArgumentException bad) {
+                    problems.add((suffix.isEmpty() ? "en" : suffix.substring(1)) + " / " + key
+                            + " → MessageFormat rejected it: " + value);
+                    continue;
+                }
+                // Every index the English pattern carries must survive into the output as its sentinel; if a
+                // stray apostrophe swallowed it, the literal "{n}" shows instead.
+                for (int idx : indices) {
+                    if (idx < args.length && !out.contains((String) args[idx])) {
+                        problems.add((suffix.isEmpty() ? "en" : suffix.substring(1)) + " / " + key + " → {" + idx
+                                + "} not substituted (likely an unescaped apostrophe): " + value);
+                    }
+                }
+            }
+        }
+        assertTrue(
+                problems.isEmpty(),
+                "MessageFormat values that drop an argument in some locale (double the apostrophes: l' → l''):\n"
+                        + String.join("\n", problems));
+    }
+
     @Test
     void resolvePrefersExplicitThenSystemThenEnglish() {
         Set<String> available = Set.of("en", "it", "es", "fr", "pt", "de");
