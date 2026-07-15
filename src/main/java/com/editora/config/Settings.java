@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 75;
+    public static final int SCHEMA_VERSION = 76;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -72,6 +72,8 @@ public class Settings {
     private boolean markdownFormatBar = true;
     /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork). Transparent with one caret. */
     private boolean multiCaret = true;
+    /** With no selection, Copy/Cut act on the whole current line (VS Code {@code editor.emptySelectionClipboard}). */
+    private boolean copyLineWhenNoSelection = true;
 
     private boolean spellCheck = true;
     /** Honor the personal dictionary ({@code dictionary.txt}) during spell check; off re-flags those words. */
@@ -1058,6 +1060,14 @@ public class Settings {
 
     public void setMultiCaret(boolean multiCaret) {
         this.multiCaret = multiCaret;
+    }
+
+    public boolean isCopyLineWhenNoSelection() {
+        return copyLineWhenNoSelection;
+    }
+
+    public void setCopyLineWhenNoSelection(boolean copyLineWhenNoSelection) {
+        this.copyLineWhenNoSelection = copyLineWhenNoSelection;
     }
 
     public boolean isShowToolbar() {

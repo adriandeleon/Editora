@@ -4029,6 +4029,40 @@ public class EditorBuffer implements TabContent {
         return false;
     }
 
+    /** Puts the whole current line (including a trailing newline) on the clipboard — the empty-selection
+     *  Copy of VS Code's {@code editor.emptySelectionClipboard}. Leaves the document untouched. */
+    public void copyCurrentLine() {
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        int p = a.getCurrentParagraph();
+        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+        content.putString(a.getParagraph(p).getText() + "\n");
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    /** Cuts the whole current line — copies it (with a trailing newline) then deletes the line as one
+     *  undoable edit (the empty-selection Cut of VS Code's {@code editor.emptySelectionClipboard}). */
+    public void cutCurrentLine() {
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        int p = a.getCurrentParagraph();
+        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+        content.putString(a.getParagraph(p).getText() + "\n");
+        Clipboard.getSystemClipboard().setContent(content);
+        int total = a.getParagraphs().size();
+        int start;
+        int end;
+        if (p < total - 1) { // not the last line: take this line plus its trailing newline
+            start = a.getAbsolutePosition(p, 0);
+            end = a.getAbsolutePosition(p + 1, 0);
+        } else if (total > 1) { // last line: take the preceding newline plus this line
+            start = a.getAbsolutePosition(p - 1, a.getParagraph(p - 1).length());
+            end = a.getAbsolutePosition(p, a.getParagraph(p).length());
+        } else { // only line in the buffer: clear it
+            start = 0;
+            end = a.getLength();
+        }
+        a.deleteText(start, end);
+    }
+
     /** Collapses any extra carets / box selection back to a single caret. */
     public void collapseCarets() {
         if (multiCaret != null) {

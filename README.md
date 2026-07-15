@@ -125,6 +125,9 @@ Editora is built with the help of AI coding tools.
 - **Multiple cursors & column selection** — VS Code–style multi-caret editing: add a caret at the next
   occurrence of the selection / above / below, type or edit everywhere at once, `Esc` to collapse; plus
   Alt-drag column/box selection. (Powered by a personal RichTextFX fork.)
+- **Copy/cut the current line with no selection** — VS Code's `editor.emptySelectionClipboard`: with
+  nothing selected, Copy grabs the whole current line and Cut removes it (one undoable step). On by default;
+  toggle in Settings → Editor or via "View: Toggle Copy Line When No Selection".
 - **Spell checking** — red wavy underlines on misspelled words, with right-click suggestions,
   Add-to-Dictionary, and Ignore. Source files only check comments and string literals; plaintext and
   Markdown are checked in full. Toggle via "View: Toggle Spell Check"; choose a dictionary per file

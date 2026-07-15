@@ -6847,6 +6847,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         boolean had = area.getSelection().getLength() > 0;
+        if (!had && config.getSettings().isCopyLineWhenNoSelection() && b != null) {
+            b.cutCurrentLine(); // empty selection → cut the whole current line (VS Code editor.emptySelectionClipboard)
+            deactivateMark();
+            refreshPasteState();
+            setStatus(tr("status.cutLine"));
+            return;
+        }
         area.cut();
         deactivateMark();
         refreshPasteState(); // clipboard now has content
@@ -6867,6 +6874,14 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         boolean had = area.getSelection().getLength() > 0;
+        if (!had && config.getSettings().isCopyLineWhenNoSelection() && b != null) {
+            b.copyCurrentLine(); // empty selection → copy the whole current line (VS Code
+            // editor.emptySelectionClipboard)
+            deactivateMark();
+            refreshPasteState();
+            setStatus(tr("status.copiedLine"));
+            return;
+        }
         area.copy();
         deactivateMark();
         refreshPasteState(); // clipboard now has content
@@ -11246,6 +11261,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.toggleAutocompleteSnippets", this::toggleAutocompleteSnippets));
         registry.register(Command.of("view.toggleAutocompleteMermaid", this::toggleAutocompleteMermaid));
         registry.register(Command.of("view.toggleMultiCaret", this::toggleMultiCaret));
+        registry.register(Command.of(
+                "view.toggleCopyLineWhenNoSelection",
+                () -> toggleSetting(
+                        "view.toggleCopyLineWhenNoSelection",
+                        () -> config.getSettings().isCopyLineWhenNoSelection(),
+                        config.getSettings()::setCopyLineWhenNoSelection,
+                        null)));
         registry.register(
                 Command.of("edit.addCaretNextOccurrence", () -> withMultiCaret(EditorBuffer::addCaretNextOccurrence)));
         registry.register(Command.of("edit.addCaretAbove", () -> withMultiCaret(EditorBuffer::addCaretAbove)));

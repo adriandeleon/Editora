@@ -3,6 +3,11 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Copy/cut current line on empty selection (VS Code `editor.emptySelectionClipboard`) — with no
+      selection, `edit.copy`/`edit.cut` act on the whole current line (Cut is one undoable step; last-line cut
+      takes the preceding newline so no blank line is left). `EditorBuffer.copyCurrentLine`/`cutCurrentLine`;
+      gated by `Settings.copyLineWhenNoSelection` (default on, schema 75→76); Settings → Editor checkbox +
+      palette `view.toggleCopyLineWhenNoSelection`; i18n ×6; covered by `CopyLineNoSelectionFxTest`.
 - [x] Expert mode — a per-window focus mode like Zen but lighter: it strips only the surrounding window
       chrome (toolbar/tab bar/breadcrumb/tool stripes + whitespace guides) and keeps the whole editor view
       (line numbers, status bar, minimap, column ruler, current-line highlight). Mirrors Zen end-to-end:

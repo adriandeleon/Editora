@@ -124,8 +124,9 @@ public enum ConfigSchema {
                     Map.entry(72, (Migration)
                             ConfigMigrations::identity), // v72→73: + typstLspCommand/typstLspEnabled (additive)
                     Map.entry(73, (Migration) ConfigMigrations::identity), // v73→74: + systemd/ssh/dockerfile previews
-                    Map.entry(
-                            74, (Migration) ConfigMigrations::identity))), // v74→75: + githubActionsPreview (additive)
+                    Map.entry(74, (Migration) ConfigMigrations::identity), // v74→75: + githubActionsPreview (additive)
+                    Map.entry(75, (Migration)
+                            ConfigMigrations::identity))), // v75→76: + copyLineWhenNoSelection (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
