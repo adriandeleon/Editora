@@ -31,13 +31,22 @@ public final class EditorConfigGlob {
         } else if (g.startsWith("/")) {
             g = g.substring(1); // leading slash → anchored to the .editorconfig directory
         }
-        StringBuilder re = new StringBuilder("^");
-        appendPattern(re, g);
-        re.append('$');
         try {
+            StringBuilder re = new StringBuilder("^");
+            appendPattern(re, g); // also inside the try: a malformed glob must never throw out of matches()
+            re.append('$');
             return Pattern.compile(re.toString()).matcher(relPath).matches();
         } catch (RuntimeException e) {
             return false;
+        }
+    }
+
+    /** A brace-range bound as a long, or null when it doesn't fit (so the caller degrades to "any integer"). */
+    private static Long parseBound(String s) {
+        try {
+            return Long.parseLong(s);
+        } catch (NumberFormatException overflow) {
+            return null;
         }
     }
 
@@ -116,7 +125,13 @@ public final class EditorConfigGlob {
     private static void appendBrace(StringBuilder re, String inner) {
         Matcher m = NUM_RANGE.matcher(inner);
         if (m.matches()) {
-            re.append(numericRange(Long.parseLong(m.group(1)), Long.parseLong(m.group(2))));
+            // NUM_RANGE accepts any digit count, so a bound past Long.MAX (e.g. `{1..99999999999999999999}` in
+            // a hostile .editorconfig) overflows Long.parseLong. The MAX_RANGE cap only fires once BOTH bounds
+            // parse, so the throw escaped — and matches()' try/catch is after this call. A bound we can't hold
+            // in a long can't be a small enumerable range anyway, so fall back to "match any integer".
+            Long lo = parseBound(m.group(1));
+            Long hi = parseBound(m.group(2));
+            re.append(lo == null || hi == null ? "-?\\d+" : numericRange(lo, hi));
             return;
         }
         List<String> parts = splitTopLevelCommas(inner);

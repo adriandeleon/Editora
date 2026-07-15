@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A pathological regex in Find no longer freezes the editor.** Typing a valid-but-catastrophic pattern
+  (the classic ReDoS case) with regex search on could send the find bar backtracking for many seconds — on the
+  UI thread, so the whole editor locked up with no way out. Regex search is now time-bounded and abandons a
+  runaway match instead.
+- **A hostile or fat-fingered `.editorconfig` no longer throws when you open a file.** An enormous numeric
+  glob range like `[{1..99999999999999999999}]` crashed the read of any file it governed. It now degrades to
+  matching any number.
+- **The systemd unit preview no longer throws on an out-of-range time value.** A directive like
+  `RestartSec=99999999999999999999` (or one that overflows when converted to seconds) now shows the raw value
+  instead of failing to render.
+
 - **Closing an image, hex, or PDF tab now actually releases it.** Those tabs were only cleaned up when closed
   by clicking the ✕ — closing them with Ctrl-W, "Close All"/"Close Others", or by closing the window leaked a
   live thread and (for a PDF) kept the file open for as long as Editora was running. Open and close a few

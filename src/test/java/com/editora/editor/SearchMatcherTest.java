@@ -91,4 +91,39 @@ class SearchMatcherTest {
         assertEquals(1, SearchMatcher.indexAt(ms, 10));
         assertEquals(-1, SearchMatcher.indexAt(ms, 6));
     }
+
+    // A pattern + input that catastrophically backtracks on this JDK: `(.*a){30}` over 30 'a's runs ~9 s
+    // unbounded (`{32}` ~38 s), which is a total UI freeze since the find bar matches on the FX thread.
+    private static final String EVIL_RE = "(.*a){30}";
+    private static final String EVIL_IN = "a".repeat(30);
+
+    @Test
+    void aPathologicalRegexIsAbandonedRatherThanHangingForever() {
+        // java.util.regex has no timeout and the pattern is VALID, so regexError() doesn't catch it — it used
+        // to spin ~9 s (much longer as the input grows) on the FX thread. The default budget must bound it.
+        long start = System.nanoTime();
+        List<int[]> out = SearchMatcher.matches(EVIL_IN, EVIL_RE, true, true, false);
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(elapsedMs < 4_000, "must abandon the runaway match near the ~1s budget, took " + elapsedMs + "ms");
+        assertNotNull(out); // returned at all — that's the point
+    }
+
+    @Test
+    void aTinyBudgetBoundsItAlmostImmediately() {
+        // A 1 ms budget aborts the same catastrophic match right away — proves the deadline actually fires,
+        // not that the input happened to be tractable.
+        long start = System.nanoTime();
+        List<int[]> out = SearchMatcher.regexMatches(EVIL_IN, EVIL_RE, true, false, 1_000_000L); // 1 ms
+        assertTrue((System.nanoTime() - start) / 1_000_000 < 1_000, "bounded by the tiny budget");
+        assertNotNull(out);
+    }
+
+    @Test
+    void ordinaryRegexSearchStillWorks() {
+        // The bounding must not change normal results.
+        List<int[]> out = SearchMatcher.matches("foo bar foo", "foo", true, true, false);
+        assertEquals(2, out.size());
+        assertEquals(0, out.get(0)[0]);
+        assertEquals(8, out.get(1)[0]);
+    }
 }

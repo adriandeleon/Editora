@@ -106,21 +106,90 @@ public final class SearchMatcher {
         }
     }
 
+    /** Wall-clock budget for a single regex search before it's abandoned (see {@link Deadline}). */
+    static final long DEFAULT_MATCH_BUDGET_NANOS = 1_000_000_000L; // 1 s
+
     private static List<int[]> regexMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
+        return regexMatches(text, query, caseSensitive, wholeWord, DEFAULT_MATCH_BUDGET_NANOS);
+    }
+
+    /**
+     * Regex matches, but bounded in time. {@code java.util.regex} is a backtracking engine with no timeout, so
+     * a <b>valid</b> but pathological pattern — the classic {@code (a+)+$} against a long run of {@code a}s
+     * ending in a non-match — backtracks for effectively forever. The in-editor find bar runs this
+     * <em>synchronously on the JavaFX thread</em> (a debounce only delays it), so such a pattern froze the whole
+     * editor with no way out ({@code regexError} only catches <em>syntax</em> errors, and a pathological pattern
+     * compiles fine). The input is wrapped in a {@link Deadline} sequence whose {@code charAt} aborts the match
+     * once the budget passes — the engine touches {@code charAt} on every backtrack step, so it unwinds
+     * promptly — and we return whatever was found so far rather than hang. Package-visible budget overload for
+     * tests.
+     */
+    static List<int[]> regexMatches(
+            String text, String query, boolean caseSensitive, boolean wholeWord, long budgetNanos) {
         Pattern p = compileRegex(query, caseSensitive, wholeWord);
         if (p == null) {
             return List.of();
         }
         List<int[]> out = new ArrayList<>();
-        Matcher matcher = p.matcher(text);
+        Matcher matcher = p.matcher(new Deadline(text, budgetNanos));
         int from = 0;
-        while (from <= text.length() && matcher.find(from)) {
-            int start = matcher.start();
-            int end = matcher.end();
-            out.add(new int[] {start, end});
-            from = end > start ? end : end + 1; // advance past a zero-width match
+        try {
+            while (from <= text.length() && matcher.find(from)) {
+                int start = matcher.start();
+                int end = matcher.end();
+                out.add(new int[] {start, end});
+                from = end > start ? end : end + 1; // advance past a zero-width match
+            }
+        } catch (MatchAbortedException aborted) {
+            return out; // budget exceeded — partial results beat freezing the UI
         }
         return out;
+    }
+
+    /** Thrown by {@link Deadline} to unwind a runaway backtracking match; caught in {@link #regexMatches}. */
+    private static final class MatchAbortedException extends RuntimeException {
+        MatchAbortedException() {
+            super(null, null, false, false); // no message/stacktrace — it's control flow, not an error
+        }
+    }
+
+    /**
+     * A read-only {@link CharSequence} view of the text that throws {@link MatchAbortedException} from
+     * {@code charAt} once {@code deadlineNanos} passes. The clock is only sampled every 1024th access (a bit
+     * mask) so the common fast path stays a plain array read.
+     */
+    private static final class Deadline implements CharSequence {
+        private final CharSequence text;
+        private final long deadlineNanos;
+        private int ticks;
+
+        Deadline(CharSequence text, long budgetNanos) {
+            this.text = text;
+            this.deadlineNanos = System.nanoTime() + budgetNanos;
+        }
+
+        @Override
+        public char charAt(int index) {
+            if ((++ticks & 0x3FF) == 0 && System.nanoTime() > deadlineNanos) {
+                throw new MatchAbortedException();
+            }
+            return text.charAt(index);
+        }
+
+        @Override
+        public int length() {
+            return text.length();
+        }
+
+        @Override
+        public CharSequence subSequence(int start, int end) {
+            return text.subSequence(start, end);
+        }
+
+        @Override
+        public String toString() {
+            return text.toString();
+        }
     }
 
     private static boolean isWordBounded(String text, int start, int end) {

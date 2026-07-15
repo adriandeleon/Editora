@@ -68,4 +68,21 @@ class EditorConfigGlobTest {
         assertTrue(EditorConfigGlob.matches("/Makefile", "Makefile"));
         assertFalse(EditorConfigGlob.matches("/Makefile", "sub/Makefile"));
     }
+
+    @Test
+    void anOversizedNumericRangeDoesNotThrow() {
+        // A hostile .editorconfig section like [{1..99999999999999999999}] overflowed Long.parseLong and the
+        // exception escaped matches() (its try/catch was after the pattern build), throwing all the way out of
+        // EditorConfig.resolveFor — so merely OPENING any file it governed threw. It must degrade to matching
+        // any integer instead.
+        assertTrue(EditorConfigGlob.matches("file{1..99999999999999999999}.txt", "file7.txt"));
+        assertTrue(EditorConfigGlob.matches("v{0..99999999999999999999}", "v12345"));
+        assertFalse(EditorConfigGlob.matches("v{0..99999999999999999999}", "vNaN"));
+    }
+
+    @Test
+    void anInRangeNumericRangeStillEnumerates() {
+        assertTrue(EditorConfigGlob.matches("f{1..3}.txt", "f2.txt"));
+        assertFalse(EditorConfigGlob.matches("f{1..3}.txt", "f9.txt"));
+    }
 }
