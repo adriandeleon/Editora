@@ -602,6 +602,12 @@ git tag v1.2.3 && git push origin v1.2.3
 A `-rcN` suffix (e.g. `v1.2.3-rc1`) is published as a pre-release. Installers are currently
 **unsigned**, so macOS Gatekeeper / Windows SmartScreen will warn on first launch.
 
+**Update notifications:** on startup (at most once a day) Editora checks GitHub for a newer release and shows a
+subtle "Update: X.Y.Z" indicator in the status bar when one is available — click it to open the release page.
+*Check for Updates* in the command palette checks on demand, and the About dialog shows an update link. Automatic
+checks are on by default and can be disabled in Settings → Workspace → Updates (they contact GitHub's API over
+HTTPS and send no data). Pre-releases are ignored — only full releases trigger a notice.
+
 ## Command line
 
 ```

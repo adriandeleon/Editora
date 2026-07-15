@@ -57,6 +57,9 @@ public final class StatusBar extends HBox {
     /** Indeterminate progress while the debug session is starting; hidden once running/suspended. */
     private final ProgressBar debugProgress = new ProgressBar(0);
 
+    /** "Update available" indicator; clickable → open the release page (and dismiss the notice). Hidden unless a
+     *  newer, non-dismissed release is known. */
+    private final Label update = segment("update.openDownloadPage", tr("statusbar.tip.update"));
     /** MCP server running indicator; clickable → copy the connection command. Hidden when the server is off. */
     private final Label mcp = segment("mcp.copyEndpoint", tr("statusbar.tip.mcp"));
     /** "● REC" indicator shown only while a keyboard macro is being recorded; clickable → stop recording. */
@@ -127,6 +130,10 @@ public final class StatusBar extends HBox {
         lsp.setManaged(false);
 
         mcp.getStyleClass().add("status-mcp");
+        update.getStyleClass().add("status-update");
+        update.setVisible(false); // shown only when a newer, non-dismissed release is available
+        update.setManaged(false);
+
         mcp.setText(tr("statusbar.mcp"));
         mcp.setVisible(false); // shown only while the MCP server is running
         mcp.setManaged(false);
@@ -162,6 +169,7 @@ public final class StatusBar extends HBox {
                 .addAll(
                         echo,
                         spacer,
+                        update,
                         macroRec,
                         remote,
                         debugProgress,
@@ -344,6 +352,16 @@ public final class StatusBar extends HBox {
         lspProgress.setProgress(showProgress ? ProgressBar.INDETERMINATE_PROGRESS : 0);
         lspProgress.setVisible(showProgress);
         lspProgress.setManaged(showProgress);
+    }
+
+    /** Shows the "update available" indicator for {@code version} (e.g. "Update: 1.0.0"), or hides it. Shown even
+     *  in Simple UI mode — an available update is worth surfacing regardless of chrome. */
+    public void setUpdateAvailable(boolean available, String version) {
+        if (available) {
+            update.setText(tr("statusbar.update", version));
+        }
+        update.setVisible(available);
+        update.setManaged(available);
     }
 
     /** Shows/hides the MCP-server-running indicator (suppressed in Simple UI mode). */

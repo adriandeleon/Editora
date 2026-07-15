@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Settings {
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 76;
+    public static final int SCHEMA_VERSION = 77;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -74,6 +74,12 @@ public class Settings {
     private boolean multiCaret = true;
     /** With no selection, Copy/Cut act on the whole current line (VS Code {@code editor.emptySelectionClipboard}). */
     private boolean copyLineWhenNoSelection = true;
+    /** Check GitHub for a newer release on startup (at most once/day). Contacts the GitHub API over HTTPS. */
+    private boolean updateCheck = true;
+    /** Epoch millis of the last background update check (throttles to once/day); 0 = never checked. */
+    private long lastUpdateCheckEpoch = 0;
+    /** The version whose update notice the user dismissed (so it isn't re-shown); "" = none dismissed. */
+    private String dismissedUpdateVersion = "";
 
     private boolean spellCheck = true;
     /** Honor the personal dictionary ({@code dictionary.txt}) during spell check; off re-flags those words. */
@@ -1068,6 +1074,30 @@ public class Settings {
 
     public void setCopyLineWhenNoSelection(boolean copyLineWhenNoSelection) {
         this.copyLineWhenNoSelection = copyLineWhenNoSelection;
+    }
+
+    public boolean isUpdateCheck() {
+        return updateCheck;
+    }
+
+    public void setUpdateCheck(boolean updateCheck) {
+        this.updateCheck = updateCheck;
+    }
+
+    public long getLastUpdateCheckEpoch() {
+        return lastUpdateCheckEpoch;
+    }
+
+    public void setLastUpdateCheckEpoch(long lastUpdateCheckEpoch) {
+        this.lastUpdateCheckEpoch = lastUpdateCheckEpoch;
+    }
+
+    public String getDismissedUpdateVersion() {
+        return dismissedUpdateVersion == null ? "" : dismissedUpdateVersion;
+    }
+
+    public void setDismissedUpdateVersion(String dismissedUpdateVersion) {
+        this.dismissedUpdateVersion = dismissedUpdateVersion == null ? "" : dismissedUpdateVersion;
     }
 
     public boolean isShowToolbar() {
