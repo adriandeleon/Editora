@@ -265,12 +265,22 @@ public final class BreakpointManager {
         int delta = insertedNL - removedNL;
         int pivot = atLineStart ? startLine - 1 : startLine;
         int removedEndLine = pivot + removedNL;
+        // When the deletion starts MID-line (not at column 0), the last line it touches isn't fully deleted —
+        // its trailing content merges onto the edit, i.e. a line-join (Backspace at column 0, or Delete at a
+        // line's end). A breakpoint on that join line must follow its surviving content to pivot+insertedNL,
+        // not vanish — otherwise you'd set a breakpoint, join the line above, and silently debug without it.
+        // (For an at-line-start deletion the last removed line's content really is gone; its successor is the
+        // survivor and the shift branch below already handles that, so this only applies when !atLineStart.)
+        boolean joinSurvives = !atLineStart && removedNL > 0;
         int maxLine = Math.max(0, paragraphCount - 1);
         NavigableMap<Integer, Breakpoint> out = new TreeMap<>();
         for (Breakpoint bp : current.values()) {
             int line = bp.line();
             if (line <= pivot) {
                 out.put(line, bp);
+            } else if (line == removedEndLine && joinSurvives) {
+                int moved = Math.min(Math.max(pivot + insertedNL, 0), maxLine);
+                out.put(moved, bp.withLine(moved));
             } else if (line <= removedEndLine) {
                 continue; // inside the deleted span
             } else {

@@ -77,4 +77,23 @@ class BreakpointManagerTest {
         assertEquals(2, merged.get(1).line());
         assertEquals(9, merged.get(2).line()); // new one appended
     }
+
+    @Test
+    void joiningALineUpwardKeepsTheBreakpointOnTheJoinLine() {
+        // foo() on line 18, bar() on line 19 with a breakpoint. Backspace at column 0 of line 19 removes only
+        // the newline (mid-line delete: startLine=18, atLineStart=false, removedNL=1), joining bar() onto
+        // line 18. bar()'s code survives, so its breakpoint must follow to line 18 — not silently vanish.
+        NavigableMap<Integer, Breakpoint> out = BreakpointManager.shift(map(19), 18, false, 1, 0, 30);
+        assertTrue(out.containsKey(18), "the breakpoint on the join line follows its code to line 18");
+        assertFalse(out.containsKey(19), "line 19 no longer exists — the breakpoint wasn't just dropped");
+    }
+
+    @Test
+    void aMidLineDeleteSpanningLinesKeepsTheTrailingSurvivorButDropsTheMiddle() {
+        // Delete from mid-line 18 through the start of line 20 (removedNL=2, atLineStart=false): line 19 is
+        // consumed, line 20's content merges onto 18. A bp on 19 is dropped; a bp on 20 follows to 18.
+        NavigableMap<Integer, Breakpoint> out = BreakpointManager.shift(map(19, 20), 18, false, 2, 0, 30);
+        assertFalse(out.containsKey(19), "the fully-deleted middle line's breakpoint is dropped");
+        assertTrue(out.containsKey(18), "the trailing survivor line's breakpoint follows to the join line");
+    }
 }

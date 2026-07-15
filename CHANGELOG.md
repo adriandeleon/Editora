@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Joining two lines no longer silently loses a breakpoint or bookmark on the lower line.** Pressing
+  Backspace at the start of a line (or Delete at the end of the line above) merges the two lines — the code
+  survives, but a breakpoint or bookmark on the merged-up line was being dropped, so you'd set a breakpoint,
+  tidy up the line above, and then debug without it. The marker now follows its code to the joined line.
+
 - **French and Italian error/status messages no longer show a literal `{0}` instead of the filename or
   error.** In those languages an apostrophe (`l'`, `d'`, `dell'`) sits right before the value placeholder, and
   an unescaped apostrophe is a MessageFormat escape that swallowed it — so "save failed: /path" came out as

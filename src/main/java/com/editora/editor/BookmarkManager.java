@@ -283,12 +283,21 @@ public final class BookmarkManager {
         int delta = insertedNL - removedNL;
         int pivot = atLineStart ? startLine - 1 : startLine;
         int removedEndLine = pivot + removedNL;
+        // A mid-line deletion (not at column 0) joins its last touched line onto the edit — that line's
+        // trailing content survives (a line-join: Backspace at column 0, or Delete at a line's end). A
+        // bookmark on that join line must follow its content to pivot+insertedNL rather than be dropped.
+        // (An at-line-start deletion genuinely removes that line's content; its successor is the survivor and
+        // is handled by the shift branch, so this only applies when !atLineStart.) Mirrors BreakpointManager.
+        boolean joinSurvives = !atLineStart && removedNL > 0;
         int maxLine = Math.max(0, paragraphCount - 1);
         NavigableMap<Integer, Bookmark> out = new TreeMap<>();
         for (Bookmark bm : current.values()) {
             int line = bm.line();
             if (line <= pivot) {
                 out.put(line, bm);
+            } else if (line == removedEndLine && joinSurvives) {
+                int moved = Math.min(Math.max(pivot + insertedNL, 0), maxLine);
+                out.put(moved, bm.withLine(moved));
             } else if (line <= removedEndLine) {
                 continue; // inside the deleted span: drop the bookmark
             } else {
