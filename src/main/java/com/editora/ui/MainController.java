@@ -9176,7 +9176,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (fileName.isBlank()) {
             fileName = "untitled";
         }
-        java.nio.file.Path target = targetDir == null ? null : targetDir.resolve(fileName);
+        java.nio.file.Path target = null;
+        if (targetDir != null) {
+            // Contain the file name to targetDir, exactly as the multi-file path does via resolveTargetPath:
+            // a `../…` or absolute fileName pattern (from a malicious/imported template) must not escape and
+            // create files anywhere writable (a shell rc, an autostart entry, a git hook).
+            java.nio.file.Path resolved = targetDir.resolve(fileName).normalize();
+            if (!resolved.startsWith(targetDir.normalize())) {
+                setStatus(tr("status.templatePathEscape"));
+                return;
+            }
+            target = resolved;
+        }
         com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
                 answers,
                 author,

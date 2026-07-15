@@ -178,18 +178,107 @@ public final class PreviewImageLoader {
         }
     }
 
+    /** Cap on redirect hops we'll follow (each re-checked against the SSRF guard). */
+    private static final int MAX_REDIRECTS = 5;
+
     private static byte[] fetch(String url) throws IOException {
-        if (url.startsWith("data:")) {
+        URI uri = URI.create(url);
+        if (isBlockedTarget(uri)) {
+            return null; // SSRF / internal-network / UNC-credential-leak guard — see isBlockedTarget
+        }
+        if ("data".equalsIgnoreCase(uri.getScheme())) {
             return decodeDataUri(url);
         }
-        URLConnection con = URI.create(url).toURL().openConnection();
-        con.setConnectTimeout(TIMEOUT_MS);
-        con.setReadTimeout(TIMEOUT_MS);
-        // Some CDNs (incl. shields.io) reject requests without a User-Agent.
-        con.setRequestProperty("User-Agent", "Editora");
-        try (InputStream in = con.getInputStream()) {
-            return in.readAllBytes();
+        // Follow redirects manually so EACH hop is re-checked: a public URL must not be able to 30x-pivot to a
+        // loopback/internal target past the guard (the JDK's automatic redirect following wouldn't re-check).
+        for (int hop = 0; hop < MAX_REDIRECTS; hop++) {
+            URLConnection con = uri.toURL().openConnection();
+            con.setConnectTimeout(TIMEOUT_MS);
+            con.setReadTimeout(TIMEOUT_MS);
+            con.setRequestProperty("User-Agent", "Editora"); // some CDNs (shields.io) reject a missing UA
+            if (con instanceof java.net.HttpURLConnection http) {
+                http.setInstanceFollowRedirects(false);
+                int code = http.getResponseCode();
+                if (code >= 300 && code < 400) {
+                    String location = http.getHeaderField("Location");
+                    http.disconnect();
+                    if (location == null) {
+                        return null;
+                    }
+                    uri = uri.resolve(location);
+                    if (isBlockedTarget(uri)) {
+                        return null; // the redirect points somewhere we won't reach
+                    }
+                    continue;
+                }
+            }
+            try (InputStream in = con.getInputStream()) {
+                return in.readAllBytes();
+            }
         }
+        return null; // too many redirects
+    }
+
+    /**
+     * True when fetching {@code uri} could hit the local host / internal network (blind SSRF) or leak
+     * credentials via a UNC path — so the preview image loader must refuse it.
+     *
+     * <p>Reachable automatically: the live Markdown/CSV preview loads every {@code ![](…)} the moment it
+     * renders, and the source can be an untrusted file. Without this, {@code ![](http://169.254.169.254/…)}
+     * (cloud metadata), {@code http://10.0.0.1/…} (internal hosts), or {@code file://attacker/share} (an SMB
+     * NetNTLM-hash leak on Windows) fire with no consent. Only {@code data:}, a <em>local</em> {@code file:}
+     * (relative markdown images resolve to {@code file:///…}), and {@code http(s)} to a public host are
+     * allowed; the host classification is the pure, unit-tested {@link #isInternalAddress}.
+     */
+    static boolean isBlockedTarget(URI uri) {
+        String scheme = uri.getScheme();
+        if (scheme == null) {
+            return true;
+        }
+        scheme = scheme.toLowerCase(Locale.ROOT);
+        switch (scheme) {
+            case "data" -> {
+                return false;
+            }
+            case "file" -> {
+                // A local file is fine (that's how relative markdown images load). A non-empty authority means
+                // a UNC/remote path (\\host\share) — the credential-leak vector — so refuse it.
+                return uri.getHost() != null && !uri.getHost().isBlank();
+            }
+            case "http", "https" -> {
+                String host = uri.getHost();
+                if (host == null || host.isBlank()) {
+                    return true;
+                }
+                try {
+                    for (java.net.InetAddress addr : java.net.InetAddress.getAllByName(host)) {
+                        if (isInternalAddress(addr)) {
+                            return true; // literal internal IP, or a hostname that resolves to one
+                        }
+                    }
+                    return false;
+                } catch (java.net.UnknownHostException e) {
+                    return true; // can't resolve → don't reach out
+                }
+            }
+            default -> {
+                return true; // ftp/jar/… — not an image source we serve
+            }
+        }
+    }
+
+    /** Pure: an address the preview must not fetch from — loopback, link-local (incl. {@code 169.254.169.254}
+     *  cloud metadata), any-local, multicast, IPv4 site-local (RFC-1918), or IPv6 ULA ({@code fc00::/7}). */
+    static boolean isInternalAddress(java.net.InetAddress a) {
+        if (a.isLoopbackAddress()
+                || a.isLinkLocalAddress()
+                || a.isAnyLocalAddress()
+                || a.isMulticastAddress()
+                || a.isSiteLocalAddress()) {
+            return true;
+        }
+        byte[] bytes = a.getAddress();
+        return bytes.length == 16 && (bytes[0] & 0xFE) == 0xFC; // IPv6 unique-local (fc00::/7)
     }
 
     /** Decodes a {@code data:} URI's payload (base64 or percent-encoded). */
