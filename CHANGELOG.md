@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Security
+
+- **Previewing an untrusted Markdown file can no longer probe your internal network or leak credentials.**
+  An image reference in the source (`![](…)`) was fetched with no restriction the moment the preview rendered,
+  so a malicious document could reach cloud-metadata endpoints, internal hosts, or a Windows file share (an
+  SMB credential leak) with no consent. The preview now refuses to fetch loopback, link-local, private, and
+  UNC targets, re-checking each redirect hop; public images and local files still load.
+- **A malicious file template can no longer write outside the target folder.** The single-file "New from
+  Template" path didn't contain its file-name pattern, so a `../…` or absolute name could create a file
+  anywhere writable. It now applies the same containment the multi-file path already used. (Templates aren't
+  loaded from the opened workspace, so this is defense-in-depth.)
 
 - **Format Document no longer corrupts the file if you edit while it's working.** A language server computes
   formatting against the file as it was when asked; if you typed during the round-trip, those edits landed at
