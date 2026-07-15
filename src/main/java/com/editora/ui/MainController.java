@@ -319,8 +319,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Build tools (Maven/npm/…): one IntelliJ-style tasks-tree tool window per detected tool, whose stripe
      *  appears when the tool's marker file is found (see {@link BuildCoordinator}). */
     private final Map<BuildTool, ToolWindow> buildToolWindows = new java.util.EnumMap<>(BuildTool.class);
-    /** The matching output-console tool window per build tool (auto-opens on a run). */
-    private final Map<BuildTool, ToolWindow> buildConsoleWindows = new java.util.EnumMap<>(BuildTool.class);
+    /** The shared tabbed "Build Output" window — one tab per build tool that runs (Maven/npm/Cargo/Go/Gradle),
+     *  fed by every {@link BuildCoordinator}; its stripe appears when any tool's marker is detected, and it
+     *  auto-opens on a run. */
+    private final BuildOutputPanel buildOutputPanel = new BuildOutputPanel();
+
+    private ToolWindow buildOutputToolWindow;
 
     private ToolWindow agentToolWindow;
 
@@ -2174,17 +2178,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                             c.iconSupplier(),
                             c.tasksPanel(),
                             "tool." + tool.id()));
-            // The output console (auto-opens on a run); distinct id/stripe so both can coexist.
-            buildConsoleWindows.put(
-                    tool,
-                    new ToolWindow(
-                            tool.id() + "Output",
-                            tr("toolwindow.buildOutput", tool.displayName()),
-                            ToolWindow.Side.BOTTOM,
-                            Icons::terminal,
-                            c.panel(),
-                            "tool." + tool.id() + "Output"));
         }
+        // A single shared "Build Output" console for every build tool (auto-opens on a run).
+        buildOutputPanel.setOnLink(this::openRunLink);
+        buildOutputToolWindow = new ToolWindow(
+                "buildOutput",
+                tr("toolwindow.buildOutput"),
+                ToolWindow.Side.BOTTOM,
+                Icons::terminal,
+                buildOutputPanel,
+                "tool.buildOutput");
         installCoordinator = new InstallCoordinator(coordinatorHost, new InstallCoordinator.Ops() {
             @Override
             public java.nio.file.Path configDir() {
@@ -2271,10 +2274,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.register(tw, true); // tasks-tree stripe visible by preference…
             toolWindows.setAvailable(tw, false); // …but hidden until the tool's marker file is detected
         }
-        for (ToolWindow tw : buildConsoleWindows.values()) {
-            toolWindows.register(tw, false); // console stripe off by default; auto-opens when a task runs
-            toolWindows.setAvailable(tw, false);
-        }
+        toolWindows.register(buildOutputToolWindow, false); // shared console stripe off by default; auto-opens on run
+        toolWindows.setAvailable(buildOutputToolWindow, false); // …available once any build tool is detected
         toolWindows.register(remoteToolWindow, false); // off by default (niche); always available — no buffer needed
         toolWindows.register(
                 agentToolWindow, false); // stripe off by default; shown via tool.agent / Settings → AI Agent
@@ -2764,47 +2765,55 @@ public class MainController implements com.editora.mcp.McpBridge {
     private List<BuildCoordinator> createBuildCoordinators() {
         List<BuildCoordinator> list = new ArrayList<>();
         for (BuildTool tool : BuildTool.enabled()) {
-            list.add(new BuildCoordinator(tool, coordinatorHost, new BuildCoordinator.Ops() {
-                @Override
-                public java.nio.file.Path projectRoot() {
-                    return windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
-                }
+            list.add(new BuildCoordinator(
+                    tool,
+                    coordinatorHost,
+                    new BuildCoordinator.Ops() {
+                        @Override
+                        public java.nio.file.Path projectRoot() {
+                            return windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
+                        }
 
-                @Override
-                public void openTasks() {
-                    ToolWindow tw = buildToolWindows.get(tool);
-                    if (tw != null) {
-                        toolWindows.open(tw, true);
-                    }
-                }
+                        @Override
+                        public void openTasks() {
+                            ToolWindow tw = buildToolWindows.get(tool);
+                            if (tw != null) {
+                                toolWindows.open(tw, true);
+                            }
+                        }
 
-                @Override
-                public void openConsole() {
-                    ToolWindow tw = buildConsoleWindows.get(tool);
-                    if (tw != null) {
-                        toolWindows.open(tw, true);
-                    }
-                }
+                        @Override
+                        public void openConsole() {
+                            if (buildOutputToolWindow != null) {
+                                toolWindows.open(buildOutputToolWindow, true);
+                            }
+                        }
 
-                @Override
-                public void onOutputLink(com.editora.run.StackTraceLinks.Link link) {
-                    openRunLink(link);
-                }
-
-                @Override
-                public void setToolWindowsAvailable(boolean available) {
-                    ToolWindow tasks = buildToolWindows.get(tool);
-                    ToolWindow console = buildConsoleWindows.get(tool);
-                    if (tasks != null) {
-                        toolWindows.setAvailable(tasks, available);
-                    }
-                    if (console != null) {
-                        toolWindows.setAvailable(console, available);
-                    }
-                }
-            }));
+                        @Override
+                        public void setToolWindowsAvailable(boolean available) {
+                            ToolWindow tasks = buildToolWindows.get(tool);
+                            if (tasks != null) {
+                                toolWindows.setAvailable(tasks, available);
+                            }
+                            // The shared console is available when *any* build tool is currently detected.
+                            if (buildOutputToolWindow != null) {
+                                toolWindows.setAvailable(buildOutputToolWindow, anyBuildDetected());
+                            }
+                        }
+                    },
+                    buildOutputPanel));
         }
         return list;
+    }
+
+    /** Whether any enabled build tool currently has a detected marker file (drives the shared console stripe). */
+    private boolean anyBuildDetected() {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.isEnabled() && c.isDetected()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The coordinator for a specific build tool (for the palette gate / Settings status reads). */
@@ -10054,7 +10063,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         externalToolCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
         runCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
         debugCoordinator.panel().setConsoleFont(settings.getFontFamily(), consoleFont);
-        buildCoordinators.forEach(c -> c.panel().setOutputFont(settings.getFontFamily(), consoleFont));
+        buildOutputPanel.setOutputFont(settings.getFontFamily(), consoleFont);
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
@@ -11444,6 +11453,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 }
                             })));
         }
+        registry.register(Command.of("tool.buildOutput", () -> toolWindows.toggle(buildOutputToolWindow)));
         registry.register(Command.of(
                 "view.toggleTodoHighlight",
                 () -> toggleSetting(

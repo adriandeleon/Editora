@@ -3,6 +3,15 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Consolidated the five build-tool output consoles into one shared tabbed **Build Output** window — Maven/
+      npm/Cargo/Go/Gradle previously each registered a separate console tool window (5 stripe buttons + 5
+      Settings → Tool Windows rows); now one `BuildOutputPanel` (a `TabPane`, id `buildOutput`, `Icons::terminal`)
+      owned by `MainController`, with one `BuildToolPanel` tab per tool created on first run (owner-routed:
+      `started(owner, toolName, …)` makes/selects the tab, `appendOutput/finished/failed` route to that tool's
+      console — two concurrent builds get their own tabs, no interleaving). Removed the per-tool `tool.<id>Output`
+      commands + `buildConsoleWindows` map; added `tool.buildOutput`; repurposed `toolwindow.buildOutput` i18n to
+      a plain "Build Output" (×6). The per-tool **tasks** windows are unchanged. Covered by `BuildOutputPanelFxTest`
+      (tab routing) + `BuildOutputWindowFxTest` (window-level) + `BuildCoordinatorFxTest` (shared-panel ctor).
 - [x] Copy/cut current line on empty selection (VS Code `editor.emptySelectionClipboard`) — with no
       selection, `edit.copy`/`edit.cut` act on the whole current line (Cut is one undoable step; last-line cut
       takes the preceding newline so no blank line is left). `EditorBuffer.copyCurrentLine`/`cutCurrentLine`;
