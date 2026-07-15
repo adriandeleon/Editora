@@ -62,6 +62,36 @@ class MultiFileSearchTest {
     }
 
     @Test
+    void regexReplaceIsPerLineLikeThePreview() {
+        // ";$" matches every line's trailing ; in the preview (per-line); replace must do the same, not just
+        // the single end-of-file match a whole-text regex replace would do.
+        SearchQuery q = new SearchQuery(";$", false, true, false);
+        assertEquals(3, MultiFileSearch.matchesInText("a;\nb;\nc;", q).size(), "preview matches every line");
+        MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll("a;\nb;\nc;", q, "X");
+        assertEquals("aX\nbX\ncX", r.text());
+        assertEquals(3, r.count());
+    }
+
+    @Test
+    void regexReplaceNeverSpansALineBreak() {
+        // A cross-line regex matches nothing in the per-line preview; replace must not rewrite across "\n".
+        SearchQuery q = new SearchQuery("foo\nbar", false, true, false);
+        String text = "x foo\nbar y";
+        assertEquals(0, MultiFileSearch.matchesInText(text, q).size());
+        MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll(text, q, "Z");
+        assertEquals(text, r.text(), "no cross-line rewrite");
+        assertEquals(0, r.count());
+    }
+
+    @Test
+    void regexReplacePreservesCrlf() {
+        MultiFileSearch.ReplaceResult r =
+                MultiFileSearch.replaceAll("a;\r\nb;\r\n", new SearchQuery(";$", false, true, false), "X");
+        assertEquals("aX\r\nbX\r\n", r.text());
+        assertEquals(2, r.count());
+    }
+
+    @Test
     void regexAndWholeWordHonored() {
         List<LineMatch> ms =
                 MultiFileSearch.matchesInText("cat cats category cat", new SearchQuery("cat", true, false, true));

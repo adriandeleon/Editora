@@ -47,33 +47,60 @@ public final class MultiFileSearch {
      * Replaces every match of {@code q} in {@code text}. In regex mode the replacement supports
      * capture-group references ({@code $1}/{@code ${name}}, with {@code \} escapes); in literal mode
      * {@code $}/{@code \} are inserted verbatim. A bad group reference is a graceful no-op (text unchanged).
+     *
+     * <p><b>Line-oriented</b>, exactly like {@link #matchesInText} — the matcher runs per line (a trailing
+     * {@code \r} excluded, EOLs preserved), so what Replace All changes is precisely what the search preview
+     * showed. (A whole-text regex replace instead diverged from the per-line preview: {@code ;$} matched every
+     * line in the panel but only once at end-of-file, and a cross-line regex like {@code foo\nbar} matched
+     * nothing in the panel yet rewrote across the newline.)
      */
     public static ReplaceResult replaceAll(String text, SearchQuery q, String replacement) {
         if (text == null) {
             return new ReplaceResult("", 0);
         }
-        List<int[]> matches = SearchMatcher.matches(text, q.text(), q.caseSensitive(), q.regex(), q.wholeWord());
-        if (matches.isEmpty()) {
+        if (q == null || q.text() == null || q.text().isEmpty()) {
             return new ReplaceResult(text, 0);
         }
         String repl = replacement == null ? "" : replacement;
-        if (q.regex()) {
-            java.util.regex.Pattern p = SearchMatcher.compileRegex(q.text(), q.caseSensitive(), q.wholeWord());
-            if (p != null) {
-                try {
-                    return new ReplaceResult(p.matcher(text).replaceAll(repl), matches.size());
-                } catch (RuntimeException badReplacementRef) {
-                    return new ReplaceResult(text, 0); // invalid $-group reference → leave the text untouched
-                }
-            }
+        java.util.regex.Pattern regex =
+                q.regex() ? SearchMatcher.compileRegex(q.text(), q.caseSensitive(), q.wholeWord()) : null;
+        if (q.regex() && regex == null) {
+            return new ReplaceResult(text, 0); // bad pattern → leave the text untouched
         }
-        StringBuilder sb = new StringBuilder(text.length());
+        StringBuilder out = new StringBuilder(text.length());
+        int count = 0;
+        int n = text.length();
         int i = 0;
-        for (int[] m : matches) {
-            sb.append(text, i, m[0]).append(repl);
-            i = m[1];
+        try {
+            while (i <= n) {
+                int nl = text.indexOf('\n', i);
+                int lineEnd = nl < 0 ? n : nl;
+                int contentEnd = lineEnd > i && text.charAt(lineEnd - 1) == '\r' ? lineEnd - 1 : lineEnd;
+                String content = text.substring(i, contentEnd);
+                List<int[]> ms = SearchMatcher.matches(content, q.text(), q.caseSensitive(), q.regex(), q.wholeWord());
+                if (ms.isEmpty()) {
+                    out.append(content);
+                } else if (regex != null) {
+                    out.append(regex.matcher(content).replaceAll(repl)); // honors $1/${name} on this line
+                    count += ms.size();
+                } else {
+                    int last = 0;
+                    for (int[] m : ms) {
+                        out.append(content, last, m[0]).append(repl);
+                        last = m[1];
+                    }
+                    out.append(content, last, content.length());
+                    count += ms.size();
+                }
+                out.append(text, contentEnd, nl < 0 ? n : nl + 1); // preserve this line's \r?\n terminator
+                if (nl < 0) {
+                    break;
+                }
+                i = nl + 1;
+            }
+        } catch (RuntimeException badReplacementRef) {
+            return new ReplaceResult(text, 0); // invalid $-group reference → leave the text untouched
         }
-        sb.append(text, i, text.length());
-        return new ReplaceResult(sb.toString(), matches.size());
+        return new ReplaceResult(out.toString(), count);
     }
 }

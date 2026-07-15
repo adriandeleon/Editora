@@ -48,6 +48,25 @@ class SearchMatcherTest {
     }
 
     @Test
+    void caseInsensitiveRegexFoldsNonAscii() {
+        // Without UNICODE_CASE, CASE_INSENSITIVE only folds ASCII, so "café" wouldn't match "CAFÉ" in regex
+        // mode — while the literal path does. Both must agree.
+        assertRanges(SearchMatcher.matches("CAFÉ", "café", false, true, false), m(0, 4));
+        assertRanges(SearchMatcher.matches("CAFÉ", "café", false, false, false), m(0, 4)); // literal, for parity
+    }
+
+    @Test
+    void wholeWordLiteralUsesRealWordBoundaries() {
+        // A query with a non-word edge char: there IS a \b between "a" and "+", so "+foo" matches "a+foo" —
+        // matching the regex path's \b(?:…)\b and ripgrep -w (the old test required a non-word char outside).
+        assertRanges(SearchMatcher.matches("a+foo", "+foo", true, false, true), m(1, 5));
+        // Both edges non-word ⇒ no boundary after ")", so it correctly does NOT match (like regex \b(?:…)\b).
+        assertRanges(SearchMatcher.matches("call(foo)", "(foo)", true, false, true));
+        // A word-edge query is unchanged: "cat" is still not a whole word inside "xcat".
+        assertRanges(SearchMatcher.matches("xcat cat", "cat", true, false, true), m(5, 8));
+    }
+
+    @Test
     void regexWholeWordWraps() {
         // \b(?:in)\b must not match "inside"
         assertRanges(SearchMatcher.matches("in inside in", "in", true, true, true), m(0, 2), m(10, 12));

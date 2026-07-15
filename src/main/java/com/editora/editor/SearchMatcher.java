@@ -100,7 +100,11 @@ public final class SearchMatcher {
     public static Pattern compileRegex(String query, boolean caseSensitive, boolean wholeWord) {
         String pattern = wholeWord ? "\\b(?:" + (query == null ? "" : query) + ")\\b" : (query == null ? "" : query);
         try {
-            return Pattern.compile(pattern, caseSensitive ? 0 : Pattern.CASE_INSENSITIVE);
+            // UNICODE_CASE so case-insensitive folds non-ASCII too (é↔É) — matching the literal path's
+            // String.regionMatches folding and ripgrep's -i; without it the regex path silently misses
+            // accented/Cyrillic/Greek case variants that the other two backends find.
+            int flags = caseSensitive ? 0 : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+            return Pattern.compile(pattern, flags);
         } catch (PatternSyntaxException e) {
             return null;
         }
@@ -192,10 +196,20 @@ public final class SearchMatcher {
         }
     }
 
+    /**
+     * True word-boundary ({@code \b}) test for a literal match — a boundary exists where the char inside the
+     * match and the char just outside it differ in word-ness. Using {@code \b} semantics (rather than
+     * "the outside char must be a non-word char") keeps literal whole-word in agreement with the regex path's
+     * {@code \b(?:…)\b} and with ripgrep {@code -w} when the query's own edge char is a non-word char (e.g.
+     * {@code +foo} does match in {@code a+foo} — there is a boundary between {@code a} and {@code +}). For a
+     * query with word-char edges (the common case) this is identical to the old test.
+     */
     private static boolean isWordBounded(String text, int start, int end) {
-        boolean leftOk = start == 0 || !isWordChar(text.charAt(start - 1));
-        boolean rightOk = end == text.length() || !isWordChar(text.charAt(end));
-        return leftOk && rightOk;
+        boolean beforeWord = start > 0 && isWordChar(text.charAt(start - 1));
+        boolean firstWord = isWordChar(text.charAt(start));
+        boolean lastWord = isWordChar(text.charAt(end - 1));
+        boolean afterWord = end < text.length() && isWordChar(text.charAt(end));
+        return (beforeWord != firstWord) && (lastWord != afterWord);
     }
 
     private static boolean isWordChar(char c) {
