@@ -88,6 +88,51 @@ class SpellCheckerTest {
     }
 
     @Test
+    void typographicPunctuationDoesNotExemptWordsFromChecking() {
+        // macOS/iOS auto-substitute "--"→"—" and "'"→"’". Those chars used to fail the letters-only token
+        // test, marking the WHOLE token structural — so every word joined by them was silently unchecked.
+        String em = "The results—surprising—showed up.";
+        for (int[] s : SpellChecker.wordSpans(em)) {
+            assertFalse(
+                    SpellChecker.partOfStructuredToken(em, s[0], s[1]),
+                    word(em, s) + " is prose joined by an em dash, not a structured token");
+        }
+        String smart = "The world’s problem";
+        for (int[] s : SpellChecker.wordSpans(smart)) {
+            assertFalse(
+                    SpellChecker.partOfStructuredToken(smart, s[0], s[1]),
+                    word(smart, s) + " is prose with a typographic apostrophe");
+        }
+        // …while real structured tokens are still skipped.
+        assertTrue(structural("https://x/y"));
+        assertTrue(structural("snake_case"));
+    }
+
+    @Test
+    void nonBreakingSpaceSeparatesTokens() {
+        // Character.isWhitespace(U+00A0) is false, so the token walk ran straight through an NBSP and merged
+        // the words either side into one "structural" token — pervasive in pasted text and French typography.
+        String line = "hello\u00A0world"; // a non-breaking space, not a regular one
+        for (int[] s : SpellChecker.wordSpans(line)) {
+            assertFalse(
+                    SpellChecker.partOfStructuredToken(line, s[0], s[1]),
+                    word(line, s) + " is a plain word (NBSP is a token break)");
+        }
+    }
+
+    @Test
+    void typographicApostropheStaysInsideTheWordAndNormalizes() {
+        String line = "isn’t";
+        List<int[]> spans = SpellChecker.wordSpans(line);
+        assertEquals(1, spans.size(), "isn’t is ONE word, not isn + t");
+        assertEquals("isn’t", word(line, spans.get(0)));
+        // …and the lookup normalizes it to the ASCII form the dictionaries actually contain.
+        assertEquals("isn't", SpellChecker.normalizeApostrophes("isn’t"));
+        assertEquals("don't", SpellChecker.normalizeApostrophes("don‘t"));
+        assertEquals("plain", SpellChecker.normalizeApostrophes("plain"));
+    }
+
+    @Test
     void skipsIdentifiersAcronymsNumbersAndShortWords() {
         assertTrue(SpellChecker.skip("a")); // too short
         assertTrue(SpellChecker.skip("getName")); // camelCase
@@ -116,6 +161,17 @@ class SpellCheckerTest {
         assertFalse(c.isMisspelled("zzx")); // ignored this session
 
         assertTrue(c.suggest("teh").contains("the"));
+    }
+
+    @Test
+    void typographicApostropheIsNotFlaggedAgainstTheRealDictionary() {
+        // The .dic spells contractions with an ASCII "'", but editors auto-substitute U+2019 — without
+        // normalization "don’t" would be reported misspelled.
+        assumeTrue(SpellDictionaries.buildBlocking("en_US").isPresent(), "en_US dictionary should build");
+        SpellChecker c = new SpellChecker("en_US", Set.of());
+        assertFalse(c.isMisspelled("don’t"), "don’t normalizes to don't");
+        assertFalse(c.isMisspelled("isn’t"));
+        assertTrue(c.isMisspelled("wrold’s"), "a genuine misspelling is still caught with a smart apostrophe");
     }
 
     @Test
