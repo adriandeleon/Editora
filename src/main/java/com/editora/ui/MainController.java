@@ -2972,16 +2972,24 @@ public class MainController implements com.editora.mcp.McpBridge {
         openPath(file);
         Platform.runLater(() -> {
             EditorBuffer b = activeBuffer();
-            if (b == null
-                    || b.getPath() == null
-                    || !canonicalPath(b.getPath()).equals(canonicalPath(file))
-                    || !activeEditable()) {
+            if (b == null || b.getPath() == null || !canonicalPath(b.getPath()).equals(canonicalPath(file))) {
+                return;
+            }
+            // Say so rather than doing nothing: a TODO in a read-only buffer is common (a .log opens in View
+            // mode, as does anything not writable on disk — i.e. exactly the vendored/generated code a scan
+            // turns up), and a menu click that produced no status, no error and no change looked like a bug.
+            if (!activeEditable()) {
+                setStatus(tr("status.todo.readOnly"));
                 return;
             }
             org.fxmisc.richtext.CodeArea area = b.getArea();
             int idx = line - 1;
             int paragraphs = area.getParagraphs().size();
             if (idx < 0 || idx >= paragraphs) {
+                setStatus(tr("status.todo.lineChanged")); // the file shrank under the scan snapshot
+                if (afterApply != null) {
+                    afterApply.run();
+                }
                 return;
             }
             String current = area.getParagraph(idx).getText();

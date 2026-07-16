@@ -5458,7 +5458,10 @@ public class EditorBuffer implements TabContent {
     }
 
     private boolean jumpTodoMark(boolean forward) {
-        if (todoMatcher == null) {
+        // Same gates as refreshTodoMarks: without them a huge file (where the highlight is deliberately off
+        // and no marks are drawn) still ran the full multi-pattern scan over the whole document on the FX
+        // thread, and jumped to a match the user cannot see.
+        if (todoMatcher == null || !todoEnabled || largeFile) {
             return false;
         }
         java.util.List<TodoMark> marks = todoMatcher.match(area.getText());

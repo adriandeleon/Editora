@@ -22,6 +22,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The TODO tool window's edit actions no longer corrupt the line they rewrite.** Marking a TODO done (or
+  setting its priority, or editing its text) re-emitted the whole comment, which could damage it two ways: a
+  block comment's terminator was treated as part of the TODO's text, so editing the text dropped the closing
+  `*/` and silently commented out everything below it; and a Markdown link right after the keyword was read
+  as a `[tag]`, so re-emitting it inserted a space and broke the link — in a `TODO.md`, exactly where such
+  lines live. HTML `-->` comments were affected too. (From a per-feature audit of TODO highlighting.)
+
+- **Reopening a completed FIXME no longer turns it into a TODO.** Marking an item done overwrites its
+  keyword, so nothing remembers whether it started as a FIXME, HACK or XXX — Reopen simply assumed TODO and
+  silently downgraded it. Reopen now asks which keyword to restore. (From a per-feature audit of TODO
+  highlighting.)
+
+- **A TODO edit on a read-only file now says why nothing happened**, instead of appearing to do nothing at
+  all. Log files and anything not writable on disk open in View mode — which is exactly the generated and
+  vendored code a TODO scan turns up. (From a per-feature audit of TODO highlighting.)
+
+- **Quick-adding a TODO pattern now matches case like the built-in ones do**, so a new `REVIEW` pattern no
+  longer also flags the word "review" in ordinary prose. (From a per-feature audit of TODO highlighting.)
+
+- **Jumping to the next/previous TODO no longer scans a file whose highlighting is deliberately off** (a
+  large file), and a single stale mark can no longer blank every TODO highlight for a frame after a big
+  delete. (From a per-feature audit of TODO highlighting.)
+
 - **Keyboard macros now record Backspace, Delete and the arrow keys.** They were invisible to the recorder —
   the editor handles them itself and no keymap binds them — so they were silently dropped: recording "type x,
   Backspace, type y" replayed as `xy`, and the classic "go to line start, insert something, move down" macro

@@ -39,6 +39,24 @@ import static com.editora.i18n.Messages.tr;
 public final class TodoPanel extends VBox implements ToolWindowContent {
 
     /** Controller callbacks. */
+    /** The keywords offered when reopening a DONE item — the configured patterns, minus DONE itself. */
+    private List<String> keywords = List.of("TODO");
+
+    /** Pushed by the coordinator whenever the patterns are (re)compiled. */
+    void setKeywords(List<String> patternNames) {
+        List<String> out = new ArrayList<>();
+        for (String n : patternNames) {
+            if (n != null && !n.isBlank() && !com.editora.todo.TodoPatterns.DONE_KEYWORD.equals(n)) {
+                out.add(n);
+            }
+        }
+        this.keywords = out.isEmpty() ? List.of("TODO") : List.copyOf(out);
+    }
+
+    private List<String> reopenKeywords() {
+        return keywords;
+    }
+
     public interface Actions {
         void openMatch(Path file, int line, int col);
 
@@ -47,7 +65,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         /** Sets (or clears, when {@code priority} is null) the match's {@code (priority)} in the source. */
         void setPriority(Path file, TodoMatch match, String priority);
 
-        /** Rewrites the match's keyword to {@code DONE} (mark done) or back to {@code TODO} (reopen). */
+        /** Rewrites the match's keyword to {@code DONE} (mark done) or back to a live keyword (reopen). */
         void setKeyword(Path file, TodoMatch match, String keyword);
 
         /** Prompts for and replaces the match's description text in the source. */
@@ -120,7 +138,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
 
         tree.setShowRoot(false);
         tree.setRoot(new TreeItem<>());
-        tree.setCellFactory(t -> new RowCell(actions));
+        tree.setCellFactory(t -> new RowCell(actions, this::reopenKeywords));
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 activateSelected();
@@ -289,9 +307,12 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     /** Renders a group header (label + count, file icon under "by file") or a structured match row. */
     private static final class RowCell extends TreeCell<Row> {
         private final Actions actions;
+        /** Live view of the configured keywords (the panel re-pushes them on every pattern change). */
+        private final java.util.function.Supplier<List<String>> reopenKeywords;
 
-        RowCell(Actions actions) {
+        RowCell(Actions actions, java.util.function.Supplier<List<String>> reopenKeywords) {
             this.actions = actions;
+            this.reopenKeywords = reopenKeywords;
         }
 
         @Override
@@ -321,10 +342,22 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                     com.editora.todo.TodoPatterns.DONE_KEYWORD.equals(m.parsed().keyword());
             javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
 
-            javafx.scene.control.MenuItem doneItem =
-                    new javafx.scene.control.MenuItem(done ? tr("todo.menu.reopen") : tr("todo.menu.markDone"));
-            doneItem.setOnAction(
-                    e -> actions.setKeyword(file, m, done ? "TODO" : com.editora.todo.TodoPatterns.DONE_KEYWORD));
+            // Mark Done overwrites the keyword, and nothing records what it was — so reopening cannot know
+            // whether this line started life as a TODO or a FIXME. It used to assume "TODO", quietly
+            // downgrading every FIXME/HACK/XXX that was ever marked done and reopened. Ask instead.
+            javafx.scene.control.MenuItem doneItem = null;
+            javafx.scene.control.Menu reopenMenu = null;
+            if (done) {
+                reopenMenu = new javafx.scene.control.Menu(tr("todo.menu.reopen"));
+                for (String k : reopenKeywords.get()) {
+                    javafx.scene.control.MenuItem it = new javafx.scene.control.MenuItem(k);
+                    it.setOnAction(e -> actions.setKeyword(file, m, k));
+                    reopenMenu.getItems().add(it);
+                }
+            } else {
+                doneItem = new javafx.scene.control.MenuItem(tr("todo.menu.markDone"));
+                doneItem.setOnAction(e -> actions.setKeyword(file, m, com.editora.todo.TodoPatterns.DONE_KEYWORD));
+            }
 
             javafx.scene.control.Menu priorityMenu = new javafx.scene.control.Menu(tr("todo.menu.priority"));
             for (String p : com.editora.todo.TodoComment.PRIORITY_ORDER) {
@@ -339,7 +372,8 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
             javafx.scene.control.MenuItem editDesc = new javafx.scene.control.MenuItem(tr("todo.menu.editDescription"));
             editDesc.setOnAction(e -> actions.editDescription(file, m));
 
-            menu.getItems().addAll(doneItem, priorityMenu, editDesc);
+            menu.getItems().add(done ? reopenMenu : doneItem);
+            menu.getItems().addAll(priorityMenu, editDesc);
             return menu;
         }
 
