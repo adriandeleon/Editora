@@ -3,6 +3,21 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Completion audit (per-feature bug hunt) — 7 fixes: **42 bundled snippets were unreachable by keyboard**
+      (Tab-expansion scanned only `[A-Za-z0-9_]`, so `#inc`/`!`/`?xml`/`---`/`->` never matched; it now tries
+      the whole non-whitespace token first, falling back to the identifier run); **the post-accept suppression
+      never fired** (a boolean cleared in `Platform.runLater` ≈264 ms before the 280 ms debounce it gated —
+      now stamped against a new `EditorBuffer.docVersion`, so it lasts exactly until the user's next edit);
+      **ghost text spliced casings** (`APP` + `le` = `APPle` — `CompletionEngine.ghostSuffix` now accepts only
+      a word cased like what was typed); **`rankCompare` violated the `Comparator` contract** (the "very close
+      match" nudge read only operand `a` → non-antisymmetric, input-order-dependent ranking, plus a latent
+      TimSort `IllegalArgumentException`); **`MatchHighlighter` indexed a lowercased copy** (`toLowerCase`
+      isn't length-preserving — "İ" → 2 chars — so ranges drifted and could overrun the label the popup cell
+      substrings); and **two async staleness gaps** (auto-import `additionalTextEdits` applied blind after the
+      resolve round-trip; the LSP completion guard trusted caret equality, which an edit can restore).
+      Deferred: honoring an LSP item's own `textEdit.range` on accept (a server whose trigger char is part of
+      its insert text — phpactor's `$` — yields `$$user`), and offering non-identifier snippet prefixes in the
+      *popup* (needs a per-item replace range).
 - [x] Update notifications — checks GitHub `/releases/latest` on startup (once/day, throttled via
       `Settings.lastUpdateCheckEpoch`), gated by `Settings.updateCheck` (default on). Pure `update/UpdateCheck`
       (parseLatest / normalizeVersion / isNewer via `PluginInstaller.compareVersions` / isDue) + `update/UpdateService`

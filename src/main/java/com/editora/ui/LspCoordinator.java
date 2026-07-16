@@ -551,9 +551,19 @@ final class LspCoordinator {
             return null;
         }
         return () -> {
-            if (buffer.getPath() != null) {
-                lspManager.resolveCompletion(buffer.getPath(), item, buffer::applyLspEdits);
+            if (buffer.getPath() == null) {
+                return;
             }
+            // The resolve is a round-trip; its edits carry positions computed against the document as it is
+            // right now (this runs just after the accept's own edit). If the document moves meanwhile — the
+            // user undoes the accept, or edits above the insert point — those positions are stale and
+            // applying them blind writes an import into the wrong place (or for a symbol that's gone).
+            long version = buffer.docVersion();
+            lspManager.resolveCompletion(buffer.getPath(), item, edits -> {
+                if (buffer.docVersion() == version) {
+                    buffer.applyLspEdits(edits);
+                }
+            });
         };
     }
 
