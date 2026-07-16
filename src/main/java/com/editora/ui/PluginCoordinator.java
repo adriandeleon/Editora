@@ -253,26 +253,27 @@ final class PluginCoordinator {
                 ? d.dir()
                 : d.dir().resolve(c.dir).normalize();
         host.setStatus(tr("status.plugins.running", c.title == null || c.title.isBlank() ? c.id : c.title));
-        new Thread(
-                        () -> {
-                            ProcessRunner.Result r;
-                            try {
-                                r = ProcessRunner.run(cwd, Duration.ofSeconds(120), new ArrayList<>(c.run), Map.of());
-                            } catch (RuntimeException e) {
-                                Platform.runLater(() -> host.setStatus(tr("status.plugins.cmdFailed", e.getMessage())));
-                                return;
-                            }
-                            String out = (r.out() + "\n" + r.err()).strip();
-                            if (!out.isBlank()) {
-                                LOG.info("[plugin " + d.id() + "] " + out);
-                            }
-                            Platform.runLater(() -> host.setStatus(
-                                    r.ok()
-                                            ? tr("status.plugins.cmdDone", c.id)
-                                            : tr("status.plugins.cmdFailed", "exit " + r.exit())));
-                        },
-                        "plugin-cmd-" + d.id())
-                .start();
+        Thread t = new Thread(
+                () -> {
+                    ProcessRunner.Result r;
+                    try {
+                        r = ProcessRunner.run(cwd, Duration.ofSeconds(120), new ArrayList<>(c.run), Map.of());
+                    } catch (RuntimeException e) {
+                        Platform.runLater(() -> host.setStatus(tr("status.plugins.cmdFailed", e.getMessage())));
+                        return;
+                    }
+                    String out = (r.out() + "\n" + r.err()).strip();
+                    if (!out.isBlank()) {
+                        LOG.info("[plugin " + d.id() + "] " + out);
+                    }
+                    Platform.runLater(() -> host.setStatus(
+                            r.ok()
+                                    ? tr("status.plugins.cmdDone", c.id)
+                                    : tr("status.plugins.cmdFailed", "exit " + r.exit())));
+                },
+                "plugin-cmd-" + d.id());
+        t.setDaemon(true); // created off the non-daemon FX thread; don't let a running command block JVM exit
+        t.start();
     }
 
     // --- plugin registry (browse / install / uninstall) -----------------------------------------
@@ -413,6 +414,11 @@ final class PluginCoordinator {
             config.savePlugins();
             host.setStatus(tr("status.plugins.installed", r.name()));
         } else {
+            // Declining must DISABLE it: installBytes already moved the new code into place before this gate,
+            // so an *update* whose new capabilities the user rejected would otherwise stay enabled and run the
+            // rejected code on the next launch.
+            config.getPluginStore().setEnabled(r.id(), false);
+            config.savePlugins();
             host.setStatus(tr("status.plugins.notEnabled", r.name()));
         }
         settingsWindow.syncPluginsCheck(); // rebuilds the per-plugin list
