@@ -22,6 +22,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gradle's "Load all tasks…" no longer misses tasks that have no description**, and no longer throws the
+  list away the next time you save. Any task registered without a description — common in real build scripts,
+  and the norm for Gradle's own "Other tasks" — was silently dropped from the enumeration, while the status
+  line still reported the (short) count as a success. And because the task list was rebuilt from scratch on
+  every save, tab switch and window focus, the ~90-second enumeration you just waited for vanished on the next
+  Ctrl+S. (From a per-feature audit of Build Tools.)
+
+- **Loading Gradle's task list no longer leaks it into another project.** Switching projects while the
+  enumeration was running merged the first project's tasks into the second one's tree, where running one fails
+  with "task not found". (From a per-feature audit of Build Tools.)
+
+- **A build wrapper that isn't executable no longer breaks every build.** `mvnw`/`gradlew` are preferred over
+  everything, including your configured command — but a wrapper checked out without its execute bit (a Windows
+  clone, an unzip that dropped modes) was preferred anyway, and every run died with "Permission denied"
+  instead of falling back to `mvn`/`gradle`. On Windows the wrapper is also found now: it was being launched
+  by bare name, which is neither on PATH nor resolved against the project directory. (From a per-feature audit
+  of Build Tools.)
+
+- **A Bun project is no longer run with npm.** Only the legacy binary lockfile (`bun.lockb`) was recognized,
+  so any project using Bun 1.2's default `bun.lock` fell through to npm. (From a per-feature audit of Build
+  Tools.)
+
+- **A build file that fails to parse now says so.** The tasks window showed "No build tool detected" — the
+  opposite of the truth, since the tool's stripe is only there *because* the marker was found — and nothing
+  reported the parse error. (From a per-feature audit of Build Tools.)
+
+- **"Run custom…" no longer throws** if the build file is deleted or renamed while its prompt is open. (From a
+  per-feature audit of Build Tools.)
+
 - **The TODO tool window's edit actions no longer corrupt the line they rewrite.** Marking a TODO done (or
   setting its priority, or editing its text) re-emitted the whole comment, which could damage it two ways: a
   block comment's terminator was treated as part of the TODO's text, so editing the text dropped the closing

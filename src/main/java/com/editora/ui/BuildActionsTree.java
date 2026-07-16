@@ -63,6 +63,8 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     private final Set<String> activeToggles = new LinkedHashSet<>();
 
     private BuildActionsProvider provider;
+    /** Placeholder text for a null provider (null ⇒ the generic "nothing detected"). */
+    private String emptyMessage;
 
     /** The sections currently on screen — lets {@link #setProvider} skip a no-op re-root (see its javadoc). */
     private List<BuildAction.Section> rendered;
@@ -158,7 +160,18 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
      * </ul>
      */
     public void setProvider(BuildActionsProvider provider) {
+        setProvider(provider, null);
+    }
+
+    /**
+     * As {@link #setProvider(BuildActionsProvider)}, but with the message to show when there is nothing to
+     * render. A null provider means either "no build file here" or "the build file is broken" — the tree used
+     * to say "No build tool detected" for both, which is actively wrong for the second: the stripe is only
+     * visible *because* a marker was found.
+     */
+    public void setProvider(BuildActionsProvider provider, String emptyMessage) {
         this.provider = provider;
+        this.emptyMessage = emptyMessage;
         if (provider == null) {
             activeToggles.clear();
             rendered = null;
@@ -199,7 +212,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
 
     private void rebuild(List<BuildAction.Section> sections) {
         boolean has = provider != null && sections != null;
-        placeholder.setText(tr("buildtree.empty"));
+        placeholder.setText(emptyMessage != null ? emptyMessage : tr("buildtree.empty"));
         placeholder.setVisible(!has);
         tree.setVisible(has);
         if (!has) {

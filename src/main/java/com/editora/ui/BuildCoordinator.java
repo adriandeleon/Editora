@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +61,10 @@ final class BuildCoordinator {
 
     /** The nearest detected marker-file directory for the current context, or {@code null}. */
     private Path markerRoot;
+    /** Gradle's on-demand task list + the root it was enumerated for, so a re-detect can restore it. */
+    private Path loadedTasksRoot;
+
+    private List<String> loadedTasks = List.of();
     /** The provider built from the parsed marker file, or {@code null} (absent/malformed). */
     private BuildActionsProvider provider;
     /** A short label for the detected project (Maven artifactId / npm name), or {@code null}. */
@@ -194,7 +199,16 @@ final class BuildCoordinator {
         this.markerRoot = root;
         this.provider = parsed;
         this.detectedLabel = label;
-        tree.setProvider(parsed); // rebuild the tasks tree (null = placeholder when absent/malformed)
+        // Every detect builds a FRESH provider, and detect re-runs on tab switch / focus-regain / every save
+        // — which silently threw away the tasks the user waited ~90s for "Load all tasks…" to enumerate
+        // (Ctrl+S was enough to make the All-tasks section vanish). Re-apply them for the same root.
+        if (parsed != null && root != null && root.equals(loadedTasksRoot) && !loadedTasks.isEmpty()) {
+            parsed.addLoadedTasks(loadedTasks);
+        }
+        // A marker that exists but doesn't parse is not the same as no marker at all: the stripe stays (the
+        // root is real), so the tree must say the build file is broken rather than "no build tool detected".
+        tree.setProvider(
+                parsed, root != null && parsed == null ? tr("status.build.malformed", tool.displayName()) : null);
         ops.setToolWindowsAvailable(isEnabled() && root != null);
     }
 
@@ -242,6 +256,9 @@ final class BuildCoordinator {
             host.setStatus(tr("status.build.busy", tool.displayName()));
             return;
         }
+        // Capture the root now: the prompt is an in-scene overlay, so a focus-regain can re-detect (and null
+        // markerRoot, e.g. the pom was deleted meanwhile) while it is open — executable(null) then NPEs.
+        Path root = markerRoot;
         host.promptText(
                 tr("dialog.buildCustom.title", tool.displayName()), tr("dialog.buildCustom.label"), "", text -> {
                     if (text == null || text.isBlank()) {
@@ -251,9 +268,13 @@ final class BuildCoordinator {
                     if (tokens.isEmpty()) {
                         return;
                     }
-                    List<String> argv = new ArrayList<>(executable(markerRoot));
+                    if (!Files.isDirectory(root)) {
+                        host.setStatus(tr("status.build.notDetected", tool.displayName()));
+                        return;
+                    }
+                    List<String> argv = new ArrayList<>(executable(root));
                     argv.addAll(tokens);
-                    launch(markerRoot, argv, tokens, List.of());
+                    launch(root, argv, tokens, List.of());
                 });
     }
 
@@ -344,6 +365,7 @@ final class BuildCoordinator {
             return;
         }
         Path root = markerRoot;
+        int gen = detectGeneration;
         String override = tool.commandIn(host.settings());
         host.setStatus(tr("status.build.loadingTasks", tool.displayName()));
         Thread t = new Thread(
@@ -356,6 +378,14 @@ final class BuildCoordinator {
                     }
                     List<String> finalTasks = tasks;
                     Platform.runLater(() -> {
+                        // Guard like refresh() does: this can take ~90s, and the callback used to read the
+                        // CURRENT provider — so switching to another Gradle project meanwhile merged this
+                        // project's task names into that one's tree, where running one fails "task not found".
+                        if (gen != detectGeneration || !root.equals(markerRoot)) {
+                            return;
+                        }
+                        loadedTasksRoot = root;
+                        loadedTasks = List.copyOf(finalTasks);
                         if (provider != null) {
                             provider.addLoadedTasks(finalTasks); // mutate the shared provider once…
                             tree.refreshFromProvider(); // …then re-render both views over it
