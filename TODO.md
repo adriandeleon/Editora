@@ -3,6 +3,45 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] TODO-highlighting audit (per-feature bug hunt) — 7 fixes, the top three in the code that **rewrites the
+      user's source line**: `TodoComment.parse` swept a **block-comment terminator** into the description, so
+      `withDescription` on a `/*  TODO: x  */` line emitted it back without the closer — an unterminated
+      comment silently commenting out the rest of the file (new shared `TodoComment.closerStart`, honored by
+      `parse` *and* re-appended by `TodoEdit.rebuild`; covers `*/` + `-->`); a **Markdown link**
+      `[label](url)` after the keyword parsed as a `[tag]`, and the canonical re-emit injected a space that
+      broke it (a `]` followed by `(` is never a tag now) — this fires on a plain "Mark Done" in a TODO.md;
+      and **Reopen hardcoded "TODO"**, silently downgrading every FIXME/HACK/XXX ever marked done (mark-done
+      destroys the keyword, so Reopen is now a submenu of the configured keywords, pushed from
+      `applyHighlight`). Plus: `applyTodoLineEdit` returned bare on a read-only buffer (no status, no
+      re-scan → looked broken; new `status.todo.readOnly` ×6) and on an out-of-range line; `todo.addPattern`
+      quick-added with `caseSensitive=false` while every `defaults()` entry uses true; `jumpTodoMark`
+      bypassed the `todoEnabled`/`largeFile` gates (a full FX-thread scan of a file showing no marks); and
+      `TodoHighlightOverlay.redraw` wrapped the *whole* mark loop in one try/catch, so one stale
+      out-of-range mark blanked every highlight for the frame (now per-mark + a length clamp).
+      **Not reproducible — dropped:** the audit flagged user-regex ReDoS on the FX thread as CONFIRMED, but
+      JDK 25's engine defeated every textbook pattern tried (`(x+x+)+y`, `(a+)+$`, `(a|aa)+$`,
+      `([a-zA-Z]+)*$` — all sub-millisecond, raw `Pattern` too); `(.*a){25}` costs a flat ~300 ms whatever the
+      input length, i.e. JIT warmup, not backtracking. Verified-clean: TodoScanner zero-length/CRLF/col
+      round-trip/document order, TodoComment bounds, TodoPatterns.compile, TodoGrouping comparators,
+      TodoService caps + generation guard, the stale-snapshot check, canvas discipline.
+- [x] Macros audit (per-feature bug hunt) — 7 fixes, two of them core: **Backspace/Delete/arrows/Home/End
+      were invisible to the recorder** (the area handles them natively, *no* bundled keymap binds them, and
+      `isRecordableChar` rejects 0x08 — so neither hook saw them and `x Backspace y` replayed as `xy`; new
+      `MacroStep.KEY` kind + the pure `MacroKey` codec (`S-DOWN`/`C-LEFT` carry modifiers, since the area acts
+      on those too) + `KeyDispatcher.setKeyListener` at the unbound-key fall-through + `EditorBuffer.pressKey`
+      re-dispatching a real event so the Backspace filters run); and **both capture hooks were scene-wide**
+      (they are scene filters → they saw the palette's/find bar's own typing, recorded it as TEXT, and replay
+      typed it into the document — new `setRecordTarget` gate + `EditorBuffer.ownsKeyTarget`). Plus:
+      `onCommand`'s `macro.` prefix also swallowed `macro.run.*` (macro composition silently dropped —
+      recursion is the player guard's job, not the recorder's); a rename keeping the slug (`build`→`Build`)
+      **destroyed the keybinding** (`reset(oldId)` ran after `rebind(newId)` on the *same* id — now
+      id-compared and reset-before-rebind); **slug collisions** (`my macro`/`my-macro`, any symbol-only name →
+      `macro`) registered one `macro.run.<id>` twice, last-write-wins, shadowing a macro (now refused via
+      `MacroService.slugClash` + `settings.macro.idExists`); `replayLastN` took an unbounded count (FX-thread
+      freeze → `MAX_REPLAY_TIMES`); `run()` reported success for a replay the re-entrancy guard had dropped
+      (`play` returns a boolean now); `runSaved` did not finalize an in-progress recording. Deferred → #449
+      (nested-command record order, latent). Verified-clean: the `playing` guard's `finally`, replay never
+      re-recorded, no assist double-application, persistence, multi-window broadcast, recorder lifecycle.
 - [x] Markdown audit (per-feature bug hunt) — 7 fixes: **`MarkdownTable.blockBounds` threw at caret 0 of a
       doc starting with `\n`** (the `Math.max(0, caret-1)` clamp made `lastIndexOf` find the leading newline →
       `substring(1,0)`; it runs on *every* Enter/Tab in a Markdown buffer, so the keystroke was swallowed);

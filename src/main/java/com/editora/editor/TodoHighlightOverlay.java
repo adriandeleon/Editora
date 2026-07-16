@@ -136,26 +136,37 @@ final class TodoHighlightOverlay extends Region {
             int firstOffset = area.getAbsolutePosition(first, 0);
             int lastOffset = area.getAbsolutePosition(
                     last, area.getParagraph(last).getText().length());
+            int len = area.getLength();
             for (TodoMark m : marks) {
                 int spanEnd = Math.max(m.end(), Math.max(m.tagEnd(), m.priEnd()));
                 if (spanEnd < firstOffset || m.start() > lastOffset) {
                     continue; // off-screen — cheap reject before the costly offset→position conversion
                 }
-                paintSpan(g, m.start(), m.end(), washColor(m.colorWeb()), null, first, last, w, h);
-                if (m.hasTag()) {
-                    paintSpan(
-                            g,
-                            m.tagStart(),
-                            m.tagEnd(),
-                            washColor(m.tagColorWeb()),
-                            solidColor(m.tagColorWeb()),
-                            first,
-                            last,
-                            w,
-                            h);
+                if (spanEnd > len) {
+                    continue; // stale: an edit shrank the document since the marks were computed
                 }
-                if (m.hasPriority() && m.priColorWeb() != null) {
-                    paintSpan(g, m.priStart(), m.priEnd(), washColor(m.priColorWeb()), null, first, last, w, h);
+                // Guard per mark, not per frame. Marks refresh on the 300 ms pulse but we repaint on every
+                // edit, so one mark left past the end used to throw out of the whole loop — blanking every
+                // remaining highlight until the next pulse.
+                try {
+                    paintSpan(g, m.start(), m.end(), washColor(m.colorWeb()), null, first, last, w, h);
+                    if (m.hasTag()) {
+                        paintSpan(
+                                g,
+                                m.tagStart(),
+                                m.tagEnd(),
+                                washColor(m.tagColorWeb()),
+                                solidColor(m.tagColorWeb()),
+                                first,
+                                last,
+                                w,
+                                h);
+                    }
+                    if (m.hasPriority() && m.priColorWeb() != null) {
+                        paintSpan(g, m.priStart(), m.priEnd(), washColor(m.priColorWeb()), null, first, last, w, h);
+                    }
+                } catch (RuntimeException ignored) {
+                    // This mark no longer maps to a position — skip it, keep painting the rest.
                 }
             }
         } catch (RuntimeException ignored) {

@@ -99,4 +99,15 @@ class TodoCommentTest {
         assertEquals(
                 TodoComment.PRIORITY_ORDER.size(), parse("TODO plain", "TODO").priorityRank()); // no priority = last
     }
+
+    @Test
+    void closerStartFindsOnlyATrailingTerminator() {
+        assertEquals(10, TodoComment.closerStart("/* TODO x */"));
+        assertEquals(10, TodoComment.closerStart("/* TODO x */  "), "trailing spaces do not hide it");
+        assertEquals(22, TodoComment.closerStart("<!-- TODO [ui] polish -->"));
+        assertEquals(-1, TodoComment.closerStart("// TODO handle the */ token"), "mid-line is not a terminator");
+        assertEquals(-1, TodoComment.closerStart("// TODO plain"));
+        assertEquals(-1, TodoComment.closerStart(""));
+        assertEquals(-1, TodoComment.closerStart(null));
+    }
 }

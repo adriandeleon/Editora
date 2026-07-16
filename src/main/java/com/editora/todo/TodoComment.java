@@ -69,6 +69,11 @@ public record TodoComment(
                 if (close < 0) {
                     break;
                 }
+                if (close + 1 < n && lineText.charAt(close + 1) == '(') {
+                    break; // a Markdown link "[label](url)" — not a tag; leave the whole thing in the
+                    // description. Claiming it split the link across the canonical re-emit
+                    // ("[label] (url)") and silently broke it on the next edit action.
+                }
                 String content = lineText.substring(j + 1, close).trim();
                 if (content.isEmpty()) {
                     break; // an empty [] isn't a tag — leave it in the description
@@ -99,7 +104,10 @@ public record TodoComment(
         while (ds < n && Character.isWhitespace(lineText.charAt(ds))) {
             ds++;
         }
-        int de = n;
+        int de = closerStart(lineText); // the trailing */ or --> belongs to the line, not the description
+        if (de < 0) {
+            de = n;
+        }
         while (de > ds && Character.isWhitespace(lineText.charAt(de - 1))) {
             de--;
         }
@@ -118,6 +126,34 @@ public record TodoComment(
                 priorityEnd,
                 descriptionStart,
                 descriptionEnd);
+    }
+
+    /** Block-comment terminators a TODO line can end with, which are part of the comment, not its text. */
+    private static final List<String> CLOSERS = List.of("*/", "-->");
+
+    /**
+     * The index at which {@code lineText}'s trailing block-comment terminator begins ({@code /* TODO x *}{@code /}
+     * → the index of {@code *}{@code /}), or {@code -1} when the line doesn't end with one.
+     *
+     * <p>Shared by {@link #parse} (which keeps it out of the description) and {@link TodoEdit#rebuild} (which
+     * re-appends it), so a rewrite can't drop it. It used to land in the description: editing the description
+     * of {@code /*}{@code  TODO: x *}{@code /} then emitted {@code /*}{@code  TODO <new text>} — an unterminated
+     * block comment, silently commenting out everything below it.
+     */
+    public static int closerStart(String lineText) {
+        if (lineText == null) {
+            return -1;
+        }
+        int end = lineText.length();
+        while (end > 0 && Character.isWhitespace(lineText.charAt(end - 1))) {
+            end--;
+        }
+        for (String closer : CLOSERS) {
+            if (end >= closer.length() && lineText.startsWith(closer, end - closer.length())) {
+                return end - closer.length();
+            }
+        }
+        return -1;
     }
 
     public boolean hasTag() {

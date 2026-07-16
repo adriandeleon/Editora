@@ -30,6 +30,13 @@ public final class TodoEdit {
         if (description != null && !description.isEmpty()) {
             sb.append(' ').append(description);
         }
+        // Re-append the line's block-comment terminator: it belongs to the comment, not to the text we
+        // re-emit (see TodoComment.closerStart). Dropping it left an unterminated /* … , silently commenting
+        // out everything below it.
+        int closer = TodoComment.closerStart(lineText);
+        if (closer >= 0) {
+            sb.append(' ').append(lineText.substring(closer).strip());
+        }
         return sb.toString();
     }
 

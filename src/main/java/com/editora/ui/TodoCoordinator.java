@@ -197,6 +197,12 @@ final class TodoCoordinator {
                 s.getTodoPriorityLowColor());
         matcher = text -> toTodoMarks(TodoScanner.scan(text, compiled), partColors);
         host.forEachBuffer(this::applyToBuffer);
+        // The panel offers these when reopening a DONE item (mark-done overwrote whatever it was).
+        List<String> names = new ArrayList<>();
+        for (TodoPatterns.Compiled c : compiled) {
+            names.add(c.name());
+        }
+        panel.setKeywords(names);
         refreshPanelIfOpen();
     }
 
@@ -327,7 +333,10 @@ final class TodoCoordinator {
                 }
                 Settings s = host.settings();
                 List<TodoPattern> list = new ArrayList<>(s.getTodoPatterns());
-                list.add(new TodoPattern(name.strip(), regex.strip(), TodoPatterns.DEFAULT_COLOR, false, true));
+                // caseSensitive=true, like every pattern in TodoPatterns.defaults(): a quick-added \bREVIEW\b
+                // matching "review" in ordinary prose is not what the built-ins do, and a case-insensitive
+                // \bDONE\b would break the panel's exact-case done detection.
+                list.add(new TodoPattern(name.strip(), regex.strip(), TodoPatterns.DEFAULT_COLOR, true, true));
                 s.setTodoPatterns(list);
                 host.requestSave();
                 applyHighlight();
