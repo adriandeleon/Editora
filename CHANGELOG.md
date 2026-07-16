@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Running an External Tool on a remote (SFTP) file no longer hangs the app.** The tool tried to launch a
+  local process in the remote file's directory, which can't work; the "Running…" status hung forever with no
+  output. External Tools are now disabled for remote buffers with a clear message. (From a per-feature audit of
+  the Remote/SFTP feature.)
+
+- **A remote file that was open when you quit no longer reopens the wrong local file on restart.** The session
+  stored the bare path (dropping the `sftp://` host), so on the next launch a same-named local file could be
+  opened in its place; remote entries are now stored as their full URI and skipped on restart until you
+  reconnect (matching Recent Files).
+
+- **Failed SSH logins and reconnects no longer leak connections.** A wrong password left the SSH session open,
+  and reconnecting the same host stranded the previous filesystem; both are now closed.
+
+- **Remote hosts given as bracketed IPv6 literals** (`sftp://[::1]:2222/…`) now parse and round-trip correctly.
+
 - **Replace All in Find-in-Files now changes exactly what the search preview showed.** The results list matches
   line by line, but Replace All applied a regex over the *whole file* — so `;$` previewed a hit on every line
   but only replaced the last one, and a cross-line pattern like `foo\nbar` previewed nothing yet rewrote across

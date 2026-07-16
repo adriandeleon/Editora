@@ -74,7 +74,10 @@ public final class RemoteFileSystems {
             Result result;
             try {
                 SftpFileSystem fs = open(conn, secret);
-                byAuthority.put(conn.id(), fs);
+                SftpFileSystem prev = byAuthority.put(conn.id(), fs);
+                if (prev != null && prev != fs) {
+                    closeQuietly(prev); // reconnecting the same site: don't leak the previous filesystem
+                }
                 String start = conn.lastPath() != null && !conn.lastPath().isBlank() ? conn.lastPath() : ".";
                 result = new Result(true, fs.getPath(start), null); // "." resolves to the SFTP home dir
             } catch (Exception e) {
@@ -93,22 +96,36 @@ public final class RemoteFileSystems {
         ClientSession session = client.connect(conn.user(), conn.host(), conn.port())
                 .verify(CONNECT_TIMEOUT)
                 .getSession();
-        switch (conn.auth()) {
-            case PASSWORD -> {
-                if (secret != null) {
-                    session.addPasswordIdentity(new String(secret));
+        try {
+            switch (conn.auth()) {
+                case PASSWORD -> {
+                    if (secret != null) {
+                        session.addPasswordIdentity(new String(secret));
+                    }
+                }
+                case KEY -> session.setKeyIdentityProvider(keyProvider(List.of(Path.of(conn.keyPath())), secret));
+                case DEFAULT_KEYS -> {
+                    List<Path> keys = defaultKeyFiles();
+                    if (!keys.isEmpty()) {
+                        session.setKeyIdentityProvider(keyProvider(keys, secret));
+                    }
                 }
             }
-            case KEY -> session.setKeyIdentityProvider(keyProvider(List.of(Path.of(conn.keyPath())), secret));
-            case DEFAULT_KEYS -> {
-                List<Path> keys = defaultKeyFiles();
-                if (!keys.isEmpty()) {
-                    session.setKeyIdentityProvider(keyProvider(keys, secret));
-                }
-            }
+            session.auth().verify(AUTH_TIMEOUT);
+            // On success the SftpFileSystem owns the session (closing the FS closes it).
+            return SftpClientFactory.instance().createSftpFileSystem(session);
+        } catch (IOException | RuntimeException e) {
+            session.close(true); // failed auth / FS creation: close the session so it isn't leaked
+            throw e;
         }
-        session.auth().verify(AUTH_TIMEOUT);
-        return SftpClientFactory.instance().createSftpFileSystem(session);
+    }
+
+    private static void closeQuietly(java.io.Closeable c) {
+        try {
+            c.close();
+        } catch (Exception ignored) {
+            // best-effort
+        }
     }
 
     private static KeyIdentityProvider keyProvider(List<Path> files, char[] passphrase) {

@@ -56,4 +56,31 @@ class SftpUriTest {
         assertNull(SftpUri.parse("sftp://")); // no host
         assertNull(SftpUri.parse("sftp://h:notaport/x")); // bad port
     }
+
+    @Test
+    void bracketedIpv6HostWithPort() {
+        SftpUri u = SftpUri.parse("sftp://ada@[::1]:2222/srv/app.js");
+        assertEquals("::1", u.host());
+        assertEquals(2222, u.port());
+        assertEquals("ada", u.user());
+        assertEquals("/srv/app.js", u.path());
+        assertEquals("ada@[::1]:2222", u.authority());
+        assertEquals("sftp://ada@[::1]:2222/srv/app.js", u.format(), "round-trips with brackets");
+    }
+
+    @Test
+    void bracketedIpv6HostDefaultPort() {
+        SftpUri u = SftpUri.parse("sftp://[fe80::1]/etc/hosts");
+        assertEquals("fe80::1", u.host());
+        assertEquals(22, u.port());
+        assertEquals("sftp://[fe80::1]/etc/hosts", u.format());
+        assertEquals("[fe80::1]:22", u.authority());
+    }
+
+    @Test
+    void rejectsMalformedIpv6() {
+        assertNull(SftpUri.parse("sftp://[::1")); // unclosed bracket
+        assertNull(SftpUri.parse("sftp://[::1]x/y")); // junk after ]
+        assertNull(SftpUri.parse("sftp://[::1]:bad/y")); // bad port
+    }
 }
