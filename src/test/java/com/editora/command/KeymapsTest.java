@@ -111,6 +111,41 @@ class KeymapsTest {
         }
     }
 
+    /**
+     * Every token's key-part must be something {@code KeyDispatcher.chord()} can actually emit — else the
+     * binding is dead (nothing ever produces that token). {@code chord()} lowercases letters and expresses
+     * Shift as a separate {@code S-} prefix, so a bare uppercase letter (e.g. {@code "L"}, should be
+     * {@code "S-l"}) or a shifted-punctuation glyph (e.g. {@code "?"}, should be {@code "S-/"}) is never
+     * produced. Guards the {@code M-?}/{@code M-g L} class of dead binding.
+     */
+    @Test
+    void everyChordKeyPartIsProducibleByTheDispatcher() {
+        String shiftGlyphs = "?!@#$%^&*()_+{}|:\"<>~";
+        for (String resource : allKeymapResources()) {
+            for (String sequence : load(resource).keySet()) {
+                for (String token : sequence.split(" ")) {
+                    String key = token;
+                    for (String mod : MOD_ORDER) {
+                        if (key.startsWith(mod)) {
+                            key = key.substring(mod.length());
+                        }
+                    }
+                    if (key.length() == 1) {
+                        char c = key.charAt(0);
+                        assertFalse(
+                                c >= 'A' && c <= 'Z',
+                                resource + ": token '" + token + "' uses uppercase '" + c
+                                        + "' — chord() lowercases letters; use S-" + Character.toLowerCase(c));
+                        assertFalse(
+                                shiftGlyphs.indexOf(c) >= 0,
+                                resource + ": token '" + token + "' uses shift-glyph '" + c
+                                        + "' which chord() never emits (use S-<unshifted key>)");
+                    }
+                }
+            }
+        }
+    }
+
     @Test
     void guiKeymapsBindSameCommandSetOnBothPlatforms() {
         for (String id : GUI) {

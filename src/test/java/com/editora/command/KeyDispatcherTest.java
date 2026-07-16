@@ -37,6 +37,63 @@ class KeyDispatcherTest {
     }
 
     @Test
+    void shiftedPunctuationIsSBaseKeyNotTheGlyph() {
+        // "?" is Shift+SLASH → "S-/", never "?" (so the Emacs find-references binding must be "M-S-/").
+        assertEquals("M-S-/", KeyDispatcher.chord(press(KeyCode.SLASH, true, false, true, false)));
+    }
+
+    @Test
+    void numpadDigitProducesThePlainDigitToken() {
+        // A numpad digit must map to "6" (matching the M-1…M-9 chords), not "Numpad 6" (unmatchable + a space).
+        assertEquals("M-6", KeyDispatcher.chord(press(KeyCode.NUMPAD6, false, false, true, false)));
+        assertEquals("M-6", KeyDispatcher.chord(press(KeyCode.DIGIT6, false, false, true, false)));
+    }
+
+    // --- KEY_TYPED swallow rule (a bound chord's char is eaten; an unbound Option glyph is not) ---
+
+    private static KeyDispatcher dispatcher() {
+        KeymapManager km = new KeymapManager();
+        km.loadNamed("emacs", false); // C-t is bound to edit.transposeChars
+        return new KeyDispatcher(new CommandRegistry(), km, s -> {});
+    }
+
+    private static KeyEvent typed(String ch, boolean alt) {
+        return new KeyEvent(KeyEvent.KEY_TYPED, ch, "", KeyCode.UNDEFINED, false, false, alt, false);
+    }
+
+    @Test
+    void pairedKeyTypedIsSwallowedAfterAConsumedChord() {
+        KeyDispatcher d = dispatcher();
+        KeyEvent p = press(KeyCode.T, false, true, false, false); // C-t
+        d.handle(p);
+        assertTrue(p.isConsumed(), "a bound chord consumes its press");
+        KeyEvent t = typed("", false);
+        d.handleTyped(t);
+        assertTrue(t.isConsumed(), "the paired KEY_TYPED must still be swallowed so C-t doesn't also type");
+    }
+
+    @Test
+    void normalTypedCharIsNotSwallowed() {
+        KeyDispatcher d = dispatcher();
+        KeyEvent p = press(KeyCode.A, false, false, false, false); // lone unbound 'a'
+        d.handle(p);
+        assertFalse(p.isConsumed(), "a lone unbound key falls through");
+        KeyEvent t = typed("a", false);
+        d.handleTyped(t);
+        assertFalse(t.isConsumed(), "normal typing is not swallowed");
+    }
+
+    @Test
+    void unboundOptionCharIsNotSwallowed() {
+        // No consumed press → an Alt/Option-produced glyph (macOS accented/symbol input) must pass through.
+        // The old code unconditionally ate it on macOS, breaking Option input.
+        KeyDispatcher d = dispatcher();
+        KeyEvent t = typed("ƒ", true); // e.g. Option+f producing "ƒ", but unbound
+        d.handleTyped(t);
+        assertFalse(t.isConsumed(), "an unbound Option/Alt character must reach the editor");
+    }
+
+    @Test
     void modifierOnlyEventHasNoChord() {
         assertNull(KeyDispatcher.chord(press(KeyCode.CONTROL, false, true, false, false)));
     }
