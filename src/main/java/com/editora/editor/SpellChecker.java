@@ -26,7 +26,9 @@ public final class SpellChecker {
     public SpellChecker(String langId, Set<String> userWords) {
         this.langId = langId;
         this.userWords = userWords == null ? new HashSet<>() : userWords;
-        SpellDictionaries.ensureBuilt(langId, null);
+        // Deliberately NOT ensureBuilt() here: every EditorBuffer constructs a SpellChecker, so building from
+        // the ctor spent ~200 ms of startup CPU + ~1 MB retained per language even with spell check OFF.
+        // setSpellCheckEnabled(true) and setLanguage() both already trigger the build when it's actually needed.
     }
 
     public void setLanguage(String langId, Runnable onReady) {
@@ -74,7 +76,10 @@ public final class SpellChecker {
         if (skip(word)) {
             return false;
         }
-        String lower = word.toLowerCase(Locale.ROOT);
+        // The dictionaries (and user words) spell "don't" with an ASCII apostrophe, but macOS/iOS
+        // auto-substitute U+2019 — normalize so "don’t" isn't reported as a misspelling.
+        String normalized = normalizeApostrophes(word);
+        String lower = normalized.toLowerCase(Locale.ROOT);
         if ((userWordsEnabled && userWords.contains(lower)) || ignored.contains(lower)) {
             return false;
         }
@@ -85,7 +90,43 @@ public final class SpellChecker {
         if (h == null) {
             return false;
         }
-        return !h.spell(word);
+        return !h.spell(normalized);
+    }
+
+    /** Replaces the typographic apostrophes editors auto-substitute with the ASCII {@code '} the dictionaries
+     *  actually contain, so {@code don’t} matches {@code don't}. Pure. */
+    static String normalizeApostrophes(String s) {
+        if (s == null || (s.indexOf('’') < 0 && s.indexOf('‘') < 0)) {
+            return s;
+        }
+        return s.replace('’', '\'').replace('‘', '\'');
+    }
+
+    /** An apostrophe that can sit inside a word — ASCII plus the typographic ones auto-substituted on
+     *  macOS/iOS ({@code don’t}). */
+    private static boolean isApostrophe(char c) {
+        return c == '\'' || c == '’' || c == '‘';
+    }
+
+    /** A hyphen/dash that joins words in prose. Includes the em/en dashes editors auto-substitute for
+     *  {@code --}/{@code -}, plus the soft hyphen — none of which make a token "structural". */
+    private static boolean isDash(char c) {
+        return c == '-'
+                || c == '‐' // hyphen
+                || c == '‑' // non-breaking hyphen
+                || c == '‒' // figure dash
+                || c == '–' // en dash
+                || c == '—' // em dash
+                || c == '−' // minus sign
+                || c == '­'; // soft hyphen
+    }
+
+    /** A character that ends a whitespace-bounded token. {@link Character#isWhitespace} is NOT enough: it
+     *  reports {@code false} for NBSP (U+00A0), which is pervasive in pasted text and required by French
+     *  typography — without this the words either side of an NBSP merge into one "structural" token and are
+     *  never checked. */
+    private static boolean isTokenBreak(char c) {
+        return Character.isWhitespace(c) || Character.isSpaceChar(c);
     }
 
     /** Up to a handful of suggestions for a misspelled word (empty if the dictionary isn't ready). */
@@ -130,7 +171,7 @@ public final class SpellChecker {
     /** Wrapping punctuation trimmed from a whitespace token's ends before judging it (quotes, brackets,
      *  sentence punctuation, Markdown emphasis). Notably excludes {@code / \\ @ _ = ~} and {@code -}: those
      *  are part of the token's structure (or intra-word), not edge decoration. */
-    private static final String EDGE = "\"'`()[]{}<>,;:.!?*#|…‘’“”";
+    private static final String EDGE = "\"'`()[]{}<>,;:.!?*#|…‘’“”«»";
 
     /**
      * Whether the letter run {@code [start, end)} is part of a URL, file path, e-mail, or
@@ -149,10 +190,10 @@ public final class SpellChecker {
         }
         int ts = start;
         int te = end;
-        while (ts > 0 && !Character.isWhitespace(line.charAt(ts - 1))) {
+        while (ts > 0 && !isTokenBreak(line.charAt(ts - 1))) {
             ts--;
         }
-        while (te < line.length() && !Character.isWhitespace(line.charAt(te))) {
+        while (te < line.length() && !isTokenBreak(line.charAt(te))) {
             te++;
         }
         while (ts < te && EDGE.indexOf(line.charAt(ts)) >= 0) {
@@ -163,7 +204,7 @@ public final class SpellChecker {
         }
         for (int k = ts; k < te; k++) {
             char c = line.charAt(k);
-            if (!Character.isLetter(c) && c != '-' && c != '\'') {
+            if (!Character.isLetter(c) && !isDash(c) && !isApostrophe(c)) {
                 return true;
             }
         }
@@ -194,14 +235,14 @@ public final class SpellChecker {
                 char ch = line.charAt(end);
                 if (Character.isLetter(ch)) {
                     end++;
-                } else if (ch == '\'' && end + 1 < n && Character.isLetter(line.charAt(end + 1))) {
-                    end++; // apostrophe between letters stays in the word
+                } else if (isApostrophe(ch) && end + 1 < n && Character.isLetter(line.charAt(end + 1))) {
+                    end++; // apostrophe between letters stays in the word (incl. the typographic "don’t")
                 } else {
                     break;
                 }
             }
             // Trim a trailing apostrophe that slipped in (shouldn't, given the look-ahead, but be safe).
-            while (end > start && line.charAt(end - 1) == '\'') {
+            while (end > start && isApostrophe(line.charAt(end - 1))) {
                 end--;
             }
             if (end > start) {

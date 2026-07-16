@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Spell check no longer squiggles inside Markdown fenced code blocks.** The "skip ``` code fences" rule was
+  never actually switched on (it was decided before the file's language was known), so opening a README put red
+  squiggles on `sudo`, `cd`, `xzf` and friends inside its code blocks. (From a per-feature audit of Spell
+  Check.)
+
+- **Spell check no longer skips whole phrases joined by typographic punctuation.** A sentence using an em dash
+  (`results—surprising—showed`), a smart apostrophe (`world’s`), or a non-breaking space had *every* word in
+  that run silently left unchecked — and since macOS/iOS auto-substitute `--`→`—` and `'`→`’`, that's ordinary
+  typed prose. Those characters are now understood as part of the word, and `don’t` is matched against the
+  dictionary's `don't` rather than being reported as a misspelling. Non-breaking spaces (pervasive in pasted
+  text, and required by French typography) now separate words properly.
+
+- **Editora no longer builds the spell-check dictionary at startup when spell check is turned off** — it cost
+  ~200 ms of CPU and ~1 MB of memory per language on every launch regardless of the setting.
+
+
 - **A running plugin-defined shell command no longer delays quitting Editora** — it ran on a non-daemon thread
   that could hold the JVM open until the command (or its 2-minute timeout) finished; it's now a daemon thread.
 

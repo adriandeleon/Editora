@@ -5828,6 +5828,10 @@ public class EditorBuffer implements TabContent {
         this.grammar = g;
         folds.setLanguage(language);
         spellOverlay.setProseMode(isProse()); // prose checks all words; code only comments/strings
+        // Must be re-pushed here, not just from installOverlays(): that runs in the constructor, before the
+        // language is known, so it always saw plaintext ⇒ markdown stayed false forever and ``` fenced code
+        // blocks WERE spell-checked (sudo/cd/xzf squiggled inside a README's bash block).
+        spellOverlay.setMarkdown(isMarkdown());
         invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
         applyHighlighting();
     }
