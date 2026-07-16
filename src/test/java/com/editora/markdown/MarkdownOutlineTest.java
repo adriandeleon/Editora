@@ -60,4 +60,24 @@ class MarkdownOutlineTest {
         assertTrue(MarkdownOutline.headings("").isEmpty());
         assertTrue(MarkdownOutline.headings("just text\nno headings\n").isEmpty());
     }
+
+    /**
+     * A setext underline may only underline a *paragraph*. After a list item, `---` is a thematic break —
+     * CommonMark's own example ("- Foo\n---" is a list plus an <hr>) — but it was read as an H2 titled with
+     * the list text, which then polluted the Structure outline and the generated TOC.
+     */
+    @Test
+    void dashesAfterAListItemAreAThematicBreakNotASetextHeading() {
+        assertEquals(
+                List.of(new Heading(1, "Real", 3)), MarkdownOutline.headings("- item one\n- item two\n---\n# Real\n"));
+        assertEquals(List.of(new Heading(1, "Real", 3)), MarkdownOutline.headings("1. one\n2. two\n---\n# Real\n"));
+        assertEquals(List.of(new Heading(1, "Real", 2)), MarkdownOutline.headings("> quoted\n---\n# Real\n"));
+    }
+
+    /** The real setext case — a paragraph line underlined — must still be detected. */
+    @Test
+    void setextUnderAParagraphIsStillAHeading() {
+        assertEquals(List.of(new Heading(2, "Title", 0)), MarkdownOutline.headings("Title\n---\n"));
+        assertEquals(List.of(new Heading(1, "Title", 0)), MarkdownOutline.headings("Title\n===\n"));
+    }
 }

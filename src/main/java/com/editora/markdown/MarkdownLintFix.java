@@ -99,7 +99,7 @@ public final class MarkdownLintFix {
                 }
             }
             if (enabled(off, dir, i, "MD009")) {
-                fixed = stripTrailing(fixed);
+                fixed = stripTrailing(fixed, lines, i);
             }
 
             if (fixed.isBlank()) {
@@ -129,11 +129,15 @@ public final class MarkdownLintFix {
         return !off.contains(code) && !dir.disabled(line, code);
     }
 
-    private static String stripTrailing(String line) {
+    /** Strips trailing whitespace, but never a hard line break (see {@link MarkdownLint#isHardLineBreak}). */
+    private static String stripTrailing(String line, String[] lines, int i) {
         int e = line.length();
         while (e > 0 && (line.charAt(e - 1) == ' ' || line.charAt(e - 1) == '\t')) {
             e--;
         }
-        return e == line.length() ? line : line.substring(0, e);
+        if (e == line.length() || MarkdownLint.isHardLineBreak(line, e, lines, i)) {
+            return line;
+        }
+        return line.substring(0, e);
     }
 }

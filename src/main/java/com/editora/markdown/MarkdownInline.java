@@ -29,7 +29,8 @@ public final class MarkdownInline {
         if (selStart >= len
                 && selEnd + len <= text.length()
                 && text.startsWith(marker, selStart - len)
-                && text.startsWith(marker, selEnd)) {
+                && text.startsWith(marker, selEnd)
+                && !partOfLongerRun(text, selStart, selEnd, marker)) {
             String inner = text.substring(selStart, selEnd);
             return new MarkdownEdit(
                     selStart - len, selEnd + len, inner, selStart - len, selStart - len + inner.length());
@@ -41,7 +42,7 @@ public final class MarkdownInline {
             return new MarkdownEdit(selStart, selEnd, inner, selStart, selStart + inner.length());
         }
         if (selStart == selEnd) {
-            // Empty selection: insert the pair, caret between the markers.
+            // Empty selection: insert the pair, caret between the markers. (see partOfLongerRun below)
             return new MarkdownEdit(selStart, selEnd, marker + marker, selStart + len, selStart + len);
         }
         String wrapped = marker + sel + marker;
@@ -85,5 +86,27 @@ public final class MarkdownInline {
             }
         }
         return null;
+    }
+
+    /**
+     * True when the markers found just outside the selection are really part of a <b>longer run</b> of the
+     * same character — i.e. the {@code *} we matched on either side of {@code **bold**} is the inner
+     * asterisk of the bold pair, not italics of its own.
+     *
+     * <p>Without this, toggling italic over bold text unwrapped one layer of the bold instead:
+     * {@code **bold**} became {@code *bold*} — the bold silently lost — where every other editor produces
+     * {@code ***bold***}. Only same-character markers ({@code *}, {@code _}, {@code ~}, {@code `}) can form
+     * a run, so a run check on the char just beyond each marker is enough.
+     */
+    private static boolean partOfLongerRun(String text, int selStart, int selEnd, String marker) {
+        char c = marker.charAt(0);
+        for (int i = 0; i < marker.length(); i++) {
+            if (marker.charAt(i) != c) {
+                return false; // not a single-character run marker — nothing to disambiguate
+            }
+        }
+        int before = selStart - marker.length() - 1;
+        int after = selEnd + marker.length();
+        return (before >= 0 && text.charAt(before) == c) || (after < text.length() && text.charAt(after) == c);
     }
 }

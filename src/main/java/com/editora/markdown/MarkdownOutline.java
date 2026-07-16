@@ -63,8 +63,8 @@ public final class MarkdownOutline {
                 continue;
             }
 
-            // Setext: a non-blank text line underlined by all '=' (H1) or all '-' (H2).
-            if (!trimmed.isEmpty() && i + 1 < lines.length) {
+            // Setext: a *paragraph* line underlined by all '=' (H1) or all '-' (H2).
+            if (!trimmed.isEmpty() && i + 1 < lines.length && isParagraphStart(trimmed)) {
                 int setext = setextLevel(stripCr(lines[i + 1]));
                 if (setext > 0 && atxLevel(line) == 0 && fenceToken(line) == null) {
                     out.add(new Heading(setext, trimmed, i));
@@ -127,6 +127,32 @@ public final class MarkdownOutline {
             body = body.substring(0, end).strip();
         }
         return body;
+    }
+
+    /**
+     * True when {@code trimmed} could open a <b>paragraph</b> — the only block a setext underline may
+     * underline. A {@code ---} under a list item, blockquote or HTML block is a thematic break, not an H2
+     * (CommonMark's own example: {@code - Foo\n---} is a list plus an {@code <hr>}). Treating it as a
+     * heading put list text in the Structure outline and, via the shared outline, in the generated TOC —
+     * including a {@code <!-- /toc -->} marker sitting above a {@code ---}.
+     */
+    private static boolean isParagraphStart(String trimmed) {
+        char c = trimmed.charAt(0);
+        if (c == '>' || c == '<') {
+            return false; // blockquote / HTML block
+        }
+        if ((c == '-' || c == '*' || c == '+') && trimmed.length() > 1 && trimmed.charAt(1) == ' ') {
+            return false; // bullet list item
+        }
+        int d = 0;
+        while (d < trimmed.length() && Character.isDigit(trimmed.charAt(d))) {
+            d++;
+        }
+        boolean ordered = d > 0
+                && d + 1 < trimmed.length()
+                && (trimmed.charAt(d) == '.' || trimmed.charAt(d) == ')')
+                && trimmed.charAt(d + 1) == ' ';
+        return !ordered;
     }
 
     /** Setext underline level: 1 for all-'=', 2 for all-'-', else 0. */

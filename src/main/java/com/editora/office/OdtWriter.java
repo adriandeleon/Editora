@@ -391,7 +391,49 @@ public final class OdtWriter {
     // ---- escaping ----
 
     private static String esc(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        return stripInvalidXml(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
+     * Drops characters XML 1.0 forbids outright — the C0 controls other than tab/LF/CR, and unpaired
+     * surrogates. They cannot be escaped (not even as a numeric character reference), so leaving one in
+     * makes {@code content.xml} non-well-formed and the whole {@code .odt} unopenable ("file is corrupt")
+     * with no error at export time. A form feed (Emacs {@code ^L} section markers) or a stray BEL/ESC from
+     * pasted terminal output is enough. POI does the same for the {@code .docx} side, which is why only this
+     * hand-rolled writer was exposed.
+     */
+    static String stripInvalidXml(String s) {
+        if (s == null || s.isEmpty()) {
+            return s == null ? "" : s;
+        }
+        StringBuilder sb = null;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            boolean ok = c == '\t'
+                    || c == '\n'
+                    || c == '\r'
+                    || (c >= 0x20 && c <= 0xD7FF)
+                    || (c >= 0xE000 && c <= 0xFFFD)
+                    || Character.isSurrogate(c) && hasPair(s, i, c);
+            if (ok) {
+                if (sb != null) {
+                    sb.append(c);
+                }
+            } else {
+                if (sb == null) {
+                    sb = new StringBuilder(s.length()).append(s, 0, i);
+                }
+                sb.append('�'); // same visible fallback commonmark uses for NUL
+            }
+        }
+        return sb == null ? s : sb.toString();
+    }
+
+    /** True when the surrogate at {@code i} is part of a well-formed pair (so the code point is legal). */
+    private static boolean hasPair(String s, int i, char c) {
+        return Character.isHighSurrogate(c)
+                ? i + 1 < s.length() && Character.isLowSurrogate(s.charAt(i + 1))
+                : i > 0 && Character.isHighSurrogate(s.charAt(i - 1));
     }
 
     private static String escAttr(String s) {

@@ -147,4 +147,43 @@ class MarkdownLintTest {
                 .anyMatch(d -> d.code().equals("MD018")));
         assertTrue(has("#Heading\n", "MD018")); // still flagged without the directive
     }
+
+    /**
+     * Two trailing spaces are a Markdown hard line break (<br>), which upstream markdownlint allows by
+     * default (br_spaces: 2). MD009 flagged them and the fixer stripped them — silently reflowing addresses,
+     * poems and signature blocks into one paragraph.
+     */
+    @Test
+    void md009LeavesAHardLineBreakAlone() {
+        assertTrue(
+                MarkdownLint.lint("Roses are red  \nViolets are blue\n").stream()
+                        .noneMatch(d -> d.code().equals("MD009")),
+                "exactly two trailing spaces before a non-blank line is a <br>");
+        assertEquals(
+                "Roses are red  \nViolets are blue\n",
+                MarkdownLintFix.fix("Roses are red  \nViolets are blue\n", java.util.Set.of(), 4),
+                "the fixer must not destroy it");
+    }
+
+    /** Everything that isn't a hard break stays flagged — and stays fixed. */
+    @Test
+    void md009StillFlagsRealTrailingWhitespace() {
+        assertTrue(
+                MarkdownLint.lint("three spaces   \nnext\n").stream()
+                        .anyMatch(d -> d.code().equals("MD009")),
+                "three spaces is not a break");
+        assertTrue(
+                MarkdownLint.lint("a tab\t\nnext\n").stream()
+                        .anyMatch(d -> d.code().equals("MD009")),
+                "a tab is not a break");
+        assertTrue(
+                MarkdownLint.lint("dangling  \n\n").stream()
+                        .anyMatch(d -> d.code().equals("MD009")),
+                "two spaces before a blank line breaks nothing");
+        assertTrue(
+                MarkdownLint.lint("last line  \n").stream()
+                        .anyMatch(d -> d.code().equals("MD009")),
+                "two spaces at end of document breaks nothing");
+        assertEquals("three spaces\nnext\n", MarkdownLintFix.fix("three spaces   \nnext\n", java.util.Set.of(), 4));
+    }
 }

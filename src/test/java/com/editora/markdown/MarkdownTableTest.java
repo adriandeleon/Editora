@@ -204,4 +204,63 @@ class MarkdownTableTest {
         assertEquals("a|b,c", MarkdownTable.toCsv("| a\\|b | c |\n| --- | --- |"));
         assertNull(MarkdownTable.toCsv("just some text\nno table here"));
     }
+
+    /**
+     * {@code lastIndexOf} searches backward from *and including* {@code fromIndex}, so the old
+     * {@code Math.max(0, caret - 1)} clamp made a caret at offset 0 find a leading newline — yielding
+     * {@code substring(1, 0)}. It threw for any document starting with a blank line, table or not, and
+     * {@code EditorBuffer.applyEnter} calls this on every Enter in a Markdown buffer: Ctrl+Home then Enter
+     * lost the keystroke and dumped an exception.
+     */
+    @Test
+    void blockBoundsAtOffsetZeroOfADocStartingWithABlankLine() {
+        assertNull(MarkdownTable.blockBounds("\n| a | b |\n|---|---|", 0));
+        assertNull(MarkdownTable.blockBounds("\nplain text", 0));
+        assertNull(MarkdownTable.blockBounds("\n", 0));
+        assertArrayEquals(
+                new int[] {1, 20},
+                MarkdownTable.blockBounds("\n| a | b |\n|---|---|", 2),
+                "the row itself still resolves");
+    }
+
+    /**
+     * A cell may contain an escaped pipe ({@code \|}) — {@link MarkdownTable#fromCsv} emits them by design.
+     * Splitting the row on every {@code |} cut such a cell in two and invented a column, so pressing Tab in a
+     * table pasted from CSV silently corrupted it.
+     */
+    @Test
+    void escapedPipesSurviveReflowAndNavigation() {
+        String table = MarkdownTable.fromCsv("h1,h2\na|b,c");
+        assertEquals("h1,h2\na|b,c", MarkdownTable.toCsv(table), "fromCsv → toCsv round-trips");
+        String reflowed = MarkdownTable.reflow(table);
+        assertEquals(
+                2, MarkdownTable.reflow(reflowed).split("\n")[0].split("(?<!\\\\)\\|").length - 1, "still 2 columns");
+        assertEquals("h1,h2\na|b,c", MarkdownTable.toCsv(reflowed), "reflow preserves the escaped pipe");
+        assertEquals(reflowed, MarkdownTable.reflow(reflowed), "reflow is idempotent");
+        MarkdownTable.Nav nav = MarkdownTable.tab(table, 2, true);
+        assertEquals("h1,h2\na|b,c", MarkdownTable.toCsv(nav.block()), "Tab preserves it too");
+    }
+
+    /** An escaped pipe is two chars wide on emit, so the column must be padded to fit it. */
+    @Test
+    void escapedPipeCellFillsItsColumn() {
+        String[] lines =
+                MarkdownTable.reflow("| a\\|b | c |\n| --- | --- |\n| x | y |").split("\n");
+        assertEquals(lines[0].length(), lines[1].length(), "header and delimiter rows line up");
+        assertEquals(lines[0].length(), lines[2].length(), "body row lines up");
+    }
+
+    /** Deleting the only data row used to clamp the caret onto the delimiter row, where typing breaks it. */
+    @Test
+    void deleteRowNeverLeavesTheCaretOnTheDelimiterRow() {
+        String block = "| a | b |\n| --- | --- |\n| 1 | 2 |";
+        MarkdownTable.Nav nav = MarkdownTable.deleteRow(block, block.indexOf('1'));
+        int line = 0;
+        for (int i = 0; i < nav.caret() && i < nav.block().length(); i++) {
+            if (nav.block().charAt(i) == '\n') {
+                line++;
+            }
+        }
+        assertEquals(0, line, "caret falls back to the header, not the '---' row");
+    }
 }

@@ -9,8 +9,9 @@ import java.util.regex.Pattern;
  * Pure (no-toolkit, unit-tested) GFM table reflow: given the text block of a pipe table, pad every column
  * to its widest cell and rebuild the delimiter row honoring alignment ({@code :--} left, {@code :-:}
  * center, {@code --:} right). {@link #blockBounds(String, int)} finds the contiguous table block around a
- * caret so {@code EditorBuffer} can select + replace it. Column widths use {@code String.length()} (CJK
- * double-width and escaped {@code \|} are not special-cased).
+ * caret so {@code EditorBuffer} can select + replace it. An escaped {@code \|} is content, not a separator:
+ * cells are held unescaped inside this class and re-escaped on emit, and widths are measured on the emitted
+ * (escaped) form. Column widths use {@code String.length()} (CJK double-width is not special-cased).
  */
 public final class MarkdownTable {
 
@@ -42,7 +43,10 @@ public final class MarkdownTable {
         if (text == null || caret < 0 || caret > text.length()) {
             return null;
         }
-        int ls = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
+        // No Math.max(0, …) clamp here: lastIndexOf searches backward from and *including* fromIndex, so
+        // clamping caret==0 to 0 finds a leading '\n' and yields ls=1 > le=0 → substring(1,0) throws. A
+        // negative fromIndex is exactly right — it returns -1, so ls lands on 0.
+        int ls = text.lastIndexOf('\n', caret - 1) + 1;
         int le = text.indexOf('\n', caret);
         if (le < 0) {
             le = text.length();
@@ -116,7 +120,7 @@ public final class MarkdownTable {
             }
             List<String> r = rows.get(i);
             for (int c = 0; c < r.size(); c++) {
-                width[c] = Math.max(width[c], r.get(c).length());
+                width[c] = Math.max(width[c], cellWidth(r.get(c)));
             }
         }
         StringBuilder out = new StringBuilder();
@@ -301,7 +305,12 @@ public final class MarkdownTable {
         List<List<String>> rows = rowsOf(block);
         rows.remove(li);
         String reflowed = reflow(joinRows(rows));
+        // Clamp to the last surviving row — but never onto the delimiter row, which is where deleting the
+        // only data row landed the caret: typing there mangles the `---` line and the table stops parsing.
         int newLine = Math.min(li, rows.size() - 1);
+        if (newLine == delim) {
+            newLine = delim - 1; // fall back to the header
+        }
         return new Nav(reflowed, cellContentOffset(reflowed, newLine, ci));
     }
 
@@ -413,7 +422,8 @@ public final class MarkdownTable {
             }
             sb.append('|');
             for (String c : rows.get(i)) {
-                sb.append(' ').append(c).append(" |");
+                // Escaped again because this block is re-parsed by the following reflow.
+                sb.append(' ').append(escapePipes(c)).append(" |");
             }
         }
         return sb.toString();
@@ -458,16 +468,16 @@ public final class MarkdownTable {
             align[c] = Align.NONE;
             width[c] = MIN_WIDTH;
             for (List<String> r : data) {
-                width[c] = Math.max(width[c], r.get(c).length());
+                width[c] = Math.max(width[c], cellWidth(r.get(c)));
             }
         }
-        // Emit our own aligned table (NOT through reflow, whose pipe-naive split would corrupt `\|`):
-        // header, delimiter, then body — escaping any literal pipe on emit so cells stay intact.
+        // Emit header, delimiter, then body. dataRow escapes each cell's literal pipes before padding, so
+        // `\|` cells stay intact and still fill their column.
         StringBuilder out = new StringBuilder();
-        out.append(csvDataRow(data.get(0), width, align));
+        out.append(dataRow(data.get(0), width, align, ncol));
         out.append('\n').append(delimiterRow(width, align));
         for (int i = 1; i < data.size(); i++) {
-            out.append('\n').append(csvDataRow(data.get(i), width, align));
+            out.append('\n').append(dataRow(data.get(i), width, align, ncol));
         }
         return out.toString();
     }
@@ -480,18 +490,6 @@ public final class MarkdownTable {
             out.add(v.replace("\r", " ").replace("\n", " ").strip());
         }
         return out;
-    }
-
-    /** A reflow-style data row, padded to the column widths, with any literal pipe escaped (`\|`) on emit. */
-    private static String csvDataRow(List<String> cells, int[] width, Align[] align) {
-        StringBuilder sb = new StringBuilder("|");
-        for (int c = 0; c < width.length; c++) {
-            String v = c < cells.size() ? cells.get(c) : "";
-            sb.append(' ')
-                    .append(pad(v, width[c], align[c]).replace("|", "\\|"))
-                    .append(" |");
-        }
-        return sb.toString();
     }
 
     /**
@@ -517,7 +515,7 @@ public final class MarkdownTable {
                 out.append('\n');
             }
             first = false;
-            List<String> cells = splitCellsEscaped(line);
+            List<String> cells = splitCells(line);
             for (int c = 0; c < cells.size(); c++) {
                 if (c > 0) {
                     out.append(',');
@@ -665,7 +663,7 @@ public final class MarkdownTable {
         boolean leadingPipe = line.strip().startsWith("|");
         int pipesBefore = 0;
         for (int i = 0; i < Math.min(col, line.length()); i++) {
-            if (line.charAt(i) == '|') {
+            if (line.charAt(i) == '|' && !escapedPipeAt(line, i)) {
                 pipesBefore++;
             }
         }
@@ -679,7 +677,7 @@ public final class MarkdownTable {
         String text = lineAt(block, line);
         int pipes = 0;
         for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '|') {
+            if (text.charAt(i) == '|' && !escapedPipeAt(text, i)) {
                 if (pipes == cell) {
                     int content = i + 1;
                     while (content < text.length() && text.charAt(content) == ' ') {
@@ -717,8 +715,16 @@ public final class MarkdownTable {
         return -1;
     }
 
-    /** Like {@link #splitCells} but treats {@code \|} as an escaped pipe inside a cell (unescaped to {@code |}). */
-    private static List<String> splitCellsEscaped(String line) {
+    /**
+     * The cells of one row, with {@code \|} treated as an escaped pipe (a cell's content, not a separator)
+     * and unescaped to a literal {@code |}. Cell values are held unescaped everywhere inside this class;
+     * {@link #escapePipes} puts the backslashes back on emit.
+     *
+     * <p>Splitting on every {@code |} instead — as this did — cut such a cell in two and invented a column,
+     * so a table produced by {@link #fromCsv} (which emits {@code \|} by design) was corrupted by the very
+     * next reflow, i.e. by pressing Tab in it.
+     */
+    private static List<String> splitCells(String line) {
         String t = line.strip();
         if (t.startsWith("|")) {
             t = t.substring(1);
@@ -744,19 +750,14 @@ public final class MarkdownTable {
         return cells;
     }
 
-    private static List<String> splitCells(String line) {
-        String t = line.strip();
-        if (t.startsWith("|")) {
-            t = t.substring(1);
-        }
-        if (t.endsWith("|")) {
-            t = t.substring(0, t.length() - 1);
-        }
-        List<String> cells = new ArrayList<>();
-        for (String c : t.split("\\|", -1)) {
-            cells.add(c.strip());
-        }
-        return cells;
+    /** Re-escapes a cell's literal pipes for emission into a row. Inverse of {@link #splitCells}' unescape. */
+    private static String escapePipes(String cell) {
+        return cell.indexOf('|') < 0 ? cell : cell.replace("|", "\\|");
+    }
+
+    /** True when the {@code |} at {@code i} is escaped ({@code \|}) — content, not a cell separator. */
+    private static boolean escapedPipeAt(String line, int i) {
+        return i > 0 && line.charAt(i - 1) == '\\';
     }
 
     private static boolean isDelimiterRow(String line) {
@@ -799,13 +800,19 @@ public final class MarkdownTable {
         return sb.toString();
     }
 
+    /** Emits one row. Cells are escaped *before* padding so a {@code \|} cell still fills its column. */
     private static String dataRow(List<String> cells, int[] width, Align[] align, int ncol) {
         StringBuilder sb = new StringBuilder("|");
         for (int c = 0; c < ncol; c++) {
             String v = c < cells.size() ? cells.get(c) : "";
-            sb.append(' ').append(pad(v, width[c], align[c])).append(" |");
+            sb.append(' ').append(pad(escapePipes(v), width[c], align[c])).append(" |");
         }
         return sb.toString();
+    }
+
+    /** Display width of a cell as it will be emitted — i.e. with its pipes escaped. */
+    private static int cellWidth(String cell) {
+        return escapePipes(cell).length();
     }
 
     private static String pad(String v, int w, Align align) {

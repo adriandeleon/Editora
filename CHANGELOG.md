@@ -22,6 +22,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pressing Enter at the very start of a Markdown file that begins with a blank line no longer does
+  nothing.** The table-block finder threw an out-of-bounds exception there, and it runs on every Enter (and
+  every Tab) in a Markdown buffer — so the keystroke was swallowed and an error went to the debug log. No
+  table needed; any document starting with a blank line was enough. (From a per-feature audit of Markdown.)
+
+- **A table cell containing a pipe is no longer destroyed by the next Tab.** A `\|` in a cell was treated as
+  a column separator, so the cell was split in two and the table grew a phantom column — which bit hardest
+  right after pasting CSV as a table, since that's exactly what produces `\|` cells. Reflow, Tab navigation,
+  the row/column operations and the CSV round-trip all keep escaped pipes intact now, and such a cell is
+  padded to its real width so the columns still line up. (From a per-feature audit of Markdown.)
+
+- **Exporting Markdown to ODF (`.odt`) no longer produces a file LibreOffice and Word refuse to open.** A
+  control character in the source — a form feed used as a page marker, or a stray escape/bell out of pasted
+  terminal output — was written straight into the document's XML, which forbids those characters outright.
+  The export reported success and the file was unopenable. (From a per-feature audit of Markdown.)
+
+- **Making bold text italic no longer removes the bold.** Selecting `**bold**` and pressing italic (the
+  format bar, `markdown.italic`, or `C-c C-s i`) matched the inner asterisk of the bold markers and stripped
+  them, leaving `*bold*` instead of `***bold***`. (From a per-feature audit of Markdown.)
+
+- **The Markdown linter no longer flags — and its auto-fix no longer deletes — hard line breaks.** Two
+  trailing spaces are Markdown's `<br>`, allowed by markdownlint's own defaults; "Fix all" stripped them,
+  silently reflowing addresses, poems and signature blocks into a single paragraph. Three or more trailing
+  spaces are still flagged. (From a per-feature audit of Markdown.)
+
+- **A `---` under a list item is a horizontal rule again, not a heading.** It was read as a setext heading
+  titled with the list's last item, which then appeared in the Structure outline and in generated tables of
+  contents. (From a per-feature audit of Markdown.)
+
+- **Deleting a table's last data row no longer leaves the cursor on the `---` divider**, where typing broke
+  the table. (From a per-feature audit of Markdown.)
+
 - **Snippets whose prefix isn't a plain word now expand with Tab.** Expansion scanned back over letters,
   digits and `_` only, so at `#inc` it stopped on the `#` and looked up `inc` — which nothing is registered
   under. That left 42 bundled snippets unreachable from the keyboard: the c/cpp `#include`/`#ifndef`/`#define`
