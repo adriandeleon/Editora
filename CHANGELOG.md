@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Replace All in Find-in-Files now changes exactly what the search preview showed.** The results list matches
+  line by line, but Replace All applied a regex over the *whole file* — so `;$` previewed a hit on every line
+  but only replaced the last one, and a cross-line pattern like `foo\nbar` previewed nothing yet rewrote across
+  the newline. Replace is now line-oriented like the preview (line endings preserved). (From a per-feature
+  audit of Search.)
+
+- **Case-insensitive regex search now matches accented and other non-ASCII letters.** A regex search for
+  `café` (case-insensitive) missed `CAFÉ` — the regex engine was folding only ASCII, unlike the plain-text
+  search and ripgrep. All three now agree.
+
+- **Whole-word search for a term that starts or ends with punctuation now behaves like a word-boundary
+  match.** e.g. `+foo` now matches inside `a+foo`, matching the regex/ripgrep whole-word rule; ordinary words
+  are unaffected.
+
 - **Files with accented or non-ASCII names now work with Git.** A file like `café.txt` was left with Git's
   raw quoted-and-escaped name (`"caf\303\251.txt"`) throughout the integration, so it got no color in the
   Project tree and staging / unstaging / discarding / diffing it failed with "pathspec did not match". Editora
