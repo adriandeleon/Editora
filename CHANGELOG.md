@@ -22,6 +22,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An external tool's output no longer lands in the wrong file.** The result was applied to whatever tab was
+  active when the tool *finished*, not the one it ran on — so switching tabs during a format run replaced the
+  entire contents of an unrelated file with the formatted output of the first, and reported success. The
+  target file is now captured when the tool starts, and its output is dropped if the file changed meanwhile.
+  (From a per-feature audit of External Tools.)
+
+- **A command that waits for input no longer freezes external tools for the rest of the session.** A tool like
+  `grep`/`jq`/`sort` configured without a stdin source waited forever for input that never came, and its
+  timeout could never fire — blocking every later tool run. Timeouts are now genuinely enforced (they were
+  unreachable for *any* command that outlived them), and a runaway tool's output can no longer exhaust memory.
+  (From a per-feature audit of External Tools.)
+
+- **File paths and selections with spaces or apostrophes now reach the tool intact.** `$FilePath$` for
+  `~/My Docs/a.txt` arrived as two separate arguments, and no amount of quoting fixed it — an apostrophe in
+  the path (`~/Bob's Files/`) split it anyway *and* deleted the apostrophe. An empty `$SelectedText$` used to
+  vanish entirely, shifting every argument after it. (From a per-feature audit of External Tools.)
+
+- **"Run last tool again" no longer runs a tool you deleted, disabled, or edited** — it re-ran a stale copy,
+  including the old command after you'd fixed it. (From a per-feature audit of External Tools.)
+
+- **Editing external tools in one window no longer deletes tools added in another.** (From a per-feature audit
+  of External Tools.)
+
+- **Two tools whose names differ only in punctuation no longer collide**, silently making one unreachable and
+  stealing its shortcut; and a tool that legitimately produces no output is no longer reported as having
+  failed. (From a per-feature audit of External Tools.)
+
 - **Opening a file that happens to contain the same text as another no longer steals that file's personal
   notes.** Notes were re-homed onto a file whose *content hash* matched — which is not identity: a
   `cp config.yaml config.backup.yaml`, a duplicated LICENSE, or the boilerplate `index.ts` in each package of a

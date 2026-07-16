@@ -3,6 +3,34 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] External Tools audit (per-feature bug hunt) — 8 fixes, two of them in the **shared** `ProcessRunner`:
+      **the timeout was unenforceable** (stdout was drained *inline* on the caller, and `waitFor(timeout)` only
+      ran after that drain hit EOF — which needs the child to exit; measured: `sleep 5` with a 1 s timeout
+      returned at **5011 ms, exit=0**) and **stdin was never closed when `stdin == null`**, so anything that
+      reads stdin (`grep`/`jq`/`sort`, an easy misconfiguration since StdinSource defaults to NONE) blocked
+      forever → never closed stdout → the inline drain never returned → the single-thread
+      `ExternalToolService` executor was **dead for the session** (verified: still hung at 8 s; now exits
+      immediately). Both drains moved to side threads + `ProcessRegistry.killTree` on timeout + a 10 MB capture
+      cap (a runaway `find /` could OOM the service thread, and `exec.submit` discards the Future so the Error
+      vanished and the status spun forever — now also `catch (Throwable)`). **This affects every subprocess in
+      the app** (git/mermaid/build tools/LSP+DAP detection/elevated save), all of which had an unenforceable
+      timeout. Plus, in External Tools proper: **`applyResult` wrote stdout into `host.activeBuffer()` at
+      *apply* time** — switch tabs during a 600 ms `black -` run and REPLACE_BUFFER overwrote an unrelated file
+      wholesale, reporting success (now captures the target + its `docVersion`, the `requestLspCompletion`
+      idiom); **`tokenize(expand(x))` tokenized user data** (`$FilePath$` = `~/My Docs/a.txt` → 2 argv;
+      `'$FilePath$'` still broke on `~/Bob's Files/` *and* ate the apostrophe; an empty `$SelectedText$`
+      vanished, shifting positionals → `grep file.txt` treated the file as the pattern and hung) — now the
+      template is tokenized first and macros expand **per token** (IntelliJ's model, one macro = one argv);
+      `rerunLast` held the `ExternalTool` instance so it re-ran deleted/disabled tools and pre-edit commands
+      (now by name, re-resolved, + an `isEnabled()` guard in `run`); the Settings page snapshotted the tool
+      list **in the constructor**, so a second window's save deleted the first's new tools (now reloads in
+      `load()`); the `slug` was copied from `MacroService` **without its `slugClash` guard** (two tools → one
+      `externalTool.run.<id>`, last-write-wins, one silently unreachable + its keybinding stolen); and a
+      successful run with empty stdout reported `"<tool> failed: "` with a blank reason. Verified-clean:
+      `ToolMacros.expand` (single-pass — no recursive re-expansion, `$$`, unknown `$X$`, null fields), the
+      remote/SFTP gate (#426 shape — genuinely closed), the stdin writer thread (8 MB in 10 ms, broken pipe
+      swallowed), `stripOneTrailingNewline` (exactly one, not applied to REPLACE_BUFFER), Simple-mode gating,
+      the `externalTool.run.` prefix vs the static picker id.
 - [x] Workspace audit (per-feature bug hunt: Projects / Notes / Local History / update check) — 6 fixes, all
       data-loss or intent-loss: **`PathKeys.findKeyByIdentity` accepted a `CONTENT_HASH` match as file
       identity**, so opening any file with identical bytes (a `cp`, a duplicated LICENSE, a monorepo's

@@ -238,6 +238,9 @@ public class SettingsWindow {
     private javafx.scene.control.ColorPicker todoLowColorPicker;
     private VBox markdownLintRulesBox;
     /** Working copy of the External Tools list, edited live by the master-detail page. */
+    /** The External Tools ListView, so {@link #reloadExternalTools} can restore the selection. */
+    private ListView<com.editora.externaltool.ExternalTool> externalToolList;
+
     private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
             javafx.collections.FXCollections.observableArrayList();
 
@@ -3604,9 +3607,10 @@ public class SettingsWindow {
 
     /** Master-detail editor: a list of tools on the left, a form for the selected tool on the right. */
     private javafx.scene.Node externalToolsEditor() {
-        externalToolItems.setAll(copyTools(config.getSettings().getExternalTools()));
+        reloadExternalTools();
 
         ListView<com.editora.externaltool.ExternalTool> list = new ListView<>(externalToolItems);
+        externalToolList = list;
         list.setPrefSize(170, 220);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
@@ -3650,6 +3654,15 @@ public class SettingsWindow {
         Runnable commit = () -> {
             com.editora.externaltool.ExternalTool t = list.getSelectionModel().getSelectedItem();
             if (t == null || loadingExternalTool) {
+                return;
+            }
+            // Distinct names can produce one externalTool.run.<slug> command ("Format JSON" / "format-json";
+            // any two symbol-only names both fall back to "tool"). CommandRegistry.register is a put, so the
+            // second tool silently shadowed the first: the palette showed one entry and a keybinding on it
+            // always ran the later tool. MacroService refuses the same collision — mirror it.
+            if (slugTaken(t, name.getText())) {
+                macroWarn(tr("settings.externalTool.idExists", name.getText()));
+                name.setText(t.getName()); // put the field back
                 return;
             }
             t.setName(name.getText());
@@ -3743,6 +3756,19 @@ public class SettingsWindow {
         HBox buttons = new HBox(6, add, remove, spacer(), save);
         buttons.setAlignment(Pos.CENTER_LEFT);
         return new VBox(8, top, buttons);
+    }
+
+    /** True when {@code newName} would give {@code tool} the command id another tool already uses. */
+    private boolean slugTaken(com.editora.externaltool.ExternalTool tool, String newName) {
+        String id = com.editora.externaltool.ExternalTool.commandIdFor(newName);
+        for (com.editora.externaltool.ExternalTool other : externalToolItems) {
+            if (other != tool
+                    && com.editora.externaltool.ExternalTool.commandIdFor(other.getName())
+                            .equals(id)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
@@ -5473,9 +5499,31 @@ public class SettingsWindow {
 
     // --- load + sync (unchanged behavior) --------------------------------------------------------
 
+    /**
+     * Re-reads the External Tools list from the live settings. The page is built eagerly in the constructor
+     * (one SettingsWindow per MainController), so a startup snapshot went stale the moment another window
+     * added a tool — and this window's next save wrote its snapshot back, deleting the other's tool.
+     */
+    private void reloadExternalTools() {
+        var selected = externalToolList == null
+                ? null
+                : externalToolList.getSelectionModel().getSelectedItem();
+        String selectedName = selected == null ? null : selected.getName();
+        externalToolItems.setAll(copyTools(config.getSettings().getExternalTools()));
+        if (externalToolList != null && selectedName != null) {
+            for (var t : externalToolItems) {
+                if (selectedName.equals(t.getName())) {
+                    externalToolList.getSelectionModel().select(t);
+                    break;
+                }
+            }
+        }
+    }
+
     private void load() {
         loading = true;
         try {
+            reloadExternalTools(); // another window may have added/removed a tool since this page was built
             refreshDictionaryList(); // pick up words added elsewhere (e.g. "Add to Dictionary") since last open
             Settings settings = config.getSettings();
             if (!fontFamily.getItems().contains(settings.getFontFamily())) {
