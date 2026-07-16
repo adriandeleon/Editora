@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The HTML live-preview server no longer serves files outside the previewed file's folder via a symbolic
+  link.** Its path-traversal guard was purely lexical, so a symlink inside the folder that pointed elsewhere
+  (common in real project trees) could be fetched by the previewed page — an arbitrary-file read. The guard now
+  resolves symlinks and rejects anything whose real target leaves the folder. (From a per-feature audit of the
+  Web feature.)
+
 ### Fixed
+
+- **HTML preview assets whose filename contains `+`, `%`, or a space now load.** The server decoded the URL
+  path twice (and form-decoded `+` to a space), so `<img src="my+file.png">` 404'd; it now decodes once.
+
+- **The live-preview server uses a bounded thread pool**, so a flood of long-poll connections from another
+  local process can't grow threads without limit.
+
+- **A `.http` `>>` response-save operator can no longer write outside the request file's folder** (a `../`
+  path is now rejected).
 
 - **macOS Option-key text input works again.** Typing an accented or special character with Option (é, ç, ∞,
   dead keys) was being swallowed by the editor even when Option wasn't a bound shortcut; unbound Option
