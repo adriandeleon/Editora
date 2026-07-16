@@ -3,6 +3,23 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Markdown audit (per-feature bug hunt) — 7 fixes: **`MarkdownTable.blockBounds` threw at caret 0 of a
+      doc starting with `\n`** (the `Math.max(0, caret-1)` clamp made `lastIndexOf` find the leading newline →
+      `substring(1,0)`; it runs on *every* Enter/Tab in a Markdown buffer, so the keystroke was swallowed);
+      **`splitCells` split on `\|`** (escaped pipes are content — `fromCsv` emits them by design, so a
+      CSV-pasted table was corrupted by the next Tab; cells are now held unescaped internally, re-escaped on
+      emit via `escapePipes`, widths measured on the escaped form, and `cellIndexAt`/`cellContentOffset` skip
+      escaped pipes); **`OdtWriter.esc` passed C0 control chars into `content.xml`** (XML 1.0 forbids them
+      even as numeric refs → an unopenable `.odt`; new `stripInvalidXml`, matching what POI already does for
+      docx); **italic-over-bold unwrapped the bold** (`*` matched the inner asterisk of `**` → `*bold*`, not
+      `***bold***`; new `partOfLongerRun` guard); **MD009 flagged hard line breaks** (2 trailing spaces =
+      `<br>`, allowed by upstream's `br_spaces: 2` default — the fixer was deleting them; new
+      `MarkdownLint.isHardLineBreak`, shared with `MarkdownLintFix`); **`---` under a list item read as a
+      setext heading** (it's a thematic break per CommonMark; new `isParagraphStart` guard — it was polluting
+      the Structure outline and generated TOCs); and **`deleteRow` parked the caret on the delimiter row**.
+      Verified-clean: `MarkdownToc.slug`/`uniqueAnchor` (GitHub-compatible incl. CJK + the `-1`/`-2` counter),
+      `parseSize` bounds, ragged-table add/delete column, `MarkdownLines` ordered-list continuation, MathSpans
+      currency rejection, DocxWriter (POI sanitizes), lint directives, `MarkdownLintFix` idempotence.
 - [x] Completion audit (per-feature bug hunt) — 7 fixes: **42 bundled snippets were unreachable by keyboard**
       (Tab-expansion scanned only `[A-Za-z0-9_]`, so `#inc`/`!`/`?xml`/`---`/`->` never matched; it now tries
       the whole non-whitespace token first, falling back to the identifier run); **the post-accept suppression

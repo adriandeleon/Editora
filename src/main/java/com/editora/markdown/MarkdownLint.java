@@ -175,12 +175,12 @@ public final class MarkdownLint {
                 add(out, off, directives, new Diagnostic(lineNo, tab + 1, run - tab, WARNING, "MD010", "Hard tab"));
             }
 
-            // MD009: trailing whitespace.
+            // MD009: trailing whitespace — except a hard line break.
             int end = line.length();
             while (end > 0 && (line.charAt(end - 1) == ' ' || line.charAt(end - 1) == '\t')) {
                 end--;
             }
-            if (end < line.length()) {
+            if (end < line.length() && !isHardLineBreak(line, end, lines, i)) {
                 add(
                         out,
                         off,
@@ -472,5 +472,25 @@ public final class MarkdownLint {
 
     static String stripCr(String line) {
         return !line.isEmpty() && line.charAt(line.length() - 1) == '\r' ? line.substring(0, line.length() - 1) : line;
+    }
+
+    /**
+     * True when {@code line}'s trailing whitespace (which starts at {@code contentEnd}) is a Markdown
+     * <b>hard line break</b> — exactly two spaces, on a non-blank line that is followed by a non-blank one —
+     * rather than stray whitespace.
+     *
+     * <p>Two trailing spaces render as {@code <br>}; upstream markdownlint permits them by default
+     * ({@code br_spaces: 2}). Flagging them meant {@link MarkdownLintFix} stripped them, silently reflowing
+     * addresses, poems and signature blocks into one paragraph. Three or more (or a trailing tab) stay
+     * flagged — those aren't a break either.
+     */
+    static boolean isHardLineBreak(String line, int contentEnd, String[] lines, int i) {
+        if (contentEnd == 0 || line.length() - contentEnd != 2) {
+            return false; // a blank/whitespace-only line, or not exactly two trailing chars
+        }
+        if (line.charAt(contentEnd) != ' ' || line.charAt(contentEnd + 1) != ' ') {
+            return false; // tabs don't make a break
+        }
+        return i + 1 < lines.length && !stripCr(lines[i + 1]).isBlank(); // a break needs a line to break to
     }
 }

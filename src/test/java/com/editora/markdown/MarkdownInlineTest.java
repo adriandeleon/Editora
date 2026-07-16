@@ -60,4 +60,28 @@ class MarkdownInlineTest {
         assertEquals("https://y/z", MarkdownInline.linkAround(bare, 6));
         assertNull(MarkdownInline.linkAround(bare, 0));
     }
+
+    private static String apply(String text, int selStart, int selEnd, String marker) {
+        MarkdownEdit e = MarkdownInline.toggle(text, selStart, selEnd, marker);
+        return text.substring(0, e.from()) + e.replacement() + text.substring(e.to());
+    }
+
+    /**
+     * Toggling italic over bold matched the *inner* asterisk of each `**` and unwrapped it, so the bold was
+     * silently lost ("**bold**" → "*bold*") where every other editor adds italics ("***bold***").
+     */
+    @Test
+    void togglingItalicOverBoldAddsItalicRatherThanStrippingTheBold() {
+        assertEquals("***bold***", apply("**bold**", 2, 6, "*"));
+        assertEquals("***it***", apply("*it*", 1, 3, "**"), "the inverse already worked");
+    }
+
+    /** The unwrap path itself must still work — only a *longer run* of the marker char is off-limits. */
+    @Test
+    void unwrappingMatchingMarkersStillWorks() {
+        assertEquals("it", apply("*it*", 1, 3, "*"));
+        assertEquals("bold", apply("**bold**", 2, 6, "**"));
+        assertEquals("s", apply("~~s~~", 2, 3, "~~"));
+        assertEquals("c", apply("`c`", 1, 2, "`"));
+    }
 }
