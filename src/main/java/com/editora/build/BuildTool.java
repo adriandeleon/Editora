@@ -46,15 +46,7 @@ public enum BuildTool {
 
         @Override
         public List<String> executable(Path root, boolean isWindows, String override) {
-            List<String> wrapper = List.of();
-            if (isWindows) {
-                if (Files.isRegularFile(root.resolve("mvnw.cmd"))) {
-                    wrapper = List.of("mvnw.cmd");
-                }
-            } else if (Files.isRegularFile(root.resolve("mvnw"))) {
-                wrapper = List.of("./mvnw");
-            }
-            return BuildExecutable.resolve(wrapper, override, "mvn");
+            return BuildExecutable.resolve(wrapperArgv(root, isWindows, "mvnw", "mvnw.cmd"), override, "mvn");
         }
     },
 
@@ -163,15 +155,7 @@ public enum BuildTool {
 
         @Override
         public List<String> executable(Path root, boolean isWindows, String override) {
-            List<String> wrapper = List.of();
-            if (isWindows) {
-                if (Files.isRegularFile(root.resolve("gradlew.bat"))) {
-                    wrapper = List.of("gradlew.bat");
-                }
-            } else if (Files.isRegularFile(root.resolve("gradlew"))) {
-                wrapper = List.of("./gradlew");
-            }
-            return BuildExecutable.resolve(wrapper, override, "gradle");
+            return BuildExecutable.resolve(wrapperArgv(root, isWindows, "gradlew", "gradlew.bat"), override, "gradle");
         }
 
         @Override
@@ -303,12 +287,38 @@ public enum BuildTool {
     /** Timeout for the on-demand {@code gradle tasks} enumeration (a fresh Gradle daemon can be slow). */
     private static final Duration TASK_LOAD_TIMEOUT = Duration.ofSeconds(90);
 
+    /**
+     * The argv prefix for a project's build wrapper ({@code mvnw}/{@code gradlew}), or empty when there isn't
+     * a usable one — in which case {@link BuildExecutable#resolve} falls back to the Settings override or the
+     * tool on PATH.
+     *
+     * <p>Two things this has to get right. It checks the wrapper is <b>executable</b>, not merely present: a
+     * repo cloned without the exec bit (a Windows clone with no {@code core.filemode}, an unzip that drops
+     * modes — Maven's own docs tell people to {@code chmod +x mvnw}) otherwise won a preference it couldn't
+     * honor, and every build died with {@code error=13, Permission denied} instead of falling back to
+     * {@code mvn}. And on Windows it hands back an <b>absolute</b> path: a bare {@code mvnw.cmd} is neither on
+     * PATH nor resolved against the child's working directory. On Unix {@code ./mvnw} is kept — the forked
+     * child chdirs to the working directory before exec, so it resolves, and it reads better in the console.
+     */
+    private static List<String> wrapperArgv(Path root, boolean isWindows, String unixName, String windowsName) {
+        Path wrapper = root.resolve(isWindows ? windowsName : unixName);
+        if (!Files.isRegularFile(wrapper)) {
+            return List.of();
+        }
+        if (!isWindows && !Files.isExecutable(wrapper)) {
+            return List.of(); // present but not +x — fall back rather than fail the run
+        }
+        return List.of(isWindows ? wrapper.toAbsolutePath().normalize().toString() : "./" + unixName);
+    }
+
     private static String npmPackageManager(Path root, NpmProject project) {
         return NpmPackageManager.detect(
                 project.packageManagerField(),
                 Files.exists(root.resolve("package-lock.json")),
                 Files.exists(root.resolve("yarn.lock")),
                 Files.exists(root.resolve("pnpm-lock.yaml")),
-                Files.exists(root.resolve("bun.lockb")));
+                // bun.lock is Bun >= 1.2's default text lockfile; bun.lockb is the legacy binary one. Probing
+                // only the legacy name made every modern Bun project fall through to "npm".
+                Files.exists(root.resolve("bun.lock")) || Files.exists(root.resolve("bun.lockb")));
     }
 }

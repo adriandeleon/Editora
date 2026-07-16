@@ -74,4 +74,72 @@ class GradleTasksTest {
                 .map(r -> ((BuildAction.Task) r).label())
                 .toList();
     }
+
+    /**
+     * Verbatim shape of a real {@code gradle tasks --all} run (Gradle 9.5.1, a bare java project with one
+     * custom task registered without a description). The report prints a task with no description as a
+     * <b>bare name</b> — {@code noDescriptionTask} and {@code prepareKotlinBuildScriptModel} here — which the
+     * old {@code name - description} regex silently dropped, while the status line reported the undercount as
+     * a success. The bare section headers ("Other tasks", "Rules") must still be excluded: what tells them
+     * apart is the {@code -----} rule underneath.
+     */
+    private static final String REAL_ALL_OUTPUT = """
+            ------------------------------------------------------------
+            Tasks runnable from root project 'demo'
+            ------------------------------------------------------------
+
+            Build tasks
+            -----------
+            assemble - Assembles the outputs of this project.
+            build - Assembles and tests this project.
+
+            Other tasks
+            -----------
+            compileJava - Compiles main Java source.
+            noDescriptionTask
+            prepareKotlinBuildScriptModel
+            processResources - Processes main resources.
+
+            Rules
+            -----
+            Pattern: clean<TaskName>: Cleans the output files of a task.
+            Pattern: build<ConfigurationName>: Assembles the artifacts of a configuration.
+
+            BUILD SUCCESSFUL in 1s
+            """;
+
+    @Test
+    void tasksWithoutADescriptionAreNotDropped() {
+        List<String> tasks = GradleTasks.parse(REAL_ALL_OUTPUT);
+        assertTrue(tasks.contains("noDescriptionTask"), "a task registered without a description is real");
+        assertTrue(tasks.contains("prepareKotlinBuildScriptModel"));
+        assertTrue(tasks.contains("assemble"), "described tasks still parse");
+        assertTrue(tasks.contains("compileJava"));
+    }
+
+    @Test
+    void bareSectionHeadersAndNoiseAreStillExcluded() {
+        List<String> tasks = GradleTasks.parse(REAL_ALL_OUTPUT);
+        assertFalse(tasks.contains("Rules"), "underlined ⇒ a section header, not a task");
+        assertFalse(tasks.contains("Pattern:"), "the Rules section's entries are not tasks");
+        assertFalse(tasks.contains("BUILD"), "the build result line is not a task");
+        assertTrue(tasks.stream().noneMatch(t -> t.startsWith("-")), "no separator rules captured");
+        assertEquals(
+                List.of(
+                        "assemble",
+                        "build",
+                        "compileJava",
+                        "noDescriptionTask",
+                        "prepareKotlinBuildScriptModel",
+                        "processResources"),
+                tasks,
+                "exactly the tasks, in report order");
+    }
+
+    @Test
+    void subprojectTaskNamesSurvive() {
+        assertEquals(
+                List.of("app:compileJava", "lib:jar"),
+                GradleTasks.parse("app:compileJava - Compiles main Java source.\nlib:jar"));
+    }
 }

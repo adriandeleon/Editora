@@ -3,6 +3,30 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Build Tools audit (per-feature bug hunt) — 7 fixes across the Maven/npm/Cargo/Go/Gradle framework:
+      **`GradleTasks.parse` required `" - description"`**, so `gradle tasks --all` rows for
+      description-less tasks were silently dropped (verified against **real Gradle 9.5.1 output**: 30→32 tasks;
+      `noDescriptionTask`/`prepareKotlinBuildScriptModel` were lost while the status echoed the undercount as
+      success) — now a whole-line name match, with bare section headers ("Rules", "Other tasks") excluded by
+      the `-----` rule Gradle underlines them with; **`BuildTool.GRADLE.parse` builds a fresh
+      `GradleActionsProvider` per detect** and detect re-runs on tab switch/focus/**every save**, so the ~90 s
+      task enumeration was wiped by Ctrl+S (the coordinator now caches `loadedTasks` per root and re-applies in
+      `applyDetected`); **`loadAllTasks` had no generation guard** (unlike `refresh()`) → switching projects
+      mid-load merged project A's tasks into project B's tree; **the wrapper probe used `isRegularFile`, never
+      `isExecutable`** → a non-+x `mvnw` (Windows clone / unzip; Maven's docs say `chmod +x mvnw`) won the
+      preference and every build died `error=13 Permission denied` instead of falling back to `mvn`, and the
+      **Windows wrapper was launched by bare name** (`mvnw.cmd` is neither on PATH nor resolved against the
+      child's CWD → now absolute); **only `bun.lockb` was probed** so Bun ≥1.2's default `bun.lock` ran `npm`;
+      a **malformed marker** showed "No build tool detected" in the tree (the stripe is visible *because* the
+      marker exists — now shows `status.build.malformed`); and `runCustom` re-read `markerRoot` inside its
+      prompt callback (NPE if the pom vanished meanwhile). Deferred → #451 (`RootResolver` accepts a
+      *directory* named like a marker; shared with LSP, which needs the directory arm for `.terraform`/`.git`).
+      Verified-clean: **no shell injection** via a parsed npm script / Maven profile id (pure `ProcessBuilder`
+      argv, plus JDK≥21.0.3's `.cmd` arg validation); `BuildService.stop()` **does** tree-kill (the LSP orphan
+      bug is not repeated); daemon stdout+stderr pumps; `refresh()`'s generation guard; `BuildOutputPanel`
+      owner-routing (IdentityHashMap → no cross-tab interleave, tabs not user-closable mid-build); the
+      stale-toggle drop + `sections.equals(rendered)` no-op; PomParser XXE + partial-pom tolerance;
+      CargoProject virtual workspace; GoProject `go.work`; remote/SFTP gating.
 - [x] TODO-highlighting audit (per-feature bug hunt) — 7 fixes, the top three in the code that **rewrites the
       user's source line**: `TodoComment.parse` swept a **block-comment terminator** into the description, so
       `withDescription` on a `/*  TODO: x  */` line emitted it back without the closer — an unterminated
