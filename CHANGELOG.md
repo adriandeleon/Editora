@@ -15,7 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolves symlinks and rejects anything whose real target leaves the folder. (From a per-feature audit of the
   Web feature.)
 
+- **Declining a plugin's capability prompt now disables it.** When updating an already-installed plugin, the
+  new code is written to disk before the "here's what it can do" prompt; declining used to leave the plugin
+  enabled, so the rejected update ran on the next launch. Declining now disables the plugin. (From a per-feature
+  audit of the Plugins feature.)
+
 ### Fixed
+
+- **A running plugin-defined shell command no longer delays quitting Editora** — it ran on a non-daemon thread
+  that could hold the JVM open until the command (or its 2-minute timeout) finished; it's now a daemon thread.
 
 - **HTML preview assets whose filename contains `+`, `%`, or a space now load.** The server decoded the URL
   path twice (and form-decoded `+` to a space), so `<img src="my+file.png">` 404'd; it now decodes once.
