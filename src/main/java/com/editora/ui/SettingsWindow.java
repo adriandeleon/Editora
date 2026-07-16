@@ -2360,6 +2360,7 @@ public class SettingsWindow {
                 input.clear();
                 refreshDictionaryList();
                 dictionaryList.getSelectionModel().select(w);
+                apply(); // live-apply like every other control here: re-runs the spell overlays' caches
             }
             input.requestFocus();
         };
@@ -2374,6 +2375,7 @@ public class SettingsWindow {
             if (sel != null) {
                 config.removeUserWord(sel);
                 refreshDictionaryList();
+                apply(); // live-apply: the removed word must start being flagged again right away
             }
         });
 

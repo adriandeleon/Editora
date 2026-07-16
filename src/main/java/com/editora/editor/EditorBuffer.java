@@ -1980,6 +1980,13 @@ public class EditorBuffer implements TabContent {
         spellOverlay.refresh();
     }
 
+    /** Drops this buffer's memoized spell verdicts and repaints. Call after the shared user-word set changes:
+     *  the set is shared, but each buffer's overlay memoizes its own per-word results, so without this the
+     *  other tabs keep squiggling a word that was just added to the dictionary. */
+    public void refreshSpell() {
+        spellOverlay.refresh();
+    }
+
     /** The primary view. Tool windows, overlays, folding and highlighting all bind to this one. */
     public CodeArea getArea() {
         return area;
