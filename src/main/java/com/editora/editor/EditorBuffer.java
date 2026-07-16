@@ -6671,6 +6671,55 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * True when {@code target} is (or sits inside) one of this buffer's editor areas — i.e. a key event
+     * aimed at the document itself rather than at an overlay, the find bar, or a tool-window field.
+     *
+     * <p>The macro recorder needs this because the key hooks live on a <b>scene</b> filter, which sees every
+     * key in the window: without it, the text typed into the command palette or the find bar was recorded
+     * and then replayed straight into the document.
+     */
+    public boolean ownsKeyTarget(javafx.event.EventTarget target) {
+        for (javafx.scene.Node n = target instanceof javafx.scene.Node node ? node : null;
+                n != null;
+                n = n.getParent()) {
+            if (n == area || (area2 != null && n == area2)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Replays a bare editing/navigation key press from a recorded macro — Backspace, Delete, an arrow,
+     * Home/End, Page Up/Down — by {@code KeyCode} name.
+     *
+     * <p>The token carries the modifiers ({@code BACK_SPACE}, {@code S-DOWN}, {@code C-LEFT}), because the
+     * area acts on modified variants too — Shift-Down extends the selection, Ctrl-Left goes a word left —
+     * and replaying those as a bare arrow would move the caret instead.
+     *
+     * <p>Unlike {@link #typeString}, there is no "apply" method to reuse here: the behavior of these keys
+     * lives in the area's own input map (and in the Backspace filters — smart-backspace, the auto-close
+     * empty-pair delete, the Markdown empty-marker delete). So this fires a real {@code KEY_PRESSED} at the
+     * focused area, which runs exactly the handlers a hand-pressed key runs. Recording only ever captures
+     * keys bound to no command, so the re-dispatch can't also fire a chord; the macro recorder is inert
+     * during replay in any case.
+     */
+    public void pressKey(String macroKeyToken) {
+        com.editora.macro.MacroKey.Decoded k = com.editora.macro.MacroKey.decode(macroKeyToken);
+        if (k == null || !isEditable() || hugeFile) {
+            return;
+        }
+        KeyCode code;
+        try {
+            code = KeyCode.valueOf(k.keyCodeName());
+        } catch (IllegalArgumentException e) {
+            return; // a hand-edited macros.json / a step typed into the Settings editor
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        a.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, k.shift(), k.ctrl(), k.alt(), k.meta()));
+    }
+
     /** Types a single character through the editor's typing assists. See {@link #typeString}. */
     public void typeChar(char c) {
         CodeArea a = focusedArea != null ? focusedArea : area;

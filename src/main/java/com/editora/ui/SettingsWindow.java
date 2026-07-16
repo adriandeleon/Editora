@@ -1907,6 +1907,25 @@ public class SettingsWindow {
         return null;
     }
 
+    private void macroWarn(String message) {
+        Alert a = new Alert(Alert.AlertType.WARNING, message, ButtonType.OK);
+        a.initOwner(stage);
+        a.setHeaderText(null);
+        a.showAndWait();
+    }
+
+    /** True when {@code name} would take a {@code macro.run.<slug>} id another saved macro already uses. */
+    private static boolean macroSlugTaken(com.editora.config.MacroStore store, String name) {
+        String id = com.editora.macro.MacroService.commandIdFor(name);
+        for (com.editora.macro.Macro m : store.macros) {
+            if (!m.name().equals(name)
+                    && com.editora.macro.MacroService.commandIdFor(m.name()).equals(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void saveMacro(ListView<com.editora.macro.Macro> list, String rawName) {
         String newName = rawName == null ? "" : rawName.trim();
         if (newName.isEmpty() || macroOriginalName == null) {
@@ -1915,14 +1934,19 @@ public class SettingsWindow {
         com.editora.config.MacroStore store = config.getMacroStore();
         boolean renamed = !macroOriginalName.equals(newName);
         if (renamed && store.find(newName) != null) {
-            Alert a = new Alert(Alert.AlertType.WARNING, tr("settings.macro.nameExists", newName), ButtonType.OK);
-            a.initOwner(stage);
-            a.setHeaderText(null);
-            a.showAndWait();
+            macroWarn(tr("settings.macro.nameExists", newName));
             return;
         }
-        String oldChord =
-                renamed ? currentChordFor(com.editora.macro.MacroService.commandIdFor(macroOriginalName)) : null;
+        // Distinct names can slug to one macro.run.<id> ("my macro" / "my-macro"; any symbol-only name ->
+        // "macro"). The store keys by name but commands key by slug, so the second registration silently
+        // shadowed the first — the older macro became unreachable by command or keybinding.
+        String oldId = com.editora.macro.MacroService.commandIdFor(macroOriginalName);
+        String newId = com.editora.macro.MacroService.commandIdFor(newName);
+        if (renamed && !newId.equals(oldId) && macroSlugTaken(store, newName)) {
+            macroWarn(tr("settings.macro.idExists", newName));
+            return;
+        }
+        String oldChord = renamed ? currentChordFor(oldId) : null;
         com.editora.macro.Macro updated =
                 new com.editora.macro.Macro(newName, new java.util.ArrayList<>(macroStepItems));
         if (renamed) {
@@ -1931,9 +1955,12 @@ public class SettingsWindow {
         store.put(updated);
         config.saveMacros();
         onMacrosChanged.run(); // re-register macro.run.* (incl. the renamed id) in every window
-        if (renamed && oldChord != null && !oldChord.isBlank() && shortcutActions != null) {
-            shortcutActions.rebind(com.editora.macro.MacroService.commandIdFor(newName), oldChord);
-            shortcutActions.reset(com.editora.macro.MacroService.commandIdFor(macroOriginalName));
+        // Carry the keybinding across only when the command id actually changed. A rename that keeps the
+        // slug ("build" -> "Build") leaves oldId == newId, and resetting after rebinding stripped the chord
+        // we had just re-added — a macro.run.* id has no base default to fall back to, so it went unbound.
+        if (renamed && !newId.equals(oldId) && oldChord != null && !oldChord.isBlank() && shortcutActions != null) {
+            shortcutActions.reset(oldId); // drop the old id's override BEFORE binding the new one
+            shortcutActions.rebind(newId, oldChord);
         }
         macroItems.setAll(store.macros);
         for (com.editora.macro.Macro m : macroItems) {

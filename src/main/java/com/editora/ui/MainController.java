@@ -1271,9 +1271,13 @@ public class MainController implements com.editora.mcp.McpBridge {
      * closes that window and returns focus to the editor (instead of starting the go-to prefix).
      */
     public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
-        // Record literally-typed characters into an in-progress macro (no-op unless recording).
+        // Record literally-typed characters + the bare editing/navigation keys the area handles itself into
+        // an in-progress macro (all no-ops unless recording), gated to keys aimed at the active editor — the
+        // hooks are scene filters, so they'd otherwise capture the palette's / find bar's own input.
         if (macroCoordinator != null) {
             dispatcher.setTypedListener(macroCoordinator::onTypedChar);
+            dispatcher.setKeyListener(macroCoordinator::onKey);
+            dispatcher.setRecordTarget(macroCoordinator::isRecordableTarget);
         }
         dispatcher.setPreDispatch((token, target) -> {
             if (!"M-g".equals(token)) {

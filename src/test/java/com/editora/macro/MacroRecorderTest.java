@@ -74,4 +74,40 @@ class MacroRecorderTest {
         r.recordChar('z'); // ignored — recording stopped
         assertEquals(captured, r.steps());
     }
+
+    /**
+     * Backspace/Delete/arrows are handled natively by the editor area and are bound to no command in any
+     * bundled keymap, so they reach neither capture hook — a macro recorded with them used to replay as if
+     * they had never been pressed ("x Backspace y" inserted "xy"). They are their own step kind now, and
+     * they break the text run so the order survives.
+     */
+    @Test
+    void bareKeysAreRecordedInOrderAndBreakTheTextRun() {
+        MacroRecorder r = new MacroRecorder();
+        r.start();
+        r.recordChar('x');
+        r.recordKey("BACK_SPACE");
+        r.recordChar('y');
+        r.recordKey("DOWN");
+        r.recordKey("HOME");
+        assertEquals(
+                List.of(
+                        MacroStep.text("x"),
+                        MacroStep.key("BACK_SPACE"),
+                        MacroStep.text("y"),
+                        MacroStep.key("DOWN"),
+                        MacroStep.key("HOME")),
+                r.steps());
+    }
+
+    @Test
+    void recordKeyIsANoOpWhenNotRecordingOrBlank() {
+        MacroRecorder r = new MacroRecorder();
+        r.recordKey("DOWN"); // not started
+        assertTrue(r.isEmpty());
+        r.start();
+        r.recordKey(null);
+        r.recordKey("  ");
+        assertTrue(r.isEmpty());
+    }
 }

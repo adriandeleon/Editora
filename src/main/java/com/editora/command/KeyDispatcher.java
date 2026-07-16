@@ -32,6 +32,11 @@ public class KeyDispatcher {
      *  focused tool window. Only consulted when no multi-key prefix is pending. */
     private java.util.function.BiPredicate<String, EventTarget> preDispatch;
 
+    /** Macro capture: the bare-key hook, and the gate deciding whose key events are recordable. */
+    private Consumer<String> keyListener;
+
+    private java.util.function.Predicate<EventTarget> recordTarget = t -> false;
+
     public KeyDispatcher(CommandRegistry registry, KeymapManager keymap, Consumer<String> statusListener) {
         this.registry = registry;
         this.keymap = keymap;
@@ -41,6 +46,30 @@ public class KeyDispatcher {
     /** Installs a first-look hook (see {@link #preDispatch}); may be null to clear. */
     public void setPreDispatch(java.util.function.BiPredicate<String, EventTarget> hook) {
         this.preDispatch = hook;
+    }
+
+    /**
+     * Gate for the macro-recording hooks: only key events whose target passes are recorded. These hooks live
+     * on a <b>scene</b> filter — which, running in the capture phase, sees every key in the window before it
+     * reaches whatever is focused. Without this gate the text typed into the command palette, the find bar,
+     * a picker or a tool-window filter field was recorded as macro text and replayed into the document.
+     * Defaults to recording nothing, so a caller that never sets it can't capture stray keys.
+     */
+    public void setRecordTarget(java.util.function.Predicate<EventTarget> gate) {
+        this.recordTarget = gate != null ? gate : t -> false;
+    }
+
+    /**
+     * Installs a hook fed each bare editing/navigation key ({@code BACK_SPACE}, {@code DELETE}, the arrows,
+     * {@code HOME}/{@code END}, {@code PAGE_UP}/{@code PAGE_DOWN}) that reaches the editor <b>unbound</b> —
+     * the area handles those natively, so they produce neither a command nor a recordable character. Used by
+     * the macro recorder; without it a recorded macro simply omitted them. The value is a
+     * {@link com.editora.macro.MacroKey} token, so a modified-but-unbound variant the area still acts on
+     * (<b>Shift</b>-Down extends the selection, <b>Ctrl</b>-Left goes a word left) replays with its
+     * modifiers rather than as a bare arrow. May be null to clear.
+     */
+    public void setKeyListener(Consumer<String> listener) {
+        this.keyListener = listener;
     }
 
     /**
@@ -99,8 +128,9 @@ public class KeyDispatcher {
             event.consume();
             return;
         }
-        // A genuine character reaching the editor — feed it to the macro recorder (if any).
-        if (typedListener != null) {
+        // A genuine character reaching the editor — feed it to the macro recorder (if any). Gated on the
+        // target: this is a scene filter, so it also sees keys typed into the palette/find bar/pickers.
+        if (typedListener != null && recordTarget.test(event.getTarget())) {
             String s = event.getCharacter();
             if (s != null) {
                 for (int i = 0; i < s.length(); i++) {
@@ -181,8 +211,36 @@ public class KeyDispatcher {
             consumedPress = true;
             return;
         }
-        // A lone, unbound key: let it fall through so normal text input works.
+        // A lone, unbound key: let it fall through so normal text input works. If it's an editing or
+        // navigation key aimed at the editor, hand it to the macro recorder first — the area handles these
+        // itself, so this is the only place they can be captured.
+        if (keyListener != null && RECORDABLE_KEYS.contains(event.getCode()) && recordTarget.test(event.getTarget())) {
+            keyListener.accept(com.editora.macro.MacroKey.encode(
+                    event.isControlDown(),
+                    event.isAltDown(),
+                    event.isMetaDown(),
+                    event.isShiftDown(),
+                    event.getCode().name()));
+        }
     }
+
+    /**
+     * The bare keys a macro must capture: they change the document or the caret, are handled natively by the
+     * editor area, and are bound to no command in any bundled keymap — so neither the command hook nor the
+     * typed-char hook (Backspace is 0x08, below the printable range; the arrows emit no KEY_TYPED at all)
+     * ever sees them. Recording only the unbound ones keeps a chord that IS bound on the command path.
+     */
+    private static final java.util.Set<KeyCode> RECORDABLE_KEYS = java.util.Set.of(
+            KeyCode.BACK_SPACE,
+            KeyCode.DELETE,
+            KeyCode.LEFT,
+            KeyCode.RIGHT,
+            KeyCode.UP,
+            KeyCode.DOWN,
+            KeyCode.HOME,
+            KeyCode.END,
+            KeyCode.PAGE_UP,
+            KeyCode.PAGE_DOWN);
 
     /**
      * True if the event's target (or any ancestor) opts out of global key dispatch via the
