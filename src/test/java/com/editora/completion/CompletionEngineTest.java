@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CompletionEngineTest {
@@ -89,5 +90,48 @@ class CompletionEngineTest {
         assertEquals("withSort", sorted.get(0).label()); // has sortText → before the nulls
         assertEquals("noSort1", sorted.get(1).label()); // null sortText → alphabetical fallback
         assertEquals("noSort2", sorted.get(2).label());
+    }
+
+    @Test
+    void rankCompareIsAntisymmetric() {
+        // The "very close match" nudge used to be decided from the first operand alone, so a close match and
+        // a longer one each sorted before the other: rankCompare(a,b) and rankCompare(b,a) were both
+        // negative, and the ranking came out however the snippets happened to be declared.
+        assertTrue(CompletionEngine.rankCompare("abc", "abbb", "ab") < 0, "the close match ranks first");
+        assertTrue(CompletionEngine.rankCompare("abbb", "abc", "ab") > 0, "...from either direction");
+    }
+
+    @Test
+    void rankIsIndependentOfInputOrder() {
+        List<Completion> a = CompletionEngine.merge(
+                List.of(), List.of(Completion.word("abbb", null), Completion.word("abc", null)), "ab", 12);
+        List<Completion> b = CompletionEngine.merge(
+                List.of(), List.of(Completion.word("abc", null), Completion.word("abbb", null)), "ab", 12);
+        assertEquals("abc", a.get(0).insert());
+        assertEquals("abc", b.get(0).insert(), "same items, other declaration order → same ranking");
+    }
+
+    @Test
+    void rankCompareObeysTheComparatorContractOnALargeSamePrefixRun() {
+        // TimSort refuses to sort a run of >=32 with a comparator that contradicts itself ("Comparison
+        // method violates its general contract!") — that would throw mid-keystroke on a snippet file with
+        // many same-prefix entries.
+        List<Completion> words = new java.util.ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            words.add(Completion.word(i % 2 == 0 ? "abc" + i : "ab" + "b".repeat(2 + i % 5) + i, null));
+        }
+        assertEquals(12, CompletionEngine.merge(List.of(), words, "ab", 12).size());
+    }
+
+    @Test
+    void ghostSuffixOnlyCompletesWordsCasedLikeWhatWasTyped() {
+        // Ghost text keeps the typed prefix and appends only the suffix, so an all-caps/mixed-case prefix
+        // would splice into a non-word: "APP" + "le" = "APPle".
+        assertEquals("le", CompletionEngine.ghostSuffix("apple", "app"));
+        assertEquals("le", CompletionEngine.ghostSuffix("apple", "App"), "sentence-start capitalization");
+        assertNull(CompletionEngine.ghostSuffix("apple", "APP"));
+        assertNull(CompletionEngine.ghostSuffix("apple", "aPp"));
+        assertNull(CompletionEngine.ghostSuffix("apple", "apple"), "no suffix to add");
+        assertNull(CompletionEngine.ghostSuffix("apple", "banana"));
     }
 }

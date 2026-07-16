@@ -364,8 +364,19 @@ public class EditorBuffer implements TabContent {
     private boolean docPopupActive; // per-open session flag (reset on each popup open; Ctrl+Q toggles)
     private long docGen; // generation guard for the debounced/async doc fetch
     private javafx.animation.PauseTransition docDebounce;
-    /** Suppresses one auto-trigger pass right after we programmatically accept a completion. */
-    private boolean suppressCompletion;
+    /**
+     * Monotonic count of text changes to this buffer's document — a cheap "has the document moved under me"
+     * stamp for the async/deferred completion paths (a caret offset alone can't tell: an edit can land the
+     * caret back on the same offset). Bumped for edits made in either view (they share the document).
+     */
+    private long docVersion;
+    /**
+     * The {@link #docVersion} right after we programmatically accepted a completion, so the auto-trigger
+     * that the accept's own edit schedules is suppressed — but a real edit after it (which bumps the
+     * version) is not. A plain boolean cleared on the next pulse would be useless here: the debounced
+     * trigger it must gate is ~280 ms away.
+     */
+    private long suppressCompletionAtVersion = -1;
     /** Inline "ghost text" suggestion (prose buffers): a single muted suffix drawn after the caret. */
     private Label ghostLabel;
 
@@ -674,6 +685,11 @@ public class EditorBuffer implements TabContent {
         // manager via UndoMerge.PAUSE). Subscribe AFTER setUndoManager so the manager records the change
         // first; both views share the document, so this one subscription covers edits made in either.
         area.plainTextChanges().subscribe(c -> breakUndoGroupIfBoundary(c.getInserted(), c.getRemoved()));
+        // Document-change stamp for the deferred/async completion paths. On plainTextChanges (emitted
+        // synchronously by the edit) rather than the debounced stream, so a change is visible the instant it
+        // happens; both views share the document, so this one subscription covers either. One long++ per
+        // edit — off the per-keystroke cost budget.
+        area.plainTextChanges().subscribe(c -> docVersion++);
         area.setLineHighlighterFill(lineHighlightColor);
         // Track the earliest changed line immediately (the debounced stream below drops intermediate
         // emissions, so the dirty start must be accumulated here), then re-highlight after a pause.
@@ -6417,16 +6433,13 @@ public class EditorBuffer implements TabContent {
         }
         int lineStart = a.getAbsolutePosition(par, 0);
         int oldEnd = lineStart + oldIndent.length();
-        suppressCompletion = true;
-        try {
-            a.replaceText(lineStart, oldEnd, newIndent);
-            int delta = newIndent.length() - oldIndent.length();
-            int newCaret = caret <= oldEnd ? lineStart + newIndent.length() : caret + delta;
-            newCaret = Math.max(lineStart, Math.min(newCaret, a.getLength()));
-            a.moveTo(newCaret);
-        } finally {
-            Platform.runLater(() -> suppressCompletion = false);
-        }
+        a.replaceText(lineStart, oldEnd, newIndent);
+        int delta = newIndent.length() - oldIndent.length();
+        int newCaret = caret <= oldEnd ? lineStart + newIndent.length() : caret + delta;
+        newCaret = Math.max(lineStart, Math.min(newCaret, a.getLength()));
+        a.moveTo(newCaret);
+        // Re-indenting isn't the user typing a word — don't let the edit we just made pop the completion.
+        suppressCompletionAtVersion = docVersion;
     }
 
     /**
@@ -6815,26 +6828,52 @@ public class EditorBuffer implements TabContent {
         a.requestFocus();
     }
 
-    /** Expands the identifier before the caret if it matches a snippet prefix; returns whether it did. */
+    /** Expands the token before the caret if it matches a snippet prefix; returns whether it did. */
     private boolean expandPrefixAtCaret(CodeArea a) {
         if (!isEditable() || a.getSelection().getLength() > 0) {
             return false;
         }
         int caret = a.getCaretPosition();
         String text = a.getText();
-        int start = caret;
-        while (start > 0 && isPrefixChar(text.charAt(start - 1))) {
-            start--;
+        int identStart = caret;
+        while (identStart > 0 && isPrefixChar(text.charAt(identStart - 1))) {
+            identStart--;
         }
-        if (start == caret) {
+        // Plenty of snippet prefixes aren't identifiers — `#include`/`#ifndef` (c/cpp), `!` (the emmet html
+        // skeleton), `?xml`, `---` (yaml), `->` (ruby), `[PSCustomObject]` — so try the whole
+        // non-whitespace token first and fall back to the identifier run. Matching only the identifier run
+        // left 42 bundled snippets unreachable from the keyboard: at `#inc` the scan stops on the `#` and
+        // looks up "inc", which no snippet is registered under.
+        int tokenStart = snippetTokenStart(text, caret);
+        if (tokenStart < identStart) {
+            Snippet wide = snippetProvider.apply(language, text.substring(tokenStart, caret));
+            if (wide != null) {
+                startSnippet(a, wide, tokenStart, caret);
+                return true;
+            }
+        }
+        if (identStart == caret) {
             return false;
         }
-        Snippet snippet = snippetProvider.apply(language, text.substring(start, caret));
+        Snippet snippet = snippetProvider.apply(language, text.substring(identStart, caret));
         if (snippet == null) {
             return false;
         }
-        startSnippet(a, snippet, start, caret);
+        startSnippet(a, snippet, identStart, caret);
         return true;
+    }
+
+    /** Longest snippet prefix we'll look up ({@code [SuppressMessageAttribute]} is the longest bundled one). */
+    private static final int MAX_SNIPPET_PREFIX = 40;
+
+    /** Start of the non-whitespace token ending at {@code caret}, bounded to {@link #MAX_SNIPPET_PREFIX}. */
+    private static int snippetTokenStart(String text, int caret) {
+        int start = caret;
+        int limit = Math.max(0, caret - MAX_SNIPPET_PREFIX);
+        while (start > limit && !Character.isWhitespace(text.charAt(start - 1))) {
+            start--;
+        }
+        return start;
     }
 
     /** Parses {@code snippet}, replaces {@code [from,to)} with the expansion, and begins a session. */
@@ -7239,7 +7278,7 @@ public class EditorBuffer implements TabContent {
                 // no LSP/grammar to complete against on a large file anyway. largeFile implies hugeFile.
                 || !isEditable()
                 || hasActiveSnippet()
-                || (suppressCompletion && !manual)
+                || (!manual && docVersion == suppressCompletionAtVersion) // don't re-offer right after accept
                 || a.getSelection().getLength() > 0) {
             hideCompletion();
             return;
@@ -7378,10 +7417,13 @@ public class EditorBuffer implements TabContent {
     /** The suffix of the best word completion that continues {@code prefix}, or null if none qualifies. */
     private static String bestGhostSuffix(List<Completion> items, String prefix) {
         for (Completion c : items) {
-            if (c.kind() == Completion.Kind.WORD
-                    && c.insert().length() > prefix.length()
-                    && c.insert().regionMatches(true, 0, prefix, 0, prefix.length())) {
-                return c.insert().substring(prefix.length());
+            if (c.kind() == Completion.Kind.WORD) {
+                // The accept path keeps the typed prefix and inserts only this suffix, so the word must be
+                // cased compatibly with what was typed (see CompletionEngine.ghostSuffix).
+                String suffix = CompletionEngine.ghostSuffix(c.insert(), prefix);
+                if (suffix != null) {
+                    return suffix;
+                }
             }
         }
         return null;
@@ -7452,12 +7494,10 @@ public class EditorBuffer implements TabContent {
         CodeArea a = ghostArea;
         String s = ghostSuffix;
         hideGhost();
-        suppressCompletion = true;
-        try {
-            a.insertText(a.getCaretPosition(), s);
-        } finally {
-            Platform.runLater(() -> suppressCompletion = false);
-        }
+        a.insertText(a.getCaretPosition(), s);
+        // Stamped AFTER the edit (which bumps docVersion), so the auto-trigger that edit schedules is the
+        // one suppressed — the user typing on afterwards bumps the version again and re-enables it.
+        suppressCompletionAtVersion = docVersion;
         a.requestFocus();
     }
 
@@ -7490,6 +7530,7 @@ public class EditorBuffer implements TabContent {
      *  whole scope and leaves filtering to the client), then shows them merged with the local snippets. */
     private void requestLspCompletion(CodeArea a, int caret, String prefix, java.util.List<Completion> localItems) {
         long gen = ++completionGen;
+        long version = docVersion;
         // Flush the current text to the server FIRST: the completion auto-trigger (≈120ms) fires before
         // the debounced didChange (≈300ms), so without this the server still has stale text and member
         // completion after '.' resolves against the old document. JSON-RPC preserves order, so this
@@ -7498,7 +7539,14 @@ public class EditorBuffer implements TabContent {
             lspChangeListener.accept(a.getText());
         }
         lspCompletionProvider.accept(new int[] {a.getCurrentParagraph(), a.getCaretColumn()}, lspItems -> {
-            if (gen != completionGen || a.getScene() == null || a.getCaretPosition() != caret || hasActiveSnippet()) {
+            // Drop a response the document has moved past. The caret check alone isn't enough: an edit can
+            // put the caret back on the same offset (select the word, retype it), which would show items
+            // computed for the old text.
+            if (gen != completionGen
+                    || docVersion != version
+                    || a.getScene() == null
+                    || a.getCaretPosition() != caret
+                    || hasActiveSnippet()) {
                 return;
             }
             // Order LSP items by the server's relevance (preselect, then sortText) — IntelliJ-style —
@@ -7610,16 +7658,14 @@ public class EditorBuffer implements TabContent {
             start--;
         }
         hideCompletion();
-        suppressCompletion = true;
-        try {
-            if (c.snippet() != null) {
-                startSnippet(a, c.snippet(), start, caret);
-            } else {
-                a.replaceText(start, caret, c.insert());
-            }
-        } finally {
-            Platform.runLater(() -> suppressCompletion = false);
+        if (c.snippet() != null) {
+            startSnippet(a, c.snippet(), start, caret);
+        } else {
+            a.replaceText(start, caret, c.insert());
         }
+        // Stamped AFTER the edit (which bumps docVersion), so the auto-trigger that edit schedules is the
+        // one suppressed — the user typing on afterwards bumps the version again and re-enables it.
+        suppressCompletionAtVersion = docVersion;
         if (c.onAccept() != null) {
             c.onAccept().run(); // e.g. resolve + apply a TypeScript auto-import's additionalTextEdits
         }
@@ -7642,6 +7688,16 @@ public class EditorBuffer implements TabContent {
             return indentInsertSpacesOverride;
         }
         return !Indenter.detectUnit(area.getText(), tabSize).contains("\t");
+    }
+
+    /**
+     * Monotonic count of edits made to this buffer's document. Callers that hand work to an async round-trip
+     * and then apply its result to the document (e.g. resolving a completion's auto-import edits) capture
+     * this first and drop the result if it moved — the offsets a server computed against one revision are
+     * meaningless against another.
+     */
+    public long docVersion() {
+        return docVersion;
     }
 
     public void applyLspEdits(java.util.List<LspTextEdit> edits) {

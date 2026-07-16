@@ -22,6 +22,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Snippets whose prefix isn't a plain word now expand with Tab.** Expansion scanned back over letters,
+  digits and `_` only, so at `#inc` it stopped on the `#` and looked up `inc` — which nothing is registered
+  under. That left 42 bundled snippets unreachable from the keyboard: the c/cpp `#include`/`#ifndef`/`#define`
+  family, the emmet `!` HTML skeleton, `?xml`, yaml `---`, ruby `->`, typst `=`, and PowerShell's
+  `[PSCustomObject]`. Tab now tries the whole token before falling back to the word before the caret. (From a
+  per-feature audit of Completion.)
+
+- **Accepting a completion no longer immediately offers another one on the word you just completed.** The
+  guard against re-triggering was cleared on the next frame — ~264 ms before the trigger it was meant to
+  suppress — so it never suppressed anything: accepting `apple` grew a fresh `s` ghost, and accepting a
+  language-server item re-opened the popup. Suppression is now tied to the accept's own edit, so it lasts until
+  you type something. (From a per-feature audit of Completion.)
+
+- **Inline completion no longer mangles the capitalization of what you typed.** Ghost text matched
+  case-insensitively but appended the dictionary's own spelling to what you had typed, so an acronym at the end
+  of a line (`APP`) was offered — and on Tab accepted — as `APPle`. A word is now only suggested when it would
+  complete to a correctly-cased word. (From a per-feature audit of Completion.)
+
+- **Completion ranking no longer depends on the order snippets happen to be declared in.** The comparator
+  contradicted itself (two entries could each sort before the other), so identical candidates ranked
+  differently depending on input order, and a snippet file with enough same-prefix entries could throw
+  mid-keystroke. (From a per-feature audit of Completion.)
+
+- **The completion popup no longer mis-highlights — or crashes on — a label containing a dotted capital İ.**
+  The matched characters were located in a lowercased copy of the label, and lowercasing is not always
+  length-preserving, so the emphasis shifted onto the wrong characters and could run past the label's end.
+  (From a per-feature audit of Completion.)
+
+- **A completion's auto-import is dropped when the file changed while it was being resolved.** Resolving an
+  import is a round-trip to the language server, and its result used to be applied blind — so undoing the
+  completion (or editing above it) meanwhile inserted the import in the wrong place, or for a symbol that was
+  no longer there. Language-server completion results are likewise dropped now when an edit lands the caret
+  back on the offset the request was made at. (From a per-feature audit of Completion.)
+
 - **Your personal spell dictionary can no longer be silently lost.** `dictionary.txt` was rewritten by
   truncating it first (a crash or full disk mid-write left it empty), and a single malformed byte anywhere in
   it made Editora discard *every* word without a word — after which removing a word rewrote the file from that

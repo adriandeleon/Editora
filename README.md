@@ -304,7 +304,8 @@ Editora is built with the help of AI coding tools.
   first (always light, what-you-preview-is-what-prints), reusing the PDF layout core. Run "File: Print"
   / "File: Print Preview" from the palette.
 - **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a prefix + Tab to
-  expand (or pick via `C-c i` / "Snippet: Insert…"); Tab/Shift-Tab cycle fields, placeholders are
+  expand, or pick via `C-c i` / "Snippet: Insert…". Prefixes needn't be plain words: `#inc` (C/C++
+  `#include`), `!` (the HTML skeleton), `?xml` and yaml's `---` all expand. Tab/Shift-Tab cycle fields, placeholders are
   pre-selected, mirrors update live, `$0` is the final caret. Standard body syntax (`$1`,
   `${1:default}`, mirrors, choices, variables, escapes). Snippets ship for all 21 highlighted languages
   (most from the MIT [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection);

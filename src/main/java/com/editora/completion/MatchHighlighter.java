@@ -2,7 +2,6 @@ package com.editora.completion;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Computes which characters of a completion label match the typed query, so the popup can <b>bold</b> them
@@ -24,13 +23,15 @@ public final class MatchHighlighter {
         if (q.isEmpty()) {
             return new int[0][];
         }
-        String ll = label.toLowerCase(Locale.ROOT);
-        String lq = q.toLowerCase(Locale.ROOT);
+        // Everything below indexes `label` directly and folds case per character. Matching against a
+        // lowercased *copy* would be wrong: String.toLowerCase is not length-preserving ("İ" U+0130 → "i̇",
+        // one char becoming two), so a copy's indexes drift past such a char — mis-highlighting the label,
+        // and overrunning its end (the popup cell substrings these ranges) when the copy is longer.
 
         // 1) Contiguous case-insensitive substring (prefix or internal) — one clean run.
-        int idx = ll.indexOf(lq);
+        int idx = indexOfIgnoreCase(label, q);
         if (idx >= 0) {
-            return new int[][] {{idx, idx + lq.length()}};
+            return new int[][] {{idx, idx + q.length()}};
         }
 
         // 2) Subsequence (camelCase / fuzzy): match query chars in order, coalescing adjacent hits.
@@ -38,8 +39,8 @@ public final class MatchHighlighter {
         int i = 0;
         int runStart = -1;
         int prev = -2;
-        for (int j = 0; j < label.length() && i < lq.length(); j++) {
-            if (ll.charAt(j) == lq.charAt(i)) {
+        for (int j = 0; j < label.length() && i < q.length(); j++) {
+            if (equalsIgnoreCase(label.charAt(j), q.charAt(i))) {
                 if (j != prev + 1) {
                     if (runStart >= 0) {
                         ranges.add(new int[] {runStart, prev + 1});
@@ -50,12 +51,26 @@ public final class MatchHighlighter {
                 i++;
             }
         }
-        if (i < lq.length()) {
+        if (i < q.length()) {
             return new int[0][]; // not a full subsequence → don't highlight
         }
         if (runStart >= 0) {
             ranges.add(new int[] {runStart, prev + 1});
         }
         return ranges.toArray(new int[0][]);
+    }
+
+    /** First index in {@code s} where {@code sub} occurs case-insensitively, or -1. Length-preserving. */
+    private static int indexOfIgnoreCase(String s, String sub) {
+        for (int i = 0; i + sub.length() <= s.length(); i++) {
+            if (s.regionMatches(true, i, sub, 0, sub.length())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean equalsIgnoreCase(char a, char b) {
+        return a == b || Character.toLowerCase(a) == Character.toLowerCase(b);
     }
 }

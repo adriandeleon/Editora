@@ -122,6 +122,33 @@ public final class CompletionEngine {
         return out;
     }
 
+    /**
+     * The tail of {@code word} to show as inline ghost text after a typed {@code prefix}, or null when the
+     * word isn't a sane completion of it. Pure/unit-tested.
+     *
+     * <p>Ghost text renders — and accepts — as the typed prefix followed by this suffix, so the prefix keeps
+     * whatever casing the user typed. That only spells the word correctly when the prefix is either the
+     * word's own casing ({@code app}→{@code apple}) or its sentence-start capitalization
+     * ({@code App}→{@code Apple}). Matching case-insensitively and appending the dictionary's tail regardless
+     * would splice the two together: {@code APP} + {@code le} = {@code APPle}. Those are rejected (an
+     * all-caps word is an acronym anyway — the spell checker skips them for the same reason).
+     */
+    public static String ghostSuffix(String word, String prefix) {
+        if (word == null || prefix == null || prefix.isEmpty() || word.length() <= prefix.length()) {
+            return null;
+        }
+        if (!word.regionMatches(true, 0, prefix, 0, prefix.length())) {
+            return null;
+        }
+        String suffix = word.substring(prefix.length());
+        String completed = prefix + suffix;
+        return completed.equals(word) || completed.equals(capitalize(word)) ? suffix : null;
+    }
+
+    private static String capitalize(String w) {
+        return w.isEmpty() ? w : Character.toUpperCase(w.charAt(0)) + w.substring(1);
+    }
+
     /** Exact-case prefix matches first, then case-insensitive alphabetical. */
     static int rankCompare(String a, String b, String prefix) {
         boolean ea = a.startsWith(prefix);
@@ -129,11 +156,28 @@ public final class CompletionEngine {
         if (ea != eb) {
             return ea ? -1 : 1;
         }
-        int byLen = Integer.compare(a.length(), b.length());
-        if (byLen != 0 && a.length() <= prefix.length() + 1) {
-            return byLen; // nudge very-close matches up
+        // "Very close" matches (the prefix plus at most one char) are nudged above longer ones, and are
+        // ordered among themselves by length. The tier MUST be derived from both operands: deciding it from
+        // `a` alone makes the comparator non-antisymmetric (rankCompare(x,y) and rankCompare(y,x) both
+        // negative), so the ranked order would depend on the order the snippets happened to be declared in,
+        // and a large enough same-prefix run would trip TimSort's contract check.
+        boolean ca = isVeryClose(a, prefix);
+        boolean cb = isVeryClose(b, prefix);
+        if (ca != cb) {
+            return ca ? -1 : 1;
+        }
+        if (ca) {
+            int byLen = Integer.compare(a.length(), b.length());
+            if (byLen != 0) {
+                return byLen;
+            }
         }
         return a.toLowerCase(Locale.ROOT).compareTo(b.toLowerCase(Locale.ROOT));
+    }
+
+    /** A match that is the typed prefix plus at most one more char. */
+    private static boolean isVeryClose(String s, String prefix) {
+        return s.length() <= prefix.length() + 1;
     }
 
     private static boolean startsWithIgnoreCase(String s, String prefix) {
