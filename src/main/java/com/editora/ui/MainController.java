@@ -4661,7 +4661,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         WorkspaceState state = config.getWorkspaceState();
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
         for (WorkspaceState.OpenFile f : state.getOpenFiles()) {
-            if (f.getPath() != null && !f.getPath().isBlank() && Files.isReadable(Path.of(f.getPath()))) {
+            // parseStorable reconstructs a local path directly, or a remote (sftp://) one via the resolver —
+            // which is null until its connection is open, so a remote entry is skipped at startup rather than
+            // reopened as a same-named *local* file.
+            Path rp = f.getPath() == null || f.getPath().isBlank()
+                    ? null
+                    : com.editora.vfs.Vfs.parseStorable(f.getPath());
+            if (rp != null && Files.isReadable(rp)) {
                 files.add(f);
             }
         }
@@ -4677,7 +4683,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         int activeIndex = 0;
         for (int i = 0; i < files.size(); i++) {
             WorkspaceState.OpenFile f = files.get(i);
-            Path p = Path.of(f.getPath());
+            Path p = com.editora.vfs.Vfs.parseStorable(f.getPath()); // non-null: the filter above kept only readable
             boolean active = f.getPath().equals(activePath);
             if (active) {
                 activeIndex = i;
@@ -6848,13 +6854,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             Path p = tabPath(tab); // buffer or image-viewer path (image tabs restore too)
             if (p != null) {
                 int caret = buffer != null ? buffer.getArea().getCaretPosition() : 0;
-                files.add(new WorkspaceState.OpenFile(p.toAbsolutePath().toString(), caret, pinned.contains(tab)));
+                // Vfs.toStorableString keeps a remote file's sftp:// URI — a bare path would be reopened as a
+                // *local* file on restart (a same-named local file could silently open in its place).
+                files.add(new WorkspaceState.OpenFile(
+                        com.editora.vfs.Vfs.toStorableString(p), caret, pinned.contains(tab)));
             }
         }
         WorkspaceState state = config.getWorkspaceState();
         state.setOpenFiles(files);
         Path activePath = tabPath(tabPane.getSelectionModel().getSelectedItem());
-        state.setActiveFile(activePath != null ? activePath.toAbsolutePath().toString() : "");
+        state.setActiveFile(activePath != null ? com.editora.vfs.Vfs.toStorableString(activePath) : "");
         persistWindowBounds(state);
         toolWindows.persistDividers(); // capture a divider dragged but left open (close() only saves on hide)
         restoreCliFocusToolWindows(state);

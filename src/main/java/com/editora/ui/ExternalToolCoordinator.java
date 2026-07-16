@@ -160,6 +160,14 @@ final class ExternalToolCoordinator {
         if (!isEnabled() || tool == null) {
             return;
         }
+        // A remote (SFTP) buffer's path/dir can't feed a local subprocess: ProcessRunner does
+        // workingDir.toFile(), and SftpPath.toFile() throws UnsupportedOperationException on the service
+        // thread — the "Running…" status would hang forever with no output. Gate on the active buffer.
+        EditorBuffer active = host.activeBuffer();
+        if (active != null && active.getPath() != null && !host.isLocalBuffer(active)) {
+            host.setStatus(tr("status.externalTool.remoteUnsupported"));
+            return;
+        }
         ToolInvocation inv = ToolInvocation.of(tool, buildContext(), defaultDir());
         if (inv.isEmpty()) {
             host.setStatus(tr("status.externalTool.noCommand", tool.getName()));

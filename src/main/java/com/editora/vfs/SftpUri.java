@@ -29,14 +29,35 @@ public record SftpUri(String user, String host, int port, String path) {
             authority = authority.substring(at + 1);
         }
         int port = DEFAULT_PORT;
-        int colon = authority.indexOf(':');
-        String host = authority;
-        if (colon >= 0) {
-            host = authority.substring(0, colon);
-            try {
-                port = Integer.parseInt(authority.substring(colon + 1).strip());
-            } catch (NumberFormatException e) {
+        String host;
+        if (authority.startsWith("[")) {
+            // Bracketed IPv6 literal: sftp://[::1]:2222/path — split the port only after the closing ']'
+            // (an IPv6 address is full of colons, so a plain indexOf(':') would mangle it).
+            int close = authority.indexOf(']');
+            if (close < 0) {
                 return null;
+            }
+            host = authority.substring(1, close);
+            String after = authority.substring(close + 1);
+            if (after.startsWith(":")) {
+                try {
+                    port = Integer.parseInt(after.substring(1).strip());
+                } catch (NumberFormatException e) {
+                    return null;
+                }
+            } else if (!after.isEmpty()) {
+                return null; // junk between ']' and the path
+            }
+        } else {
+            int colon = authority.indexOf(':');
+            host = authority;
+            if (colon >= 0) {
+                host = authority.substring(0, colon);
+                try {
+                    port = Integer.parseInt(authority.substring(colon + 1).strip());
+                } catch (NumberFormatException e) {
+                    return null;
+                }
             }
         }
         if (host.isBlank() || port <= 0 || port > 65535) {
@@ -51,7 +72,7 @@ public record SftpUri(String user, String host, int port, String path) {
         if (user != null && !user.isEmpty()) {
             sb.append(user).append('@');
         }
-        sb.append(host);
+        sb.append(bracketedHost());
         if (port != DEFAULT_PORT) {
             sb.append(':').append(port);
         }
@@ -60,7 +81,12 @@ public record SftpUri(String user, String host, int port, String path) {
 
     /** The connection key ({@code user@host:port}) — all paths on one host+user+port share a filesystem. */
     public String authority() {
-        return (user == null || user.isEmpty() ? "" : user + "@") + host + ":" + port;
+        return (user == null || user.isEmpty() ? "" : user + "@") + bracketedHost() + ":" + port;
+    }
+
+    /** The host as it appears in a URI: an IPv6 literal (contains {@code :}) is wrapped in {@code [...]}. */
+    private String bracketedHost() {
+        return host.indexOf(':') >= 0 && !host.startsWith("[") ? "[" + host + "]" : host;
     }
 
     /** A short {@code host:/path} label for the UI. */
