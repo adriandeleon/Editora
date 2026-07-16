@@ -22,6 +22,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Keyboard macros now record Backspace, Delete and the arrow keys.** They were invisible to the recorder —
+  the editor handles them itself and no keymap binds them — so they were silently dropped: recording "type x,
+  Backspace, type y" replayed as `xy`, and the classic "go to line start, insert something, move down" macro
+  replayed without ever moving. Home/End, Page Up/Down and the selection-extending variants (Shift-Down,
+  Ctrl-Left) are captured too, with their modifiers. (From a per-feature audit of Macros.)
+
+- **Recording a macro no longer captures what you type into the command palette or the find bar.** The
+  capture hook saw every keystroke in the window regardless of what was focused, so recording a command via
+  the palette also recorded the letters used to search for it — and replaying then typed them into your
+  document. Only keys aimed at the editor are recorded now. (From a per-feature audit of Macros.)
+
+- **A macro can invoke another saved macro again.** Doing so while recording was silently dropped, because
+  the filter meant to exclude the record/replay commands also excluded every saved macro's own command.
+  (From a per-feature audit of Macros.)
+
+- **Renaming a macro no longer loses its keyboard shortcut** when the new name is a close variant of the old
+  one (`build` → `Build`). (From a per-feature audit of Macros.)
+
+- **Two macros can no longer end up sharing one command**, which made the older one unreachable from the
+  palette and stole its shortcut. Names that differ only in punctuation (`my macro` / `my-macro`), or that
+  are all punctuation, are now refused with an explanation instead of silently shadowing. (From a per-feature
+  audit of Macros.)
+
+- **"Replay N times" no longer freezes the window** when given an absurd count, and a macro reached from
+  inside another replay no longer reports success while doing nothing. (From a per-feature audit of Macros.)
+
 - **Pressing Enter at the very start of a Markdown file that begins with a blank line no longer does
   nothing.** The table-block finder threw an out-of-bounds exception there, and it runs on every Enter (and
   every Tab) in a Markdown buffer — so the keystroke was swallowed and an error went to the debug log. No

@@ -51,6 +51,21 @@ final class MacroCoordinator {
         service.onTypedChar(c);
     }
 
+    /** Capture hook for the key dispatcher's bare-key listener (Backspace/Delete/arrows/…). */
+    void onKey(String macroKeyToken) {
+        service.onKey(macroKeyToken);
+    }
+
+    /**
+     * Gate for both capture hooks: record a key only when it is aimed at the active editor's own area. The
+     * hooks are scene filters, so they otherwise also see everything typed into the command palette, the find
+     * bar, a picker or a tool-window filter field — which was then replayed into the document.
+     */
+    boolean isRecordableTarget(javafx.event.EventTarget target) {
+        EditorBuffer b = host.activeBuffer();
+        return b != null && b.ownsKeyTarget(target);
+    }
+
     /** Registers the static {@code macro.*} commands + one {@code macro.run.<slug>} per saved macro. */
     void registerCommands() {
         registry.register(Command.of("macro.startRecording", this::startRecording));
@@ -98,7 +113,7 @@ final class MacroCoordinator {
             host.setStatus(tr("status.macro.none"));
             return;
         }
-        service.replayLast(times, registry::run, this::typeText);
+        service.replayLast(times, registry::run, this::typeText, this::pressKey);
         host.setStatus(times == 1 ? tr("status.macro.replayed") : tr("status.macro.replayedN", times));
     }
 
@@ -116,10 +131,14 @@ final class MacroCoordinator {
         });
     }
 
-    private static int parseTimes(String s) {
+    /** Repeat count for "replay N times", clamped: replay is synchronous on the FX thread, so an
+     *  unbounded count (a fat-fingered "99999999") freezes the window with no way to cancel. */
+    static final int MAX_REPLAY_TIMES = 10_000;
+
+    static int parseTimes(String s) {
         try {
             int n = Integer.parseInt(s == null ? "" : s.trim());
-            return n > 0 ? n : 1;
+            return Math.max(1, Math.min(n, MAX_REPLAY_TIMES));
         } catch (NumberFormatException e) {
             return 1;
         }
@@ -153,6 +172,9 @@ final class MacroCoordinator {
     }
 
     private void runSaved() {
+        if (service.isRecording()) {
+            stopRecording(); // finalize first, like replayLast — else the picker's own keys join the recording
+        }
         if (service.saved().isEmpty()) {
             host.setStatus(tr("status.macro.noSaved"));
             return;
@@ -163,7 +185,7 @@ final class MacroCoordinator {
                 () -> new ArrayList<>(service.saved()),
                 Macro::name,
                 m -> tr("palette.macro.stepCount", m.steps().size()),
-                m -> service.run(m.name(), 1, registry::run, this::typeText));
+                m -> service.run(m.name(), 1, registry::run, this::typeText, this::pressKey));
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.window());
     }
@@ -197,12 +219,22 @@ final class MacroCoordinator {
         }
     }
 
+    /** Replay KEY steps (Backspace/Delete/arrows/…) at the active buffer's focused area. */
+    private void pressKey(String keyCodeName) {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null) {
+            b.pressKey(keyCodeName);
+        }
+    }
+
     /** Registers one {@code macro.run.<slug>} command per saved macro (palette- and key-bindable). */
     private void registerSavedCommands() {
         for (Macro m : service.saved()) {
             String name = m.name();
             registry.register(Command.of(
-                    MacroService.commandIdFor(name), name, () -> service.run(name, 1, registry::run, this::typeText)));
+                    MacroService.commandIdFor(name),
+                    name,
+                    () -> service.run(name, 1, registry::run, this::typeText, this::pressKey)));
         }
     }
 

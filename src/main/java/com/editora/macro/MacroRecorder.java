@@ -4,10 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Accumulates the interleaved stream of invoked commands and literal typed characters while a macro is
- * being recorded. Two hooks feed it — a command-execution listener (→ {@link #recordCommand}) and a
- * typed-character hook (→ {@link #recordChar}) — both firing on the FX thread in event order, so the
- * recorded sequence preserves the order in which the user performed the actions.
+ * Accumulates the interleaved stream of invoked commands, literal typed characters and bare
+ * editing/navigation key presses while a macro is being recorded. Three hooks feed it — a command-execution
+ * listener (→ {@link #recordCommand}), a typed-character hook (→ {@link #recordChar}) and a key hook
+ * (→ {@link #recordKey}) — all firing on the FX thread in event order, so the recorded sequence preserves
+ * the order in which the user performed the actions.
  *
  * <p>Consecutive characters coalesce into a single {@link MacroStep#TEXT} step (so a run of typing is one
  * step, not one per keystroke). Pure — no toolkit dependency — and unit-tested.
@@ -33,6 +34,17 @@ public final class MacroRecorder {
             return;
         }
         steps.add(MacroStep.command(commandId));
+    }
+
+    /**
+     * Records a bare key press by {@code KeyCode} name (Backspace, Delete, an arrow, Home/End, …). No-op
+     * when not recording. Breaks the text run, so {@code x Backspace y} is three steps, in order.
+     */
+    public void recordKey(String keyCodeName) {
+        if (!recording || keyCodeName == null || keyCodeName.isBlank()) {
+            return;
+        }
+        steps.add(MacroStep.key(keyCodeName));
     }
 
     /** Records a literally-typed character, coalescing it into the trailing text step. No-op when not recording. */
