@@ -107,4 +107,70 @@ class HistoryRetentionTest {
         Set<String> live = HistoryRetention.liveHashes(byProject);
         assertEquals(Set.of("h1", "h2", "h3"), live);
     }
+
+    private static HistoryRevision labelled(long ts, long size, String sha, String label) {
+        return new HistoryRevision("/tmp/a.txt", ts, size, sha, HistoryRevision.REASON_LABEL, label);
+    }
+
+    private static HistoryRevision deleted(long ts, long size, String sha) {
+        return new HistoryRevision("/tmp/a.txt", ts, size, sha, HistoryRevision.REASON_DELETE, "");
+    }
+
+    /**
+     * A "Put Label" revision is a named restore point — the user's deliberate mark, and the whole reason the
+     * label path forces a revision. Retention treated it as cache: past the age limit it was dropped (and its
+     * blob GCd) with no warning.
+     */
+    @Test
+    void ageBasedPruningKeepsLabelledAndPreDeleteRevisions() {
+        long now = 100_000_000L;
+        long day = 86_400_000L;
+        List<HistoryRevision> revs = List.of(
+                rev(now, 10, "newest"),
+                labelled(now - 31 * day, 10, "before-refactor-sha", "before-refactor"),
+                deleted(now - 40 * day, 10, "last-copy-sha"),
+                rev(now - 31 * day, 10, "old-auto"));
+        List<HistoryRevision> out = HistoryRetention.prune(revs, 0, 30 * day, now);
+        assertTrue(out.stream().anyMatch(r -> r.sha256().equals("before-refactor-sha")), "the user's label survives");
+        assertTrue(out.stream().anyMatch(r -> r.sha256().equals("last-copy-sha")), "the pre-delete copy survives");
+        assertFalse(out.stream().anyMatch(r -> r.sha256().equals("old-auto")), "an old automatic revision is cache");
+    }
+
+    /** With autosave on, the per-file cap is reached in hours — it must not evict the user's label. */
+    @Test
+    void theCountCapOnlyCountsAutomaticRevisions() {
+        List<HistoryRevision> revs = new java.util.ArrayList<>();
+        revs.add(rev(1000, 10, "newest"));
+        revs.add(labelled(999, 10, "kept-label", "before-refactor"));
+        for (int i = 0; i < 10; i++) {
+            revs.add(rev(900 - i, 10, "auto" + i));
+        }
+        List<HistoryRevision> out = HistoryRetention.prune(revs, 3, 0, 2000);
+        assertTrue(out.stream().anyMatch(r -> r.sha256().equals("kept-label")), "the label is not evicted by the cap");
+        assertEquals(
+                3,
+                out.stream().filter(r -> r.label().isBlank()).count(),
+                "exactly maxPerFile automatic revisions are kept");
+    }
+
+    /** The project byte budget walks past a label rather than reclaiming its bytes. */
+    @Test
+    void theProjectBudgetNeverEvictsALabelledRevision() {
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        bucket.put(
+                "/tmp/a.txt",
+                List.of(rev(500, 100, "newest-a"), labelled(100, 100, "label-a", "keep-me"), rev(200, 100, "auto-a")));
+        Map<String, List<HistoryRevision>> out = HistoryRetention.enforceProjectBudget(bucket, 200);
+        List<HistoryRevision> a = out.get("/tmp/a.txt");
+        assertTrue(a.stream().anyMatch(r -> r.sha256().equals("label-a")), "the label survives the budget");
+        assertFalse(a.stream().anyMatch(r -> r.sha256().equals("auto-a")), "the automatic revision was evicted first");
+    }
+
+    @Test
+    void isProtectedIdentifiesUserIntent() {
+        assertTrue(HistoryRetention.isProtected(labelled(1, 1, "s", "my-label")));
+        assertTrue(HistoryRetention.isProtected(deleted(1, 1, "s")));
+        assertFalse(HistoryRetention.isProtected(rev(1, 1, "s")));
+        assertFalse(HistoryRetention.isProtected(null));
+    }
 }

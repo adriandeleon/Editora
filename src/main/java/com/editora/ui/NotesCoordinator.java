@@ -227,7 +227,15 @@ final class NotesCoordinator {
     }
 
     private static String findNoteKeyByIdentity(Map<String, List<PersonalNote>> map, FileIdentity id) {
-        return PathKeys.findKeyByIdentity(map, id);
+        // A content-hash match only means "same bytes" — it is trusted only when the note's own file is gone
+        // from disk (a rename). Otherwise opening a copy of an annotated file stole its notes; see PathKeys.
+        return PathKeys.findKeyByIdentity(map, id, path -> {
+            try {
+                return !path.isBlank() && java.nio.file.Files.exists(java.nio.file.Path.of(path));
+            } catch (RuntimeException e) {
+                return false; // an unparseable stored path can't be an existing file
+            }
+        });
     }
 
     // --- add / edit / delete / jump (command + gutter + context-menu entry points) -------------------

@@ -70,6 +70,9 @@ final class HistoryCoordinator {
     private final DiffCoordinator diff;
     private final Ops ops;
     private final HistoryService historyService;
+    /** Records submitted but not yet folded into the index — blob GC is only safe at zero (FX-confined). */
+    private int recordsInFlight;
+
     private final FileHistoryPanel panel;
 
     HistoryCoordinator(CoordinatorHost host, DiffCoordinator diff, Ops ops) {
@@ -200,22 +203,44 @@ final class HistoryCoordinator {
         var policy = new HistoryRetention.RetentionPolicy(
                 s.getHistoryMaxPerFile(), maxAgeMillis, (long) Math.max(0, s.getHistoryMaxTotalMb()) * 1024L * 1024L);
         long now = System.currentTimeMillis();
-        historyService.snapshot(file, content, reason, label, force, existing, policy, now, updated -> {
-            Map<String, List<HistoryRevision>> bucket = ops.historyMap();
-            bucket.put(key, updated);
-            // Enforce the per-project byte budget across the whole bucket, then persist + GC.
-            var trimmed = HistoryRetention.enforceProjectBudget(bucket, policy.maxTotalBytesPerProject());
-            bucket.clear();
-            bucket.putAll(trimmed);
-            ops.saveHistory();
-            historyService.gc(HistoryRetention.liveHashes(ops.historyByProject()));
+        recordsInFlight++;
+        historyService.snapshot(file, content, reason, label, force, existing, policy, now, rev -> {
+            recordsInFlight--;
+            if (rev != null) {
+                applyRecorded(key, rev, policy, now);
+            }
+            // Only safe once nothing is in flight: every blob is written before its revision reaches the
+            // index here, so GCing mid-flight deleted the blob of a revision that was about to be indexed.
+            if (recordsInFlight == 0) {
+                historyService.gc(HistoryRetention.liveHashes(ops.historyByProject()));
+            }
             EditorBuffer active = host.activeBuffer();
-            if (active != null
+            if (rev != null
+                    && active != null
                     && active.getPath() != null
                     && historyKey(active.getPath()).equals(key)) {
                 refresh();
             }
         });
+    }
+
+    /**
+     * Folds one recorded revision into the project's index, on the FX thread, against the list <b>as it is
+     * now</b> — the executor no longer builds the list, because it could only see the list as it was when the
+     * record was submitted.
+     */
+    private void applyRecorded(String key, HistoryRevision rev, HistoryRetention.RetentionPolicy policy, long now) {
+        Map<String, List<HistoryRevision>> bucket = ops.historyMap();
+        List<HistoryRevision> current = bucket.getOrDefault(key, List.of());
+        List<HistoryRevision> updated = new ArrayList<>(current.size() + 1);
+        updated.add(rev); // newest-first
+        updated.addAll(current);
+        bucket.put(key, HistoryRetention.prune(updated, policy.maxPerFile(), policy.maxAgeMillis(), now));
+        // Enforce the per-project byte budget across the whole bucket, then persist.
+        var trimmed = HistoryRetention.enforceProjectBudget(bucket, policy.maxTotalBytesPerProject());
+        bucket.clear();
+        bucket.putAll(trimmed);
+        ops.saveHistory();
     }
 
     private FileHistoryPanel.Actions historyActions() {

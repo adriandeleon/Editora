@@ -3,6 +3,7 @@ package com.editora.config;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 import com.editora.vfs.Vfs;
 
@@ -93,22 +94,38 @@ public final class PathKeys {
     }
 
     /**
-     * The first bucket key whose any note's {@link FileIdentity} matches {@code id} by content hash or
-     * canonical path (used to re-home a buffer's notes when the path key has changed but the file is the
-     * same). Returns {@code null} for a null {@code id} or no match.
+     * The bucket key holding the notes that belong to {@code id}'s file, when it is keyed under a different
+     * path — i.e. the file was renamed or moved outside Editora. Returns {@code null} for a null {@code id}
+     * or no match. The caller re-keys the notes onto the new path, so a wrong answer here <b>moves a note
+     * off the file it was written on</b>.
+     *
+     * <p>A canonical-path match is identity. A <b>content-hash match is not</b>: two files can hold the same
+     * bytes without being the same file — a {@code cp config.yaml config.backup.yaml}, a duplicated
+     * {@code LICENSE}, the boilerplate {@code index.ts} in each package of a monorepo. Accepting it meant
+     * merely *opening* such a file moved the other file's notes onto it and deleted them from the original.
+     * So a hash match is only trusted when the candidate's own file is <b>gone</b> from disk, which is what
+     * a rename actually looks like; {@code stillExists} decides that (injected so this stays pure).
      */
-    public static String findKeyByIdentity(Map<String, List<PersonalNote>> map, FileIdentity id) {
+    public static String findKeyByIdentity(
+            Map<String, List<PersonalNote>> map, FileIdentity id, Predicate<String> stillExists) {
         if (id == null) {
             return null;
         }
+        String hashCandidate = null;
         for (var entry : map.entrySet()) {
             for (PersonalNote n : entry.getValue()) {
                 FileIdentity.Match m = FileIdentity.match(n.file(), id);
-                if (m == FileIdentity.Match.CONTENT_HASH || m == FileIdentity.Match.CANONICAL_PATH) {
-                    return entry.getKey();
+                if (m == FileIdentity.Match.CANONICAL_PATH) {
+                    return entry.getKey(); // the same file — no ambiguity
+                }
+                if (m == FileIdentity.Match.CONTENT_HASH
+                        && hashCandidate == null
+                        && !stillExists.test(n.file().canonicalPath())
+                        && !stillExists.test(n.file().path())) {
+                    hashCandidate = entry.getKey(); // same bytes AND the original is gone ⇒ a rename
                 }
             }
         }
-        return null;
+        return hashCandidate;
     }
 }

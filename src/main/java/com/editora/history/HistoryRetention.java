@@ -52,14 +52,37 @@ public final class HistoryRetention {
         for (int i = 0; i < revisions.size(); i++) {
             HistoryRevision r = revisions.get(i);
             boolean tooOld = maxAgeMillis > 0 && (now - r.timestamp()) > maxAgeMillis;
-            if (i == 0 || !tooOld) {
+            if (i == 0 || !tooOld || isProtected(r)) {
                 out.add(r);
             }
         }
         if (maxPerFile > 0 && out.size() > maxPerFile) {
-            out = new ArrayList<>(out.subList(0, maxPerFile));
+            // The cap counts only automatic revisions: a labelled restore point (or the last copy of a
+            // deleted file) is deliberate, and with autosave on, 50 automatic revisions is a few hours of
+            // editing — so counting them evicted the user's named revision the same day they made it.
+            List<HistoryRevision> capped = new ArrayList<>(out.size());
+            int automatic = 0;
+            for (HistoryRevision r : out) {
+                if (isProtected(r)) {
+                    capped.add(r);
+                } else if (automatic < maxPerFile) {
+                    automatic++;
+                    capped.add(r);
+                }
+            }
+            out = capped;
         }
         return out;
+    }
+
+    /**
+     * True for a revision that exists because the <b>user</b> asked for it, not because a save happened: a
+     * named restore point ("Put Label"), or the copy captured just before a file was deleted — which may be
+     * the only copy left. Retention treats those as intent and never evicts them; everything else is cache.
+     */
+    public static boolean isProtected(HistoryRevision r) {
+        return r != null
+                && ((r.label() != null && !r.label().isBlank()) || HistoryRevision.REASON_DELETE.equals(r.reason()));
     }
 
     /**
@@ -96,11 +119,22 @@ public final class HistoryRetention {
                 if (list.size() <= 1) {
                     continue; // keep each file's newest revision
                 }
-                HistoryRevision oldest = list.get(list.size() - 1); // newest-first ⇒ last is oldest
-                if (oldest.timestamp() < victimTs) {
-                    victimTs = oldest.timestamp();
+                // The oldest EVICTABLE row: a labelled/pre-delete revision is user intent, not cache, so the
+                // budget walks past it rather than deleting it (and its blob) without a word.
+                int idx = -1;
+                for (int i = list.size() - 1; i >= 1; i--) { // newest-first ⇒ walk from the oldest
+                    if (!isProtected(list.get(i))) {
+                        idx = i;
+                        break;
+                    }
+                }
+                if (idx < 0) {
+                    continue; // this file is all labels — nothing here to reclaim
+                }
+                if (list.get(idx).timestamp() < victimTs) {
+                    victimTs = list.get(idx).timestamp();
                     victimFile = e.getKey();
-                    victimIndex = list.size() - 1;
+                    victimIndex = idx;
                 }
             }
             if (victimFile == null) {

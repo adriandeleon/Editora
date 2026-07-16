@@ -3,6 +3,32 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Workspace audit (per-feature bug hunt: Projects / Notes / Local History / update check) — 6 fixes, all
+      data-loss or intent-loss: **`PathKeys.findKeyByIdentity` accepted a `CONTENT_HASH` match as file
+      identity**, so opening any file with identical bytes (a `cp`, a duplicated LICENSE, a monorepo's
+      boilerplate `index.ts`) ran the rename re-key — `map.remove(keyA)` + `put(keyB)` + persist — **deleting
+      the original's notes** (now gated on the candidate's file being *gone* from disk, which is what a rename
+      actually is; verified both ways: rename still re-keys, copy no longer steals); **`HistoryRetention`
+      pruned user-labelled revisions** (age *and* the per-file cap *and* the project budget — with autosave on,
+      50 automatic revisions is hours, so a "before-refactor" label could die the same day; new `isProtected`
+      exempts labels + the pre-delete capture); **`recordFor` was a read-modify-write across the async
+      boundary** (the executor built the new list from the list as it was at *submit* time → two records for
+      one key, or an autosave of two dirty buffers, dropped a revision / resurrected budget-evicted rows —
+      `HistoryService.snapshot` now delivers just the `HistoryRevision` and `applyRecorded` folds it in on FX
+      against the live list); **blob GC ran from a per-record callback** with an FX-snapshotted `liveHashes`,
+      so a blob written but not yet indexed was deleted → an index row whose content is gone, rendered as an
+      empty file *and* apply-able over the real one (now gated on an FX-confined `recordsInFlight == 0`);
+      **`NoteManager.place` laundered RESOLVED → ORPHANED → ACTIVE** (a system observation overwrote a user
+      decision, persisted); and **`compareVersions` ranked `1.0.0-rc1` above `1.0.0`** (raw last-segment string
+      compare — `"0"` < `"0-rc1"`), so RC users never saw the GA (proper semver pre-release precedence now;
+      shared with the plugin registry). Deferred → #453 (LINE notes capture no context → nearest-identical-line
+      re-anchor), #454 (a >200-char note highlights only 200 — needs a `TextAnchor` schema bump), #455
+      (>5000 occurrences → jumps up-file instead of orphaning). Verified-clean: `ProjectManager` (active/delete/
+      `createOrGet` by normalized root), `WindowManager.reconcileOpenSet` (3 s debounce; traced the quit burst),
+      `deleteProject` (right id; orphan blobs reclaimed by the next gc), `NoteAnchors.shiftOffset/shiftRange`,
+      `NoteStore.mergePreservingOrder` (by UUID), the pre-delete capture, restore targeting (folder mode can't
+      revert another file), `HistoryBlobStore` (temp+move, sharded, idempotent), index write atomicity,
+      `UpdateCheck.isDue` (clock moved back = due) + `parseLatest` caps/HTTPS/UA.
 - [x] Build Tools audit (per-feature bug hunt) — 7 fixes across the Maven/npm/Cargo/Go/Gradle framework:
       **`GradleTasks.parse` required `" - description"`**, so `gradle tasks --all` rows for
       description-less tasks were silently dropped (verified against **real Gradle 9.5.1 output**: 30→32 tasks;

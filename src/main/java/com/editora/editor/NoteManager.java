@@ -251,7 +251,11 @@ public final class NoteManager {
         int savedEnd = absOffset(a.endLine(), a.endColumn());
         int[] r = NoteAnchors.relocate(area.getText(), savedStart, savedEnd, a.selectedText(), a.prefix(), a.suffix());
         if (r == null) {
-            PersonalNote orphan = note.status() == NoteStatus.ORPHANED ? note : note.withStatus(NoteStatus.ORPHANED);
+            // ORPHANED is a system observation ("I can't find the text"), RESOLVED is the user's decision.
+            // Overwriting one with the other lost the decision permanently: a checkout that hid the text
+            // flipped RESOLVED -> ORPHANED (persisted), and finding the text again mapped ORPHANED ->
+            // ACTIVE, so the note came back as open work.
+            PersonalNote orphan = note.status() == NoteStatus.ACTIVE ? note.withStatus(NoteStatus.ORPHANED) : note;
             return new Tracked(orphan, -1, -1);
         }
         PersonalNote active = note.status() == NoteStatus.ORPHANED ? note.withStatus(NoteStatus.ACTIVE) : note;

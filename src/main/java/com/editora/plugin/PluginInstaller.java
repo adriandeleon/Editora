@@ -193,10 +193,20 @@ public final class PluginInstaller {
      * Compares dotted version strings numerically segment-by-segment (e.g. {@code 1.10 > 1.9}); a
      * non-numeric segment falls back to a case-insensitive string compare. Pure — unit-tested. Returns
      * negative/zero/positive like {@link Comparator}.
+     *
+     * <p>A semver <b>pre-release</b> suffix ({@code 1.0.0-rc1}) ranks <i>below</i> the same numeric core
+     * ({@code 1.0.0}), per the spec. Comparing the raw last segments instead made {@code "0"} sort before
+     * {@code "0-rc1"} — i.e. the release looked *older* than its own release candidate, so a user running an
+     * {@code -rcN} build (which the release pipeline publishes as a pre-release) was never told the final
+     * version had shipped.
      */
     public static int compareVersions(String a, String b) {
-        String[] as = (a == null ? "" : a.strip()).split("\\.");
-        String[] bs = (b == null ? "" : b.strip()).split("\\.");
+        String an = (a == null ? "" : a.strip());
+        String bn = (b == null ? "" : b.strip());
+        String ap = preRelease(an);
+        String bp = preRelease(bn);
+        String[] as = core(an).split("\\.");
+        String[] bs = core(bn).split("\\.");
         int n = Math.max(as.length, bs.length);
         for (int i = 0; i < n; i++) {
             String x = (i < as.length && !as[i].isBlank()) ? as[i] : "0";
@@ -213,7 +223,29 @@ public final class PluginInstaller {
                 return cmp < 0 ? -1 : 1;
             }
         }
-        return 0;
+        if (ap.isEmpty() && bp.isEmpty()) {
+            return 0;
+        }
+        if (ap.isEmpty()) {
+            return 1; // a release outranks its own pre-release
+        }
+        if (bp.isEmpty()) {
+            return -1;
+        }
+        int cmp = ap.toLowerCase(Locale.ROOT).compareTo(bp.toLowerCase(Locale.ROOT));
+        return cmp == 0 ? 0 : (cmp < 0 ? -1 : 1);
+    }
+
+    /** The numeric core of a version — everything before a {@code -pre.release} suffix. */
+    private static String core(String v) {
+        int dash = v.indexOf('-');
+        return dash < 0 ? v : v.substring(0, dash);
+    }
+
+    /** The {@code -pre.release} suffix of a version, without the dash ({@code ""} when there is none). */
+    private static String preRelease(String v) {
+        int dash = v.indexOf('-');
+        return dash < 0 || dash + 1 >= v.length() ? "" : v.substring(dash + 1);
     }
 
     private static Integer tryInt(String s) {
