@@ -252,9 +252,13 @@ public final class HttpClientService {
         if (baseDir == null || result.failed()) {
             return;
         }
+        Path baseReal = baseDir.toAbsolutePath().normalize();
         for (HttpFile.Redirect r : request.redirects()) {
             try {
-                Path target = baseDir.resolve(r.path());
+                Path target = baseReal.resolve(r.path()).normalize();
+                if (!target.startsWith(baseReal)) {
+                    continue; // a ">> ../../x" must not write outside the request file's folder
+                }
                 if (!r.force() && Files.exists(target)) {
                     continue;
                 }

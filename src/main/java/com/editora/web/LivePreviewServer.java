@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -52,7 +51,10 @@ public final class LivePreviewServer {
             return server.getAddress().getPort();
         }
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-        pool = Executors.newCachedThreadPool(r -> {
+        // Bounded (not newCachedThreadPool): each /__editora_livereload request blocks a worker for up to
+        // POLL_TIMEOUT_MS, so an unbounded pool lets any localhost process exhaust threads/memory by holding
+        // many concurrent long-polls. A small fixed pool caps that; normal use holds one poll per open page.
+        pool = Executors.newFixedThreadPool(16, r -> {
             Thread t = new Thread(r, "html-preview-http");
             t.setDaemon(true);
             return t;
@@ -163,8 +165,10 @@ public final class LivePreviewServer {
             sendStatus(ex, 404);
             return;
         }
+        // urlPath is URI.getPath(), which is already %-decoded — do NOT URLDecoder.decode again (that is
+        // form decoding: it turns "+" into a space and double-decodes "%25", breaking asset filenames that
+        // contain "+", "%", or a space).
         String rel = urlPath.startsWith("/") ? urlPath.substring(1) : urlPath;
-        rel = URLDecoder.decode(rel, StandardCharsets.UTF_8);
         if (rel.isEmpty()) {
             rel = previewRelPath == null ? "" : previewRelPath; // "/" ⇒ the previewed file
         }
@@ -231,10 +235,23 @@ public final class LivePreviewServer {
     /**
      * Resolves {@code rel} against {@code root} and rejects anything that escapes the doc root (path
      * traversal), returning {@code null} when unsafe. {@code root} must be absolute + normalized.
+     *
+     * <p>Beyond the lexical {@code normalize()}+{@code startsWith} check, it canonicalizes an <em>existing</em>
+     * target with {@code toRealPath()} and re-checks containment — otherwise a symlink that lives inside the
+     * doc root but points outside it (common in real project trees) would pass the lexical check and let the
+     * preview server read an arbitrary file (same-origin with the previewed page). A target that doesn't exist
+     * yet (or can't be canonicalized) falls back to the lexical result — the subsequent read just 404s.
      */
     static Path safeResolve(Path root, String rel) {
         Path resolved = root.resolve(rel).normalize();
-        return resolved.startsWith(root) ? resolved : null;
+        if (!resolved.startsWith(root)) {
+            return null; // lexical escape (…/../…, absolute path)
+        }
+        try {
+            return resolved.toRealPath().startsWith(root.toRealPath()) ? resolved : null;
+        } catch (IOException notYetExisting) {
+            return resolved; // no such file — safe to return; the read will 404
+        }
     }
 
     /** Splices the live-reload {@code <script>} before {@code </body>} (appends when there is no body tag). */

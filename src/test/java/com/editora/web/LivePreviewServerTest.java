@@ -72,6 +72,27 @@ class LivePreviewServerTest {
         assertNull(LivePreviewServer.safeResolve(root, "a/../../outside.txt"));
     }
 
+    @Test
+    void safeResolveRejectsASymlinkPointingOutsideRoot(@TempDir Path tmp) throws Exception {
+        Path root = Files.createDirectories(tmp.resolve("site")).toRealPath();
+        Path outside = Files.writeString(tmp.resolve("secret.txt"), "top secret");
+        try {
+            Files.createSymbolicLink(root.resolve("escape.txt"), outside);
+        } catch (UnsupportedOperationException | java.io.IOException e) {
+            org.junit.jupiter.api.Assumptions.abort("symlinks not creatable on this platform");
+        }
+        // The lexical normalize()+startsWith check passes (escape.txt is under root), but the link's real
+        // target is outside → must be rejected.
+        assertNull(LivePreviewServer.safeResolve(root, "escape.txt"), "a symlink escaping the root is rejected");
+
+        // A normal file and an in-root symlink are still allowed.
+        Files.writeString(root.resolve("index.html"), "<html></html>");
+        assertNotNull(LivePreviewServer.safeResolve(root, "index.html"));
+        Path inner = Files.writeString(root.resolve("real.css"), "body{}");
+        Files.createSymbolicLink(root.resolve("alias.css"), inner);
+        assertNotNull(LivePreviewServer.safeResolve(root, "alias.css"), "an in-root symlink is fine");
+    }
+
     // --- end-to-end: a real loopback server (no browser involved) ---------------------------------
 
     @Test
