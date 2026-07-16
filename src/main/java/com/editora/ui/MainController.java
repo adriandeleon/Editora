@@ -4999,7 +4999,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Spell checking: share the user dictionary + persist "Add to Dictionary" (before applyViewSettings,
         // which sets the per-file language and enables checking).
         buffer.setSpellUserWords(config.getUserDictionary());
-        buffer.setOnAddToDictionary(config::addUserWord);
+        buffer.setOnAddToDictionary(this::addUserWordAndRefreshAll);
         applyViewSettings(buffer);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.persistBookmarks(buffer));
@@ -9960,6 +9960,19 @@ public class MainController implements com.editora.mcp.McpBridge {
             err.setHeaderText(tr("status.print.failed", ""));
             err.setContentText(msg);
             err.showAndWait();
+        }
+    }
+
+    /** Persists a word to the shared personal dictionary, then drops every open buffer's memoized spell
+     *  verdicts — the word set is shared, but each buffer's overlay caches its own results, so "Add to
+     *  Dictionary" in one tab used to leave the word squiggled in the others for the rest of the session. */
+    private void addUserWordAndRefreshAll(String word) {
+        config.addUserWord(word);
+        for (Tab tab : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(tab);
+            if (b != null) {
+                b.refreshSpell();
+            }
         }
     }
 

@@ -366,7 +366,9 @@ public class SharedConfig {
         }
     }
 
-    /** Rewrites {@code dictionary.txt} from the in-memory set (one word per line); non-fatal on failure. */
+    /** Rewrites {@code dictionary.txt} from the in-memory set (one word per line); non-fatal on failure.
+     *  Written via temp + atomic move (the project convention): a plain {@code writeString} truncates first,
+     *  so a crash / disk-full between truncate and write left the whole personal dictionary empty. */
     private void rewriteUserDictionary() {
         try {
             Files.createDirectories(configDir);
@@ -374,7 +376,8 @@ public class SharedConfig {
             for (String w : userDictionary) {
                 sb.append(w).append(System.lineSeparator());
             }
-            Files.writeString(getUserDictionaryFile(), sb.toString());
+            com.editora.io.AtomicFileWrite.write(
+                    getUserDictionaryFile(), sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         } catch (IOException e) {
             // non-fatal: the in-memory set still applies for this session
         }
@@ -387,8 +390,12 @@ public class SharedConfig {
             return;
         }
         try {
-            for (String line : Files.readAllLines(file)) {
-                String w = line.strip().toLowerCase(java.util.Locale.ROOT);
+            // Lenient decode: Files.readAllLines REPORTs malformed bytes and throws, which silently discarded
+            // the ENTIRE personal dictionary over one bad byte — and a later remove would then rewrite the
+            // file from that empty set (permanent loss). new String(bytes, UTF_8) replaces instead of throwing.
+            String text = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8);
+            for (String line : text.split("\r?\n")) {
+                String w = stripBom(line).strip().toLowerCase(java.util.Locale.ROOT);
                 if (!w.isEmpty()) {
                     userDictionary.add(w);
                 }
@@ -396,6 +403,12 @@ public class SharedConfig {
         } catch (IOException ignored) {
             // missing/unreadable dictionary just means no user words
         }
+    }
+
+    /** Drops a leading UTF-8 BOM — {@link String#strip()} does not (U+FEFF is {@code Cf}, not whitespace), so
+     *  a BOM'd dictionary.txt left its first word permanently unmatchable. */
+    private static String stripBom(String s) {
+        return !s.isEmpty() && s.charAt(0) == '﻿' ? s.substring(1) : s;
     }
 
     // --- loading + saving the bucketed stores ---

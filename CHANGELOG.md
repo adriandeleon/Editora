@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Your personal spell dictionary can no longer be silently lost.** `dictionary.txt` was rewritten by
+  truncating it first (a crash or full disk mid-write left it empty), and a single malformed byte anywhere in
+  it made Editora discard *every* word without a word — after which removing a word rewrote the file from that
+  empty set, making the loss permanent. It's now written atomically and read leniently (a stray byte or a
+  byte-order mark no longer costs you the file). (From a per-feature audit of Spell Check.)
+
+- **Adding or removing a word in Settings → Spell Check now takes effect immediately** instead of only after
+  toggling something else or restarting.
+
+- **"Add to Dictionary" now clears the squiggle in every open tab**, not just the one you right-clicked in.
+
+- **Restored tabs get their squiggles without needing a scroll or keystroke.** When several files asked for
+  the same dictionary at once (session restore, a language switch), only the first was told when it finished
+  loading — the rest silently showed no spell check at all.
+
+
 - **Spell check no longer squiggles inside Markdown fenced code blocks.** The "skip ``` code fences" rule was
   never actually switched on (it was decided before the file's language was known), so opening a README put red
   squiggles on `sudo`, `cd`, `xzf` and friends inside its code blocks. (From a per-feature audit of Spell

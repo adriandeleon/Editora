@@ -3,6 +3,8 @@ package com.editora.editor;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +35,9 @@ public final class SpellDictionaries {
 
     private static final Map<String, Hunspell> CACHE = new ConcurrentHashMap<>();
     private static final Set<String> BUILDING = ConcurrentHashMap.newKeySet();
+    /** Callbacks waiting on an in-flight build, per language — several buffers commonly ask at once. */
+    private static final Map<String, List<Runnable>> PENDING = new ConcurrentHashMap<>();
+
     private static final ExecutorService BUILDER = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "spell-dictionary-builder");
         t.setDaemon(true);
@@ -57,26 +62,45 @@ public final class SpellDictionaries {
 
     /**
      * Ensures {@code langId} is built (off-thread, once), then runs {@code onReady} on the FX thread.
-     * No-op if already built/building or unavailable. {@code onReady} may be {@code null}.
+     * {@code onReady} <b>always</b> fires (unless the language is unavailable): immediately when the language
+     * is already built, and after an in-flight build for every waiting caller. {@code onReady} may be null.
      */
     public static void ensureBuilt(String langId, Runnable onReady) {
-        if (langId == null || CACHE.containsKey(langId) || !AVAILABLE.contains(langId)) {
+        if (langId == null || !AVAILABLE.contains(langId)) {
             return;
         }
+        if (CACHE.containsKey(langId)) {
+            if (onReady != null) {
+                Platform.runLater(onReady); // already built — the caller still needs its callback
+            }
+            return;
+        }
+        // Queue BEFORE claiming the build: several buffers ask for the same language at once (session
+        // restore, a language switch), and dropping the losers' callbacks left those buffers with no
+        // squiggles at all until the user scrolled or typed.
+        if (onReady != null) {
+            PENDING.computeIfAbsent(langId, k -> Collections.synchronizedList(new ArrayList<>()))
+                    .add(onReady);
+        }
         if (!BUILDING.add(langId)) {
-            return; // a build is already in flight
+            return; // a build is in flight; it will run our queued callback
         }
         BUILDER.execute(() -> {
             try {
                 Hunspell h = build(langId);
                 CACHE.put(langId, h);
-                if (onReady != null) {
-                    Platform.runLater(onReady);
-                }
             } catch (Exception | LinkageError e) {
                 // Leave uncached; a later ensureBuilt() can retry. Never let a bad dictionary crash the app.
             } finally {
+                // Clear BUILDING first: a caller racing here then starts a fresh build that drains its own
+                // queued callback, rather than having it stranded in PENDING forever.
                 BUILDING.remove(langId);
+                List<Runnable> waiting = PENDING.remove(langId);
+                if (waiting != null) {
+                    for (Runnable r : waiting) {
+                        Platform.runLater(r);
+                    }
+                }
             }
         });
     }
