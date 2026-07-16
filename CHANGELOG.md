@@ -22,6 +22,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Opening a file that happens to contain the same text as another no longer steals that file's personal
+  notes.** Notes were re-homed onto a file whose *content hash* matched — which is not identity: a
+  `cp config.yaml config.backup.yaml`, a duplicated LICENSE, or the boilerplate `index.ts` in each package of a
+  monorepo is enough. Merely opening the second file moved the first one's notes onto it and deleted them from
+  the original, permanently. A content match is now only trusted when the original file is gone from disk —
+  i.e. an actual rename, which is the case this exists for. (From a per-feature audit of Workspace.)
+
+- **Local History no longer deletes revisions you named.** "Put Label" marks a deliberate restore point, but
+  retention treated it as cache: past the 30-day age limit, or once 50 automatic revisions had accumulated
+  (a few hours of editing with autosave on), your labelled revision was silently dropped and its content
+  deleted. Labels — and the copy captured just before a file is deleted — are now exempt from the age limit,
+  the per-file cap and the project size budget. (From a per-feature audit of Workspace.)
+
+- **Local History no longer loses a revision, or deletes the content of one it just recorded.** Saving two
+  files at once (or labelling during a slow save) could overwrite one revision with a list that never
+  contained it, and the blob cleanup could run between a revision's content being written and it reaching the
+  index — deleting the content of a revision that was about to be listed, which then displayed as an empty
+  file. (From a per-feature audit of Workspace.)
+
+- **A note you marked resolved no longer comes back as open work.** If the note's text was temporarily absent
+  — a branch switch, a colleague's edit — its resolved mark was overwritten with "orphaned" and saved, and
+  when the text returned it came back as active. (From a per-feature audit of Workspace.)
+
+- **Release-candidate builds are now told when the final version ships.** `1.0.0` was considered *older* than
+  `1.0.0-rc1`, so anyone running an RC never saw the update notice for the release it was a candidate for.
+  (From a per-feature audit of Workspace.)
+
 - **Gradle's "Load all tasks…" no longer misses tasks that have no description**, and no longer throws the
   list away the next time you save. Any task registered without a description — common in real build scripts,
   and the norm for Gradle's own "Other tasks" — was silently dropped from the enumeration, while the status

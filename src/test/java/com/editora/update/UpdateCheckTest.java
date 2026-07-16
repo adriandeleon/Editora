@@ -74,4 +74,27 @@ class UpdateCheckTest {
         assertFalse(UpdateCheck.isDue(now - DAY / 2, now, DAY), "half a day → not yet");
         assertTrue(UpdateCheck.isDue(now + DAY, now, DAY), "future timestamp (clock moved back) → due");
     }
+
+    /**
+     * The release pipeline publishes {@code vX.Y.Z-rcN} tags as pre-releases, so an RC user runs
+     * {@code 1.0.0-rc1}. Comparing the raw last segments made {@code "0"} sort before {@code "0-rc1"} — the
+     * final release looked OLDER than its own candidate — so the one nudge an RC user should get (the GA)
+     * never came.
+     */
+    @Test
+    void aPreReleaseIsOlderThanItsFinalRelease() {
+        assertTrue(UpdateCheck.isNewer("1.0.0-rc1", "1.0.0"), "the GA is newer than the rc");
+        assertTrue(UpdateCheck.isNewer("1.0.0-rc1", "1.0.0-rc2"));
+        assertTrue(UpdateCheck.isNewer("0.9.0-rc3", "1.0.0"));
+        assertFalse(UpdateCheck.isNewer("1.0.0", "1.0.0-rc1"), "the rc is not an upgrade from the GA");
+        assertFalse(UpdateCheck.isNewer("1.0.0", "1.0.0"));
+    }
+
+    @Test
+    void plainVersionsAreUnaffected() {
+        assertTrue(UpdateCheck.isNewer("0.9.5", "0.10.0"), "numeric per segment, not lexical");
+        assertTrue(UpdateCheck.isNewer("1.0.0", "1.0.1"));
+        assertFalse(UpdateCheck.isNewer("1.10.0", "1.9.0"));
+        assertFalse(UpdateCheck.isNewer("2.0.0", "1.9.9"));
+    }
 }

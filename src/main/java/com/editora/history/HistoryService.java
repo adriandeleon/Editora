@@ -39,27 +39,9 @@ public final class HistoryService {
     }
 
     /**
-     * Records a snapshot off the FX thread, then delivers the updated (pruned) newest-first revision list
-     * for {@code file} on the FX thread via {@code onUpdated}. If the content is identical to the newest
-     * existing revision ({@link HistoryRetention#isDuplicate}), nothing is written and {@code onUpdated}
-     * is <b>not</b> called (a no-op save adds no revision).
-     *
-     * @param existing the file's current revision list (captured on the FX thread; not mutated)
-     */
-    public void snapshot(
-            Path file,
-            String content,
-            String reason,
-            List<HistoryRevision> existing,
-            RetentionPolicy policy,
-            long now,
-            Consumer<List<HistoryRevision>> onUpdated) {
-        snapshot(file, content, reason, "", false, existing, policy, now, onUpdated);
-    }
-
-    /**
-     * Records a snapshot, optionally carrying a user {@code label} and {@code force}-ing a revision even when
-     * the content is unchanged. {@code force = true} is used for "Put Label" so a label always marks a point
+     * Records a snapshot off the FX thread — sha, blob write — and delivers the new {@link HistoryRevision}
+     * on the FX thread via {@code onRecorded}, for the caller to fold into the index there. Optionally
+     * carries a user {@code label} and {@code force}s a revision even when the content is unchanged. {@code force = true} is used for "Put Label" so a label always marks a point
      * in time (the blob is content-addressed, so a same-sha row costs only the index entry). With
      * {@code force = false} an unchanged content is skipped and {@code onUpdated} is <b>not</b> called.
      */
@@ -72,23 +54,25 @@ public final class HistoryService {
             List<HistoryRevision> existing,
             RetentionPolicy policy,
             long now,
-            Consumer<List<HistoryRevision>> onUpdated) {
+            Consumer<HistoryRevision> onRecorded) {
         List<HistoryRevision> snapshot = existing == null ? List.of() : new ArrayList<>(existing);
         exec.submit(() -> {
             String sha = HistoryBlobStore.sha256(content);
             if (!force && HistoryRetention.isDuplicate(snapshot, sha)) {
-                return; // unchanged since the last revision — skip
+                // Unchanged since the last revision — skip the blob write. Still report completion: the
+                // caller counts in-flight records to know when it is safe to GC.
+                Platform.runLater(() -> onRecorded.accept(null));
+                return;
             }
             blobs.put(content, sha);
             long size = content.getBytes(StandardCharsets.UTF_8).length;
             HistoryRevision rev =
                     new HistoryRevision(file.toString(), now, size, sha, reason, label == null ? "" : label);
-            List<HistoryRevision> updated = new ArrayList<>(snapshot.size() + 1);
-            updated.add(rev); // newest-first
-            updated.addAll(snapshot);
-            List<HistoryRevision> pruned =
-                    HistoryRetention.prune(updated, policy.maxPerFile(), policy.maxAgeMillis(), now);
-            Platform.runLater(() -> onUpdated.accept(pruned));
+            // Deliver just the revision: the caller folds it into the index on the FX thread, against the
+            // list as it is THEN. Building the new list here from the list as it was at submit time meant a
+            // second record for the same file (a label during a slow save; two dirty buffers on one autosave)
+            // overwrote the first one's revision with a list that never contained it.
+            Platform.runLater(() -> onRecorded.accept(rev));
         });
     }
 
@@ -100,7 +84,14 @@ public final class HistoryService {
         });
     }
 
-    /** Garbage-collects blobs no longer referenced by {@code live} (computed on the FX thread). */
+    /**
+     * Garbage-collects blobs no longer referenced by {@code live}.
+     *
+     * <p>{@code live} is computed on the FX thread, so the caller must only call this when <b>no record is in
+     * flight</b>: a blob is written on the executor before its revision reaches the index, so a GC that ran
+     * between those two points deleted the blob of a revision that was about to be indexed — leaving a row
+     * whose content is gone (and which then renders as an empty file).
+     */
     public void gc(Set<String> live) {
         exec.submit(() -> blobs.deleteUnreferenced(live));
     }

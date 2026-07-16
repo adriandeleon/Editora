@@ -69,6 +69,9 @@ class PathKeysTest {
         assertFalse(PathKeys.sameNormalized(Path.of("/a"), null));
     }
 
+    /** Every real file "still exists" — the production predicate. */
+    private static final java.util.function.Predicate<String> ON_DISK = p -> !p.isBlank() && Files.exists(Path.of(p));
+
     @Test
     void findKeyByIdentityMatchesByCanonicalPathAcrossBucketKeys(@TempDir Path tmp) throws IOException {
         Path f = Files.writeString(tmp.resolve("note.md"), "body");
@@ -77,11 +80,48 @@ class PathKeysTest {
         Map<String, List<PersonalNote>> map = Map.of(
                 "other-key", List.of(),
                 "the-key", List.of(note));
-        assertEquals("the-key", PathKeys.findKeyByIdentity(map, id));
-        assertNull(PathKeys.findKeyByIdentity(map, null));
+        assertEquals("the-key", PathKeys.findKeyByIdentity(map, id, ON_DISK));
+        assertNull(PathKeys.findKeyByIdentity(map, null, ON_DISK));
         // A different file (different identity) → no match.
         Path g = Files.writeString(tmp.resolve("z.md"), "elsewhere");
-        assertNull(PathKeys.findKeyByIdentity(map, FileIdentity.of(g)));
+        assertNull(PathKeys.findKeyByIdentity(map, FileIdentity.of(g), ON_DISK));
+    }
+
+    /**
+     * Two different files can hold identical bytes — a {@code cp config.yaml config.backup.yaml}, a
+     * duplicated LICENSE, the boilerplate {@code index.ts} of every package in a monorepo. The caller
+     * re-keys onto whatever this returns, so answering "same file" there <b>moved the notes off the file
+     * they were written on and deleted them from it</b>. Merely opening the copy was enough.
+     */
+    @Test
+    void identicalContentIsNotIdentityWhileTheOriginalStillExists(@TempDir Path tmp) throws IOException {
+        Path original = Files.writeString(tmp.resolve("web-index.ts"), "export {};\n");
+        Path copy = Files.writeString(tmp.resolve("api-index.ts"), "export {};\n");
+        FileIdentity idOriginal = FileIdentity.of(original);
+        assertEquals(
+                FileIdentity.Match.CONTENT_HASH,
+                FileIdentity.match(idOriginal, FileIdentity.of(copy)),
+                "same bytes, different files");
+        Map<String, List<PersonalNote>> map = Map.of(
+                original.toString(), List.of(PersonalNote.create(idOriginal, NoteScope.LINE, null, "n", List.of())));
+        assertNull(
+                PathKeys.findKeyByIdentity(map, FileIdentity.of(copy), ON_DISK),
+                "the original is still on disk — this is a copy, not a rename");
+    }
+
+    /** The case the re-key exists for: renamed outside Editora, so the old path is gone. */
+    @Test
+    void aContentMatchIsTrustedOnceTheOriginalIsGone(@TempDir Path tmp) throws IOException {
+        Path original = Files.writeString(tmp.resolve("old-name.ts"), "export const x = 1;\n");
+        FileIdentity idOriginal = FileIdentity.of(original);
+        Map<String, List<PersonalNote>> map = Map.of(
+                original.toString(), List.of(PersonalNote.create(idOriginal, NoteScope.LINE, null, "n", List.of())));
+        Path renamed = tmp.resolve("new-name.ts");
+        Files.move(original, renamed);
+        assertEquals(
+                original.toString(),
+                PathKeys.findKeyByIdentity(map, FileIdentity.of(renamed), ON_DISK),
+                "the old path is gone and the bytes match — a rename; the notes must follow");
     }
 
     @Test
