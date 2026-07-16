@@ -103,7 +103,10 @@ public final class SnippetParser {
             while (j < s.length() && Character.isDigit(s.charAt(j))) {
                 j++;
             }
-            int num = Integer.parseInt(s.substring(n, j));
+            Integer num = parseStopNumber(s, n, j);
+            if (num == null) {
+                return false; // an over-long number (e.g. a literal "$12345678901") → treat "$…" as text
+            }
             emitStop(num, null, out, ranges, firstText);
             pos[0] = j;
             return true;
@@ -124,6 +127,16 @@ public final class SnippetParser {
         return false;
     }
 
+    /** A tab-stop number {@code s[from,to)}, or {@code null} when the digit run overflows an int (so the
+     *  caller can treat the {@code $…} as literal text rather than throwing). */
+    private static Integer parseStopNumber(String s, int from, int to) {
+        try {
+            return Integer.parseInt(s.substring(from, to));
+        } catch (NumberFormatException overflow) {
+            return null;
+        }
+    }
+
     /** Parses a {@code ${…}} construct beginning at {@code pos[0]} (the '$'). */
     private static boolean parseBrace(
             String s,
@@ -134,12 +147,19 @@ public final class SnippetParser {
             Map<Integer, List<String>> choices,
             Variables vars) {
         int i = pos[0] + 2; // past "${"
+        if (i >= s.length()) {
+            return false; // a bare "${" at end of the body → treat it as literal text (don't crash)
+        }
         if (Character.isDigit(s.charAt(i))) {
             int j = i;
             while (j < s.length() && Character.isDigit(s.charAt(j))) {
                 j++;
             }
-            int num = Integer.parseInt(s.substring(i, j));
+            Integer boxed = parseStopNumber(s, i, j);
+            if (boxed == null) {
+                return false; // over-long number → treat the "${…" as literal text
+            }
+            int num = boxed;
             char sep = j < s.length() ? s.charAt(j) : '}';
             if (sep == '}') { // ${1}
                 emitStop(num, null, out, ranges, firstText);

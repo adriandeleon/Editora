@@ -62,4 +62,16 @@ class SnippetSessionTest {
         ParsedSnippet p = new ParsedSnippet("abc", List.of(new TabStop(0, List.of(new int[] {3, 3}), "")));
         assertEquals(p, SnippetSession.reindent(p, "    "));
     }
+
+    @Test
+    void reindentPreservesChoicesSoTheDropdownSurvives() {
+        // A multi-line choice snippet expanded at an indent runs through reindent, which used to rebuild the
+        // TabStop with the 3-arg ctor and drop the choices → no dropdown.
+        TabStop choice = new TabStop(1, List.of(new int[] {2, 3}), "a", List.of("a", "b", "c"));
+        ParsedSnippet p = new ParsedSnippet("{\na\n}", List.of(choice));
+        ParsedSnippet out = SnippetSession.reindent(p, "  ");
+        TabStop s = out.stops().get(0);
+        assertEquals(List.of("a", "b", "c"), s.choices());
+        assertEquals(true, s.hasChoices());
+    }
 }
