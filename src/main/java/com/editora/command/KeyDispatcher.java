@@ -88,11 +88,13 @@ public class KeyDispatcher {
      * Swallows the character event that pairs with a key press we already handled, so a bound key
      * never also types a character. This matters when the command opened a modal dialog
      * ({@code showAndWait}): the press is consumed, but its KEY_TYPED is queued and delivered to the
-     * editor after the dialog closes (e.g. the trailing {@code g} of {@code M-g g}). On macOS we also
-     * swallow any Option-produced character, since Option is the Meta key (e.g. {@code M-f} => "ƒ").
+     * editor after the dialog closes (e.g. the trailing {@code g} of {@code M-g g}). A bound Option/Meta
+     * chord on macOS is already covered: {@code handle()} consumes it and sets {@code consumedPress}, so its
+     * glyph ({@code M-f} => "ƒ") is swallowed here too. We must NOT swallow an <em>unbound</em> Option
+     * character, though — that would break macOS Option-based accented/symbol input (é, ç, ∞, dead keys).
      */
-    private void handleTyped(KeyEvent event) {
-        if (consumedPress || (IS_MAC && event.isAltDown())) {
+    void handleTyped(KeyEvent event) {
+        if (consumedPress) {
             consumedPress = false;
             event.consume();
             return;
@@ -241,7 +243,10 @@ public class KeyDispatcher {
             return code.getName().toLowerCase(Locale.ROOT);
         }
         if (code.isDigitKey()) {
-            return code.getName();
+            // Main-row digits: getName() is "0".."9". Numpad digits: "Numpad 6" — take the trailing digit so
+            // it maps to "6" (matches the M-1…M-9 chords) instead of an unmatchable, space-containing token.
+            String name = code.getName();
+            return name.length() == 1 ? name : name.substring(name.length() - 1);
         }
         return switch (code) {
             case SPACE -> "space";

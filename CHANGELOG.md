@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **macOS Option-key text input works again.** Typing an accented or special character with Option (é, ç, ∞,
+  dead keys) was being swallowed by the editor even when Option wasn't a bound shortcut; unbound Option
+  characters now reach the document, while bound Meta chords still don't type a stray glyph. (From a
+  per-feature audit of the keymap subsystem.)
+
+- **Two default Emacs shortcuts that never worked now do.** *Find References* (`M-?`) and *AceJump to line*
+  (`M-g L`) were written with key tokens the dispatcher can't produce, so they silently did nothing; they're
+  now `M-S-/` and `M-g Shift-L`. A test guards the whole class of unreachable binding.
+
+- **Numeric-keypad digits with a modifier now match the `M-1`…`M-9` shortcuts** instead of producing an
+  unmatchable token.
+
 - **A snippet or template containing a plain dollar amount no longer fails silently.** A body with text like
   `$12345678901` (a `$` followed by a very long number) threw internally, so the snippet didn't expand / the
   template didn't create — the number is now treated as ordinary text. A body ending in a stray `${` is
