@@ -19,6 +19,9 @@ import com.editora.process.ProcessRunner;
  */
 public final class ExternalToolService {
 
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(ExternalToolService.class.getName());
+
     /** Hard cap so a hung CLI can't leak a process/thread; the buffer is fed and drained off-thread. */
     public static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(2);
 
@@ -31,8 +34,19 @@ public final class ExternalToolService {
     /** Runs {@code inv} off-thread and delivers its result on the FX thread. */
     public void run(ToolInvocation inv, Duration timeout, Consumer<ProcessRunner.Result> onResult) {
         exec.submit(() -> {
-            ProcessRunner.Result r = ProcessRunner.run(inv.workingDir(), timeout, inv.argv(), Map.of(), inv.stdin());
-            Platform.runLater(() -> onResult.accept(r));
+            ProcessRunner.Result r;
+            try {
+                r = ProcessRunner.run(inv.workingDir(), timeout, inv.argv(), Map.of(), inv.stdin());
+            } catch (Throwable t) {
+                // exec.submit discards the Future, so an Error (an OutOfMemoryError on a huge capture, say)
+                // would be swallowed into it: onResult never runs and the caller's "Running…" status spins
+                // forever. The same reason PdfExportService/PrintService catch Throwable.
+                LOG.log(java.util.logging.Level.WARNING, "external tool failed: " + inv.displayCommand(), t);
+                String message = t.toString();
+                r = new ProcessRunner.Result(-1, "", message);
+            }
+            ProcessRunner.Result result = r;
+            Platform.runLater(() -> onResult.accept(result));
         });
     }
 

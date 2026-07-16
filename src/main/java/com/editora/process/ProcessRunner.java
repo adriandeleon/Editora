@@ -28,6 +28,12 @@ import java.util.concurrent.TimeUnit;
  */
 public final class ProcessRunner {
 
+    /** How long to wait for the output pipes' tail after the child has exited. */
+    private static final long DRAIN_GRACE_MS = 500;
+
+    /** Cap on captured stdout/stderr per run — enough for any real tool report, bounded against a runaway. */
+    private static final int MAX_CAPTURED_BYTES = 10 * 1024 * 1024;
+
     /** Outcome of one command: process {@code exit} code plus its captured {@code out}/{@code err}. */
     public record Result(int exit, String out, String err) {
         public boolean ok() {
@@ -95,29 +101,45 @@ public final class ProcessRunner {
                     "proc-stdin");
             stdinWriter.setDaemon(true);
             stdinWriter.start();
+        } else {
+            // No stdin to feed: close the child's immediately so anything that reads it sees EOF instead of
+            // waiting for input that can never come. Leaving it open wedged the caller forever — a child
+            // blocked on stdin never exits, so it never closes stdout, so the drain below never ended (and
+            // the timeout, which only runs after the drain, never got a chance to fire).
+            try {
+                process.getOutputStream().close();
+            } catch (IOException ignored) {
+                // already gone
+            }
         }
-        // Drain stderr on a side thread while we read stdout, so neither pipe can fill and stall.
+        // Drain both pipes on side threads: neither can fill and stall the child, and — crucially — the
+        // caller stays free to enforce the timeout. Draining stdout HERE, inline, made the timeout
+        // unreachable: a child that outlives it (or never exits at all) blocked this thread indefinitely,
+        // and `waitFor(timeout)` was only reached once the child had already finished.
         ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
         Thread errReader = new Thread(() -> drain(process.getErrorStream(), errBuf), "proc-stderr");
         errReader.setDaemon(true);
         errReader.start();
-
         ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
-        drain(process.getInputStream(), outBuf);
+        Thread outReader = new Thread(() -> drain(process.getInputStream(), outBuf), "proc-stdout");
+        outReader.setDaemon(true);
+        outReader.start();
 
         try {
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-                process.destroyForcibly();
-                return new Result(-1, outBuf.toString(StandardCharsets.UTF_8), "command timed out");
+                ProcessRegistry.killTree(process); // children first — a wrapper script's real work is a child
+                return new Result(-1, text(outBuf), "command timed out");
             }
-            errReader.join(500);
+            // The child is gone; give the readers a moment to finish the pipe's tail. A bounded join (rather
+            // than an open-ended read) so a grandchild holding the pipe open can't hang us.
+            outReader.join(DRAIN_GRACE_MS);
+            errReader.join(DRAIN_GRACE_MS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            process.destroyForcibly();
+            ProcessRegistry.killTree(process);
             return new Result(-1, "", "interrupted");
         }
-        return new Result(
-                process.exitValue(), outBuf.toString(StandardCharsets.UTF_8), errBuf.toString(StandardCharsets.UTF_8));
+        return new Result(process.exitValue(), text(outBuf), text(errBuf));
     }
 
     /**
@@ -339,15 +361,28 @@ public final class ProcessRunner {
         return "PATH";
     }
 
+    /**
+     * Reads {@code in} to EOF, keeping at most {@link #MAX_CAPTURED_BYTES}. Reading continues past the cap
+     * (discarding) so the child never blocks on a full pipe — but the buffer stops growing, so a runaway
+     * {@code find /} can't exhaust the heap (the packaged app runs {@code -Xmx2g}, and an OOM here would be
+     * swallowed into the executor's discarded Future, leaving the caller's status spinning forever).
+     */
     private static void drain(InputStream in, ByteArrayOutputStream out) {
         byte[] buf = new byte[8192];
         try (in) {
             int n;
             while ((n = in.read(buf)) != -1) {
-                out.write(buf, 0, n);
+                int room = MAX_CAPTURED_BYTES - out.size();
+                if (room > 0) {
+                    out.write(buf, 0, Math.min(n, room));
+                }
             }
         } catch (IOException ignored) {
             // Stream closed early (process exited); whatever we captured is good enough.
         }
+    }
+
+    private static String text(ByteArrayOutputStream buf) {
+        return buf.toString(StandardCharsets.UTF_8); // ByteArrayOutputStream is synchronized — safe mid-drain
     }
 }

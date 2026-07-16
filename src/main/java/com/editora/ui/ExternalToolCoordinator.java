@@ -46,7 +46,8 @@ final class ExternalToolCoordinator {
     private final ExternalToolPanel panel = new ExternalToolPanel();
     private CommandRegistry registry;
     /** The last external tool run, for {@code externalTool.rerunLast}. */
-    private ExternalTool lastTool;
+    /** Name of the last tool run — re-resolved on rerun, so a deleted/edited tool can't be re-run stale. */
+    private String lastToolName;
 
     ExternalToolCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -148,16 +149,30 @@ final class ExternalToolCoordinator {
     }
 
     private void rerunLast() {
-        if (lastTool == null) {
+        // Re-resolve by name against the live list: holding the ExternalTool instance meant rerun happily ran
+        // a tool the user had since deleted or disabled, and — because the Settings page persists fresh
+        // copies — an edited tool re-ran with its pre-edit command.
+        ExternalTool tool = lastToolName == null ? null : findEnabled(lastToolName);
+        if (tool == null) {
             host.setStatus(tr("status.externalTool.noLast"));
             return;
         }
-        run(lastTool);
+        run(tool);
+    }
+
+    /** The enabled tool with this name, or null (deleted, disabled, or renamed since it was last run). */
+    private ExternalTool findEnabled(String name) {
+        for (ExternalTool t : enabledTools()) {
+            if (t.getName() != null && t.getName().equals(name)) {
+                return t;
+            }
+        }
+        return null;
     }
 
     /** Runs an external tool against the active buffer; applies its output per the tool's {@code OutputTarget}. */
     private void run(ExternalTool tool) {
-        if (!isEnabled() || tool == null) {
+        if (!isEnabled() || tool == null || !tool.isEnabled()) {
             return;
         }
         // A remote (SFTP) buffer's path/dir can't feed a local subprocess: ProcessRunner does
@@ -173,9 +188,14 @@ final class ExternalToolCoordinator {
             host.setStatus(tr("status.externalTool.noCommand", tool.getName()));
             return;
         }
-        lastTool = tool;
+        lastToolName = tool.getName();
         host.setStatus(tr("status.externalTool.running", tool.getName()));
-        service.run(inv, ExternalToolService.DEFAULT_TIMEOUT, r -> applyResult(tool, inv, r));
+        // Capture the buffer the tool ran ON, plus its docVersion. applyResult used to write stdout into
+        // whatever tab happened to be active when the subprocess finished — switch tabs during a 600 ms
+        // `black -` run and REPLACE_BUFFER overwrote the whole of an unrelated file.
+        EditorBuffer target = active;
+        long version = target == null ? -1 : target.docVersion();
+        service.run(inv, ExternalToolService.DEFAULT_TIMEOUT, r -> applyResult(tool, inv, r, target, version));
     }
 
     /** Captures the macro/stdin context from the active buffer (file fields empty for an unsaved buffer). */
@@ -226,7 +246,8 @@ final class ExternalToolCoordinator {
     }
 
     /** Applies a finished tool's result on the FX thread (console / replace selection / buffer / insert). */
-    private void applyResult(ExternalTool tool, ToolInvocation inv, ProcessRunner.Result r) {
+    private void applyResult(
+            ExternalTool tool, ToolInvocation inv, ProcessRunner.Result r, EditorBuffer target, long version) {
         if (tool.getOutput() == ExternalTool.OutputTarget.CONSOLE) {
             ops.openConsole();
             panel.show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
@@ -237,15 +258,30 @@ final class ExternalToolCoordinator {
             return;
         }
         // Text-target modes: apply stdout only on success; otherwise surface the error in the console.
-        if (!r.ok() || r.out().isEmpty()) {
+        if (!r.ok()) {
             ops.openConsole();
             panel.show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
             host.setStatus(tr("status.externalTool.failed", tool.getName(), r.message()));
             return;
         }
-        EditorBuffer b = host.activeBuffer();
+        if (r.out().isEmpty()) {
+            // A successful run with nothing on stdout is not a failure — `sed 's|//.*||'` over a
+            // comment-only selection legitimately produces "". Reporting "<tool> failed: " with a blank
+            // reason was a lie; still don't apply it, so a silent tool can't blank the buffer.
+            host.setStatus(tr("status.externalTool.noOutput", tool.getName()));
+            return;
+        }
+        EditorBuffer b = target;
         if (b == null || !b.isEditable()) {
             host.setStatus(tr("status.externalTool.notEditable"));
+            return;
+        }
+        if (b.docVersion() != version) {
+            // The file changed while the tool ran — its stdout was computed from text that no longer exists,
+            // so applying it would silently revert the edits made meanwhile.
+            ops.openConsole();
+            panel.show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
+            host.setStatus(tr("status.externalTool.bufferChanged", tool.getName()));
             return;
         }
         var area = b.getArea();
