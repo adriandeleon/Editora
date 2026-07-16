@@ -367,7 +367,8 @@ public final class SnippetSession {
             for (int[] r : s.ranges()) {
                 rs.add(new int[] {r[0] + add[r[0]], r[1] + add[r[1]]});
             }
-            stops.add(new TabStop(s.number(), rs, s.placeholder()));
+            stops.add(new TabStop(s.number(), rs, s.placeholder(), s.choices())); // keep choices (the 3-arg
+            // ctor drops them → a multi-line ${1|a,b|} choice field would lose its dropdown after re-indent)
         }
         return new ParsedSnippet(sb.toString(), stops);
     }

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A snippet or template containing a plain dollar amount no longer fails silently.** A body with text like
+  `$12345678901` (a `$` followed by a very long number) threw internally, so the snippet didn't expand / the
+  template didn't create — the number is now treated as ordinary text. A body ending in a stray `${` is
+  likewise handled instead of erroring. (From a per-feature audit of Snippets & Templates.)
+
+- **Multi-line snippets with a choice field now show their dropdown when expanded on an indented line.** The
+  `${1|a,b,c|}` choice list was being dropped during re-indentation, so the field became a plain placeholder;
+  the dropdown is preserved now.
+
 - **Running an External Tool on a remote (SFTP) file no longer hangs the app.** The tool tried to launch a
   local process in the remote file's directory, which can't work; the "Running…" status hung forever with no
   output. External Tools are now disabled for remote buffers with a clear message. (From a per-feature audit of

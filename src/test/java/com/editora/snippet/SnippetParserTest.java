@@ -61,6 +61,24 @@ class SnippetParserTest {
     }
 
     @Test
+    void unterminatedDollarBraceAtEndIsLiteralNotACrash() {
+        // "${" with nothing after it must not StringIndexOutOfBounds — treat it as literal text.
+        assertEquals("foo${", SnippetParser.parse("foo${", NONE).text());
+        assertEquals("${", SnippetParser.parse("${", NONE).text());
+    }
+
+    @Test
+    void overlongTabStopNumberIsTreatedAsLiteral() {
+        // A literal dollar amount: "$" + 11 digits overflows an int — must not throw NumberFormatException.
+        ParsedSnippet p = SnippetParser.parse("Price: $12345678901", NONE);
+        assertEquals("Price: $12345678901", p.text());
+        assertEquals(0, p.stops().size());
+        assertEquals(
+                "${999999999999:x}",
+                SnippetParser.parse("${999999999999:x}", NONE).text());
+    }
+
+    @Test
     void choiceUsesFirstOptionAndCapturesAll() {
         ParsedSnippet p = SnippetParser.parse("${1|alpha,beta,gamma|}", NONE);
         assertEquals("alpha", p.text());
