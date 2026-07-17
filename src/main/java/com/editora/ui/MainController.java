@@ -607,8 +607,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public String commandUsing(String chordSeq) {
-                return keymap.commandFor(chordSeq);
+            public java.util.List<com.editora.command.KeybindingEdits.Conflict> conflicts(
+                    String chordSeq, String commandId) {
+                return com.editora.command.KeybindingEdits.conflicts(keymap.bindings(), chordSeq, commandId);
             }
 
             @Override

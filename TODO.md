@@ -3,6 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Rebinding a prefix chord silently disables everything under it** (#438) — the keybinding editor's
+      conflict check was `keymap.commandFor(chord)`, an **exact** match only, so recording a lone `C-x` (a
+      prefix of `C-x C-s`/`C-x C-f`/`C-x C-c`/…) matched nothing → no warning → every `C-x …` binding dead
+      (the dispatcher resolves `C-x` to a command before the second key). New pure
+      `KeybindingEdits.conflicts(active, proposed, forCommand)` returns the collisions both ways —
+      **SHADOWS** (proposed is a prefix of an existing chord → breaks it) and **UNREACHABLE** (an existing
+      chord is a prefix of proposed → new one never fires) plus **EXACT** — whole-token prefix (so `C-x` isn't
+      a prefix of `C-xy`). `SettingsWindow.rebindWithConflictCheck` lists the affected shortcuts in the confirm
+      dialog (6-catalog i18n, apostrophe-safe MessageFormat verified). 6 new unit tests incl. one documenting
+      that the old exact-match check saw no conflict where three bindings live.
 - [x] **HTTP client silently drops a JDK-rejected header** (#440) — `send()` wrapped `b.header()` in a
       `catch (IllegalArgumentException) { /* skip */ }`, so a header the JDK rejects (a pasted value with a
       trailing `\r\n`, an embedded control char, or a restricted name like `Host`) went out **missing** with no

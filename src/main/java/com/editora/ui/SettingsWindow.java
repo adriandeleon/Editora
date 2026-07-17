@@ -1626,27 +1626,36 @@ public class SettingsWindow {
         if (seq.isEmpty()) {
             return false;
         }
-        String other = shortcutActions.commandUsing(seq);
-        if (other != null && !other.equals(commandId)) {
-            String otherTitle = shortcutActions.rows().stream()
-                    .filter(r -> r.id().equals(other))
-                    .map(Shortcut::title)
-                    .findFirst()
-                    .orElse(other);
+        List<com.editora.command.KeybindingEdits.Conflict> conflicts = shortcutActions.conflicts(seq, commandId);
+        if (!conflicts.isEmpty()) {
+            StringBuilder affected = new StringBuilder();
+            for (var c : conflicts) {
+                affected.append("\n   ").append(c.chord()).append("  —  ").append(titleOf(c.commandId()));
+            }
             Alert confirm = new Alert(
                     Alert.AlertType.CONFIRMATION,
-                    tr("dialog.shortcut.conflict.body", seq, otherTitle),
+                    tr("dialog.shortcut.conflict.body", seq, affected.toString()),
                     ButtonType.OK,
                     ButtonType.CANCEL);
             confirm.initOwner(stage);
             confirm.setTitle(tr("dialog.shortcut.conflict.title"));
             confirm.setHeaderText(null);
+            confirm.getDialogPane().setMinWidth(460);
             if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
                 return false;
             }
         }
         shortcutActions.rebind(commandId, seq);
         return true;
+    }
+
+    /** The display title of a command id (from the shortcut rows), falling back to the id itself. */
+    private String titleOf(String commandId) {
+        return shortcutActions.rows().stream()
+                .filter(r -> r.id().equals(commandId))
+                .map(Shortcut::title)
+                .findFirst()
+                .orElse(commandId);
     }
 
     /** Injects the cross-window macro re-register hook (→ {@code MainController}); used by the Macros page. */
@@ -5847,8 +5856,10 @@ public class SettingsWindow {
     public interface ShortcutActions {
         java.util.List<Shortcut> rows();
 
-        /** The command currently bound to {@code chordSeq}, or null (for conflict warnings). */
-        String commandUsing(String chordSeq);
+        /** Existing bindings that binding {@code chordSeq} to {@code commandId} would collide with — an exact
+         *  match, a prefix that would shadow multi-key chords, or a shorter chord that makes this unreachable.
+         *  Empty when there's no conflict. */
+        java.util.List<com.editora.command.KeybindingEdits.Conflict> conflicts(String chordSeq, String commandId);
 
         void rebind(String commandId, String chordSeq);
 
