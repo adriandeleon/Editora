@@ -90,6 +90,14 @@ final class LspCoordinator {
 
         /** Detection finished updating — re-evaluate the active buffer's install banner. */
         void onDetectionSettled();
+
+        /**
+         * The canonical (symlink-resolved) form of {@code file}, so every consumer of the diagnostics map keys
+         * agrees. A server reports diagnostics under whatever URI it chose (some canonicalize, some echo the
+         * sent path), while {@code setProblemsActiveFile} is given the canonical active path — canonicalizing
+         * the key here is what lets the active-file-first sort (and tab-close clear) actually match.
+         */
+        Path canonicalize(Path file);
     }
 
     private final CoordinatorHost host;
@@ -186,17 +194,20 @@ final class LspCoordinator {
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
         }
+        // Key the map by the canonical path so it agrees with setProblemsActiveFile (given the canonical
+        // active path) and clearDiagnostics (given the buffer's path) — the server may report a symlink URI.
+        Path key = ops.canonicalize(file);
         if (buffer == null || diagnostics.isEmpty()) {
-            problems.remove(file);
+            problems.remove(key);
         } else {
-            problems.put(file, diagnostics);
+            problems.put(key, diagnostics);
         }
         refreshProblems();
     }
 
     /** Drops {@code file}'s diagnostics (a tab closed / its LSP session ended) + refreshes the panel. */
     void clearDiagnostics(Path file) {
-        problems.remove(file);
+        problems.remove(ops.canonicalize(file));
         refreshProblems();
     }
 
