@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Opening a terminal in an untrusted repo can no longer run its commands (Windows).** "Open Terminal Here"
+  built a `cmd.exe` command line with the folder path spliced in (`cmd /k cd /d <dir>`), so a repository
+  shipping a directory named with a shell metacharacter — `&`, `|`, `^`, all legal in Windows folder names —
+  executed arbitrary commands the moment you opened a terminal there. The folder is now handed to the child
+  process as its working directory, where no shell parses it, instead of being placed in any command line.
+  (macOS and Linux were never affected — they exec the terminal launcher directly, with no shell. "Reveal in
+  Explorer" was never affected either: `explorer.exe` is launched directly and runs no subcommand.)
+
 - **SFTP connections now verify the server's host key.** Editora accepted *any* key, so anyone positioned
   between you and your server — hostile Wi-Fi, a compromised router, DNS spoofing — could impersonate it
   silently, and with password auth Editora simply handed them the password, along with the contents of every

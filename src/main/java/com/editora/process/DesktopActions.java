@@ -24,6 +24,20 @@ public final class DesktopActions {
         WINDOWS
     }
 
+    /**
+     * A desktop command to launch: its {@code argv}, plus an optional {@code workingDir} that is set on the
+     * child process (via {@link ProcessBuilder#directory}) instead of being interpolated into any argument.
+     *
+     * <p>The distinction is a security boundary. On Windows the terminal is opened through {@code cmd.exe},
+     * which parses its command line — so a folder path placed <em>in</em> that command line (the old
+     * {@code cmd /k "cd /d " + dir}) lets a directory named with a shell metacharacter — {@code &}, {@code |},
+     * {@code ^}, all legal in Windows folder names — run arbitrary commands when the user picks "Open Terminal
+     * Here" on an untrusted repo. Routing the path through {@code directory()} hands it to CreateProcess's
+     * working-directory parameter, which no shell parses, so there is nothing to inject into. {@code null}
+     * means the child inherits the app's working directory.
+     */
+    public record Command(List<String> argv, Path workingDir) {}
+
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "desktop-actions");
         t.setDaemon(true);
@@ -61,13 +75,23 @@ public final class DesktopActions {
         };
     }
 
-    /** The command that opens a terminal with its working directory set to {@code dir}. Pure. */
-    public static List<String> terminalArgv(Os os, Path dir) {
+    /**
+     * The command that opens a terminal at {@code dir}. Pure.
+     *
+     * <p>macOS and Linux exec their launcher directly (no shell), so passing {@code dir} as an argv element is
+     * safe — a metacharacter in it is just a literal character. Windows must open the terminal through
+     * {@code cmd.exe}, so {@code dir} is <em>not</em> put in the command line: the argv is fixed literals and
+     * the folder is delivered as the child's {@link Command#workingDir}. A new console still needs
+     * {@code start} (a launched-from-a-windowless-process {@code cmd} would get no visible window); the new
+     * window inherits its parent's working directory, which is why {@code directory(dir)} is enough and no
+     * {@code cd} / {@code start /D <path>} appears anywhere a shell could parse it. See {@link Command}.
+     */
+    public static Command terminalCommand(Os os, Path dir) {
         String d = dir.toString();
         return switch (os) {
-            case MAC -> List.of("open", "-a", "Terminal", d);
-            case WINDOWS -> List.of("cmd", "/c", "start", "cmd", "/k", "cd /d " + d);
-            case LINUX -> List.of("x-terminal-emulator", "--working-directory=" + d);
+            case MAC -> new Command(List.of("open", "-a", "Terminal", d), null);
+            case WINDOWS -> new Command(List.of("cmd", "/c", "start", "", "cmd", "/k"), dir);
+            case LINUX -> new Command(List.of("x-terminal-emulator", "--working-directory=" + d), null);
         };
     }
 
@@ -80,21 +104,33 @@ public final class DesktopActions {
         return parent != null ? parent : path;
     }
 
-    /** Reveals {@code path} in the file manager; on failure calls {@code onError} (off the FX thread). */
+    /**
+     * Reveals {@code path} in the file manager; on failure calls {@code onError} (off the FX thread).
+     *
+     * <p>Every {@code revealArgv} launcher ({@code open}/{@code explorer}/{@code xdg-open}) is exec'd
+     * directly via {@link ProcessBuilder} — <em>not</em> through a shell — so the path is a single argv
+     * element and a metacharacter in it is inert. In particular the Windows {@code explorer /select,<path>}
+     * is not a command-injection vector: {@code explorer.exe} parses its own arguments and runs no subcommand.
+     */
     public static void reveal(Path path, boolean isDir, Consumer<String> onError) {
-        launch(revealArgv(currentOs(), path, isDir, containingDir(path, isDir)), onError);
+        launch(revealArgv(currentOs(), path, isDir, containingDir(path, isDir)), null, onError);
     }
 
     /** Opens a terminal at {@code path}'s containing folder; calls {@code onError} (off the FX thread). */
     public static void openTerminal(Path path, boolean isDir, Consumer<String> onError) {
-        launch(terminalArgv(currentOs(), containingDir(path, isDir)), onError);
+        Command cmd = terminalCommand(currentOs(), containingDir(path, isDir));
+        launch(cmd.argv(), cmd.workingDir(), onError);
     }
 
-    private static void launch(List<String> argv, Consumer<String> onError) {
+    private static void launch(List<String> argv, Path workingDir, Consumer<String> onError) {
         EXEC.submit(() -> {
             try {
                 ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(argv));
                 ProcessRunner.applyStandardEnv(pb);
+                if (workingDir != null) {
+                    // The child's working directory (CreateProcess lpCurrentDirectory), never a shell argument.
+                    pb.directory(workingDir.toFile());
+                }
                 pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
                 pb.redirectError(ProcessBuilder.Redirect.DISCARD);
                 pb.start();
