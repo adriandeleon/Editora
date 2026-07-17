@@ -398,9 +398,11 @@ final class AiCoordinator {
         return true;
     }
 
-    /** The API key: the Settings override, else the {@code ANTHROPIC_API_KEY} environment variable. */
+    /** The API key: the current provider's Settings override, else the {@code ANTHROPIC_API_KEY} environment
+     *  variable (Anthropic only). Per-provider, so a key configured for one provider is never sent to the
+     *  other's endpoint. */
     private String apiKey() {
-        return effectiveKey(host.settings().getAiApiKey(), provider(), System.getenv("ANTHROPIC_API_KEY"));
+        return effectiveKey(host.settings().getApiKeyFor(provider()), provider(), System.getenv("ANTHROPIC_API_KEY"));
     }
 
     /**

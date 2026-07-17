@@ -1191,6 +1191,11 @@ public class SettingsWindow {
         aiProviderCombo.valueProperty().addListener((obs, was, now) -> {
             if (!loading && now != null) {
                 config.getSettings().setAiProvider(now);
+                // Keys are per-provider: show the newly-selected provider's key (never carry one provider's
+                // credential over to the other, which would send it to that provider's endpoint).
+                loading = true;
+                aiApiKeyField.setText(config.getSettings().getApiKeyFor(com.editora.ai.AiProvider.from(now)));
+                loading = false;
                 apply();
                 scheduleAiStatus();
             }
@@ -1213,7 +1218,11 @@ public class SettingsWindow {
         aiApiKeyField = new javafx.scene.control.PasswordField();
         aiApiKeyField.setPromptText(tr("settings.ai.apiKeyPrompt"));
         aiApiKeyField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAiApiKey(now);
+            if (loading) {
+                return; // programmatic reload on provider-switch / load — don't write it back
+            }
+            // Store under the currently-selected provider so each provider keeps its own key.
+            config.getSettings().setApiKeyFor(com.editora.ai.AiProvider.from(aiProviderCombo.getValue()), now);
             apply();
             scheduleAiStatus();
         });
@@ -5617,7 +5626,7 @@ public class SettingsWindow {
             agentIncludeContextCheck.setSelected(settings.isAgentIncludeContext());
             aiCheck.setSelected(settings.isAiSupport());
             aiModelField.setText(settings.getAiModel());
-            aiApiKeyField.setText(settings.getAiApiKey());
+            aiApiKeyField.setText(settings.getApiKeyFor(com.editora.ai.AiProvider.from(settings.getAiProvider())));
             aiInlineCheck.setSelected(settings.isAiInlineCompletion());
             aiCompletionModelField.setText(settings.getAiCompletionModel());
             aiProviderCombo.setValue(
@@ -6038,7 +6047,9 @@ public class SettingsWindow {
         try {
             aiCheck.setSelected(config.getSettings().isAiSupport());
             aiModelField.setText(config.getSettings().getAiModel());
-            aiApiKeyField.setText(config.getSettings().getAiApiKey());
+            aiApiKeyField.setText(config.getSettings()
+                    .getApiKeyFor(
+                            com.editora.ai.AiProvider.from(config.getSettings().getAiProvider())));
             aiInlineCheck.setSelected(config.getSettings().isAiInlineCompletion());
             aiCompletionModelField.setText(config.getSettings().getAiCompletionModel());
             aiProviderCombo.setValue(

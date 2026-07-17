@@ -128,7 +128,10 @@ public enum ConfigSchema {
                     Map.entry(
                             75, (Migration) ConfigMigrations::identity), // v75→76: + copyLineWhenNoSelection (additive)
                     Map.entry(76, (Migration)
-                            ConfigMigrations::identity))), // v76→77: + updateCheck/lastUpdateCheck/dismissed
+                            ConfigMigrations::identity), // v76→77: + updateCheck/lastUpdateCheck/dismissed
+                    // v77→78: split the shared aiApiKey onto per-provider fields (aiApiKey = Anthropic,
+                    // aiApiKeyOpenai = OpenAI-compatible) so switching provider can't leak the other's key.
+                    Map.entry(77, (Migration) ConfigMigrations::splitAiApiKeyByProvider))),
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
