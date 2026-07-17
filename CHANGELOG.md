@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CSV files using classic-Mac (CR-only) line endings are parsed into rows correctly.** A file whose lines end
+  with a lone carriage return had its records fused together (`a,b⏎c,d` became one row `a, bc, d`, with the `b`
+  and `c` glued into a cell that exists nowhere in the file). The CSV parser now treats a lone CR — as well as
+  LF and CRLF — as a record separator, matching RFC 4180 and other tools. (From the deferred backlog.)
+
 - **The crontab preview now shows all the requested next-run times for infrequent schedules.** A leap-day job
   (`0 0 29 2 *`) or a yearly one showed only its first upcoming run — the forward scan shared one ~4-year
   budget across every result, so it ran out before finding a schedule's second occurrence. The scan budget is
