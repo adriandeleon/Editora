@@ -87,4 +87,24 @@ class NoteAnchorsTest {
         // An old note (length 0, or shorter than the needle) falls back to the needle length.
         assertArrayEquals(new int[] {2, 4}, NoteAnchors.relocate(doc, 2, 4, "cd", "", "", 0));
     }
+
+    // --- a needle too common to disambiguate orphans, not jumps up-file (#455) ----------------------
+
+    @Test
+    void aNeedleOccurringMoreThanTheCapOrphansInsteadOfJumpingUpFile() {
+        // The needle occurs far more than MAX_OCCURRENCES, and the note lives past occurrence #MAX_OCCURRENCES.
+        String doc = "X".repeat(NoteAnchors.MAX_OCCURRENCES + 1000);
+        int savedStart = doc.length(); // past every collected occurrence; level-1 fails (out of range)
+        assertNull(
+                NoteAnchors.relocate(doc, savedStart, savedStart + 1, "X", "", "", 1),
+                "too many occurrences to disambiguate → orphan, not a wrong up-file jump");
+    }
+
+    @Test
+    void aManageableNumberOfOccurrencesStillRelocates() {
+        // Exactly at/under the cap → still scored + relocated (no regression).
+        String doc = "..word..word..word..";
+        int[] r = NoteAnchors.relocate(doc, 14, 18, "word", "..", "..", 4);
+        assertArrayEquals(new int[] {14, 18}, r, "the nearest matching occurrence is chosen");
+    }
 }

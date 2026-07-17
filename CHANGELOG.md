@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A personal note whose text is extremely common no longer jumps to the wrong place after an edit.** In a
+  very large file where a note's text occurs thousands of times, an edit could relocate the note far up-file to
+  the wrong occurrence instead of admitting it couldn't be placed. Such a note is now marked orphaned (which is
+  honest and recoverable) rather than silently moved somewhere wrong. (From the deferred backlog.)
+
 - **A personal note on a long selection now highlights the whole selection, not just the first 200
   characters.** Notes cap the amount of selected text they store, and the highlight was drawn over that capped
   text — so a note taken on a 500-character selection was highlighted over only its first 200. Notes now record
