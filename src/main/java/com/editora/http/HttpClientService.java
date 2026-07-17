@@ -89,6 +89,12 @@ public final class HttpClientService {
             headers.add(new String[] {h[0], sub.apply(h[1])});
         }
         headers = HttpAuth.normalizeHeaders(headers);
+        // Trim whitespace/newlines the JDK client would reject, and collect any header it still can't send —
+        // otherwise a header (a pasted Authorization with a trailing \r\n) is dropped silently and the request
+        // goes out unauthenticated. From here on `headers` is the sendable, trimmed set.
+        HttpHeaders.Partition hp = HttpHeaders.partition(headers);
+        headers = hp.sendable();
+        List<String> warnings = hp.warnings();
         String contentType = headerValue(headers, "Content-Type");
 
         BodyContent bc = resolveBody(request, baseDir, sub, contentType, headers);
@@ -129,11 +135,12 @@ public final class HttpClientService {
             });
             String respType = resp.headers().firstValue("content-type").orElse("");
             long size = resp.body() == null ? 0 : resp.body().getBytes(StandardCharsets.UTF_8).length;
-            HttpResult result = new HttpResult(resp.statusCode(), respHeaders, resp.body(), respType, ms, size, null);
+            HttpResult result =
+                    new HttpResult(resp.statusCode(), respHeaders, resp.body(), respType, ms, size, null, warnings);
             writeRedirects(request, baseDir, result);
             return new HttpExchange(label, method, url, headers, bc.display(), result);
         } catch (Exception e) {
-            HttpResult err = new HttpResult(0, List.of(), "", "", 0, 0, errorMessage(url, e));
+            HttpResult err = new HttpResult(0, List.of(), "", "", 0, 0, errorMessage(url, e), warnings);
             return new HttpExchange(label, method, url, headers, bc.display(), err);
         }
     }
@@ -206,11 +213,7 @@ public final class HttpClientService {
             throws java.io.IOException, InterruptedException {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(timeout);
         for (String[] h : headers) {
-            try {
-                b.header(h[0], h[1]);
-            } catch (IllegalArgumentException ignore) {
-                // a header the JDK client forbids setting (Host, Content-Length, …) — skip it
-            }
+            b.header(h[0], h[1]); // pre-validated by HttpHeaders.partition — un-sendable ones were surfaced
         }
         if (authOverride != null) {
             b.header("Authorization", authOverride);

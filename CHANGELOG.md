@@ -74,6 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The HTTP client no longer silently drops a request header — a puzzling `401` becomes diagnosable.** A
+  header value the JDK client rejects (a token pasted from a terminal with a trailing newline, or a value
+  with an embedded control character) was skipped without a word, so the request went out missing that header.
+  `Authorization` was already trimmed, but any *custom* auth header (`X-Api-Key`, `X-Auth-Token`) was not, so a
+  pasted key with a stray newline dropped it and the request went out unauthenticated. Every header's value is
+  now trimmed of surrounding whitespace (spec-safe — servers strip it anyway), and any header still un-sendable
+  (a restricted name, or an embedded control character — a header-injection attempt) is shown as a warning atop
+  the response report instead of vanishing. (From the deferred backlog.)
+
+
 - **Git now works for a project opened through a symlink.** `git rev-parse --show-toplevel` reports the repo's
   real path, while an open file keeps its as-opened (symlinked) path — so for a repo reached through a symlink
   (a macOS `/tmp` project, or a symlinked work directory) the two never matched, and Compare-with-HEAD, stage,

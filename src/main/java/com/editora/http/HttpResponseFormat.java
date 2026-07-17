@@ -29,10 +29,16 @@ public final class HttpResponseFormat {
     }
 
     public static String render(HttpResult r) {
-        if (r.failed()) {
-            return "⚠  " + r.error();
-        }
         StringBuilder sb = new StringBuilder();
+        for (String w : r.warnings()) {
+            sb.append("⚠  ").append(w).append('\n'); // e.g. a header that couldn't be sent — shown, not dropped
+        }
+        if (!r.warnings().isEmpty()) {
+            sb.append('\n');
+        }
+        if (r.failed()) {
+            return sb.append("⚠  ").append(r.error()).toString();
+        }
         sb.append("HTTP ").append(r.status()).append('\n');
         for (String[] h : r.headers()) {
             sb.append(h[0]).append(": ").append(h[1]).append('\n');
