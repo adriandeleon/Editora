@@ -41,12 +41,12 @@ public final class SshConfigPreview {
         root.getChildren().add(header);
 
         for (SshConfig.Block b : blocks) {
-            root.getChildren().add(blockNode(b));
+            root.getChildren().add(blockNode(blocks, b));
         }
         return root;
     }
 
-    private static Node blockNode(SshConfig.Block b) {
+    private static Node blockNode(List<SshConfig.Block> blocks, SshConfig.Block b) {
         VBox box = new VBox();
         box.getStyleClass().add("sshconfig-block");
 
@@ -56,7 +56,7 @@ public final class SshConfigPreview {
         t.setWrapText(true);
         box.getChildren().add(t);
 
-        Label summary = new Label(SshConfigDescribe.summary(b));
+        Label summary = new Label(SshConfigDescribe.summary(blocks, b));
         summary.getStyleClass().add("sshconfig-summary");
         summary.setWrapText(true);
         box.getChildren().add(summary);
