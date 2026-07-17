@@ -178,5 +178,27 @@ class CronExpressionTest {
         // Feb 30 never occurs — nextRuns must bound-scan and return empty, not hang.
         assertTrue(
                 ok("0 0 30 2 *").nextRuns(LocalDateTime.of(2026, 1, 1, 0, 0), 1).isEmpty());
+        // …and an n>1 request on an impossible spec still terminates (one exhausted scan, not n).
+        assertTrue(
+                ok("0 0 30 2 *").nextRuns(LocalDateTime.of(2026, 1, 1, 0, 0), 3).isEmpty());
+    }
+
+    @Test
+    void aSparseScheduleReturnsAllRequestedRuns() {
+        // A leap-day schedule's period exceeds the ~4-year scan cap. Budgeting the cap once across all n found
+        // only the first run (#477). Per-result budgeting finds all three (verified against croniter).
+        assertEquals(
+                List.of(
+                        LocalDateTime.of(2028, 2, 29, 0, 0),
+                        LocalDateTime.of(2032, 2, 29, 0, 0),
+                        LocalDateTime.of(2036, 2, 29, 0, 0)),
+                ok("0 0 29 2 *").nextRuns(LocalDateTime.of(2026, 7, 17, 0, 0), 3));
+        // A yearly schedule likewise returns all requested runs.
+        assertEquals(
+                List.of(
+                        LocalDateTime.of(2027, 1, 1, 0, 0),
+                        LocalDateTime.of(2028, 1, 1, 0, 0),
+                        LocalDateTime.of(2029, 1, 1, 0, 0)),
+                ok("0 0 1 1 *").nextRuns(LocalDateTime.of(2026, 7, 17, 0, 0), 3));
     }
 }

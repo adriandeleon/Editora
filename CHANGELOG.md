@@ -91,6 +91,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The crontab preview now shows all the requested next-run times for infrequent schedules.** A leap-day job
+  (`0 0 29 2 *`) or a yearly one showed only its first upcoming run — the forward scan shared one ~4-year
+  budget across every result, so it ran out before finding a schedule's second occurrence. The scan budget is
+  now per result, so all three next-run times appear (an impossible schedule like Feb 31 still stops rather
+  than looping). (From the deferred backlog.)
+
 - **The SSH config preview now reflects overrides from earlier `Host` blocks.** SSH uses the *first* value it
   finds for each option, so an earlier `Host *` (or matching wildcard) block can fix `User`/`Port`/etc. before
   a later host-specific block does. The preview summarized each block from its own lines only, so it could

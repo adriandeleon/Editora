@@ -160,9 +160,22 @@ public final class CronExpression {
             return out;
         }
         LocalDateTime t = from.truncatedTo(ChronoUnit.MINUTES).plusMinutes(1);
-        for (int scanned = 0; scanned < MAX_SCAN_MINUTES && out.size() < n; scanned++, t = t.plusMinutes(1)) {
-            if (matches(t)) {
-                out.add(t);
+        // Budget the scan PER result (reset after each hit), not once across all n. A schedule whose period
+        // exceeds the ~4-year cap — a leap-day `0 0 29 2 *` (4y), a yearly `0 0 1 JAN *` — would otherwise find
+        // only its first occurrence. The cap still terminates an impossible spec (`0 0 31 2 *`): a full
+        // MAX_SCAN_MINUTES scan with no hit ends the loop and returns what was found so far.
+        while (out.size() < n) {
+            boolean found = false;
+            for (int scanned = 0; scanned < MAX_SCAN_MINUTES; scanned++, t = t.plusMinutes(1)) {
+                if (matches(t)) {
+                    out.add(t);
+                    t = t.plusMinutes(1); // step past this hit before scanning for the next
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                break; // budget exhausted with no further occurrence
             }
         }
         return out;
