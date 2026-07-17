@@ -87,6 +87,10 @@ public final class DapClient implements IDebugProtocolClient {
     private volatile List<DapModels.FileBreakpoints> initialBreakpoints = List.of();
     /** Exception-breakpoint filter ids (e.g. {@code uncaught}/{@code caught}). */
     private volatile List<String> exceptionFilters = List.of();
+    /** True once the adapter's {@code initialized} event installed the configuration (breakpoints +
+     *  exception filters). Before that, a filter change only updates the field — {@link #initialized}
+     *  will read it. After it, a change must be sent on the wire itself. */
+    private volatile boolean configured;
 
     public DapClient(Host host) {
         this.host = host;
@@ -96,8 +100,24 @@ public final class DapClient implements IDebugProtocolClient {
         this.initialBreakpoints = breakpoints == null ? List.of() : List.copyOf(breakpoints);
     }
 
+    /**
+     * Sets the exception-breakpoint filters. Before the session starts these are installed by
+     * {@link #initialized}; once it is running they must also go on the wire right away, because
+     * {@code initialized} has already fired and will never read the field again — otherwise toggling
+     * exception breakpoints mid-session silently does nothing while the UI reports it took effect.
+     * Fire-and-forget, mirroring {@link #sendSetBreakpoints}.
+     */
     public void setExceptionFilters(List<String> filters) {
         this.exceptionFilters = filters == null ? List.of() : List.copyOf(filters);
+        if (server != null && configured) {
+            try {
+                SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
+                ex.setFilters(this.exceptionFilters.toArray(new String[0]));
+                server.setExceptionBreakpoints(ex);
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "live setExceptionBreakpoints failed", e);
+            }
+        }
     }
 
     /** The adapter's {@code initialize} capabilities (kept for feature gating, e.g. Jump to Line). */
@@ -224,6 +244,7 @@ public final class DapClient implements IDebugProtocolClient {
                 server.setExceptionBreakpoints(ex);
             }
             server.configurationDone(new ConfigurationDoneArguments());
+            configured = true; // later filter/breakpoint changes must now go on the wire themselves
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "configuration phase failed", e);
         }

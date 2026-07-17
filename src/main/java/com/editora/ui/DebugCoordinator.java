@@ -9,6 +9,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Priority;
+
 import com.editora.config.Breakpoint;
 import com.editora.config.BreakpointStore;
 import com.editora.config.PathKeys;
@@ -482,7 +488,11 @@ final class DebugCoordinator {
         }
         clearExecHighlight();
         ops.openPath(frame.file()); // opens or focuses the tab
-        EditorBuffer b = host.activeBuffer();
+        // Take the frame's OWN buffer, not whatever is active: openPath opens nothing when the source
+        // isn't on disk (a frame in a dependency, or a path baked in by a build on another machine — it
+        // just echoes "failed to open"), which would otherwise paint the "you are here" line onto an
+        // arbitrary line of the unrelated file the user happens to be looking at. Mirrors applyInlineValues.
+        EditorBuffer b = ops.bufferForPath(frame.file());
         if (b != null) {
             execHighlightBuffer = b;
             b.setExecutionLine(frame.line());
@@ -616,7 +626,11 @@ final class DebugCoordinator {
         }
     }
 
-    /** Edits the caret line's breakpoint condition / log message (creating one if absent). */
+    /**
+     * Edits the caret line's breakpoint (creating one if absent): its condition, its log message — which
+     * makes it a logpoint: the adapter logs and does not suspend — and whether it is enabled. All three
+     * already persist, re-anchor and reach the adapter; this form is what reaches them.
+     */
     void editBreakpointAtCaret() {
         EditorBuffer b = host.activeBuffer();
         if (b == null) {
@@ -628,12 +642,51 @@ final class DebugCoordinator {
             b.toggleBreakpoint(line);
         }
         Breakpoint bp = mgr.get(line);
-        String initial = bp == null ? "" : bp.condition();
-        host.promptText(
-                tr("dialog.debug.conditionTitle"),
-                tr("dialog.debug.conditionContent"),
-                initial,
-                cond -> mgr.setCondition(line, cond == null ? "" : cond.trim()));
+        if (bp == null) {
+            return; // the line is gone (a concurrent edit) — nothing to edit
+        }
+
+        TextField condition = new TextField(bp.condition());
+        condition.setPrefColumnCount(32);
+        TextField logMessage = new TextField(bp.logMessage());
+        logMessage.setPrefColumnCount(32);
+        CheckBox enabled = new CheckBox(tr("dialog.debug.breakpointEnabled"));
+        enabled.setSelected(bp.enabled());
+
+        GridPane grid = new GridPane();
+        grid.setHgap(8);
+        grid.setVgap(8);
+        grid.add(new Label(tr("dialog.debug.conditionLabel")), 0, 0);
+        grid.add(condition, 1, 0);
+        grid.add(new Label(tr("dialog.debug.logMessageLabel")), 0, 1);
+        grid.add(logMessage, 1, 1);
+        grid.add(enabled, 1, 2);
+        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 3);
+        GridPane.setHgrow(condition, Priority.ALWAYS);
+        GridPane.setHgrow(logMessage, Priority.ALWAYS);
+
+        OverlayInput.show(
+                host.overlayHost(),
+                tr("dialog.debug.breakpointTitle"),
+                grid,
+                condition,
+                tr("dialog.ok"),
+                null,
+                () -> {
+                    mgr.setCondition(line, condition.getText().trim());
+                    mgr.setLogMessage(line, logMessage.getText().trim());
+                    mgr.setEnabled(line, enabled.isSelected());
+                },
+                null,
+                false);
+    }
+
+    /** A small muted hint label under a form field. */
+    private static Label note(String text) {
+        Label l = new Label(text);
+        l.getStyleClass().add("settings-note");
+        l.setWrapText(true);
+        return l;
     }
 
     /** Toggles the "uncaught exceptions" breakpoint filter. */

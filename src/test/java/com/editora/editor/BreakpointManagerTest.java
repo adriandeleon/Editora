@@ -68,6 +68,36 @@ class BreakpointManagerTest {
     }
 
     @Test
+    void reanchorNeverCollapsesTwoBreakpointsOntoOneLine() {
+        // Two breakpoints on ADJACENT IDENTICAL lines (two `});` in a row — routine in real code), then a
+        // line is added above outside the editor (git pull / a formatter). Both lines still exist, so both
+        // breakpoints must survive: the map is keyed by line, so re-anchoring them both onto the same line
+        // silently drops one — and restore() then persists the loss, so it never comes back.
+        List<String> doc =
+                new java.util.ArrayList<>(List.of("a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "});", "});", "z"));
+        doc.add(0, "// added upstream"); // everything below shifts down one: 10,11 -> 11,12
+        List<Breakpoint> saved = List.of(Breakpoint.plain(10, "});"), Breakpoint.plain(11, "});"));
+
+        NavigableMap<Integer, Breakpoint> out = BreakpointManager.reanchor(saved, doc.size(), doc::get, 2000);
+
+        assertEquals(2, out.size(), "both breakpoints must survive — neither line was deleted");
+        assertTrue(out.containsKey(11));
+        assertTrue(out.containsKey(12));
+    }
+
+    @Test
+    void reanchorStepsAsideRatherThanOverwriteWhenContentIsGone() {
+        // Both breakpoints' text has vanished, so both fall back to their stored line — and a shrunken
+        // file clamps them onto the same last line. Neither may swallow the other.
+        List<String> doc = List.of("only", "two");
+        List<Breakpoint> saved = List.of(Breakpoint.plain(40, "gone();"), Breakpoint.plain(50, "gone();"));
+
+        NavigableMap<Integer, Breakpoint> out = BreakpointManager.reanchor(saved, doc.size(), doc::get, 2000);
+
+        assertEquals(2, out.size(), "a clamp collision must not drop a breakpoint");
+    }
+
+    @Test
     void mergePreservingOrderKeepsPreviousOrderThenAppendsNew() {
         List<Breakpoint> prev = List.of(Breakpoint.plain(5, "five"), Breakpoint.plain(2, "two"));
         List<Breakpoint> current =

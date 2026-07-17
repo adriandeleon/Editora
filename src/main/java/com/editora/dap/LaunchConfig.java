@@ -17,7 +17,7 @@ public final class LaunchConfig {
     /**
      * A {@code launch} request body. {@code mainClass} is required; {@code projectName}/{@code classPaths}/
      * {@code modulePaths}/{@code javaExec}/{@code cwd}/{@code args} are optional (omitted when blank/empty).
-     * Program args are joined into a single string (the adapter accepts a string or array).
+     * Program args are passed as an argv array, so an argument containing spaces stays one argument.
      */
     public static Map<String, Object> launch(
             String mainClass,
@@ -49,7 +49,11 @@ public final class LaunchConfig {
             m.put("cwd", cwd);
         }
         if (notEmpty(args)) {
-            m.put("args", String.join(" ", args));
+            // The argv, NOT a joined string: ProgramArgs.tokenize already quote-parsed the user's input
+            // into arguments, so re-joining on a space throws that grouping away — `"hello world" second`
+            // would reach main() as three arguments while Run passes two. java-debug accepts an array
+            // (as does the program(...) sibling below, which always did this correctly).
+            m.put("args", args);
         }
         m.put("console", "internalConsole");
         m.put("stopOnEntry", stopOnEntry);
