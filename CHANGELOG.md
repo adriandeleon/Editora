@@ -91,6 +91,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A hung AI endpoint no longer wedges every later AI request.** If an endpoint returned response headers and
+  then stopped writing (a stalled proxy, a crashed local server that keeps the socket open), the streaming read
+  blocked forever — and because AI requests run one at a time, every subsequent commit-message, explain, or
+  inline completion queued behind it permanently until you restarted. The stream now gives up if no data
+  arrives for the response-timeout window and frees the worker; a healthy slow generation keeps streaming, since
+  any activity resets the clock. (From the deferred backlog.)
+
 - **The diff viewer no longer garbles non-UTF-8 files.** When comparing a Latin-1 or UTF-16 file against its
   committed version (Compare with HEAD / a branch / a commit, or the Commit window's staged/unstaged rows), the
   git side was force-decoded as UTF-8 — so every accented character came out as mojibake, and because the
