@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A personal note on a long selection now highlights the whole selection, not just the first 200
+  characters.** Notes cap the amount of selected text they store, and the highlight was drawn over that capped
+  text — so a note taken on a 500-character selection was highlighted over only its first 200. Notes now record
+  the full selection length and highlight the complete span. (From the deferred backlog.)
+
 - **CSV files using classic-Mac (CR-only) line endings are parsed into rows correctly.** A file whose lines end
   with a lone carriage return had its records fused together (`a,b⏎c,d` became one row `a, bc, d`, with the `b`
   and `c` glued into a cell that exists nowhere in the file). The CSV parser now treats a lone CR — as well as

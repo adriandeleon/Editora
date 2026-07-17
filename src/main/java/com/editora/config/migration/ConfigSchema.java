@@ -139,7 +139,8 @@ public enum ConfigSchema {
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),
     /** Legacy {@code recent-files.json} was a bare JSON array (v0); v1 wraps it in an object. */
     RECENT(RecentFiles.SCHEMA_VERSION, 1, Map.of(0, ConfigMigrations::wrapRecentFilesArray)),
-    NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2: TextAnchor gained a `length` component — additive (missing ⇒ 0, handled by the relocator).
+    NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of()),
     PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added the per-revision label (additive; absent rows default to "").

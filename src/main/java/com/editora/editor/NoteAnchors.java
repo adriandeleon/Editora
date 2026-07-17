@@ -43,10 +43,29 @@ public final class NoteAnchors {
 
     /**
      * Locates the anchor's text in {@code doc}. Returns {@code {start,end}} (end exclusive) or {@code null}
-     * if it can't be relocated (the note should be marked orphaned).
+     * if it can't be relocated (the note should be marked orphaned). The span runs from the match to
+     * {@code start + length} (clamped to the document): {@code length} is the note's <em>full</em> original
+     * selection length, so a note taken on more than {@link com.editora.config.TextAnchor#MAX_TEXT} characters
+     * highlights the whole selection rather than just the capped {@code needle} used to find it (#454). A
+     * {@code length} shorter than the needle (an old note with no saved length, or a bad value) falls back to
+     * the needle length.
      */
+    /** As {@link #relocate(String, int, int, String, String, String, int)} with {@code length} defaulting to
+     *  the {@code selectedText} length (the span = the captured text). */
     public static int[] relocate(
             String doc, int savedStart, int savedEnd, String selectedText, String prefix, String suffix) {
+        return relocate(
+                doc,
+                savedStart,
+                savedEnd,
+                selectedText,
+                prefix,
+                suffix,
+                selectedText == null ? 0 : selectedText.length());
+    }
+
+    public static int[] relocate(
+            String doc, int savedStart, int savedEnd, String selectedText, String prefix, String suffix, int length) {
         if (doc == null) {
             return null;
         }
@@ -56,11 +75,12 @@ public final class NoteAnchors {
             int s = clamp(savedStart, 0, doc.length());
             return new int[] {s, s};
         }
+        int span = Math.max(length, needle.length());
         // Level 1: the saved offset still holds the text.
         if (savedStart >= 0
                 && savedStart + needle.length() <= doc.length()
                 && doc.regionMatches(savedStart, needle, 0, needle.length())) {
-            return new int[] {savedStart, savedStart + needle.length()};
+            return new int[] {savedStart, Math.min(savedStart + span, doc.length())};
         }
         List<Integer> occ = occurrences(doc, needle);
         if (occ.isEmpty()) {
@@ -78,7 +98,7 @@ public final class NoteAnchors {
                 best = o;
             }
         }
-        return new int[] {best, best + needle.length()};
+        return new int[] {best, Math.min(best + span, doc.length())};
     }
 
     private static boolean contextMatches(String doc, int at, String needle, String prefix, String suffix) {
