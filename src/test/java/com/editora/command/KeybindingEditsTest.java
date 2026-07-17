@@ -6,6 +6,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class KeybindingEditsTest {
@@ -94,5 +95,65 @@ class KeybindingEditsTest {
         assertTrue(KeybindingEdits.defaultChords(base(), "edit.completion")
                 .containsAll(java.util.List.of("C-M-i", "M-/")));
         assertEquals(java.util.List.of("C-x C-s"), KeybindingEdits.defaultChords(base(), "file.save"));
+    }
+
+    // --- prefix-collision detection (#438) --------------------------------------------------------
+
+    private static Map<String, String> active() {
+        return map(
+                "C-x C-s", "file.save",
+                "C-x C-f", "file.find",
+                "C-x C-c", "app.quit",
+                "C-s", "find.show");
+    }
+
+    @Test
+    void bindingAPrefixChordIsDetectedAsShadowingEveryChordUnderIt() {
+        // The footgun: recording a lone C-x has NO exact match, so the old check waved it through — yet it
+        // dead-ends every C-x … binding. conflicts() must surface all three as SHADOWS.
+        var conflicts = KeybindingEdits.conflicts(active(), "C-x", "some.new.command");
+
+        assertEquals(3, conflicts.size(), conflicts.toString());
+        assertTrue(conflicts.stream().allMatch(c -> c.kind() == KeybindingEdits.ConflictKind.SHADOWS));
+        assertTrue(conflicts.stream().anyMatch(c -> c.commandId().equals("file.save")));
+        assertTrue(conflicts.stream().anyMatch(c -> c.commandId().equals("app.quit")));
+    }
+
+    @Test
+    void theOldExactMatchCheckMissedThisEntirely() {
+        // Documents the gap: an exact-chord lookup (what the editor used to do) finds nothing for C-x.
+        assertNull(active().get("C-x"), "no exact binding on C-x — the old check saw no conflict");
+        assertEquals(3, KeybindingEdits.conflicts(active(), "C-x", "x").size(), "…but three bindings live under it");
+    }
+
+    @Test
+    void bindingUnderAnExistingChordIsDetectedAsUnreachable() {
+        // The reverse: C-x C-s C-q can never fire because C-x C-s resolves first.
+        var conflicts = KeybindingEdits.conflicts(active(), "C-x C-s C-q", "some.new.command");
+        assertEquals(1, conflicts.size());
+        assertEquals(KeybindingEdits.ConflictKind.UNREACHABLE, conflicts.get(0).kind());
+        assertEquals("file.save", conflicts.get(0).commandId());
+    }
+
+    @Test
+    void anExactMatchIsReportedAsExact() {
+        var conflicts = KeybindingEdits.conflicts(active(), "C-s", "some.new.command");
+        assertEquals(1, conflicts.size());
+        assertEquals(KeybindingEdits.ConflictKind.EXACT, conflicts.get(0).kind());
+        assertEquals("find.show", conflicts.get(0).commandId());
+    }
+
+    @Test
+    void rebindingACommandOverItsOwnChordIsNotAConflict() {
+        assertTrue(KeybindingEdits.conflicts(active(), "C-x C-s", "file.save").isEmpty());
+        // and a lone C-x still conflicts with the OTHER C-x chords even when rebinding one of them.
+        assertEquals(2, KeybindingEdits.conflicts(active(), "C-x", "file.save").size());
+    }
+
+    @Test
+    void aSharedTokenPrefixThatIsNotAWholeChordPrefixIsNotAConflict() {
+        // "C-x" must not be treated as a prefix of a "C-xy" chord — matching is whole-token.
+        var m = map("C-xy C-s", "some.cmd");
+        assertTrue(KeybindingEdits.conflicts(m, "C-x", "other").isEmpty());
     }
 }

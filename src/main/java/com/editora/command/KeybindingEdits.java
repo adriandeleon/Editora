@@ -16,6 +16,51 @@ public final class KeybindingEdits {
 
     private KeybindingEdits() {}
 
+    /** How a proposed chord collides with an existing binding. */
+    public enum ConflictKind {
+        /** Same chord — the proposed rebind takes the existing binding over. */
+        EXACT,
+        /** The proposed chord is a prefix of the existing multi-key chord, so binding it makes the longer
+         *  chord unreachable (the prefix now resolves to a command before the extra keys can be typed). */
+        SHADOWS,
+        /** An existing chord is a prefix of the proposed one, so the proposed chord can never fire (the
+         *  shorter existing chord resolves first). */
+        UNREACHABLE
+    }
+
+    /** A binding the proposed chord would collide with. */
+    public record Conflict(String chord, String commandId, ConflictKind kind) {}
+
+    /**
+     * The existing bindings that binding {@code proposed} to {@code forCommandId} would collide with. Chords
+     * are space-joined key tokens ({@code "C-x C-s"}); a prefix is a whole-token prefix. Bindings of
+     * {@code forCommandId} itself are ignored (rebinding a command over its own chord is not a conflict).
+     *
+     * <p>This is what turns a silent footgun into a warning: recording a lone {@code C-x} used to draw no
+     * warning (no <em>exact</em> match existed) yet dead-ended every {@code C-x …} binding — save, find,
+     * commit, quit — because the dispatcher resolves {@code C-x} to a command before the second key arrives.
+     */
+    public static List<Conflict> conflicts(Map<String, String> active, String proposed, String forCommandId) {
+        List<Conflict> out = new ArrayList<>();
+        if (active == null || proposed == null || proposed.isBlank()) {
+            return out;
+        }
+        String p = proposed.trim();
+        active.forEach((chord, cmd) -> {
+            if (cmd == null || cmd.equals(forCommandId) || KeymapManager.UNBIND.equals(cmd) || chord.isBlank()) {
+                return;
+            }
+            if (chord.equals(p)) {
+                out.add(new Conflict(chord, cmd, ConflictKind.EXACT));
+            } else if (chord.startsWith(p + " ")) {
+                out.add(new Conflict(chord, cmd, ConflictKind.SHADOWS)); // proposed is a prefix of this chord
+            } else if (p.startsWith(chord + " ")) {
+                out.add(new Conflict(chord, cmd, ConflictKind.UNREACHABLE)); // this chord is a prefix of proposed
+            }
+        });
+        return out;
+    }
+
     /** All chord sequences the base keymap binds to {@code commandId}, in iteration order. */
     public static List<String> defaultChords(Map<String, String> base, String commandId) {
         List<String> out = new ArrayList<>();

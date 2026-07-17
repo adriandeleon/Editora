@@ -112,6 +112,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   blob the same way the editor reads the file (a byte-order mark wins, else the file's `.editorconfig` `charset`,
   else UTF-8), so the text is right and only real edits show. (From the deferred backlog.)
 
+- **Rebinding a prefix chord no longer silently breaks every shortcut under it.** Recording a lone `C-x` in
+  Settings → Keymaps drew no warning yet dead-ended `C-x C-s` (save), `C-x C-f` (find file), `C-x g` (commit),
+  `C-x C-c` (quit) and the rest — the editor only checked for an exact-chord clash, and `C-x` alone matched
+  nothing. The conflict check now also finds prefix collisions in both directions (a new chord that would
+  shadow existing multi-key ones, and a shorter existing chord that would make the new one unreachable) and
+  lists the affected shortcuts in the confirm dialog. (From the deferred backlog.)
+
 - **The HTTP client no longer silently drops a request header — a puzzling `401` becomes diagnosable.** A
   header value the JDK client rejects (a token pasted from a terminal with a trailing newline, or a value
   with an embedded control character) was skipped without a word, so the request went out missing that header.
