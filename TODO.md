@@ -3,6 +3,18 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **HTTP client silently drops a JDK-rejected header** (#440) — `send()` wrapped `b.header()` in a
+      `catch (IllegalArgumentException) { /* skip */ }`, so a header the JDK rejects (a pasted value with a
+      trailing `\r\n`, an embedded control char, or a restricted name like `Host`) went out **missing** with no
+      status/report note → an unauthenticated request and a mystery `401`. Nuance found by executing the repro:
+      `HttpAuth.normalizeHeaders` **already `.strip()`s Authorization**, so that header was fine — but a
+      *custom* auth header (`X-Api-Key`/`X-Auth-Token`, common) with the same paste artifact was dropped. New
+      pure `HttpHeaders.partition` trims **every** header value (spec-safe OWS strip) and separates the
+      sendable from the un-sendable, validating against the real `HttpRequest.Builder`; `run` surfaces the
+      un-sendable ones as `HttpResult.warnings` shown atop the report (`HttpResponseFormat`). **Proven end to
+      end against a real `com.sun.net.httpserver` server** that reports the header it received: a custom auth
+      header with a trailing newline now arrives trimmed (`expected: <sk-secret-123> but was: <null>` on the
+      old code), and an injection value (`a\r\nX-Injected: evil`) is surfaced, not sent.
 - [x] **Symlinked repo root → "not in repo"** (#434) — `GitService.repoRelative` (and `GitCoordinator.rel`)
       compared a git-reported root (symlink-resolved by `rev-parse --show-toplevel`) against an as-opened file
       path, so `f.startsWith(r)` failed for any repo reached through a symlink (macOS `/tmp → /private/tmp`, a
