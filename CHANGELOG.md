@@ -27,6 +27,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The crontab preview described the day-of-month/day-of-week rule backwards.** `0 0 13 * 5` was explained as
+  "on day 13 of the month **and** on Friday" — i.e. Friday the 13th. It actually runs on *every* Friday and
+  *every* 13th, which is cron's most famous gotcha and the reason the preview exists. The next-run times shown
+  in the same row already said so, so the preview contradicted itself on screen. A day field covering every
+  value made it worse: `0 0 1-31 * 5` claimed "on Friday" while running daily. The English is now derived from
+  the same rule the matcher uses, and verified against croniter. (From a per-feature audit of the previews.)
+
+- **A weekend crontab was reported as a syntax error.** `0 0 * * 6-7` (Saturday–Sunday) and `0 0 * * 5-7` were
+  rejected with "range start after end", because 7 was folded to Sunday's 0 before the range was read, turning
+  6–7 into 6–0. Real cron expands the range first and folds afterwards; Editora now does too. (From a
+  per-feature audit of the previews.)
+
+- **Turning a preview off could strand a file in a preview it couldn't leave — or evict one that still
+  worked.** Each preview asked "is this file my format?" rather than "does this file still have a preview?".
+  So switching off structured data stranded an XML file, whose tree rides that same setting, in a preview with
+  nothing left to render and no toggle to escape with; and it also bounced a GitHub Actions workflow — which is
+  YAML, but has its own preview — out of a view mode that is remembered per file. (From a per-feature audit of
+  the previews.)
+
+
 - **A breakpoint (or a bookmark) on one of two adjacent identical lines could vanish for good.** Both are kept
   in a line-keyed map and are re-anchored to their saved line text when a file is opened, so when an edit made
   outside the editor shifted two same-text lines — two `});` in a row, routine in real code — the upper one

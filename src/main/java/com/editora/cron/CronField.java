@@ -42,6 +42,10 @@ final class CronField {
      * Parses one field {@code token} against its inclusive {@code [min,max]} range. {@code names} maps a
      * lowercased 3-letter name to its number (e.g. {@code jan}→1), or {@code null} for numeric-only fields.
      * {@code sundayWrap} handles the day-of-week quirk where {@code 7} is an alias for Sunday ({@code 0}).
+     *
+     * <p>Vixie parses the day-of-week over {@code 0-7} and only folds {@code 7} into {@code 0} <em>after</em>
+     * expanding, so that is what we do: folding first turns the canonical weekend {@code 6-7} into
+     * {@code lo=6, hi=0} and rejects a schedule real cron runs happily.
      */
     static CronField parse(String token, int min, int max, Map<String, Integer> names, boolean sundayWrap) {
         String t = token.trim();
@@ -51,8 +55,12 @@ final class CronField {
         boolean star = t.equals("*");
         TreeSet<Integer> out = new TreeSet<>();
         Integer fieldStep = null;
+        int parseMax = sundayWrap ? max + 1 : max; // day-of-week accepts 7 (= Sunday) as an input value
         for (String element : t.split(",")) {
-            fieldStep = parseElement(element.trim(), min, max, names, sundayWrap, out, t.contains(","), fieldStep);
+            fieldStep = parseElement(element.trim(), min, parseMax, names, out, t.contains(","), fieldStep);
+        }
+        if (sundayWrap && out.remove(7)) {
+            out.add(0); // 7 and 0 are the same day; normalize now that every range is expanded
         }
         if (out.isEmpty()) {
             throw new ParseException("no matching values in \"" + token + "\"");
@@ -66,7 +74,6 @@ final class CronField {
             int min,
             int max,
             Map<String, Integer> names,
-            boolean sundayWrap,
             TreeSet<Integer> out,
             boolean isList,
             Integer priorStep) {
@@ -88,10 +95,10 @@ final class CronField {
         } else {
             int dash = rangePart.indexOf('-');
             if (dash > 0) {
-                lo = value(rangePart.substring(0, dash), min, max, names, sundayWrap);
-                hi = value(rangePart.substring(dash + 1), min, max, names, sundayWrap);
+                lo = value(rangePart.substring(0, dash), min, max, names);
+                hi = value(rangePart.substring(dash + 1), min, max, names);
             } else {
-                lo = value(rangePart, min, max, names, sundayWrap);
+                lo = value(rangePart, min, max, names);
                 // A bare "a/n" means a..max step n; a bare "a" is just a.
                 hi = slash >= 0 ? max : lo;
             }
@@ -106,7 +113,7 @@ final class CronField {
         return (!isList && slash >= 0) ? Integer.valueOf(step) : priorStep;
     }
 
-    private static int value(String s, int min, int max, Map<String, Integer> names, boolean sundayWrap) {
+    private static int value(String s, int min, int max, Map<String, Integer> names) {
         String v = s.trim();
         int n;
         if (names != null && !v.isEmpty() && !Character.isDigit(v.charAt(0)) && v.charAt(0) != '-') {
@@ -117,9 +124,6 @@ final class CronField {
             n = named;
         } else {
             n = parseInt(v, "value");
-        }
-        if (sundayWrap && n == 7) {
-            n = 0;
         }
         if (n < min || n > max) {
             throw new ParseException(n + " is out of range (" + min + "–" + max + ")");

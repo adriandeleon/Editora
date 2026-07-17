@@ -3,6 +3,40 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Editor-preview audit (per-feature bug hunt) — 4 fixes across the **N-parallel-implementations** cluster,
+      driven against **real oracles**: croniter (a venv under the scratchpad), Python's `csv`, and `ssh -G`.
+      **The two halves of the audit met in the middle:** a differential test of `CronExpression.nextRuns` vs
+      croniter over 21 expressions found **0 disagreements** — the engine is exact, including the Vixie
+      day-of-month/day-of-week **OR-rule** — while a *self*-consistency check of `describe()` against
+      `nextRuns()` found the **English says the opposite**. `dayPhrase()` joined the two day parts with
+      **" and "** (`0 0 13 * 5` → "day 13 of the month and on Friday" = Friday the 13th; it fires every Friday
+      *and* every 13th), and gated on `coversAll()` while `matches()` gates on `isStar()` — so `0 0 1-31 * 5`
+      dropped the field that forces the OR and claimed "on Friday" while firing **daily**. `CrontabPreview`
+      renders both in one row, so it contradicted itself on screen. Both now derive from `isStar()` + " or ".
+      Also **`0 0 * * 6-7` — the canonical weekend cron — was a "syntax error"**: `CronField.value` folded
+      7→Sunday-0 *before* the range bound was read, making `lo=6, hi=0`; Vixie expands over 0-7 and folds
+      after, so `parse` now uses `parseMax = max+1` for DOW and normalizes 7→0 once every range is expanded.
+      And the shared seam: every `set*PreviewEnabled` asked **"is this file my format?"** instead of **"does
+      this file still have a preview?"**, wrong in both directions — XML's tree rides `structuredPreview` but
+      `isStructured()` is false for XML, so turning it off **stranded** the buffer in PREVIEW where every
+      `scheduleRenderPreview` branch misses and falls through to the **unconditional Markdown tail** (it renders
+      the XML source as Markdown) with `hasPreview()`=false removing the toggle needed to escape; conversely a
+      workflow *is* YAML, so turning off structured **evicted** it from the GH-Actions preview and clobbered a
+      view mode persisted per file. One `reconcilePreviewMode()` (= the `!hasPreview()` test the GH-Actions
+      sibling alone already had) now serves all 9 setters. Deferred → #476 (the ssh-config preview claims
+      options an earlier `Host *` overrides — `ssh -G` proves 2 of 3 values wrong; needs a real resolver +
+      pattern matching), #477 (sparse cron shows 1 of 3 next runs — the ~4-year scan budget is shared across
+      all n), #478 (CR-only line endings are one long line everywhere, not just in the CSV grid).
+      **Verified clean, with what was run:** `CsvParser.formatRow`→`parse` round-trip over 11 nasty values
+      (commas/quotes/`""`/embedded newlines/CRLF) — 0 failures; `CsvParser.parse` vs Python `csv` over 25
+      inputs — 22 identical, 2 cosmetic blank-line diffs, 1 = #478; `CsvAlign` align/shrink properties — 27/27;
+      `StructuredParser`/`XmlParser` caps — a 200k-node doc errors cleanly in ~85 ms building **zero** nodes,
+      20k-deep nesting is refused (no `StackOverflowError`); impossible cron (`0 0 31 2 *`) terminates in 30 ms;
+      `looksLikeWorkflow` — 11 cases incl. the YAML-1.1 `"on"`→boolean gotcha, nested/commented keys, and a
+      bounded 64 KB head read; `previewGen` + FX-thread discipline identical across all 8 tree branches;
+      `isXml()` excludes `.svg`. **Repros that FAILED:** `*/2` needing Vixie's `DOM_STAR` (croniter agrees with
+      us); `CsvAlign` losing quoted content; unbounded node building; `isGithubActions()` costing a full
+      `getText()`.
 - [x] Debug/DAP audit (per-feature bug hunt) — 5 fixes, verified against **real debugpy 1.8.21 + node 22**.
       **Data loss first:** `BreakpointManager`/`BookmarkManager.reanchor` rebuild a **line-keyed map**, so two
       markers resolving to the same line meant `put` silently dropped one — and `restore`'s self-heal then
