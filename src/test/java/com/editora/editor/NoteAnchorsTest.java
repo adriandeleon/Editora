@@ -62,4 +62,29 @@ class NoteAnchorsTest {
         int[] r = NoteAnchors.relocate("abc", 99, 99, "", "", "");
         assertArrayEquals(new int[] {3, 3}, r, "empty needle (blank line) → clamped position, not orphan");
     }
+
+    // --- span covers the full original selection, not just the capped needle (#454) -----------------
+
+    @Test
+    void relocateSpansTheFullSelectionLengthNotJustTheCappedNeedle() {
+        // A note on a long selection: the stored needle is capped, but `length` is the full selection.
+        String doc = "AAAAAAAAAA" + "xxxxxx" + "BBBBBBBBBB"; // needle "AAAA…" at offset 0, real span longer
+        String needle = "AAAAAAAAAA"; // 10 chars (stands in for a capped-at-MAX_TEXT text)
+        int fullLength = 16; // the real selection was "AAAAAAAAAAxxxxxx" (10 + 6)
+        // Level 1 (saved offset still holds the needle):
+        int[] exact = NoteAnchors.relocate(doc, 0, 16, needle, "", "", fullLength);
+        assertArrayEquals(new int[] {0, 16}, exact, "span extends to start + full length, not start + needle");
+        // Occurrence-search path (saved offset wrong) reaches the same full span.
+        int[] found = NoteAnchors.relocate(doc, 99, 115, needle, "", "", fullLength);
+        assertArrayEquals(new int[] {0, 16}, found);
+    }
+
+    @Test
+    void relocateClampsTheSpanToTheDocumentAndFallsBackForOldNotes() {
+        String doc = "abcdef";
+        // A length past the end of the document is clamped.
+        assertArrayEquals(new int[] {2, 6}, NoteAnchors.relocate(doc, 2, 6, "cd", "", "", 100));
+        // An old note (length 0, or shorter than the needle) falls back to the needle length.
+        assertArrayEquals(new int[] {2, 4}, NoteAnchors.relocate(doc, 2, 4, "cd", "", "", 0));
+    }
 }

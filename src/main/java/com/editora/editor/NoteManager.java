@@ -249,7 +249,8 @@ public final class NoteManager {
         TextAnchor a = note.anchor();
         int savedStart = absOffset(a.line(), a.column());
         int savedEnd = absOffset(a.endLine(), a.endColumn());
-        int[] r = NoteAnchors.relocate(area.getText(), savedStart, savedEnd, a.selectedText(), a.prefix(), a.suffix());
+        int[] r = NoteAnchors.relocate(
+                area.getText(), savedStart, savedEnd, a.selectedText(), a.prefix(), a.suffix(), a.length());
         if (r == null) {
             // ORPHANED is a system observation ("I can't find the text"), RESOLVED is the user's decision.
             // Overwriting one with the other lost the decision permanently: a checkout that hid the text

@@ -19,7 +19,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class NoteStore {
 
     /** Current on-disk schema version of {@code notes.json}. */
-    public static final int SCHEMA_VERSION = 1;
+    // v1 → v2: TextAnchor gained a `length` component (the note's full selection length); additive — an old
+    // anchor deserializes with length 0 and the relocator falls back to the capped needle length (#454).
+    public static final int SCHEMA_VERSION = 2;
 
     private int schemaVersion = SCHEMA_VERSION;
 
