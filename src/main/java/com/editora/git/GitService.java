@@ -1,5 +1,6 @@
 package com.editora.git;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -335,18 +336,55 @@ public final class GitService {
         });
     }
 
-    /** The repo-relative, forward-slash path of {@code file} under {@code root} (for {@code git show} specs);
-     *  {@code null} if {@code file} isn't under {@code root}. Pure — unit-tested. */
+    /**
+     * The repo-relative, forward-slash path of {@code file} under {@code root} (for {@code git show} specs);
+     * {@code null} if {@code file} isn't under {@code root}.
+     *
+     * <p>Both sides are <b>symlink-resolved</b> before comparing. {@code root} comes from
+     * {@code git rev-parse --show-toplevel}, which returns the <em>real</em> path, while the buffer's
+     * {@code file} keeps its as-opened path — so when the repo is reached through a symlink
+     * ({@code ~/work/app → /Volumes/data/app}, or macOS {@code /tmp → /private/tmp}), the two share no prefix
+     * and every path-based Git op (diff, stage, blame, history) wrongly reports "not in repo". Resolving both
+     * to their real paths fixes that. A path that doesn't exist on disk (a fake test path, a deleted file)
+     * falls back to {@code toAbsolutePath().normalize()}, preserving the old behaviour where there's nothing
+     * to resolve.
+     */
     public static String repoRelative(Path root, Path file) {
         if (root == null || file == null) {
             return null;
         }
-        Path r = root.toAbsolutePath().normalize();
-        Path f = file.toAbsolutePath().normalize();
+        Path r = realPath(root);
+        Path f = realPath(file);
         if (!f.startsWith(r)) {
             return null;
         }
         return r.relativize(f).toString().replace('\\', '/');
+    }
+
+    /**
+     * {@code p}'s real, symlink-resolved path. When {@code p} doesn't exist on disk (a not-yet-saved or
+     * deleted file, or a fake path in a test), resolves the nearest existing ancestor and re-appends the
+     * missing tail — so a file under a symlinked directory still canonicalizes even before it hits disk —
+     * and if nothing resolves, falls back to a plain absolute-normalized path.
+     */
+    static Path realPath(Path p) {
+        try {
+            return p.toRealPath();
+        } catch (IOException notThere) {
+            Path abs = p.toAbsolutePath();
+            Path existing = abs.getParent();
+            while (existing != null && !Files.exists(existing)) {
+                existing = existing.getParent();
+            }
+            if (existing == null) {
+                return abs.normalize();
+            }
+            try {
+                return existing.toRealPath().resolve(existing.relativize(abs)).normalize();
+            } catch (IOException stillNot) {
+                return abs.normalize();
+            }
+        }
     }
 
     /**
