@@ -150,10 +150,37 @@ public final class RemoteFileSystems {
                 .verify(CONNECT_TIMEOUT)
                 .getSession();
         try {
+            authenticate(session, conn, secret, AUTH_TIMEOUT);
+            // On success the SftpFileSystem owns the session (closing the FS closes it).
+            return SftpClientFactory.instance().createSftpFileSystem(session);
+        } catch (IOException | RuntimeException e) {
+            session.close(true); // failed auth / FS creation: close the session so it isn't leaked
+            throw e;
+        }
+    }
+
+    /**
+     * Runs the auth handshake on {@code session} for {@code conn}, using {@code secret} as the password or key
+     * passphrase, returning once authenticated.
+     *
+     * <p>For password auth the password is <b>removed from the session as soon as the handshake finishes</b>.
+     * MINA's client API is String-only ({@code addPasswordIdentity(String)} / a String-returning
+     * {@code PasswordIdentityProvider}), so a String copy that the caller's {@code char[]} wipe cannot reach
+     * is unavoidable at this boundary — but {@code addPasswordIdentity} otherwise keeps that String on the
+     * session's identity list for the <em>entire connected session</em>, which can be hours. A password is
+     * only needed for the initial handshake (SSH re-keys against the host key, not the password), so removing
+     * it in a {@code finally} shrinks its lifetime from "until you disconnect" to "the handshake", after which
+     * it is unreachable and eligible for GC. Package-visible so it can be tested against a real SSH server.
+     */
+    static void authenticate(ClientSession session, RemoteConnection conn, char[] secret, Duration timeout)
+            throws IOException {
+        String passwordIdentity = null;
+        try {
             switch (conn.auth()) {
                 case PASSWORD -> {
                     if (secret != null) {
-                        session.addPasswordIdentity(new String(secret));
+                        passwordIdentity = new String(secret);
+                        session.addPasswordIdentity(passwordIdentity);
                     }
                 }
                 case KEY -> session.setKeyIdentityProvider(keyProvider(List.of(Path.of(conn.keyPath())), secret));
@@ -164,12 +191,11 @@ public final class RemoteFileSystems {
                     }
                 }
             }
-            session.auth().verify(AUTH_TIMEOUT);
-            // On success the SftpFileSystem owns the session (closing the FS closes it).
-            return SftpClientFactory.instance().createSftpFileSystem(session);
-        } catch (IOException | RuntimeException e) {
-            session.close(true); // failed auth / FS creation: close the session so it isn't leaked
-            throw e;
+            session.auth().verify(timeout);
+        } finally {
+            if (passwordIdentity != null) {
+                session.removePasswordIdentity(passwordIdentity); // don't retain it past the handshake
+            }
         }
     }
 

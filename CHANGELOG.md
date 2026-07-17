@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **An SFTP password no longer lingers in memory for the whole session.** After authenticating, Editora kept
+  the password on the SSH session's identity list until you disconnected — potentially hours — so a memory dump
+  of a long-running session could recover it. It is now dropped as soon as the handshake completes, since a
+  password is only needed to authenticate. (A password only needs one string copy at the SSH library's
+  boundary, which its API doesn't let us zero; this shrinks how long that copy is reachable from "until
+  disconnect" to "during the handshake".)
+
 - **Opening a terminal in an untrusted repo can no longer run its commands (Windows).** "Open Terminal Here"
   built a `cmd.exe` command line with the folder path spliced in (`cmd /k cd /d <dir>`), so a repository
   shipping a directory named with a shell metacharacter — `&`, `|`, `^`, all legal in Windows folder names —

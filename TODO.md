@@ -3,6 +3,18 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **SFTP password lifetime (#437, security / defense-in-depth)** — the connect form wipes the `char[]`
+      secret, but `session.addPasswordIdentity(new String(secret))` kept a String copy on the **session's
+      identity list for the entire connected session** (hours), defeating the wipe at MINA's String-only
+      boundary. Since a password is only needed for the initial handshake (SSH re-keys against the host key,
+      not the password), `RemoteFileSystems.authenticate` now `removePasswordIdentity`s it in a `finally` right
+      after `session.auth()`, shrinking the copy's reachable lifetime from "until disconnect" to "the
+      handshake". The unavoidable String at the MINA boundary stays (no `char[]` client API; the issue notes
+      this) — this closes the *duration*, not the copy. Auth extracted into a testable `authenticate(session,
+      conn, secret, timeout)`; **proven against a real in-process SSH server** — after auth
+      `ClientSession.passwordIteratorOf(session)` is empty (success and rejected-password paths both), failing
+      on the old code (`expected: <false> but was: <true>`). Completes the SFTP hardening trio (host key #487,
+      this).
 - [x] **Windows cmd metacharacter injection in "Open Terminal Here"** (#413, security) —
       `DesktopActions.terminalArgv` built `cmd /c start cmd /k "cd /d " + dir`, splicing the folder path into a
       `cmd.exe` command line. A repo shipping a directory named `repo & calc.exe & rem ` (every char legal in a
