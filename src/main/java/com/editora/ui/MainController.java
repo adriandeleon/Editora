@@ -3226,6 +3226,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public void onDetectionSettled() {
                     maybeOfferInstall(activeBuffer()); // hide/show the install banner per fresh LSP detection
                 }
+
+                @Override
+                public Path canonicalize(Path file) {
+                    return canonicalPath(file);
+                }
             });
 
     /** Personal Notes feature; owns the panel/jump-pickers/persistence. Built in {@link #init} (needs config). */

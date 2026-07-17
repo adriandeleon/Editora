@@ -91,6 +91,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Problems window now sorts the active file to the top even when it's reached through a symlink.** The
+  diagnostics were stored under the path the language server reported (often a symlink path like `/tmp/…`),
+  while the active-file marker used the resolved real path (`/private/tmp/…`), so on macOS — and for any
+  symlinked project directory — the two never matched and the file you were editing never floated to the top.
+  Diagnostics are now keyed by the resolved real path, so the sort (and the tab-close clear) line up. (From
+  the deferred backlog.)
+
 - **An HTTP request whose body is missing its blank line now warns instead of silently sending nothing.** In a
   `.http` file the body must be separated from the headers by a blank line; if you forgot it, a JSON body like
   `{"a": 1}` was parsed as a header (it has a colon) and the request went out with no body — a failure that
