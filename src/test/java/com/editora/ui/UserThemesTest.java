@@ -47,4 +47,32 @@ class UserThemesTest {
         // rgba(...) isn't a #hex → not parsed (fine; callers fall back / derive).
         assertNull(UserThemes.parseColor("-color-accent-muted: rgba(0,0,0,0.3);", "-color-accent-muted"));
     }
+
+    @Test
+    void parseColorFollowsATokenDefinedByReference() {
+        // Defining a palette and mapping the tokens onto it is ordinary CSS authoring. Reading "no colour"
+        // here defaulted the editor to a white background and the light syntax palette — so a dark theme got
+        // dark chrome around a glaring white editor.
+        String css = ".root { -color-dark-1: #101010; -color-light-1: #f0f0f0;\n"
+                + "  -color-bg-default: -color-dark-1; -color-fg-default: -color-light-1; }";
+        assertEquals(Color.web("#101010"), UserThemes.parseColor(css, "-color-bg-default"));
+        assertEquals(Color.web("#f0f0f0"), UserThemes.parseColor(css, "-color-fg-default"));
+    }
+
+    @Test
+    void parseColorFollowsAChainOfReferencesButNotForever() {
+        assertEquals(
+                Color.web("#abcdef"),
+                UserThemes.parseColor("-a: #abcdef; -b: -a; -c: -b; -color-bg-default: -c;", "-color-bg-default"));
+        // A cycle must terminate rather than recurse until the stack goes.
+        assertNull(UserThemes.parseColor("-x: -y; -y: -x; -color-bg-default: -x;", "-color-bg-default"));
+        // A token pointing at itself is not a colour.
+        assertNull(UserThemes.parseColor("-color-bg-default: -color-bg-default;", "-color-bg-default"));
+    }
+
+    @Test
+    void parseColorDoesNotMatchALongerTokenThatMerelyStartsWithIt() {
+        String css = ".root { -color-bg-default-hover: #ff0000; -color-bg-default: #00ff00; }";
+        assertEquals(Color.web("#00ff00"), UserThemes.parseColor(css, "-color-bg-default"));
+    }
 }

@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A user theme that defines its colours by reference is no longer read as light.** A theme file can set up a
+  palette and point the standard tokens at it (`-color-bg-default: -color-dark-1;`) — ordinary CSS authoring.
+  Editora only looked for a literal hex value, found none, and fell back to defaults: a dark theme got dark
+  chrome around a glaring white editor with the light syntax palette. It now follows the reference. Relatedly,
+  a token is no longer confused with a longer one that merely starts with it (`-color-bg-default-hover` was
+  being read as the background).
+
+- **A stray or half-written `.css` file is no longer offered as a theme.** Anything ending in `.css` in the
+  themes folder appeared in the picker, so an empty or unfinished file became a selectable theme that stripped
+  the app's styling when chosen. A theme file now has to actually declare something.
+
 - **"Reset to Defaults" now actually resets your settings.** It restored 23 of 181 preferences — a
   hand-written list of setters that stopped being updated years of features ago — so it silently left roughly
   87% of your settings exactly as they were, including every AI, language-server, debugger, Mermaid, TODO,

@@ -109,7 +109,7 @@ final class UserThemes {
             return null;
         }
         String name = titleCase(baseName(css.getFileName().toString()));
-        if (name.isBlank()) {
+        if (name.isBlank() || !looksLikeStylesheet(text)) {
             return null;
         }
         java.net.URI uri = css.toUri();
@@ -138,6 +138,18 @@ final class UserThemes {
         // control CSS url (used by Themes). Editor override themes carry their own CSS url (used by
         // EditorThemes.stylesheetFor). controlKind selects which url the caller ultimately uses.
         return new Entry(name, url, dark, bg, fg, line, minimapText, minimapViewport);
+    }
+
+    /**
+     * Whether {@code css} actually declares anything — it must set at least one AtlantaFX {@code -color-*}
+     * token or one JavaFX {@code -fx-*} property.
+     *
+     * <p>Anything ending in {@code .css} in the folder is offered as a theme, so without this an empty file,
+     * a half-written one, or a stray text file becomes a selectable theme named after it — and picking it
+     * applies an empty user-agent stylesheet, stripping AtlantaFX from the whole app.
+     */
+    private static boolean looksLikeStylesheet(String css) {
+        return css.contains("-color-") || css.contains("-fx-");
     }
 
     private static Color firstNonNull(Color a, Color b) {
@@ -172,18 +184,48 @@ final class UserThemes {
         return sb.toString();
     }
 
-    /** First {@code #rrggbb}/{@code #rrggbbaa} hex following {@code token} (up to the next {@code ;}), or null. */
+    /** How many {@code -a: -b;} hops {@link #parseColor} will follow before giving up (also breaks cycles). */
+    private static final int MAX_VAR_HOPS = 4;
+
+    private static final Pattern HEX = Pattern.compile("#([0-9a-fA-F]{6}([0-9a-fA-F]{2})?)\\b");
+
+    /** A value that is just another variable name, e.g. {@code -color-bg-default: -color-dark-1;}. */
+    private static final Pattern VAR_REF = Pattern.compile("^\\s*(-[A-Za-z0-9_-]+)\\s*$");
+
+    /**
+     * The colour {@code token} resolves to: the first {@code #rrggbb}/{@code #rrggbbaa} hex in its value, or —
+     * when the value is just another variable — that variable's colour, up to {@link #MAX_VAR_HOPS} hops.
+     * Returns null if it resolves to no literal colour.
+     *
+     * <p>Following the indirection matters because a token defined by reference is ordinary CSS authoring
+     * (define a palette, map the tokens onto it). Reporting "no colour" for one silently defaults the editor
+     * to a white background and the light syntax palette — so a dark theme rendered dark chrome around a
+     * glaring white editor. The bundled themes and AtlantaFX's own all use literal hex, which is why the
+     * happy path never showed it.
+     */
     static Color parseColor(String css, String token) {
-        Matcher m =
-                Pattern.compile(Pattern.quote(token) + "\\s*:?\\s*([^;{}]*)").matcher(css);
+        return parseColor(css, token, MAX_VAR_HOPS);
+    }
+
+    private static Color parseColor(String css, String token, int hopsLeft) {
+        // The lookahead keeps `-color-bg-default` from matching a longer token that merely starts with it.
+        Matcher m = Pattern.compile(Pattern.quote(token) + "(?![A-Za-z0-9_-])\\s*:?\\s*([^;{}]*)")
+                .matcher(css);
         while (m.find()) {
-            Matcher hex =
-                    Pattern.compile("#([0-9a-fA-F]{6}([0-9a-fA-F]{2})?)\\b").matcher(m.group(1));
+            String value = m.group(1);
+            Matcher hex = HEX.matcher(value);
             if (hex.find()) {
                 try {
                     return Color.web(hex.group());
                 } catch (IllegalArgumentException ignored) {
                     // keep scanning
+                }
+            }
+            Matcher ref = VAR_REF.matcher(value);
+            if (hopsLeft > 0 && ref.find() && !ref.group(1).equals(token)) {
+                Color referenced = parseColor(css, ref.group(1), hopsLeft - 1);
+                if (referenced != null) {
+                    return referenced;
                 }
             }
         }
