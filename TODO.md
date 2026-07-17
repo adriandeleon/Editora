@@ -3,6 +3,18 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Windows cmd metacharacter injection in "Open Terminal Here"** (#413, security) —
+      `DesktopActions.terminalArgv` built `cmd /c start cmd /k "cd /d " + dir`, splicing the folder path into a
+      `cmd.exe` command line. A repo shipping a directory named `repo & calc.exe & rem ` (every char legal in a
+      Windows folder name) ran `calc.exe` when the user picked Open-Terminal-Here on it. Fixed by construction:
+      the path is delivered as the child's **working directory** (`ProcessBuilder.directory`, i.e. CreateProcess
+      `lpCurrentDirectory`, parsed by no shell) and the argv is fixed literals (`cmd /c start "" cmd /k`); a new
+      `DesktopActions.Command{argv, workingDir}` record carries the split. mac/linux exec their launcher directly
+      (no shell) so their path-as-argv was always safe; **Reveal-in-Explorer was never a command-injection vector
+      either** — `explorer.exe` is launched directly and runs no subcommand (documented, not "fixed"). The
+      injection-closure is proven by a pure test (the malicious path appears in no cmd argument, fails on the old
+      code); **the launch behaviour — that `start ""` opens a console inheriting the working directory — is the
+      one part unverifiable on macOS and wants a Windows device-test** (per the issue's own caveat).
 - [x] **SFTP host-key verification (GHSA-p4qf-p7q6-2mrw)** — the initiative's top open security item, and the
       first of the deferred backlog. `RemoteFileSystems` passed **`AcceptAllServerKeyVerifier`**, so SSH's
       entire security model was off: a MITM on the path presented their own key, Editora connected without a
