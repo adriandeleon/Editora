@@ -83,8 +83,12 @@ public final class NoteAnchors {
             return new int[] {savedStart, Math.min(savedStart + span, doc.length())};
         }
         List<Integer> occ = occurrences(doc, needle);
-        if (occ.isEmpty()) {
-            return null; // orphan
+        if (occ.isEmpty() || occ.size() > MAX_OCCURRENCES) {
+            // No occurrence, OR the needle is too common to disambiguate reliably: orphan (honest +
+            // recoverable) rather than pick from a truncated top-of-file list. Previously the scan collected
+            // only the first MAX_OCCURRENCES from offset 0, so a note living past occurrence #MAX_OCCURRENCES
+            // scored to the last of those and jumped far up-file (#455).
+            return null;
         }
         // Levels 2-3: prefer an occurrence whose surrounding context matches; tie-break by proximity.
         int best = -1;
@@ -115,7 +119,9 @@ public final class NoteAnchors {
     private static List<Integer> occurrences(String doc, String needle) {
         List<Integer> out = new ArrayList<>();
         int i = doc.indexOf(needle);
-        while (i >= 0 && out.size() < MAX_OCCURRENCES) {
+        // Collect one past the cap so the caller can tell "exactly MAX_OCCURRENCES" from "more than that"
+        // (too ambiguous → orphan) instead of silently picking from a truncated prefix.
+        while (i >= 0 && out.size() <= MAX_OCCURRENCES) {
             out.add(i);
             i = doc.indexOf(needle, i + 1);
         }
