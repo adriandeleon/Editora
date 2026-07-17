@@ -36,6 +36,57 @@ class CronExpressionTest {
     }
 
     @Test
+    void describesTheDayOfMonthOrDayOfWeekRuleAsOrNotAnd() {
+        // The most famous cron gotcha: when BOTH day fields are restricted, cron fires when EITHER matches.
+        // "day 13 of the month and on Friday" reads as Friday the 13th; it actually fires on every Friday and
+        // every 13th. The preview renders describe() and the next-run times in the same row, so saying "and"
+        // made it contradict itself on screen.
+        assertEquals("At midnight, on day 13 of the month or on Friday", describe("0 0 13 * 5"));
+        assertEquals(
+                List.of(
+                        LocalDateTime.of(2026, 1, 2, 0, 0), // a Friday
+                        LocalDateTime.of(2026, 1, 9, 0, 0), // a Friday
+                        LocalDateTime.of(2026, 1, 13, 0, 0)), // the 13th, a Tuesday
+                ok("0 0 13 * 5").nextRuns(LocalDateTime.of(2026, 1, 1, 0, 0), 3),
+                "the description must agree with what the schedule actually does");
+    }
+
+    @Test
+    void describesADayFieldThatCoversEveryValueRatherThanDroppingIt() {
+        // `1-31` is not a star, so it still forces the OR-rule — and OR'd with Friday that fires EVERY day.
+        // Describing it as just "on Friday" dropped the very field that changes the meaning.
+        assertEquals("At midnight, on days 1 through 31 of the month or on Friday", describe("0 0 1-31 * 5"));
+        assertEquals(
+                List.of(LocalDateTime.of(2026, 1, 2, 0, 0), LocalDateTime.of(2026, 1, 3, 0, 0)),
+                ok("0 0 1-31 * 5").nextRuns(LocalDateTime.of(2026, 1, 1, 0, 0), 2),
+                "consecutive days — the schedule is daily, not weekly");
+    }
+
+    @Test
+    void acceptsAWeekendRangeThatCrossesTheSundayAlias() {
+        // `6-7` (Sat–Sun) is the canonical weekend cron. 7 is an alias for Sunday, but Vixie expands the range
+        // over 0-7 FIRST and folds 7 into 0 afterwards; folding first makes it lo=6, hi=0 — rejected as
+        // "range start after end" for a schedule real cron runs happily.
+        assertEquals(
+                List.of(
+                        LocalDateTime.of(2026, 1, 3, 0, 0), // Saturday
+                        LocalDateTime.of(2026, 1, 4, 0, 0), // Sunday
+                        LocalDateTime.of(2026, 1, 10, 0, 0)), // Saturday
+                ok("0 0 * * 6-7").nextRuns(LocalDateTime.of(2026, 1, 1, 0, 0), 3));
+        assertEquals(
+                List.of(
+                        LocalDateTime.of(2026, 1, 2, 0, 0), // Friday
+                        LocalDateTime.of(2026, 1, 3, 0, 0),
+                        LocalDateTime.of(2026, 1, 4, 0, 0)),
+                ok("0 0 * * 5-7").nextRuns(LocalDateTime.of(2026, 1, 1, 0, 0), 3));
+        assertTrue(CronExpression.parse("0 0 * * 0-7").ok(), "the whole legal day-of-week range");
+        assertEquals(
+                ok("0 0 * * 0").nextRuns(LocalDateTime.of(2026, 1, 1, 0, 0), 3),
+                ok("0 0 * * 7").nextRuns(LocalDateTime.of(2026, 1, 1, 0, 0), 3),
+                "7 and 0 are the same day");
+    }
+
+    @Test
     void describesNamesAndMonths() {
         assertEquals("At 09:00, on Monday", describe("0 9 * * MON"));
         assertEquals("At midnight, on day 1 of the month, in June, December", describe("0 0 1 6,12 *"));

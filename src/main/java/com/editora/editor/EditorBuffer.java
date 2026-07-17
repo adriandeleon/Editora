@@ -2242,6 +2242,24 @@ public class EditorBuffer implements TabContent {
     /** Whether this buffer supports the 3-mode preview: Markdown always, Mermaid only while the feature
      *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off), and CSV
      *  only once the grid preview node has been injected (the feature-on gate — see {@link #hasCsvPreview}). */
+    /**
+     * Leaves the preview when — and only when — this buffer has no preview left. Called after any
+     * {@code set*PreviewEnabled} flip.
+     *
+     * <p>Each setter used to ask "is this file my format?" instead, which is wrong both ways. One setting can
+     * back several formats (an XML file's DOM tree rides {@code structuredPreview}, but {@code isStructured()}
+     * is false for XML) — so the buffer was left stranded in a preview whose feature is off: every branch of
+     * {@link #scheduleRenderPreview} then misses and falls through to the Markdown tail, rendering the source
+     * as Markdown, while {@code hasPreview()} being false takes away the toggle needed to escape. And one file
+     * can have two previews (a workflow is also YAML) — so turning off the unrelated one clobbered a
+     * per-file view mode that is persisted in {@code WorkspaceState.markdownViewModes}.
+     */
+    private void reconcilePreviewMode() {
+        if (!hasPreview() && markdownViewMode != MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.EDITOR);
+        }
+    }
+
     public boolean hasPreview() {
         return isMarkdown()
                 || isMarkwhen()
@@ -2284,9 +2302,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.svgPreviewEnabled = enabled;
-        if (!enabled && isSvg() && markdownViewMode != MarkdownViewMode.EDITOR) {
-            setMarkdownViewMode(MarkdownViewMode.EDITOR);
-        }
+        reconcilePreviewMode();
     }
 
     /** A Typst document buffer (.typ). The whole buffer renders to a multi-page image preview via the typst
@@ -2306,9 +2322,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.typstPreviewEnabled = enabled;
-        if (!enabled && isTypst() && markdownViewMode != MarkdownViewMode.EDITOR) {
-            setMarkdownViewMode(MarkdownViewMode.EDITOR);
-        }
+        reconcilePreviewMode();
     }
 
     /** Injects the typst {@code --root} resolver (file path → root dir); see {@link #typstRootResolver}. */
@@ -2357,9 +2371,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.crontabPreviewEnabled = enabled;
-        if (!enabled && isCrontab() && markdownViewMode != MarkdownViewMode.EDITOR) {
-            setMarkdownViewMode(MarkdownViewMode.EDITOR);
-        }
+        reconcilePreviewMode();
     }
 
     /** An {@code /etc/fstab} buffer (language {@code fstab} — see ConfigFileType). */
@@ -2378,9 +2390,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.fstabPreviewEnabled = enabled;
-        if (!enabled && isFstab() && markdownViewMode != MarkdownViewMode.EDITOR) {
-            setMarkdownViewMode(MarkdownViewMode.EDITOR);
-        }
+        reconcilePreviewMode();
     }
 
     /** A systemd unit buffer (language {@code systemd}: .service/.timer/.socket/… — see LanguageRegistry). */
@@ -2399,9 +2409,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.systemdPreviewEnabled = enabled;
-        if (!enabled && isSystemd() && markdownViewMode != MarkdownViewMode.EDITOR) {
-            setMarkdownViewMode(MarkdownViewMode.EDITOR);
-        }
+        reconcilePreviewMode();
     }
 
     /** An SSH client-config buffer (language {@code ssh-config} — see ConfigFileType). */
@@ -2420,9 +2428,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.sshConfigPreviewEnabled = enabled;
-        if (!enabled && isSshConfig() && markdownViewMode != MarkdownViewMode.EDITOR) {
-            setMarkdownViewMode(MarkdownViewMode.EDITOR);
-        }
+        reconcilePreviewMode();
     }
 
     /** A Dockerfile buffer (language {@code dockerfile} — see ConfigFileType). */
@@ -2441,9 +2447,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.dockerfilePreviewEnabled = enabled;
-        if (!enabled && isDockerfile() && markdownViewMode != MarkdownViewMode.EDITOR) {
-            setMarkdownViewMode(MarkdownViewMode.EDITOR);
-        }
+        reconcilePreviewMode();
     }
 
     /** A GitHub Actions workflow buffer — a YAML file whose content matches the workflow signature (on+jobs).
@@ -2468,11 +2472,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.githubActionsPreviewEnabled = enabled;
-        // A workflow is YAML, so turning this off leaves the structured YAML tree (if enabled); only force the
-        // editor when there's no other preview to fall back to.
-        if (!enabled && isGithubActions() && !hasPreview() && markdownViewMode != MarkdownViewMode.EDITOR) {
-            setMarkdownViewMode(MarkdownViewMode.EDITOR);
-        }
+        reconcilePreviewMode();
     }
 
     /** Whether this buffer uses the self-scrolling tree host (structured, XML, crontab, or fstab) — shared surface. */
@@ -2493,9 +2493,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.structuredPreviewEnabled = enabled;
-        if (!enabled && isStructured() && markdownViewMode != MarkdownViewMode.EDITOR) {
-            setMarkdownViewMode(MarkdownViewMode.EDITOR); // drop back to source when the feature is turned off
-        }
+        reconcilePreviewMode();
     }
 
     /** Whether the last render of this structured buffer detected an OpenAPI/Swagger spec. */

@@ -228,13 +228,25 @@ public final class CronExpression {
         return String.format("At %02d:%02d", h, m);
     }
 
+    /**
+     * The day part of {@link #describe()}. Both halves gate on {@code isStar()} — the exact predicate
+     * {@link #matches} uses — and join with "or" when both are restricted, because that is the Vixie OR-rule
+     * the matcher implements.
+     *
+     * <p>Saying "and" inverted the meaning of the most famous cron gotcha: {@code 0 0 13 * 5} was described as
+     * "on day 13 of the month and on Friday" — i.e. Friday the 13th — when it fires on every Friday
+     * <em>and</em> every 13th, as the next-run times right beside it in the preview showed. Gating on
+     * {@code coversAll()} compounded it: a day field that happens to cover every value (say {@code 1-31}, or
+     * a step of one) is not a star, so it still forces the OR-rule, but it was dropped from the prose —
+     * {@code 0 0 1-31 * 5} claimed "on Friday" while firing every day.
+     */
     private String dayPhrase() {
-        boolean domRestricted = !dom.coversAll();
-        boolean dowRestricted = !dow.coversAll();
+        boolean domRestricted = !dom.isStar();
+        boolean dowRestricted = !dow.isStar();
         String domPart = domRestricted ? domPhrase() : "";
         String dowPart = dowRestricted ? dowPhrase() : "";
         if (!domPart.isEmpty() && !dowPart.isEmpty()) {
-            return domPart + " and " + dowPart;
+            return domPart + " or " + dowPart; // both restricted ⇒ the OR-rule; see matches()
         }
         return domPart.isEmpty() ? dowPart : domPart;
     }
