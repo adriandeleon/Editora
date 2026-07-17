@@ -19,7 +19,8 @@ import static com.editora.i18n.Messages.tr;
  * generation from the staged diff, explain-selection into a Markdown buffer, and rewrite-selection as an
  * undoable edit — each one streamed call to the Anthropic Messages API via {@link AiService} (no SDK, no
  * agent loop; the embedded ACP agent is the separate {@code AgentCoordinator}). The API key comes from
- * {@code Settings.aiApiKey}, falling back to the {@code ANTHROPIC_API_KEY} environment variable.
+ * {@code Settings.aiApiKey}, falling back — for the Anthropic provider only — to the
+ * {@code ANTHROPIC_API_KEY} environment variable (see {@link #effectiveKey}).
  * {@code MainController} keeps the {@code ai.*} command registrations and delegates here.
  */
 final class AiCoordinator {
@@ -399,12 +400,29 @@ final class AiCoordinator {
 
     /** The API key: the Settings override, else the {@code ANTHROPIC_API_KEY} environment variable. */
     private String apiKey() {
-        String configured = host.settings().getAiApiKey();
+        return effectiveKey(host.settings().getAiApiKey(), provider(), System.getenv("ANTHROPIC_API_KEY"));
+    }
+
+    /**
+     * The key to send: {@code configured} if set, else {@code anthropicEnvKey} — but <b>only</b> for
+     * {@link AiProvider#ANTHROPIC}. Pure, so it is unit-tested without touching the real environment.
+     *
+     * <p>The environment fallback must stay tied to the provider the variable belongs to. It is Anthropic's
+     * credential by name and it is exported on most developer machines, while the OpenAI-compatible provider
+     * points at a <em>user-supplied</em> endpoint (LM Studio, a LAN proxy, any host at all) and its
+     * {@link AiProvider#requiresApiKey()} is false precisely because a local server needs none. Handing that
+     * provider the environment's Anthropic key sent it there as a bearer token with the Settings key field
+     * empty — nothing on screen suggested a credential was in play — and inline completion ships it on every
+     * idle pause, unprompted. It also let a blank-field user past the "no key configured" gate.
+     */
+    static String effectiveKey(String configured, AiProvider provider, String anthropicEnvKey) {
         if (configured != null && !configured.isBlank()) {
             return configured.trim();
         }
-        String env = System.getenv("ANTHROPIC_API_KEY");
-        return env == null ? "" : env.trim();
+        if (provider != AiProvider.ANTHROPIC || anthropicEnvKey == null) {
+            return "";
+        }
+        return anthropicEnvKey.trim();
     }
 
     private String model() {
