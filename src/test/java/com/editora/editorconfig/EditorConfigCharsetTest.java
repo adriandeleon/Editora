@@ -57,6 +57,32 @@ class EditorConfigCharsetTest {
     }
 
     @Test
+    void resolveNameBomWinsOverEditorConfig() {
+        // A leading BOM overrides whatever .editorconfig says (the file is self-describing).
+        byte[] bom16le = {(byte) 0xFF, (byte) 0xFE, 'A', 0};
+        assertEquals("utf-16le", EditorConfigCharset.resolveName(bom16le, "latin1"));
+        byte[] bom8 = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF, 'x'};
+        assertEquals("utf-8-bom", EditorConfigCharset.resolveName(bom8, "latin1"));
+    }
+
+    @Test
+    void resolveNameFallsBackToEditorConfigThenUtf8() {
+        byte[] plain = {(byte) 0xE9}; // a bare latin1 'é' — no BOM, invalid UTF-8 start
+        assertEquals("latin1", EditorConfigCharset.resolveName(plain, "latin1"));
+        assertEquals("utf-8", EditorConfigCharset.resolveName(plain, null)); // EditorConfig off / no rule
+    }
+
+    @Test
+    void resolveNameThenDecodeRecoversLatin1WhereUtf8Mojibakes() {
+        // The #435 core: a latin1-committed blob decoded as UTF-8 is mojibake; via resolveName+decode it's real.
+        byte[] bytes = "café".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+        String correct = EditorConfigCharset.decode(bytes, EditorConfigCharset.resolveName(bytes, "latin1"));
+        assertEquals("café", correct);
+        String forcedUtf8 = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        assertFalse(forcedUtf8.contains("café"), "UTF-8 force-decode should mojibake: " + forcedUtf8);
+    }
+
+    @Test
     void displayNames() {
         assertEquals("UTF-8", EditorConfigCharset.displayName("utf-8"));
         assertEquals("UTF-8 BOM", EditorConfigCharset.displayName("utf-8-bom"));

@@ -182,21 +182,24 @@ public final class GitService {
     // --- diff viewer: blob content + history -----------------------------------------------------
 
     /**
-     * Fetches a blob's content via {@code git show <spec>} (e.g. {@code HEAD:rel/path} for the committed
-     * version, {@code :rel/path} for the staged/index version, {@code <ref>:rel/path} for any commit).
-     * Posts the content on the FX thread, or {@code ""} when the spec doesn't exist (a new/untracked file
-     * has no such blob) — callers treat {@code ""} as "empty side".
+     * Fetches a blob's <em>raw bytes</em> via {@code git show <spec>} (e.g. {@code HEAD:rel/path} for the
+     * committed version, {@code :rel/path} for the staged/index version, {@code <ref>:rel/path} for any
+     * commit), so a caller can decode it with the file's real charset rather than force-decoding as UTF-8
+     * (which mojibakes a Latin-1/UTF-16 tracked file). Posts on the FX thread; empty bytes when the spec
+     * doesn't exist (a new/untracked file has no such blob) or on failure — callers treat empty as "empty side".
      */
-    public void show(Path root, String spec, Consumer<String> onResult) {
+    public void showBytes(Path root, String spec, Consumer<byte[]> onResult) {
         exec.submit(() -> {
-            String content = "";
+            byte[] bytes = new byte[0];
             if (gitAvailable() && root != null && spec != null) {
-                ProcessRunner.Result r = git(root, QUICK, "show", spec);
+                List<String> cmd = List.of("git", "show", spec);
+                ProcessRunner.BytesResult r =
+                        ProcessRunner.runBytes(root, QUICK, cmd, Map.of("GIT_OPTIONAL_LOCKS", "0"));
                 if (r.ok()) {
-                    content = r.out();
+                    bytes = r.out();
                 }
             }
-            String posted = content;
+            byte[] posted = bytes;
             Platform.runLater(() -> onResult.accept(posted));
         });
     }

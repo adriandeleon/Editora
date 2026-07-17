@@ -74,6 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The diff viewer no longer garbles non-UTF-8 files.** When comparing a Latin-1 or UTF-16 file against its
+  committed version (Compare with HEAD / a branch / a commit, or the Commit window's staged/unstaged rows), the
+  git side was force-decoded as UTF-8 — so every accented character came out as mojibake, and because the
+  working side read correctly, the whole file showed as one giant spurious change. Both sides now decode a git
+  blob the same way the editor reads the file (a byte-order mark wins, else the file's `.editorconfig` `charset`,
+  else UTF-8), so the text is right and only real edits show. (From the deferred backlog.)
+
 - **The HTTP client no longer silently drops a request header — a puzzling `401` becomes diagnosable.** A
   header value the JDK client rejects (a token pasted from a terminal with a trailing newline, or a value
   with an embedded control character) was skipped without a word, so the request went out missing that header.

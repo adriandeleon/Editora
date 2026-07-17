@@ -2800,6 +2800,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public Path finderStartDir() {
                     return MainController.this.finderStartDir();
                 }
+
+                @Override
+                public String editorConfigCharset(Path file) {
+                    return editorConfigCharsetFor(file);
+                }
             });
 
     // --- Mermaid (mmdc render/export + maid lint) ----------------------------------------------------
@@ -5615,19 +5620,18 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private String readWithCharset(EditorBuffer buffer, Path file) throws IOException {
         byte[] bytes = Files.readAllBytes(file);
-        String name = com.editora.editorconfig.EditorConfigCharset.detectByBom(bytes);
-        if (name == null) {
-            name = com.editora.editorconfig.EditorConfigCharset.UTF_8;
-            if (editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)) {
-                String ec =
-                        com.editora.editorconfig.EditorConfig.resolveFor(file).charset();
-                if (ec != null) {
-                    name = ec;
-                }
-            }
-        }
+        String name = com.editora.editorconfig.EditorConfigCharset.resolveName(bytes, editorConfigCharsetFor(file));
         buffer.setDetectedCharset(name);
         return com.editora.editorconfig.EditorConfigCharset.decode(bytes, name);
+    }
+
+    /** The file's resolved {@code .editorconfig} charset, or null (EditorConfig off / remote / no rule). The
+     *  BOM check that overrides it lives in {@link com.editora.editorconfig.EditorConfigCharset#resolveName}. */
+    String editorConfigCharsetFor(Path file) {
+        if (editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)) {
+            return com.editora.editorconfig.EditorConfig.resolveFor(file).charset();
+        }
+        return null;
     }
 
     /** Reads up to {@code maxChars} characters (UTF-8) from {@code file}, bounding memory use. */
