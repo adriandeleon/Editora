@@ -129,4 +129,26 @@ class CsvParserTest {
         assertFalse(CsvParser.hasMultilineField(CsvParser.parse("a,b\nc,d", ',')));
         assertTrue(CsvParser.hasMultilineField(CsvParser.parse("\"a\nb\",c", ',')));
     }
+
+    // --- record separators: LF, CRLF, and lone CR (classic Mac) (#478) — verified against Python csv ------
+
+    @Test
+    void loneCrIsARecordSeparatorNotContent() {
+        // Was fused into one row [['a','bc','d']]; Python's csv splits on the lone CR.
+        assertEquals(List.of(List.of("a", "b"), List.of("c", "d")), CsvParser.parse("a,b\rc,d\r", ','));
+        assertEquals(List.of(List.of("a", "b"), List.of("c", "d")), CsvParser.parse("a,b\rc,d", ','));
+        assertEquals(List.of(List.of("x"), List.of("y"), List.of("z")), CsvParser.parse("x\ry\rz", ','));
+    }
+
+    @Test
+    void crlfIsASingleRecordSeparator() {
+        // The CR of a CRLF pair must not create an empty record before the LF.
+        assertEquals(List.of(List.of("a", "b"), List.of("c", "d")), CsvParser.parse("a,b\r\nc,d\r\n", ','));
+    }
+
+    @Test
+    void aQuotedFieldKeepsAnEmbeddedCr() {
+        // Inside quotes the EOL branch is skipped, so a quoted multi-line field keeps its CR content.
+        assertEquals(List.of(List.of("a\rb", "c")), CsvParser.parse("\"a\rb\",c", ','));
+    }
 }

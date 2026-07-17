@@ -175,13 +175,20 @@ public final class CsvParser {
                 row.add(f.toString());
                 f.setLength(0);
                 pending = true;
-            } else if (c == '\n') {
+            } else if (c == '\n' || c == '\r') {
+                // Record separator: LF (Unix), lone CR (classic Mac OS), or CRLF (Windows/RFC-4180). A lone
+                // CR used to be dropped as content, fusing two records into one; now every EOL style ends the
+                // record, matching RFC-4180 / Python's csv. (Inside quotes this branch is skipped, so a quoted
+                // multi-line field keeps its embedded newline.)
                 row.add(f.toString());
                 rows.add(row);
                 row = new ArrayList<>();
                 f.setLength(0);
                 pending = false;
-            } else if (c != '\r') {
+                if (c == '\r' && i + 1 < text.length() && text.charAt(i + 1) == '\n') {
+                    i++; // consume the LF of a CRLF pair so it doesn't start an empty record
+                }
+            } else {
                 f.append(c);
                 pending = true;
             }
