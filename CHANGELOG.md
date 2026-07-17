@@ -91,6 +91,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An HTTP request whose body is missing its blank line now warns instead of silently sending nothing.** In a
+  `.http` file the body must be separated from the headers by a blank line; if you forgot it, a JSON body like
+  `{"a": 1}` was parsed as a header (it has a colon) and the request went out with no body — a failure that
+  looked like the server's fault. Editora now recognizes that a line in the header block isn't a real header
+  and shows a clear warning atop the response ("a request body must be separated from the headers by a blank
+  line") rather than guessing where the body starts. (From the deferred backlog.)
+
 - **A hung AI endpoint no longer wedges every later AI request.** If an endpoint returned response headers and
   then stopped writing (a stalled proxy, a crashed local server that keeps the socket open), the streaming read
   blocked forever — and because AI requests run one at a time, every subsequent commit-message, explain, or

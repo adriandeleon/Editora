@@ -131,7 +131,8 @@ public final class HttpFile {
             String name,
             BodyRef bodyRef,
             List<Redirect> redirects,
-            Directives directives) {}
+            Directives directives,
+            String warning) {}
 
     /** Parses one request {@code block} (from {@link Request#block()}) into method/URL/headers/body, plus an
      *  external-body reference + redirect operators. The {@code name}/{@code directives} default; use
@@ -148,7 +149,7 @@ public final class HttpFile {
             }
         }
         if (i >= lines.length) {
-            return new Parsed("GET", "", List.of(), "", null, null, List.of(), Directives.NONE);
+            return new Parsed("GET", "", List.of(), "", null, null, List.of(), Directives.NONE, null);
         }
         String[] mu = methodUrl(lines[i]);
         StringBuilder url = new StringBuilder(mu[1]);
@@ -162,13 +163,22 @@ public final class HttpFile {
             i++;
         }
         List<String[]> headers = new ArrayList<>();
+        String warning = null;
         for (; i < lines.length && !lines[i].strip().isEmpty(); i++) {
             int colon = lines[i].indexOf(':');
-            if (colon > 0) {
+            if (colon > 0 && isHeaderFieldName(lines[i].substring(0, colon).strip())) {
                 headers.add(new String[] {
                     lines[i].substring(0, colon).strip(),
                     lines[i].substring(colon + 1).strip()
                 });
+            } else if (warning == null) {
+                // A non-blank line in the header block that isn't a valid `Name: value` — almost always a
+                // request body written without the required blank line before it (a common typo). Per the
+                // JetBrains .http convention we still send no body (a colon-bearing body line like `{"a": 1}`
+                // would otherwise be parsed as a bogus header); surface a warning so the empty request doesn't
+                // look like a server problem, rather than guessing where the body starts.
+                warning = "a request body must be separated from the headers by a blank line (found \""
+                        + lines[i].strip() + "\")";
             }
         }
         while (i < lines.length && lines[i].strip().isEmpty()) {
@@ -206,14 +216,52 @@ public final class HttpFile {
             body.append(lines[i]);
         }
         return new Parsed(
-                mu[0], url.toString(), headers, body.toString().strip(), null, bodyRef, redirects, Directives.NONE);
+                mu[0],
+                url.toString(),
+                headers,
+                body.toString().strip(),
+                null,
+                bodyRef,
+                redirects,
+                Directives.NONE,
+                warning);
     }
 
     /** Like {@link #parseRequest(String)} but carries the request's {@code name} + {@code directives}. */
     public static Parsed parseRequest(Request req) {
         Parsed p = parseRequest(req.block());
         return new Parsed(
-                p.method(), p.url(), p.headers(), p.body(), req.name(), p.bodyRef(), p.redirects(), req.directives());
+                p.method(),
+                p.url(),
+                p.headers(),
+                p.body(),
+                req.name(),
+                p.bodyRef(),
+                p.redirects(),
+                req.directives(),
+                p.warning());
+    }
+
+    /**
+     * Whether {@code name} is a valid HTTP header field-name (RFC 7230 {@code token}: one or more {@code tchar}
+     * — alphanumerics or {@code !#$%&'*+-.^_`|~}). Used to tell a real header from a body line that lacked its
+     * blank separator: {@code Content-Type} is a token, {@code {"a"} (from {@code {"a": 1}}) is not.
+     */
+    private static boolean isHeaderFieldName(String name) {
+        if (name.isEmpty()) {
+            return false;
+        }
+        for (int j = 0; j < name.length(); j++) {
+            char c = name.charAt(j);
+            boolean tchar = (c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9')
+                    || "!#$%&'*+-.^_`|~".indexOf(c) >= 0;
+            if (!tchar) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Every {@code @name = value} declaration as {@code [name, rawValue]} pairs, in order. */
