@@ -3,6 +3,41 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] AI audit (per-feature bug hunt) — **2 credential leaks**, verified by pointing Editora at a **fake local
+      endpoint** and reading the bytes it actually sent. **The critical one needed no user action at all:**
+      `AiCoordinator.apiKey()` fell back to `System.getenv("ANTHROPIC_API_KEY")` **with no provider check**, so
+      a user with that variable exported (universal for Claude Code users) who picked the **OpenAI-compatible**
+      provider — the local LM Studio/Ollama path, whose `requiresApiKey()` is *false* because a local server
+      needs no key — silently shipped their Anthropic credential to whatever `aiEndpoint` pointed at:
+      `Authorization: Bearer sk-ant-api03-…`, captured on the wire, with the Settings key field **empty** so
+      nothing on screen suggested a key existed. `aiEndpoint` is free text, so that host need not be loopback.
+      Worse, **inline completion** fires it per idle pause, unprompted; and the env key also satisfied the
+      `apiKey().isEmpty()` "not configured" gate, so the feature reported itself ready and began transmitting
+      code. Now the pure, unit-tested `AiCoordinator.effectiveKey(configured, provider, envKey)` only consults
+      the variable for the provider it belongs to. **The second:** `settings.toml` — which holds that key — was
+      written with the default umask (**0644**) in a **0755** config dir, i.e. world-readable, the same shape
+      the MCP audit (#467) fixed for its bearer token. Fixed at the `ConfigWriter` chokepoint, so it covers
+      *every* config file (`notes.json` is private too), as a **creation** attribute (never briefly readable,
+      no extra syscall) that also re-tightens a file left 0644 by an older version. **Also: CLAUDE.md
+      documented none of it** — zero mentions of `AiService`/`AcpClient`/`AiCoordinator`/`AgentCoordinator`,
+      and the Settings bullet still claimed the AI page was "an empty coming-soon placeholder [that] was
+      dropped" — for the only feature in the app that transmits the user's source code to a third party. Now
+      has an `ai/`+`agent/` bullet carrying the credential invariants. Deferred → #480 (one shared `aiApiKey`
+      across providers → switching sends the old key to the new endpoint; needs per-provider fields + a
+      migration), #481 (a key sent in cleartext to a **non-loopback** `http://` host — but plain-http
+      *loopback* is the intended local-inference design, so "require https" is not the fix), #482 (a hanging
+      endpoint may wedge the single-thread `ai-service` executor for the session — **unverified**, reasoned).
+      **Verified clean, with what was run:** the request body carries only the system prompt + language + the
+      `prefix<CURSOR>suffix` window (explain/rewrite send `getSelectedText()`, **not** the buffer; no file path
+      or name is transmitted; `AiRequests.truncate` caps at 120k); `aiEnabled`+`aiSupport`+`!simpleMode` are
+      ANDed consistently in both coordinators; SSE `[DONE]`/empty-`data:`/`MissingNode` handled (a real stream
+      parsed end-to-end through the fake server); `AiService`'s generation guard is double-checked and
+      `rewriteSelection` re-verifies the text at `[start,end)` before replacing; the ACP agent is
+      `ProcessRegistry.track`ed + `killTree`d and **drains stderr past the log cap** (the LSP/DAP deadlock,
+      correctly avoided); every `AcpClient.Host` callback marshals via `Platform.runLater`, no `.get()`/
+      `.join()` on FX. **Repro NOT pursued:** ACP `fs/read_text_file` has no path confinement, but the agent is
+      a local process the user launched with their own privileges and can read those files directly — defence
+      in depth, not a privilege boundary.
 - [x] Editor-preview audit (per-feature bug hunt) — 4 fixes across the **N-parallel-implementations** cluster,
       driven against **real oracles**: croniter (a venv under the scratchpad), Python's `csv`, and `ssh -G`.
       **The two halves of the audit met in the middle:** a differential test of `CronExpression.nextRuns` vs

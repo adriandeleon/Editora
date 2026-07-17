@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -27,6 +29,9 @@ import java.util.logging.Logger;
 public final class ConfigWriter {
 
     private static final Logger LOG = Logger.getLogger(ConfigWriter.class.getName());
+
+    /** Config files can hold credentials + private content, so they are owner-only (0600). */
+    private static final java.util.Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");
 
     private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "config-writer");
@@ -117,12 +122,35 @@ public final class ConfigWriter {
             Files.createDirectories(parent);
         }
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        Files.write(tmp, bytes);
+        writeOwnerOnly(tmp, bytes);
         try {
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException atomicUnsupported) {
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
         }
+    }
+
+    /**
+     * Writes {@code bytes} to {@code tmp}, readable only by its owner where the filesystem supports it.
+     *
+     * <p>Config files are not public: {@code settings.toml} holds the AI provider's <em>API key</em> — a
+     * billable credential — and {@code notes.json} holds the user's private notes. The default umask leaves a
+     * new file world-readable (0644) in a config dir that is itself world-traversable (0755), so any other
+     * account on the machine could simply read the key out. The mode is applied as a <em>creation</em>
+     * attribute rather than set afterwards, so the file is never briefly readable by anyone else, and it costs
+     * no extra syscall. The move preserves the mode, which also re-tightens a file left 0644 by an older
+     * version. A no-op on filesystems without POSIX permissions (Windows).
+     */
+    private static void writeOwnerOnly(Path tmp, byte[] bytes) throws IOException {
+        Files.deleteIfExists(tmp); // a leftover temp would keep its old, laxer mode
+        if (tmp.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            try {
+                Files.createFile(tmp, PosixFilePermissions.asFileAttribute(OWNER_ONLY));
+            } catch (UnsupportedOperationException ignored) {
+                // No POSIX attributes after all — fall through and write with the default mode.
+            }
+        }
+        Files.write(tmp, bytes); // CREATE+TRUNCATE_EXISTING: keeps the mode of the file just created
     }
 
     /** Flushes any pending writes, then stops the writer thread (final app shutdown). */

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Your Anthropic API key is no longer sent to a local or third-party AI endpoint.** `ANTHROPIC_API_KEY` is
+  exported on most developer machines, and Editora fell back to it for *any* provider — so selecting the
+  OpenAI-compatible provider (the local LM Studio / Ollama path, which needs no key at all) attached that key
+  as a bearer token to whatever endpoint was configured. The Settings key field was empty, so nothing on
+  screen suggested a credential was in play, and inline completion sent it on every idle pause while typing.
+  The environment fallback is now only used for the provider the variable belongs to. (From a per-feature
+  audit of the AI pages.)
+
+- **Config files are no longer readable by other users on the machine.** They were written with the default
+  umask — mode 0644 in a world-traversable config directory — and `settings.toml` holds the AI provider's API
+  key, a billable credential, while `notes.json` holds the user's private notes. Every config file is now
+  owner-only, applied when the file is created so it is never briefly readable, and rewriting a file left
+  world-readable by an earlier version tightens it. (From a per-feature audit of the AI pages.)
+
+
 - **The MCP server's access token is no longer readable by other users on the machine.** It was written with
   default permissions (world-readable) into a world-traversable config directory, and that token is the only
   thing protecting the MCP tools — which can run any editor command and read or write any file. It is now
