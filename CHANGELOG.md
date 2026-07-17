@@ -74,6 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Git now works for a project opened through a symlink.** `git rev-parse --show-toplevel` reports the repo's
+  real path, while an open file keeps its as-opened (symlinked) path — so for a repo reached through a symlink
+  (a macOS `/tmp` project, or a symlinked work directory) the two never matched, and Compare-with-HEAD, stage,
+  unstage, revert, and file history all reported "not in repo" or did nothing. Both paths are now
+  symlink-resolved before comparing. (From the deferred backlog.)
+
+
 - **A user theme that defines its colours by reference is no longer read as light.** A theme file can set up a
   palette and point the standard tokens at it (`-color-bg-default: -color-dark-1;`) — ordinary CSS authoring.
   Editora only looked for a literal hex value, found none, and fell back to defaults: a dark theme got dark

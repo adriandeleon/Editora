@@ -3,6 +3,17 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Symlinked repo root → "not in repo"** (#434) — `GitService.repoRelative` (and `GitCoordinator.rel`)
+      compared a git-reported root (symlink-resolved by `rev-parse --show-toplevel`) against an as-opened file
+      path, so `f.startsWith(r)` failed for any repo reached through a symlink (macOS `/tmp → /private/tmp`, a
+      symlinked work dir) → null → Compare-with-HEAD / stage / unstage / revert / history all "not in repo".
+      Now `repoRelative` symlink-resolves **both** sides via `GitService.realPath` (`toRealPath`, falling back
+      to a nearest-existing-ancestor resolve for a not-yet-saved/deleted file, then plain normalize), and
+      `GitCoordinator.rel` delegates to it. **Reproduced with real git + a real symlink on this box** (`root`
+      = `.../realrepo`, `file` = `.../linked/a.txt` → null before, `a.txt` after); the git commands that take a
+      `-- <abspath>` pathspec (gutter diff, blame) were already fine because git resolves the symlink itself.
+      Unit test with a real `createSymbolicLink` temp repo fails on the old code (`expected: <a.txt> but was:
+      <null>`); the pure fake-path tests still pass via the fallback.
 - [x] **SFTP password lifetime (#437, security / defense-in-depth)** — the connect form wipes the `char[]`
       secret, but `session.addPasswordIdentity(new String(secret))` kept a String copy on the **session's
       identity list for the entire connected session** (hours), defeating the wipe at MINA's String-only

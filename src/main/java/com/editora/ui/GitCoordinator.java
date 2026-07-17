@@ -674,10 +674,11 @@ final class GitCoordinator {
 
     /** Repo-relative (forward-slash) path for {@code file}, or {@code null} when there's no repo/path. */
     private String rel(Path file) {
-        if (file == null || repoRoot == null) {
-            return null;
-        }
-        return repoRoot.relativize(file.toAbsolutePath()).toString().replace(java.io.File.separatorChar, '/');
+        // Delegates to repoRelative, which symlink-resolves both sides: repoRoot comes from git (real path)
+        // while the buffer's file is as-opened, so a plain relativize produced a bogus `../…` pathspec — and
+        // then git add/reset/checkout on it failed — for any repo reached through a symlink (a macOS /tmp
+        // project, a symlinked work dir). Returns null when the file isn't under the repo, as before.
+        return GitService.repoRelative(repoRoot, file);
     }
 
     /** {@code git add -- <path>} for a file or folder (the Project-tree "Stage" action). */
