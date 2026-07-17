@@ -234,7 +234,9 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   `saveConnections`/`loadConnections`). **`RemoteFileSystems`** (UI-owned, the `GitService` idiom: a daemon
   executor + `Platform.runLater`) holds one `SftpFileSystem` per `user@host:port`, `connect(conn, secret,
   cb)` (auth precedence **default `~/.ssh` keys → key file → password**; the secret `char[]` is wiped after
-  use), `pathFor(SftpUri)`/`disconnect`/`shutdown`, and wires `Vfs.setRemoteResolver` so remote URIs in
+  use, and the password is removed from the SSH session the instant the handshake finishes —
+  `RemoteFileSystems.authenticate`'s `finally` — so MINA's String-only `addPasswordIdentity` copy isn't
+  retained on the session for the whole connection), `pathFor(SftpUri)`/`disconnect`/`shutdown`, and wires `Vfs.setRemoteResolver` so remote URIs in
   recent-files reconstruct to live Paths. **Local-only gating** (all inert for local files, so zero
   behavior change): `MainController.isLocalBuffer` + `Vfs.isLocal` guards on LSP (`syncBufferLsp`
   eligibility), DAP/breakpoints (`isDebuggableBuffer`), run/shell-run/HTTP (`addBuffer`), git
