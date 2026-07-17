@@ -92,12 +92,15 @@ final class LanguageServerSession implements LanguageClient {
         return t;
     });
     private final Map<String, Integer> versions = new ConcurrentHashMap<>();
-    private final List<Runnable> pending = new ArrayList<>();
+    private final List<Pending> pending = new ArrayList<>();
     private final AtomicInteger nextVersion = new AtomicInteger(1);
 
     private Process process;
     private LanguageServer server;
     private volatile boolean initialized;
+    private volatile Runnable onDead = () -> {};
+    private final java.util.concurrent.atomic.AtomicBoolean deadReported =
+            new java.util.concurrent.atomic.AtomicBoolean();
     private volatile boolean disposed;
     private ServerCapabilities capabilities;
 
@@ -107,6 +110,18 @@ final class LanguageServerSession implements LanguageClient {
             Consumer<PublishDiagnosticsParams> onDiagnostics,
             java.util.function.BiConsumer<String, String> onStatus) {
         this(spec, root, onDiagnostics, onStatus, null);
+    }
+
+    /** How long to wait for the {@code initialize} handshake before giving up on the server. */
+    private static final java.time.Duration INITIALIZE_TIMEOUT = java.time.Duration.ofSeconds(60);
+
+    /**
+     * Invoked (once) when this session can no longer serve requests — the process exited on its own, or the
+     * handshake failed/timed out. The manager drops the session so the next request starts a fresh one; the
+     * default is a no-op so the extra constructors need no change.
+     */
+    void setOnDead(Runnable onDead) {
+        this.onDead = onDead == null ? () -> {} : onDead;
     }
 
     LanguageServerSession(
@@ -130,6 +145,11 @@ final class LanguageServerSession implements LanguageClient {
             ProcessRunner.applyStandardEnv(pb);
             process = pb.start();
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
+            // A server that dies on its own (crash, OOM-kill) otherwise stays cached as a live session:
+            // ready()/isManaged() keep returning true, every request fails into an empty result, and the
+            // re-open guard (which tests isManaged) never restarts it — so LSP is silently dead for the
+            // session, while the status bar still names the server.
+            process.onExit().thenRun(() -> markDead());
             // Drain the server's stderr on a daemon thread (LSP traffic is on stdout). It MUST be drained —
             // an undrained PIPE fills its ~64 KB OS buffer on a chatty server (jdtls logs heavily) and the
             // server blocks writing, deadlocking mid-startup. Capturing it to the Debug Log (instead of the
@@ -194,17 +214,22 @@ final class LanguageServerSession implements LanguageClient {
             ip.setInitializationOptions(initializationOptions); // jdtls: {"bundles":[<java-debug jar>]}
         }
         server.initialize(ip)
+                // A server that never answers leaves this future — and every queued call — hanging forever:
+                // the status bar's loading bar spins with no error, the session is cached as if it were live,
+                // and the queue grows with each edit. That is exactly the jdtls workspace-lock wedge. Time it
+                // out so the handshake either completes or fails, like executeCommand already does.
+                .orTimeout(INITIALIZE_TIMEOUT.toSeconds(), java.util.concurrent.TimeUnit.SECONDS)
                 .thenAccept(result -> {
                     capabilities = result.getCapabilities();
                     server.initialized(new InitializedParams());
                     pushConfiguration(); // proactively enable Pyright auto-imports (also answered via configuration())
-                    List<Runnable> toRun;
+                    List<Pending> toRun;
                     synchronized (this) {
                         initialized = true;
                         toRun = new ArrayList<>(pending);
                         pending.clear();
                     }
-                    toRun.forEach(Runnable::run);
+                    toRun.forEach(p -> p.action().run());
                     // Signal the UI that the handshake completed so the status-bar loading bar stops. The
                     // jdtls-specific language/status notification (handled below) only fires for JDT LS and only
                     // once a project is ready; this universal signal covers every server — and a clean file that
@@ -213,7 +238,11 @@ final class LanguageServerSession implements LanguageClient {
                 })
                 .exceptionally(t -> {
                     LOG.log(Level.WARNING, "initialize failed", t);
+                    synchronized (this) {
+                        pending.clear(); // nothing will ever run these; they pin document copies
+                    }
                     onStatus.accept("Error", null); // also stop the loading bar on a failed handshake
+                    markDead(); // drop the session: it is cached but can never serve a request
                     return null;
                 });
     }
@@ -326,18 +355,57 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** Runs {@code action} now if initialized, else queues it until {@code initialize} completes. */
+    /** Marks the session unusable and tells the manager to drop it. Idempotent; safe from any thread. */
+    private void markDead(java.lang.Process ignored) {
+        markDead();
+    }
+
+    private void markDead() {
+        if (deadReported.compareAndSet(false, true)) {
+            initialized = false;
+            synchronized (this) {
+                pending.clear();
+            }
+            onDead.run();
+        }
+    }
+
+    /** True while the session can actually serve a request — initialized AND its process still alive. */
+    boolean isLive() {
+        return initialized && !disposed && process != null && process.isAlive();
+    }
+
     private void whenReady(Runnable action) {
+        whenReady(null, action);
+    }
+
+    /**
+     * Runs {@code action} now, or queues it until {@code initialize} completes.
+     *
+     * <p>A non-null {@code collapseKey} makes this <b>replace</b> any queued action with the same key. That
+     * matters for {@code didChange}, whose lambda captures the whole document text: while a server is still
+     * initializing (jdtls takes seconds — or forever, if it wedges) the 300 ms debounce queued one entry per
+     * typing pause, each pinning a full copy of the file. A 1 MB file and five minutes of typing retained
+     * ~1 GB, against the packaged app's {@code -Xmx2g}. Only the latest text per document is worth keeping.
+     */
+    private void whenReady(String collapseKey, Runnable action) {
         if (disposed) {
             return;
         }
         synchronized (this) {
             if (!initialized) {
-                pending.add(action);
+                if (collapseKey != null) {
+                    pending.removeIf(p -> collapseKey.equals(p.key()));
+                }
+                pending.add(new Pending(collapseKey, action));
                 return;
             }
         }
         action.run();
     }
+
+    /** A queued call, with an optional key identifying entries a later one supersedes. */
+    private record Pending(String key, Runnable action) {}
 
     // --- Document synchronization (full-text) ---------------------------------------------------
 
@@ -352,10 +420,14 @@ final class LanguageServerSession implements LanguageClient {
             return; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
         }
         int version = versions.merge(uri, 1, Integer::sum);
-        whenReady(() -> server.getTextDocumentService()
-                .didChange(new DidChangeTextDocumentParams(
-                        new VersionedTextDocumentIdentifier(uri, version),
-                        List.of(new TextDocumentContentChangeEvent(text)))));
+        // Collapse: a queued didChange for this uri is superseded by this one (full-text sync, so only the
+        // latest matters) — otherwise every typing pause before initialize pins another copy of the document.
+        whenReady(
+                "didChange:" + uri,
+                () -> server.getTextDocumentService()
+                        .didChange(new DidChangeTextDocumentParams(
+                                new VersionedTextDocumentIdentifier(uri, version),
+                                List.of(new TextDocumentContentChangeEvent(text)))));
     }
 
     /**
@@ -553,6 +625,9 @@ final class LanguageServerSession implements LanguageClient {
             return;
         }
         disposed = true;
+        synchronized (this) {
+            pending.clear(); // a session torn down mid-handshake must not retain its queued document copies
+        }
         try {
             if (server != null && initialized) {
                 server.shutdown().whenComplete((r, t) -> {
