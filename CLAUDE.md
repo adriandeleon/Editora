@@ -268,7 +268,7 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   reconnect. A remote buffer
   opens with a remote `Path`, so plain Save → `writeBuffer` → `Files.writeString` writes back over SFTP, no
   dialog; `saveAs` is guarded for remote. Recent files round-trip the `sftp://` URI (`Vfs.toStorableString`;
-  a remote entry resolves only once its connection is open). **Dependency:** Apache **MINA SSHD**
+  a remote entry resolves only once its connection is open). **Host-key verification (do not weaken):** the client uses a `KnownHostsServerKeyVerifier` over **`~/.ssh/known_hosts`** — shared with OpenSSH on purpose. Unknown host → the injected `RemoteFileSystems.HostKeyPrompt` (trust-on-first-use; `RemoteCoordinator` marshals it to FX and blocks the SSH I/O thread, bounded + fail-closed), written to the file only on acceptance; **changed key → refused without asking** (that's the MITM — a prompt there just gets clicked through); no prompt → refuse. It shipped as `AcceptAllServerKeyVerifier`, which made every SFTP session unauthenticated and handed a password-auth MITM the password (GHSA-p4qf-p7q6-2mrw). Tested against a real in-process `SshServer` **and a real impostor on the same port** (`HostKeyVerificationTest` + `RemoteFileSystemsHostKeyFxTest`); the known_hosts path is ctor-injectable so tests never touch the real one. **Dependency:** Apache **MINA SSHD**
   (`org.apache.sshd:sshd-osgi` + `sshd-sftp`) — the combined **sshd-osgi** bundle (module
   `org.apache.sshd.osgi`) is used instead of sshd-common+sshd-core, which **split** the
   `org.apache.sshd.common`/`server` packages across two automatic modules (illegal under JPMS); `sshd-sftp`

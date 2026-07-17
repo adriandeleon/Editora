@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **SFTP connections now verify the server's host key.** Editora accepted *any* key, so anyone positioned
+  between you and your server — hostile Wi-Fi, a compromised router, DNS spoofing — could impersonate it
+  silently, and with password auth Editora simply handed them the password, along with the contents of every
+  file you opened or saved. Editora now checks the key against `~/.ssh/known_hosts` (the same file `ssh` uses,
+  so a host you have already accepted at the terminal connects without a prompt). A host you have never
+  connected to asks you first, showing its fingerprint to compare — and a host whose key has *changed* is
+  refused outright, without offering a button that waves it through.
+
+
 - **The exported configuration archive is no longer readable by other users.** Settings → Advanced → "Export
   Configuration" writes a zip of the config directory into your home folder — including `settings.toml`, and so
   the AI provider's API key, plus your private notes. The archive was created world-readable, which undid the

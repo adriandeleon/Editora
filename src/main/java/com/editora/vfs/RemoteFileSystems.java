@@ -1,6 +1,7 @@
 package com.editora.vfs;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -16,8 +17,11 @@ import java.util.function.Consumer;
 import javafx.application.Platform;
 
 import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.keyverifier.KnownHostsServerKeyVerifier;
+import org.apache.sshd.client.keyverifier.ServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
+import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
 import org.apache.sshd.sftp.client.SftpClientFactory;
@@ -46,15 +50,64 @@ public final class RemoteFileSystems {
     });
     private final Map<String, SftpFileSystem> byAuthority = new ConcurrentHashMap<>();
 
+    /**
+     * Asked to approve a host key that {@code known_hosts} has never seen — the trust-on-first-use decision,
+     * the same one {@code ssh} puts to you at the terminal.
+     *
+     * <p>Called on an SSH I/O thread and <b>must block</b> until the user decides; {@code false} aborts the
+     * connection. A null prompt means "no UI to ask with", which rejects unknown hosts rather than trusting
+     * them.
+     */
+    @FunctionalInterface
+    public interface HostKeyPrompt {
+        boolean confirmUnknownHost(String host, int port, String keyType, String fingerprint);
+    }
+
     public RemoteFileSystems() {
+        this(null);
+    }
+
+    /**
+     * @param prompt asks about a host key not yet in {@code known_hosts}; null rejects unknown hosts outright.
+     */
+    public RemoteFileSystems(HostKeyPrompt prompt) {
+        this(prompt, knownHostsFile());
+    }
+
+    /** As {@link #RemoteFileSystems(HostKeyPrompt)}, with an explicit {@code known_hosts} (tests). */
+    RemoteFileSystems(HostKeyPrompt prompt, Path knownHosts) {
         client = SshClient.setUpDefaultClient();
-        // Trust the server key on first connect (the editor has no known_hosts/TOFU prompt UI yet); a
-        // proper known_hosts check is a deferred hardening. Without this, MINA rejects unknown host keys.
-        client.setServerKeyVerifier(org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE);
+        // Verify the server's host key against ~/.ssh/known_hosts — the same file ssh itself uses, so a host
+        // already accepted at the terminal connects without a prompt, and an entry accepted here is honoured
+        // by ssh afterwards. MINA's verifier gives the three outcomes SSH requires: a known host whose key
+        // matches connects silently; an UNKNOWN host goes to the trust-on-first-use delegate below and is
+        // written to the file only once the user accepts; and a known host presenting a DIFFERENT key is
+        // refused outright, without asking. That last case is the man-in-the-middle, and it is the point.
+        client.setServerKeyVerifier(new KnownHostsServerKeyVerifier(unknownHostVerifier(prompt), knownHosts));
         client.start();
         Vfs.setRemoteResolver(this::resolve); // remote sftp:// strings → live Paths
         Vfs.setRemoteStorable(this::storableFor); // remote Path → sftp:// string (Path.toUri() throws for SFTP)
         Vfs.setRemoteOwner(this); // so shutdown() can un-pin these statics (see Vfs.clearRemoteHooksIf)
+    }
+
+    /** {@code ~/.ssh/known_hosts} — shared with OpenSSH deliberately (see the constructor). */
+    static Path knownHostsFile() {
+        return Path.of(System.getProperty("user.home", "."), ".ssh", "known_hosts");
+    }
+
+    /**
+     * The delegate {@link KnownHostsServerKeyVerifier} consults for a host it has no entry for. Accepting here
+     * is what makes MINA write the entry, so this is the only place trust is established.
+     */
+    private static ServerKeyVerifier unknownHostVerifier(HostKeyPrompt prompt) {
+        return (session, address, key) -> {
+            if (prompt == null) {
+                return false; // nothing to ask with — refuse rather than trust silently
+            }
+            String host = address instanceof InetSocketAddress a ? a.getHostString() : String.valueOf(address);
+            int port = address instanceof InetSocketAddress a ? a.getPort() : 22;
+            return prompt.confirmUnknownHost(host, port, KeyUtils.getKeyType(key), KeyUtils.getFingerPrint(key));
+        };
     }
 
     /** The {@code sftp://user@host:port/path} string for a remote Path, by finding its owning connection. */
