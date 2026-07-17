@@ -143,4 +143,47 @@ class ConfigMigrationsTest {
         JsonNode input = mapper.readTree("{\"x\":1}");
         assertFalse(ConfigMigrations.addDefaultAgentIdToSessions(input).has("sessions"));
     }
+
+    // --- v77→78: split aiApiKey onto per-provider fields (#480) --------------------------------------
+
+    @Test
+    void splitAiApiKeyMovesTheKeyOffAnOpenAiActiveConfig() throws Exception {
+        JsonNode in = mapper.readTree("{\"aiProvider\":\"openai\",\"aiApiKey\":\"sk-openrouter\"}");
+        ObjectNode out = (ObjectNode) ConfigMigrations.splitAiApiKeyByProvider(in);
+        // The key was an OpenAI-endpoint key; keeping it in aiApiKey would resurrect it as an Anthropic key.
+        assertEquals("sk-openrouter", out.get("aiApiKeyOpenai").asText());
+        assertEquals("", out.get("aiApiKey").asText());
+    }
+
+    @Test
+    void splitAiApiKeyLeavesAnAnthropicActiveConfigUntouched() throws Exception {
+        // Anthropic is the default provider, so the common case already lands in the right field.
+        JsonNode in = mapper.readTree("{\"aiProvider\":\"anthropic\",\"aiApiKey\":\"sk-ant-REAL\"}");
+        ObjectNode out = (ObjectNode) ConfigMigrations.splitAiApiKeyByProvider(in);
+        assertEquals("sk-ant-REAL", out.get("aiApiKey").asText());
+        assertFalse(out.has("aiApiKeyOpenai"));
+
+        // A blank/absent provider defaults to Anthropic too.
+        JsonNode blank = mapper.readTree("{\"aiApiKey\":\"sk-ant-REAL\"}");
+        ObjectNode blankOut = (ObjectNode) ConfigMigrations.splitAiApiKeyByProvider(blank);
+        assertEquals("sk-ant-REAL", blankOut.get("aiApiKey").asText());
+        assertFalse(blankOut.has("aiApiKeyOpenai"));
+    }
+
+    @Test
+    void splitAiApiKeyNoOpsWithNoKeyOrAnAlreadySplitConfig() throws Exception {
+        // No key to move.
+        JsonNode empty = mapper.readTree("{\"aiProvider\":\"openai\",\"aiApiKey\":\"\"}");
+        assertEquals(
+                "",
+                ((ObjectNode) ConfigMigrations.splitAiApiKeyByProvider(empty))
+                        .path("aiApiKeyOpenai")
+                        .asText());
+        // Already-populated OpenAI key must not be clobbered by a stale aiApiKey.
+        JsonNode already =
+                mapper.readTree("{\"aiProvider\":\"openai\",\"aiApiKey\":\"stale\",\"aiApiKeyOpenai\":\"sk-real\"}");
+        ObjectNode out = (ObjectNode) ConfigMigrations.splitAiApiKeyByProvider(already);
+        assertEquals("sk-real", out.get("aiApiKeyOpenai").asText());
+        assertEquals("stale", out.get("aiApiKey").asText());
+    }
 }

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Switching AI provider no longer leaks the previous provider's API key to the new endpoint.** The API key
+  was a single field shared by both AI providers, so configuring Anthropic and then switching to the
+  OpenAI-compatible provider (a local model, or a hosted host like OpenRouter/Together/Groq) sent your
+  Anthropic key — over plain http in that provider's default configuration — to a server that had no business
+  seeing it, unprompted on every inline-completion pause. The reverse leaked too. Keys are now stored
+  per-provider: the Settings key field shows and edits only the currently-selected provider's key, and a key
+  configured for one provider is never sent to another's endpoint. An existing key is migrated onto the
+  provider that was active when it was saved. (From the deferred backlog.)
+
 - **An SFTP password no longer lingers in memory for the whole session.** After authenticating, Editora kept
   the password on the SSH session's identity list until you disconnected — potentially hours — so a memory dump
   of a long-running session could recover it. It is now dropped as soon as the handshake completes, since a

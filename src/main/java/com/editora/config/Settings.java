@@ -38,7 +38,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 77;
+    public static final int SCHEMA_VERSION = 78;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -322,8 +322,14 @@ public class Settings {
     /** The Anthropic model id for the AI actions; blank = the built-in default (claude-opus-4-8). */
     private String aiModel = "";
     /** Anthropic API key override; blank = the ANTHROPIC_API_KEY environment variable. Stored in
-     *  settings.toml as plain text — prefer the environment variable on shared machines. */
+     *  settings.toml as plain text — prefer the environment variable on shared machines. Per-provider:
+     *  this is the Anthropic key only, so switching to the OpenAI provider never sends it to that endpoint
+     *  (see {@link #getApiKeyFor}). */
     private String aiApiKey = "";
+    /** The OpenAI-compatible provider's API key override (a hosted OpenAI-compatible host — OpenRouter,
+     *  Together, Groq — needs one; a local LM Studio/Ollama server does not). Kept separate from
+     *  {@link #aiApiKey} so a key configured for one provider is never disclosed to the other's endpoint. */
+    private String aiApiKeyOpenai = "";
     /** AI inline ghost-text completion (a short continuation after a typing pause): off by default;
      *  effective only when {@link #aiSupport} is on and an API key is available. */
     private boolean aiInlineCompletion = false;
@@ -772,6 +778,32 @@ public class Settings {
 
     public void setAiApiKey(String aiApiKey) {
         this.aiApiKey = aiApiKey;
+    }
+
+    public String getAiApiKeyOpenai() {
+        return aiApiKeyOpenai == null ? "" : aiApiKeyOpenai;
+    }
+
+    public void setAiApiKeyOpenai(String aiApiKeyOpenai) {
+        this.aiApiKeyOpenai = aiApiKeyOpenai;
+    }
+
+    /**
+     * The configured API key for {@code provider} — the Anthropic key ({@link #aiApiKey}) or the
+     * OpenAI-compatible key ({@link #aiApiKeyOpenai}). Kept per-provider so switching provider never sends
+     * one provider's credential to another's (user-supplied) endpoint. {@code provider} null → Anthropic.
+     */
+    public String getApiKeyFor(com.editora.ai.AiProvider provider) {
+        return provider == com.editora.ai.AiProvider.OPENAI ? getAiApiKeyOpenai() : getAiApiKey();
+    }
+
+    /** Sets the API key for {@code provider} (Anthropic or OpenAI-compatible). {@code provider} null → Anthropic. */
+    public void setApiKeyFor(com.editora.ai.AiProvider provider, String key) {
+        if (provider == com.editora.ai.AiProvider.OPENAI) {
+            setAiApiKeyOpenai(key);
+        } else {
+            setAiApiKey(key);
+        }
     }
 
     public boolean isAiInlineCompletion() {

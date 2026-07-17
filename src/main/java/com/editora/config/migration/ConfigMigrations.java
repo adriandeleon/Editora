@@ -233,6 +233,37 @@ public final class ConfigMigrations {
     }
 
     /**
+     * v77 -> v78 for {@code settings.toml}: split the single {@code aiApiKey} onto per-provider fields. The
+     * key was a single field shared by both AI providers, so switching provider silently sent one provider's
+     * credential to the other's endpoint. {@code aiApiKey} now holds the <em>Anthropic</em> key and
+     * {@code aiApiKeyOpenai} the OpenAI-compatible one. A user whose saved provider was OpenAI had their
+     * OpenAI-endpoint key in {@code aiApiKey}, so move it to {@code aiApiKeyOpenai} and clear {@code aiApiKey}
+     * (else it would be resurrected as an Anthropic key). Anthropic was the default, so the common case — a
+     * key saved under Anthropic — already lands in the right field and is left untouched.
+     */
+    static JsonNode splitAiApiKeyByProvider(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        JsonNode providerNode = o.get("aiProvider");
+        boolean openaiActive = providerNode != null
+                && providerNode.isTextual()
+                && providerNode.asText().strip().equalsIgnoreCase("openai");
+        JsonNode keyNode = o.get("aiApiKey");
+        boolean hasKey =
+                keyNode != null && keyNode.isTextual() && !keyNode.asText().isBlank();
+        JsonNode openaiKeyNode = o.get("aiApiKeyOpenai");
+        boolean openaiKeyAlreadySet = openaiKeyNode != null
+                && openaiKeyNode.isTextual()
+                && !openaiKeyNode.asText().isBlank();
+        if (openaiActive && hasKey && !openaiKeyAlreadySet) {
+            o.put("aiApiKeyOpenai", keyNode.asText());
+            o.put("aiApiKey", "");
+        }
+        return o;
+    }
+
+    /**
      * v1 -> v2 for {@code agent-sessions.json}: backfill {@code agentId} on every remembered session that
      * predates multi-agent support. Before this feature Claude Code was the only ACP agent, so any existing
      * entry was created by it — set {@code "agentId":"claude"} on entries missing/blank it. An entry that

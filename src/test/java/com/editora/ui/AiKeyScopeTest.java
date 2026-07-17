@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import com.editora.ai.AiProvider;
+import com.editora.config.Settings;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,5 +42,34 @@ class AiKeyScopeTest {
     void noKeyAnywhereIsEmptyNotNull() {
         assertEquals("", AiCoordinator.effectiveKey(null, AiProvider.ANTHROPIC, null));
         assertEquals("", AiCoordinator.effectiveKey("", AiProvider.OPENAI, null));
+    }
+
+    // --- per-provider key scoping (#480) ------------------------------------------------------------
+
+    @Test
+    void aConfiguredKeyIsScopedToItsProviderAndNeverLeaksToTheOther() {
+        Settings s = new Settings();
+        s.setAiApiKey("sk-ant-REAL"); // the Anthropic key
+        // The #480 leak: switching to the OpenAI provider used to resend this key to that endpoint.
+        assertEquals("", s.getApiKeyFor(AiProvider.OPENAI), "Anthropic key must not surface for OPENAI");
+        assertEquals("sk-ant-REAL", s.getApiKeyFor(AiProvider.ANTHROPIC));
+
+        // A key configured for the OpenAI-compatible host stays out of Anthropic requests, and vice versa.
+        s.setApiKeyFor(AiProvider.OPENAI, "sk-openrouter");
+        assertEquals("sk-openrouter", s.getApiKeyFor(AiProvider.OPENAI));
+        assertEquals("sk-ant-REAL", s.getApiKeyFor(AiProvider.ANTHROPIC));
+
+        // setApiKeyFor routes to the right backing field.
+        s.setApiKeyFor(AiProvider.ANTHROPIC, "sk-ant-2");
+        assertEquals("sk-ant-2", s.getAiApiKey());
+        assertEquals("sk-openrouter", s.getAiApiKeyOpenai());
+    }
+
+    @Test
+    void aNullProviderIsTreatedAsAnthropic() {
+        Settings s = new Settings();
+        s.setApiKeyFor(null, "sk-ant");
+        assertEquals("sk-ant", s.getAiApiKey());
+        assertEquals("sk-ant", s.getApiKeyFor(null));
     }
 }
