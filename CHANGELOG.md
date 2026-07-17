@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The MCP server's access token is no longer readable by other users on the machine.** It was written with
+  default permissions (world-readable) into a world-traversable config directory, and that token is the only
+  thing protecting the MCP tools — which can run any editor command and read or write any file. It is now
+  owner-only, and the token is compared in constant time. (From a per-feature audit of Typst + MCP.)
+
 - **The HTML live-preview server no longer serves files outside the previewed file's folder via a symbolic
   link.** Its path-traversal guard was purely lexical, so a symlink inside the folder that pointed elsewhere
   (common in real project trees) could be fetched by the previewed page — an arbitrary-file read. The guard now
@@ -21,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   audit of the Plugins feature.)
 
 ### Fixed
+
+- **Installing Typst now actually fixes the preview.** A failed render was cached against the document's text
+  forever, so after installing the tool — which re-renders every open preview — the old "typst not found" was
+  served straight back. Two documents with identical text in different folders also showed each other's
+  render, and editing a file they `#import`ed never refreshed the preview. (From a per-feature audit of Typst +
+  MCP.)
+
+- **Typst works when its path contains a space** — `/Users/John Smith/…` was split into two arguments and
+  every render failed, which also broke the installer for anyone whose home directory has a space. And the
+  preview is no longer reported as ready for a command that can't actually render. (From a per-feature audit
+  of Typst + MCP.)
+
+- **Exporting a Typst document now reports the file it actually wrote.** Typst renames `report.png` to
+  `report-1.png` — even for a single page — so the status bar named a file that didn't exist; an export that
+  produced nothing also reported success. (From a per-feature audit of Typst + MCP.)
+
+- **Pressing Enter after a Typst list item numbered beyond ~19 digits no longer throws.** (From a per-feature
+  audit of Typst + MCP.)
 
 - **A named PlantUML diagram now renders — and exports.** PlantUML names its output after the diagram
   (`@startuml myclassdiagram` writes `myclassdiagram.png`), but Editora looked for a fixed file name, so any

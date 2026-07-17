@@ -143,8 +143,20 @@ final class TypstCoordinator {
             }
             host.setStatus(tr("status.typst.exporting"));
             service.export(source, f.toPath(), fileDirOf(file), rootOf(file), r -> {
-                if (r.ok()) {
-                    host.setStatus(tr("status.typst.exported", f.toString()));
+                // typst rewrites report.png -> report-1.png (even for one page), so the chooser's own path is
+                // not what got written; report what actually exists — and treat "exited 0, wrote nothing" as
+                // the failure it is rather than claiming success over a missing file.
+                java.util.List<java.nio.file.Path> written =
+                        r.ok() ? com.editora.typst.TypstRenderer.exportedFiles(f.toPath()) : java.util.List.of();
+                if (r.ok() && written.size() == 1) {
+                    host.setStatus(tr("status.typst.exported", written.get(0).toString()));
+                } else if (r.ok() && written.size() > 1) {
+                    host.setStatus(tr(
+                            "status.typst.exportedPages",
+                            written.size(),
+                            String.valueOf(written.get(0).toAbsolutePath().getParent())));
+                } else if (r.ok()) {
+                    host.setStatus(tr("status.typst.exportFailed", tr("status.typst.noOutput")));
                 } else {
                     String msg = r.message();
                     host.setStatus(tr("status.typst.exportFailed", msg));

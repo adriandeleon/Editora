@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Pure tests for the Typst CLI facade: command resolution, argv builders, output naming, page sorting. */
@@ -93,5 +94,36 @@ class TypstRendererTest {
         assertEquals(
                 List.of("page-1.png", "page-2.png", "page-3.png", "page-10.png"),
                 sorted.stream().map(p -> p.getFileName().toString()).toList());
+    }
+
+    /**
+     * A tool path with a space is reachable two ways: Settings → Typst → Browse…, and the installer (which
+     * writes an absolute path — so any user whose home has a space, /Users/John Smith/, got a permanently
+     * broken render). Splitting on whitespace made argv [/Users/John, Smith/…]. Same fix as DiagramRenderer.
+     */
+    @Test
+    void aConfiguredPathContainingASpaceIsNotSplit(@TempDir java.nio.file.Path tmp) throws java.io.IOException {
+        java.nio.file.Path dir = java.nio.file.Files.createDirectories(tmp.resolve("John Smith"));
+        java.nio.file.Path exe = java.nio.file.Files.writeString(dir.resolve("typst"), "#!/bin/sh\n");
+        assertEquals(java.util.List.of(exe.toString()), TypstRenderer.command(exe.toString()));
+    }
+
+    @Test
+    void aMultiTokenCommandStillTokenizes() {
+        assertEquals(java.util.List.of("npx", "-y", "typst-cli"), TypstRenderer.command("npx -y typst-cli"));
+        assertEquals(java.util.List.of("typst"), TypstRenderer.command(""), "blank falls back to the default");
+        assertEquals(java.util.List.of("typst"), TypstRenderer.command(null));
+    }
+
+    /**
+     * A wrapper always launches, so "any clean launch counts" (exit != -1) says nothing about whether the
+     * tool is really there — Settings showed a green "found" for a command that cannot render, and the
+     * install button flipped to "Installed". A single-token command keeps the lenient rule.
+     */
+    @Test
+    void detectRequiresSuccessForAMultiTokenWrapper() {
+        assertFalse(TypstRenderer.detect(java.util.List.of("sh", "-c", "exit 1")));
+        assertFalse(TypstRenderer.detect(java.util.List.of("npx", "typst-definitely-not-a-package")));
+        assertTrue(TypstRenderer.detect(java.util.List.of("sh", "-c", "exit 0")), "a wrapper that succeeds counts");
     }
 }

@@ -4,8 +4,11 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.HexFormat;
 import java.util.concurrent.ExecutorService;
@@ -116,12 +119,26 @@ public final class McpServer {
                 sendStatus(ex, 401);
                 return;
             }
-            byte[] in = ex.getRequestBody().readAllBytes();
+            byte[] in = readCapped(ex.getRequestBody());
             JsonNode req;
             try {
                 req = mapper.readTree(in);
             } catch (IOException parse) {
                 writeJson(ex, 200, JsonRpc.error(mapper, mapper.nullNode(), JsonRpc.PARSE_ERROR, "Parse error"));
+                return;
+            }
+            if (req != null && req.isArray()) {
+                // JSON-RPC batching is legal but unsupported here. Without this the array has no "id", so it
+                // was taken for a notification and answered 202 with no body — leaving the client waiting
+                // forever on a response that will never come. Say so instead.
+                writeJson(
+                        ex,
+                        200,
+                        JsonRpc.error(
+                                mapper,
+                                mapper.nullNode(),
+                                JsonRpc.INVALID_REQUEST,
+                                "Batch requests are not supported"));
                 return;
             }
             JsonNode id = req == null ? null : req.get("id");
@@ -158,7 +175,32 @@ public final class McpServer {
 
     private boolean authorized(HttpExchange ex) {
         String header = ex.getRequestHeaders().getFirst("Authorization");
-        return header != null && header.equals("Bearer " + token);
+        if (header == null) {
+            return false;
+        }
+        // Constant-time: String.equals short-circuits on the first differing char, which leaks a prefix
+        // oracle to anything that can time the loopback response.
+        byte[] got = header.getBytes(StandardCharsets.UTF_8);
+        byte[] want = ("Bearer " + token).getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(got, want);
+    }
+
+    /**
+     * Writes the endpoint + bearer token for a local MCP client to read.
+     *
+     * <p>The token is the <b>only</b> thing standing between a local process and full control of the editor
+     * (the tool surface can run any registered command and read/write any file), so the file must be
+     * owner-only. Jackson's default write left it at the umask — 0644 in practice — inside a 0755 config dir,
+     * i.e. readable by every other local account (on macOS every standard user's primary group is `staff`,
+     * so `~` being 0750 doesn't stop it; on Linux `/home/user` is commonly 0755). The rest of the auth design
+     * is sound; this file undid it. Elsewhere the codebase already writes secrets 0600 (InstallService, the
+     * elevated-save temp).
+     */
+    /** Cap on a request body — the app runs with a bounded heap; an unbounded readAllBytes need not oblige. */
+    private static final int MAX_BODY_BYTES = 8 * 1024 * 1024;
+
+    private static byte[] readCapped(java.io.InputStream in) throws IOException {
+        return in.readNBytes(MAX_BODY_BYTES);
     }
 
     private void writeEndpointFile() {
@@ -168,9 +210,22 @@ public final class McpServer {
         try {
             Path file = configDir.resolve(ENDPOINT_FILE);
             Files.createDirectories(configDir);
+            restrictToOwner(configDir, "rwx------");
             mapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), node);
+            restrictToOwner(file, "rw-------");
         } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not write " + ENDPOINT_FILE, e);
+        }
+    }
+
+    /** Best-effort owner-only permissions; a no-op where POSIX views aren't supported (Windows). */
+    private static void restrictToOwner(Path path, String perms) {
+        try {
+            if (path.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(perms));
+            }
+        } catch (IOException | UnsupportedOperationException e) {
+            LOG.log(Level.WARNING, "Could not restrict permissions on " + path, e);
         }
     }
 

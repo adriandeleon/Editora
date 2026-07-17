@@ -46,11 +46,27 @@ public final class TypstImages {
     private record Loaded(Image image, double logicalWidth) {}
 
     /** {@code more} = pages beyond the display cap that were not rendered into the preview (0 = all shown). */
-    private record Cached(List<Loaded> pages, String error, int more) {
+    private record Cached(List<Loaded> pages, String error, int more, long at) {
+        Cached(List<Loaded> pages, String error, int more) {
+            this(pages, error, more, System.currentTimeMillis());
+        }
+
         boolean ok() {
             return error == null && pages != null && !pages.isEmpty();
         }
+
+        /**
+         * A failure is only worth reusing briefly. The key is the source — not the tool — so a document that
+         * failed because typst wasn't installed stayed "broken" after installing it: the install flow
+         * re-renders every preview, which is a cache hit on the same text. (Mirrors DiagramImages.)
+         */
+        boolean expired() {
+            return error != null && System.currentTimeMillis() - at > FAILURE_TTL_MS;
+        }
     }
+
+    /** How long a failed render is reused before being retried — mirrors {@link PreviewImageLoader}. */
+    private static final long FAILURE_TTL_MS = 60_000;
 
     /** Cap on cached rendered documents (each page pins a GPU texture — bounded LRU). */
     private static final int MAX_CACHED = 8;
@@ -89,9 +105,17 @@ public final class TypstImages {
 
     /** Pushes the live Typst config (called at startup + every settings apply). */
     public static void configure(boolean enabled, List<String> command) {
+        boolean toolChanged = TypstImages.enabled != enabled;
         TypstImages.enabled = enabled;
         if (command != null && !command.isEmpty()) {
+            toolChanged |= !command.equals(TypstImages.command);
             TypstImages.command = List.copyOf(command);
+        }
+        if (toolChanged) {
+            // The key is the source, never the tool — so a newly installed (or re-pointed) typst would
+            // otherwise re-serve the cached "typst not found". That IS the install flow: it re-renders every
+            // preview, hitting the same key. (Mirrors DiagramImages.configure.)
+            CACHE.clear();
         }
     }
 
@@ -115,8 +139,12 @@ public final class TypstImages {
 
     private static void fill(
             StackPane host, String source, DoubleUnaryOperator sizer, String retainKey, Path fileDir, Path root) {
-        String key = key(source);
+        String key = key(source, fileDir, root);
         Cached hit = CACHE.get(key);
+        if (hit != null && hit.expired()) {
+            CACHE.remove(key);
+            hit = null;
+        }
         if (hit != null) {
             applyCached(host, hit, sizer, retainKey);
             return;
@@ -221,14 +249,26 @@ public final class TypstImages {
                 : Messages.tr("typst.renderFailed") + "\n" + message.strip();
     }
 
-    /** Cache key = sha-256 of the source, so editing invalidates but a re-render of unchanged text hits. */
-    private static String key(String source) {
+    /**
+     * Cache key = sha-256 of the source <b>plus the directory it renders in</b>, so editing invalidates but a
+     * re-render of unchanged text hits.
+     *
+     * <p>The directory belongs in the key because a Typst document's {@code #import}/{@code #image} paths
+     * resolve relative to it: keying on the source alone meant two different files with identical text (the
+     * same boilerplate {@code main.typ} in two projects, each with its own {@code conf.typ}) served each
+     * other's render.
+     */
+    private static String key(String source, Path fileDir, Path root) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             md.update(source.getBytes(StandardCharsets.UTF_8));
+            md.update((byte) 0);
+            md.update(String.valueOf(fileDir).getBytes(StandardCharsets.UTF_8));
+            md.update((byte) 0);
+            md.update(String.valueOf(root).getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(md.digest());
         } catch (Exception e) {
-            return source.length() + ":" + source.hashCode();
+            return source.length() + ":" + source.hashCode() + ":" + fileDir + ":" + root;
         }
     }
 }
