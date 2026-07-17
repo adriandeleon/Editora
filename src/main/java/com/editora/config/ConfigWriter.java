@@ -132,25 +132,40 @@ public final class ConfigWriter {
 
     /**
      * Writes {@code bytes} to {@code tmp}, readable only by its owner where the filesystem supports it.
-     *
-     * <p>Config files are not public: {@code settings.toml} holds the AI provider's <em>API key</em> — a
-     * billable credential — and {@code notes.json} holds the user's private notes. The default umask leaves a
-     * new file world-readable (0644) in a config dir that is itself world-traversable (0755), so any other
-     * account on the machine could simply read the key out. The mode is applied as a <em>creation</em>
-     * attribute rather than set afterwards, so the file is never briefly readable by anyone else, and it costs
-     * no extra syscall. The move preserves the mode, which also re-tightens a file left 0644 by an older
-     * version. A no-op on filesystems without POSIX permissions (Windows).
+     * The subsequent atomic move preserves the mode, which also re-tightens a file left 0644 by an older
+     * version.
      */
     private static void writeOwnerOnly(Path tmp, byte[] bytes) throws IOException {
-        Files.deleteIfExists(tmp); // a leftover temp would keep its old, laxer mode
-        if (tmp.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+        createOwnerOnly(tmp);
+        Files.write(tmp, bytes); // CREATE+TRUNCATE_EXISTING: keeps the mode of the file just created
+    }
+
+    /**
+     * (Re)creates {@code file} empty and readable only by its owner, ready to be written by any API whose
+     * default options are CREATE+TRUNCATE_EXISTING ({@link Files#write}, {@link Files#newOutputStream}) —
+     * those keep the mode of the file they find.
+     *
+     * <p><b>Use this for anything derived from the config dir.</b> Config data is not public:
+     * {@code settings.toml} holds the AI provider's <em>API key</em> — a billable credential — and
+     * {@code notes.json} holds the user's private notes. The default umask leaves a new file world-readable
+     * (0644) in a directory that is itself world-traversable (0755), so any other account on the machine can
+     * simply read the key out. That applies just as much to a <em>copy</em>: the config export writes a zip of
+     * the whole directory into the user's home, so it must be owner-only too — locking down the original and
+     * not the export protects nothing.
+     *
+     * <p>The mode is applied as a <em>creation</em> attribute rather than set afterwards, so the file is never
+     * briefly readable by anyone else, and it costs no extra syscall. A no-op on filesystems without POSIX
+     * permissions (Windows).
+     */
+    public static void createOwnerOnly(Path file) throws IOException {
+        Files.deleteIfExists(file); // a leftover file would keep its old, laxer mode
+        if (file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
             try {
-                Files.createFile(tmp, PosixFilePermissions.asFileAttribute(OWNER_ONLY));
+                Files.createFile(file, PosixFilePermissions.asFileAttribute(OWNER_ONLY));
             } catch (UnsupportedOperationException ignored) {
                 // No POSIX attributes after all — fall through and write with the default mode.
             }
         }
-        Files.write(tmp, bytes); // CREATE+TRUNCATE_EXISTING: keeps the mode of the file just created
     }
 
     /** Flushes any pending writes, then stops the writer thread (final app shutdown). */

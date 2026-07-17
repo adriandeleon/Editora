@@ -64,11 +64,17 @@ public final class ConfigExporter {
      * forward-slash separators) into {@code destinationDir/<zipName>} and returns the created file.
      * A missing/empty config dir yields a valid empty zip. {@code destinationDir} must exist.
      *
+     * <p>The zip is created <b>owner-only</b>: it contains a copy of {@code settings.toml} — and so of the AI
+     * provider's API key — plus the user's private notes, and it lands in their home directory, which is
+     * world-traversable. Locking down the config dir's own files while writing a world-readable archive of
+     * them next door would protect nothing.
+     *
      * @throws IOException if the destination can't be written or a file can't be read
      */
     public static Path export(Path configDir, Path destinationDir, String version, String userName, LocalDateTime now)
             throws IOException {
         Path zip = destinationDir.resolve(zipName(configDir, version, userName, now));
+        ConfigWriter.createOwnerOnly(zip); // newOutputStream truncates it and keeps the mode
         try (OutputStream out = Files.newOutputStream(zip);
                 ZipOutputStream zos = new ZipOutputStream(out)) {
             if (Files.isDirectory(configDir)) {
