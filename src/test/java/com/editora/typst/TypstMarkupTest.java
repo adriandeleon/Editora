@@ -96,4 +96,16 @@ class TypstMarkupTest {
         assertEquals(0, TypstMarkup.markerLength("plain"));
         assertEquals(0, TypstMarkup.markerLength("*bold*"));
     }
+
+    /**
+     * The regex accepts an unbounded digit run, so a 20-digit list number overflowed Long.parseLong and threw
+     * NumberFormatException straight out of the Enter key filter. The Markdown sibling guards this and says
+     * why in a comment; the Typst copy dropped the guard.
+     */
+    @Test
+    void anOverflowingListNumberDoesNotThrowOutOfTheEnterFilter() {
+        assertNull(TypstMarkup.continuation("99999999999999999999. item"), "don't continue — don't throw");
+        assertEquals("4. ", TypstMarkup.continuation("3. item"), "a normal number still increments");
+        assertEquals("10. ", TypstMarkup.continuation("9. item"), "…across a digit boundary");
+    }
 }

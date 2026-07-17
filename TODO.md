@@ -3,6 +3,36 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Typst + MCP audit (per-feature bug hunt) — 9 fixes incl. one **security** issue, verified against real
+      typst 0.15.0 and a real `McpServer` probed over loopback. **SECURITY: `mcp-endpoint.json` was written at
+      the umask (0644) into a 0755 config dir** — and that bearer token is the *only* boundary on a tool
+      surface that runs **any** registered command and reads/writes **any** path (both verified live against a
+      running server). On macOS every standard account's primary group is `staff`, so `~` at 0750 doesn't stop
+      another local user; on Linux `/home/user` is commonly 0755. Now 0600 + the dir 0700 (the codebase already
+      writes secrets 0600 elsewhere), and `authorized()` uses `MessageDigest.isEqual` instead of
+      `String.equals`. **The bigger lesson: Typst repeated the #460 Mermaid/Diagram bugs verbatim** — my own PR
+      fixed the diagram siblings and left the third parallel implementation untouched: cached failures with no
+      TTL and no `configure()` invalidation (so Install… → `reapplyToolSupport` → `refreshPreview` was a cache
+      HIT on the stale "typst not found" — `InstallCoordinator`'s comment literally promises "→ preview lights
+      up"), `command()` whitespace-splitting a Browse'd/installer-written path with a space, and `detect()`'s
+      `exit != -1` false-positiving an npx wrapper. Plus Typst-only: the cache key omitted `fileDir`/`root`
+      although `#import`/`#image` resolve **relative to them** (two projects' identical boilerplate `main.typ`
+      served each other's render; editing an imported `conf.typ` never refreshed); export named the chooser's
+      path though typst rewrites `report.png`→`report-1.png` **even for one page** (new `exportedFiles()`
+      globs what was really written, and "exited 0, wrote nothing" is now a failure — the #460 lesson);
+      `TypstMarkup.continuation` threw `NumberFormatException` out of the **Enter key filter** on a 20-digit
+      list number (the Markdown sibling guards this *and says why in a comment*; the copy dropped it). MCP
+      also: a JSON-RPC batch was answered 202-with-no-body (the client waits forever) → `INVALID_REQUEST`; the
+      request body is capped. Deferred → #461 (preview cache bounds documents not pages — a 40-page doc
+      retains ~570 MB vs `-Xmx2g`), #462 (compile errors show the UUID temp filename), #463 (closing the owner
+      window stops MCP app-wide), #464 (stale endpoint file survives a crash), #465 (the throwaway `.typ` may
+      trigger project-tree refreshes — repro FAILED on macOS, would fire on Linux inotify). Verified-clean by
+      execution: MCP binds **strictly loopback** (a LAN POST is refused), the auth gate (401/405, no CORS on
+      preflight so a browser cannot attach the token — DNS-rebinding gets same-origin but still can't guess
+      it), malformed JSON → clean -32700 with no leak; typst's `page-{p}.png` naming is correct for single
+      *and* multi page (no PlantUML-style surprise), the `-{p}` template is *required* (typst hard-errors
+      without it), relative `#import`/`#image` + `--root` containment genuinely work, temp cleanup on
+      success/failure/bad-exe.
 - [x] Mermaid + Diagrams audit (per-feature bug hunt) — 8 fixes, verified against the **real CLIs installed on
       this box** (mmdc 11.16.0, graphviz 15.1.0, plantuml 1.2026.6, maid via npx). Headline: **PlantUML names
       its output after the DIAGRAM, not the input** — `@startuml myclassdiagram` writes `myclassdiagram.png`,

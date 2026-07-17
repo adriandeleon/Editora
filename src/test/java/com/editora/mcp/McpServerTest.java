@@ -163,4 +163,52 @@ class McpServerTest {
         }
         return HttpClient.newHttpClient().send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
+
+    /**
+     * The bearer token is the ONLY thing between a local process and full control of the editor — the tool
+     * surface runs any registered command and reads/writes any path. Jackson's plain write left the file at
+     * the umask (0644 in practice) inside a 0755 config dir, so every other local account could read it: on
+     * macOS every standard user's primary group is `staff`, and on Linux /home/user is commonly world-
+     * readable. Elsewhere this codebase already writes secrets 0600.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void theEndpointFileIsNotReadableByOtherUsers(@TempDir Path dir) throws Exception {
+        McpServer s = new McpServer(new FakeBridge(), dir);
+        s.start();
+        try {
+            Path endpoint = dir.resolve("mcp-endpoint.json");
+            assertTrue(Files.isRegularFile(endpoint), "the endpoint file is written on start");
+            assertTrue(Files.readString(endpoint).contains(s.token()), "…and it does contain the token");
+            var perms = Files.getPosixFilePermissions(endpoint);
+            assertEquals(
+                    java.util.Set.of(
+                            java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                            java.nio.file.attribute.PosixFilePermission.OWNER_WRITE),
+                    perms,
+                    "a file holding a bearer token must be owner-only, was: "
+                            + java.nio.file.attribute.PosixFilePermissions.toString(perms));
+            assertFalse(
+                    Files.getPosixFilePermissions(dir)
+                            .contains(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE),
+                    "the config dir must not be traversable by others either");
+        } finally {
+            s.stop();
+        }
+    }
+
+    /** A batch is legal JSON-RPC and unsupported here — but it must SAY so, not answer 202 and hang. */
+    @Test
+    void aBatchRequestIsRejectedRatherThanSilentlyAcknowledged(@TempDir Path dir) throws Exception {
+        McpServer s = new McpServer(new FakeBridge(), dir);
+        int port = s.start();
+        try {
+            HttpResponse<String> resp =
+                    post(port, s.token(), "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}]");
+            assertEquals(200, resp.statusCode(), "was 202 with no body — the client waits forever");
+            assertTrue(resp.body().contains("-32600"), resp.body());
+        } finally {
+            s.stop();
+        }
+    }
 }

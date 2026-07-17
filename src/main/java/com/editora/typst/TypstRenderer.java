@@ -65,14 +65,39 @@ public final class TypstRenderer {
      */
     public static List<String> command(String configured) {
         String raw = configured == null || configured.isBlank() ? "typst" : configured.strip();
-        return List.of(raw.split("\\s+"));
+        // A value that IS a file is taken whole: Settings has a Browse… button, and the installer writes an
+        // absolute path — so a home directory with a space (/Users/John Smith/…) made every render die with
+        // Cannot run program "/Users/John". Anything else tokenizes quote-aware, so a multi-token command
+        // still works. (Same fix as DiagramRenderer.command.)
+        if (isExistingFile(raw)) {
+            return List.of(raw);
+        }
+        List<String> tokens = com.editora.run.ProgramArgs.tokenize(raw);
+        return tokens.isEmpty() ? List.of(raw) : List.copyOf(tokens);
     }
 
-    /** Whether {@code typst} is launchable (present). Blocking; call off the FX thread. */
+    /** True when {@code raw} names a file that exists — i.e. it is a path, not a command line. */
+    private static boolean isExistingFile(String raw) {
+        try {
+            return !raw.isBlank() && Files.isRegularFile(Path.of(raw));
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether {@code typst} is launchable (present). Blocking; call off the FX thread.
+     *
+     * <p>For a single-token command any clean <em>launch</em> counts (the runner's {@code exit == -1} is its
+     * failed-to-start sentinel) — a tool that runs but rejects the flag is still installed. For a multi-token
+     * wrapper the reasoning inverts: the wrapper always launches, so only its exit code says whether the tool
+     * is really there. (Same fix as DiagramRenderer.detect.)
+     */
     public static boolean detect(List<String> base) {
         List<String> cmd = new ArrayList<>(base);
         cmd.add("--version");
-        return ProcessRunner.run(null, DETECT_TIMEOUT, cmd).exit() != -1;
+        ProcessRunner.Result r = ProcessRunner.run(null, DETECT_TIMEOUT, cmd);
+        return base.size() > 1 ? r.ok() : r.exit() != -1;
     }
 
     /** The PPI a render targets ({@code 96 * RENDER_SCALE}). */
@@ -197,6 +222,49 @@ public final class TypstRenderer {
         a.add(input.toString());
         a.add(output);
         return a;
+    }
+
+    /**
+     * The files an export to {@code dest} actually produced, in page order — {@code dest} itself for a PDF,
+     * else the {@code base-<n>.ext} files {@link #exportOutput}'s {@code {p}} template makes typst write.
+     *
+     * <p>Needed because the caller cannot name the result: typst rewrites {@code report.png} to
+     * {@code report-1.png} — <b>even for a single-page document</b> — so reporting the chooser's own path
+     * told the user "Exported to …/report.png" about a file that does not exist. An empty result also means
+     * the tool exited 0 having written nothing, which must not read as success.
+     */
+    public static List<Path> exportedFiles(Path dest) {
+        String fmt = formatFor(dest.getFileName().toString());
+        if ("pdf".equals(fmt)) {
+            return Files.isRegularFile(dest) ? List.of(dest) : List.of();
+        }
+        Path parent = dest.toAbsolutePath().getParent();
+        if (parent == null) {
+            return List.of();
+        }
+        String name = dest.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        String base = dot >= 0 ? name.substring(0, dot) : name;
+        String ext = dot >= 0 ? name.substring(dot) : "." + fmt;
+        Pattern numbered = Pattern.compile(Pattern.quote(base) + "-(\\d+)" + Pattern.quote(ext) + "$");
+        try (var files = Files.list(parent)) {
+            List<Path> out = new ArrayList<>(files.filter(Files::isRegularFile)
+                    .filter(f -> numbered.matcher(f.getFileName().toString()).find())
+                    .toList());
+            out.sort(java.util.Comparator.comparingInt(f -> pageNumber(numbered, f)));
+            return List.copyOf(out);
+        } catch (IOException e) {
+            return List.of();
+        }
+    }
+
+    private static int pageNumber(Pattern numbered, Path file) {
+        Matcher m = numbered.matcher(file.getFileName().toString());
+        try {
+            return m.find() ? Integer.parseInt(m.group(1)) : Integer.MAX_VALUE;
+        } catch (NumberFormatException e) {
+            return Integer.MAX_VALUE;
+        }
     }
 
     /**
