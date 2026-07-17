@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Your AI API key is no longer sent in cleartext to a remote server.** If you pointed an AI provider at a
+  plain-`http://` endpoint on another machine, Editora attached your key (an `Authorization: Bearer` token, or
+  Anthropic's `x-api-key`) with no check on the address, so the credential crossed the network unencrypted.
+  Editora now refuses — before connecting — to attach a key to a non-loopback `http://` host, with a clear
+  message to use an `https` endpoint or a loopback address. Plain-http *loopback* (LM Studio, Ollama, vLLM on
+  `127.0.0.1`) is untouched, since that is the intended local-inference path and never leaves the machine, and
+  a keyless local server is unaffected. (From the deferred backlog.)
+
 - **Switching AI provider no longer leaks the previous provider's API key to the new endpoint.** The API key
   was a single field shared by both AI providers, so configuring Anthropic and then switching to the
   OpenAI-compatible provider (a local model, or a hosted host like OpenRouter/Together/Groq) sent your
