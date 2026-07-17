@@ -3,6 +3,41 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Debug/DAP audit (per-feature bug hunt) — 5 fixes, verified against **real debugpy 1.8.21 + node 22**.
+      **Data loss first:** `BreakpointManager`/`BookmarkManager.reanchor` rebuild a **line-keyed map**, so two
+      markers resolving to the same line meant `put` silently dropped one — and `restore`'s self-heal then
+      **persisted** the loss. Trivial to hit: two breakpoints on **adjacent identical lines** (`});`/`});`) plus
+      any external edit that shifts them — the upper one re-anchors down onto the line the lower one still
+      exact-matches. Both lines still exist; one marker (and, for a bookmark, its **note**) is gone for good.
+      The javadoc *documented* it as a feature ("Collisions dedup naturally via the map (last writer wins)") —
+      but these aren't duplicates. Now each resolves against the lines still **free**, walked in stored-line
+      order so the outcome can't depend on the caller's ordering (a persisted bookmark list is in *user* order).
+      Also: **Java debug launches corrupted quoted program args** — `String.join(" ", args)` undid the very
+      tokenization `ProgramArgs.tokenize` performed, so `"hello world" second` reached `main()` as **3** args
+      while Run passed 2 (the collision `[hello world, second]` vs `[hello, world, second]` → one identical
+      string proves the loss is irrecoverable at our boundary); python/js's `program(...)` sibling 25 lines below
+      was always correct. **`debug.toggleExceptionBreakpoints` silently did nothing mid-session** while echoing
+      success — `exceptionFilters` is read *only* by `initialized()`, so `DapManager`'s `if (client != null)`
+      live branch wrote a field nothing would read again (proven against real debugpy: filters set up front →
+      stops on the exception; toggled mid-session → runs straight through and terminates). And the
+      **execution-line highlight painted the wrong file**: `highlightFrame` took `host.activeBuffer()` after an
+      `openPath` that opens nothing when the frame's source isn't on disk (a dependency, or a CI-baked path) —
+      and `setExecutionLine` also `jumpToLine`s, so it yanked the caret of the file you were reading to an
+      arbitrary line; its sibling `applyInlineValues` already used `bufferForPath` correctly.
+      **Shipped a feature that was 95% built:** logpoints + disabled breakpoints persisted, re-anchored, reached
+      the adapter, and had gutter glyphs — but `setLogMessage`/`setEnabled` had **zero callers**, so both states
+      were unreachable and `command.debug.editBreakpoint.desc` ("condition, log message") was a lie; Edit
+      Breakpoint is now a 3-field form. Deferred → #473 (a breakpoint in a **closed** file is saved and shown
+      again on reopen but never sent to the adapter — `collectBreakpoints` walks open buffers only), #474
+      (Editora's own installed js-debug always loses to a VS Code copy — "newest wins" scrapes a version from
+      the path and Editora's layout has none). Verified-clean / **repros that FAILED**: breakpoints wiped by a
+      restore-before-load (`loadInto` is synchronous and precedes it on both open paths); watches leaking across
+      projects (`setWorkspaceStateFile` precedes `init`); a stale `variablesReference` after resume (expanding
+      one yields an empty node — cosmetic). Also **measured, not guessed**: persisting on every line-changing
+      edit costs **0.215 ms** on a 49 KB store — ~0.6% of the FX thread while holding Enter, so it stays.
+      Conditional breakpoints, run-to-cursor temp cleanup, adapter kill-on-dispose (`alive after dispose? false`),
+      threading (no blocking call on FX; the `initialized` reader-thread deadlock genuinely avoided), and the
+      jdtls bundle→restart ordering (now that #472 made `shutdownServer` work) all verified end to end.
 - [x] LSP audit (per-feature bug hunt) — 4 fixes, driven against the **11 real servers installed here**.
       **The root cause was a raw NUL byte typed into the source.** `LspManager`'s session key was
       `serverId + "<NUL>" + root.toUri()` — a literal control character, not an escape — which made the whole

@@ -168,6 +168,14 @@ public final class BreakpointManager {
      * breakpoint to the nearest line whose stripped text equals its saved {@code lineText}. A breakpoint
      * whose stored line already matches stays put; one whose content has drifted is re-found within
      * {@code maxScan} lines; one whose {@code lineText} is empty or gone is kept at its clamped stored line.
+     *
+     * <p>A line already claimed by an earlier breakpoint is <em>never</em> reused: two breakpoints whose
+     * lines both still exist must not collapse onto one, because the map would silently drop one of them.
+     * Adjacent identical lines make that easy to hit (two {@code });} in a row) — after an external edit
+     * shifts them, the upper breakpoint re-anchors down onto the line the lower one still exact-matches.
+     * Each breakpoint is therefore resolved against the lines still free, and the list is walked in
+     * stored-line order so the outcome never depends on the caller's ordering (a persisted list need not
+     * be line-ordered).
      */
     public static NavigableMap<Integer, Breakpoint> reanchor(
             List<Breakpoint> saved,
@@ -179,26 +187,58 @@ public final class BreakpointManager {
             return out;
         }
         int maxLine = paragraphCount - 1;
+        List<Breakpoint> ordered = new ArrayList<>();
         for (Breakpoint bp : saved) {
-            if (bp == null || bp.line() < 0) {
-                continue;
+            if (bp != null && bp.line() >= 0) {
+                ordered.add(bp);
             }
+        }
+        ordered.sort(java.util.Comparator.comparingInt(Breakpoint::line));
+        for (Breakpoint bp : ordered) {
             int stored = Math.min(bp.line(), maxLine);
-            int resolved = resolveLine(stored, bp.lineText(), maxLine, lineTextAt, maxScan);
+            int resolved = resolveLine(stored, bp.lineText(), maxLine, lineTextAt, maxScan, out::containsKey);
+            if (resolved < 0) {
+                continue; // every line is already claimed (fewer lines than breakpoints)
+            }
             out.put(resolved, resolved == bp.line() ? bp : bp.withLine(resolved));
         }
         return out;
     }
 
     private static int resolveLine(
-            int stored, String wanted, int maxLine, java.util.function.IntFunction<String> lineTextAt, int maxScan) {
-        if (wanted == null || wanted.isEmpty()) {
-            return stored;
+            int stored,
+            String wanted,
+            int maxLine,
+            java.util.function.IntFunction<String> lineTextAt,
+            int maxScan,
+            java.util.function.IntPredicate taken) {
+        boolean haveText = wanted != null && !wanted.isEmpty();
+        if (haveText) {
+            if (!taken.test(stored) && textAt(lineTextAt, stored).equals(wanted)) {
+                return stored;
+            }
+            for (int r = 1; r <= maxScan; r++) {
+                int down = stored + r;
+                int up = stored - r;
+                boolean downOk = down <= maxLine;
+                boolean upOk = up >= 0;
+                if (!downOk && !upOk) {
+                    break;
+                }
+                if (downOk && !taken.test(down) && textAt(lineTextAt, down).equals(wanted)) {
+                    return down;
+                }
+                if (upOk && !taken.test(up) && textAt(lineTextAt, up).equals(wanted)) {
+                    return up;
+                }
+            }
         }
-        if (textAt(lineTextAt, stored).equals(wanted)) {
-            return stored;
-        }
-        for (int r = 1; r <= maxScan; r++) {
+        return taken.test(stored) ? nearestFree(stored, maxLine, taken) : stored;
+    }
+
+    /** The nearest line to {@code stored} that no earlier breakpoint claimed (downward first), else -1. */
+    private static int nearestFree(int stored, int maxLine, java.util.function.IntPredicate taken) {
+        for (int r = 1; r <= maxLine + 1; r++) {
             int down = stored + r;
             int up = stored - r;
             boolean downOk = down <= maxLine;
@@ -206,14 +246,14 @@ public final class BreakpointManager {
             if (!downOk && !upOk) {
                 break;
             }
-            if (downOk && textAt(lineTextAt, down).equals(wanted)) {
+            if (downOk && !taken.test(down)) {
                 return down;
             }
-            if (upOk && textAt(lineTextAt, up).equals(wanted)) {
+            if (upOk && !taken.test(up)) {
                 return up;
             }
         }
-        return stored;
+        return -1;
     }
 
     private static String textAt(java.util.function.IntFunction<String> lineTextAt, int line) {

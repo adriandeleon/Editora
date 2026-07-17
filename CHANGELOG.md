@@ -27,6 +27,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A breakpoint (or a bookmark) on one of two adjacent identical lines could vanish for good.** Both are kept
+  in a line-keyed map and are re-anchored to their saved line text when a file is opened, so when an edit made
+  outside the editor shifted two same-text lines — two `});` in a row, routine in real code — the upper one
+  re-anchored down onto the line the lower one still matched exactly, and the second silently overwrote the
+  first. Both lines still existed; one marker just disappeared. The self-heal then wrote the collapsed set
+  back to disk, so it never came back — and for a bookmark, the note went with it. Each marker now resolves
+  against the lines still free, so two never collapse onto one. (From a per-feature audit of Debugging.)
+
+- **Debugging a Java program with a quoted argument passed the wrong arguments.** Program arguments are shared
+  with Run, which passes `"hello world" second` as two arguments; the Java debug launch re-joined them into one
+  space-separated string, so the program received three. Java only — Python and JavaScript were always correct,
+  and the fix is what those already did. (From a per-feature audit of Debugging.)
+
+- **Toggling exception breakpoints during a debug session did nothing, while reporting that it worked.** The
+  filters were only read once, when the session started, so a later change updated a field nothing would read
+  again: the program ran straight through an uncaught exception without suspending, even though the status bar
+  said exception breakpoints were on. Confirmed against a real debugpy. (From a per-feature audit of Debugging.)
+
+- **The debugger's execution-line highlight could land on a file that has nothing to do with the stack frame.**
+  When a frame's source isn't on disk — a frame inside a dependency, or a path baked in by a build on another
+  machine — opening it fails quietly, and the "you are here" line was then painted onto whatever file happened
+  to be in front, scrolling it to an arbitrary line. (From a per-feature audit of Debugging.)
+
+### Added
+
+- **Logpoints and disabled breakpoints can now actually be created.** Both were fully built — they persisted,
+  re-anchored, reached the adapter, and had their own gutter glyphs — but nothing in the app could set them:
+  Edit Breakpoint only ever asked for a condition, despite its own description promising "condition, log
+  message". It is now a form with all three (condition, log message, enabled). A log message turns a breakpoint
+  into a logpoint: the debugger logs it and never suspends. (From a per-feature audit of Debugging.)
+
+
 - **Turning a language server off in Settings now actually stops it, and changing its command now takes
   effect.** Neither did: the code that shuts down one server's sessions could never match them, so a disabled
   server kept running, a re-pointed command kept using the old binary (while its Settings row turned green as

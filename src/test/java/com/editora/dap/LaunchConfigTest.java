@@ -45,8 +45,22 @@ class LaunchConfigTest {
         assertEquals(List.of("/mp/m.jar"), m.get("modulePaths"));
         assertEquals("/usr/bin/java", m.get("javaExec"));
         assertEquals("/work", m.get("cwd"));
-        assertEquals("--flag x", m.get("args")); // joined into a single string
+        assertEquals(List.of("--flag", "x"), m.get("args")); // the argv, not a joined string
         assertEquals(true, m.get("stopOnEntry"));
+    }
+
+    @Test
+    void javaLaunchPassesArgvSoAnArgumentWithSpacesStaysOneArgument() {
+        // `"hello world" second` — ProgramArgs.tokenize already resolved the quoting into 2 arguments, and
+        // Run passes exactly those. Joining them back on a space is lossy: main() would receive 3. The
+        // collision is the proof — [hello world, second] and [hello, world, second] join to one same string.
+        List<String> argv = List.of("hello world", "second");
+        Map<String, Object> m = LaunchConfig.launch("A", "", List.of(), List.of(), "", "", argv, false);
+        assertEquals(argv, m.get("args"), "the debuggee must get the same argv the Run feature passes");
+
+        // The same argv reaches debugpy/node the same way (this sibling was always correct).
+        Map<String, Object> p = LaunchConfig.program("python", "/x/s.py", "/x", "python3", argv, false);
+        assertEquals(argv, p.get("args"), "java and program(...) must agree");
     }
 
     @Test

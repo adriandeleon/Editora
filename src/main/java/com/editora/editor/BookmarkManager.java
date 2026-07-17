@@ -177,7 +177,15 @@ public final class BookmarkManager {
      * {@code lineText}. A bookmark whose stored line already matches stays put (the common O(1) case);
      * one whose content has drifted (file edited outside the editor) is re-found within {@code maxScan}
      * lines; one whose {@code lineText} is empty or no longer present is kept at its clamped stored
-     * line. Collisions dedup naturally via the map (last writer wins).
+     * line.
+     *
+     * <p>A line already claimed by an earlier bookmark is <em>never</em> reused: two bookmarks whose
+     * lines both still exist must not collapse onto one, because the map would silently drop one of them
+     * <em>and its note</em>. Adjacent identical lines make that easy to hit (two {@code });} in a row) —
+     * after an external edit shifts them, the upper bookmark re-anchors down onto the line the lower one
+     * still exact-matches. Each bookmark is therefore resolved against the lines still free, and the list
+     * is walked in stored-line order so the outcome never depends on the caller's ordering (the persisted
+     * list is in the user's chosen order, not line order).
      *
      * @param lineTextAt returns the <em>raw</em> text of a 0-based line; it is stripped here for the
      *                   comparison (matching how {@link #captureLineText} stores it).
@@ -189,26 +197,60 @@ public final class BookmarkManager {
             return out;
         }
         int maxLine = paragraphCount - 1;
+        List<Bookmark> ordered = new ArrayList<>();
         for (Bookmark bm : saved) {
-            if (bm == null || bm.line() < 0) {
-                continue;
+            if (bm != null && bm.line() >= 0) {
+                ordered.add(bm);
             }
+        }
+        ordered.sort(java.util.Comparator.comparingInt(Bookmark::line));
+        for (Bookmark bm : ordered) {
             int stored = Math.min(bm.line(), maxLine);
-            int resolved = resolveLine(stored, bm.lineText(), maxLine, lineTextAt, maxScan);
+            int resolved = resolveLine(stored, bm.lineText(), maxLine, lineTextAt, maxScan, out::containsKey);
+            if (resolved < 0) {
+                continue; // every line is already claimed (fewer lines than bookmarks)
+            }
             out.put(resolved, resolved == bm.line() ? bm : bm.withLine(resolved));
         }
         return out;
     }
 
     private static int resolveLine(
-            int stored, String wanted, int maxLine, java.util.function.IntFunction<String> lineTextAt, int maxScan) {
-        if (wanted == null || wanted.isEmpty()) {
-            return stored; // nothing to match against (e.g. a blank-line bookmark)
+            int stored,
+            String wanted,
+            int maxLine,
+            java.util.function.IntFunction<String> lineTextAt,
+            int maxScan,
+            java.util.function.IntPredicate taken) {
+        boolean haveText = wanted != null && !wanted.isEmpty();
+        if (haveText) {
+            if (!taken.test(stored) && textAt(lineTextAt, stored).equals(wanted)) {
+                return stored; // already correct — the common case
+            }
+            for (int r = 1; r <= maxScan; r++) {
+                int down = stored + r;
+                int up = stored - r;
+                boolean downOk = down <= maxLine;
+                boolean upOk = up >= 0;
+                if (!downOk && !upOk) {
+                    break;
+                }
+                if (downOk && !taken.test(down) && textAt(lineTextAt, down).equals(wanted)) {
+                    return down;
+                }
+                if (upOk && !taken.test(up) && textAt(lineTextAt, up).equals(wanted)) {
+                    return up;
+                }
+            }
         }
-        if (textAt(lineTextAt, stored).equals(wanted)) {
-            return stored; // already correct — the common case
-        }
-        for (int r = 1; r <= maxScan; r++) {
+        // Content gone (or nothing to match against, e.g. a blank-line bookmark) — keep at the clamped
+        // stored line; if an earlier bookmark took it, step aside rather than overwrite it.
+        return taken.test(stored) ? nearestFree(stored, maxLine, taken) : stored;
+    }
+
+    /** The nearest line to {@code stored} that no earlier bookmark claimed (downward first), else -1. */
+    private static int nearestFree(int stored, int maxLine, java.util.function.IntPredicate taken) {
+        for (int r = 1; r <= maxLine + 1; r++) {
             int down = stored + r;
             int up = stored - r;
             boolean downOk = down <= maxLine;
@@ -216,14 +258,14 @@ public final class BookmarkManager {
             if (!downOk && !upOk) {
                 break;
             }
-            if (downOk && textAt(lineTextAt, down).equals(wanted)) {
+            if (downOk && !taken.test(down)) {
                 return down;
             }
-            if (upOk && textAt(lineTextAt, up).equals(wanted)) {
+            if (upOk && !taken.test(up)) {
                 return up;
             }
         }
-        return stored; // content gone — keep at the clamped stored line (the user can clear it)
+        return -1;
     }
 
     private static String textAt(java.util.function.IntFunction<String> lineTextAt, int line) {

@@ -134,6 +134,33 @@ class BookmarkManagerTest {
     }
 
     @Test
+    void neverCollapsesTwoBookmarksOntoOneLine() {
+        // Two bookmarks on ADJACENT IDENTICAL lines, then a line is added above outside the editor. Both
+        // lines still exist, so both bookmarks — and both NOTES — must survive: the map is keyed by line,
+        // so re-anchoring them onto the same line silently drops one, and restoreBookmarks() persists it.
+        var lines = doc("// added upstream", "a", "b", "});", "});", "z");
+        var out = BookmarkManager.reanchor(
+                saved(new Bookmark(2, "note A", "});"), new Bookmark(3, "note B", "});")), 6, lines, 2000);
+
+        assertEquals(2, out.size(), "both bookmarks must survive — neither line was deleted");
+        assertEquals("note A", out.get(3).note());
+        assertEquals("note B", out.get(4).note());
+    }
+
+    @Test
+    void collapseIsPreventedRegardlessOfTheSavedListOrder() {
+        // The persisted list is in the USER'S chosen order (the panel lets them reorder), not line order,
+        // so the outcome must not depend on it.
+        var lines = doc("// added upstream", "a", "b", "});", "});", "z");
+        var out = BookmarkManager.reanchor(
+                saved(new Bookmark(3, "note B", "});"), new Bookmark(2, "note A", "});")), 6, lines, 2000);
+
+        assertEquals(2, out.size());
+        assertEquals("note A", out.get(3).note());
+        assertEquals("note B", out.get(4).note());
+    }
+
+    @Test
     void picksTrulyNearestOccurrence() {
         // stored=4, "import" at 0 and 3: line 3 (distance 1) wins over line 0 (distance 4).
         var lines = doc("import", "a", "b", "import", "c");
