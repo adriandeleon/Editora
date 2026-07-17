@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The exported configuration archive is no longer readable by other users.** Settings → Advanced → "Export
+  Configuration" writes a zip of the config directory into your home folder — including `settings.toml`, and so
+  the AI provider's API key, plus your private notes. The archive was created world-readable, which undid the
+  lock-down of the files it copies. The session log (`editora-session.log`), which records your file paths and
+  error text, was the same. Both are now owner-only, from one shared helper. (From a per-feature audit of the
+  Appearance / Interface / Tool Windows / Advanced pages.)
+
+
 - **Your Anthropic API key is no longer sent to a local or third-party AI endpoint.** `ANTHROPIC_API_KEY` is
   exported on most developer machines, and Editora fell back to it for *any* provider — so selecting the
   OpenAI-compatible provider (the local LM Studio / Ollama path, which needs no key at all) attached that key
@@ -41,6 +49,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   audit of the Plugins feature.)
 
 ### Fixed
+
+- **A user theme that defines its colours by reference is no longer read as light.** A theme file can set up a
+  palette and point the standard tokens at it (`-color-bg-default: -color-dark-1;`) — ordinary CSS authoring.
+  Editora only looked for a literal hex value, found none, and fell back to defaults: a dark theme got dark
+  chrome around a glaring white editor with the light syntax palette. It now follows the reference. Relatedly,
+  a token is no longer confused with a longer one that merely starts with it (`-color-bg-default-hover` was
+  being read as the background).
+
+- **A stray or half-written `.css` file is no longer offered as a theme.** Anything ending in `.css` in the
+  themes folder appeared in the picker, so an empty or unfinished file became a selectable theme that stripped
+  the app's styling when chosen. A theme file now has to actually declare something.
+
+- **"Reset to Defaults" now actually resets your settings.** It restored 23 of 181 preferences — a
+  hand-written list of setters that stopped being updated years of features ago — so it silently left roughly
+  87% of your settings exactly as they were, including every AI, language-server, debugger, Mermaid, TODO,
+  preview and build-tool option, plus Simple mode, the keymap and the UI language. It even left the AI API key
+  in place. It is now driven off the same properties the settings file is written from, so a new setting is
+  covered the day it's added; text zoom and your keybindings are still deliberately preserved. (From a
+  per-feature audit of the Appearance / Interface / Tool Windows / Advanced pages.)
+
 
 - **The crontab preview described the day-of-month/day-of-week rule backwards.** `0 0 13 * 5` was explained as
   "on day 13 of the month **and** on Friday" — i.e. Friday the 13th. It actually runs on *every* Friday and

@@ -86,6 +86,9 @@ public final class DebugLog {
         synchronized (LOCK) {
             try {
                 Path path = configDir.resolve("editora-session.log");
+                // Owner-only, like everything else in the config dir: this records the user's file paths,
+                // project names and error text. newBufferedWriter truncates and keeps the mode.
+                com.editora.config.ConfigWriter.createOwnerOnly(path);
                 file = new PrintWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8));
                 for (String record : RECORDS) {
                     file.println(record);

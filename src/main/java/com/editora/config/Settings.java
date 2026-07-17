@@ -1,13 +1,41 @@
 package com.editora.config;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /** User preferences, (de)serialized to {@code settings.toml}. Session/state lives in {@link WorkspaceState}. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Settings {
+
+    /**
+     * Restores every preference on {@code live} to its default, in place — {@code live} is the one instance
+     * every window holds, so it must be mutated, not replaced. Backs Settings → Advanced → "Reset to
+     * Defaults". Deliberately preserves the two things that page doesn't own: {@link #getFontZoom() fontZoom}
+     * (the editor's Ctrl-+/- text zoom) and {@link #getKeybindings() keybindings} (the Keymaps page's own
+     * "Reset all").
+     *
+     * <p>Driven off the serialized form rather than a hand-written list of setters. The list version had gone
+     * stale: it restored <b>23 of 181</b> fields, so "Reset to Defaults" silently left ~87% of preferences
+     * alone — every setting added since it was written (all of AI, LSP, Debug, Mermaid, TODO, the previews,
+     * the build tools, Simple mode, the keymap, the UI language…) was simply missed. Copying the properties
+     * Jackson already persists means a new field is covered the day it is added.
+     */
+    public static void resetToDefaults(Settings live) {
+        double fontZoom = live.getFontZoom();
+        Map<String, String> keybindings = live.getKeybindings();
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            mapper.readerForUpdating(live).readValue(mapper.writeValueAsBytes(new Settings()));
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not reset settings to their defaults", e);
+        }
+        live.setFontZoom(fontZoom);
+        live.setKeybindings(keybindings);
+    }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
     public static final int SCHEMA_VERSION = 77;

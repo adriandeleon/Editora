@@ -2,6 +2,8 @@ package com.editora.config;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,7 +14,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class ConfigExporterTest {
 
@@ -85,5 +89,20 @@ class ConfigExporterTest {
         try (ZipFile zf = new ZipFile(zip.toFile())) {
             assertEquals(0, zf.size(), "no entries");
         }
+    }
+
+    @Test
+    void theExportedZipIsNotReadableByOtherUsers(@TempDir Path cfg, @TempDir Path home) throws Exception {
+        // The export lands in the user's home directory and contains a copy of settings.toml — and so of the
+        // AI provider's API key — plus the user's private notes. Writing the config dir's own files owner-only
+        // while dropping a world-readable archive of them next door would protect nothing.
+        assumeTrue(cfg.getFileSystem().supportedFileAttributeViews().contains("posix"));
+        Files.writeString(cfg.resolve("settings.toml"), "aiApiKey = 'sk-ant-api03-BILLABLE'\n");
+
+        Path zip = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN);
+
+        var perms = Files.getPosixFilePermissions(zip);
+        assertFalse(perms.contains(PosixFilePermission.OTHERS_READ), "the export must not be world-readable");
+        assertEquals("rw-------", PosixFilePermissions.toString(perms));
     }
 }

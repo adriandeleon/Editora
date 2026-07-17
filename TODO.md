@@ -3,6 +3,37 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Appearance / Interface / Tool Windows / Advanced audit — **the last four Settings pages; the initiative's
+      final sweep** (23 features audited in all). *Caveat: the audit agent hit its session limit before
+      reporting, so this pass is mine alone and is narrower than the others — Themes/UserThemes CSS loading and
+      the ToolWindowManager available-vs-visible round-trip were NOT covered and are still worth a look.*
+      **User themes now survive real-world files:** a theme that points the standard tokens at its own palette
+      (`-color-bg-default: -color-dark-1;` — ordinary authoring; the bundled themes *and* upstream AtlantaFX
+      all use literal hex, which is why the happy path hid it) parsed as *no colour* → bg defaulted to white
+      and `dark=false`, so a dark theme rendered dark chrome around a white editor with the light syntax
+      palette; `parseColor` now follows the reference (bounded, cycle-safe) and no longer matches a longer
+      token that merely starts with the one asked for (`-color-bg-default-hover` was returned as the
+      background — proven by a test that fails on the old code). And **any** `.css` in the folder became a
+      selectable theme: an empty or half-written file showed up in the picker and stripped AtlantaFX from the
+      whole app when chosen — a theme must now declare at least one `-color-*`/`-fx-*`.
+      **ToolWindowManager's available-vs-visible split: verified CLEAN**, by execution rather than reading —
+      a transient `setAvailable(false)` never writes back a preference, an availability round-trip doesn't
+      resurrect a window the user hid, and it restores the button without popping the window open. Previously
+      only the pure predicate had a test; the manager's state machine now has four.
+      **"Reset to Defaults" restored 23 of 181 fields.** A hand-written list of setters that had rotted for
+      years: every setting added since (all of AI, LSP, Debug, Mermaid, TODO, the previews, the build tools,
+      Simple mode, `keymap`, `uiLanguage`, `fillColumn`…) was missed, so the button silently left ~87% of
+      preferences untouched — and left `aiApiKey` sitting there. Replaying the exact old setters against a real
+      `Settings` shows it plainly (`aiApiKey: 'sk-ant-…MY-BILLABLE-KEY'` survives a "reset"). Now
+      `Settings.resetToDefaults(live)` copies the properties **Jackson already persists** (mutating in place —
+      every window holds that instance) and re-applies the two documented exceptions, so a new field is covered
+      the day it is added. Verified Jackson *replaces* list-valued settings rather than merging them.
+      **And I finished the job I started in #483:** that PR locked `settings.toml` to 0600 but I never grepped
+      for the other writers — **`ConfigExporter` zips the whole config dir (key included) into `$HOME` at
+      0644**, and `DebugLog`'s `editora-session.log` was 0644 too. Locking the original and not the copy
+      protects nothing. Both now go through one shared `ConfigWriter.createOwnerOnly` (a creation attribute, so
+      never briefly readable) — the *third* and *fourth* instances of the world-readable-secret shape after MCP
+      #467 and AI #483. **When a fix lands on a secret, grep for every other writer of it.**
 - [x] AI audit (per-feature bug hunt) — **2 credential leaks**, verified by pointing Editora at a **fake local
       endpoint** and reading the bytes it actually sent. **The critical one needed no user action at all:**
       `AiCoordinator.apiKey()` fell back to `System.getenv("ANTHROPIC_API_KEY")` **with no provider check**, so

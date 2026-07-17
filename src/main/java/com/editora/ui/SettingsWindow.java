@@ -5444,48 +5444,8 @@ public class SettingsWindow {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        Settings d = new Settings();
-        Settings s = config.getSettings();
-        resetAppearanceFields(d, s);
-        resetEditorFields(d, s);
-        resetSpellFields(d, s);
-        resetApplicationFields(d, s);
+        Settings.resetToDefaults(config.getSettings());
         commitReset();
-    }
-
-    private void resetAppearanceFields(Settings d, Settings s) {
-        s.setFontFamily(d.getFontFamily());
-        s.setFontSize(d.getFontSize());
-        s.setTheme(d.getTheme());
-        s.setEditorTheme(d.getEditorTheme());
-        s.setEditorThemeUserSet(false);
-    }
-
-    private void resetEditorFields(Settings d, Settings s) {
-        s.setShowColumnRuler(d.isShowColumnRuler());
-        s.setHighlightCurrentLine(d.isHighlightCurrentLine());
-        s.setShowLineNumbers(d.isShowLineNumbers());
-        s.setShowMinimap(d.isShowMinimap());
-        s.setShowWhitespace(d.isShowWhitespace());
-        s.setShowNoteIndicators(d.isShowNoteIndicators());
-        s.setTabSize(d.getTabSize());
-        s.setAutoSave(d.getAutoSave());
-        s.setAutoSaveDelayMillis(d.getAutoSaveDelayMillis());
-    }
-
-    private void resetSpellFields(Settings d, Settings s) {
-        s.setSpellCheck(d.isSpellCheck());
-        s.setSpellLanguage(d.getSpellLanguage());
-    }
-
-    private void resetApplicationFields(Settings d, Settings s) {
-        s.setShowToolbar(d.isShowToolbar());
-        s.setShowStatusBar(d.isShowStatusBar());
-        s.setShowTabBar(d.isShowTabBar());
-        s.setShowBreadcrumb(d.isShowBreadcrumb());
-        s.setProjectSupport(d.isProjectSupport());
-        s.setGitSupport(d.isGitSupport());
-        s.setNotesSupport(d.isNotesSupport());
     }
 
     /** Persists + applies a reset, re-themes the app, and reloads the controls + preview. */
