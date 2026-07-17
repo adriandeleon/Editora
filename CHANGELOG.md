@@ -91,6 +91,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A folder named like a build file no longer triggers a spurious "can't read the build file" error.** The
+  build-tool detector walked up looking for markers like `pom.xml`/`package.json`/`go.mod` and accepted a
+  *directory* of that name as a match, then failed trying to parse it — so a project that merely had a folder
+  called `pom.xml` somewhere up the tree showed a build stripe and a parse error for a build file it doesn't
+  have. Build markers are now matched only as files. (From the deferred backlog.)
+
 - **Disabling a language server now clears its errors from the Problems window.** Turning a server off in
   Settings (e.g. unchecking Java) stopped the server but left its already-reported errors listed forever — no
   server remained to retract them, and closing the tab missed them too. Disabling a server now clears its

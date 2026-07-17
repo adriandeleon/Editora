@@ -164,7 +164,9 @@ final class BuildCoordinator {
         int gen = ++detectGeneration;
         Thread t = new Thread(
                 () -> {
-                    Path root = RootResolver.findMarkerRoot(context, tool.markers());
+                    // filesOnly: every build marker is a file (pom.xml/package.json/go.mod/…), so a directory
+                    // merely named like one must not root the tool there (it would then fail to parse) — #451.
+                    Path root = RootResolver.findMarkerRoot(context, tool.markers(), true);
                     BuildActionsProvider parsed = null;
                     String label = null;
                     if (root != null) {

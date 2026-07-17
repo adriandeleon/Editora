@@ -44,10 +44,22 @@ public final class RootResolver {
 
     /**
      * Walks up from {@code filePath}'s directory looking for the first ancestor that directly contains
-     * any of {@code markers}; returns that ancestor, or {@code null} if none is found up to the root.
-     * Pure.
+     * any of {@code markers} (as a regular file <em>or</em> a directory); returns that ancestor, or
+     * {@code null} if none is found up to the root. Pure.
      */
     public static Path findMarkerRoot(Path filePath, List<String> markers) {
+        return findMarkerRoot(filePath, markers, false);
+    }
+
+    /**
+     * As {@link #findMarkerRoot(Path, List)}, but when {@code filesOnly} is true a marker matches only a
+     * regular <b>file</b>. Build markers are all files ({@code pom.xml}, {@code package.json},
+     * {@code go.mod}, …), so a <em>directory</em> merely named like one — a folder called {@code pom.xml}
+     * anywhere up the tree — must not root that build tool there (it then fails to parse, showing a "can't
+     * read the build file" error for a project that has none). LSP markers include real directories
+     * ({@code .git}/{@code .terraform}), so those callers pass {@code filesOnly=false}. Pure.
+     */
+    public static Path findMarkerRoot(Path filePath, List<String> markers, boolean filesOnly) {
         if (filePath == null || markers == null || markers.isEmpty()) {
             return null;
         }
@@ -55,7 +67,7 @@ public final class RootResolver {
         while (dir != null) {
             for (String marker : markers) {
                 Path candidate = dir.resolve(marker);
-                if (Files.isRegularFile(candidate) || Files.isDirectory(candidate)) {
+                if (Files.isRegularFile(candidate) || (!filesOnly && Files.isDirectory(candidate))) {
                     return dir;
                 }
             }

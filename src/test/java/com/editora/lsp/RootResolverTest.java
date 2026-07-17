@@ -61,4 +61,34 @@ class RootResolverTest {
         assertNull(RootResolver.findMarkerRoot(file, MARKERS));
         assertEquals(dir.toAbsolutePath().normalize(), RootResolver.resolve(null, file, MARKERS));
     }
+
+    // --- filesOnly: a directory named like a build marker must not root a build tool (#451) ---------
+
+    @Test
+    void aDirectoryNamedLikeABuildMarkerDoesNotRootWhenFilesOnly(@TempDir Path tmp) throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve("proj"));
+        Files.createDirectory(dir.resolve("pom.xml")); // a *folder* named pom.xml (legal, if unusual)
+        Path file = Files.createFile(dir.resolve("Main.java"));
+        // Default (files-or-dirs) roots there — the LSP arm — but the build path (filesOnly) must not.
+        assertEquals(dir.toAbsolutePath().normalize(), RootResolver.findMarkerRoot(file, List.of("pom.xml")));
+        assertNull(RootResolver.findMarkerRoot(file, List.of("pom.xml"), true));
+    }
+
+    @Test
+    void aRealBuildFileStillRootsWithFilesOnly(@TempDir Path tmp) throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve("proj"));
+        Files.createFile(dir.resolve("pom.xml"));
+        Path file = Files.createFile(dir.resolve("Main.java"));
+        assertEquals(dir.toAbsolutePath().normalize(), RootResolver.findMarkerRoot(file, List.of("pom.xml"), true));
+    }
+
+    @Test
+    void filesOnlyFalseStillMatchesADirectoryMarker(@TempDir Path tmp) throws IOException {
+        // An LSP directory marker (.git) must keep rooting under the default (filesOnly=false) call.
+        Path dir = Files.createDirectories(tmp.resolve("repo"));
+        Files.createDirectory(dir.resolve(".git"));
+        Path file = Files.createFile(dir.resolve("Main.java"));
+        assertEquals(dir.toAbsolutePath().normalize(), RootResolver.findMarkerRoot(file, List.of(".git")));
+        assertNull(RootResolver.findMarkerRoot(file, List.of(".git"), true), "filesOnly ignores a dir marker");
+    }
 }
