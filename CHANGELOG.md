@@ -91,6 +91,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The SSH config preview now reflects overrides from earlier `Host` blocks.** SSH uses the *first* value it
+  finds for each option, so an earlier `Host *` (or matching wildcard) block can fix `User`/`Port`/etc. before
+  a later host-specific block does. The preview summarized each block from its own lines only, so it could
+  state the exact opposite of what `ssh` will do. For a block that names a single concrete host, the summary
+  now resolves each value across the whole file (matching `ssh -G`); a wildcard block still shows its own
+  declared values. (From the deferred backlog.)
+
 - **A folder named like a build file no longer triggers a spurious "can't read the build file" error.** The
   build-tool detector walked up looking for markers like `pom.xml`/`package.json`/`go.mod` and accepted a
   *directory* of that name as a match, then failed trying to parse it — so a project that merely had a folder

@@ -29,6 +29,49 @@ public final class SshConfig {
 
     private SshConfig() {}
 
+    /**
+     * The effective value ssh would use for {@code key} when connecting to {@code host}, applying the config's
+     * <b>first-obtained-value-wins</b> rule across the whole file: walk blocks in file order (the leading
+     * {@code global} block matches every host; a {@code Host} block matches per {@link SshPattern}), and return
+     * the first value any matching block sets for {@code key}. {@code Match} blocks are skipped (their criteria
+     * — {@code exec}/{@code host}/{@code user}/… — aren't modelled). {@code null} if nothing sets it. Pure.
+     */
+    public static String effective(List<Block> blocks, String host, String key) {
+        if (blocks == null || host == null) {
+            return null;
+        }
+        for (Block b : blocks) {
+            boolean applies =
+                    switch (b.type()) {
+                        case "global" -> true;
+                        case "Host" -> SshPattern.matches(b.argument(), host);
+                        default -> false; // Match blocks: criteria not modelled
+                    };
+            if (applies) {
+                String v = b.first(key);
+                if (v != null) {
+                    return v; // first obtained value wins
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Whether a {@code Host} block's argument is a single concrete host name (one token, no {@code * ? !}) —
+     *  the only case where a per-block behaviour summary resolves to one connection. Pure. */
+    public static boolean isConcreteHost(String argument) {
+        if (argument == null) {
+            return false;
+        }
+        String a = argument.strip();
+        return !a.isEmpty()
+                && a.indexOf(' ') < 0
+                && a.indexOf('\t') < 0
+                && a.indexOf('*') < 0
+                && a.indexOf('?') < 0
+                && a.indexOf('!') < 0;
+    }
+
     public static List<Block> parse(String text) {
         List<Block> blocks = new ArrayList<>();
         Block global = new Block("global", "", new ArrayList<>());
