@@ -80,6 +80,8 @@ final class MermaidCoordinator {
     private void gating() {
         boolean on = isEnabled();
         host.forEachBuffer(b -> b.setMermaidLintEnabled(on && avail.maid()));
+        // A failed render asks maid for precise diagnostics — only worth spawning when maid is really there.
+        MermaidImages.setMaidAvailable(on && avail.maid());
         host.applyAutocomplete();
     }
 

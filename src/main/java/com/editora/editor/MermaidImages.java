@@ -30,7 +30,24 @@ import com.editora.mermaid.Mermaid;
 public final class MermaidImages {
 
     /** A finished render: a {@code loaded} image (success) or an {@code error} message (failure). */
-    private record Cached(PreviewImageLoader.Loaded loaded, String error) {}
+    private record Cached(PreviewImageLoader.Loaded loaded, String error, long at) {
+        Cached(PreviewImageLoader.Loaded loaded, String error) {
+            this(loaded, error, System.currentTimeMillis());
+        }
+
+        /**
+         * A failure is only worth reusing briefly. The cache key is the source (+ theme) — not the tool — so
+         * a diagram that failed because the CLI was missing stayed "broken" after installing it: the install
+         * flow re-renders every preview, which is a cache hit on the same source. Successes never expire
+         * (same source, same picture).
+         */
+        boolean expired() {
+            return error != null && System.currentTimeMillis() - at > FAILURE_TTL_MS;
+        }
+    }
+
+    /** How long a failed render is reused before being retried — mirrors {@link PreviewImageLoader}. */
+    private static final long FAILURE_TTL_MS = 60_000;
 
     /** Cap on cached rendered diagrams. Each successful entry holds a GPU texture, so the cache is
      *  bounded (LRU) rather than growing unbounded as more diagrams are rendered. */
@@ -53,20 +70,37 @@ public final class MermaidImages {
     private static volatile List<String> mmdc = List.of("mmdc");
     private static volatile List<String> maid = List.of("maid");
     private static volatile boolean dark;
+    /** Whether maid was detected — a failed render only asks it for diagnostics when it is actually there. */
+    private static volatile boolean maidAvailable;
 
     private MermaidImages() {}
 
     /** Pushes the live Mermaid config (called at startup + every settings/theme apply). The commands are
      *  tokenized (a bare binary or e.g. {@code npx -y @probelabs/maid}). */
     public static void configure(boolean enabled, List<String> mmdcCommand, List<String> maidCommand, boolean dark) {
+        boolean toolChanged = MermaidImages.enabled != enabled;
         MermaidImages.enabled = enabled;
         if (mmdcCommand != null && !mmdcCommand.isEmpty()) {
+            toolChanged |= !mmdcCommand.equals(MermaidImages.mmdc);
             MermaidImages.mmdc = List.copyOf(mmdcCommand);
         }
         if (maidCommand != null && !maidCommand.isEmpty()) {
             MermaidImages.maid = List.copyOf(maidCommand);
         }
         MermaidImages.dark = dark;
+        if (toolChanged) {
+            // The cache key is the source (+ theme), never the tool — so a different (or newly installed)
+            // mmdc would otherwise re-serve the old result. That is exactly the install flow: it re-renders
+            // every open preview, which hit the cached "render failed" from when mmdc was missing, and the
+            // diagram stayed broken until the user edited it or restarted.
+            CACHE.clear();
+        }
+    }
+
+    /** Pushed once maid detection settles (see {@code MermaidCoordinator.gating}): a failed render only asks
+     *  maid for diagnostics when it is actually installed. */
+    public static void setMaidAvailable(boolean available) {
+        MermaidImages.maidAvailable = available;
     }
 
     public static boolean isEnabled() {
@@ -90,6 +124,10 @@ public final class MermaidImages {
     private static void fill(StackPane host, String source, java.util.function.DoubleUnaryOperator sizer) {
         String key = key(source, dark);
         Cached hit = CACHE.get(key);
+        if (hit != null && hit.expired()) {
+            CACHE.remove(key);
+            hit = null;
+        }
         if (hit != null) {
             applyCached(host, hit, sizer);
             return;
@@ -97,6 +135,7 @@ public final class MermaidImages {
         host.getChildren().setAll(placeholder(Messages.tr("mermaid.rendering")));
         List<String> exe = mmdc;
         List<String> maidExe = maid;
+        boolean useMaid = maidAvailable;
         boolean useDark = dark;
         EXEC.submit(() -> {
             Mermaid.Render r = Mermaid.renderPng(exe, source, useDark);
@@ -111,9 +150,14 @@ public final class MermaidImages {
                     result =
                             new Cached(new PreviewImageLoader.Loaded(img, img.getWidth() / Mermaid.RENDER_SCALE), null);
                 }
-            } else {
-                // On a render failure, prefer maid's precise line/column diagnostics over mmdc's raw error.
+            } else if (useMaid) {
+                // On a render failure, prefer maid's precise line/column diagnostics over mmdc's raw error —
+                // but only when maid is actually installed. Unconditionally, every failed render spawned the
+                // default `npx -y @probelabs/maid` (~6.5 s, and `-y` may hit the npm registry): a Markdown
+                // file with five fences and no mmdc spent ~30 s in npx to learn nothing.
                 result = new Cached(null, diagnose(maidExe, source, r.error()));
+            } else {
+                result = new Cached(null, r.error());
             }
             CACHE.put(key, result);
             Platform.runLater(() -> applyCached(host, result, sizer));

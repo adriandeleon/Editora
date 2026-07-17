@@ -3,6 +3,32 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] Mermaid + Diagrams audit (per-feature bug hunt) — 8 fixes, verified against the **real CLIs installed on
+      this box** (mmdc 11.16.0, graphviz 15.1.0, plantuml 1.2026.6, maid via npx). Headline: **PlantUML names
+      its output after the DIAGRAM, not the input** — `@startuml myclassdiagram` writes `myclassdiagram.png`,
+      but `DiagramRenderer` read back a fixed `diagram.<fmt>`, so (a) a valid named diagram rendered as bare
+      `"render failed"` (identical to a broken one, since a successful plantuml run has empty stderr → the
+      `Render.fail` blank branch) and (b) **export reported success while writing NO file** — `exportTo` only
+      moved `if (r.ok() && isRegularFile(out))` but returned `r` regardless, and the temp dir was then deleted
+      in `finally`. Now `producedFile()` finds what the tool actually wrote (the temp dir is single-use), and a
+      missing output is an error. The `DiagramKind.PLANTUML` javadoc asserted the wrong assumption verbatim.
+      Also: **render failures were cached forever** keyed on `sha256(source+theme)` — never the tool — and
+      `configure()` never invalidated, so Install… → `reapplyToolSupport` → `refreshPreview` was a cache HIT on
+      the stale error (fixed: `configure` clears on a tool/enabled change + a `FAILURE_TTL_MS` like
+      `PreviewImageLoader`, which these classes "mirror" but had no TTL); **`detect`'s `exit != -1` rule
+      false-positives for an npx wrapper** (npx always launches → maid "detected" on any machine with Node →
+      live lint fired a ~6.5 s npx per pause; now a multi-token command requires exit 0); `command()`
+      whitespace-split a Browse…-picked path with a space (now: an existing file is one token, else
+      quote-aware `ProgramArgs.tokenize`); `setPaths` nulled the availability cache **unconditionally**, so
+      every live-apply settings/theme change re-probed (~6.5 s) on the single thread shared with lint+export;
+      `diagnose()` spawned maid on **every** failed render with no availability gate (5 fences, no mmdc → ~30 s
+      of npx); `MaidOutput.collect` never read maid's real top-level **`warnings`** array. Deferred → #458
+      (no cancellation of superseded renders — typing in a `.mmd` queues ~4 s Chromium spawns), #459
+      (multi-`@startuml` renders only the first, silently). Verified-clean by execution: temp-file cleanup on
+      success/failure/missing-binary (0 leaks), temp dirs are 0700, **no** concurrent-render collision (each
+      render gets its own temp dir — the audit's own hypothesis, disproved), no argv injection (source always
+      via temp file), `MaidOutput` vs real maid JSON, the lint overlay's out-of-range clamping, mmdc/dot flags
+      vs the installed versions, LRU bounding, the DiagramImages theme-bit omission.
 - [x] External Tools audit (per-feature bug hunt) — 8 fixes, two of them in the **shared** `ProcessRunner`:
       **the timeout was unenforceable** (stdout was drained *inline* on the caller, and `waitFor(timeout)` only
       ran after that drain hit EOF — which needs the child to exit; measured: `sleep 5` with a 1 s timeout

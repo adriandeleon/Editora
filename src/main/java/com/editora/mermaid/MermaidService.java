@@ -38,11 +38,23 @@ public final class MermaidService {
     private volatile String maidPath = "";
     private volatile Availability cached;
 
-    /** Updates the configured executable paths/commands; clears the cached availability so it re-probes. */
+    /**
+     * Updates the configured executable paths/commands. Clears the cached availability <b>only when they
+     * actually change</b>, so the next detect re-probes.
+     *
+     * <p>Clearing unconditionally meant every settings apply re-probed — and Settings is live-apply, so that
+     * is once per control you touch, plus every theme apply. The default maid command is
+     * {@code npx -y @probelabs/maid}, whose probe costs ~6.5 s, on the same single thread that serves live
+     * {@code .mmd} linting and exports: toggling a checkbox parked a multi-second job in front of them.
+     */
     public void setPaths(String mmdcPath, String maidPath) {
-        this.mmdcPath = mmdcPath == null ? "" : mmdcPath;
-        this.maidPath = maidPath == null ? "" : maidPath;
-        this.cached = null;
+        String mmdc = mmdcPath == null ? "" : mmdcPath;
+        String maid = maidPath == null ? "" : maidPath;
+        if (!mmdc.equals(this.mmdcPath) || !maid.equals(this.maidPath)) {
+            this.cached = null;
+        }
+        this.mmdcPath = mmdc;
+        this.maidPath = maid;
     }
 
     /** The mmdc command (configured value or {@link #DEFAULT_MMDC}), tokenized. */

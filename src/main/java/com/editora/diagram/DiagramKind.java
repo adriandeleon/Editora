@@ -31,7 +31,9 @@ public enum DiagramKind {
         }
     },
     /** PlantUML ({@code .puml}/{@code .plantuml}/{@code .pu}/{@code .iuml}). Renders {@code plantuml -t<fmt> <in>},
-     *  which writes {@code <in-base>.<fmt>} beside the input — i.e. our {@code diagram.<fmt>}. */
+     *  which writes beside the input — but named after the <b>diagram</b>, not the input file: an
+     *  {@code @startuml myclassdiagram} produces {@code myclassdiagram.<fmt>}, not {@code diagram.<fmt>}. The
+     *  renderer therefore finds the produced file rather than assuming its name. */
     PLANTUML("plantuml", "plantuml", "puml", false) {
         @Override
         List<String> args(List<String> cmd, Path in, Path out, String fmt, boolean dark) {
