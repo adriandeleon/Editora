@@ -310,6 +310,11 @@ final class LspCoordinator {
         for (String serverId : SERVER_IDS) {
             // Stop any server whose per-server toggle is off (frees its process); buffers deactivate below.
             if (!serverEnabled(serverId)) {
+                // Clear this server's buffers' diagnostics BEFORE shutting it down. After shutdown
+                // isManaged() is false, so syncBuffer's else-branch clear (guarded on isManaged) is skipped —
+                // and with no server left to re-publish an empty list, the Problems window would strand this
+                // server's diagnostics forever (#469).
+                clearDiagnosticsForServer(serverId);
                 lspManager.shutdownServer(serverId);
             }
             // Probe each known server independently (one may be installed and another not).
@@ -318,6 +323,22 @@ final class LspCoordinator {
                 applyGating();
             });
         }
+    }
+
+    /** Clears the diagnostics (Problems entry + editor overlay) of every open buffer served by {@code serverId}
+     *  and closes its document — used when that server is being disabled, before it is shut down. */
+    private void clearDiagnosticsForServer(String serverId) {
+        host.forEachBuffer(b -> {
+            Path p = b.getPath();
+            if (p == null || !serverId.equals(com.editora.lsp.LspServerRegistry.serverIdFor(b.getLanguage()))) {
+                return;
+            }
+            b.setLspActive(false); // drop the editor squiggle overlay/stripes immediately
+            if (lspManager.isManaged(p)) {
+                lspManager.closeDocument(p);
+            }
+            clearDiagnostics(p); // remove from the Problems map (canonical key) + refresh the panel
+        });
     }
 
     /** Applies the detection-dependent gate to every open buffer (per the file's own server). */

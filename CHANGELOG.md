@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Disabling a language server now clears its errors from the Problems window.** Turning a server off in
+  Settings (e.g. unchecking Java) stopped the server but left its already-reported errors listed forever — no
+  server remained to retract them, and closing the tab missed them too. Disabling a server now clears its
+  files' diagnostics (Problems entries and the editor squiggles) as it shuts down. (From the deferred backlog.)
+
 - **The Problems window now sorts the active file to the top even when it's reached through a symlink.** The
   diagnostics were stored under the path the language server reported (often a symlink path like `/tmp/…`),
   while the active-file marker used the resolved real path (`/private/tmp/…`), so on macOS — and for any
