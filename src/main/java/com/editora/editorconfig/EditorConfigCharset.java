@@ -67,6 +67,20 @@ public final class EditorConfigCharset {
     }
 
     /**
+     * The charset name to decode {@code bytes} with: a BOM, if present, wins; else the file's
+     * {@code .editorconfig} charset ({@code editorConfigCharset}, or null when EditorConfig is off / the file
+     * is remote / has no rule); else UTF-8. The same resolution the editor uses to read a file — so both sides
+     * of a diff agree rather than the HEAD side force-decoding as UTF-8. Pure.
+     */
+    public static String resolveName(byte[] bytes, String editorConfigCharset) {
+        String bom = detectByBom(bytes);
+        if (bom != null) {
+            return bom;
+        }
+        return editorConfigCharset != null ? editorConfigCharset : UTF_8;
+    }
+
+    /**
      * Decodes {@code bytes} as {@code name}, dropping a leading BOM only when the bytes <em>actually</em>
      * begin with this charset's BOM. A BOM charset (e.g. {@code utf-8-bom}) declared in {@code .editorconfig}
      * does not guarantee the on-disk file has a BOM, so skipping unconditionally would silently drop the

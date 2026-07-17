@@ -16,6 +16,7 @@ import com.editora.diff.DiffService;
 import com.editora.diff.PatchParser;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
+import com.editora.editorconfig.EditorConfigCharset;
 import com.editora.git.GitFormat;
 import com.editora.git.GitService;
 
@@ -65,6 +66,13 @@ final class DiffCoordinator {
 
         /** Start directory for the compare-with-file picker. */
         Path finderStartDir();
+
+        /**
+         * The {@code .editorconfig} charset name for {@code file} (or {@code null} when EditorConfig is off /
+         * the file is remote / has no rule), so a diff decodes git blobs + a closed working file the same way
+         * the editor would read them — not force-decoding as UTF-8.
+         */
+        String editorConfigCharset(Path file);
     }
 
     private final CoordinatorHost host;
@@ -245,7 +253,7 @@ final class DiffCoordinator {
                 tr("diff.side.working"),
                 name,
                 name,
-                cb -> git.service().show(root, "HEAD:" + rel, cb),
+                blobSide(root, "HEAD:" + rel, path),
                 cb -> cb.accept(worktreeText(path)),
                 DiffViewerPane.EditableSide.RIGHT,
                 path);
@@ -386,7 +394,7 @@ final class DiffCoordinator {
                             tr("diff.side.working"),
                             name,
                             name,
-                            cb -> git.service().show(root, chosen.hash() + ":" + rel, cb),
+                            blobSide(root, chosen.hash() + ":" + rel, path),
                             cb -> cb.accept(worktreeText(path)),
                             DiffViewerPane.EditableSide.RIGHT,
                             path));
@@ -434,7 +442,7 @@ final class DiffCoordinator {
                             tr("diff.side.working"),
                             name,
                             name,
-                            cb -> git.service().show(root, chosen + ":" + rel, cb),
+                            blobSide(root, chosen + ":" + rel, path),
                             cb -> cb.accept(worktreeText(path)),
                             DiffViewerPane.EditableSide.RIGHT,
                             path));
@@ -459,8 +467,8 @@ final class DiffCoordinator {
                     tr("diff.side.staged"),
                     name,
                     name,
-                    cb -> git.service().show(root, "HEAD:" + repoRel, cb),
-                    cb -> git.service().show(root, ":" + repoRel, cb),
+                    blobSide(root, "HEAD:" + repoRel, abs),
+                    blobSide(root, ":" + repoRel, abs),
                     DiffViewerPane.EditableSide.NONE,
                     null);
         } else {
@@ -470,7 +478,7 @@ final class DiffCoordinator {
                     tr("diff.side.working"),
                     name,
                     name,
-                    cb -> git.service().show(root, ":" + repoRel, cb),
+                    blobSide(root, ":" + repoRel, abs),
                     cb -> cb.accept(worktreeText(abs)),
                     DiffViewerPane.EditableSide.RIGHT,
                     abs);
@@ -501,8 +509,8 @@ final class DiffCoordinator {
                 tr("diff.title.vsCommitShort", GitFormat.shortHash(hash)),
                 name,
                 name,
-                cb -> git.service().show(root, hash + "~1:" + parentRel, cb),
-                cb -> git.service().show(root, hash + ":" + repoRel, cb),
+                blobSide(root, hash + "~1:" + parentRel, root.resolve(repoRel)),
+                blobSide(root, hash + ":" + repoRel, root.resolve(repoRel)),
                 DiffViewerPane.EditableSide.NONE,
                 null);
     }
@@ -515,10 +523,34 @@ final class DiffCoordinator {
             return b.text();
         }
         try {
-            return Files.exists(abs) ? Files.readString(abs) : "";
+            if (!Files.exists(abs)) {
+                return "";
+            }
+            // Decode the closed working file the same way the editor would (BOM / .editorconfig charset),
+            // not force-UTF-8 — else a non-UTF-8 file's working side would disagree with the (now
+            // charset-correct) blob side.
+            byte[] bytes = Files.readAllBytes(abs);
+            return EditorConfigCharset.decode(
+                    bytes, EditorConfigCharset.resolveName(bytes, ops.editorConfigCharset(abs)));
         } catch (IOException e) {
             return "";
         }
+    }
+
+    /**
+     * A diff side that fetches a git blob ({@code spec}, e.g. {@code HEAD:path}) as raw bytes and decodes it
+     * with the same charset resolution the editor uses for {@code file} (BOM wins, else the file's
+     * {@code .editorconfig} charset, else UTF-8) — so a Latin-1/UTF-16 tracked file shows real text and no
+     * spurious whole-file change, instead of UTF-8 mojibake.
+     */
+    private DiffSide blobSide(Path root, String spec, Path file) {
+        String ecCharset = ops.editorConfigCharset(file);
+        return onText -> git.service()
+                .showBytes(
+                        root,
+                        spec,
+                        bytes -> onText.accept(
+                                EditorConfigCharset.decode(bytes, EditorConfigCharset.resolveName(bytes, ecCharset))));
     }
 
     /** Saves a unified-diff patch (the diff viewer's export action) via a file chooser. */
