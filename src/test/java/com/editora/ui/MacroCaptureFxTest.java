@@ -34,6 +34,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MacroCaptureFxTest {
 
+    /** Mirrors KeyDispatcher.IS_MAC — the Alt-consume that gates what this hook can see is per-OS. */
+    private static final boolean IS_MAC =
+            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
+
     @BeforeAll
     void setUp() throws Exception {
         FxTestSupport.bootToolkit();
@@ -104,9 +108,25 @@ class MacroCaptureFxTest {
         FxTestSupport.runOnFx(() -> {
             fire(r.buffer().getArea(), KeyCode.DOWN, true, false, false); // S-down: extend selection
             fire(r.buffer().getArea(), KeyCode.LEFT, false, true, false); // C-left: word left
-            fire(r.buffer().getArea(), KeyCode.DOWN, false, false, true); // M-down: unbound here
         });
-        assertEquals(List.of("key:S-DOWN", "key:C-LEFT", "key:M-DOWN"), r.captured());
+        assertEquals(List.of("key:S-DOWN", "key:C-LEFT"), r.captured());
+    }
+
+    /**
+     * An unbound plain-Alt chord is recorded only where the editor will actually act on it — i.e. macOS,
+     * where Option is Meta and the area handles Option-Down.
+     *
+     * <p>On Windows/Linux {@code KeyDispatcher} deliberately <em>consumes</em> an unbound key held with plain
+     * Alt, before this hook's fall-through: letting it through makes the OS treat it as a menu mnemonic and
+     * freezes the keyboard app-wide. The key therefore never reaches the area, so recording it would be
+     * wrong — replaying it would do nothing either. (This assertion was macOS-only and unguarded, which is
+     * what broke CI on the Linux runner.)
+     */
+    @Test
+    void anUnboundAltChordIsRecordedOnlyWhereTheEditorWillSeeIt() throws Exception {
+        Rig r = FxTestSupport.callOnFx(MacroCaptureFxTest::rig);
+        FxTestSupport.runOnFx(() -> fire(r.buffer().getArea(), KeyCode.DOWN, false, false, true)); // M-down
+        assertEquals(IS_MAC ? List.of("key:M-DOWN") : List.of(), r.captured());
     }
 
     private static void fire(javafx.scene.Node target, KeyCode code, boolean shift, boolean ctrl, boolean alt) {
