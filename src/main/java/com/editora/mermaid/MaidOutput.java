@@ -81,8 +81,10 @@ public final class MaidOutput {
                     text(node, "message", text(node, "msg", ""))));
             return;
         }
-        // Recurse into common container fields (errors / diagnostics / results).
-        for (String field : List.of("errors", "diagnostics", "results", "issues")) {
+        // Recurse into common container fields. "warnings" is a real top-level array in maid's own output
+        // (alongside "errors"/"warningCount") and was missing here, so a maid warning produced no squiggle
+        // and no tooltip; severity already flows through Diagnostic.severity/isError.
+        for (String field : List.of("errors", "warnings", "diagnostics", "results", "issues")) {
             if (node.has(field)) {
                 collect(node.get(field), out);
             }

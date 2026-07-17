@@ -32,7 +32,24 @@ import com.editora.i18n.Messages;
 public final class DiagramImages {
 
     /** A finished render: a {@code loaded} image (success) or an {@code error} message (failure). */
-    private record Cached(PreviewImageLoader.Loaded loaded, String error) {}
+    private record Cached(PreviewImageLoader.Loaded loaded, String error, long at) {
+        Cached(PreviewImageLoader.Loaded loaded, String error) {
+            this(loaded, error, System.currentTimeMillis());
+        }
+
+        /**
+         * A failure is only worth reusing briefly. The cache key is the source (+ theme) — not the tool — so
+         * a diagram that failed because the CLI was missing stayed "broken" after installing it: the install
+         * flow re-renders every preview, which is a cache hit on the same source. Successes never expire
+         * (same source, same picture).
+         */
+        boolean expired() {
+            return error != null && System.currentTimeMillis() - at > FAILURE_TTL_MS;
+        }
+    }
+
+    /** How long a failed render is reused before being retried — mirrors {@link PreviewImageLoader}. */
+    private static final long FAILURE_TTL_MS = 60_000;
 
     /** Cap on cached rendered diagrams (each successful entry pins a GPU texture — bounded LRU). */
     private static final int MAX_CACHED = 48;
@@ -59,11 +76,19 @@ public final class DiagramImages {
     /** Pushes the live diagram config (called at startup + every settings/theme apply). Commands per kind
      *  are tokenized (a bare binary or a multi-word invocation). */
     public static void configure(boolean enabled, Map<DiagramKind, List<String>> commandsByKind, boolean dark) {
+        boolean toolChanged = DiagramImages.enabled != enabled;
         DiagramImages.enabled = enabled;
         if (commandsByKind != null && !commandsByKind.isEmpty()) {
+            toolChanged |= !commandsByKind.equals(DiagramImages.commands);
             DiagramImages.commands = new EnumMap<>(commandsByKind);
         }
         DiagramImages.dark = dark;
+        if (toolChanged) {
+            // The key is the source (+ theme), never the tool — so a newly installed or re-pointed dot/
+            // plantuml would re-serve the cached "render failed" from when it was missing (the install flow
+            // re-renders every preview, which is a hit on the same source).
+            CACHE.clear();
+        }
     }
 
     public static boolean isEnabled() {
@@ -88,6 +113,10 @@ public final class DiagramImages {
         boolean useDark = dark && kind.themeSensitive();
         String key = key(kind, source, useDark);
         Cached hit = CACHE.get(key);
+        if (hit != null && hit.expired()) {
+            CACHE.remove(key);
+            hit = null;
+        }
         if (hit != null) {
             applyCached(host, hit, sizer);
             return;

@@ -46,26 +46,53 @@ public final class Mermaid {
     private Mermaid() {}
 
     /**
-     * The command to invoke: the user-configured value if set, else {@code defaultCommand}; either may be
-     * a bare executable or a multi-token command (e.g. {@code npx -y @probelabs/maid}), split on
-     * whitespace. Pure; unit-tested.
+     * The command to invoke: the user-configured value if set, else {@code defaultCommand}. Either may be a
+     * bare executable or a multi-token command (e.g. {@code npx -y @probelabs/maid}). Pure; unit-tested.
+     *
+     * <p>A value that <b>is an existing file</b> is taken whole — the Settings page has a Browse… button, and
+     * a space in the path is normal ({@code C:\Program Files\Graphviz\bin\dot.exe},
+     * {@code ~/Library/Application Support/…}); splitting it on whitespace produced an argv of
+     * {@code [C:\Program, Files\…]} and the run died with "No such file or directory". Anything else is
+     * tokenized quote-aware, so a multi-token command still works and a path can also be quoted by hand.
      */
     static List<String> command(String configured, String defaultCommand) {
         String raw = configured == null || configured.isBlank() ? defaultCommand : configured.strip();
-        return List.of(raw.split("\\s+"));
+        if (isExistingFile(raw)) {
+            return List.of(raw);
+        }
+        List<String> tokens = com.editora.run.ProgramArgs.tokenize(raw);
+        return tokens.isEmpty() ? List.of(raw) : List.copyOf(tokens);
+    }
+
+    /** True when {@code raw} names a file that exists — i.e. it is a path, not a command line. */
+    private static boolean isExistingFile(String raw) {
+        try {
+            return !raw.isBlank() && Files.isRegularFile(Path.of(raw));
+        } catch (RuntimeException e) {
+            return false; // not a parseable path (a command line with odd chars)
+        }
     }
 
     /**
      * Whether the {@code base} command is launchable (tool present). Blocking; call off the FX thread.
-     * Tries {@code --version} then {@code --help}; since a tool that runs but rejects the flag still
-     * means it's installed, any clean <em>launch</em> (the runner's {@code exit != -1} failed-to-start
-     * sentinel) counts as present — avoiding false negatives.
+     * Tries {@code --version} then {@code --help}.
+     *
+     * <p>For a <b>single-token</b> command, any clean <em>launch</em> counts (the runner's {@code exit == -1}
+     * is its failed-to-start sentinel): a tool that runs but rejects the flag is still installed, so this
+     * avoids a false negative. For a <b>multi-token wrapper</b> ({@code npx -y <pkg>} — the default maid
+     * command) that reasoning inverts: npx itself always launches, so a launch says nothing about the
+     * package. Its exit code is the only signal, and a missing package exits non-zero — so require success
+     * there. Without this, maid reported "detected" on any machine with Node, and live linting fired a
+     * multi-second npx on every typing pause that could never produce a diagnostic.
      */
     public static boolean detect(List<String> base) {
-        if (ProcessRunner.run(null, DETECT_TIMEOUT, withArgs(base, "--version")).exit() != -1) {
+        boolean wrapper = base.size() > 1;
+        ProcessRunner.Result version = ProcessRunner.run(null, DETECT_TIMEOUT, withArgs(base, "--version"));
+        if (wrapper ? version.ok() : version.exit() != -1) {
             return true;
         }
-        return ProcessRunner.run(null, DETECT_TIMEOUT, withArgs(base, "--help")).exit() != -1;
+        ProcessRunner.Result help = ProcessRunner.run(null, DETECT_TIMEOUT, withArgs(base, "--help"));
+        return wrapper ? help.ok() : help.exit() != -1;
     }
 
     /**

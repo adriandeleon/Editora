@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -57,5 +58,32 @@ class DiagramRendererTest {
         assertNull(DiagramKind.fromLanguage("mermaid")); // Mermaid stays on its own path
         assertNull(DiagramKind.fromLanguage("markdown"));
         assertNull(DiagramKind.fromLanguage(null));
+    }
+
+    /**
+     * A tool path with a space is normal — {@code C:\Program Files\Graphviz\bin\dot.exe}, or anything under
+     * {@code ~/Library/Application Support/} — and the Settings page has a Browse… button, so it is trivially
+     * reachable. Splitting the value on whitespace turned it into two argv tokens and the run died with "No
+     * such file or directory". A value that IS a file is now taken whole; anything else still tokenizes, so a
+     * multi-token command keeps working.
+     */
+    @Test
+    void aConfiguredPathContainingASpaceIsNotSplit(@TempDir java.nio.file.Path tmp) throws java.io.IOException {
+        java.nio.file.Path dir = java.nio.file.Files.createDirectories(tmp.resolve("My Tools"));
+        java.nio.file.Path exe = java.nio.file.Files.writeString(dir.resolve("plantuml"), "#!/bin/sh\n");
+        assertEquals(List.of(exe.toString()), DiagramRenderer.command(exe.toString(), "plantuml"));
+    }
+
+    @Test
+    void aMultiTokenCommandStillTokenizes() {
+        assertEquals(List.of("npx", "-y", "some-renderer"), DiagramRenderer.command("npx -y some-renderer", "dot"));
+        assertEquals(List.of("dot"), DiagramRenderer.command("", "dot"), "blank falls back to the default");
+        assertEquals(List.of("dot"), DiagramRenderer.command(null, "dot"));
+    }
+
+    /** A quoted path works too (tokenize is quote-aware), for a path that doesn't exist yet. */
+    @Test
+    void aQuotedPathIsOneToken() {
+        assertEquals(List.of("/opt/My Tools/plantuml"), DiagramRenderer.command("\"/opt/My Tools/plantuml\"", "x"));
     }
 }

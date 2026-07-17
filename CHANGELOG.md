@@ -22,6 +22,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A named PlantUML diagram now renders — and exports.** PlantUML names its output after the diagram
+  (`@startuml myclassdiagram` writes `myclassdiagram.png`), but Editora looked for a fixed file name, so any
+  named diagram showed a bare "render failed" in the preview — indistinguishable from a broken one — and
+  exporting it reported "Exported to …" while writing **no file at all**. Naming a diagram is idiomatic
+  PlantUML and required for multi-diagram files. (From a per-feature audit of Mermaid + Diagrams.)
+
+- **Installing Mermaid no longer leaves your diagrams showing "render failed".** A failed render was cached
+  against the diagram's text forever, so after installing `mmdc` — which re-renders every open preview — the
+  old error was served straight back. The diagram stayed broken until you edited it or restarted. The same
+  applied to changing a tool's path in Settings, and to DOT/PlantUML. (From a per-feature audit of Mermaid +
+  Diagrams.)
+
+- **Mermaid's linter is no longer reported as installed when it isn't.** The default maid command runs through
+  `npx`, which always launches — so on any machine with Node, maid showed as found, and every pause in typing
+  fired a multi-second `npx` that could never produce a diagnostic. (From a per-feature audit of Mermaid +
+  Diagrams.)
+
+- **A diagram tool whose path contains a space now works** — `C:\Program Files\Graphviz\bin\dot.exe`, or
+  anything under `Application Support`, was split into two arguments and failed with "No such file or
+  directory", even though Settings offers a Browse… button. (From a per-feature audit of Mermaid + Diagrams.)
+
+- **Toggling a setting no longer stalls diagram linting and export for several seconds.** Every settings or
+  theme change re-probed for the tools — including the ~6.5-second `npx` probe — on the same single thread
+  that serves live linting. Detection is now only re-run when a path actually changes, and a failed render no
+  longer spawns the linter when it isn't installed. Mermaid warnings also appear now, instead of being
+  dropped. (From a per-feature audit of Mermaid + Diagrams.)
+
 - **An external tool's output no longer lands in the wrong file.** The result was applied to whatever tab was
   active when the tool *finished*, not the one it ran on — so switching tabs during a format run replaced the
   entire contents of an unrelated file with the formatted output of the first, and reported success. The
