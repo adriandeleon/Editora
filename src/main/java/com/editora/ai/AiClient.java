@@ -38,6 +38,14 @@ public final class AiClient {
         void onError(String message);
     }
 
+    /** Shared daemon scheduler for the streaming idle-read watchdog (one thread — the checks are trivial). */
+    private static final java.util.concurrent.ScheduledExecutorService IDLE_WATCHDOG =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "ai-idle-watchdog");
+                t.setDaemon(true);
+                return t;
+            });
+
     private final ObjectMapper mapper = new ObjectMapper();
     private final HttpClient http =
             HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
@@ -95,17 +103,46 @@ public final class AiClient {
             listener.onError(AiErrors.describe(e));
             return;
         }
+        java.util.concurrent.atomic.AtomicBoolean idleTimedOut = new java.util.concurrent.atomic.AtomicBoolean(false);
         try {
             HttpResponse<java.io.InputStream> resp = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() != 200) {
                 listener.onError(errorBody(resp));
                 return;
             }
+            java.io.InputStream body = resp.body();
+            // Idle-read watchdog. The response timeout only bounds the wait for the *headers*, so an endpoint
+            // that returns "200 …" and then writes nothing would block this read forever — and because
+            // AiService runs on a single-thread executor, every later request would queue behind it
+            // permanently (until restart). A healthy stream keeps arriving (even a slow reasoning model:
+            // Anthropic sends periodic ping events), so each line resets the clock and a long generation is
+            // never cut off; only a genuine stall past responseTimeout closes the stream, failing the read
+            // fast so the worker thread returns to the queue. (cancel() is polled between lines, which can't
+            // interrupt a read already blocked mid-line — closing the stream is what actually unblocks it.)
+            java.util.concurrent.atomic.AtomicLong lastActivity =
+                    new java.util.concurrent.atomic.AtomicLong(System.nanoTime());
+            long idleNanos = responseTimeout.toNanos();
+            long checkMillis = Math.max(100, Math.min(2000, responseTimeout.toMillis() / 4));
+            java.util.concurrent.ScheduledFuture<?> watchdog = IDLE_WATCHDOG.scheduleAtFixedRate(
+                    () -> {
+                        if (System.nanoTime() - lastActivity.get() > idleNanos) {
+                            idleTimedOut.set(true);
+                            try {
+                                body.close(); // unblocks the reader's blocked readLine()
+                            } catch (IOException ignored) {
+                                // best effort — the read still errors out
+                            }
+                        }
+                    },
+                    checkMillis,
+                    checkMillis,
+                    java.util.concurrent.TimeUnit.MILLISECONDS);
             String stopReason = "end_turn";
             SseParser parser = new SseParser();
-            try (BufferedReader r = new BufferedReader(new InputStreamReader(resp.body(), StandardCharsets.UTF_8))) {
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = r.readLine()) != null) {
+                    lastActivity.set(System.nanoTime());
                     if (cancelled.getAsBoolean()) {
                         listener.onDone("cancelled");
                         return;
@@ -161,13 +198,16 @@ public final class AiClient {
                         }
                     }
                 }
+            } finally {
+                watchdog.cancel(false);
             }
             listener.onDone(stopReason);
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            listener.onError(AiErrors.describe(e));
+            // A read we closed on an idle timeout throws a generic IOException — report the real reason.
+            listener.onError(idleTimedOut.get() ? "timed out (no data from the endpoint)" : AiErrors.describe(e));
         }
     }
 
