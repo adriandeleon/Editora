@@ -3,10 +3,17 @@ package com.editora.ui;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
@@ -107,11 +114,62 @@ final class RemoteCoordinator {
         panel.refresh();
     }
 
+    /** How long a host-key question may sit unanswered before the connection is refused. */
+    private static final long HOST_KEY_ANSWER_TIMEOUT_SECONDS = 120;
+
     private RemoteFileSystems remoteFs() {
         if (remoteFs == null) {
-            remoteFs = new RemoteFileSystems(); // starts the SSH client + wires Vfs resolver
+            // Starts the SSH client + wires the Vfs resolver. The prompt is the trust-on-first-use decision:
+            // without one, RemoteFileSystems refuses unknown hosts rather than trusting them.
+            remoteFs = new RemoteFileSystems(this::confirmHostKey);
         }
         return remoteFs;
+    }
+
+    /**
+     * Trust-on-first-use: asked on an SSH I/O thread about a host {@code known_hosts} has never seen, answered
+     * on the FX thread. Blocking the caller is the contract — the SSH handshake cannot proceed until the user
+     * decides. Anything but an explicit "Connect" is a refusal, including running out of patience.
+     */
+    private boolean confirmHostKey(String host, int port, String keyType, String fingerprint) {
+        if (Platform.isFxApplicationThread()) {
+            return askHostKey(host, port, keyType, fingerprint); // already on FX — asking directly can't deadlock
+        }
+        AtomicBoolean accepted = new AtomicBoolean(false);
+        CountDownLatch answered = new CountDownLatch(1);
+        Platform.runLater(() -> {
+            try {
+                accepted.set(askHostKey(host, port, keyType, fingerprint));
+            } finally {
+                answered.countDown();
+            }
+        });
+        try {
+            // Bounded, so an unanswered dialog can't park an SSH I/O thread for the rest of the session.
+            // Timing out means "not confirmed" — it fails closed.
+            if (!answered.await(HOST_KEY_ANSWER_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                return false;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return accepted.get();
+    }
+
+    /** The question itself (FX thread) — the same one {@code ssh} asks at the terminal. */
+    private boolean askHostKey(String host, int port, String keyType, String fingerprint) {
+        ButtonType connect = new ButtonType(tr("dialog.hostKey.connect"), ButtonBar.ButtonData.OK_DONE);
+        Alert alert = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("dialog.hostKey.content", host + ":" + port, keyType, fingerprint),
+                ButtonType.CANCEL,
+                connect);
+        alert.initOwner(this.host.window());
+        alert.setTitle(tr("dialog.hostKey.title"));
+        alert.setHeaderText(tr("dialog.hostKey.header", host));
+        alert.getDialogPane().setMinWidth(560);
+        return alert.showAndWait().orElse(ButtonType.CANCEL) == connect;
     }
 
     void connect() {

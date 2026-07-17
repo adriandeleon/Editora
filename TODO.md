@@ -3,6 +3,24 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **SFTP host-key verification (GHSA-p4qf-p7q6-2mrw)** — the initiative's top open security item, and the
+      first of the deferred backlog. `RemoteFileSystems` passed **`AcceptAllServerKeyVerifier`**, so SSH's
+      entire security model was off: a MITM on the path presented their own key, Editora connected without a
+      word, and with `AuthMethod.PASSWORD` **sent them the password** — plus the plaintext of every file
+      browsed/opened/saved, modifiable in flight. Now a `KnownHostsServerKeyVerifier` over **`~/.ssh/known_hosts`**
+      (deliberately the same file `ssh` uses — a host already trusted at the terminal doesn't re-prompt, and an
+      entry Editora writes is honoured by `ssh`), with the three outcomes SSH requires: known+match → silent;
+      **unknown → a trust-on-first-use dialog** showing `host:port`, key type and the `SHA256:` fingerprint,
+      written to the file only on acceptance; **known+different → refused outright, without asking** (offering
+      a button there is how a MITM gets clicked through). The prompt is a `HostKeyPrompt` injected by
+      `RemoteCoordinator`: called on an SSH I/O thread, marshalled to FX, blocking (the handshake can't
+      proceed until the user decides), bounded at 2 min so an unanswered dialog can't park an I/O thread, and
+      **fails closed** on timeout/interrupt/no-UI. **Proven against a real in-process SSH server and a real
+      impostor** — a second `SshServer` on the same port with a different host key: 9 tests across
+      `HostKeyVerificationTest` (MINA's contract) + `RemoteFileSystemsHostKeyFxTest` (Editora's wiring, via a
+      real SFTP subsystem). All 4 wiring tests fail on the old code, one of them stating the bug exactly:
+      `the user said no ==> expected: <false> but was: <true>`. Deferred → #486 (the 20 s connect timeout can
+      expire while the host-key dialog is open).
 - [x] Appearance / Interface / Tool Windows / Advanced audit — **the last four Settings pages; the initiative's
       final sweep** (23 features audited in all). *Caveat: the audit agent hit its session limit before
       reporting, so this pass is mine alone and is narrower than the others — Themes/UserThemes CSS loading and
