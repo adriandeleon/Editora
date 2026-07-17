@@ -33,11 +33,25 @@ public final class ConfigWriter {
     /** Config files can hold credentials + private content, so they are owner-only (0600). */
     private static final java.util.Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");
 
-    private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "config-writer");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ExecutorService io;
+
+    public ConfigWriter() {
+        this(Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "config-writer");
+            t.setDaemon(true);
+            return t;
+        }));
+    }
+
+    /**
+     * Test seam: supply the executor that runs the drains. Production uses the no-arg constructor's single
+     * daemon thread. A test can inject a controllable executor to make the {@code enqueue}→{@code cancel}
+     * ordering deterministic — otherwise the real writer thread may drain a queued write <em>before</em> a
+     * following {@code cancel} runs (a race that flaked {@code ConfigDurabilityTest} on loaded CI runners).
+     */
+    ConfigWriter(ExecutorService io) {
+        this.io = io;
+    }
 
     private final Object lock = new Object();
     private final Map<Path, byte[]> pending = new LinkedHashMap<>();

@@ -99,11 +99,17 @@ class ConfigDurabilityTest {
         // Deleting a project deletes its session file — but a coalesced write may still be in the queue, and
         // it would land afterwards and re-create it. Project ids are derived from the folder path, so a
         // resurrected file gets picked straight back up if the folder is ever re-added.
+        //
+        // The drain runs on the writer's executor, so with the real thread this test races: the write can land
+        // before `cancel` is called, flaking on a loaded CI runner (which it did). A paused executor holds the
+        // drain until after `cancel`, making the ordering the test actually means to check deterministic.
         Path file = dir.resolve("projects").resolve("ghost.json");
-        ConfigWriter writer = new ConfigWriter();
+        PausableExecutor exec = new PausableExecutor();
+        ConfigWriter writer = new ConfigWriter(exec);
+
         writer.enqueue(file, "{\"resurrected\":true}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        writer.cancel(file);
-        writer.flush();
+        writer.cancel(file); // reaches the queue before the (still-paused) drain
+        exec.resume(); // now the drain runs — it must find nothing to write
         assertFalse(Files.exists(file), "a cancelled write must not land");
 
         // Sanity: without the cancel it does land (so the test proves the cancel, not a broken writer).
@@ -111,6 +117,58 @@ class ConfigDurabilityTest {
         writer.flush();
         assertTrue(Files.exists(file));
         writer.shutdown();
+    }
+
+    /**
+     * An executor that queues submitted tasks while paused, then runs them (and everything after) inline once
+     * {@link #resume} is called. Lets a test fix the {@code enqueue}→{@code cancel}→drain ordering that the
+     * real writer thread would otherwise race.
+     */
+    private static final class PausableExecutor extends java.util.concurrent.AbstractExecutorService {
+        private final java.util.Queue<Runnable> queued = new java.util.ArrayDeque<>();
+        private boolean paused = true;
+
+        @Override
+        public synchronized void execute(Runnable command) {
+            if (paused) {
+                queued.add(command);
+            } else {
+                command.run();
+            }
+        }
+
+        void resume() {
+            java.util.List<Runnable> toRun;
+            synchronized (this) {
+                paused = false;
+                toRun = new java.util.ArrayList<>(queued);
+                queued.clear();
+            }
+            toRun.forEach(Runnable::run);
+        }
+
+        @Override
+        public void shutdown() {}
+
+        @Override
+        public java.util.List<Runnable> shutdownNow() {
+            return List.of();
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return false;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return false;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, java.util.concurrent.TimeUnit unit) {
+            return true;
+        }
     }
 
     @Test
