@@ -3,6 +3,35 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] LSP audit (per-feature bug hunt) — 4 fixes, driven against the **11 real servers installed here**.
+      **The root cause was a raw NUL byte typed into the source.** `LspManager`'s session key was
+      `serverId + "<NUL>" + root.toUri()` — a literal control character, not an escape — which made the whole
+      file **binary to grep/rg** (they skip it silently; my own greps returned nothing, and the audit agent
+      misread the key as `serverId + " " + root`). Under that cover, `shutdownServer` built its scan prefix as
+      `serverId + " "` — **a space** — so `key.startsWith(prefix)` never matched and **`shutdownServer` was a
+      complete no-op**. Its callers: disabling a server in Settings (the server kept running), and
+      `restartServer` — i.e. *"toggling debug **restarts jdtls** so it reloads with the java-debug bundle"*
+      (CLAUDE.md) never happened, so Java debugging silently didn't work until an app restart. Now one
+      `SESSION_KEY_SEP` + `sessionKey`/`sessionKeyPrefix`, unit-tested against each other. Also: **a hung
+      `initialize` had no timeout** and the pending queue was unbounded and never cleared on failure/dispose —
+      each queued `didChange` captures the whole document, so ~1000 queued edits of a 1 MB file retained ~1 GB
+      against `-Xmx2g`, with the loading bar spinning forever (measured by the audit); now `orTimeout` +
+      `didChange` collapsing per uri + clear on every exit path. **A server that dies on its own was never
+      detected** — the session stayed cached with `initialized=true`, so `isManaged()` kept the re-open guard
+      shut and every request failed into an empty result while the status bar still named the server (now
+      `process.onExit()` → drop from both maps). And **changing a server's command never applied**: the session
+      key omits the command and `putCommand` only invalidated the detect cache, so the stale session was handed
+      straight back and the old process leaked. Deferred → #468 (JSON/CSS/HTML advertise
+      `documentFormattingProvider:false` but *do* format — needs `provideFormatter`), #469 (disabling a server
+      strands its diagnostics), #470 (Problems' active-file sort vs symlinked paths), #471 (Find References is
+      O(refs × document) on the FX thread). Verified-clean / **repros that FAILED**: two windows sharing one
+      jdtls `-data` (both real jdtls initialized fine — the `.lock` wedge did not reproduce); `applyLspEdits`
+      clamping a whole-document edit (drove taplo both with and without a trailing newline — both round-trip).
+      **Hypothesis disproved:** Editora never declares `textDocument.formatting`/`documentSymbol` client caps,
+      but an A/B of all 11 servers with Editora's real `initialize` vs a fully-declaring client showed **zero**
+      difference in advertised providers. Clean: `LspPositions` (UTF-16 units), `SemanticTokensDecoder`,
+      `DiagnosticMapper`/`DocumentSymbolMapper`, overlay clamping, didOpen/didChange pairing + monotonic
+      versions, `whenReady` ordering, the stderr drain, `dispose()` → `killTree`.
 - [x] Typst + MCP audit (per-feature bug hunt) — 9 fixes incl. one **security** issue, verified against real
       typst 0.15.0 and a real `McpServer` probed over loopback. **SECURITY: `mcp-endpoint.json` was written at
       the umask (0644) into a 0755 config dir** — and that bearer token is the *only* boundary on a tool

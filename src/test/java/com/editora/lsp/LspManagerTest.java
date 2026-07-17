@@ -126,4 +126,38 @@ class LspManagerTest {
         Map<String, Object> autobuild = (Map<String, Object>) java.get("autobuild");
         assertEquals(Boolean.FALSE, autobuild.get("enabled")); // autobuild stays off even while debugging
     }
+
+    /**
+     * {@code shutdownServer} finds a server's sessions by {@code key.startsWith(serverId + SEP)}. The key was
+     * built with a <b>raw NUL byte</b> typed straight into the source while the prefix used a <b>space</b>, so
+     * the scan never matched and shutdownServer did nothing at all — silently. Its callers are "disable this
+     * server in Settings" (the server kept running and kept publishing diagnostics) and {@code restartServer},
+     * which is how toggling Debug is supposed to reload jdtls with the java-debug bundle (it never did).
+     *
+     * <p>The raw control character is why it survived: it made LspManager.java <b>binary</b> to grep/rg, which
+     * skip it without a word — so the two halves could never be compared by searching for them.
+     */
+    @Test
+    void aSessionKeyIsMatchedByTheShutdownPrefixForItsServer() {
+        java.nio.file.Path root = java.nio.file.Path.of("/proj");
+        String key = LspManager.sessionKey("json", root);
+        assertTrue(
+                key.startsWith(LspManager.sessionKeyPrefix("json")),
+                "shutdownServer(\"json\") must match its own session key: " + key.replace("\u0000", "<NUL>"));
+    }
+
+    /** …and must not match a different server whose id merely starts the same. */
+    @Test
+    void theShutdownPrefixDoesNotMatchASimilarlyNamedServer() {
+        java.nio.file.Path root = java.nio.file.Path.of("/proj");
+        assertFalse(LspManager.sessionKey("jsonx", root).startsWith(LspManager.sessionKeyPrefix("json")));
+        assertFalse(LspManager.sessionKey("java", root).startsWith(LspManager.sessionKeyPrefix("javascript")));
+    }
+
+    /** The separator must be a character no server id or URI can contain, or the scan could match wrongly. */
+    @Test
+    void theSessionKeySeparatorCannotOccurInAnIdOrUri() {
+        String key = LspManager.sessionKey("json", java.nio.file.Path.of("/proj"));
+        assertEquals(1, key.chars().filter(c -> c == 0).count(), "exactly one separator in the key");
+    }
 }

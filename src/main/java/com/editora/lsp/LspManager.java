@@ -88,6 +88,14 @@ public final class LspManager {
         String prev = commands.put(serverId, cmd);
         if (!cmd.equals(prev)) {
             availableCache.remove(serverId); // command changed → re-probe on next detect
+            if (prev != null) {
+                // …and the session running the OLD command must go. The session key is (serverId, root) — the
+                // command isn't part of it — so without this the stale session is handed straight back:
+                // isManaged() stays true so the buffer is never re-opened, the new command never runs, and the
+                // old process leaks. Meanwhile the Settings row re-probes the new command and turns green, so
+                // it looks like it applied.
+                shutdownServer(serverId);
+            }
         }
     }
 
@@ -215,13 +223,38 @@ public final class LspManager {
         return file != null && com.editora.vfs.Vfs.isLocal(file) && sessionByDocUri.containsKey(uri(file));
     }
 
+    /**
+     * Separator between the two halves of a session key. It must be a character that cannot occur in a server
+     * id or a URI, so the {@code startsWith(serverId + SEP)} scan in {@link #shutdownServer} can't match the
+     * wrong session.
+     *
+     * <p>Written as an escape, not as a raw NUL byte in the source: a literal control character made this
+     * whole file <b>binary</b> to grep/rg (they skip it silently), which is exactly how the key here and the
+     * prefix in {@code shutdownServer} came to disagree — one used the NUL, the other a space, so
+     * {@code shutdownServer} never matched a single session and quietly did nothing at all.
+     */
+    private static final String SESSION_KEY_SEP = "\u0000";
+
+    /** The {@code sessionsByRoot} key: one session per (server, root). The command is deliberately not part
+     *  of it — {@link #putCommand} disposes the session when the command changes. */
+    static String sessionKey(String serverId, Path root) {
+        return serverId + SESSION_KEY_SEP + root.toUri();
+    }
+
+    /** The prefix every {@link #sessionKey} for {@code serverId} starts with — how {@link #shutdownServer}
+     *  finds that server's sessions. Must agree with {@link #sessionKey}; unit-tested, because it silently
+     *  did not. */
+    static String sessionKeyPrefix(String serverId) {
+        return serverId + SESSION_KEY_SEP;
+    }
+
     private LanguageServerSession sessionForRoot(Path root, String languageId) {
         String serverId = LspServerRegistry.serverIdFor(languageId);
         if (serverId == null) {
             return null;
         }
         // Key by (serverId, root) — not languageId — so js/ts/jsx/tsx in one root share one tsserver.
-        String key = serverId + " " + root.toUri();
+        String key = sessionKey(serverId, root);
         return sessionsByRoot.computeIfAbsent(key, k -> {
             LspServerRegistry.ServerSpec spec = LspServerRegistry.specFor(languageId, commands);
             if (spec == null) {
@@ -257,8 +290,20 @@ public final class LspManager {
                     this::onPublishDiagnostics,
                     (type, msg) -> Platform.runLater(() -> onStatus.accept(type, msg)),
                     initOptions);
+            // Drop the session the moment it can no longer serve requests — the process died on its own, or
+            // the handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps
+            // returning true (so the re-open guard never restarts it), every request fails into an empty
+            // result, and LSP is silently dead for the rest of the session while the status bar still names
+            // the server.
+            session.setOnDead(() -> dropSession(key, session));
             return session.start() ? session : null;
         });
+    }
+
+    /** Removes a session that can no longer serve requests, so the next open starts a fresh one. */
+    private void dropSession(String key, LanguageServerSession session) {
+        sessionsByRoot.remove(key, session);
+        sessionByDocUri.values().removeIf(s -> s == session);
     }
 
     private LanguageServerSession sessionFor(Path file) {
@@ -783,7 +828,7 @@ public final class LspManager {
 
     /** Shuts down every session for {@code serverId} (e.g. when that server's per-server toggle goes off). */
     public void shutdownServer(String serverId) {
-        String prefix = serverId + " ";
+        String prefix = sessionKeyPrefix(serverId);
         var it = sessionsByRoot.entrySet().iterator();
         while (it.hasNext()) {
             var e = it.next();

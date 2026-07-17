@@ -27,6 +27,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Turning a language server off in Settings now actually stops it, and changing its command now takes
+  effect.** Neither did: the code that shuts down one server's sessions could never match them, so a disabled
+  server kept running, a re-pointed command kept using the old binary (while its Settings row turned green as
+  if it had applied) and leaked the old process, and toggling Debug never reloaded the Java server with its
+  debug plugin — the thing that makes Java debugging work at all. (From a per-feature audit of LSP.)
+
+- **A language server that crashes no longer takes every language feature down silently.** Its session stayed
+  cached and looked healthy, so completion, hover, go-to-definition and diagnostics all quietly did nothing
+  while the status bar still named the server, and nothing ever restarted it. A dead server is now detected and
+  dropped, so the next file you open starts a fresh one. (From a per-feature audit of LSP.)
+
+- **A language server that never finishes starting no longer leaks memory or spins forever.** The handshake had
+  no timeout, so the loading indicator never stopped, and every keystroke queued another full copy of the
+  document — about a gigabyte after a few minutes of typing in a large file, against a 2 GB heap. (From a
+  per-feature audit of LSP.)
+
 - **Installing Typst now actually fixes the preview.** A failed render was cached against the document's text
   forever, so after installing the tool — which re-renders every open preview — the old "typst not found" was
   served straight back. Two documents with identical text in different folders also showed each other's
