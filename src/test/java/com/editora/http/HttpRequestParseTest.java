@@ -4,6 +4,7 @@ import com.editora.http.HttpFile.Parsed;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for parsing a single request block into method/URL/headers/body, env vars, and rendering. */
@@ -82,5 +83,48 @@ class HttpRequestParseTest {
     void rendererShowsErrorForFailedRequest() {
         HttpResult r = new HttpResult(0, java.util.List.of(), "", "", 0, 0, "Connection refused");
         assertTrue(HttpResponseFormat.render(r).contains("Connection refused"));
+    }
+
+    // --- body without a blank line before it (#441) -------------------------------------------------
+
+    @Test
+    void aBodyWithNoBlankLineBeforeItWarnsAndIsNotSentAsAHeader() {
+        // The reported typo: no blank line before the JSON body. `{"a": 1}` has a colon, so the old parser
+        // split it into a bogus header ({"a" = 1}) and sent the POST with no body — silently.
+        Parsed p = HttpFile.parseRequest("""
+                POST https://example.com/api
+                Content-Type: application/json
+                {"a": 1}""");
+        assertEquals(1, p.headers().size(), "only the real header survives");
+        assertEquals("Content-Type", p.headers().get(0)[0]);
+        assertEquals("", p.body(), "no body without the blank separator (spec-compliant)");
+        assertTrue(
+                p.warning() != null && p.warning().contains("blank line"),
+                "the malformed shape is surfaced, not silently dropped: " + p.warning());
+    }
+
+    @Test
+    void aWellFormedRequestHasNoWarning() {
+        Parsed p = HttpFile.parseRequest("""
+                POST https://example.com/api
+                Content-Type: application/json
+
+                {"a": 1}""");
+        assertEquals("{\"a\": 1}", p.body());
+        assertNull(p.warning());
+    }
+
+    @Test
+    void aValidHeaderIsNeverMistakenForABody() {
+        // Real header names use tchars beyond letters (X-Api-Key, values with colons like a URL) — none warn.
+        Parsed p = HttpFile.parseRequest("""
+                GET https://example.com/
+                X-Api-Key: abc.def
+                Referer: https://x/y:8080
+
+                """);
+        assertEquals(2, p.headers().size());
+        assertEquals("https://x/y:8080", p.headers().get(1)[1]);
+        assertNull(p.warning());
     }
 }

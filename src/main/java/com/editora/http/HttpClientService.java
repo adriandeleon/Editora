@@ -94,7 +94,11 @@ public final class HttpClientService {
         // goes out unauthenticated. From here on `headers` is the sendable, trimmed set.
         HttpHeaders.Partition hp = HttpHeaders.partition(headers);
         headers = hp.sendable();
-        List<String> warnings = hp.warnings();
+        List<String> warnings = new ArrayList<>();
+        if (request.warning() != null) {
+            warnings.add(request.warning()); // e.g. a body written without the required blank line before it
+        }
+        warnings.addAll(hp.warnings());
         String contentType = headerValue(headers, "Content-Type");
 
         BodyContent bc = resolveBody(request, baseDir, sub, contentType, headers);
