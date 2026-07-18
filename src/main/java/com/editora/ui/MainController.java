@@ -2254,12 +2254,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         for (BuildCoordinator c : buildCoordinators) {
             BuildTool tool = c.tool();
             // The primary window: the IntelliJ-style tasks tree (its stripe appears when the marker is found).
+            // Defaults to the RIGHT stripe (a better fit for a vertical task list); a window with a persisted
+            // side keeps it (currentSide reads WorkspaceState first). The shared Build Output console stays
+            // BOTTOM. (#531)
             buildToolWindows.put(
                     tool,
                     new ToolWindow(
                             tool.id(),
                             tr("toolwindow." + tool.id()),
-                            ToolWindow.Side.BOTTOM,
+                            ToolWindow.Side.RIGHT,
                             c.iconSupplier(),
                             c.tasksPanel(),
                             "tool." + tool.id()));
