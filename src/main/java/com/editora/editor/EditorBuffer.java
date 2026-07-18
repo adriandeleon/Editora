@@ -485,6 +485,10 @@ public class EditorBuffer implements TabContent {
     private boolean lspActive;
 
     private java.util.function.Consumer<String> lspChangeListener;
+    /** {@link #docVersion} of the document text last sent to the server, so a send whose content hasn't changed
+     *  since (the completion flush and the debounced pulse both fire for one edit) skips the whole-document
+     *  {@code getText()} + {@code didChange}. Reset to -1 on LSP (de)activation so a re-attach always re-sends. */
+    private long lastLspSentVersion = -1;
     /** Debounced pull-diagnostics request (servers that answer textDocument/diagnostic); null = none. */
     private Runnable lspDiagnosticsRequester;
     /** Debounced semantic-tokens request (servers advertising range semantic tokens); null = none. */
@@ -734,8 +738,8 @@ public class EditorBuffer implements TabContent {
         // here, not in lspChangeListener, so it fires once per debounce — not on every completion keystroke
         // (requestLspCompletion flushes lspChangeListener directly to send fresh text before completing).
         area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> {
-            if (lspActive && lspChangeListener != null) {
-                lspChangeListener.accept(area.getText());
+            if (lspActive) {
+                sendLspChange();
             }
             if (lspActive && lspDiagnosticsRequester != null) {
                 lspDiagnosticsRequester.run();
@@ -2815,6 +2819,20 @@ public class EditorBuffer implements TabContent {
         this.lspChangeListener = listener;
     }
 
+    /**
+     * Sends the current document text to the language server — unless it already has this version (the same
+     * {@link #docVersion} as the last send). Both the completion flush and the debounced edit pulse call this for
+     * one edit; the guard drops the second, avoiding a redundant whole-document {@code getText()} + {@code
+     * didChange}. Split views share the document, so {@code area.getText()} is the canonical full text.
+     */
+    private void sendLspChange() {
+        if (lspChangeListener == null || docVersion == lastLspSentVersion) {
+            return;
+        }
+        lastLspSentVersion = docVersion;
+        lspChangeListener.accept(area.getText());
+    }
+
     /** Injects the debounced pull-diagnostics request (fired on the same pulse as didChange); null disables. */
     public void setLspDiagnosticsRequester(Runnable requester) {
         this.lspDiagnosticsRequester = requester;
@@ -3017,6 +3035,7 @@ public class EditorBuffer implements TabContent {
         // to map + render (the Problems tree, minimap + scrollbar stripes), freezing the editor. largeFile
         // is implied by hugeFile (see setReadOnly), so this single guard covers both.
         this.lspActive = on && isLspLanguage() && !largeFile && !heavyFile;
+        lastLspSentVersion = -1; // an (de)activation re-syncs via didOpen; force the next change-send to fire
         if (this.lspActive || lspOverlay != null) {
             lspOverlay().setActive(this.lspActive);
         }
@@ -7612,10 +7631,9 @@ public class EditorBuffer implements TabContent {
         // Flush the current text to the server FIRST: the completion auto-trigger (≈120ms) fires before
         // the debounced didChange (≈300ms), so without this the server still has stale text and member
         // completion after '.' resolves against the old document. JSON-RPC preserves order, so this
-        // didChange is applied before the completion request below.
-        if (lspChangeListener != null) {
-            lspChangeListener.accept(a.getText());
-        }
+        // didChange is applied before the completion request below. (Skipped when the server already has this
+        // version — e.g. the debounced pulse just sent it — so it doesn't re-materialize the whole document.)
+        sendLspChange();
         lspCompletionProvider.accept(new int[] {a.getCurrentParagraph(), a.getCaretColumn()}, lspItems -> {
             // Drop a response the document has moved past. The caret check alone isn't enough: an edit can
             // put the caret back on the same offset (select the word, retype it), which would show items
