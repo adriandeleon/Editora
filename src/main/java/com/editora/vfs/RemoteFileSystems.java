@@ -2,6 +2,7 @@ package com.editora.vfs;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.SocketTimeoutException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -12,11 +13,13 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
 import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.future.AuthFuture;
 import org.apache.sshd.client.keyverifier.KnownHostsServerKeyVerifier;
 import org.apache.sshd.client.keyverifier.ServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
@@ -41,8 +44,25 @@ public final class RemoteFileSystems {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration AUTH_TIMEOUT = Duration.ofSeconds(20);
+    /** How often the connect wait re-checks the (prompt-excluded) deadline while blocking. */
+    private static final long POLL_MILLIS = 200;
 
     private final SshClient client;
+    private final Duration connectTimeout;
+    private final Duration authTimeout;
+    /**
+     * Host-key-dialog time during the <em>current</em> connect, so the auth deadline can discount it (#486): the
+     * trust-on-first-use prompt blocks the key exchange that gates auth, and a careful "compare this fingerprint"
+     * answer must not time the handshake out. {@code promptAccumulatedNanos} is completed prompt time;
+     * {@code promptStartNanos} marks a prompt still on screen (0 when none) so {@link #livePromptElapsedNanos()}
+     * counts the in-progress wait too — the deadline is checked <em>while</em> the dialog is up, before the
+     * verifier's {@code finally} has folded it in. The verifier (a MINA I/O thread) writes both; the auth wait
+     * (the serialized {@code sftp-connect} thread) reads them. Reset per connect; safe because {@link #exec}
+     * serializes connects.
+     */
+    private final AtomicLong promptAccumulatedNanos = new AtomicLong();
+
+    private final AtomicLong promptStartNanos = new AtomicLong();
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "sftp-connect");
         t.setDaemon(true);
@@ -76,6 +96,13 @@ public final class RemoteFileSystems {
 
     /** As {@link #RemoteFileSystems(HostKeyPrompt)}, with an explicit {@code known_hosts} (tests). */
     RemoteFileSystems(HostKeyPrompt prompt, Path knownHosts) {
+        this(prompt, knownHosts, CONNECT_TIMEOUT, AUTH_TIMEOUT);
+    }
+
+    /** As above, with explicit connect/auth timeouts — the seam tests use to exercise the deadline quickly. */
+    RemoteFileSystems(HostKeyPrompt prompt, Path knownHosts, Duration connectTimeout, Duration authTimeout) {
+        this.connectTimeout = connectTimeout;
+        this.authTimeout = authTimeout;
         client = SshClient.setUpDefaultClient();
         // Verify the server's host key against ~/.ssh/known_hosts — the same file ssh itself uses, so a host
         // already accepted at the terminal connects without a prompt, and an entry accepted here is honoured
@@ -99,14 +126,24 @@ public final class RemoteFileSystems {
      * The delegate {@link KnownHostsServerKeyVerifier} consults for a host it has no entry for. Accepting here
      * is what makes MINA write the entry, so this is the only place trust is established.
      */
-    private static ServerKeyVerifier unknownHostVerifier(HostKeyPrompt prompt) {
+    private ServerKeyVerifier unknownHostVerifier(HostKeyPrompt prompt) {
         return (session, address, key) -> {
             if (prompt == null) {
                 return false; // nothing to ask with — refuse rather than trust silently
             }
             String host = address instanceof InetSocketAddress a ? a.getHostString() : String.valueOf(address);
             int port = address instanceof InetSocketAddress a ? a.getPort() : 22;
-            return prompt.confirmUnknownHost(host, port, KeyUtils.getKeyType(key), KeyUtils.getFingerPrint(key));
+            // Time how long the human takes so the auth deadline can exclude it (#486): this runs on a MINA I/O
+            // thread while the FX dialog blocks it. Mark the start so the deadline check counts the in-progress
+            // wait, then fold the total in and clear the marker when the dialog closes.
+            long t0 = System.nanoTime();
+            promptStartNanos.set(t0);
+            try {
+                return prompt.confirmUnknownHost(host, port, KeyUtils.getKeyType(key), KeyUtils.getFingerPrint(key));
+            } finally {
+                promptAccumulatedNanos.addAndGet(System.nanoTime() - t0);
+                promptStartNanos.set(0);
+            }
         };
     }
 
@@ -146,17 +183,61 @@ public final class RemoteFileSystems {
     }
 
     private SftpFileSystem open(RemoteConnection conn, char[] secret) throws IOException {
+        // Reset the host-key-dialog clock: the trust-on-first-use prompt runs during the key exchange, which MINA
+        // completes as part of the *auth* wait (the connect future is fulfilled at the transport level, before
+        // KEX), so the verifier's time accumulates here and the auth wait below discounts it (#486).
+        promptAccumulatedNanos.set(0);
+        promptStartNanos.set(0);
         ClientSession session = client.connect(conn.user(), conn.host(), conn.port())
-                .verify(CONNECT_TIMEOUT)
+                .verify(connectTimeout)
                 .getSession();
         try {
-            authenticate(session, conn, secret, AUTH_TIMEOUT);
+            authenticate(session, conn, secret, authTimeout, this::livePromptElapsedNanos);
             // On success the SftpFileSystem owns the session (closing the FS closes it).
             return SftpClientFactory.instance().createSftpFileSystem(session);
         } catch (IOException | RuntimeException e) {
             session.close(true); // failed auth / FS creation: close the session so it isn't leaked
             throw e;
         }
+    }
+
+    /**
+     * Blocks on {@code auth} up to {@code timeout}, but <b>excludes</b> the time a host-key dialog was on screen
+     * (#486): the trust-on-first-use prompt blocks the key exchange that gates authentication, so a slow "compare
+     * this fingerprint" answer lands inside this wait and must not count against the deadline. Polls every {@link
+     * #POLL_MILLIS} and re-checks the prompt-adjusted deadline; a genuinely stuck server still fails at {@code
+     * timeout} because {@code promptElapsedNanos} stays 0 when nobody is asked.
+     */
+    private static void awaitAuthExcludingPrompt(
+            AuthFuture auth, Duration timeout, java.util.function.LongSupplier promptElapsedNanos) throws IOException {
+        long start = System.nanoTime();
+        while (!auth.await(POLL_MILLIS)) {
+            if (handshakeExpired(System.nanoTime() - start, promptElapsedNanos.getAsLong(), timeout)) {
+                throw new SocketTimeoutException("Authentication timed out after " + timeout.toSeconds() + "s");
+            }
+        }
+        if (!auth.isSuccess()) {
+            Throwable t = auth.getException();
+            if (t instanceof IOException io) {
+                throw io;
+            }
+            throw new IOException(t == null ? "Authentication failed" : t.getMessage(), t);
+        }
+    }
+
+    /** Host-key-dialog time so far this connect — completed prompts plus any dialog still on screen (#486). */
+    private long livePromptElapsedNanos() {
+        long start = promptStartNanos.get();
+        long acc = promptAccumulatedNanos.get();
+        return start == 0 ? acc : acc + Math.max(0, System.nanoTime() - start);
+    }
+
+    /**
+     * Whether a handshake that has been waiting {@code elapsedNanos} has exceeded {@code timeout}, discounting the
+     * {@code promptNanos} a host-key dialog was up (#486). Pure/unit-tested.
+     */
+    static boolean handshakeExpired(long elapsedNanos, long promptNanos, Duration timeout) {
+        return elapsedNanos - promptNanos >= timeout.toNanos();
     }
 
     /**
@@ -173,6 +254,20 @@ public final class RemoteFileSystems {
      * it is unreachable and eligible for GC. Package-visible so it can be tested against a real SSH server.
      */
     static void authenticate(ClientSession session, RemoteConnection conn, char[] secret, Duration timeout)
+            throws IOException {
+        authenticate(session, conn, secret, timeout, () -> 0L);
+    }
+
+    /**
+     * As above, but discounts {@code promptElapsedNanos} — the time a host-key dialog was on screen — from the
+     * auth deadline, so a careful "compare this fingerprint" answer doesn't time the handshake out (#486).
+     */
+    static void authenticate(
+            ClientSession session,
+            RemoteConnection conn,
+            char[] secret,
+            Duration timeout,
+            java.util.function.LongSupplier promptElapsedNanos)
             throws IOException {
         String passwordIdentity = null;
         try {
@@ -191,7 +286,7 @@ public final class RemoteFileSystems {
                     }
                 }
             }
-            session.auth().verify(timeout);
+            awaitAuthExcludingPrompt(session.auth(), timeout, promptElapsedNanos);
         } finally {
             if (passwordIdentity != null) {
                 session.removePasswordIdentity(passwordIdentity); // don't retain it past the handshake
