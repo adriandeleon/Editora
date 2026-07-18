@@ -91,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A failed settings/session save is now surfaced instead of vanishing silently.** If Editora couldn't write
+  `settings.toml` or the session state (full disk, read-only config directory, permissions), a setting change
+  or the session on quit was lost with no indication. Editora now shows a status message on the failure. (#418)
 - **The JavaScript debug adapter you install through Editora is now the one that's used.** After installing
   vscode-js-debug via the in-app installer (or `install-js-debug.sh`), Editora could silently keep using an
   older VS Code extension copy instead. Editora's own installed adapter now takes precedence. (#474)

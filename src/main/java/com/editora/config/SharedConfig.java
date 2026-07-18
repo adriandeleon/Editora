@@ -139,6 +139,12 @@ public class SharedConfig {
         writer.flush();
     }
 
+    /** Routes config-file write failures to {@code handler} (on the writer thread) so they can be surfaced
+     *  instead of silently swallowed (#418). See {@link ConfigWriter#setOnWriteError}. */
+    public void setOnWriteError(java.util.function.BiConsumer<Path, java.io.IOException> handler) {
+        writer.setOnWriteError(handler);
+    }
+
     /**
      * Zips the active config directory into a timestamped {@code .zip} in the user's home directory
      * and returns the created file. Backs up whichever config dir is in use.
