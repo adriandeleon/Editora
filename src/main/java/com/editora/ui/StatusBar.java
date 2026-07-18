@@ -98,8 +98,11 @@ public final class StatusBar extends HBox {
     private boolean lspLoadingState;
     /** Whether the app-wide MCP server is running, so Simple-mode toggling can re-apply its visibility. */
     private boolean mcpRunning;
-    /** A single listener refreshes every segment on caret / text / selection changes. */
-    private final InvalidationListener changeListener = obs -> refresh();
+    /** Caret / selection changes update only the cheap caret-dependent segments (Ln/Col + the CSV field) —
+     *  NOT the file-size segment, which is O(document) and doesn't change when the caret moves. */
+    private final InvalidationListener caretListener = obs -> refreshCaretSegments();
+    /** The debounced edit subscription that recomputes the (O(n)) file-size segment once per typing burst. */
+    private org.reactfx.Subscription sizeSub;
 
     public StatusBar(Supplier<EditorBuffer> activeBuffer, CommandRegistry registry, Supplier<Settings> settings) {
         this.activeBuffer = activeBuffer;
@@ -400,15 +403,31 @@ public final class StatusBar extends HBox {
     /** Re-binds live listeners to {@code buffer} (or none) and refreshes the segments. */
     public void attach(EditorBuffer buffer) {
         if (attached != null) {
-            attached.getArea().caretPositionProperty().removeListener(changeListener);
-            attached.getArea().textProperty().removeListener(changeListener);
-            attached.getArea().selectionProperty().removeListener(changeListener);
+            attached.getArea().caretPositionProperty().removeListener(caretListener);
+            attached.getArea().selectionProperty().removeListener(caretListener);
+        }
+        if (sizeSub != null) {
+            sizeSub.unsubscribe();
+            sizeSub = null;
         }
         attached = buffer;
         if (buffer != null) {
-            buffer.getArea().caretPositionProperty().addListener(changeListener);
-            buffer.getArea().textProperty().addListener(changeListener);
-            buffer.getArea().selectionProperty().addListener(changeListener);
+            // Ln/Col + the CSV field track the caret cheaply (no full-document scan).
+            buffer.getArea().caretPositionProperty().addListener(caretListener);
+            buffer.getArea().selectionProperty().addListener(caretListener);
+            // The file size only changes on an EDIT — and computing it materializes the whole document (an
+            // O(n) String + byte[]), so it must not run per keystroke. It was previously bound to textProperty
+            // (which itself re-materializes the whole document per keystroke) AND recomputed on every caret
+            // move; now it's a debounced plainTextChanges pulse — once per typing burst, delta-based.
+            sizeSub = buffer.getArea()
+                    .plainTextChanges()
+                    .successionEnds(java.time.Duration.ofMillis(200))
+                    .subscribe(ignore -> {
+                        EditorBuffer b = activeBuffer.get();
+                        if (b != null) {
+                            refreshSize(b);
+                        }
+                    });
         }
         refresh();
     }
@@ -479,7 +498,24 @@ public final class StatusBar extends HBox {
             csvField.setManaged(false);
             return;
         }
-        var area = buffer.getArea();
+        refreshPositionAndCsv(buffer, buffer.getArea());
+        language.setText(displayLanguage(buffer.getLanguage()));
+        endings.setText(buffer.getLineEnding());
+        refreshSize(buffer);
+    }
+
+    /** Updates only the caret-dependent segments for the active buffer (the {@link #caretListener} target). */
+    private void refreshCaretSegments() {
+        EditorBuffer b = activeBuffer.get();
+        if (b != null) {
+            refreshPositionAndCsv(b, b.getArea());
+        }
+    }
+
+    /** The caret-dependent segments — Ln/Col (+ selection) and the CSV "Field N of M" readout. Cheap: only
+     *  single-line scans, no full-document materialization, so it's safe on the per-caret-move path (updated
+     *  by {@link #caretListener} without recomputing the O(n) file size). */
+    private void refreshPositionAndCsv(EditorBuffer buffer, org.fxmisc.richtext.CodeArea area) {
         int line = area.getCurrentParagraph() + 1;
         int col = area.getCaretColumn() + 1;
         int selected = area.getSelection().getLength();
@@ -491,10 +527,9 @@ public final class StatusBar extends HBox {
         position.setText(text);
         position.getTooltip().setText(tr("statusbar.tip.offset", area.getCaretPosition()));
 
-        // CSV/TSV column readout — "Field N of M". Cost is two single-line scans (the header row for the
-        // column count, the caret's line up to the caret for the field index), so it's cheap next to the
-        // O(n) file-size formatting already done here. Approximation: a field whose quotes span multiple
-        // physical lines is counted per line (RFC-4180 multi-line fields are rare in practice).
+        // CSV/TSV column readout — "Field N of M". Two single-line scans (the header row for the column count,
+        // the caret's line up to the caret for the field index). Approximation: a field whose quotes span
+        // multiple physical lines is counted per line (RFC-4180 multi-line fields are rare in practice).
         boolean csv = buffer.isCsv() && !simpleMode;
         csvField.setVisible(csv);
         csvField.setManaged(csv);
@@ -506,9 +541,12 @@ public final class StatusBar extends HBox {
             int idx = com.editora.csv.CsvParser.fieldIndexAt(cur, delim, area.getCaretColumn());
             csvField.setText(tr("statusbar.csvField", idx, total));
         }
+    }
 
-        language.setText(displayLanguage(buffer.getLanguage()));
-        endings.setText(buffer.getLineEnding());
+    /** The file-size segment. Materializes the whole document (an O(n) String + byte[]) to count UTF-8 bytes,
+     *  so it is kept OFF the per-caret / per-keystroke path — computed only on a full {@link #refresh()} (tab
+     *  switch / state change) and a debounced edit pulse, never per caret move (it doesn't change on one). */
+    private void refreshSize(EditorBuffer buffer) {
         size.setText(formatSize(buffer.getContent().getBytes(StandardCharsets.UTF_8).length));
     }
 

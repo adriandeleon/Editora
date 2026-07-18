@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **Moving the caret or typing in a large file is much lighter.** The status bar recomputed the file size — which
+  scans and copies the whole document — on every caret move and keystroke (and re-materialized the whole
+  document per keystroke besides). The size now updates only when the file actually changes, debounced, so
+  arrow-keying and typing no longer allocate the entire document on the UI thread. (#542)
+
 ### Changed
 
 - **The command palette now shows commands that can't run in the current context, grayed out**, instead of
