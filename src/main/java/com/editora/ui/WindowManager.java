@@ -343,6 +343,36 @@ public class WindowManager {
         return stage;
     }
 
+    /**
+     * Opens {@code file} at 0-based {@code line} in the window for {@code projectKey} ({@code ""} = the global
+     * no-project window): focuses the window if it's already open and opens the file there now, else builds the
+     * window and opens the file after its session restores (passing it as a startup target, like a CLI file).
+     * Used when a bookmark/note belonging to another project is activated, so the user lands in that project's
+     * window rather than having the file opened out of context in the current one. A deleted project falls back
+     * to the global window.
+     */
+    public void openInWindow(String projectKey, Path file, int line) {
+        String key = projectKey == null ? "" : projectKey;
+        Project project = key.isEmpty() ? null : findProject(key);
+        if (!key.isEmpty() && project == null) {
+            key = ""; // the project was deleted — fall back to the global window
+        }
+        Holder existing = findHolder(key);
+        if (existing != null && existing.controller() != null) {
+            focus(existing.stage());
+            setActiveAndSave(key);
+            existing.controller().openAndNavigate(file, line);
+            return;
+        }
+        // Not open — build it, passing the file as a startup target (1-based line) so it opens + jumps after
+        // this window's own session restore, exactly like a command-line FILE:line argument.
+        List<MainController.OpenTarget> targets = List.of(new MainController.OpenTarget(file, line + 1, 1));
+        Path stateFile = key.isEmpty() ? null : projects().stateFile(project);
+        buildWindow(key, project, stateFile, targets, false, false, null, false);
+        projects().markOpen(key);
+        setActiveAndSave(key);
+    }
+
     private void setActiveAndSave(String key) {
         projects().setActive(key);
         projects().save();

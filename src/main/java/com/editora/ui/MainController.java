@@ -465,6 +465,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public void openInProjectWindow(String projectKey, java.nio.file.Path file, int line) {
+                MainController.this.openInProjectWindow(projectKey, file, line);
+            }
+
+            @Override
             public String noteKey(EditorBuffer buffer) {
                 return MainController.noteKey(buffer);
             }
@@ -520,6 +525,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void navigateToLine(int line) {
                 MainController.this.navigateToLine(line);
+            }
+
+            @Override
+            public void openInProjectWindow(String projectKey, java.nio.file.Path file, int line) {
+                MainController.this.openInProjectWindow(projectKey, file, line);
             }
 
             @Override
@@ -1813,6 +1823,35 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         area.requestFollowCaret();
         area.requestFocus();
+    }
+
+    /**
+     * Opens a bookmark/note's file at 0-based {@code line} in the window for {@code projectKey} ({@code ""} =
+     * general/no-project). When the entry belongs to <em>this</em> window's project (or Projects are off, or
+     * there's no window manager), it opens in place — the original behavior. Otherwise it hands off to
+     * {@link WindowManager#openInWindow} so the user lands in that project's window (focused if already open,
+     * else built), rather than opening the file out of context in the current window.
+     */
+    private void openInProjectWindow(String projectKey, Path file, int line) {
+        String key = projectKey == null ? "" : projectKey;
+        if (windowManager == null || !projectsEnabled() || key.equals(config.currentProjectKey())) {
+            openPath(file);
+            Platform.runLater(() -> navigateToLine(line));
+            return;
+        }
+        windowManager.openInWindow(key, file, line);
+    }
+
+    /**
+     * Cross-window landing for a bookmark/note activated from another project's bucket: opens {@code file} in
+     * <em>this</em> (now-focused) window and jumps to 0-based {@code line}. Called by
+     * {@link WindowManager#openInWindow} on the target window's controller once it exists and is restored.
+     */
+    public void openAndNavigate(Path file, int line) {
+        openPath(file);
+        if (line >= 0) {
+            Platform.runLater(() -> navigateToLine(line));
+        }
     }
 
     /** Repopulates the recent-files menu from the persisted list (most-recent first). */

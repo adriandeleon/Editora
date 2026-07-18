@@ -46,26 +46,31 @@ public class NotesPanel extends VBox implements ToolWindowContent {
             String currentKey,
             Function<String, String> nameFor) {}
 
-    /** Mutations the panel asks the controller to perform (file key = canonical path in the notes map). */
+    /**
+     * Mutations the panel asks the controller to perform (file key = canonical path in the notes map). Each
+     * mutation carries the row's {@code projectKey} — the bucket it lives in ({@code ""} = General) — because the
+     * panel shows more than one bucket at once (General + current + others), so the controller must target the
+     * right one rather than always the active project's.
+     */
     public interface Actions {
-        void openAndJump(String fileKey, PersonalNote note);
+        void openAndJump(String projectKey, String fileKey, PersonalNote note);
 
-        void editBody(String fileKey, PersonalNote note);
+        void editBody(String projectKey, String fileKey, PersonalNote note);
 
-        void setStatus(String fileKey, PersonalNote note, NoteStatus status);
+        void setStatus(String projectKey, String fileKey, PersonalNote note, NoteStatus status);
 
-        void delete(String fileKey, PersonalNote note);
+        void delete(String projectKey, String fileKey, PersonalNote note);
 
-        void deleteAll(String fileKey);
+        void deleteAll(String projectKey, String fileKey);
     }
 
     private sealed interface Row permits ProjectRow, FileRow, NoteRow {}
 
     private record ProjectRow(String key, String name, boolean current) implements Row {}
 
-    private record FileRow(String fileKey) implements Row {}
+    private record FileRow(String projectKey, String fileKey) implements Row {}
 
-    private record NoteRow(String fileKey, PersonalNote note) implements Row {}
+    private record NoteRow(String projectKey, String fileKey, PersonalNote note) implements Row {}
 
     private final Supplier<Scope> source;
     private final Actions actions;
@@ -171,7 +176,9 @@ public class NotesPanel extends VBox implements ToolWindowContent {
             boolean current = key.equals(currentKey);
             TreeItem<Row> projectNode =
                     new TreeItem<>(new ProjectRow(key, scope.nameFor().apply(key), current));
-            projectNode.setExpanded(key.isEmpty() || current);
+            // Expand only the current project's group by default; General and every other project start
+            // collapsed (in the no-project window, General *is* the current group, so it expands there).
+            projectNode.setExpanded(current);
             bucket.forEach((fileKey, notes) -> {
                 if (notes == null || notes.isEmpty()) {
                     return;
@@ -179,11 +186,11 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 List<TreeItem<Row>> kids = new ArrayList<>();
                 for (PersonalNote note : notes) {
                     if (filter.isEmpty() || matches(fileKey, note, filter)) {
-                        kids.add(new TreeItem<>(new NoteRow(fileKey, note)));
+                        kids.add(new TreeItem<>(new NoteRow(key, fileKey, note)));
                     }
                 }
                 if (!kids.isEmpty()) {
-                    TreeItem<Row> fileItem = new TreeItem<>(new FileRow(fileKey));
+                    TreeItem<Row> fileItem = new TreeItem<>(new FileRow(key, fileKey));
                     fileItem.setExpanded(true);
                     fileItem.getChildren().setAll(kids);
                     projectNode.getChildren().add(fileItem);
@@ -225,7 +232,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (sel.getValue() instanceof NoteRow n) {
-            actions.openAndJump(n.fileKey(), n.note());
+            actions.openAndJump(n.projectKey(), n.fileKey(), n.note());
         } else {
             sel.setExpanded(!sel.isExpanded());
         }
@@ -282,7 +289,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 setTooltip(new Tooltip(f.fileKey()));
                 MenuItem deleteAll = new MenuItem(tr("notes.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());
-                deleteAll.setOnAction(e -> actions.deleteAll(f.fileKey()));
+                deleteAll.setOnAction(e -> actions.deleteAll(f.projectKey(), f.fileKey()));
                 setContextMenu(new ContextMenu(deleteAll));
             } else if (item instanceof NoteRow n) {
                 setText(noteLabel(n.note()));
@@ -299,15 +306,15 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         private ContextMenu noteMenu(NoteRow n) {
             MenuItem edit = new MenuItem(tr("notes.editBody"));
             edit.setGraphic(Icons.edit());
-            edit.setOnAction(e -> actions.editBody(n.fileKey(), n.note()));
+            edit.setOnAction(e -> actions.editBody(n.projectKey(), n.fileKey(), n.note()));
             boolean resolved = n.note().status() == NoteStatus.RESOLVED;
             MenuItem toggle = new MenuItem(resolved ? tr("notes.reopen") : tr("notes.resolve"));
             toggle.setGraphic(resolved ? Icons.refresh() : Icons.check());
-            toggle.setOnAction(
-                    e -> actions.setStatus(n.fileKey(), n.note(), resolved ? NoteStatus.ACTIVE : NoteStatus.RESOLVED));
+            toggle.setOnAction(e -> actions.setStatus(
+                    n.projectKey(), n.fileKey(), n.note(), resolved ? NoteStatus.ACTIVE : NoteStatus.RESOLVED));
             MenuItem delete = new MenuItem(tr("notes.delete"));
             delete.setGraphic(Icons.trash());
-            delete.setOnAction(e -> actions.delete(n.fileKey(), n.note()));
+            delete.setOnAction(e -> actions.delete(n.projectKey(), n.fileKey(), n.note()));
             return new ContextMenu(edit, toggle, new SeparatorMenuItem(), delete);
         }
     }

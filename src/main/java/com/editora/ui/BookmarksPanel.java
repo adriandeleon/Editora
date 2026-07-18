@@ -54,15 +54,20 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     public record Scope(
             Map<String, Map<String, List<Bookmark>>> byProject, String currentKey, Function<String, String> nameFor) {}
 
-    /** Mutations the panel asks the controller to perform (it knows which files are open). */
+    /**
+     * Mutations the panel asks the controller to perform (it knows which files are open). Each mutation carries
+     * the row's {@code projectKey} — the bucket it lives in ({@code ""} = General) — because the panel shows more
+     * than one bucket at once (General + current + others), so the controller must target the right one rather
+     * than always the active project's.
+     */
     public interface Actions {
-        void openAndJump(Path file, int line);
+        void openAndJump(String projectKey, Path file, int line);
 
-        void setNote(Path file, int line, String note);
+        void setNote(String projectKey, Path file, int line, String note);
 
-        void delete(Path file, int line);
+        void delete(String projectKey, Path file, int line);
 
-        void deleteAll(Path file);
+        void deleteAll(String projectKey, Path file);
         /** Reorder a bookmark within its file (indices into that file's stored list, in the current project). */
         void moveBookmark(Path file, int fromIndex, int toIndex);
         /** Reorder a whole file group among the file headers (indices into the current project's file order). */
@@ -74,9 +79,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     private record ProjectRow(String key, String name, boolean current) implements Row {}
 
-    private record FileRow(Path file) implements Row {}
+    private record FileRow(String projectKey, Path file) implements Row {}
 
-    private record MarkRow(Path file, Bookmark bm) implements Row {}
+    private record MarkRow(String projectKey, Path file, Bookmark bm) implements Row {}
 
     private static final String SCOPE_HINT = tr("bookmarks.scopeTip");
 
@@ -195,21 +200,22 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             boolean current = key.equals(currentKey);
             TreeItem<Row> projectNode =
                     new TreeItem<>(new ProjectRow(key, scope.nameFor().apply(key), current));
-            // Expand the buckets you care about (General + current); collapse other projects.
-            projectNode.setExpanded(key.isEmpty() || current);
+            // Expand only the current project's group by default; General and every other project start
+            // collapsed (in the no-project window, General *is* the current group, so it expands there).
+            projectNode.setExpanded(current);
             for (Map.Entry<String, List<Bookmark>> e : bucket.entrySet()) {
                 if (e.getValue() == null || e.getValue().isEmpty()) {
                     continue;
                 }
                 Path file = Path.of(e.getKey());
                 boolean fileMatches = fileName(file).toLowerCase().contains(query);
-                TreeItem<Row> fileNode = new TreeItem<>(new FileRow(file));
+                TreeItem<Row> fileNode = new TreeItem<>(new FileRow(key, file));
                 fileNode.setExpanded(true);
                 for (Bookmark bm : e.getValue()) {
                     if (query.isEmpty()
                             || fileMatches
                             || markLabel(bm).toLowerCase().contains(query)) {
-                        fileNode.getChildren().add(new TreeItem<>(new MarkRow(file, bm)));
+                        fileNode.getChildren().add(new TreeItem<>(new MarkRow(key, file, bm)));
                     }
                 }
                 if (!fileNode.getChildren().isEmpty()) {
@@ -404,7 +410,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (item.getValue() instanceof MarkRow m) {
-            actions.openAndJump(m.file(), m.bm().line());
+            actions.openAndJump(m.projectKey(), m.file(), m.bm().line());
         } else {
             item.setExpanded(!item.isExpanded()); // a project or file header toggles
         }
@@ -510,7 +516,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 tr("dialog.bookmarkNote.title"),
                 tr("dialog.bookmarkNote.content"),
                 m.bm().note(),
-                note -> actions.setNote(m.file(), m.bm().line(), note.strip()));
+                note -> actions.setNote(m.projectKey(), m.file(), m.bm().line(), note.strip()));
     }
 
     /** Injects the in-scene prompt used to edit a bookmark's note (so the panel needs no overlay host). */
@@ -519,7 +525,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     }
 
     private void deleteMark(MarkRow m) {
-        actions.delete(m.file(), m.bm().line());
+        actions.delete(m.projectKey(), m.file(), m.bm().line());
     }
 
     private void deleteFile(FileRow f) {
@@ -532,7 +538,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         confirm.setTitle(tr("bookmarks.deleteFileTitle"));
         confirm.setHeaderText(null);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
-            actions.deleteAll(f.file());
+            actions.deleteAll(f.projectKey(), f.file());
         }
     }
 

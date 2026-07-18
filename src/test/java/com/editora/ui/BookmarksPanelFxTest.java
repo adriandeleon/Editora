@@ -30,16 +30,16 @@ class BookmarksPanelFxTest {
 
     private static final BookmarksPanel.Actions NOOP = new BookmarksPanel.Actions() {
         @Override
-        public void openAndJump(Path file, int line) {}
+        public void openAndJump(String projectKey, Path file, int line) {}
 
         @Override
-        public void setNote(Path file, int line, String note) {}
+        public void setNote(String projectKey, Path file, int line, String note) {}
 
         @Override
-        public void delete(Path file, int line) {}
+        public void delete(String projectKey, Path file, int line) {}
 
         @Override
-        public void deleteAll(Path file) {}
+        public void deleteAll(String projectKey, Path file) {}
 
         @Override
         public void moveBookmark(Path file, int fromIndex, int toIndex) {}
