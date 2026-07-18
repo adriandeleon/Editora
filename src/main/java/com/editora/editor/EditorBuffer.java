@@ -707,6 +707,14 @@ public class EditorBuffer implements TabContent {
                 semanticGen++;
                 semanticStale = true;
             }
+            // LSP diagnostics are anchored to absolute line/col and only replaced when the server re-pushes
+            // (a debounced didChange + round-trip, ~300 ms+). Until then every keystroke would repaint the OLD
+            // squiggles/stripe/minimap ticks at their OLD lines — underlining whatever text now sits there.
+            // Clear them on the edit so nothing paints on shifted lines; setLspDiagnostics re-anchors on the
+            // next push (which always follows an edit — jdtls republishes, pull servers re-pull) (#417).
+            if (lspActive) {
+                suppressStaleDiagnostics();
+            }
         });
         area.multiPlainChanges().successionEnds(Duration.ofMillis(150)).subscribe(ignore -> {
             applyHighlighting();
@@ -3035,6 +3043,16 @@ public class EditorBuffer implements TabContent {
         }
         minimap.setDiagnostics(diagnostics);
         diagnosticStripe.setDiagnostics(diagnostics);
+    }
+
+    /** Clears the diagnostic overlay/stripe/minimap on an edit so their line/col-anchored marks don't paint on
+     *  shifted lines until the server re-pushes (#417). A no-op cost beyond the repaint the edit already does. */
+    private void suppressStaleDiagnostics() {
+        if (lspOverlay != null) {
+            lspOverlay.setDiagnostics(java.util.List.of());
+        }
+        minimap.setDiagnostics(java.util.List.of());
+        diagnosticStripe.setDiagnostics(java.util.List.of());
     }
 
     /** The debounced semantic-tokens request (fired on the 300 ms didChange pulse while active); null = none. */
