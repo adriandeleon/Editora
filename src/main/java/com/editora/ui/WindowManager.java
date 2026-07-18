@@ -455,6 +455,14 @@ public class WindowManager {
         }
     }
 
+    /** Re-runs the spell pass over every window's tabs after the shared user dictionary changed (a word added
+     *  via "Add to Dictionary"), so another window's stale squiggles on that word clear immediately (#443). */
+    public void broadcastUserDictionaryChanged() {
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller.refreshSpellAllTabs();
+        }
+    }
+
     /** Re-registers the synthetic {@code externalTool.run.*} commands in every window after the set changed. */
     public void broadcastExternalToolsChanged() {
         for (Holder h : new ArrayList<>(windows)) {
