@@ -91,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A PlantUML file with several `@startuml` diagrams no longer hides the extras silently.** Only the first
+  diagram was shown, with no sign the others existed; the preview now shows the first plus a "N more
+  diagram(s) not shown" note. (#459)
 - **Find References is faster on symbols with many references.** Building the results list re-scanned the
   whole file once per reference; on a heavily-used symbol in a large open file that caused a visible stall.
   Each file is now scanned once. (#471)

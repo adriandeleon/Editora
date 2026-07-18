@@ -32,9 +32,13 @@ import com.editora.i18n.Messages;
 public final class DiagramImages {
 
     /** A finished render: a {@code loaded} image (success) or an {@code error} message (failure). */
-    private record Cached(PreviewImageLoader.Loaded loaded, String error, long at) {
+    private record Cached(PreviewImageLoader.Loaded loaded, String error, int extra, long at) {
         Cached(PreviewImageLoader.Loaded loaded, String error) {
-            this(loaded, error, System.currentTimeMillis());
+            this(loaded, error, 0, System.currentTimeMillis());
+        }
+
+        Cached(PreviewImageLoader.Loaded loaded, String error, int extra) {
+            this(loaded, error, extra, System.currentTimeMillis());
         }
 
         /**
@@ -132,7 +136,7 @@ public final class DiagramImages {
                 if (img.isError() || img.getWidth() <= 0) {
                     result = new Cached(null, Messages.tr("diagram.renderFailed"));
                 } else {
-                    result = new Cached(new PreviewImageLoader.Loaded(img, img.getWidth()), null);
+                    result = new Cached(new PreviewImageLoader.Loaded(img, img.getWidth()), null, r.extra());
                 }
             } else {
                 result = new Cached(null, r.error());
@@ -148,7 +152,18 @@ public final class DiagramImages {
             view.setPreserveRatio(true);
             view.setSmooth(true);
             view.setFitWidth(Math.max(1, sizer.applyAsDouble(c.loaded().logicalWidth())));
-            host.getChildren().setAll(view);
+            if (c.extra() > 0) {
+                // The tool wrote more than one diagram (a multi-@startuml PlantUML file); show the first + a
+                // note so the rest aren't silently dropped (#459).
+                javafx.scene.control.Label note = new javafx.scene.control.Label(
+                        Messages.tr("diagram.moreDiagrams", Integer.toString(c.extra())));
+                note.getStyleClass().add("diagram-extra-note");
+                javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(6, view, note);
+                box.setAlignment(javafx.geometry.Pos.CENTER);
+                host.getChildren().setAll(box);
+            } else {
+                host.getChildren().setAll(view);
+            }
         } else {
             host.getChildren().setAll(errorNode(c.error()));
         }
