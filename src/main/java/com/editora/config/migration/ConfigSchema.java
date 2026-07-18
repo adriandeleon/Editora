@@ -133,7 +133,8 @@ public enum ConfigSchema {
                     // aiApiKeyOpenai = OpenAI-compatible) so switching provider can't leak the other's key.
                     Map.entry(77, (Migration) ConfigMigrations::splitAiApiKeyByProvider),
                     // v78→79: + mavenPomLspEnabled/mavenPomLspCommand (Maven-aware pom.xml server; additive)
-                    Map.entry(78, (Migration) ConfigMigrations::identity))),
+                    Map.entry(78, (Migration) ConfigMigrations::identity),
+                    Map.entry(79, (Migration) ConfigMigrations::identity))), // v79→80: + toolbarLayout (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

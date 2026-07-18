@@ -87,6 +87,7 @@ public class SettingsWindow {
         // General
         APPEARANCE(tr("settings.cat.appearance"), Group.GENERAL),
         INTERFACE(tr("settings.cat.interface"), Group.GENERAL),
+        TOOLBAR(tr("settings.cat.toolbar"), Group.GENERAL),
         WORKSPACE(tr("settings.cat.workspace"), Group.GENERAL),
         TOOL_WINDOWS(tr("settings.cat.toolWindows"), Group.GENERAL),
         // Editor
@@ -243,6 +244,14 @@ public class SettingsWindow {
 
     private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
             javafx.collections.FXCollections.observableArrayList();
+
+    // Toolbar page state: the current-toolbar token list and the not-yet-added catalog items.
+    private final javafx.collections.ObservableList<String> toolbarCurrentItems =
+            javafx.collections.FXCollections.observableArrayList();
+    private final javafx.collections.ObservableList<String> toolbarAvailableItems =
+            javafx.collections.FXCollections.observableArrayList();
+    private ToolbarActions toolbarActions; // → MainController/ToolbarCoordinator
+    private Runnable refreshToolbarLists; // re-reads the effective layout when the page is shown
 
     private boolean loadingExternalTool = false;
 
@@ -495,6 +504,29 @@ public class SettingsWindow {
     public void showSnippets(Window owner) {
         show(owner);
         sidebar.getSelectionModel().select(Category.SNIPPETS);
+    }
+
+    /** Opens Settings focused on the Toolbar customization page (the {@code view.customizeToolbar} command). */
+    public void showToolbar(Window owner) {
+        show(owner);
+        sidebar.getSelectionModel().select(Category.TOOLBAR);
+    }
+
+    /** Layout read/write the Toolbar page drives, backed by {@code ToolbarCoordinator} in the controller. */
+    public interface ToolbarActions {
+        /** The current effective layout (item ids + {@code "|"} separators). */
+        java.util.List<String> current();
+
+        /** Persist + apply a new layout (rebuilds every window's toolbar). */
+        void apply(java.util.List<String> layout);
+
+        /** Restore the shipped default arrangement. */
+        void restoreDefault();
+    }
+
+    /** Wires the Toolbar page to the controller's {@code ToolbarCoordinator}. */
+    public void setToolbarActions(ToolbarActions actions) {
+        this.toolbarActions = actions;
     }
 
     /** Injects the shared {@link com.editora.template.TemplateRegistry} backing the Templates page. */
@@ -1404,6 +1436,7 @@ public class SettingsWindow {
         // General
         pages.put(Category.APPEARANCE, appearancePage());
         pages.put(Category.INTERFACE, interfacePage());
+        pages.put(Category.TOOLBAR, toolbarPage());
         pages.put(Category.WORKSPACE, workspacePage());
         pages.put(Category.TOOL_WINDOWS, toolWindowsPage());
         // Editor
@@ -5237,6 +5270,161 @@ public class SettingsWindow {
         return p;
     }
 
+    /**
+     * The Toolbar customization page: an "Available items" list, a "Current toolbar" list (item ids +
+     * separators, in bar order), and Add/Remove/Move/Add-Separator/Restore-Default controls. Every edit is
+     * live-applied through {@link #toolbarActions} (persist + rebuild every window's toolbar).
+     */
+    private Region toolbarPage() {
+        VBox p = page(tr("settings.cat.toolbar"));
+        Label sec = section(p, tr("settings.toolbar.section"));
+
+        Label desc = note(tr("settings.toolbar.note"));
+        desc.setWrapText(true);
+        desc.setMaxWidth(560);
+        row(p, Category.TOOLBAR, sec, desc, "toolbar customize icons order add remove reorder drag");
+
+        ListView<String> available = new ListView<>(toolbarAvailableItems);
+        ListView<String> current = new ListView<>(toolbarCurrentItems);
+        available.setCellFactory(v -> toolbarCell());
+        current.setCellFactory(v -> toolbarCell());
+        available.setPrefSize(220, 300);
+        current.setPrefSize(220, 300);
+
+        Label availLabel = new Label(tr("settings.toolbar.available"));
+        Label curLabel = new Label(tr("settings.toolbar.current"));
+        availLabel.getStyleClass().add("settings-section");
+        curLabel.getStyleClass().add("settings-section");
+        VBox availBox = new VBox(4, availLabel, available);
+        VBox curBox = new VBox(4, curLabel, current);
+        javafx.scene.layout.VBox.setVgrow(available, Priority.ALWAYS);
+        javafx.scene.layout.VBox.setVgrow(current, Priority.ALWAYS);
+
+        Button add = new Button(tr("settings.toolbar.add"));
+        Button remove = new Button(tr("settings.toolbar.remove"));
+        Button up = new Button("▲");
+        Button down = new Button("▼");
+        up.getStyleClass().addAll("flat", "reorder-button");
+        down.getStyleClass().addAll("flat", "reorder-button");
+        add.setMaxWidth(Double.MAX_VALUE);
+        remove.setMaxWidth(Double.MAX_VALUE);
+        Region midGap = new Region();
+        javafx.scene.layout.VBox.setVgrow(midGap, Priority.ALWAYS);
+        VBox mid = new VBox(6, add, remove, midGap, up, down);
+        mid.setAlignment(Pos.CENTER);
+        mid.setMinWidth(104);
+
+        HBox lists = new HBox(10, availBox, mid, curBox);
+        HBox.setHgrow(availBox, Priority.ALWAYS);
+        HBox.setHgrow(curBox, Priority.ALWAYS);
+        row(p, Category.TOOLBAR, sec, lists, "toolbar available current add remove up down move");
+
+        Button sepBtn = new Button(tr("settings.toolbar.addSeparator"));
+        Button restore = new Button(tr("settings.toolbar.restoreDefault"));
+        HBox bottom = new HBox(6, sepBtn, spacer(), restore);
+        row(p, Category.TOOLBAR, sec, bottom, "toolbar separator restore default reset");
+
+        Runnable refresh = () -> {
+            if (toolbarActions == null) {
+                return;
+            }
+            java.util.List<String> cur = toolbarActions.current();
+            toolbarCurrentItems.setAll(cur);
+            java.util.Set<String> used = new java.util.HashSet<>(cur);
+            java.util.List<String> avail = new java.util.ArrayList<>();
+            for (com.editora.toolbar.ToolbarCatalog.Item it : com.editora.toolbar.ToolbarCatalog.items()) {
+                if (!used.contains(it.id())) {
+                    avail.add(it.id());
+                }
+            }
+            toolbarAvailableItems.setAll(avail);
+        };
+        refreshToolbarLists = refresh;
+        refresh.run();
+
+        // Commit the working list, then re-read the effective (sanitized) layout and optionally reselect.
+        java.util.function.IntConsumer commit = reselect -> {
+            if (toolbarActions != null) {
+                toolbarActions.apply(new java.util.ArrayList<>(toolbarCurrentItems));
+            }
+            refresh.run();
+            if (reselect >= 0 && reselect < toolbarCurrentItems.size()) {
+                current.getSelectionModel().select(reselect);
+            }
+        };
+
+        add.setOnAction(e -> {
+            String sel = available.getSelectionModel().getSelectedItem();
+            if (sel == null) {
+                return;
+            }
+            int at = current.getSelectionModel().getSelectedIndex();
+            if (at < 0) {
+                toolbarCurrentItems.add(sel);
+            } else {
+                toolbarCurrentItems.add(at + 1, sel);
+            }
+            commit.accept(-1);
+        });
+        remove.setOnAction(e -> {
+            int idx = current.getSelectionModel().getSelectedIndex();
+            if (idx < 0) {
+                return;
+            }
+            toolbarCurrentItems.remove(idx);
+            commit.accept(Math.min(idx, toolbarCurrentItems.size() - 1));
+        });
+        up.setOnAction(e -> {
+            int idx = current.getSelectionModel().getSelectedIndex();
+            if (idx > 0) {
+                java.util.Collections.swap(toolbarCurrentItems, idx, idx - 1);
+                commit.accept(idx - 1);
+            }
+        });
+        down.setOnAction(e -> {
+            int idx = current.getSelectionModel().getSelectedIndex();
+            if (idx >= 0 && idx < toolbarCurrentItems.size() - 1) {
+                java.util.Collections.swap(toolbarCurrentItems, idx, idx + 1);
+                commit.accept(idx + 1);
+            }
+        });
+        sepBtn.setOnAction(e -> {
+            int at = current.getSelectionModel().getSelectedIndex();
+            String s = com.editora.toolbar.ToolbarCatalog.SEPARATOR;
+            if (at < 0) {
+                toolbarCurrentItems.add(s);
+            } else {
+                toolbarCurrentItems.add(at + 1, s);
+            }
+            commit.accept(-1);
+        });
+        restore.setOnAction(e -> {
+            if (toolbarActions != null) {
+                toolbarActions.restoreDefault();
+            }
+            refresh.run();
+        });
+
+        return p;
+    }
+
+    /** A ListView cell showing a toolbar item's icon + label (a divider label for the separator token). */
+    private ListCell<String> toolbarCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(String token, boolean empty) {
+                super.updateItem(token, empty);
+                if (empty || token == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                setText(ToolbarCoordinator.labelFor(token));
+                setGraphic(ToolbarCoordinator.iconFor(token));
+            }
+        };
+    }
+
     // --- page helpers ---
 
     private VBox page(String title) {
@@ -5514,6 +5702,9 @@ public class SettingsWindow {
         try {
             reloadExternalTools(); // another window may have added/removed a tool since this page was built
             refreshDictionaryList(); // pick up words added elsewhere (e.g. "Add to Dictionary") since last open
+            if (refreshToolbarLists != null) {
+                refreshToolbarLists.run(); // reflect any on-bar drag customization since the page was built
+            }
             Settings settings = config.getSettings();
             if (!fontFamily.getItems().contains(settings.getFontFamily())) {
                 fontFamily.getItems().add(0, settings.getFontFamily());

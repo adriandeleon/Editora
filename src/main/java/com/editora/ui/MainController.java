@@ -360,6 +360,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Local File History: snapshots local files on save/auto-save/external reload (off-thread). */
     private HistoryCoordinator historyCoordinator;
 
+    private ToolbarCoordinator toolbarCoordinator;
+    private java.util.Map<String, javafx.scene.Node> toolbarBaseWidgets;
+
     private ToolWindow fileHistoryToolWindow;
     /** IntelliJ-style branch dropdown (actions + Local/Remote branches), anchored to the status bar. */
     private final BranchPopup branchPopup = new BranchPopup();
@@ -662,6 +665,23 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setMacrosChangedHandler(
                 this::refreshSavedMacroCommandsAllWindows); // Macros page edits → re-register commands everywhere
         this.settingsWindow.setAgentCoordinator(agentCoordinator); // AI Agent page: per-client status + combo
+        // Toolbar page ↔ the (later-constructed) ToolbarCoordinator; the lambdas resolve the field lazily.
+        this.settingsWindow.setToolbarActions(new SettingsWindow.ToolbarActions() {
+            @Override
+            public java.util.List<String> current() {
+                return toolbarCoordinator.effectiveLayout();
+            }
+
+            @Override
+            public void apply(java.util.List<String> layout) {
+                toolbarCoordinator.setLayout(layout);
+            }
+
+            @Override
+            public void restoreDefault() {
+                toolbarCoordinator.restoreDefault();
+            }
+        });
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
                 () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
@@ -1193,6 +1213,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // The keymap may have switched (it's shared); refresh every chord hint so none stays frozen to the
         // old keymap. Cheap (~25 tooltips + one palette/welcome relabel) and only on a settings/keymap apply.
         refreshToolbarTooltips();
+        if (toolbarCoordinator != null) {
+            toolbarCoordinator.rebuild(); // the toolbar layout is a shared setting — rebuild from it
+        }
         if (palette != null) {
             palette.refreshBindings();
         }
@@ -4558,7 +4581,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectToolbarGap = new Region();
         projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between Settings and the combo
         projectToolbarGap.setPrefWidth(78);
-        arrangeToolbarTail();
+        // The customizable left icon cluster is built data-driven from the persisted layout; the fixed tail
+        // (project combo + About/Quit) is re-appended after each rebuild by appendFixedTail().
+        toolbarCoordinator = new ToolbarCoordinator(coordinatorHost, registry, keymap, toolbarOps());
+        toolbarCoordinator.rebuild();
         refreshSplitButtons();
         refreshEditState(); // start disabled (no buffer yet)
         refreshPasteState();
@@ -4587,21 +4613,15 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Right-aligns the trailing toolbar group: a Switcher keybinding hint (discoverability), then the
-     * About and Quit buttons, with Quit always rightmost and About just left of it. About/Quit are
-     * moved here from their FXML slot; the group uses plain spacing (no separators) to stand apart
-     * from the separator-delimited icon clusters.
+     * Appends the fixed, non-customizable toolbar tail — the project-combo group (a Switcher hint gap, the
+     * label + combo, and the Open-Folder icon), a flexible spacer, an optional {@code --dev} badge, and the
+     * right-pinned About + Quit buttons — to the already-populated bar. Called by {@link ToolbarCoordinator}
+     * after it lays out the customizable left cluster, so the tail always sits to the right of it and stays
+     * pinned regardless of how the user customizes the left cluster. Re-adds the same field instances (the
+     * coordinator cleared the bar first), so their show/hide state from Simple mode / Projects is preserved.
      */
-    private void arrangeToolbarTail() {
+    private void appendFixedTail() {
         var items = toolBar.getItems();
-        // Pull About + Quit out of their FXML position, and drop the separator that preceded Quit.
-        items.removeAll(aboutButton, quitButton);
-        if (!items.isEmpty() && items.get(items.size() - 1) instanceof Separator) {
-            items.remove(items.size() - 1);
-        }
-        // The "Open Folder as Project" icon moves out of the left file-icon group to sit just right of
-        // the project combobox (per-project delete lives inside the combo's dropdown).
-        items.remove(openFolderButton);
 
         // Project switcher just right of the Settings icon (a ~3-icon gap), with the open-folder icon
         // immediately to the right of the combobox, before the flexible spacer.
@@ -4622,6 +4642,69 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         items.addAll(toolbarGap(), aboutButton, toolbarGap(), quitButton);
+    }
+
+    /** Id → the existing {@code @FXML} toolbar widget backing each default/special customizable item. */
+    private java.util.Map<String, javafx.scene.Node> toolbarBaseWidgets() {
+        if (toolbarBaseWidgets == null) {
+            java.util.Map<String, javafx.scene.Node> m = new java.util.HashMap<>();
+            m.put("file.new", newButton);
+            m.put("template.new", newFromTemplateButton);
+            m.put("file.find", openButton);
+            m.put("buffer.close", closeTabButton);
+            m.put("file.save", saveButton);
+            m.put("file.saveAs", saveAsButton);
+            m.put("toolbar.recent", recentButton);
+            m.put("file.clearRecent", clearRecentButton);
+            m.put("edit.undo", undoButton);
+            m.put("edit.redo", redoButton);
+            m.put("edit.cut", cutButton);
+            m.put("edit.copy", copyButton);
+            m.put("edit.paste", pasteButton);
+            m.put("find.show", findButton);
+            m.put("search.inFiles", findInFilesButton);
+            m.put("view.splitVertical", splitVerticalButton);
+            m.put("view.splitHorizontal", splitHorizontalButton);
+            m.put("palette.show", paletteButton);
+            m.put("view.toggleSimpleMode", simpleModeButton);
+            m.put("view.settings", settingsButton);
+            toolbarBaseWidgets = m;
+        }
+        return toolbarBaseWidgets;
+    }
+
+    private ToolbarCoordinator.Ops toolbarOps() {
+        return new ToolbarCoordinator.Ops() {
+            @Override
+            public javafx.scene.control.ToolBar toolBar() {
+                return toolBar;
+            }
+
+            @Override
+            public java.util.Map<String, javafx.scene.Node> baseWidgets() {
+                return toolbarBaseWidgets();
+            }
+
+            @Override
+            public void appendFixedTail() {
+                MainController.this.appendFixedTail();
+            }
+
+            @Override
+            public void afterRebuild() {
+                applySimpleMode(); // hides the curated Simple-mode buttons + collapses orphaned separators
+            }
+
+            @Override
+            public void openSettingsToolbarPage() {
+                settingsWindow.showToolbar(stage);
+            }
+
+            @Override
+            public void broadcastToolbarChanged() {
+                onSettingsApplied(config.getSettings()); // re-applies + rebuilds every window's toolbar
+            }
+        };
     }
 
     /** A fixed-width blank gap used to separate the trailing toolbar group without a separator line. */
@@ -11239,6 +11322,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));
         registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
+        registry.register(Command.of("view.customizeToolbar", () -> settingsWindow.showToolbar(stage)));
+        registry.register(Command.of("toolbar.restoreDefault", () -> toolbarCoordinator.restoreDefault()));
         registry.register(Command.of(
                 "view.toggleInstallPrompts",
                 () -> toggleSetting(

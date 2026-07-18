@@ -38,7 +38,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 79;
+    public static final int SCHEMA_VERSION = 80;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -147,6 +147,12 @@ public class Settings {
     private String todoPriorityLowColor = com.editora.todo.TodoColors.priorityColor("low");
 
     private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
+    /**
+     * The user's customized main-toolbar layout (item ids + {@code "|"} separator tokens from {@code
+     * com.editora.toolbar.ToolbarCatalog}). Empty ⇒ use {@code ToolbarCatalog.defaultLayout()}, so the
+     * shipped default needs no stored value and Reset-to-Defaults restores it for free.
+     */
+    private java.util.List<String> toolbarLayout = new java.util.ArrayList<>();
     /** Lint Markdown buffers (squiggles + the Markdown Lint tool window). */
     private boolean markdownLint = true;
     /** Markdown-lint rule codes ({@code MDxxx}) the user has turned off; empty = all rules enabled. */
@@ -1100,6 +1106,15 @@ public class Settings {
 
     public void setExternalTools(java.util.List<com.editora.externaltool.ExternalTool> externalTools) {
         this.externalTools = externalTools;
+    }
+
+    public java.util.List<String> getToolbarLayout() {
+        return toolbarLayout == null ? java.util.List.of() : toolbarLayout;
+    }
+
+    public void setToolbarLayout(java.util.List<String> toolbarLayout) {
+        this.toolbarLayout =
+                toolbarLayout == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(toolbarLayout);
     }
 
     public String getSpellLanguage() {

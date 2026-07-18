@@ -1263,6 +1263,26 @@
     -fx-border-width: 0 0 2 0;
 }
 
+/* Toolbar customize mode — the whole bar gets a subtle tint while customizing, the dragged icon dims,
+   and an accent insertion line shows on the target icon's left/right edge (mirrors the tab strip). */
+.tool-bar.toolbar-customizing {
+    -fx-background-color: -color-accent-subtle;
+}
+.tool-bar.toolbar-customizing .button {
+    -fx-cursor: move;
+}
+.toolbar-dragging {
+    -fx-opacity: 0.4;
+}
+.toolbar-drop-before {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 0 0 0 2;
+}
+.toolbar-drop-after {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 0 2 0 0;
+}
+
 /* Compact toolbar: tighter padding so the overall bar is ~25-30% shorter. */
 .tool-bar {
     -fx-padding: 2 6 2 6;
