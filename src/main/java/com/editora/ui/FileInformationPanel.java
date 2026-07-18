@@ -7,6 +7,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -67,13 +68,27 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
 
     private EditorBuffer attached;
     private final ChangeListener<Number> caretListener = (o, w, n) -> refreshCaret();
-    private final ChangeListener<String> textListener = (o, w, n) -> refreshText();
+    // Edits fire the whole-document word count, so ride the debounced delta stream (not textProperty, which
+    // materializes the whole document on every keystroke just to notify) — and only while the panel is visible.
+    private org.reactfx.Subscription textSub;
 
     public FileInformationPanel() {
         getStyleClass().add("file-info-panel");
         setSpacing(6);
         buildUI();
+        // A closed tool window is removed from the scene (getScene() == null), so the caret/edit refreshes below
+        // no-op while hidden; refresh once when it's (re)opened so a freshly-shown panel is current.
+        sceneProperty().addListener((o, was, now) -> {
+            if (now != null) {
+                refresh();
+            }
+        });
         refresh();
+    }
+
+    /** The panel does real work only while its tool window is open (its node is in the scene). */
+    private boolean visible() {
+        return getScene() != null;
     }
 
     @Override
@@ -86,12 +101,18 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     public void attach(EditorBuffer buffer) {
         if (attached != null) {
             attached.getArea().caretPositionProperty().removeListener(caretListener);
-            attached.getArea().textProperty().removeListener(textListener);
+        }
+        if (textSub != null) {
+            textSub.unsubscribe();
+            textSub = null;
         }
         attached = buffer;
         if (buffer != null) {
             buffer.getArea().caretPositionProperty().addListener(caretListener);
-            buffer.getArea().textProperty().addListener(textListener);
+            textSub = buffer.getArea()
+                    .plainTextChanges()
+                    .successionEnds(Duration.ofMillis(200))
+                    .subscribe(ignore -> refreshText());
         }
         refresh();
     }
@@ -206,31 +227,37 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     // --- Live refresh ---
 
     private void refresh() {
+        if (!visible()) {
+            return; // hidden tool window: nothing on screen to update; refreshed on open via the scene listener
+        }
         if (attached == null) {
             clearAll();
             return;
         }
-        refreshFile(attached.getPath()); // reads disk attributes — only on attach (tab switch), not edits
+        refreshFile(attached.getPath()); // reads disk attributes — only on attach (tab switch) while shown, not edits
         refreshTextSettings(attached);
         refreshCounts(attached);
         refreshCharacter(attached);
     }
 
-    /** Caret moved: only the position + character-under-caret change — never re-read the file (a network
-     *  round-trip for remote files). */
+    /** Caret moved: only the position, selection, and character-under-caret change — never the word total (which
+     *  changes only on an edit) and never a whole-document materialize or a file read. No-op while hidden. */
     private void refreshCaret() {
-        if (attached == null) {
+        if (attached == null || !visible()) {
             return;
         }
-        refreshCounts(attached); // includes line / column / caret location
+        refreshPositionAndTotals(attached); // cheap: getLength()/paragraphs count, no word count, no getText()
         refreshCharacter(attached);
     }
 
-    /** Text edited: re-derive the in-memory counts + char info; disk metadata only changes on save (which
-     *  re-attaches), so still no file read here. */
+    /** Text edited (debounced): re-derive the in-memory counts (incl. the O(n) word count) + char info; disk
+     *  metadata only changes on save (which re-attaches), so still no file read here. No-op while hidden. */
     private void refreshText() {
         if (attached == null) {
             clearAll();
+            return;
+        }
+        if (!visible()) {
             return;
         }
         refreshTextSettings(attached);
@@ -319,16 +346,22 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         return lang.substring(0, 1).toUpperCase(Locale.ROOT) + lang.substring(1);
     }
 
+    /** Full counts: the O(n) word count (materializes the whole document) plus the cheap position/totals. Only on
+     *  an edit (debounced) or on attach/open — never per caret move. */
     private void refreshCounts(EditorBuffer buffer) {
-        var area = buffer.getArea();
-        String text = area.getText();
-        int lineCount = area.getParagraphs().size();
-        int charCount = text.length();
-        int wordCount = countWords(text);
+        wordsValue.setText(formatNum(countWords(buffer.getArea().getText())));
+        refreshPositionAndTotals(buffer);
+    }
 
-        int selStartPara = area.getParagraphs().size() == 0 ? 0 : 0;
-        int selectedLines;
+    /** Line/char totals, selection, and caret location — all cheap (no whole-document {@code getText()}: char count
+     *  comes from {@code getLength()} and line count from the paragraph list). Safe to run on every caret move. */
+    private void refreshPositionAndTotals(EditorBuffer buffer) {
+        var area = buffer.getArea();
+        int lineCount = area.getParagraphs().size();
+        int charCount = area.getLength();
+
         int selectedChars = area.getSelection().getLength();
+        int selectedLines;
         if (selectedChars > 0) {
             String selText = area.getSelectedText();
             selectedLines = (int) selText.lines().count();
@@ -343,29 +376,26 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
                 selectedLines > 0 ? formatNum(lineCount) + " (" + selectedLines + ")" : formatNum(lineCount));
         charsValue.setText(
                 selectedChars > 0 ? formatNum(charCount) + " (" + selectedChars + ")" : formatNum(charCount));
-        wordsValue.setText(formatNum(wordCount));
 
         locationValue.setText(formatNum(area.getCaretPosition()));
         lineValue.setText(formatNum(area.getCurrentParagraph() + 1));
         columnValue.setText(formatNum(area.getCaretColumn() + 1));
-        // selStartPara unused — placeholder for future enhancement.
-        if (selStartPara < 0) {
-            // no-op
-        }
     }
 
     private void refreshCharacter(EditorBuffer buffer) {
         var area = buffer.getArea();
-        String text = area.getText();
         int caret = area.getCaretPosition();
-        if (caret < 0 || caret >= text.length()) {
+        int len = area.getLength();
+        if (caret < 0 || caret >= len) {
             codePointValue.setText("–");
             charNameValue.setText("–");
             charBlockValue.setText("–");
             charCategoryValue.setText("–");
             return;
         }
-        int codePoint = text.codePointAt(caret);
+        // Read just the char(s) at the caret (up to a surrogate pair) — not the whole document.
+        String at = area.getText(caret, Math.min(caret + 2, len));
+        int codePoint = at.codePointAt(0);
         codePointValue.setText(String.format("U+%04X", codePoint));
         String name = Character.getName(codePoint);
         charNameValue.setText(name == null ? "–" : name);
