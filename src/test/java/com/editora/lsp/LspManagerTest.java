@@ -106,6 +106,21 @@ class LspManagerTest {
 
     @SuppressWarnings("unchecked")
     @Test
+    void initOptionsFor() {
+        // json/css/html: provideFormatter flips the servers' advertised documentFormattingProvider to true,
+        // so Format Document becomes available (#468; verified against the real servers).
+        assertEquals(Map.of("provideFormatter", true), LspManager.initOptionsFor("json", List.of()));
+        assertEquals(Map.of("provideFormatter", true), LspManager.initOptionsFor("css", List.of()));
+        assertEquals(Map.of("provideFormatter", true), LspManager.initOptionsFor("html", List.of()));
+        // go keeps its semanticTokens flag; java delegates to javaInitOptions; others need none.
+        assertEquals(Map.of("semanticTokens", true), LspManager.initOptionsFor("go", List.of()));
+        assertEquals(LspManager.javaInitOptions(List.of()), LspManager.initOptionsFor("java", List.of()));
+        assertNull(LspManager.initOptionsFor("python", List.of()));
+        assertNull(LspManager.initOptionsFor("typescript", List.of()));
+        assertNull(LspManager.initOptionsFor(null, List.of()));
+    }
+
+    @Test
     void javaInitOptionsAlwaysDisablesAutobuildNoDebugBundles() {
         Map<String, Object> opts = LspManager.javaInitOptions(List.of());
         assertFalse(opts.containsKey("bundles"));

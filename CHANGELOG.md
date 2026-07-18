@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Format Document now works for JSON, CSS, and HTML.** The language servers for these files implement
+  formatting but only advertise it when asked with a specific option, which Editora wasn't sending — so Format
+  Document reported "not supported" even though the server would have formatted the file. Editora now sends that
+  option, and formatting works on `.json`, `.css`, and `.html`. (From the deferred backlog.)
+
 - **A deleted project no longer reappears if a session write was in flight at exactly the wrong moment.**
   Deleting a project deletes its session file and cancels any queued write of it — but if the background writer
   had already picked up that write, the cancel couldn't stop it, and the file was re-created (and the "deleted"
