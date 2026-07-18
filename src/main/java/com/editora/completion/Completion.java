@@ -25,16 +25,45 @@ public record Completion(
         String sortText,
         boolean preselect,
         boolean deprecated,
-        Object resolveToken) {
+        Object resolveToken,
+        ReplaceStart replaceStart) {
 
     public enum Kind {
         SNIPPET,
         WORD
     }
 
+    /**
+     * The LSP {@code textEdit.range.start} of the replaced range (0-based line/character), when a language
+     * server sent one. Editors must replace the server-specified range on accept, not just the identifier
+     * before the caret — the two differ when a server advertises a trigger character that is part of its own
+     * insert text (phpactor's {@code $}, bash variables). Null for word/snippet items and {@code insertText}-
+     * only LSP items. The end of the replaced range is always the current caret (absorbing chars typed since
+     * the request).
+     */
+    public record ReplaceStart(int line, int character) {}
+
+    /** Returns a copy carrying the given LSP replace-start (or null to clear it). */
+    public Completion withReplaceStart(ReplaceStart rs) {
+        return new Completion(
+                label,
+                insert,
+                kind,
+                detail,
+                snippet,
+                onAccept,
+                iconKind,
+                sortText,
+                preselect,
+                deprecated,
+                resolveToken,
+                rs);
+    }
+
     /** A plain word completion (dictionary or user word). */
     public static Completion word(String w, String detail) {
-        return new Completion(w, w, Kind.WORD, detail, null, null, CompletionIconKind.TEXT, null, false, false, null);
+        return new Completion(
+                w, w, Kind.WORD, detail, null, null, CompletionIconKind.TEXT, null, false, false, null, null);
     }
 
     /** A snippet completion; accepting it expands the snippet body via a snippet session. */
@@ -51,6 +80,7 @@ public record Completion(
                 null,
                 false,
                 false,
+                null,
                 null);
     }
 
@@ -92,6 +122,7 @@ public record Completion(
                 sortText,
                 preselect,
                 deprecated,
-                resolveToken);
+                resolveToken,
+                null);
     }
 }
