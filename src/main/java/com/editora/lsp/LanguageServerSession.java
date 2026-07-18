@@ -96,8 +96,11 @@ final class LanguageServerSession implements LanguageClient {
     private final List<Pending> pending = new ArrayList<>();
     private final AtomicInteger nextVersion = new AtomicInteger(1);
 
-    private Process process;
-    private LanguageServer server;
+    // volatile: start() runs off the FX thread (#407) and must NOT hold the `this` monitor during the fork (that
+    // would block whenReady()'s synchronized check on the FX thread, re-introducing the stall). volatile safely
+    // publishes these to the FX reader (ready()) and the launcher's drain thread instead of the monitor.
+    private volatile Process process;
+    private volatile LanguageServer server;
     private volatile boolean initialized;
     private volatile Runnable onDead = () -> {};
     private final java.util.concurrent.atomic.AtomicBoolean deadReported =
@@ -147,13 +150,26 @@ final class LanguageServerSession implements LanguageClient {
         this.initializationOptions = initializationOptions;
     }
 
-    /** Launches the server process + LSP4J client and sends {@code initialize}. Returns false on failure. */
-    synchronized boolean start() {
+    /**
+     * Launches the server process + LSP4J client and sends {@code initialize}. Returns false on failure. Called
+     * once, off the FX thread (see {@code LspManager.sessionForRoot}); deliberately <b>not</b> {@code synchronized}
+     * — the fork/exec below blocks for the JVM/Node startup, and holding the {@code this} monitor across it would
+     * block {@link #whenReady}'s {@code synchronized} check on the FX thread, re-introducing the very stall #407
+     * fixes. Fields it publishes ({@code process}/{@code server}) are {@code volatile}; {@code dispose()} stays
+     * {@code synchronized} and a post-fork {@link #disposed} guard covers a dispose that races the fork.
+     */
+    boolean start() {
         try {
             ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
             pb.directory(root.toFile());
             ProcessRunner.applyStandardEnv(pb);
             process = pb.start();
+            if (disposed) {
+                // The session was disposed while we were forking (e.g. the window closed) — kill the just-forked
+                // process and bail rather than leave it running orphaned.
+                ProcessRegistry.killTree(process);
+                return false;
+            }
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
             // A server that dies on its own (crash, OOM-kill) otherwise stays cached as a live session:
             // ready()/isManaged() keep returning true, every request fails into an empty result, and the

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Opening the first file of a language no longer freezes the editor for a beat.** Starting a language server
+  (forking the jdtls/pyright/tsserver process, scanning `PATH`, writing the process ledger) ran on the UI thread.
+  It now happens on a background thread — the editor stays responsive while the server comes up, and the loading
+  indicator already covers the wait. (#407)
 - **Language-server updates aren't sent twice per keystroke.** After a trigger character (e.g. `.`), the editor
   materialized and pushed the whole document to the server both on the completion trigger and again on the
   debounced edit pulse — the same version twice. It now skips a resend when the document hasn't changed since the

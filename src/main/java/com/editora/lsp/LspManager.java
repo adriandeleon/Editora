@@ -47,6 +47,15 @@ public final class LspManager {
         return t;
     });
 
+    // Server processes are forked here, off the FX thread (#407): a JVM/Node fork+exec + PATH scan + ledger write
+    // would otherwise stall the UI on the first open of a language. A (small) daemon pool so several servers can
+    // start concurrently rather than one blocking the next.
+    private final ExecutorService startExec = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "lsp-start");
+        t.setDaemon(true);
+        return t;
+    });
+
     private final Map<String, LanguageServerSession> sessionsByRoot = new ConcurrentHashMap<>();
     private final Map<String, LanguageServerSession> sessionByDocUri = new ConcurrentHashMap<>();
 
@@ -270,38 +279,51 @@ public final class LspManager {
         }
         // Key by (serverId, root) — not languageId — so js/ts/jsx/tsx in one root share one tsserver.
         String key = sessionKey(serverId, root);
-        return sessionsByRoot.computeIfAbsent(key, k -> {
-            LspServerRegistry.ServerSpec spec = LspServerRegistry.specFor(languageId, commands);
-            if (spec == null) {
-                return null;
+        LanguageServerSession cached = sessionsByRoot.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        LspServerRegistry.ServerSpec spec = LspServerRegistry.specFor(languageId, commands);
+        if (spec == null) {
+            return null;
+        }
+        // jdtls: give each project root its own Eclipse workspace (-data) so it never deadlocks on the shared
+        // default workspace's .lock. Created on demand; jdtls reuses it across sessions (its index persists).
+        if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && jdtlsWorkspaceBase != null) {
+            Path ws = jdtlsWorkspaceBase.resolve(LspServerRegistry.workspaceDirName(root));
+            try {
+                Files.createDirectories(ws);
+                spec = LspServerRegistry.withDataDir(spec, ws.toString());
+            } catch (java.io.IOException e) {
+                // Couldn't create the workspace dir — fall back to the default (better than not starting).
             }
-            // jdtls: give each project root its own Eclipse workspace (-data) so it never deadlocks on the
-            // shared default workspace's .lock. Created on demand; jdtls reuses it across sessions (its index
-            // persists, so subsequent opens are faster).
-            if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && jdtlsWorkspaceBase != null) {
-                Path ws = jdtlsWorkspaceBase.resolve(LspServerRegistry.workspaceDirName(root));
-                try {
-                    Files.createDirectories(ws);
-                    spec = LspServerRegistry.withDataDir(spec, ws.toString());
-                } catch (java.io.IOException e) {
-                    // Couldn't create the workspace dir — fall back to the default (better than not starting).
-                }
+        }
+        Object initOptions = initOptionsFor(serverId, debugBundles);
+        LanguageServerSession session = new LanguageServerSession(
+                spec,
+                root,
+                this::onPublishDiagnostics,
+                (type, msg) -> Platform.runLater(() -> onStatus.accept(type, msg)),
+                initOptions);
+        // Drop the session the moment it can no longer serve requests — the process died on its own, or the
+        // handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps returning true
+        // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
+        // dead for the rest of the session while the status bar still names the server.
+        session.setOnDead(() -> dropSession(key, session));
+        LanguageServerSession prev = sessionsByRoot.putIfAbsent(key, session);
+        if (prev != null) {
+            return prev; // another open created it first (rare) — use that one; this un-started session is dropped
+        }
+        // Fork + connect + initialize OFF the FX thread (#407): the process fork + PATH scan + ledger write would
+        // otherwise freeze the UI for the first open of a language. The session is already cached, so the caller's
+        // didOpen queues (LanguageServerSession.whenReady) until the async initialize completes; a failed start
+        // uncaches it so a later open retries.
+        startExec.execute(() -> {
+            if (!session.start()) {
+                dropSession(key, session);
             }
-            Object initOptions = initOptionsFor(serverId, debugBundles);
-            LanguageServerSession session = new LanguageServerSession(
-                    spec,
-                    root,
-                    this::onPublishDiagnostics,
-                    (type, msg) -> Platform.runLater(() -> onStatus.accept(type, msg)),
-                    initOptions);
-            // Drop the session the moment it can no longer serve requests — the process died on its own, or
-            // the handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps
-            // returning true (so the re-open guard never restarts it), every request fails into an empty
-            // result, and LSP is silently dead for the rest of the session while the status bar still names
-            // the server.
-            session.setOnDead(() -> dropSession(key, session));
-            return session.start() ? session : null;
         });
+        return session;
     }
 
     /** Removes a session that can no longer serve requests, so the next open starts a fresh one. */
