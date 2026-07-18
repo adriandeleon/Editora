@@ -1,18 +1,23 @@
 package com.editora.ui;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.function.Consumer;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.TextArea;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.run.StackTraceLinks;
+import org.fxmisc.flowless.VirtualizedScrollPane;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
+import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -20,15 +25,16 @@ import static com.editora.i18n.Messages.tr;
  * The "External Tools" output tool window: a read-only console showing the captured stdout/stderr of a
  * one-shot external-tool run, with a header (tool — command, exit code) and a Clear action. A
  * {@link ToolWindowContent} modeled on {@link RunPanel} but without the Stop/stdin controls (External Tools
- * runs are one-shot; stdin, if any, is fed at launch). Reuses the {@code run-*} styles + the shared
- * double-click stack-trace link handler so paths in output are clickable.
+ * runs are one-shot; stdin, if any, is fed at launch). A RichTextFX {@link CodeArea} so stderr is colored
+ * ({@code .text.run-stderr}); reuses the {@code run-*} styles + the shared double-click stack-trace link
+ * handler so paths in output are clickable.
  */
 public final class ExternalToolPanel extends VBox implements ToolWindowContent {
 
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
-    private final TextArea output = new TextArea();
+    private final CodeArea output = new CodeArea();
     private Consumer<StackTraceLinks.Link> onLink;
 
     public ExternalToolPanel() {
@@ -47,22 +53,21 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
 
         output.setEditable(false);
         output.setWrapText(false);
-        output.getStyleClass().add("run-output");
+        output.getStyleClass().addAll("editor-area", "run-output");
         RunPanel.installLinkClicks(output, () -> onLink);
 
-        VBox.setVgrow(output, Priority.ALWAYS);
-        getChildren().addAll(header, output);
+        VirtualizedScrollPane<CodeArea> scroll = new VirtualizedScrollPane<>(output);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        getChildren().addAll(header, scroll);
     }
 
     public void setOnLink(Consumer<StackTraceLinks.Link> onLink) {
         this.onLink = onLink;
     }
 
-    /** Matches the console font to the editor's code-area font (family + effective size). Sets the
-     *  control's {@code font} property directly (user-set, so the {@code .run-output} stylesheet rule
-     *  can't override it) rather than {@code -fx-font-size} via setStyle, which a TextArea ignores. */
+    /** Matches the console font to the editor's code-area font (family + effective size). */
     public void setOutputFont(String family, int size) {
-        output.setFont(javafx.scene.text.Font.font(family, size));
+        output.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
     }
 
     /** Clears the output console (the Clear button + the {@code externalTool.clearOutput} palette command). */
@@ -71,7 +76,8 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
         status.setText(tr("externalTool.idle"));
     }
 
-    /** Shows one tool run's output: a header (name + command), then stdout, then stderr, then the status line. */
+    /** Shows one tool run's output: a header (name + command), then stdout, then stderr (colored), then the
+     *  status line. */
     public void show(String toolName, String commandLine, String out, String err, int exit) {
         status.setText(exit == 0 ? tr("externalTool.done", toolName) : tr("externalTool.exited", toolName, exit));
         StringBuilder sb = new StringBuilder();
@@ -82,23 +88,34 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
                 sb.append('\n');
             }
         }
+        int errStart = sb.length();
         if (err != null && !err.isEmpty()) {
             sb.append(err);
             if (!err.endsWith("\n")) {
                 sb.append('\n');
             }
         }
-        setText(sb.toString());
+        setText(sb.toString(), errStart, sb.length() - errStart);
     }
 
-    private void setText(String text) {
-        String t = text;
-        if (t.length() > MAX_CHARS) {
-            t = t.substring(t.length() - MAX_CHARS);
+    /** Replaces the console text and tints the {@code [errStart, errStart+errLen)} stderr range, accounting for
+     *  any front-trim done to honor the char cap. */
+    private void setText(String text, int errStart, int errLen) {
+        int cut = Math.max(0, text.length() - MAX_CHARS);
+        String t = cut > 0 ? text.substring(cut) : text;
+        output.replaceText(t);
+        if (errLen > 0) {
+            int start = Math.max(0, errStart - cut);
+            int end = Math.min(t.length(), errStart + errLen - cut);
+            if (end > start) {
+                StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
+                        .add(List.of("run-stderr"), end - start)
+                        .create();
+                output.setStyleSpans(start, spans);
+            }
         }
-        output.setText(t);
-        output.positionCaret(output.getLength());
-        output.setScrollTop(Double.MAX_VALUE);
+        output.moveTo(output.getLength());
+        output.requestFollowCaret();
     }
 
     private static Region spacer() {

@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -14,7 +15,6 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Separator;
 import javafx.scene.control.SplitPane;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
@@ -30,6 +30,10 @@ import javafx.util.StringConverter;
 
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
+import org.fxmisc.flowless.VirtualizedScrollPane;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
+import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -98,7 +102,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private final ComboBox<DapModels.ThreadInfo> threads = new ComboBox<>();
     private final ListView<DapModels.StackFrameInfo> stack = new ListView<>();
     private final TreeView<VarRow> variables = new TreeView<>();
-    private final TextArea console = new TextArea();
+    private final CodeArea console = new CodeArea();
     private final TextField evalInput = new TextField();
 
     private int selectedFrameId = -1;
@@ -253,7 +257,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         console.setEditable(false);
         console.setWrapText(false);
-        console.getStyleClass().add("debug-console");
+        console.getStyleClass().addAll("editor-area", "debug-console");
         RunPanel.installLinkClicks(console, () -> onLink); // double-click a stack-trace line → jump
         evalInput.getStyleClass().add("debug-eval");
         evalInput.setPromptText(tr("debugpanel.evalPrompt"));
@@ -269,8 +273,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         top.setOrientation(Orientation.HORIZONTAL);
         top.setDividerPositions(0.42);
 
-        VBox consoleBox = new VBox(2, sectionLabel("debugpanel.console"), console, evalInput);
-        VBox.setVgrow(console, Priority.ALWAYS);
+        VirtualizedScrollPane<CodeArea> consoleScroll = new VirtualizedScrollPane<>(console);
+        VBox consoleBox = new VBox(2, sectionLabel("debugpanel.console"), consoleScroll, evalInput);
+        VBox.setVgrow(consoleScroll, Priority.ALWAYS);
         SplitPane main = new SplitPane(top, consoleBox);
         main.setOrientation(Orientation.VERTICAL);
         main.setDividerPositions(0.6);
@@ -584,24 +589,31 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Matches the console font to the editor's code-area font (family + effective size). Sets the
-     *  control's {@code font} property directly (user-set, so the {@code .debug-console} stylesheet rule
-     *  can't override it) rather than {@code -fx-font-size} via setStyle, which a TextArea ignores. */
+    /** Matches the console font to the editor's code-area font (family + effective size). */
     public void setConsoleFont(String family, int size) {
-        console.setFont(javafx.scene.text.Font.font(family, size));
+        console.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
     }
 
-    /** Appends program/console output (trimmed to a cap), auto-scrolling to the bottom. */
+    /** Appends program/console output (trimmed to a cap), auto-scrolling to the bottom. The DAP {@code stderr}
+     *  category is tinted ({@code .text.run-stderr}) so error output stands out from normal program output. */
     public void appendOutput(String text, String category) {
         if (text == null) {
             return;
         }
+        int start = console.getLength();
         console.appendText(text);
+        if ("stderr".equals(category) && !text.isEmpty()) {
+            StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
+                    .add(List.of("run-stderr"), text.length())
+                    .create();
+            console.setStyleSpans(start, spans);
+        }
         int len = console.getLength();
         if (len > MAX_CONSOLE_CHARS) {
             console.deleteText(0, len - MAX_CONSOLE_CHARS);
         }
-        console.positionCaret(console.getLength());
+        console.moveTo(console.getLength());
+        console.requestFollowCaret();
     }
 
     private void runEval() {
