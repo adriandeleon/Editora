@@ -3425,10 +3425,23 @@ public class MainController implements com.editora.mcp.McpBridge {
         return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
-    /** Stops the MCP server if this window owns it (called from {@link #disposeWindow}). */
+    /**
+     * Handles the MCP server when this window (its owner) closes (called from {@link #disposeWindow}). If
+     * another window is still open, ownership <b>moves</b> to it — the server is re-bound to that window's
+     * bridge (same port/token/endpoint), so a connected agent isn't dropped and the survivor's indicator is
+     * refreshed. Only when this is the last window is the server actually stopped (#463).
+     */
     private void stopMcpIfOwner() {
-        if (mcpServer != null && mcpOwner == this) {
-            mcpServer.stop();
+        if (mcpServer == null || mcpOwner != this) {
+            return;
+        }
+        MainController survivor = windowManager != null ? windowManager.otherLiveController(this) : null;
+        if (survivor != null) {
+            mcpServer.rebind(survivor); // move ownership; keep the server running for the surviving window
+            mcpOwner = survivor;
+            survivor.statusBar.setMcpRunning(mcpServer.isRunning());
+        } else {
+            mcpServer.stop(); // last window — really stop + remove the endpoint file
             mcpServer = null;
             mcpOwner = null;
         }

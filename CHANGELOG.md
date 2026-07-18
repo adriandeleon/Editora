@@ -91,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Closing the window that started the MCP server no longer stops MCP for the other windows.** Ownership now
+  moves to a surviving window (keeping the same port and token, so a connected agent stays connected); the
+  server is stopped only when the last window closes. (#463)
 - **A stale MCP endpoint file left by a crash is now cleaned up at launch.** If Editora exited hard while the
   MCP server was running, `mcp-endpoint.json` lingered — pointing an MCP client at a dead port with a
   live-looking token. Editora now stamps the file with its process identity and removes a stale one on the

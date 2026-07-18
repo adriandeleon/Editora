@@ -38,20 +38,30 @@ public final class McpServer {
     private static final Logger LOG = Logger.getLogger(McpServer.class.getName());
     private static final String ENDPOINT_FILE = "mcp-endpoint.json";
 
-    private final McpBridge bridge;
     private final Path configDir;
     private final ObjectMapper mapper = new ObjectMapper();
-    private final McpTools tools;
+    /** Volatile + reassignable so ownership can move to a surviving window on close ({@link #rebind}) without
+     *  restarting the server (keeping the same port/token/endpoint file, so a connected agent stays connected). */
+    private volatile McpTools tools;
+
     private final String token;
 
     private HttpServer server;
     private ExecutorService pool;
 
     public McpServer(McpBridge bridge, Path configDir) {
-        this.bridge = bridge;
         this.configDir = configDir;
         this.tools = new McpTools(bridge, mapper);
         this.token = randomToken();
+    }
+
+    /**
+     * Re-points the server at a new bridge (a different window's {@code MainController}). Used when the window
+     * that started MCP is closed while others remain: ownership moves to a survivor instead of stopping the
+     * server, so a connected agent isn't dropped (#463). Keeps the same port/token/endpoint file.
+     */
+    public void rebind(McpBridge bridge) {
+        this.tools = new McpTools(bridge, mapper);
     }
 
     /** Starts the server on an ephemeral loopback port (idempotent); returns the bound port. */

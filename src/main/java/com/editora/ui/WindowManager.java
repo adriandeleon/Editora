@@ -300,6 +300,21 @@ public class WindowManager {
         return windows.isEmpty() ? null : windows.get(windows.size() - 1);
     }
 
+    /**
+     * Any live window's controller other than {@code exclude}, or {@code null} if none — used to move MCP
+     * server ownership to a surviving window when its owner closes (#463). Called from {@code disposeWindow},
+     * which runs <em>before</em> {@link #onWindowClosed} removes the closing window, so {@code exclude} is
+     * still in the list and must be skipped.
+     */
+    MainController otherLiveController(MainController exclude) {
+        for (Holder h : windows) {
+            if (h.controller() != null && h.controller() != exclude) {
+                return h.controller();
+            }
+        }
+        return null;
+    }
+
     /** Directory holding per-window session files for untitled no-project windows ({@code windows/<uuid>.json}). */
     private Path windowsDir() {
         return shared.getConfigDir().resolve("windows");

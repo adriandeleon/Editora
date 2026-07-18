@@ -154,6 +154,32 @@ class McpServerTest {
         assertFalse(Files.exists(ep));
     }
 
+    @Test
+    void rebindMovesToolCallsToTheNewBridgeKeepingThePortAndToken(@TempDir Path dir) throws Exception {
+        // #463: when the MCP-owning window closes but others remain, the server is re-bound to a survivor
+        // instead of stopped — same port/token, tool calls now route to the survivor's bridge.
+        FakeBridge first = new FakeBridge();
+        FakeBridge second = new FakeBridge();
+        McpServer s = new McpServer(first, dir);
+        int port = s.start();
+        String token = s.token();
+        String call = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\","
+                + "\"params\":{\"name\":\"execute_command\",\"arguments\":{\"id\":\"file.save\"}}}";
+        try {
+            assertEquals(200, post(port, token, call).statusCode());
+            assertEquals("file.save", first.lastExecuted, "first bridge got the call");
+
+            s.rebind(second); // window that started MCP closed → ownership moves to a survivor
+            assertEquals(port, s.port(), "same port after rebind (server not restarted)");
+            assertEquals(token, s.token(), "same token after rebind");
+
+            assertEquals(200, post(port, token, call).statusCode());
+            assertEquals("file.save", second.lastExecuted, "the call now routes to the survivor's bridge");
+        } finally {
+            s.stop();
+        }
+    }
+
     private static HttpResponse<String> post(int port, String token, String body) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/mcp"))
                 .timeout(Duration.ofSeconds(5))
