@@ -91,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Find References is faster on symbols with many references.** Building the results list re-scanned the
+  whole file once per reference; on a heavily-used symbol in a large open file that caused a visible stall.
+  Each file is now scanned once. (#471)
 - **Closing the window that started the MCP server no longer stops MCP for the other windows.** Ownership now
   moves to a surviving window (keeping the same port and token, so a connected agent stays connected); the
   server is stopped only when the last window closes. (#463)
