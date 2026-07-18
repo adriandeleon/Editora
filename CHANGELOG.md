@@ -91,6 +91,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A deleted project no longer reappears if a session write was in flight at exactly the wrong moment.**
+  Deleting a project deletes its session file and cancels any queued write of it — but if the background writer
+  had already picked up that write, the cancel couldn't stop it, and the file was re-created (and the "deleted"
+  project came back the next time its folder was opened). The cancel now reliably suppresses an
+  already-in-flight write. (From the deferred backlog.)
+
 - **"Add to Dictionary" now clears the misspelled squiggle in every open window, not just the current one.** The
   personal dictionary is shared across windows, but adding a word only refreshed the spell check in the window
   you added it from — other windows kept underlining the word until you touched a setting there. The change now

@@ -119,6 +119,38 @@ class ConfigDurabilityTest {
         writer.shutdown();
     }
 
+    @Test
+    void cancelRevokesAWriteTheDrainHasAlreadyClaimed() throws Exception {
+        // #491: the drain claims `pending` under the lock and writes OUTSIDE it, so a cancel that arrives
+        // after the claim but before the write must still stop it — else a just-deleted project session file
+        // is resurrected. A real writer thread runs the drain; a hook pauses it right after the claim so we
+        // can slip the cancel in between deterministically.
+        Path file = dir.resolve("projects").resolve("ghost.json");
+        Files.createDirectories(file.getParent());
+        ConfigWriter writer = new ConfigWriter(); // real daemon writer thread
+
+        java.util.concurrent.CountDownLatch claimed = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch cancelDone = new java.util.concurrent.CountDownLatch(1);
+        writer.afterBatchClaimedForTest = () -> {
+            claimed.countDown();
+            try {
+                cancelDone.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        };
+
+        writer.enqueue(file, "{\"resurrected\":true}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertTrue(claimed.await(5, java.util.concurrent.TimeUnit.SECONDS), "the drain claimed the batch");
+        writer.cancel(file); // the race: cancel AFTER the drain already claimed the bytes
+        cancelDone.countDown(); // release the drain to finish (it must re-check `cancelled` and skip)
+
+        writer.afterBatchClaimedForTest = null;
+        writer.flush(); // waits for the (now-unblocked) drain to complete
+        assertFalse(Files.exists(file), "a write cancelled after being claimed must not land");
+        writer.shutdown();
+    }
+
     /**
      * An executor that queues submitted tasks while paused, then runs them (and everything after) inline once
      * {@link #resume} is called. Lets a test fix the {@code enqueue}→{@code cancel}→drain ordering that the
