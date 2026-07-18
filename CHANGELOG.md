@@ -91,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Error squiggles no longer briefly underline the wrong line while you type.** After an edit, the diagnostic
+  underlines, scrollbar ticks, and minimap marks stayed on their old line numbers until the language server
+  re-reported (a fraction of a second later), so inserting a line above an error moved the squiggle onto
+  unrelated text. They now clear on the edit and reappear, correctly placed, on the next update. (#417)
 - **A PlantUML file with several `@startuml` diagrams no longer hides the extras silently.** Only the first
   diagram was shown, with no sign the others existed; the preview now shows the first plus a "N more
   diagram(s) not shown" note. (#459)
