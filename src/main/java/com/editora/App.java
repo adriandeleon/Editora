@@ -74,6 +74,9 @@ public class App extends Application {
         // before any window builds (which can start servers) so we don't race a fresh server's startup.
         com.editora.process.ProcessRegistry.setLedgerFile(shared.getConfigDir().resolve("spawned-servers.txt"));
         com.editora.process.ProcessRegistry.reapOrphans();
+        // Delete a mcp-endpoint.json left by a crashed run — it advertises a dead port with a live-looking
+        // token. Reaped by the stamped pid + start instant, before any MCP server starts this session (#464).
+        com.editora.mcp.McpServer.reapStaleEndpoint(shared.getConfigDir());
 
         // Localize the UI: pick the language (explicit setting, else system, else English) and load the
         // message catalog before any UI text is created. A change takes effect on the next launch.

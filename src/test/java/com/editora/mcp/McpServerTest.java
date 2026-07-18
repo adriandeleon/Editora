@@ -211,4 +211,44 @@ class McpServerTest {
             s.stop();
         }
     }
+
+    @Test
+    void isStaleEndpointReapsDeadOrReusedPidsButKeepsALiveMatch() {
+        // A live process whose recorded start matches → not stale (a concurrent Editora instance).
+        java.util.function.LongFunction<java.util.Optional<Long>> live =
+                pid -> pid == 100 ? java.util.Optional.of(5000L) : java.util.Optional.empty();
+        assertFalse(McpServer.isStaleEndpoint(100L, 5000L, live), "live pid + matching start → keep");
+        // The pid is alive but its start time differs → the PID was reused → stale.
+        assertTrue(McpServer.isStaleEndpoint(100L, 4000L, live), "reused pid → reap");
+        // No live process with that pid → stale.
+        assertTrue(McpServer.isStaleEndpoint(200L, 5000L, live), "dead pid → reap");
+        // No pid at all (an old/unstamped file at launch is from a previous run) → stale.
+        assertTrue(McpServer.isStaleEndpoint(null, null, live), "no pid → reap");
+        // Live pid but no recorded start to compare → conservative: keep (never delete a possibly-live one).
+        assertFalse(McpServer.isStaleEndpoint(100L, null, live), "live pid, unknown start → keep");
+    }
+
+    @Test
+    void reapStaleEndpointDeletesAFileFromADeadProcessButKeepsALiveOne(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("mcp-endpoint.json");
+
+        // A file from a dead process (a pid that isn't running) is reaped.
+        Files.writeString(file, "{\"url\":\"http://127.0.0.1:63681/mcp\",\"token\":\"t\",\"pid\":999999999}");
+        McpServer.reapStaleEndpoint(dir);
+        assertFalse(Files.exists(file), "stale endpoint file (dead pid) should be reaped");
+
+        // A file stamped with THIS live process is kept.
+        long pid = ProcessHandle.current().pid();
+        Long start = ProcessHandle.current()
+                .info()
+                .startInstant()
+                .map(java.time.Instant::toEpochMilli)
+                .orElse(null);
+        String json = start == null
+                ? "{\"token\":\"t\",\"pid\":" + pid + "}"
+                : "{\"token\":\"t\",\"pid\":" + pid + ",\"startMillis\":" + start + "}";
+        Files.writeString(file, json);
+        McpServer.reapStaleEndpoint(dir);
+        assertTrue(Files.exists(file), "a live process's endpoint file must not be reaped");
+    }
 }
