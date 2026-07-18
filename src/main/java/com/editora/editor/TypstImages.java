@@ -130,15 +130,22 @@ public final class TypstImages {
      * {@code fileDir} is the saved file's own folder (where relative refs resolve) and {@code root} the
      * {@code --root} sandbox (possibly a higher project root) — both {@code null} for an untitled/remote buffer.
      */
-    public static Node node(String source, DoubleUnaryOperator sizer, String retainKey, Path fileDir, Path root) {
+    public static Node node(
+            String source, DoubleUnaryOperator sizer, String retainKey, Path fileDir, Path root, String displayName) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-diagram");
-        fill(host, source, sizer, retainKey, fileDir, root);
+        fill(host, source, sizer, retainKey, fileDir, root, displayName);
         return host;
     }
 
     private static void fill(
-            StackPane host, String source, DoubleUnaryOperator sizer, String retainKey, Path fileDir, Path root) {
+            StackPane host,
+            String source,
+            DoubleUnaryOperator sizer,
+            String retainKey,
+            Path fileDir,
+            Path root,
+            String displayName) {
         String key = key(source, fileDir, root);
         Cached hit = CACHE.get(key);
         if (hit != null && hit.expired()) {
@@ -157,7 +164,7 @@ public final class TypstImages {
         }
         List<String> cmd = command;
         EXEC.submit(() -> {
-            TypstRenderer.Pages r = TypstRenderer.renderPages(cmd, source, fileDir, root);
+            TypstRenderer.Pages r = TypstRenderer.renderPages(cmd, source, fileDir, root, displayName);
             Cached result;
             if (r.ok()) {
                 int total = r.pages().size();

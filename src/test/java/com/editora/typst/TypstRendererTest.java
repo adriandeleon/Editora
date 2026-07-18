@@ -126,4 +126,26 @@ class TypstRendererTest {
         assertFalse(TypstRenderer.detect(java.util.List.of("npx", "typst-definitely-not-a-package")));
         assertTrue(TypstRenderer.detect(java.util.List.of("sh", "-c", "exit 0")), "a wrapper that succeeds counts");
     }
+
+    @Test
+    void friendlyMessageRewritesTheTempFilenameToTheBufferName() {
+        // The typo path a user hits most: typst names the throwaway UUID temp file. Rewrite it to the buffer.
+        String raw =
+                "error: unknown variable: foo\n" + "  ┌─ .editora-typst-cf099c21-4e48-4307-9a38-3695b0b53f6e.typ:1:1";
+        String out = TypstRenderer.friendlyMessage(raw, "report.typ");
+        assertTrue(out.contains("report.typ:1:1"), "line/column preserved, filename rewritten");
+        assertFalse(out.contains(".editora-typst-"), "no internal temp filename leaks through");
+
+        // A leading path typst may print is rewritten along with the basename.
+        assertEquals(
+                "  ┌─ doc.typ:2:5 error",
+                TypstRenderer.friendlyMessage("  ┌─ /tmp/x/.editora-typst-abc-123.typ:2:5 error", "doc.typ"));
+
+        // No display name → a neutral placeholder, never the UUID.
+        assertEquals("at document.typ:1:1", TypstRenderer.friendlyMessage("at .editora-typst-9f.typ:1:1", null));
+
+        // Null / a message with no temp filename passes through unchanged.
+        assertEquals(null, TypstRenderer.friendlyMessage(null, "x"));
+        assertEquals("network down", TypstRenderer.friendlyMessage("network down", "x"));
+    }
 }
