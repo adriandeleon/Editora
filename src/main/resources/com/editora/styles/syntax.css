@@ -57,6 +57,10 @@
 .text.maven-build-success { -fx-fill: -color-success-fg; -fx-font-weight: bold; }
 .text.maven-build-failure { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
 
+/* Run console (com.editora.ui.RunPanel): stderr lines are tinted so error output — e.g. a Python
+   traceback — stands out from normal stdout. Applied via setStyleSpans, not a grammar. */
+.text.run-stderr { -fx-fill: -color-danger-fg; }
+
 /* CSV/TSV field separators (source.csv grammar): a muted tint so column boundaries stand out. */
 .text.csv-delimiter { -fx-fill: -color-fg-subtle; }
 

@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Run console now colors error output.** A program's stderr (e.g. a Python traceback) is tinted so it
+  stands out from normal output, instead of appearing in the same plain color. (#558)
 - **The command palette now shows commands that can't run in the current context, grayed out**, instead of
   hiding them. A command for a disabled feature (e.g. Git commands while Git is off) is listed with its
   keybinding but dimmed and non-actionable, so you can see it exists. (#532)

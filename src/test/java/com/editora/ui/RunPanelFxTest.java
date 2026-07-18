@@ -1,8 +1,8 @@
 package com.editora.ui;
 
 import javafx.scene.control.Button;
-import javafx.scene.control.TextArea;
 
+import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -29,7 +29,7 @@ class RunPanelFxTest {
     }
 
     private static String output(RunPanel p) throws Exception {
-        TextArea out = FxTestSupport.field(p, "output");
+        CodeArea out = FxTestSupport.field(p, "output");
         return FxTestSupport.callOnFx(out::getText);
     }
 

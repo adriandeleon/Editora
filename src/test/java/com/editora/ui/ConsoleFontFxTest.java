@@ -1,22 +1,20 @@
 package com.editora.ui;
 
 import javafx.scene.Scene;
-import javafx.scene.control.TextArea;
 import javafx.scene.layout.StackPane;
-import javafx.scene.text.Font;
 
+import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Guards that a tool-window console's programmatic font ({@code setOutputFont}/{@code setConsoleFont},
- * used to match the editor) survives a CSS pass. Regression test: a {@code -fx-font-size} rule on
- * {@code .run-output}/{@code .debug-console} used to override the control's font property on every
- * {@code applyCss}, so the consoles never matched the editor.
+ * Guards that the Run console's programmatic font ({@code setOutputFont}, used to match the editor) survives a
+ * CSS pass. The console is a RichTextFX {@link CodeArea} whose font is set via an inline {@code setStyle}
+ * (which beats any {@code .run-output} stylesheet rule in the CSS cascade), so {@code applyCss} must not strip it.
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -32,7 +30,7 @@ class ConsoleFontFxTest {
         FxTestSupport.runOnFx(() -> {
             RunPanel run = new RunPanel(() -> {});
             run.setOutputFont("JetBrains Mono", 17);
-            TextArea out = FxTestSupport.field(run, "output");
+            CodeArea out = FxTestSupport.field(run, "output");
 
             StackPane root = new StackPane(out);
             Scene scene = new Scene(root, 400, 300);
@@ -43,9 +41,9 @@ class ConsoleFontFxTest {
             root.applyCss();
             root.layout();
 
-            Font f = out.getFont();
-            assertEquals("JetBrains Mono", f.getFamily(), "family kept after CSS pass");
-            assertEquals(17.0, f.getSize(), 0.001, "size kept after CSS pass (CSS must not override setFont)");
+            String style = out.getStyle();
+            assertTrue(style.contains("JetBrains Mono"), "family kept in the inline style after a CSS pass: " + style);
+            assertTrue(style.contains("17"), "size kept in the inline style after a CSS pass: " + style);
         });
     }
 }
