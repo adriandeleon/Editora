@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Commit panel now appears when a file changes outside Editora.** If another program (a terminal `git`
+  command, another editor, a build) modified files under the repo while Editora was focused, the Commit stripe,
+  Git status, and gutter change bars didn't update until you clicked away and back. They now refresh as soon as
+  the project tree sees the change. (#529)
+
 ### Changed
 
 - **The Maven / Gradle / npm / Cargo / Go task panels now open on the right by default** instead of the bottom
