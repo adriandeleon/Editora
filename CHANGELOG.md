@@ -91,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Previewing a Typst document no longer churns the project tree.** Each render writes and deletes a
+  throwaway `.typ` file beside your document; on some systems the project tree's file watcher reacted to that
+  by rebuilding itself on every render. It now ignores Editora's own temporary render files. (#465)
 - **Error squiggles no longer briefly underline the wrong line while you type.** After an edit, the diagnostic
   underlines, scrollbar ticks, and minimap marks stayed on their old line numbers until the language server
   re-reported (a fraction of a second later), so inserting a line above an error moved the squiggle onto
