@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The completion popup now offers snippets whose trigger isn't a plain word.** Typing `#in` in C/C++ (or `?xml`,
+  `[PSCustomObject]`, …) never surfaced the matching `#include`/`#ifndef`/… snippet in the autocomplete popup — the
+  popup only ever looked up the identifier run after the last symbol (`in`), which no snippet is registered under, so
+  those had to be expanded with Tab. The popup now matches snippets on the whole token before the caret while words
+  and language-server items keep the identifier prefix, and accepting one replaces the full token (never `##include`).
+  (#446)
 - **Local File History keeps garbage-collecting after a failed snapshot.** If writing a history snapshot to disk
   failed, the internal completion callback was dropped, which left history GC disabled for the rest of the session
   (old revision blobs then accumulated on disk). Failures are now handled and logged, and GC keeps running. A few

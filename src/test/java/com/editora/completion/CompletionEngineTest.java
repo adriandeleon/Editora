@@ -1,5 +1,6 @@
 package com.editora.completion;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import com.editora.completion.Completion.Kind;
@@ -133,6 +134,25 @@ class CompletionEngineTest {
         assertNull(CompletionEngine.ghostSuffix("apple", "aPp"));
         assertNull(CompletionEngine.ghostSuffix("apple", "apple"), "no suffix to add");
         assertNull(CompletionEngine.ghostSuffix("apple", "banana"));
+    }
+
+    @Test
+    void completeMatchesSnippetsOnTheWideTokenNotTheIdentifierPrefix(@org.junit.jupiter.api.io.TempDir Path dir) {
+        // #446: the bundled c `#`-directive snippets (`#inc`, `#incl`, …) trigger on `#in`. The identifier walk
+        // stops at `#`, so the popup only ever saw `in` — a prefix no snippet is registered under. Snippets must
+        // match the wide non-whitespace token (`#in`) while words/keywords keep the identifier run (`in`).
+        CompletionEngine engine = new CompletionEngine(
+                new com.editora.snippet.SnippetManager(new com.editora.config.ConfigManager(dir)), null);
+
+        List<Completion> wide = engine.complete("c", null, "in", "#in", false);
+        assertTrue(
+                wide.stream().anyMatch(c -> c.insert().startsWith("#in")),
+                "the wide token `#in` reaches the `#in…` directive snippets");
+
+        List<Completion> identifierOnly = engine.complete("c", null, "in", false);
+        assertFalse(
+                identifierOnly.stream().anyMatch(c -> c.insert().startsWith("#")),
+                "the identifier-only prefix `in` never matched a `#`-directive snippet — this was the bug");
     }
 
     @Test

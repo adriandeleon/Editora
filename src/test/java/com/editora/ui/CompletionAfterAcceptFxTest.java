@@ -37,7 +37,7 @@ class CompletionAfterAcceptFxTest {
     private EditorBuffer buffer() {
         consulted.set(0); // one instance per class (PER_CLASS) — the count must not carry between tests
         EditorBuffer b = new EditorBuffer();
-        b.setCompletionProvider((snippetLang, dictLang, prefix, prose) -> {
+        b.setCompletionProvider((snippetLang, dictLang, prefix, snippetPrefix, prose) -> {
             consulted.incrementAndGet();
             return List.of(Completion.word(prefix + "s", null));
         });
