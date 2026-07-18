@@ -91,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A stale MCP endpoint file left by a crash is now cleaned up at launch.** If Editora exited hard while the
+  MCP server was running, `mcp-endpoint.json` lingered — pointing an MCP client at a dead port with a
+  live-looking token. Editora now stamps the file with its process identity and removes a stale one on the
+  next launch. (#464)
 - **Editing a Mermaid diagram no longer piles up background renders.** Each pause while typing in a `.mmd`
   file queued another headless-Chromium render (~4 s each) even though only the latest result is shown, so a
   burst of edits could back up many seconds of wasted work. Superseded renders are now skipped, so only the

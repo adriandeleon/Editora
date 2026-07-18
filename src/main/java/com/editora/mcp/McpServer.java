@@ -207,6 +207,11 @@ public final class McpServer {
         ObjectNode node = mapper.createObjectNode();
         node.put("url", url());
         node.put("token", token);
+        // Stamp this process so a stale file left by a crash can be reaped at the next launch (#464): the
+        // recorded pid + start instant let reapStaleEndpoint tell a live server from a dead one, safely
+        // against a reused PID (mirrors ProcessRegistry.reapOrphans).
+        node.put("pid", ProcessHandle.current().pid());
+        currentProcessStartMillis().ifPresent(ms -> node.put("startMillis", ms));
         try {
             Path file = configDir.resolve(ENDPOINT_FILE);
             Files.createDirectories(configDir);
@@ -216,6 +221,74 @@ public final class McpServer {
         } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not write " + ENDPOINT_FILE, e);
         }
+    }
+
+    /** This JVM process's start instant as epoch millis, if the OS exposes it. */
+    private static java.util.Optional<Long> currentProcessStartMillis() {
+        return ProcessHandle.current().info().startInstant().map(java.time.Instant::toEpochMilli);
+    }
+
+    /**
+     * Reaps a {@code mcp-endpoint.json} left behind by a crash/SIGKILL — the file is deleted only in
+     * {@link #stop()}, so a hard exit leaves it advertising a dead port with a live-looking token (a client
+     * then fails, or worse hands the token to whatever later binds that port). Run once at launch, before any
+     * server starts. The stamped pid + start instant let {@link #isStaleEndpoint} distinguish a genuinely
+     * live server (a concurrent instance) from a stale file, safely against a reused PID (#464).
+     */
+    public static void reapStaleEndpoint(Path configDir) {
+        Path file = configDir.resolve(ENDPOINT_FILE);
+        if (!Files.isRegularFile(file)) {
+            return;
+        }
+        Long pid = null;
+        Long startMillis = null;
+        try {
+            JsonNode node = new ObjectMapper().readTree(file.toFile());
+            if (node != null && node.hasNonNull("pid")) {
+                pid = node.get("pid").asLong();
+            }
+            if (node != null && node.hasNonNull("startMillis")) {
+                startMillis = node.get("startMillis").asLong();
+            }
+        } catch (IOException e) {
+            // Unreadable/corrupt endpoint file — it can't identify a live server, so treat it as stale.
+        }
+        if (isStaleEndpoint(pid, startMillis, McpServer::processStartMillis)) {
+            try {
+                Files.deleteIfExists(file);
+                LOG.info("Reaped stale " + ENDPOINT_FILE);
+            } catch (IOException e) {
+                LOG.log(Level.WARNING, "Could not delete stale " + ENDPOINT_FILE, e);
+            }
+        }
+    }
+
+    /** The start instant (epoch millis) of the live process {@code pid}, or empty when it isn't running. */
+    private static java.util.Optional<Long> processStartMillis(long pid) {
+        return ProcessHandle.of(pid).flatMap(h -> h.info().startInstant()).map(java.time.Instant::toEpochMilli);
+    }
+
+    /**
+     * Whether an endpoint file's recorded {@code pid}/{@code startMillis} identify a dead (or non-matching)
+     * server, so the file should be reaped. {@code liveStart} returns the live start-millis of a pid (empty if
+     * not running). Pure; unit-tested. Reap when: no pid (an old/unstamped file at launch is from a previous
+     * run), the pid isn't a live process, or it is live but its start time differs (the PID was reused). When
+     * the pid is live but we have no recorded start time to compare, keep it (conservative — never delete a
+     * possibly-live endpoint).
+     */
+    static boolean isStaleEndpoint(
+            Long pid, Long startMillis, java.util.function.LongFunction<java.util.Optional<Long>> liveStart) {
+        if (pid == null) {
+            return true;
+        }
+        java.util.Optional<Long> live = liveStart.apply(pid);
+        if (live.isEmpty()) {
+            return true;
+        }
+        if (startMillis == null) {
+            return false;
+        }
+        return !live.get().equals(startMillis);
     }
 
     /** Best-effort owner-only permissions; a no-op where POSIX views aren't supported (Windows). */
