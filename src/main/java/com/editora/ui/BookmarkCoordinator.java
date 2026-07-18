@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 
@@ -32,6 +31,13 @@ final class BookmarkCoordinator {
         void openPath(Path file);
 
         void navigateToLine(int line);
+
+        /**
+         * Opens {@code file} at 0-based {@code line} in {@code projectKey}'s window ({@code ""} = the
+         * general/no-project window), focusing or creating that window — so activating a bookmark from a
+         * different project switches to (or opens) that project's window instead of opening it out of context.
+         */
+        void openInProjectWindow(String projectKey, Path file, int line);
 
         /** The open buffer for {@code file}, or {@code null} if it isn't open. */
         EditorBuffer bufferForPath(Path file);
@@ -76,23 +82,23 @@ final class BookmarkCoordinator {
         persistDebounce.setOnFinished(e -> flushPendingPersist());
         this.panel = new BookmarksPanel(this::scope, new BookmarksPanel.Actions() {
             @Override
-            public void openAndJump(Path file, int line) {
-                bookmarkActivate(file, line);
+            public void openAndJump(String projectKey, Path file, int line) {
+                bookmarkActivate(projectKey, file, line);
             }
 
             @Override
-            public void setNote(Path file, int line, String note) {
-                bookmarkSetNote(file, line, note);
+            public void setNote(String projectKey, Path file, int line, String note) {
+                bookmarkSetNote(projectKey, file, line, note);
             }
 
             @Override
-            public void delete(Path file, int line) {
-                bookmarkDelete(file, line);
+            public void delete(String projectKey, Path file, int line) {
+                bookmarkDelete(projectKey, file, line);
             }
 
             @Override
-            public void deleteAll(Path file) {
-                bookmarkDeleteAll(file);
+            public void deleteAll(String projectKey, Path file) {
+                bookmarkDeleteAll(projectKey, file);
             }
 
             @Override
@@ -112,7 +118,8 @@ final class BookmarkCoordinator {
                 this::allBookmarkEntries,
                 e -> bookmarkLabel(e.bm()),
                 e -> e.file().getFileName() + ":" + (e.bm().line() + 1),
-                e -> bookmarkActivate(e.file(), e.bm().line()));
+                // The jump picker is scoped to the active project's bookmarks, so they open in this window.
+                e -> bookmarkActivate(ops.currentProjectKey(), e.file(), e.bm().line()));
     }
 
     BookmarksPanel panel() {
@@ -341,48 +348,77 @@ final class BookmarkCoordinator {
         return bm.lineText().isEmpty() ? "line " + (bm.line() + 1) : bm.lineText();
     }
 
-    /** Opens the file (if needed) and jumps to the bookmarked line. */
-    private void bookmarkActivate(Path file, int line) {
-        ops.openPath(file);
-        Platform.runLater(() -> ops.navigateToLine(line));
+    /**
+     * Opens the bookmark's file and jumps to its line — in {@code projectKey}'s window. When the bookmark
+     * belongs to the active window's project this lands in place (same behavior as before); for a General or
+     * cross-project bookmark it focuses (or opens) that project's window (see {@link Ops#openInProjectWindow}).
+     */
+    private void bookmarkActivate(String projectKey, Path file, int line) {
+        ops.openInProjectWindow(projectKey, file, line);
     }
 
-    /** Sets a bookmark's note — via the open buffer if loaded, else directly in the persisted map. */
-    private void bookmarkSetNote(Path file, int line, String note) {
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null) {
-            open.getBookmarkManager().setNote(line, note);
-        } else {
-            updateClosedFileBookmarks(
-                    file, marks -> marks.replaceAll(bm -> bm.line() == line ? bm.withNote(note) : bm));
+    /** Sets a bookmark's note — via the open buffer if loaded (active bucket only), else directly in the map. */
+    private void bookmarkSetNote(String projectKey, Path file, int line, String note) {
+        if (isActiveBucket(projectKey)) {
+            EditorBuffer open = ops.bufferForPath(file);
+            if (open != null) {
+                open.getBookmarkManager().setNote(line, note);
+                return;
+            }
         }
+        updateBucketBookmarks(
+                projectKey, file, marks -> marks.replaceAll(bm -> bm.line() == line ? bm.withNote(note) : bm));
     }
 
-    /** Deletes one bookmark — via the open buffer if loaded, else directly in the persisted map. */
-    private void bookmarkDelete(Path file, int line) {
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null) {
-            open.removeBookmark(line);
-        } else {
-            updateClosedFileBookmarks(file, marks -> marks.removeIf(bm -> bm.line() == line));
+    /** Deletes one bookmark — via the open buffer if loaded (active bucket only), else directly in the map. */
+    private void bookmarkDelete(String projectKey, Path file, int line) {
+        if (isActiveBucket(projectKey)) {
+            EditorBuffer open = ops.bufferForPath(file);
+            if (open != null) {
+                open.removeBookmark(line);
+                return;
+            }
         }
+        updateBucketBookmarks(projectKey, file, marks -> marks.removeIf(bm -> bm.line() == line));
     }
 
-    /** Deletes all bookmarks in a file — via the open buffer if loaded, else the persisted map. */
-    private void bookmarkDeleteAll(Path file) {
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null) {
-            open.clearBookmarks();
-        } else {
-            ops.bookmarks().remove(file.toString());
+    /** Deletes all bookmarks in a file — via the open buffer if loaded (active bucket only), else the map. */
+    private void bookmarkDeleteAll(String projectKey, Path file) {
+        if (isActiveBucket(projectKey)) {
+            EditorBuffer open = ops.bufferForPath(file);
+            if (open != null) {
+                open.clearBookmarks();
+                return;
+            }
+        }
+        Map<String, List<Bookmark>> bucket = bucketFor(projectKey);
+        if (bucket != null && bucket.remove(file.toString()) != null) {
             ops.saveBookmarks();
             panel.refresh();
         }
     }
 
-    /** Applies a mutation to a closed file's bookmark list in the persisted map, then saves + refreshes. */
-    private void updateClosedFileBookmarks(Path file, Consumer<List<Bookmark>> mutator) {
-        var map = ops.bookmarks();
+    /** Whether {@code projectKey} is this window's active bucket — the only one whose files can be open here. */
+    private boolean isActiveBucket(String projectKey) {
+        return (projectKey == null ? "" : projectKey).equals(ops.currentProjectKey());
+    }
+
+    /** The bookmark bucket (path → bookmarks) for a project key, or {@code null} if that bucket has no bookmarks. */
+    private Map<String, List<Bookmark>> bucketFor(String projectKey) {
+        return ops.allBookmarks().get(projectKey == null ? "" : projectKey);
+    }
+
+    /**
+     * Applies a mutation to a file's bookmark list in the given project bucket, then saves + refreshes. Used
+     * for closed files, and for any bookmark in a bucket other than this window's active one (a General or
+     * cross-project row shown in the panel while a different project is active) — those are never routed
+     * through a live buffer, whose manager is tied to the active bucket.
+     */
+    private void updateBucketBookmarks(String projectKey, Path file, Consumer<List<Bookmark>> mutator) {
+        Map<String, List<Bookmark>> map = bucketFor(projectKey);
+        if (map == null) {
+            return;
+        }
         List<Bookmark> marks = map.get(file.toString());
         if (marks == null) {
             return;

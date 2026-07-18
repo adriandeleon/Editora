@@ -48,6 +48,9 @@ class MarkerPersistDebounceFxTest {
                 public void navigateToLine(int line) {}
 
                 @Override
+                public void openInProjectWindow(String projectKey, Path file, int line) {}
+
+                @Override
                 public EditorBuffer bufferForPath(Path file) {
                     return null;
                 }

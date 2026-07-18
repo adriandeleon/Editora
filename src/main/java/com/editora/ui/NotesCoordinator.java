@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
@@ -44,6 +43,13 @@ final class NotesCoordinator {
         void openPath(Path file);
 
         void navigateToLine(int line);
+
+        /**
+         * Opens {@code file} at 0-based {@code line} in {@code projectKey}'s window ({@code ""} = the
+         * general/no-project window), focusing or creating that window — so activating a note from a different
+         * project switches to (or opens) that project's window instead of opening it out of context.
+         */
+        void openInProjectWindow(String projectKey, Path file, int line);
 
         /** Canonical-path store key for a buffer's notes (shared with the rename-migration path). */
         String noteKey(EditorBuffer buffer);
@@ -95,28 +101,28 @@ final class NotesCoordinator {
         persistDebounce.setOnFinished(e -> flushPendingPersist());
         this.panel = new NotesPanel(this::scope, new NotesPanel.Actions() {
             @Override
-            public void openAndJump(String fileKey, PersonalNote note) {
-                noteActivate(fileKey, note);
+            public void openAndJump(String projectKey, String fileKey, PersonalNote note) {
+                noteActivate(projectKey, fileKey, note);
             }
 
             @Override
-            public void editBody(String fileKey, PersonalNote note) {
-                noteEditBody(fileKey, note);
+            public void editBody(String projectKey, String fileKey, PersonalNote note) {
+                noteEditBody(projectKey, fileKey, note);
             }
 
             @Override
-            public void setStatus(String fileKey, PersonalNote note, NoteStatus status) {
-                noteSetStatus(fileKey, note, status);
+            public void setStatus(String projectKey, String fileKey, PersonalNote note, NoteStatus status) {
+                noteSetStatus(projectKey, fileKey, note, status);
             }
 
             @Override
-            public void delete(String fileKey, PersonalNote note) {
-                noteDelete(fileKey, note);
+            public void delete(String projectKey, String fileKey, PersonalNote note) {
+                noteDelete(projectKey, fileKey, note);
             }
 
             @Override
-            public void deleteAll(String fileKey) {
-                noteDeleteAll(fileKey);
+            public void deleteAll(String projectKey, String fileKey) {
+                noteDeleteAll(projectKey, fileKey);
             }
         });
         this.jumpPalette = new QuickOpen<>(
@@ -126,7 +132,8 @@ final class NotesCoordinator {
                 e -> noteEntryLabel(e.note()),
                 e -> Path.of(e.fileKey()).getFileName() + ":"
                         + (e.note().anchor().line() + 1),
-                e -> noteActivate(e.fileKey(), e.note()));
+                // The jump/search pickers are scoped to the active project's notes, so they open in this window.
+                e -> noteActivate(ops.currentProjectKey(), e.fileKey(), e.note()));
         // Search Notes: same picker, but the query matches the full body + tags + file (not just the
         // first line) so you can find a note by any word in it.
         this.searchPalette = new QuickOpen<>(
@@ -137,7 +144,8 @@ final class NotesCoordinator {
                 e -> Path.of(e.fileKey()).getFileName() + ":"
                         + (e.note().anchor().line() + 1),
                 NotesCoordinator::noteSearchText,
-                e -> noteActivate(e.fileKey(), e.note()));
+                // The jump/search pickers are scoped to the active project's notes, so they open in this window.
+                e -> noteActivate(ops.currentProjectKey(), e.fileKey(), e.note()));
     }
 
     NotesPanel panel() {
@@ -471,62 +479,90 @@ final class NotesCoordinator {
 
     // --- NotesPanel.Actions (open buffer if loaded, else mutate the persisted closed-file list) -------
 
-    private void noteActivate(String fileKey, PersonalNote note) {
+    /**
+     * Opens the note's file and jumps to its line — in {@code projectKey}'s window. When the note belongs to
+     * the active window's project this lands in place (same behavior as before); for a General or cross-project
+     * note it focuses (or opens) that project's window (see {@link Ops#openInProjectWindow}).
+     */
+    private void noteActivate(String projectKey, String fileKey, PersonalNote note) {
         String path = note.file() != null && !note.file().path().isBlank()
                 ? note.file().path()
                 : fileKey;
-        ops.openPath(Path.of(path));
-        int line = note.anchor().line();
-        Platform.runLater(() -> ops.navigateToLine(line));
+        ops.openInProjectWindow(projectKey, Path.of(path), note.anchor().line());
     }
 
-    private void noteEditBody(String fileKey, PersonalNote note) {
-        EditorBuffer open = ops.bufferForKey(fileKey);
+    private void noteEditBody(String projectKey, String fileKey, PersonalNote note) {
+        EditorBuffer open = isActiveBucket(projectKey) ? ops.bufferForKey(fileKey) : null;
         if (open != null) {
             editOpenBufferNote(open, note);
         } else {
             showNoteDialog(
                     note.body(),
-                    body -> updateClosedFileNotes(
-                            fileKey, list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withBody(body) : n)),
-                    () -> updateClosedFileNotes(fileKey, list -> list.removeIf(n -> n.id().equals(note.id()))));
+                    body -> updateBucketNotes(
+                            projectKey,
+                            fileKey,
+                            list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withBody(body) : n)),
+                    () -> updateBucketNotes(projectKey, fileKey, list -> list.removeIf(n -> n.id().equals(note.id()))));
         }
     }
 
-    private void noteSetStatus(String fileKey, PersonalNote note, NoteStatus status) {
-        EditorBuffer open = ops.bufferForKey(fileKey);
+    private void noteSetStatus(String projectKey, String fileKey, PersonalNote note, NoteStatus status) {
+        EditorBuffer open = isActiveBucket(projectKey) ? ops.bufferForKey(fileKey) : null;
         if (open != null) {
             open.getNoteManager().setStatus(note.id(), status);
         } else {
-            updateClosedFileNotes(
-                    fileKey, list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withStatus(status) : n));
+            updateBucketNotes(
+                    projectKey,
+                    fileKey,
+                    list -> list.replaceAll(n -> n.id().equals(note.id()) ? n.withStatus(status) : n));
         }
     }
 
-    private void noteDelete(String fileKey, PersonalNote note) {
-        EditorBuffer open = ops.bufferForKey(fileKey);
+    private void noteDelete(String projectKey, String fileKey, PersonalNote note) {
+        EditorBuffer open = isActiveBucket(projectKey) ? ops.bufferForKey(fileKey) : null;
         if (open != null) {
             open.getNoteManager().remove(note.id());
             open.refreshGutter();
         } else {
-            updateClosedFileNotes(fileKey, list -> list.removeIf(n -> n.id().equals(note.id())));
+            updateBucketNotes(projectKey, fileKey, list -> list.removeIf(n -> n.id().equals(note.id())));
         }
     }
 
-    private void noteDeleteAll(String fileKey) {
-        EditorBuffer open = ops.bufferForKey(fileKey);
+    private void noteDeleteAll(String projectKey, String fileKey) {
+        EditorBuffer open = isActiveBucket(projectKey) ? ops.bufferForKey(fileKey) : null;
         if (open != null) {
             open.getNoteManager().clear();
             open.refreshGutter();
         } else {
-            ops.notes().remove(fileKey);
-            ops.saveNotes();
-            panel.refresh();
+            Map<String, List<PersonalNote>> bucket = bucketFor(projectKey);
+            if (bucket != null && bucket.remove(fileKey) != null) {
+                ops.saveNotes();
+                panel.refresh();
+            }
         }
     }
 
-    private void updateClosedFileNotes(String fileKey, Consumer<List<PersonalNote>> mutator) {
-        var map = ops.notes();
+    /** Whether {@code projectKey} is this window's active bucket — the only one whose files can be open here. */
+    private boolean isActiveBucket(String projectKey) {
+        return (projectKey == null ? "" : projectKey).equals(ops.currentProjectKey());
+    }
+
+    /** The notes bucket (path → notes) for a project key, or {@code null} if that bucket has no notes. */
+    private Map<String, List<PersonalNote>> bucketFor(String projectKey) {
+        return ops.allNotes().get(projectKey == null ? "" : projectKey);
+    }
+
+    /**
+     * Applies a mutation to a file's note list in the given project bucket, then saves + refreshes. Used for
+     * closed files, and for any note in a bucket other than this window's active one (a General or cross-project
+     * row shown in the panel while a different project is active) — those are never routed through a live buffer,
+     * whose manager is tied to the active bucket.
+     */
+    private void updateBucketNotes(String projectKey, String fileKey, Consumer<List<PersonalNote>> mutator) {
+        Map<String, List<PersonalNote>> map = bucketFor(projectKey);
+        if (map == null) {
+            return;
+        }
         List<PersonalNote> list = map.get(fileKey);
         if (list == null) {
             return;

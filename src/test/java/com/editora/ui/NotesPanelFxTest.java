@@ -30,19 +30,19 @@ class NotesPanelFxTest {
 
     private static final NotesPanel.Actions NOOP = new NotesPanel.Actions() {
         @Override
-        public void openAndJump(String fileKey, PersonalNote note) {}
+        public void openAndJump(String projectKey, String fileKey, PersonalNote note) {}
 
         @Override
-        public void editBody(String fileKey, PersonalNote note) {}
+        public void editBody(String projectKey, String fileKey, PersonalNote note) {}
 
         @Override
-        public void setStatus(String fileKey, PersonalNote note, NoteStatus status) {}
+        public void setStatus(String projectKey, String fileKey, PersonalNote note, NoteStatus status) {}
 
         @Override
-        public void delete(String fileKey, PersonalNote note) {}
+        public void delete(String projectKey, String fileKey, PersonalNote note) {}
 
         @Override
-        public void deleteAll(String fileKey) {}
+        public void deleteAll(String projectKey, String fileKey) {}
     };
 
     private final Map<String, List<PersonalNote>> source = new LinkedHashMap<>();
