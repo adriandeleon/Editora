@@ -4275,8 +4275,11 @@ public class EditorBuffer implements TabContent {
             // applyPreviewScale() here — it re-enters this branch for diagrams (would recurse).
             double v = previewPane().getVvalue();
             double scale = previewFontScale;
+            // A stable per-buffer surface key so live-editing pulses coalesce (only the latest render spawns
+            // mmdc) instead of piling up ~4 s Chromium renders on every 250 ms pause (#458).
+            String surfaceKey = path != null ? path.toString() : ("mmd@" + System.identityHashCode(this));
             javafx.scene.layout.VBox box =
-                    new javafx.scene.layout.VBox(MermaidImages.node(area.getText(), lw -> lw * scale));
+                    new javafx.scene.layout.VBox(MermaidImages.node(area.getText(), lw -> lw * scale, surfaceKey));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
