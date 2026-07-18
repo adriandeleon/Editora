@@ -11,8 +11,11 @@
 # postinst to register them system-wide. Since we replace postinst we must do that here, or the
 # launcher is never installed into /usr/share/applications and the app shows the generic Java icon.
 # The bundled .desktop's Icon= is already an absolute path to our PNG, so once it's registered the
-# menu shows our icon — we just copy it into /usr/share/applications, injecting StartupWMClass
-# (jpackage's generated entry omits it, so the running window can't be matched to the entry).
+# menu shows our icon — we just copy it into /usr/share/applications. The bundled entry comes from
+# our own template override (packaging/linux/Editora.desktop, staged into the DEB wrap's resource
+# dir by scripts/aot_build.java) and already carries StartupWMClass/MimeType/Exec %F, so the copy
+# normally takes the verbatim fast path; the awk StartupWMClass injection below is kept as a
+# fallback for a build where the template override didn't take.
 #
 set -e
 

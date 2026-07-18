@@ -108,9 +108,13 @@ public class aot_build {
         }
 
         // Ensure the Linux app image carries OUR icon. The jpackage app-image phase can leave the
-        // default JavaApp.png at lib/<name>.png (the panteleyev plugin's <icon> didn't take), and the
-        // installer wrap runs `jpackage --app-image`, which IGNORES --icon — so the .deb would ship the
-        // generic Java icon (the .desktop's Icon= points at this file). Overwrite it explicitly here.
+        // default JavaApp.png at lib/<name>.png (the panteleyev plugin's <icon> didn't take). This
+        // overwrite fixes every delivery built FROM the app image (APP_IMAGE copy, .tar.gz, .AppImage)
+        // — but NOT the .deb/.rpm payload: the installer wrap below REGENERATES lib/<name>.png from
+        // jpackage's own resources (ignoring both --icon and the image's already-fixed file — verified
+        // empirically: a wrapped .deb shipped a byte-identical copy of jpackage's bundled 32x32
+        // JavaApp.png despite this overwrite). The DEB payload icon is instead supplied as a
+        // resource-dir override (<appName>.png) staged in wrapInstaller.
         boolean linux = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux");
         if (linux && icon != null && !icon.isBlank() && !"-".equals(icon) && icon.endsWith(".png")) {
             Path iconSrc = Path.of(icon);
@@ -214,12 +218,37 @@ public class aot_build {
                     "--win-shortcut", "--win-dir-chooser"));
         } else if (t.equals("DEB") || t.equals("RPM")) {
             cmd.add("--linux-shortcut");
-            // DEB: ship an `editora` command on PATH via custom maintainer scripts (postinst/postrm in
-            // packaging/linux). jpackage installs only /opt/<pkg>/bin/Editora, which isn't on PATH. The
-            // RPM bundler uses a .spec (it ignores postinst/postrm), so the resource dir is DEB-only.
+            // DEB: a resource dir overriding jpackage's generated files (the RPM bundler uses a .spec
+            // and ignores maintainer-script overrides, so this is DEB-only). Three overrides ride it:
+            //   - postinst/postrm (packaging/linux): an `editora` command on PATH + system-wide menu
+            //     registration (jpackage installs only /opt/<pkg>/bin/Editora, which isn't on PATH);
+            //   - Editora.desktop (packaging/linux): the menu-entry TEMPLATE — Exec %F + MimeType +
+            //     StartupWMClass + real Categories, so GNOME passes opened files and offers Editora
+            //     as a text editor (jpackage's own template has none of these);
+            //   - <appName>.png: the branding icon. The wrap REGENERATES lib/<name>.png in the DEB
+            //     payload from its resources — ignoring --icon and clobbering the app image's
+            //     already-fixed icon — so the icon must be supplied HERE or the .deb ships jpackage's
+            //     generic 32x32 JavaApp.png. Staged (not read from packaging/linux directly) so the
+            //     binary isn't duplicated in the repo.
             if (t.equals("DEB")) {
-                Path resDir = Path.of(System.getProperty("user.dir"), "packaging", "linux");
-                if (Files.isDirectory(resDir)) {
+                Path resSrc = Path.of(System.getProperty("user.dir"), "packaging", "linux");
+                if (Files.isDirectory(resSrc)) {
+                    Path resDir = destDir.resolve("jpackage-deb-resources");
+                    deleteRecursive(resDir);
+                    Files.createDirectories(resDir);
+                    try (Stream<Path> s = Files.list(resSrc)) {
+                        for (Path p : (Iterable<Path>) s::iterator) {
+                            if (Files.isRegularFile(p)) {
+                                Files.copy(p, resDir.resolve(p.getFileName().toString()),
+                                        StandardCopyOption.REPLACE_EXISTING);
+                            }
+                        }
+                    }
+                    if (icon != null && !icon.isBlank() && !"-".equals(icon) && icon.endsWith(".png")
+                            && Files.isRegularFile(Path.of(icon))) {
+                        Files.copy(Path.of(icon), resDir.resolve(appName + ".png"),
+                                StandardCopyOption.REPLACE_EXISTING);
+                    }
                     cmd.add("--resource-dir");
                     cmd.add(resDir.toString());
                 }

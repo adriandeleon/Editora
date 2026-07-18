@@ -46,10 +46,13 @@ cat > "$APPDIR/editora.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=Editora
+GenericName=Text Editor
 Comment=A keyboard-driven, cross-platform programmer's text editor
-Exec=Editora
+Exec=Editora %F
 Icon=editora
-Categories=Development;TextEditor;IDE;
+Categories=Development;Utility;TextEditor;IDE;
+MimeType=text/plain;
+StartupWMClass=com.editora.App
 Terminal=false
 EOF
 
