@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.function.Consumer;
 
 import javafx.geometry.Insets;
@@ -14,7 +16,10 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.run.StackTraceLinks;
+import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
+import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -24,9 +29,10 @@ import static com.editora.i18n.Messages.tr;
  * A {@link ToolWindowContent} modeled on {@link ProblemsPanel}; the controller drives it via
  * {@code started/appendOutput/finished/failed} on the FX thread.
  *
- * <p>Output goes into a read-only monospace {@link TextArea} (cheap and robust for large/streaming text)
- * whose contents are capped so a runaway program can't grow memory without bound. stdout and stderr are
- * interleaved in arrival order; per-stream coloring is a future enhancement.
+ * <p>Output goes into a read-only monospace RichTextFX {@link CodeArea} (like the build console) whose
+ * contents are capped so a runaway program can't grow memory without bound. stdout and stderr are
+ * interleaved in arrival order; stderr lines are colored ({@code .text.run-stderr}) so error output — e.g. a
+ * Python traceback — stands out from normal output.
  */
 public final class RunPanel extends VBox implements ToolWindowContent {
 
@@ -34,7 +40,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
-    private final TextArea output = new TextArea();
+    private final CodeArea output = new CodeArea();
     private final TextField input = new TextField();
     private final Button stopButton = new Button();
     private final Button clearButton = new Button();
@@ -66,7 +72,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
         output.setEditable(false);
         output.setWrapText(false);
-        output.getStyleClass().add("run-output");
+        output.getStyleClass().addAll("editor-area", "run-output");
         installLinkClicks(output, () -> onLink);
 
         // stdin: one line per Enter, echoed into the console (the program won't echo it back).
@@ -83,8 +89,9 @@ public final class RunPanel extends VBox implements ToolWindowContent {
             input.clear();
         });
 
-        VBox.setVgrow(output, Priority.ALWAYS);
-        getChildren().addAll(header, output, input);
+        VirtualizedScrollPane<CodeArea> scroll = new VirtualizedScrollPane<>(output);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        getChildren().addAll(header, scroll, input);
         idle();
     }
 
@@ -96,11 +103,9 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         this.onLink = onLink;
     }
 
-    /** Matches the console font to the editor's code-area font (family + effective size). Sets the
-     *  control's {@code font} property directly (user-set, so the {@code .run-output} stylesheet rule
-     *  can't override it) rather than {@code -fx-font-size} via setStyle, which a TextArea ignores. */
+    /** Matches the console font to the editor's code-area font (family + effective size). */
     public void setOutputFont(String family, int size) {
-        output.setFont(javafx.scene.text.Font.font(family, size));
+        output.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
     }
 
     /** Double-clicking a console line that holds a stack-trace location jumps to it. Shared with the
@@ -170,17 +175,23 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         input.setDisable(false);
     }
 
-    /** Appends one line of program output (stdout or stderr), trims if over the cap, and auto-scrolls. */
+    /** Appends one line of program output (stdout or stderr), colors stderr, trims if over the cap, and
+     *  auto-scrolls. stderr lines get {@code .text.run-stderr} so error output stands out. */
     public void appendOutput(String line, boolean stderr) {
+        int start = output.getLength();
         output.appendText(line + "\n");
+        if (stderr && !line.isEmpty()) {
+            StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
+                    .add(List.of("run-stderr"), line.length())
+                    .create();
+            output.setStyleSpans(start, spans);
+        }
         int len = output.getLength();
         if (len > MAX_CHARS) {
-            String kept = output.getText(len - MAX_CHARS, len);
-            int nl = kept.indexOf('\n');
-            output.replaceText(0, len, nl >= 0 ? kept.substring(nl + 1) : kept);
+            output.deleteText(0, len - MAX_CHARS);
         }
-        output.positionCaret(output.getLength());
-        output.setScrollTop(Double.MAX_VALUE);
+        output.moveTo(output.getLength());
+        output.requestFollowCaret();
     }
 
     /** The process exited; shows the exit code (or a "stopped" note for a killed run) and disables Stop. */
