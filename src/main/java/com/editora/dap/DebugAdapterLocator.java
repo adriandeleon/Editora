@@ -239,8 +239,8 @@ public final class DebugAdapterLocator {
         return roots;
     }
 
-    /** Searches each root (bounded depth) for {@code dapDebugServer.js} and returns the newest by the
-     *  numeric version embedded in its path (e.g. {@code js-debug-v1.2.3}), else the first found. */
+    /** Searches each root (bounded depth) for {@code dapDebugServer.js} and returns the preferred one (see
+     *  {@link #selectPreferredEntry}). */
     private static Optional<Path> findNewestEntry(List<Path> roots) {
         List<Path> found = new ArrayList<>();
         for (Path root : roots) {
@@ -255,16 +255,47 @@ public final class DebugAdapterLocator {
                 // unreadable — skip
             }
         }
-        Path best = null;
+        String best = selectPreferredEntry(found.stream().map(Path::toString).toList());
+        return best == null ? Optional.empty() : Optional.of(Path.of(best));
+    }
+
+    /**
+     * Picks the preferred {@code dapDebugServer.js} path. <b>Editora's own {@code plugins/dap/} install wins
+     * unconditionally</b> — it is the copy Editora placed there at the user's request (the in-app installer /
+     * {@code install-js-debug.sh}), and its path carries no version, so the old newest-by-{@link #pathVersion}
+     * rule always lost it to any VS Code extension dir (even a much older one), making the installer's effect
+     * invisible. {@link #pathVersion} now only breaks ties <em>within</em> a class (among Editora-owned
+     * installs, or — when none is Editora-owned — among the external roots). Pure. (#474)
+     */
+    static String selectPreferredEntry(List<String> paths) {
+        String best = null;
         String bestVer = null;
-        for (Path f : found) {
-            String ver = pathVersion(f.toString());
-            if (best == null || compareVersions(ver, bestVer) > 0) {
-                best = f;
+        boolean bestOwned = false;
+        for (String p : paths) {
+            if (p == null) {
+                continue;
+            }
+            boolean owned = isEditoraOwned(p);
+            String ver = pathVersion(p);
+            boolean take = best == null
+                    || (owned && !bestOwned) // an Editora-owned install beats any external copy
+                    || (owned == bestOwned && compareVersions(ver, bestVer) > 0); // newer within the same class
+            if (take) {
+                best = p;
                 bestVer = ver;
+                bestOwned = owned;
             }
         }
-        return Optional.ofNullable(best);
+        return best;
+    }
+
+    /** Whether {@code path} lives under an Editora-managed {@code plugins/dap/} install root. Pure. */
+    static boolean isEditoraOwned(String path) {
+        if (path == null) {
+            return false;
+        }
+        String norm = path.replace('\\', '/');
+        return norm.contains("/plugins/dap/") || norm.startsWith("plugins/dap/");
     }
 
     /** Extracts the first {@code vMAJOR.MINOR[.PATCH]} version found in a path, else {@code ""}. Pure. */

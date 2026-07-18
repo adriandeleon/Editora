@@ -147,6 +147,45 @@ class DebugAdapterLocatorTest {
         assertTrue(DebugAdapterLocator.locateJsDebugServer("", home).isEmpty());
     }
 
+    @Test
+    void locateJsDebugPrefersEditoraInstallOverNewerVsCode(@TempDir Path home) throws IOException {
+        // Editora's own installed copy (no version in its path) must win over a much newer VS Code copy —
+        // it's the adapter the user asked Editora to install (#474).
+        Path editora = home.resolve(".editora/plugins/dap/javascript/js-debug/src");
+        Path vscode = home.resolve(".vscode/extensions/ms-vscode.js-debug-1.96.0/src");
+        Files.createDirectories(editora);
+        Files.createDirectories(vscode);
+        Path editoraEntry = editora.resolve("dapDebugServer.js");
+        Files.createFile(editoraEntry);
+        Files.createFile(vscode.resolve("dapDebugServer.js"));
+        assertEquals(Optional.of(editoraEntry), DebugAdapterLocator.locateJsDebugServer("", home));
+    }
+
+    @Test
+    void selectPreferredEntryPrefersEditoraThenNewestWithinClass() {
+        String owned = "/home/me/.editora/plugins/dap/javascript/js-debug/src/dapDebugServer.js";
+        String vsOld = "/home/me/.vscode/extensions/ms-vscode.js-debug-1.80.0/src/dapDebugServer.js";
+        String vsNew = "/home/me/.vscode/extensions/ms-vscode.js-debug-1.96.0/src/dapDebugServer.js";
+        String mason = "/home/me/.local/share/nvim/mason/packages/js-debug-adapter/js-debug/src/dapDebugServer.js";
+
+        // Editora-owned wins over any external, regardless of order.
+        assertEquals(owned, DebugAdapterLocator.selectPreferredEntry(List.of(vsNew, owned)));
+        assertEquals(owned, DebugAdapterLocator.selectPreferredEntry(List.of(owned, vsNew)));
+        // No owned install → newest external by path version.
+        assertEquals(vsNew, DebugAdapterLocator.selectPreferredEntry(List.of(vsOld, vsNew, mason)));
+        // Empty / all-null.
+        assertEquals(null, DebugAdapterLocator.selectPreferredEntry(List.of()));
+    }
+
+    @Test
+    void isEditoraOwnedRecognizesPluginsDapRoots() {
+        assertTrue(DebugAdapterLocator.isEditoraOwned("/home/me/.editora/plugins/dap/javascript/x.js"));
+        assertTrue(DebugAdapterLocator.isEditoraOwned("/home/me/.editora-dev/plugins/dap/javascript/x.js"));
+        assertTrue(DebugAdapterLocator.isEditoraOwned("C:\\Users\\me\\.editora\\plugins\\dap\\javascript\\x.js"));
+        assertFalse(DebugAdapterLocator.isEditoraOwned("/home/me/.vscode/extensions/ms-vscode.js-debug-1.96.0/x.js"));
+        assertFalse(DebugAdapterLocator.isEditoraOwned(null));
+    }
+
     // --- debugpy -------------------------------------------------------------------------------
 
     @Test
