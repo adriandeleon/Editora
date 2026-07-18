@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-07-17
+
 ### Security
 
 - **Your AI API key is no longer sent in cleartext to a remote server.** If you pointed an AI provider at a
