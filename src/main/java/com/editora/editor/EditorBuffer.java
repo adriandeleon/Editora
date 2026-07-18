@@ -338,7 +338,7 @@ public class EditorBuffer implements TabContent {
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
     /** Resolves completions for the typed prefix; injected by the controller (default: none). */
-    private CompletionProvider completionProvider = (s, d, p, prose) -> List.of();
+    private CompletionProvider completionProvider = (s, d, p, sp, prose) -> List.of();
     /** When false the whole autocomplete feature is inert (master Settings toggle). */
     private boolean autocompleteEnabled = true;
     /** Per-source autocomplete toggles (gated by {@link #autocompleteEnabled}). */
@@ -7405,9 +7405,23 @@ public class EditorBuffer implements TabContent {
             hideCompletion();
             return;
         }
-        List<Completion> items = completionProvider.complete(language, getSpellLanguage(), prefix, isProse());
+        // Snippets match the whole non-whitespace token (so a non-identifier trigger — `#inc`→`#include`,
+        // `?xml`, `[PSCustomObject]` — surfaces in the popup, not only via Tab, #446); words/keywords use the
+        // identifier run. When the token is wider than the identifier, stamp a ReplaceStart on the snippet-kind
+        // items so accepting one replaces `[wideStart, caret]` (e.g. the whole `#inc`, never `##include`).
+        int wideStart = snippetTokenStart(text, caret);
+        String wideToken = text.substring(wideStart, caret);
+        List<Completion> items =
+                completionProvider.complete(language, getSpellLanguage(), prefix, wideToken, isProse());
         if (a.getScene() == null) {
             return;
+        }
+        if (wideStart < start && !items.isEmpty()) {
+            var pos = a.offsetToPosition(wideStart, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
+            Completion.ReplaceStart rs = new Completion.ReplaceStart(pos.getMajor(), pos.getMinor());
+            items = items.stream()
+                    .map(c -> c.snippet() != null && c.replaceStart() == null ? c.withReplaceStart(rs) : c)
+                    .toList();
         }
         // Prose: a single inline "ghost text" suffix after the caret (only at end-of-line content, so it
         // never overlaps following text). Code: the multi-choice popup. Handle prose BEFORE any

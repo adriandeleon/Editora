@@ -33,12 +33,25 @@ public final class CompletionEngine {
         this.userWords = userWords == null ? Set::of : userWords;
     }
 
-    /** Signature matches {@link CompletionProvider}. */
+    /** Identifier-prefix overload (snippets match the same {@code prefix}); kept for callers/tests. */
     public List<Completion> complete(String snippetLang, String dictLang, String prefix, boolean prose) {
+        return complete(snippetLang, dictLang, prefix, prefix, prose);
+    }
+
+    /**
+     * Signature matches {@link CompletionProvider}. Matches <b>snippets</b> on {@code snippetPrefix} (the wider
+     * non-whitespace token) while words/keywords use {@code prefix} (the identifier run) — so a snippet whose
+     * trigger isn't an identifier ({@code #include} for {@code #inc}, the emmet {@code !}, {@code ?xml}) shows up
+     * in the popup, not only via Tab (#446). Ranking is per-source. Gated on the identifier {@code prefix} length,
+     * so a bare-symbol trigger with no identifier part ({@code !}, {@code ->}) stays Tab-only.
+     */
+    public List<Completion> complete(
+            String snippetLang, String dictLang, String prefix, String snippetPrefix, boolean prose) {
         if (prefix == null || prefix.length() < MIN_PREFIX) {
             return List.of();
         }
-        List<Completion> snip = snippetCompletions(snippets.forLanguage(snippetLang), prefix);
+        String sp = snippetPrefix == null || snippetPrefix.isEmpty() ? prefix : snippetPrefix;
+        List<Completion> snip = snippetCompletions(snippets.forLanguage(snippetLang), sp);
         List<Completion> words = new ArrayList<>();
         if (prose) {
             for (String s : DictionaryWords.startingWith(dictLang, prefix, userWords.get(), MAX)) {
