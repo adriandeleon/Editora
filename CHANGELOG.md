@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The gutter fold arrow is 35% larger** — easier to see and click. (#530)
+
 ## [0.9.6] - 2026-07-17
 
 ### Security

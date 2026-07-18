@@ -65,8 +65,8 @@
 .editor-area .fold-chevron {
     -fx-text-fill: #8c959f;
     -fx-font-family: "sans-serif";
-    -fx-font-size: 13px;
-    -fx-min-width: 14;
+    -fx-font-size: 17.5px; /* 35% larger than the former 13px — easier to see/hit (#530) */
+    -fx-min-width: 19;
     -fx-alignment: center;
 }
 
