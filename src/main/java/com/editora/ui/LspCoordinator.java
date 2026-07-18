@@ -331,9 +331,16 @@ final class LspCoordinator {
     private void clearDiagnosticsForServer(String serverId) {
         host.forEachBuffer(b -> {
             Path p = b.getPath();
-            // Match by the server actually managing the buffer, not a re-derivation — so it stays correct when
-            // the server is mid-disable (its enable flag already flipped) and for a filename-routed pom.xml.
-            if (p == null || !serverId.equals(lspManager.managedServerId(p))) {
+            if (p == null) {
+                return;
+            }
+            // Prefer the server actually managing the buffer (correct for a filename-routed pom.xml). But when no
+            // live session manages it — the disable path shuts the session down, and diagnostics can exist without
+            // a running server — fall back to the buffer's statically-resolved server id, so a disabled server's
+            // diagnostics still get cleared (#469, regressed by #564's managedServerId-only match).
+            String managing = lspManager.managedServerId(p);
+            String resolved = managing != null ? managing : serverIdForBuffer(b);
+            if (!serverId.equals(resolved)) {
                 return;
             }
             b.setLspActive(false); // drop the editor squiggle overlay/stripes immediately
