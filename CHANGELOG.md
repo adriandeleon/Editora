@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **The Structure outline no longer rebuilds while it's closed.** It re-split the whole document and rebuilt its
+  tree on every edit (debounced) even when the tool window was hidden. It now defers the rebuild while closed and
+  does it once when the window is reopened. (#549)
 - **The File Information panel no longer slows down typing.** It re-counted words (a whole-document scan) on
   every caret move and re-materialized the whole document on every keystroke — even when the panel was closed.
   It now rides the debounced change stream, counts words only on an actual edit, reads only the character under
