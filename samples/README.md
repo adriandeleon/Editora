@@ -61,6 +61,16 @@ Editor/Split/Preview toggle that renders the timeline). There is deliberately no
 - `samples/mermaid/flowchart.mmd` — a valid diagram; preview renders it (needs `mmdc`).
 - `samples/mermaid/invalid.mmd` — intentionally broken; `maid` should draw lint squiggles.
 
+## markwhen/ — timeline + calendar + JSON export
+
+`samples/syntax/sample.mw` already covers the basic timeline; this one is day-level so the alternate
+views are worth exercising.
+
+- `samples/markwhen/roadmap.mw` — a dated roadmap with `#tag` colors and `#`/`##`-header sections. The
+  3-mode preview renders the **timeline**; **Switch to Calendar View** (`markwhen.toggleView`) shows the
+  month-grid with tag-colored chips on each covered day; **Export to JSON** (`markwhen.exportJson`) writes
+  the parsed tree. Right-click the preview for Export-to-PDF / Print too.
+
 ## diagrams/ — Graphviz DOT + PlantUML preview
 
 - `samples/diagrams/graph.dot` — a Graphviz digraph; the 3-mode preview renders it (needs the `dot` CLI).
@@ -145,6 +155,29 @@ the download error. Package versions are pinned to ones that compile with typst 
   renders the workflow digest instead of the generic YAML tree). The preview lists the triggers in plain
   English ("push to main, develop", "pull request to main", the `schedule:` cron decoded), then each job
   with its runner, `needs`/`if`, and ordered steps.
+
+## config/ — config-file grammars (highlighting only)
+
+Bundled TextMate grammars for common config formats that aren't "core languages," so they aren't in
+`syntax/`. Open each and confirm highlighting loads. Several are recognized by **name + location** (not
+extension), so the enclosing `etc/`, `network/`, `debian/` dirs matter — don't flatten them. All are
+inert samples (fake values, not real system files).
+
+- `samples/config/sample.env` — dotenv (`.env`): `KEY=value`, quotes, `${VAR}` refs, `export`.
+- `samples/config/sample.gitconfig` — git-config: `[section]` headers, `key = value`, subsection strings.
+- `samples/config/Caddyfile` — Caddy web-server config (site blocks, directives).
+- `samples/config/sample.desktop` — XDG `.desktop` entry (`[Desktop Entry]` keys).
+- `samples/config/example.sources` — Debian **deb822** APT sources (RFC822 paragraphs).
+- `samples/config/etc/hosts` — `/etc/hosts` (matched only under an `etc/` dir).
+- `samples/config/etc/apt/sources.list` — classic one-line APT `sources.list` (apt-sources grammar).
+- `samples/config/etc/network/interfaces` — Debian ifupdown config (matched under a `network/` dir).
+- `samples/config/debian/changelog` — Debian packaging changelog (matched under a `debian/` dir).
+
+## hex/ — hex viewer (binary files)
+
+- `samples/hex/sample.bin` — a small binary blob (magic bytes, embedded ASCII, control + high bytes, and
+  NUL separators). A file detected as binary by content opens in the read-only **hex viewer** (`offset |
+  hex | ASCII`) instead of dumping bytes as text. `view.openAsHex` force-opens any file this way.
 
 ## pdf/ — PDF viewer
 

@@ -1,0 +1,17 @@
+# Editora Caddyfile sample — highlighted by the `caddyfile` grammar (matched by the literal name).
+example.com {
+	root * /var/www/html
+	encode gzip
+	file_server
+	reverse_proxy /api/* localhost:8080
+	header {
+		Strict-Transport-Security "max-age=31536000;"
+	}
+	log {
+		output file /var/log/caddy/access.log
+	}
+}
+
+:8081 {
+	respond "Hello from Caddy"
+}

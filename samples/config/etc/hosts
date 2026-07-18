@@ -1,0 +1,9 @@
+# Editora /etc/hosts sample — highlighted by the `hosts` grammar (matched by the name under an `etc/` dir).
+127.0.0.1	localhost
+127.0.1.1	editora-dev
+::1		localhost ip6-localhost ip6-loopback
+ff02::1		ip6-allnodes
+ff02::2		ip6-allrouters
+
+# a project alias
+192.168.1.10	staging.internal	staging

@@ -1,0 +1,26 @@
+---
+title: Editora Roadmap
+// tag colors (frontmatter)
+#Perf: #4CAF50
+#Feature: #2196F3
+#Release: #F44336
+---
+
+// A day-level plan — good for the Calendar view (markwhen.toggleView) and JSON export
+// (markwhen.exportJson), plus the default Timeline. Dates land in July/August so the
+// calendar shows a couple of month cards with chips on the covered days.
+
+# 2026 Q3
+2026-07-01: Kick off the performance audit #Perf
+2026-07-14 / 2026-07-18: Hot-path fixes — status bar, text zoom, panels #Perf
+2026-07-20: File Information + Structure visibility gating #Perf
+2026-07-27: Debounce the marker persistence #Perf
+
+## LSP
+2026-08-03 / 2026-08-14: Incremental sync investigation #Feature
+2026-08-17: Ship the safe change-send dedupe #Perf
+2026-08-28: v0.9.7 release #Release
+
+# 2026 Q4
+2026-10-01 / 2026-10-31: Plugin marketplace #Feature
+2026-12-15: v1.0.0 #Release
