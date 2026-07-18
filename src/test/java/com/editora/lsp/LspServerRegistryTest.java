@@ -221,4 +221,36 @@ class LspServerRegistryTest {
         assertTrue(na.matches("[0-9a-f]{16}")); // filesystem-safe hex
         assertFalse(na.equals(LspServerRegistry.workspaceDirName(java.nio.file.Path.of("/home/u/projB"))));
     }
+
+    @Test
+    void mavenPomServerRoutesOnItsPseudoLanguageId() {
+        // The Maven server is keyed on the routing-only pseudo id; its editor language stays "xml".
+        assertEquals("maven-pom", LspServerRegistry.serverIdFor("maven-pom"));
+        assertTrue(LspServerRegistry.isSupported("maven-pom"));
+        // No built-in command — the install recipe writes the java -cp launcher into Settings.
+        assertEquals("", LspServerRegistry.defaultCommandFor("maven-pom"));
+        assertEquals(List.of("pom.xml", ".git"), LspServerRegistry.rootMarkersForServer("maven-pom"));
+        // The plain XML server is unchanged and distinct from the Maven server.
+        assertEquals("xml", LspServerRegistry.serverIdFor("xml"));
+    }
+
+    @Test
+    void isPomFileMatchesOnlyPomXmlCaseInsensitively() {
+        assertTrue(LspServerRegistry.isPomFile("pom.xml"));
+        assertTrue(LspServerRegistry.isPomFile("POM.XML"));
+        assertFalse(LspServerRegistry.isPomFile("build.xml"));
+        assertFalse(LspServerRegistry.isPomFile("mypom.xml"));
+        assertFalse(LspServerRegistry.isPomFile("pom.xml.bak"));
+        assertFalse(LspServerRegistry.isPomFile(null));
+    }
+
+    @Test
+    void protocolLanguageIdTranslatesMavenRouteToXml() {
+        // lemminx keys its XML handling on the "xml" languageId; lemminx-maven detects the POM by URI.
+        assertEquals("xml", LspServerRegistry.protocolLanguageId("maven-pom"));
+        // Every other id passes through unchanged (so no other server is affected).
+        assertEquals("xml", LspServerRegistry.protocolLanguageId("xml"));
+        assertEquals("java", LspServerRegistry.protocolLanguageId("java"));
+        assertEquals("javascript", LspServerRegistry.protocolLanguageId("javascript"));
+    }
 }

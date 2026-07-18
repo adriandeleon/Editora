@@ -76,6 +76,7 @@ final class LanguageServerSession implements LanguageClient {
 
     private static final Logger LOG = Logger.getLogger(LanguageServerSession.class.getName());
 
+    private final String serverId;
     private final List<String> command;
     private final Path root;
     private final Consumer<PublishDiagnosticsParams> onDiagnostics;
@@ -124,12 +125,19 @@ final class LanguageServerSession implements LanguageClient {
         this.onDead = onDead == null ? () -> {} : onDead;
     }
 
+    /** The server id this session runs (from its {@link LspServerRegistry.ServerSpec}); used to detect when a
+     *  document's desired server has changed (e.g. a pom.xml moving from the plain XML server to lemminx-maven). */
+    String serverId() {
+        return serverId;
+    }
+
     LanguageServerSession(
             LspServerRegistry.ServerSpec spec,
             Path root,
             Consumer<PublishDiagnosticsParams> onDiagnostics,
             java.util.function.BiConsumer<String, String> onStatus,
             Object initializationOptions) {
+        this.serverId = spec.serverId();
         this.command = spec.command();
         this.root = root;
         this.onDiagnostics = onDiagnostics;

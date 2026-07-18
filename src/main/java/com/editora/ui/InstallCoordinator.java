@@ -254,6 +254,7 @@ final class InstallCoordinator {
             case "xml" -> s.setXmlLspCommand(command);
             case "terraform" -> s.setTerraformLspCommand(command);
             case "typst" -> s.setTypstLspCommand(command); // tinymist: a binary archive, path must be persisted
+            case "maven-pom" -> s.setMavenPomLspCommand(command); // java -cp launcher over the extracted bundle
             default -> {
                 /* npm/toolchain servers resolve on PATH; no command to persist */
             }

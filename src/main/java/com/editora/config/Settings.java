@@ -38,7 +38,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 78;
+    public static final int SCHEMA_VERSION = 79;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -389,6 +389,10 @@ public class Settings {
     private String tomlLspCommand = "";
     private String csharpLspCommand = "";
     private String typstLspCommand = "";
+    /** The Maven-aware pom.xml server (JVM lemminx + lemminx-maven). Blank until the install recipe writes the
+     *  {@code java -cp "<dir>/*" org.eclipse.lemminx.XMLServerLauncher} command; blank ⇒ not installed. */
+    private String mavenPomLspCommand = "";
+
     private boolean javaLspEnabled = true;
     private boolean typescriptLspEnabled = true;
     private boolean pythonLspEnabled = true;
@@ -411,6 +415,9 @@ public class Settings {
     private boolean tomlLspEnabled = true;
     private boolean csharpLspEnabled = true;
     private boolean typstLspEnabled = true;
+    /** Whether the Maven-aware pom.xml server is enabled (only effective once installed — see
+     *  {@link #mavenPomLspCommand} — and under the global LSP enable). */
+    private boolean mavenPomLspEnabled = true;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -1895,6 +1902,22 @@ public class Settings {
 
     public void setTypstLspEnabled(boolean typstLspEnabled) {
         this.typstLspEnabled = typstLspEnabled;
+    }
+
+    public String getMavenPomLspCommand() {
+        return mavenPomLspCommand == null ? "" : mavenPomLspCommand;
+    }
+
+    public void setMavenPomLspCommand(String mavenPomLspCommand) {
+        this.mavenPomLspCommand = mavenPomLspCommand == null ? "" : mavenPomLspCommand;
+    }
+
+    public boolean isMavenPomLspEnabled() {
+        return mavenPomLspEnabled;
+    }
+
+    public void setMavenPomLspEnabled(boolean mavenPomLspEnabled) {
+        this.mavenPomLspEnabled = mavenPomLspEnabled;
     }
 
     public boolean isPdfLineNumbers() {

@@ -179,18 +179,23 @@ public final class LspManager {
 
     // --- Document lifecycle (called from EditorBuffer hooks via the controller) -----------------
 
-    /** Opens {@code file} (Java) on the server for {@code root}, starting that server if needed. */
-    public void openDocument(Path file, Path root, String languageId, String text) {
-        if (!enabled || file == null || root == null || !LspServerRegistry.isSupported(languageId)) {
+    /**
+     * Opens {@code file} on the server that serves {@code routeLanguageId}, starting that server if needed.
+     * The {@code routeLanguageId} selects the server + session (e.g. {@code maven-pom} routes a pom.xml to the
+     * Maven server); the id actually sent to the server in {@code didOpen} is
+     * {@link LspServerRegistry#protocolLanguageId} (so a {@code maven-pom} route opens as {@code xml}).
+     */
+    public void openDocument(Path file, Path root, String routeLanguageId, String text) {
+        if (!enabled || file == null || root == null || !LspServerRegistry.isSupported(routeLanguageId)) {
             return;
         }
-        LanguageServerSession session = sessionForRoot(root, languageId);
+        LanguageServerSession session = sessionForRoot(root, routeLanguageId);
         if (session == null) {
             return;
         }
         String uri = file.toUri().toString();
         sessionByDocUri.put(uri, session);
-        session.didOpen(uri, languageId, text);
+        session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text);
     }
 
     public void changeDocument(Path file, String text) {
@@ -221,6 +226,16 @@ public final class LspManager {
     public boolean isManaged(Path file) {
         // A remote (SFTP) file is never LSP-managed; bail before uri(), whose toUri() throws for such paths.
         return file != null && com.editora.vfs.Vfs.isLocal(file) && sessionByDocUri.containsKey(uri(file));
+    }
+
+    /** The server id currently managing {@code file}, or null if it is not open on any server. Lets the
+     *  coordinator detect a server change (e.g. a pom.xml moving to lemminx-maven) and close+reopen. */
+    public String managedServerId(Path file) {
+        if (file == null || !com.editora.vfs.Vfs.isLocal(file)) {
+            return null;
+        }
+        LanguageServerSession s = sessionByDocUri.get(uri(file));
+        return s == null ? null : s.serverId();
     }
 
     /**
@@ -793,6 +808,12 @@ public final class LspManager {
      *       {@code provideFormatter} flag is passed; without it, Format Document was silently unavailable on a
      *       {@code .json}/{@code .css}/{@code .html} even though the server would format (#468; verified by
      *       driving the real servers: the flag flips the advertised capability from false to true).</li>
+     *   <li><b>maven-pom</b> (JVM lemminx + lemminx-maven): {@code settings.xml.maven.central.skip=true} —
+     *       the lemminx-maven settings live under an {@code xml.maven} object (schema verified against the
+     *       extension's {@code XMLMavenSettings}). {@code central.skip=true} disables the heavy Maven Central
+     *       <i>index</i> download so completion is served from the local {@code ~/.m2} repository only —
+     *       offline-friendly and network-conservative, matching how Git/LSP/update-check are gated. Sending any
+     *       {@code xml.maven} object is also what activates the extension's POM awareness in the first place.</li>
      * </ul>
      */
     static Object initOptionsFor(String serverId, List<String> debugBundles) {
@@ -800,6 +821,8 @@ public final class LspManager {
             case "java" -> javaInitOptions(debugBundles);
             case "go" -> Map.of("semanticTokens", true);
             case "json", "css", "html" -> Map.of("provideFormatter", true);
+            case LspServerRegistry.MAVEN_POM_SERVER_ID ->
+                Map.of("settings", Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true)))));
             default -> null;
         };
     }
