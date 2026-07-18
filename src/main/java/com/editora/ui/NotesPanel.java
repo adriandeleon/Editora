@@ -1,7 +1,9 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import javafx.geometry.Pos;
@@ -11,6 +13,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -28,12 +31,20 @@ import com.editora.config.PersonalNote;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The Personal Notes tool window: every note in the active project, grouped by file in a tree. Enter /
- * double-click opens the file and jumps to the note; a right-click menu edits the body, resolves/reopens,
- * or deletes. Reads the persisted notes map directly (so it includes closed files) and routes mutations
- * back through {@link Actions}. Mirrors {@link BookmarksPanel}.
+ * The Personal Notes tool window: every note (across all files, open or closed) grouped by <b>project</b> then
+ * by file, in a tree. It always shows the <b>General</b> (no-project) bucket and the <b>current</b> project's
+ * bucket; a "Show all projects" toggle additionally reveals every other project's notes, so nothing
+ * appears/disappears when switching projects. Enter / double-click opens the file and jumps to the note; a
+ * right-click menu edits the body, resolves/reopens, or deletes. Reads the persisted notes map directly (so it
+ * includes closed files) and routes mutations back through {@link Actions}. Mirrors {@link BookmarksPanel}.
  */
 public class NotesPanel extends VBox implements ToolWindowContent {
+
+    /** The cross-project view the panel renders: every bucket, the current project key, and a key→name resolver. */
+    public record Scope(
+            Map<String, Map<String, List<PersonalNote>>> byProject,
+            String currentKey,
+            Function<String, String> nameFor) {}
 
     /** Mutations the panel asks the controller to perform (file key = canonical path in the notes map). */
     public interface Actions {
@@ -48,19 +59,25 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         void deleteAll(String fileKey);
     }
 
-    private sealed interface Row permits FileRow, NoteRow {}
+    private sealed interface Row permits ProjectRow, FileRow, NoteRow {}
+
+    private record ProjectRow(String key, String name, boolean current) implements Row {}
 
     private record FileRow(String fileKey) implements Row {}
 
     private record NoteRow(String fileKey, PersonalNote note) implements Row {}
 
-    private final Supplier<Map<String, List<PersonalNote>>> source;
+    private final Supplier<Scope> source;
     private final Actions actions;
     private final TextField filterField = new TextField();
+    private final ToggleButton showAll = new ToggleButton();
+    private final HBox header;
     private final TreeView<Row> tree = new TreeView<>();
     private final StackPane placeholderPane;
 
-    public NotesPanel(Supplier<Map<String, List<PersonalNote>>> source, Actions actions) {
+    private String currentKey = "";
+
+    public NotesPanel(Supplier<Scope> source, Actions actions) {
         this.source = source;
         this.actions = actions;
         getStyleClass().add("notes-panel");
@@ -83,7 +100,15 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         clear.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clear.managedProperty().bind(clear.visibleProperty());
         HBox.setHgrow(filterField, Priority.ALWAYS);
-        HBox header = new HBox(6, filterField, clear);
+
+        // "Show all projects" toggle — off by default (General + current project only); on reveals every project.
+        showAll.setGraphic(Icons.project());
+        showAll.getStyleClass().addAll("flat", "scope-toggle");
+        showAll.setFocusTraversable(false);
+        showAll.setTooltip(new Tooltip(tr("notes.showAllTip")));
+        showAll.selectedProperty().addListener((o, w, n) -> refresh());
+
+        header = new HBox(6, filterField, clear, showAll);
         header.getStyleClass().add("project-filter-bar");
         header.setAlignment(Pos.CENTER_LEFT);
 
@@ -116,42 +141,76 @@ public class NotesPanel extends VBox implements ToolWindowContent {
     @Override
     public void focusFirstItem() {
         // Land on the filter field so the user can type to filter immediately; Down/Enter move into / open
-        // the results (see FilterFieldNav in build()).
+        // the results (see FilterFieldNav in the constructor).
         filterField.requestFocus();
     }
 
-    /** Rebuilds the tree from the persisted notes map, applying the filter. */
+    /** Rebuilds the tree grouped by project (General, current, and — when {@link #showAll} is on — others). */
     public void refresh() {
         String filter = filterField.getText() == null
                 ? ""
                 : filterField.getText().strip().toLowerCase();
+        Scope scope = source.get();
+        Map<String, Map<String, List<PersonalNote>>> byProject = scope.byProject();
+        currentKey = scope.currentKey() == null ? "" : scope.currentKey();
+
+        List<String> withContent = new ArrayList<>();
+        for (Map.Entry<String, Map<String, List<PersonalNote>>> e : byProject.entrySet()) {
+            if (hasAnyNote(e.getValue())) {
+                withContent.add(e.getKey());
+            }
+        }
+        List<String> visible = ScopeGroups.visibleKeys(withContent, currentKey, showAll.isSelected(), scope.nameFor());
+
         TreeItem<Row> root = new TreeItem<>();
-        Map<String, List<PersonalNote>> map = source.get();
-        map.forEach((fileKey, notes) -> {
-            if (notes == null || notes.isEmpty()) {
-                return;
+        for (String key : visible) {
+            Map<String, List<PersonalNote>> bucket = byProject.get(key);
+            if (bucket == null) {
+                continue;
             }
-            List<TreeItem<Row>> kids = new java.util.ArrayList<>();
-            for (PersonalNote note : notes) {
-                if (filter.isEmpty() || matches(fileKey, note, filter)) {
-                    kids.add(new TreeItem<>(new NoteRow(fileKey, note)));
+            boolean current = key.equals(currentKey);
+            TreeItem<Row> projectNode =
+                    new TreeItem<>(new ProjectRow(key, scope.nameFor().apply(key), current));
+            projectNode.setExpanded(key.isEmpty() || current);
+            bucket.forEach((fileKey, notes) -> {
+                if (notes == null || notes.isEmpty()) {
+                    return;
                 }
+                List<TreeItem<Row>> kids = new ArrayList<>();
+                for (PersonalNote note : notes) {
+                    if (filter.isEmpty() || matches(fileKey, note, filter)) {
+                        kids.add(new TreeItem<>(new NoteRow(fileKey, note)));
+                    }
+                }
+                if (!kids.isEmpty()) {
+                    TreeItem<Row> fileItem = new TreeItem<>(new FileRow(fileKey));
+                    fileItem.setExpanded(true);
+                    fileItem.getChildren().setAll(kids);
+                    projectNode.getChildren().add(fileItem);
+                }
+            });
+            if (!projectNode.getChildren().isEmpty()) {
+                root.getChildren().add(projectNode);
             }
-            if (!kids.isEmpty()) {
-                TreeItem<Row> fileItem = new TreeItem<>(new FileRow(fileKey));
-                fileItem.setExpanded(true);
-                fileItem.getChildren().setAll(kids);
-                root.getChildren().add(fileItem);
-            }
-        });
+        }
         tree.setRoot(root);
         if (root.getChildren().isEmpty()) {
-            if (getChildren().size() < 2 || getChildren().get(1) != placeholderPane) {
-                getChildren().set(1, placeholderPane);
-            }
-        } else if (getChildren().get(1) != tree) {
-            getChildren().set(1, tree);
+            getChildren().setAll(header, placeholderPane);
+        } else {
+            getChildren().setAll(header, tree);
         }
+    }
+
+    private static boolean hasAnyNote(Map<String, List<PersonalNote>> bucket) {
+        if (bucket == null) {
+            return false;
+        }
+        for (List<PersonalNote> v : bucket.values()) {
+            if (v != null && !v.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean matches(String fileKey, PersonalNote note, String filter) {
@@ -196,20 +255,38 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
             setContextMenu(null);
-            getStyleClass().removeAll("note-resolved", "note-orphaned", "notes-file-row");
+            setTooltip(null);
+            getStyleClass()
+                    .removeAll(
+                            "note-resolved",
+                            "note-orphaned",
+                            "notes-file-row",
+                            "note-project-row",
+                            "note-project-current");
             if (empty || item == null) {
                 setText(null);
+                setGraphic(null);
                 return;
             }
-            if (item instanceof FileRow f) {
+            if (item instanceof ProjectRow p) {
+                setText(p.current() ? tr("scope.currentSuffix", p.name()) : p.name());
+                getStyleClass().add("note-project-row");
+                if (p.current()) {
+                    getStyleClass().add("note-project-current");
+                }
+                setGraphic(p.key().isEmpty() ? Icons.notes() : Icons.project());
+            } else if (item instanceof FileRow f) {
                 setText(fileName(f.fileKey()));
                 getStyleClass().add("notes-file-row");
+                setGraphic(FileIcons.forFileName(fileName(f.fileKey())));
+                setTooltip(new Tooltip(f.fileKey()));
                 MenuItem deleteAll = new MenuItem(tr("notes.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());
                 deleteAll.setOnAction(e -> actions.deleteAll(f.fileKey()));
                 setContextMenu(new ContextMenu(deleteAll));
             } else if (item instanceof NoteRow n) {
                 setText(noteLabel(n.note()));
+                setGraphic(Icons.notes());
                 if (n.note().status() == NoteStatus.RESOLVED) {
                     getStyleClass().add("note-resolved");
                 } else if (n.note().status() == NoteStatus.ORPHANED) {

@@ -1,8 +1,10 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import javafx.geometry.Pos;
@@ -15,6 +17,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -35,16 +38,21 @@ import com.editora.config.Bookmark;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The Bookmarks tool window: a list of every bookmark in the active project (across all its files, open
- * or closed), grouped by file in a tree. Enter / double-click opens the file and jumps to the line; a
+ * The Bookmarks tool window: every bookmark (across all files, open or closed) grouped by <b>project</b> then
+ * by file, in a tree. It always shows the <b>General</b> (no-project) bucket and the <b>current</b> project's
+ * bucket; a "Show all projects" toggle additionally reveals every other project's bookmarks, so nothing
+ * appears/disappears when switching projects. Enter / double-click opens the file and jumps to the line; a
  * right-click menu edits the note or deletes bookmarks.
  *
- * <p>It reads the persisted bookmark map directly (so it includes files that aren't open) and routes
- * mutations back through {@link Actions} so the controller can update an open buffer's gutter or the
- * persisted map for a closed file. Marks itself {@code editora.ownsKeys} for local Emacs navigation,
- * mirroring {@link StructurePanel}.
+ * <p>It reads the persisted bookmark map directly (so it includes files that aren't open) and routes mutations
+ * back through {@link Actions}. Reordering (drag / Alt+Up-Down / menu) is confined to the current project's
+ * group — the only editable bucket. Marks itself {@code editora.ownsKeys} for local Emacs navigation.
  */
 public class BookmarksPanel extends VBox implements ToolWindowContent {
+
+    /** The cross-project view the panel renders: every bucket, the current project key, and a key→name resolver. */
+    public record Scope(
+            Map<String, Map<String, List<Bookmark>>> byProject, String currentKey, Function<String, String> nameFor) {}
 
     /** Mutations the panel asks the controller to perform (it knows which files are open). */
     public interface Actions {
@@ -55,14 +63,16 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         void delete(Path file, int line);
 
         void deleteAll(Path file);
-        /** Reorder a bookmark within its file (indices into that file's stored list). */
+        /** Reorder a bookmark within its file (indices into that file's stored list, in the current project). */
         void moveBookmark(Path file, int fromIndex, int toIndex);
-        /** Reorder a whole file group among the file headers (indices into the stored file order). */
+        /** Reorder a whole file group among the file headers (indices into the current project's file order). */
         void moveFile(int fromIndex, int toIndex);
     }
 
-    /** Tree row: a file header or a single bookmark under it. */
-    private sealed interface Row permits FileRow, MarkRow {}
+    /** Tree row: a project-group header, a file header, or a single bookmark. */
+    private sealed interface Row permits ProjectRow, FileRow, MarkRow {}
+
+    private record ProjectRow(String key, String name, boolean current) implements Row {}
 
     private record FileRow(Path file) implements Row {}
 
@@ -70,12 +80,16 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     private static final String SCOPE_HINT = tr("bookmarks.scopeTip");
 
-    private final Supplier<Map<String, List<Bookmark>>> source;
+    private final Supplier<Scope> source;
     private final Actions actions;
     private final TextField filterField = new TextField();
+    private final ToggleButton showAll = new ToggleButton();
     private final HBox header;
     private final TreeView<Row> tree = new TreeView<>();
     private final StackPane placeholderPane;
+
+    /** This window's project key, updated on each {@link #refresh()} — reordering is allowed only within it. */
+    private String currentKey = "";
 
     /** In-scene single-line prompt (injected by MainController) used to edit a bookmark's note. */
     private OverlayInput.Prompt prompt;
@@ -87,7 +101,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     /** The tree item currently being dragged (for drag-and-drop reordering). */
     private TreeItem<Row> draggedItem;
 
-    public BookmarksPanel(Supplier<Map<String, List<Bookmark>>> source, Actions actions) {
+    public BookmarksPanel(Supplier<Scope> source, Actions actions) {
         this.source = source;
         this.actions = actions;
         getStyleClass().add("bookmarks-panel");
@@ -112,14 +126,21 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
 
-        // An info badge explaining that bookmarks are scoped to the active project/session.
+        // "Show all projects" toggle — off by default (General + current project only); on reveals every project.
+        showAll.setGraphic(Icons.project());
+        showAll.getStyleClass().addAll("flat", "scope-toggle");
+        showAll.setFocusTraversable(false);
+        showAll.setTooltip(new Tooltip(tr("bookmarks.showAllTip")));
+        showAll.selectedProperty().addListener((o, w, n) -> refresh());
+
+        // An info badge explaining that bookmarks are scoped per project.
         Label info = new Label("ⓘ");
         info.getStyleClass().add("info-badge");
         Tooltip infoTip = new Tooltip(SCOPE_HINT);
         infoTip.setWrapText(true);
         infoTip.setMaxWidth(320);
         Tooltip.install(info, infoTip);
-        header = new HBox(6, filterField, clearFilter, info);
+        header = new HBox(6, filterField, clearFilter, showAll, info);
         header.getStyleClass().add("project-filter-bar");
         header.setAlignment(Pos.CENTER_LEFT);
 
@@ -144,34 +165,59 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * Rebuilds the tree from the bookmark map, applying the filter. The map's iteration order (files) and
-     * each file's list order (bookmarks) are preserved verbatim — that's the user's order (drag / move),
-     * and {@link com.editora.ui.MainController#allBookmarkEntries()} reads it the same way, so the panel
-     * and the {@code M-g b} jump picker always agree.
+     * Rebuilds the tree grouped by project (General, current, and — when {@link #showAll} is on — others), then by
+     * file. Each bucket's file order and each file's bookmark order are preserved verbatim (the user's drag/move
+     * order), matching {@link com.editora.ui.MainController#allBookmarkEntries()} so the panel and the {@code M-g b}
+     * jump picker agree.
      */
     public void refresh() {
         String query = filterField.getText() == null
                 ? ""
                 : filterField.getText().strip().toLowerCase();
-        Map<String, List<Bookmark>> map = source.get();
+        Scope scope = source.get();
+        Map<String, Map<String, List<Bookmark>>> byProject = scope.byProject();
+        currentKey = scope.currentKey() == null ? "" : scope.currentKey();
+
+        List<String> withContent = new ArrayList<>();
+        for (Map.Entry<String, Map<String, List<Bookmark>>> e : byProject.entrySet()) {
+            if (hasAnyBookmark(e.getValue())) {
+                withContent.add(e.getKey());
+            }
+        }
+        List<String> visible = ScopeGroups.visibleKeys(withContent, currentKey, showAll.isSelected(), scope.nameFor());
+
         TreeItem<Row> root = new TreeItem<>();
-        for (Map.Entry<String, List<Bookmark>> e : map.entrySet()) {
-            if (e.getValue() == null || e.getValue().isEmpty()) {
+        for (String key : visible) {
+            Map<String, List<Bookmark>> bucket = byProject.get(key);
+            if (bucket == null) {
                 continue;
             }
-            Path file = Path.of(e.getKey());
-            boolean fileMatches = fileName(file).toLowerCase().contains(query);
-            TreeItem<Row> fileNode = new TreeItem<>(new FileRow(file));
-            fileNode.setExpanded(true);
-            for (Bookmark bm : e.getValue()) {
-                if (query.isEmpty()
-                        || fileMatches
-                        || markLabel(bm).toLowerCase().contains(query)) {
-                    fileNode.getChildren().add(new TreeItem<>(new MarkRow(file, bm)));
+            boolean current = key.equals(currentKey);
+            TreeItem<Row> projectNode =
+                    new TreeItem<>(new ProjectRow(key, scope.nameFor().apply(key), current));
+            // Expand the buckets you care about (General + current); collapse other projects.
+            projectNode.setExpanded(key.isEmpty() || current);
+            for (Map.Entry<String, List<Bookmark>> e : bucket.entrySet()) {
+                if (e.getValue() == null || e.getValue().isEmpty()) {
+                    continue;
+                }
+                Path file = Path.of(e.getKey());
+                boolean fileMatches = fileName(file).toLowerCase().contains(query);
+                TreeItem<Row> fileNode = new TreeItem<>(new FileRow(file));
+                fileNode.setExpanded(true);
+                for (Bookmark bm : e.getValue()) {
+                    if (query.isEmpty()
+                            || fileMatches
+                            || markLabel(bm).toLowerCase().contains(query)) {
+                        fileNode.getChildren().add(new TreeItem<>(new MarkRow(file, bm)));
+                    }
+                }
+                if (!fileNode.getChildren().isEmpty()) {
+                    projectNode.getChildren().add(fileNode);
                 }
             }
-            if (!fileNode.getChildren().isEmpty()) {
-                root.getChildren().add(fileNode);
+            if (!projectNode.getChildren().isEmpty()) {
+                root.getChildren().add(projectNode);
             }
         }
         tree.setRoot(root);
@@ -183,9 +229,37 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         applyPendingSelection();
     }
 
-    /** Whether reordering is allowed right now (only with no filter, so tree indices map to stored ones). */
+    private static boolean hasAnyBookmark(Map<String, List<Bookmark>> bucket) {
+        if (bucket == null) {
+            return false;
+        }
+        for (List<Bookmark> v : bucket.values()) {
+            if (v != null && !v.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether reordering may run now: no filter (so tree indices map to stored ones). Callers also require the
+     *  row to be in the current project's group via {@link #inCurrentGroup}. */
     private boolean reorderEnabled() {
         return filterField.getText() == null || filterField.getText().isBlank();
+    }
+
+    /** The project-group ancestor of {@code item}, or null. */
+    private static TreeItem<Row> projectNodeOf(TreeItem<Row> item) {
+        TreeItem<Row> p = item;
+        while (p != null && !(p.getValue() instanceof ProjectRow)) {
+            p = p.getParent();
+        }
+        return p;
+    }
+
+    /** Whether {@code item} lives under the current project's group (the only bucket reordering can mutate). */
+    private boolean inCurrentGroup(TreeItem<Row> item) {
+        TreeItem<Row> pn = projectNodeOf(item);
+        return pn != null && pn.getValue() instanceof ProjectRow pr && pr.key().equals(currentKey);
     }
 
     /** Reselects the row remembered before a reorder (so repeated Alt+Up/Down keeps moving the same row). */
@@ -193,26 +267,29 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         if (reselectFile == null) {
             return;
         }
-        for (TreeItem<Row> fileNode : tree.getRoot().getChildren()) {
-            FileRow fr = (FileRow) fileNode.getValue();
-            if (!fr.file().equals(reselectFile)) {
-                continue;
-            }
-            TreeItem<Row> target = fileNode;
-            if (reselectLine != null) {
-                for (TreeItem<Row> markItem : fileNode.getChildren()) {
-                    if (((MarkRow) markItem.getValue()).bm().line() == reselectLine) {
-                        target = markItem;
-                        break;
+        for (TreeItem<Row> projectNode : tree.getRoot().getChildren()) {
+            for (TreeItem<Row> fileNode : projectNode.getChildren()) {
+                if (!(fileNode.getValue() instanceof FileRow fr) || !fr.file().equals(reselectFile)) {
+                    continue;
+                }
+                TreeItem<Row> target = fileNode;
+                if (reselectLine != null) {
+                    for (TreeItem<Row> markItem : fileNode.getChildren()) {
+                        if (((MarkRow) markItem.getValue()).bm().line() == reselectLine) {
+                            target = markItem;
+                            break;
+                        }
                     }
                 }
+                int idx = tree.getRow(target);
+                if (idx >= 0) {
+                    tree.getSelectionModel().select(idx);
+                    tree.scrollTo(idx);
+                }
+                reselectFile = null;
+                reselectLine = null;
+                return;
             }
-            int idx = tree.getRow(target);
-            if (idx >= 0) {
-                tree.getSelectionModel().select(idx);
-                tree.scrollTo(idx);
-            }
-            break;
         }
         reselectFile = null;
         reselectLine = null;
@@ -328,20 +405,17 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         }
         if (item.getValue() instanceof MarkRow m) {
             actions.openAndJump(m.file(), m.bm().line());
-        } else if (item.getValue() instanceof FileRow) {
-            item.setExpanded(!item.isExpanded());
+        } else {
+            item.setExpanded(!item.isExpanded()); // a project or file header toggles
         }
     }
 
-    // --- reordering (Alt+Up/Down, context menu, drag-and-drop) ---
+    // --- reordering (Alt+Up/Down, context menu, drag-and-drop) — current project group only ---
 
     /** Moves the selected bookmark within its file, or the selected file group among files, by {@code delta}. */
     private void moveSelected(int delta) {
-        if (!reorderEnabled()) {
-            return;
-        }
         TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
-        if (item == null) {
+        if (item == null || !reorderEnabled() || !inCurrentGroup(item)) {
             return;
         }
         if (item.getValue() instanceof MarkRow m) {
@@ -354,9 +428,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                     from + delta,
                     parent.getChildren().size());
         } else if (item.getValue() instanceof FileRow f) {
-            int from = tree.getRoot().getChildren().indexOf(item);
-            moveFileGroup(
-                    f.file(), from, from + delta, tree.getRoot().getChildren().size());
+            var siblings = item.getParent().getChildren(); // the project group's file headers
+            int from = siblings.indexOf(item);
+            moveFileGroup(f.file(), from, from + delta, siblings.size());
         }
     }
 
@@ -378,15 +452,19 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         actions.moveFile(from, to);
     }
 
-    /** Whether {@code src} may be dropped onto {@code target}: a bookmark onto a sibling, or a file onto a file. */
+    /** Whether {@code src} may be dropped onto {@code target}: a bookmark onto a sibling, or a file onto a sibling
+     *  file — both within the current project's group (the only editable bucket). */
     private boolean canDrop(TreeItem<Row> src, TreeItem<Row> target) {
-        if (src == null || target == null || src == target) {
+        if (src == null || target == null || src == target || !inCurrentGroup(src) || !inCurrentGroup(target)) {
             return false;
         }
         if (src.getValue() instanceof MarkRow sm && target.getValue() instanceof MarkRow tm) {
             return sm.file().equals(tm.file());
         }
-        return src.getValue() instanceof FileRow && target.getValue() instanceof FileRow;
+        // Two file headers under the same project group.
+        return src.getValue() instanceof FileRow
+                && target.getValue() instanceof FileRow
+                && src.getParent() == target.getParent();
     }
 
     private void handleDrop(TreeItem<Row> src, TreeItem<Row> target, boolean after) {
@@ -394,11 +472,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (src.getValue() instanceof MarkRow sm) {
-            TreeItem<Row> parent = src.getParent();
-            if (parent == null) {
-                return; // a detached/root mark row has no file group to reorder within (defensive)
-            }
-            var siblings = parent.getChildren();
+            var siblings = src.getParent().getChildren();
             int from = siblings.indexOf(src);
             moveMark(
                     sm.file(),
@@ -407,9 +481,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                     insertIndex(from, siblings.indexOf(target), after),
                     siblings.size());
         } else if (src.getValue() instanceof FileRow sf) {
-            var roots = tree.getRoot().getChildren();
-            int from = roots.indexOf(src);
-            moveFileGroup(sf.file(), from, insertIndex(from, roots.indexOf(target), after), roots.size());
+            var files = src.getParent().getChildren(); // sibling file headers within the project group
+            int from = files.indexOf(src);
+            moveFileGroup(sf.file(), from, insertIndex(from, files.indexOf(target), after), files.size());
         }
     }
 
@@ -484,8 +558,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             // the cursor, the dragged row dims, and an accent insertion line shows on the target row's
             // top/bottom edge for the side it would drop on.
             setOnDragDetected(e -> {
-                if (!reorderEnabled() || getItem() == null) {
-                    return;
+                if (!reorderEnabled() || getItem() == null || !inCurrentGroup(getTreeItem())) {
+                    return; // only current-project rows are reorderable
                 }
                 draggedItem = getTreeItem();
                 Dragboard db = startDragAndDrop(TransferMode.MOVE);
@@ -526,8 +600,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             getStyleClass().removeAll("bookmark-drop-above", "bookmark-drop-below");
         }
 
-        /** "Move Up"/"Move Down" items that act on this row (disabled while a filter is active). */
+        /** "Move Up"/"Move Down" items that act on this row (only for the current project's group). */
         private void addMoveItems(ContextMenu menu) {
+            boolean can = reorderEnabled() && inCurrentGroup(getTreeItem());
             MenuItem up = new MenuItem(tr("bookmarks.moveUp"));
             up.setGraphic(Icons.arrowUp());
             up.setOnAction(e -> {
@@ -540,30 +615,38 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 tree.getSelectionModel().select(getTreeItem());
                 moveSelected(1);
             });
-            up.setDisable(!reorderEnabled());
-            down.setDisable(!reorderEnabled());
+            up.setDisable(!can);
+            down.setDisable(!can);
             menu.getItems().addAll(new SeparatorMenuItem(), up, down);
         }
 
         @Override
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
-            // Cells are reused as the tree scrolls/rebuilds; never let drag styling leak onto a reused
-            // cell. The dragged row stays dimmed via a re-applied style each repaint.
+            // Cells are reused as the tree scrolls/rebuilds; never let styling leak onto a reused cell.
             clearDropMarkers();
+            getStyleClass().removeAll("bookmark-file-row", "bookmark-project-row", "bookmark-project-current");
             toggleStyle(this, "bookmark-dragging", !empty && item != null && getTreeItem() == draggedItem);
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
                 setContextMenu(null);
-                getStyleClass().remove("bookmark-file-row");
+                setTooltip(null);
                 return;
             }
-            getStyleClass().remove("bookmark-file-row");
-            if (item instanceof FileRow f) {
+            if (item instanceof ProjectRow p) {
+                setText(p.current() ? tr("scope.currentSuffix", p.name()) : p.name());
+                getStyleClass().add("bookmark-project-row");
+                if (p.current()) {
+                    getStyleClass().add("bookmark-project-current");
+                }
+                setGraphic(p.key().isEmpty() ? Icons.notes() : Icons.project());
+                setTooltip(null);
+                setContextMenu(null);
+            } else if (item instanceof FileRow f) {
                 setText(fileName(f.file()));
                 getStyleClass().add("bookmark-file-row");
-                setGraphic(Icons.fileSheet());
+                setGraphic(FileIcons.forFileName(fileName(f.file())));
                 setTooltip(new Tooltip(f.file().toString()));
                 MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());

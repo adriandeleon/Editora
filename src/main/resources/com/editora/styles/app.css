@@ -200,6 +200,24 @@
 .bookmarks-tree .bookmark-file-row {
     -fx-text-fill: -color-fg-muted;
 }
+/* Project-group headers in the Bookmarks / Personal Notes trees (grouped by project). The current project's
+   header reads a touch stronger; the "Show all projects" scope toggle goes accent when active. */
+.bookmarks-tree .bookmark-project-row, .notes-tree .note-project-row {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
+.bookmarks-tree .bookmark-project-row .toolbar-icon, .notes-tree .note-project-row .toolbar-icon {
+    -fx-fill: -color-accent-fg;
+}
+.bookmarks-tree .bookmark-project-current, .notes-tree .note-project-current {
+    -fx-text-fill: -color-accent-emphasis;
+}
+.scope-toggle:selected {
+    -fx-background-color: -color-accent-muted;
+}
+.scope-toggle:selected .toolbar-icon {
+    -fx-fill: -color-accent-fg;
+}
 
 /* Personal Notes tool window: same look as the Bookmarks/Structure panels. */
 .notes-panel {

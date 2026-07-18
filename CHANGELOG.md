@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Bookmarks and Personal Notes now group by project, so they don't appear/disappear when you switch projects.**
+  Each panel always shows the **General** (no-project) group and the **current project**, and a new **"Show all
+  projects"** toggle reveals every other project's bookmarks/notes too — grouped by project, and you can jump to
+  any of them. File rows now use the real file-type icons and project headers are colored. (#565)
 - **The Git Log tool window is colored and uses real file icons.** Each commit's short hash reads in the accent
   color, and the changed-files list colors each row by its status (added/modified/deleted/renamed) with the
   actual file-type icon — matching the Commit tool window and Project tree — instead of flat text and a generic

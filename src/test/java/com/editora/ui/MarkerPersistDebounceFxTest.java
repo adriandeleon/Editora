@@ -61,6 +61,21 @@ class MarkerPersistDebounceFxTest {
                 }
 
                 @Override
+                public Map<String, Map<String, List<Bookmark>>> allBookmarks() {
+                    return Map.of("", map);
+                }
+
+                @Override
+                public String currentProjectKey() {
+                    return "";
+                }
+
+                @Override
+                public String projectName(String key) {
+                    return key.isEmpty() ? "General" : key;
+                }
+
+                @Override
                 public void saveBookmarks() {
                     saves[0]++;
                 }

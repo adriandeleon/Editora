@@ -42,6 +42,15 @@ final class BookmarkCoordinator {
         /** The active project's bookmarks bucket (keyed by absolute path string). */
         Map<String, List<Bookmark>> bookmarks();
 
+        /** Every project's bookmark buckets ({@code projectKey → (path → bookmarks)}) — the cross-project view. */
+        Map<String, Map<String, List<Bookmark>>> allBookmarks();
+
+        /** This window's project key ({@code ""} = general/no-project) — the "current" group when grouping. */
+        String currentProjectKey();
+
+        /** Display name for a project key: {@code ""} → "General", else the project's name (fallback: the key). */
+        String projectName(String key);
+
         /** Persists {@code bookmarks.json}. */
         void saveBookmarks();
     }
@@ -65,7 +74,7 @@ final class BookmarkCoordinator {
         this.host = host;
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
-        this.panel = new BookmarksPanel(ops::bookmarks, new BookmarksPanel.Actions() {
+        this.panel = new BookmarksPanel(this::scope, new BookmarksPanel.Actions() {
             @Override
             public void openAndJump(Path file, int line) {
                 bookmarkActivate(file, line);
@@ -108,6 +117,11 @@ final class BookmarkCoordinator {
 
     BookmarksPanel panel() {
         return panel;
+    }
+
+    /** The cross-project view the panel renders on each refresh (every bucket + the current key + a name resolver). */
+    private BookmarksPanel.Scope scope() {
+        return new BookmarksPanel.Scope(ops.allBookmarks(), ops.currentProjectKey(), ops::projectName);
     }
 
     /** Binds the jump picker to the shared overlay host (called once from {@code MainController.wireOverlayHost}). */

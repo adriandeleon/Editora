@@ -288,6 +288,16 @@ public class SharedConfig {
 
     // --- bucketed stores (keyed by project key) ---
 
+    /** Every project's note buckets ({@code projectKey → (path → notes)}), for the cross-project panel view. */
+    public Map<String, Map<String, List<PersonalNote>>> allNotes() {
+        return noteStore.getByProject();
+    }
+
+    /** Every project's bookmark buckets ({@code projectKey → (path → bookmarks)}), for the cross-project view. */
+    public Map<String, Map<String, List<Bookmark>>> allBookmarks() {
+        return bookmarkStore.getByProject();
+    }
+
     public Map<String, List<PersonalNote>> notesBucket(String key) {
         return noteStore.bucket(key);
     }
