@@ -113,6 +113,15 @@ public final class WelcomePane extends Region implements TabContent {
         return this;
     }
 
+    /**
+     * Scales the Welcome page's text to the editor text-zoom factor ({@code Settings.fontZoom}, 1.0 = 100%).
+     * The {@code .welcome-*} font sizes are all {@code em}-relative, so setting the root's font size scales the
+     * whole tree proportionally (#540). Survives {@link #refresh()} (which rebuilds only the inner content).
+     */
+    public void setFontScale(double zoom) {
+        setStyle("-fx-font-size: " + Math.max(0.5, zoom) + "em;");
+    }
+
     @Override
     public String title() {
         return tr("welcome.tab");

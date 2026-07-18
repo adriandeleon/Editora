@@ -1081,6 +1081,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private void addWelcomeTab() {
         welcomePane.refresh();
+        welcomePane.setFontScale(config.getSettings().getFontZoom()); // match the current text zoom (#540)
         if (welcomeTab != null && tabPane.getTabs().contains(welcomeTab)) {
             tabPane.getSelectionModel().select(welcomeTab);
             return;
@@ -10234,9 +10235,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
         // If the Welcome tab is open, rebuild it so its Open Folder / Clone actions track the
-        // Projects/Git toggles that may have just changed.
+        // Projects/Git toggles that may have just changed, and scale its text to the current zoom (#540).
         if (welcomeTab != null) {
             welcomePane.refresh();
+            welcomePane.setFontScale(settings.getFontZoom());
         }
     }
 

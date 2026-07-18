@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Text zoom now works inside Diff views.** `Ctrl`+`=`/`-`/`0`, the status-bar `−/+`, and `Ctrl`+mouse-wheel
   resize the font when comparing two files or a file against Git, the same as in a normal editor. (#533)
+- **Text zoom now scales the Welcome page too.** (#540)
 - **The Commit panel now appears when a file changes outside Editora.** If another program (a terminal `git`
   command, another editor, a build) modified files under the repo while Editora was focused, the Commit stripe,
   Git status, and gutter change bars didn't update until you clicked away and back. They now refresh as soon as
