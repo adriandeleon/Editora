@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Maven / Gradle / npm / Cargo / Go task panels now open on the right by default** instead of the bottom
+  (a better fit for a vertical task list). A panel you've already moved keeps its side. (#531)
 - **The gutter fold arrow is 35% larger** — easier to see and click. (#530)
 
 ## [0.9.6] - 2026-07-17
