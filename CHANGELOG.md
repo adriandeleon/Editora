@@ -91,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Typst preview no longer retains gigabytes of page images.** Its render cache was bounded by document
+  count, but each entry is a whole multi-page document — so a 40-page document could retain ~570 MB, and
+  editing it (each keystroke a new render) accumulated several times that. The cache is now bounded by total
+  pages, keeping memory in check. (#461)
 - **A Typst compile error now shows your file name, not an internal temp filename.** Previously every typo in
   the Typst preview reported an error against `.editora-typst-<uuid>.typ` (the throwaway file Editora renders
   through). The buffer's name is now shown instead; line and column were already correct. (#462)
