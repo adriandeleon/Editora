@@ -81,11 +81,28 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     /** Guards against re-entrant kind-filter menu rebuilds firing the checkbox listeners. */
     private boolean rebuildingKindFilter;
 
+    // rebuild() (an O(n) document split + a full TreeView rebuild) fires on every debounced fold-region change,
+    // which happens on every edit whether or not this tool window is open. Skip it while hidden and coalesce to a
+    // single rebuild when the window is (re)opened. (#549)
+    private boolean pendingRebuild;
+
     public StructurePanel() {
         getStyleClass().add("structure-panel");
         // Opt out of the global key dispatcher so chords like C-n reach our local handler.
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         build();
+        // A closed tool window is removed from the scene (getScene() == null); rebuild once when it's (re)opened
+        // if the outline went stale while hidden.
+        sceneProperty().addListener((o, was, now) -> {
+            if (now != null && pendingRebuild) {
+                rebuild();
+            }
+        });
+    }
+
+    /** The tree is only worth rebuilding while the tool window is open (its node is in the scene). */
+    private boolean visible() {
+        return getScene() != null;
     }
 
     private void build() {
@@ -388,6 +405,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     // --- Tree construction ---
 
     private void rebuild() {
+        if (!visible()) {
+            pendingRebuild = true; // defer the O(n) split + TreeView rebuild until the window is shown again
+            return;
+        }
+        pendingRebuild = false;
         if (buffer == null) {
             roots = new ArrayList<>(); // mutable: sortNodes sorts roots in place (a diff/Welcome tab has no buffer)
         } else if (lspSymbols != null) {

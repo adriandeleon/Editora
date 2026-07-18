@@ -2,8 +2,10 @@ package com.editora.ui;
 
 import java.util.List;
 
+import javafx.scene.Scene;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.layout.StackPane;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.SymbolNode;
@@ -37,6 +39,13 @@ class StructureNavFxTest {
         });
     }
 
+    /** A panel placed in a scene, as it is when its tool window is open (the outline only rebuilds while shown). */
+    private static StructurePanel shownPanel() {
+        StructurePanel p = new StructurePanel();
+        new Scene(new StackPane(p), 300, 400);
+        return p;
+    }
+
     private static List<SymbolNode> threeSymbols() {
         return List.of(
                 new SymbolNode("Alpha", null, "class", 0, 9, List.of()),
@@ -56,7 +65,7 @@ class StructureNavFxTest {
 
     @Test
     void unchangedSymbolsKeepSelectionAndDoNotRebuild() throws Exception {
-        StructurePanel panel = FxTestSupport.callOnFx(StructurePanel::new);
+        StructurePanel panel = FxTestSupport.callOnFx(StructureNavFxTest::shownPanel);
         EditorBuffer buffer = tenLineBuffer();
         FxTestSupport.runOnFx(() -> {
             panel.attach(buffer);
@@ -83,7 +92,7 @@ class StructureNavFxTest {
 
     @Test
     void changedSymbolsRebuildButPreserveTheSelectedSymbol() throws Exception {
-        StructurePanel panel = FxTestSupport.callOnFx(StructurePanel::new);
+        StructurePanel panel = FxTestSupport.callOnFx(StructureNavFxTest::shownPanel);
         EditorBuffer buffer = tenLineBuffer();
         FxTestSupport.runOnFx(() -> {
             panel.attach(buffer);
