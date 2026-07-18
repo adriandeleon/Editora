@@ -14,6 +14,10 @@ public class CommandRegistry {
     /** Notified with each command id that actually ran (after the command executes). Null = no listener. */
     private Consumer<String> executionListener;
 
+    /** Reentrancy depth of {@link #run}: the listener fires only for the outermost call, so a command that
+     *  synchronously delegates to another records what the user invoked, not the internal decomposition. */
+    private int runDepth;
+
     public void register(Command command) {
         commands.put(command.id(), command);
     }
@@ -42,8 +46,18 @@ public class CommandRegistry {
         if (command == null) {
             return false;
         }
-        command.run();
-        if (executionListener != null) {
+        runDepth++;
+        try {
+            command.run();
+        } finally {
+            runDepth--;
+        }
+        // Fire the execution/macro listener only for the OUTERMOST run. If a command synchronously delegates
+        // to another (`registry.run(...)` from its body), firing per-run would record the inner command first
+        // (its run() returns before the outer's does) — reversing the order and, on replay, running the inner
+        // command twice. A macro should record what the user invoked, not the internal decomposition (#449).
+        // A command that throws propagates out of the try, so it is never recorded (as before the change).
+        if (runDepth == 0 && executionListener != null) {
             executionListener.accept(id);
         }
         return true;
